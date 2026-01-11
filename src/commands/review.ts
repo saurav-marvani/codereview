@@ -57,7 +57,7 @@ export const reviewCommand = new Command('review')
       }
 
       if (!globalOpts.quiet) {
-        spinner.start(chalk.blue('Checking authentication...'));
+        spinner.start(chalk.cyan('Checking authentication...'));
       }
 
       let result: ReviewResult | TrialReviewResult;
@@ -67,7 +67,7 @@ export const reviewCommand = new Command('review')
 
         try {
           if (!globalOpts.quiet) {
-            spinner.text = chalk.blue('Fetching configuration from platform...');
+            spinner.text = chalk.cyan('Fetching configuration from platform...');
           }
           config = await reviewService.getConfig(globalOpts.org, globalOpts.repo);
         } catch (error) {
@@ -87,7 +87,7 @@ export const reviewCommand = new Command('review')
         }
 
         if (!globalOpts.quiet) {
-          spinner.text = chalk.blue('Getting file changes...');
+          spinner.text = chalk.cyan('Getting file changes...');
         }
 
         let diff = await getDiff(files, options);
@@ -99,13 +99,13 @@ export const reviewCommand = new Command('review')
 
         // Enrich with project context
         if (!globalOpts.quiet) {
-          spinner.text = chalk.blue('Reading project context...');
+          spinner.text = chalk.cyan('Reading project context...');
         }
 
         diff = await contextService.enrichDiffWithContext(diff, options.context);
 
         if (!globalOpts.quiet) {
-          spinner.text = chalk.blue('Analyzing code...');
+          spinner.text = chalk.cyan('Analyzing code...');
         }
 
         result = await reviewService.analyze(diff, config, options.rulesOnly, options.fast, {
@@ -118,7 +118,7 @@ export const reviewCommand = new Command('review')
         spinner.succeed(chalk.green(`Review complete!${modeLabel}`));
       } else {
         if (!globalOpts.quiet) {
-          spinner.text = chalk.blue('Running in trial mode...');
+          spinner.text = chalk.cyan('Running in trial mode...');
         }
 
         const trialStatus = await checkTrialStatus();
@@ -130,7 +130,7 @@ export const reviewCommand = new Command('review')
         }
 
         if (!globalOpts.quiet) {
-          spinner.text = chalk.blue('Getting file changes...');
+          spinner.text = chalk.cyan('Getting file changes...');
         }
 
         let diff = await getDiff(files, options);
@@ -142,13 +142,13 @@ export const reviewCommand = new Command('review')
 
         // Enrich with project context
         if (!globalOpts.quiet) {
-          spinner.text = chalk.blue('Reading project context...');
+          spinner.text = chalk.cyan('Reading project context...');
         }
 
         diff = await contextService.enrichDiffWithContext(diff, options.context);
 
         if (!globalOpts.quiet) {
-          spinner.text = chalk.blue('Analyzing code (trial mode)...');
+          spinner.text = chalk.cyan('Analyzing code (trial mode)...');
         }
 
         result = await reviewService.trialAnalyze(diff);
