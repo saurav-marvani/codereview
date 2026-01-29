@@ -13,7 +13,7 @@ interface UpdateCache {
   latestVersion: string;
 }
 
-function isNewerVersion(current: string, latest: string): boolean {
+export function isNewerVersion(current: string, latest: string): boolean {
   const currentParts = current.split('.').map(Number);
   const latestParts = latest.split('.').map(Number);
   const len = Math.max(currentParts.length, latestParts.length);

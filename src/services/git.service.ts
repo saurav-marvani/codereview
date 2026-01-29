@@ -307,7 +307,7 @@ class GitService {
     return fileContents;
   }
 
-  private parseGitStatus(statusChar: string): FileDiff['status'] {
+  parseGitStatus(statusChar: string): FileDiff['status'] {
     const char = statusChar.charAt(0).toUpperCase();
     switch (char) {
       case 'A': return 'added';

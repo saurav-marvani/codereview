@@ -151,7 +151,7 @@ class ReviewService {
     return result;
   }
 
-  private normalizeSuggestionsResponse(response: PullRequestSuggestionsResponse): ReviewResult {
+  normalizeSuggestionsResponse(response: PullRequestSuggestionsResponse): ReviewResult {
     let issues: ReviewIssue[] = [];
 
     if (Array.isArray(response.issues)) {
@@ -174,7 +174,7 @@ class ReviewService {
     };
   }
 
-  private mapFileSuggestions(files: ApiFileSuggestion[]): ReviewIssue[] {
+  mapFileSuggestions(files: ApiFileSuggestion[]): ReviewIssue[] {
     return files.map((s) => ({
       file: s.filePath ?? s.relevantFile,
       line: s.relevantLinesStart ?? 1,
@@ -186,7 +186,7 @@ class ReviewService {
     }));
   }
 
-  private mapPrLevelSuggestions(prLevel: ApiPrLevelSuggestion[]): ReviewIssue[] {
+  mapPrLevelSuggestions(prLevel: ApiPrLevelSuggestion[]): ReviewIssue[] {
     return prLevel.map((s) => ({
       file: 'PR',
       line: 0,
@@ -197,7 +197,7 @@ class ReviewService {
     }));
   }
 
-  private normalizeSeverity(severity?: string): Severity {
+  normalizeSeverity(severity?: string): Severity {
     if (!severity) return 'info';
     const s = severity.toLowerCase();
     if (s === 'critical') return 'critical';

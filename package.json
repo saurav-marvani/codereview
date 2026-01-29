@@ -21,6 +21,8 @@
     "start": "node dist/index.js",
     "start:local": "KODUS_API_URL=http://localhost:3001 node dist/index.js",
     "start:qa": "KODUS_API_URL=https://qa.api.kodus.io node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint": "eslint src --ext .ts",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run build"
@@ -45,7 +47,8 @@
   "devDependencies": {
     "@types/inquirer": "^9.0.7",
     "@types/node": "^20.14.9",
-    "typescript": "^5.5.3"
+    "typescript": "^5.5.3",
+    "vitest": "^4.0.18"
   },
   "engines": {
     "node": ">=18.0.0"
