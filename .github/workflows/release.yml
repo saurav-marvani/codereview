@@ -39,13 +39,14 @@ jobs:
 
       - name: Generate changelog
         run: |
+          end_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           response=$(curl -sf -X POST "${{ secrets.CHANGELOG_API_URL }}/api/v1/changelog" \
             -H "Content-Type: application/json" \
             -d '{
               "owner": "${{ github.repository_owner }}",
               "repo": "${{ github.event.repository.name }}",
               "startDate": "${{ steps.prev.outputs.date }}",
-              "endDate": "${{ github.event.release.created_at }}",
+              "endDate": "'"$end_date"'",
               "style": "end-user",
               "webhookUrl": "${{ secrets.WEBHOOK_URL }}"
             }')
