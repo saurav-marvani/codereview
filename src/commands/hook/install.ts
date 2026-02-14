@@ -55,8 +55,9 @@ while read local_ref local_sha remote_ref remote_sha; do
   fi
 
   # Review changes not yet on the remote
-  kodus review --branch "\${remote}/\${branch_name}" ${reviewFlags}
-  exit $?
+  if ! kodus review --branch "\${remote}/\${branch_name}" ${reviewFlags}; then
+    exit 1
+  fi
 done
 `;
 }
