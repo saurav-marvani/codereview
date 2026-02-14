@@ -32,6 +32,7 @@ if ! command -v kodus >/dev/null 2>&1; then
 fi
 
 remote="$1"
+current_branch="$(git symbolic-ref --short HEAD 2>/dev/null)"
 
 while read local_ref local_sha remote_ref remote_sha; do
   # Skip branch deletions
@@ -45,7 +46,13 @@ while read local_ref local_sha remote_ref remote_sha; do
   fi
 
   # Extract branch name from ref (refs/heads/my-branch → my-branch)
-  branch_name="\${remote_ref#refs/heads/}"
+  branch_name="\${local_ref#refs/heads/}"
+
+  # Only review if pushing the currently checked-out branch
+  # (--branch compares against HEAD, so reviewing other refs would produce wrong diffs)
+  if [ "\$branch_name" != "\$current_branch" ]; then
+    continue
+  fi
 
   # Review changes not yet on the remote
   kodus review --branch "\${remote}/\${branch_name}" ${reviewFlags}
