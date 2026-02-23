@@ -4,28 +4,28 @@ Benchmark suite for evaluating LLM performance on code review tasks. Uses [promp
 
 ## Models
 
-| Model | Provider |
-|---|---|
-| Gemini 2.5 Pro | Google |
-| Gemini 3 Pro (preview) | Google |
-| Gemini 3 Flash (preview) | Google |
-| Claude Sonnet 4.5 | Anthropic |
-| Claude Haiku 4.5 | Anthropic |
-| GPT-5.2 | OpenAI |
-| GPT-5 Mini | OpenAI |
-| Kimi K2.5 | Moonshot (OpenRouter) |
-| GLM 4.7 | Z-AI (OpenRouter) |
+| Model                    | Provider              |
+| ------------------------ | --------------------- |
+| Gemini 2.5 Pro           | Google                |
+| Gemini 3 Pro (preview)   | Google                |
+| Gemini 3 Flash (preview) | Google                |
+| Claude Sonnet 4.5        | Anthropic             |
+| Claude Haiku 4.5         | Anthropic             |
+| GPT-5.2                  | OpenAI                |
+| GPT-5 Mini               | OpenAI                |
+| Kimi K2.5                | Moonshot (OpenRouter) |
+| GLM 4.7                  | Z-AI (OpenRouter)     |
 
 ## Datasets
 
 80 examples across 4 languages, each with known bugs and reference solutions:
 
-| Dataset | File | Examples |
-|---|---|---|
-| TypeScript/JavaScript | `datasets/tsjs.jsonl` | 20 |
-| Python | `datasets/python.jsonl` | 20 |
-| Java | `datasets/java.jsonl` | 20 |
-| Ruby | `datasets/ruby.jsonl` | 20 |
+| Dataset               | File                    | Examples |
+| --------------------- | ----------------------- | -------- |
+| TypeScript/JavaScript | `datasets/tsjs.jsonl`   | 20       |
+| Python                | `datasets/python.jsonl` | 20       |
+| Java                  | `datasets/java.jsonl`   | 20       |
+| Ruby                  | `datasets/ruby.jsonl`   | 20       |
 
 ## Setup
 
@@ -90,6 +90,7 @@ yarn eval:codereview:python --filter-providers "openai:gpt-5.2"
 Each model's output is evaluated by **two independent judges** (Claude Sonnet 4.5 + GPT-5.2) to reduce single-model bias. The judges call the APIs directly via a custom JavaScript assertion (`judge-assertion.js`), bypassing promptfoo's built-in `llm-rubric`.
 
 Each judge evaluates every suggestion with:
+
 - **Concrete failing input** — a specific input that triggers the bug
 - **Expected output** — what should happen
 - **Actual output** — what actually happens
@@ -98,16 +99,16 @@ Suggestions that can't provide all three are marked **INVALID**.
 
 ### Metrics
 
-| Metric | Description |
-|---|---|
-| **Score** | Average of both judges' final scores |
+| Metric       | Description                                                      |
+| ------------ | ---------------------------------------------------------------- |
+| **Score**    | Average of both judges' final scores                             |
 | **Coverage** | % of known reference bugs found by at least one valid suggestion |
-| **Validity** | % of model's suggestions that are real, provable bugs |
-| **Line Acc** | Average IoU of predicted vs reference line ranges (unfound = 0) |
-| **Avg IoU** | Average IoU only for bugs the model actually found |
-| **Exact** | % of predictions with exact line range match |
-| **Within 3** | % of predictions within 3 lines of reference start/end |
-| **Latency** | p50 and p95 response time |
+| **Validity** | % of model's suggestions that are real, provable bugs            |
+| **Line Acc** | Average IoU of predicted vs reference line ranges (unfound = 0)  |
+| **Avg IoU**  | Average IoU only for bugs the model actually found               |
+| **Exact**    | % of predictions with exact line range match                     |
+| **Within 3** | % of predictions within 3 lines of reference start/end           |
+| **Latency**  | p50 and p95 response time                                        |
 
 ### Score formula
 
@@ -167,4 +168,94 @@ Score    = avg(Judge Sonnet score, Judge GPT score)
 Coverage = % of known bugs that were found
 Validity = % of suggestions that are real bugs
 ...
+```
+
+## Memory tool-call evaluation
+
+Standalone suite to evaluate whether the existing conversation flow prompt triggers long-term memory creation via `tool_propose_kody_memory_rule` while also exposing the standard Kodus MCP tools to the model.
+
+### Files
+
+```
+promptfoo.memory.yaml              # Memory suite config
+memory-prompt-loader.js            # Prompt loader for conversation memory decision
+generate-memory-prompt.js          # Generates prompt from kodus-flow ReAct conversation flow
+convert-memory-dataset.js          # Converts memory dataset to promptfoo tests
+memory-parse-output.js             # Parses model output and extracts tool calls
+memory-tool-call-assertion.js      # Pass/fail assertion for memory proposal tool calls
+datasets/memory-conversations.json # Placeholder input dataset
+datasets/memory-tests.json         # Generated promptfoo tests
+generated-memory-prompt.json       # Generated prompt artifact used by promptfoo
+run-memory-eval.sh                 # Runner (env mapping + convert + promptfoo eval)
+```
+
+### Prompt source
+
+This suite uses the same conversation prompt composition path used by `kodus-flow` ReAct strategy (`StrategyPromptFactory.createReActPrompt`) instead of a custom hardcoded prompt.
+
+The runner regenerates `generated-memory-prompt.json` automatically before each eval run.
+
+`generate-memory-prompt.js` injects a static catalog of the standard Kodus MCP tools (Code Management, Kody Rules, and Kody Issues) to keep evaluation deterministic.
+
+### Dataset contract
+
+Input dataset can be either:
+
+- JSON array, or
+- JSON object with `examples` array, or
+- JSONL (one JSON object per line).
+
+Each example supports:
+
+```json
+{
+    "id": "optional-case-id",
+    "conversation": [
+        { "role": "user", "content": "Please remember I like concise answers" }
+    ],
+    "shouldCreateMemory": true,
+    "expected": {
+        "toolName": "KODUS_CREATE_MEMORY",
+        "triggerType": "explicit",
+        "scopeLevel": "team",
+        "applyDuring": ["generation", "pipeline"],
+        "approvalMode": "manual",
+        "lifecycleAction": "create",
+        "rule": "we prefer concise answers",
+        "ambiguityLevel": "low"
+    },
+    "additionalInformation": "optional user/org context",
+    "threadId": "optional-thread-id",
+    "sessionId": "optional-session-id",
+    "correlationId": "optional-correlation-id"
+}
+```
+
+Accepted alternatives:
+
+- `messages` instead of `conversation`
+- `expected.shouldCreateMemory` instead of top-level `shouldCreateMemory`
+
+When `expected.*` fields are provided, assertions compute dimension-level scoring for:
+
+- trigger type
+- scope level
+- apply stages
+- approval mode
+- lifecycle action
+- rule content match
+
+### Run
+
+```bash
+yarn eval:memory:generate-prompt
+yarn eval:memory
+yarn eval:memory:light
+```
+
+Use your own dataset file:
+
+```bash
+yarn eval:memory --dataset=./path/to/your-memory-dataset.json
+yarn eval:memory --dataset=./path/to/your-memory-dataset.jsonl --limit=50
 ```
