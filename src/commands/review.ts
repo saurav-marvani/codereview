@@ -143,8 +143,9 @@ export const reviewCommand = new Command('review')
           reviewService.setVerbose(true);
         }
 
-        result = await reviewService.trialAnalyze(diff);
-        spinner.succeed(chalk.green(`Review complete! (Trial: ${(result as TrialReviewResult).trialInfo.reviewsUsed}/${(result as TrialReviewResult).trialInfo.reviewsLimit} reviews today)`));
+        const trialResult = await reviewService.trialAnalyze(diff);
+        result = trialResult;
+        spinner.succeed(chalk.green(formatTrialCompletionMessage(trialResult)));
       }
 
       // Handle fix mode
@@ -261,4 +262,17 @@ function formatOutput(result: ReviewResult, format: OutputFormat): string {
     default:
       return terminalFormatter.format(result);
   }
+}
+
+function formatTrialCompletionMessage(result: TrialReviewResult): string {
+  if (result.trialInfo) {
+    return `Review complete! (Trial: ${result.trialInfo.reviewsUsed}/${result.trialInfo.reviewsLimit} reviews today)`;
+  }
+
+  if (result.rateLimit) {
+    const used = Math.max(0, result.rateLimit.limit - result.rateLimit.remaining);
+    return `Review complete! (Trial: ${used}/${result.rateLimit.limit} reviews today)`;
+  }
+
+  return 'Review complete! (Trial mode)';
 }

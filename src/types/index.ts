@@ -120,10 +120,15 @@ export interface PullRequestSuggestionsResponse {
 }
 
 export interface TrialReviewResult extends ReviewResult {
-  trialInfo: {
+  trialInfo?: {
     reviewsUsed: number;
     reviewsLimit: number;
     resetsAt: string;
+  };
+  rateLimit?: {
+    remaining: number;
+    limit: number;
+    resetAt?: string;
   };
 }
 
