@@ -219,9 +219,10 @@ For each suggestion, before any other analysis:
    • If **no** → action:"discard", reason:"Out-of-diff lines".
 2.  **Information-Clarity Check**:
     • Based *only* on \`FileContentContext\`, \`CodeDiffContext\`, and the \`suggestionContent\` itself, is there sufficient, unambiguous information to perform a definitive analysis by Alice, Bob, and Charles?
-    • If critical information *that should be inferable from the provided code contexts* is missing or ambiguous, making a confident assessment of the suggestion's correctness or impact impossible, then:
+    • **Key question**: Does the suggestion's conclusion depend on code, behavior, or state that is NOT in any provided context? If the suggestion needs to assume something about callers, consumers, configuration, deployment, or library internals that aren't shown — it cannot be validated.
+    • If critical information is missing or the suggestion's conclusion requires assuming invisible code behavior:
         • action:"discard"
-        • reason:"Insufficient context for definitive analysis: <specify missing detail or ambiguity within the provided code/diff>"
+        • reason:"Insufficient context for definitive analysis: <specify what invisible code/behavior the suggestion assumes>"
     • **Do not speculate** about external factors (tickets, docs) not provided.
 
 <KeyEvaluationSteps>
