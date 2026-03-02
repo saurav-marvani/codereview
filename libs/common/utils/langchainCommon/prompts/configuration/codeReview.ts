@@ -1,5 +1,5 @@
-import { CrossFileContextSnippet } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import { ContextPack } from '@kodus/flow';
+import { CrossFileContextSnippet } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import { getDefaultKodusConfigFile } from '@libs/common/utils/validateCodeReviewConfigFile';
 import { LimitationType } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { getTextOrDefault, sanitizePromptText } from '../prompt.helpers';
@@ -70,6 +70,10 @@ export interface CodeReviewPayload {
     >;
     contextPack?: ContextPack;
     crossFileSnippets?: CrossFileContextSnippet[];
+    memories?: Array<{
+        title?: string;
+        rule?: string;
+    }>;
 }
 
 const PATH_SOURCE_TYPE_MAP: Record<string, string> = {
@@ -290,6 +294,33 @@ function buildContextDedupeKey(
     }
 
     return contextKey ?? `context:${Date.now()}`;
+}
+
+function formatMemoriesSection(
+    memories: CodeReviewPayload['memories'],
+): string {
+    if (!Array.isArray(memories) || !memories.length) {
+        return '';
+    }
+
+    const formattedMemories = memories
+        .map((memory) => {
+            const title = getTextOrDefault(memory?.title, '').trim();
+            const rule = getTextOrDefault(memory?.rule, '').trim();
+
+            if (!title || !rule) {
+                return null;
+            }
+
+            return `- Title: ${sanitizePromptText(title)}\n  Rule: ${sanitizePromptText(rule)}`;
+        })
+        .filter((entry): entry is string => Boolean(entry));
+
+    if (!formattedMemories.length) {
+        return '';
+    }
+
+    return `## Memories\n\nAdditional context from past learnings in Kody Rules format.\n\n${formattedMemories.join('\n\n')}`;
 }
 
 /**
@@ -889,6 +920,15 @@ ${mediumText}
 **LOW** - Minimal impact
 ${lowText}
 
+## Memory Rules Precedence
+
+When the external context contains a **Memories** section:
+1. Treat every memory rule as high-priority review guidance.
+2. Run an explicit memory compliance pass on changed lines before finalizing output.
+3. If a memory rule applies, prioritize surfacing that issue with concrete evidence from the diff.
+4. Do not ignore applicable memory rules just because the issue is subtle.
+5. If a memory rule conflicts with explicit visible code behavior, prioritize visible code evidence.
+
 ## Analysis Rules
 
 ### MUST DO:
@@ -1206,8 +1246,9 @@ export const prompt_codereview_system_gemini = (payload: CodeReviewPayload) => {
             : 'Note: No limit on number of suggestions.';
 
     const languageNote = payload?.languageResultPrompt || 'en-US';
+    const memoriesBlock = formatMemoriesSection(payload?.memories);
 
-    return `# Kody PR-Reviewer: Code Analysis System
+    const basePrompt = `# Kody PR-Reviewer: Code Analysis System
 
 ## Mission
 You are Kody PR-Reviewer, a senior engineer specialized in understanding and reviewing code. Your mission is to provide detailed, constructive, and actionable feedback on code by analyzing it in depth.
@@ -1262,6 +1303,10 @@ DO NOT speculate about:
 
 ## Analysis Process
 Follow this step-by-step thinking:
+
+0. **Memory Compliance Pre-check**:
+    - If a **Memories** section is present in external context, evaluate each memory rule against the changed '+' lines before other checks.
+    - Prioritize reporting issues that are direct violations of applicable memory rules.
 
 1. **Identify Potential Issues by Category**:
    - Consider how the code behaves with common inputs (empty, null, invalid)
@@ -1355,6 +1400,12 @@ Your final output should be **ONLY** a JSON object with the following structure:
    - Note: No limit on number of suggestions.
    - The current date is ${new Date().toLocaleDateString('en-GB')}
 `;
+
+    if (!memoriesBlock) {
+        return basePrompt;
+    }
+
+    return `${basePrompt}\n\n## External Context & Injected Knowledge\n\nThe following information is provided to ground your analysis in the broader system reality. Use this as your source of truth.\n\n---\n\n${memoriesBlock}`;
 };
 
 // NOTE: v2 overrides are applied directly in prompt_codereview_system_gemini_v2
@@ -1451,6 +1502,11 @@ export const prompt_codereview_system_gemini_v2 = (
         );
         const codebaseContextBlock = `### Codebase Context (REAL CODE — treat as visible evidence)\n\nThe snippets below are **actual code from the repository** (not hypothetical). They show callers, consumers, or dependents of the code being changed in this PR.\n\n**You MUST check for broken contracts between the diff and these snippets:**\n- A caller passing a string literal (event name, key, enum value) that no longer exists in the mapping/config changed by the diff\n- A consumer relying on a return type, enum value, event name, or config key that the diff renames, changes, or removes\n- A caller passing arguments that no longer match the new function signature\n- A mapping/config that references identifiers renamed or deleted in the diff\n\n**PRIORITY: Runtime-breaking bugs (wrong string literal, removed enum value, renamed key) take absolute priority over type-narrowing or type-safety improvements.** If a snippet shows code that WILL throw an error or silently fail at runtime, ALWAYS report it as a bug — even if you also see type-level improvements to suggest. Do NOT report type improvements instead of a runtime bug.\n\n**HOW TO REPORT cross-file bugs:**\n- Set \`relevantFile\` to the file under review (the diff file), since that is where the breaking change was introduced\n- Set \`relevantLinesStart/End\` to the diff lines that introduced the breaking change\n- In \`suggestionContent\`, explicitly name the cross-file consumer that will break (e.g., "PaymentService.ts still calls send(\\"paymentCaptured\\") but this event no longer exists in the mapping")\n- The proof IS the snippet — you do not need to guess hypothetical inputs. The snippet is real code that will execute\n\n${snippetLines.join('\n\n')}`;
         collectExternalContext('codebase_context', codebaseContextBlock);
+    }
+
+    const memoriesBlock = formatMemoriesSection(payload?.memories);
+    if (memoriesBlock) {
+        collectExternalContext('memories', memoriesBlock);
     }
 
     const prompt = buildFinalPrompt(

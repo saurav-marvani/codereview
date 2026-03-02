@@ -1,9 +1,106 @@
+import { getTextOrDefault, sanitizePromptText } from './prompt.helpers';
+
+function formatSyncErrors(errors: unknown[] | string | undefined): string {
+    if (!errors) {
+        return '';
+    }
+
+    const normalized = Array.isArray(errors) ? errors : [errors];
+    const formatted = normalized
+        .map((error) => {
+            if (!error) {
+                return null;
+            }
+            if (typeof error === 'string') {
+                return `- ${error}`;
+            }
+            if (typeof error === 'object') {
+                const message =
+                    typeof (error as Record<string, unknown>).message ===
+                    'string'
+                        ? ((error as Record<string, unknown>).message as string)
+                        : 'Unknown reference error';
+                return `- ${message}`;
+            }
+            return null;
+        })
+        .filter((line): line is string => Boolean(line));
+
+    if (!formatted.length) {
+        return '';
+    }
+
+    return `### Source: System Messages\n**Reference issues detected:**\n${formatted.join('\n')}`;
+}
+
+function formatReferenceSection(references: unknown[] | undefined): string {
+    if (!Array.isArray(references) || !references.length) {
+        return '';
+    }
+
+    return (references as Array<Record<string, unknown>>)
+        .map((ref) => {
+            const lineRangeInfo = ref.lineRange
+                ? ` (lines ${(ref.lineRange as Record<string, unknown>).start}-${(ref.lineRange as Record<string, unknown>).end})`
+                : '';
+            const header = `### Source: File - ${ref.filePath}${lineRangeInfo}`;
+            return `${header}\n${ref.content}`;
+        })
+        .join('\n\n');
+}
+
+function appendExternalContext(basePrompt: string, sections: string[]): string {
+    const contextBlocks = sections.filter((section) => section?.trim().length);
+
+    if (!contextBlocks.length) {
+        return basePrompt;
+    }
+
+    return `${basePrompt}\n\n## External Context & Injected Knowledge\n\nThe following information is provided to ground your analysis in the broader system reality. Use this as your source of truth.\n\n---\n\n${contextBlocks.join('\n\n---\n\n')}`;
+}
+
+function formatMemoriesSection(
+    memories?: Array<{ title?: string; rule?: string }>,
+): string {
+    if (!Array.isArray(memories) || !memories.length) {
+        return '';
+    }
+
+    const formattedMemories = memories
+        .map((memory) => {
+            const title = getTextOrDefault(memory?.title, '').trim();
+            const rule = getTextOrDefault(memory?.rule, '').trim();
+
+            if (!title || !rule) {
+                return null;
+            }
+
+            return `- Title: ${sanitizePromptText(title)}\n  Rule: ${sanitizePromptText(rule)}`;
+        })
+        .filter((entry): entry is string => Boolean(entry));
+
+    if (!formattedMemories.length) {
+        return '';
+    }
+
+    return `## Memories\n\nAdditional context from past learnings in Kody Rules format.\n\n${formattedMemories.join('\n\n')}`;
+}
+
 export const prompt_codeReviewSafeguard_system = (params: {
     languageResultPrompt: string;
+    memories?: Array<{ title?: string; rule?: string }>;
+    externalReferences?: unknown[];
+    externalReferenceErrors?: unknown[] | string;
 }) => {
-    const { languageResultPrompt } = params;
+    const {
+        languageResultPrompt,
+        memories,
+        externalReferences,
+        externalReferenceErrors,
+    } = params;
+    const memoriesBlock = formatMemoriesSection(memories);
 
-    return `## You are a panel of five experts on code review:
+    const basePrompt = `## You are a panel of five experts on code review:
 
 - **Edward (Special Cases Guardian)**: Pre-analyzes suggestions against "Special Cases for Auto-Discard". Has VETO power to immediately discard suggestions without requiring full panel analysis.
 - **Alice (Syntax & Compilation)**: Checks for syntax issues, compilation errors, and conformance with language requirements.
@@ -86,8 +183,9 @@ You have the following context:
 1. **FileContentContext** – The entire file's code (for full reference).
 2. **CodeDiffContext** – The code diff from the Pull Request, showing what is changing.
 3. **SuggestionsContext** – A list of AI-generated code suggestions to evaluate.
+4. **MemoriesContext** (if provided) – High-priority historical rules in Kody Rules format.
 
-**Important**: Only start the review after receiving **all three** pieces of context. Once all are received, proceed with the analysis.
+**Important**: Only start the review after receiving all required contexts (FileContentContext, CodeDiffContext, SuggestionsContext, and MemoriesContext when provided). Once all are received, proceed with the analysis.
 
 <Instructions>
 <AnalysisProtocol>
@@ -95,6 +193,12 @@ You have the following context:
 ## Core Principle (All Roles):
 **Preserve Type Contracts**
 "Any code suggestion must maintain the original **type guarantees** (nullability, error handling, data structure) of the code it modifies, unless explicitly intended to change them."
+
+## Memory Rules Precedence
+- If **MemoriesContext** is present, evaluate each suggestion against all applicable memory rules before final action.
+- Treat applicable memory rules as high-priority constraints for **no_changes/update/discard**.
+- If a suggestion violates an applicable memory rule, prefer **update** (if fixable) or **discard** (if not fixable).
+- If a memory rule conflicts with explicit visible code behavior in provided contexts, prioritize visible code evidence.
 
 ###  **Alice (Syntax & Compilation Check)**
  1. **Type Contract Preservation**
@@ -256,6 +360,15 @@ DISCUSSION
 - The current date is ${new Date().toLocaleDateString('en-GB')}.
 
 Start analysis`;
+
+    const referenceSection = formatReferenceSection(externalReferences);
+    const referenceErrors = formatSyncErrors(externalReferenceErrors);
+
+    return appendExternalContext(basePrompt, [
+        memoriesBlock,
+        referenceSection,
+        referenceErrors,
+    ]);
 };
 
 /**

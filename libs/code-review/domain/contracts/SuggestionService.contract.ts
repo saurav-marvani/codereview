@@ -1,23 +1,24 @@
-import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
+import { BYOKConfig } from '@kodus/kodus-common/llm';
 import { CrossFileContextSnippet } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
+import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { Repository } from '@libs/core/infrastructure/config/types/general/codeReview.type';
-import { BYOKConfig } from '@kodus/kodus-common/llm';
 
-import { PriorityStatus } from '@libs/platformData/domain/pullRequests/enums/priorityStatus.enum';
-import { ISuggestionByPR } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
 import {
-    CodeSuggestion,
-    SuggestionControlConfig,
     CodeReviewConfig,
-    LimitationType,
-    GroupingModeSuggestions,
-    ReviewOptions,
-    ReviewModeResponse,
-    CommentResult,
     CodeReviewVersion,
+    CodeSuggestion,
+    CommentResult,
+    GroupingModeSuggestions,
+    LimitationType,
+    ReviewModeResponse,
+    ReviewOptions,
+    SuggestionControlConfig,
 } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
+import { IKodyRule } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
+import { PriorityStatus } from '@libs/platformData/domain/pullRequests/enums/priorityStatus.enum';
+import { ISuggestionByPR } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
 
 /**
  * Contract for the service that handles code suggestions lifecycle,
@@ -74,6 +75,9 @@ export interface ISuggestionService {
         reviewMode: ReviewModeResponse,
         byokConfig: BYOKConfig,
         crossFileSnippets?: CrossFileContextSnippet[],
+        memories?: Array<Partial<IKodyRule>>,
+        externalReferences?: unknown[],
+        externalReferenceErrors?: unknown[] | string,
     ): Promise<any>;
 
     /**

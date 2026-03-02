@@ -3,12 +3,12 @@ import { BYOKConfig, LLMModelProvider } from '@kodus/kodus-common/llm';
 import { Inject, Injectable } from '@nestjs/common';
 
 import { IAIAnalysisService } from '@libs/code-review/domain/contracts/AIAnalysisService.contract';
-import { CrossFileContextSnippet } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import {
     COMMENT_MANAGER_SERVICE_TOKEN,
     ICommentManagerService,
 } from '@libs/code-review/domain/contracts/CommentManagerService.contract';
 import { ISuggestionService } from '@libs/code-review/domain/contracts/SuggestionService.contract';
+import { CrossFileContextSnippet } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import {
     ClusteringType,
     CodeReviewConfig,
@@ -40,6 +40,7 @@ import { LLM_ANALYSIS_SERVICE_TOKEN } from './llmAnalysis.service';
 import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { Repository } from '@libs/core/infrastructure/config/types/general/codeReview.type';
+import { IKodyRule } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import { PullRequestReviewComment } from '@libs/platform/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { PullRequestsEntity } from '@libs/platformData/domain/pullRequests/entities/pullRequests.entity';
@@ -234,6 +235,9 @@ export class SuggestionService implements ISuggestionService {
         reviewMode: ReviewModeResponse,
         byokConfig: BYOKConfig,
         crossFileSnippets?: CrossFileContextSnippet[],
+        memories?: Array<Partial<IKodyRule>>,
+        externalReferences?: unknown[],
+        externalReferenceErrors?: unknown[] | string,
     ) {
         if (!suggestions?.length) {
             return suggestions;
@@ -250,6 +254,9 @@ export class SuggestionService implements ISuggestionService {
             reviewMode,
             byokConfig,
             crossFileSnippets,
+            memories,
+            externalReferences,
+            externalReferenceErrors,
         );
     }
 

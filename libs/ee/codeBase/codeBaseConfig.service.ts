@@ -1,5 +1,5 @@
 import { createLogger } from '@kodus/flow';
-import { Inject, Injectable } from '@nestjs/common';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
 
 import { LanguageValue } from '@libs/core/domain/enums/language-parameter.enum';
 
@@ -80,7 +80,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         private readonly organizationParametersService: IOrganizationParametersService,
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
-        @Inject(KODY_RULES_SERVICE_TOKEN)
+        @Inject(forwardRef(() => KODY_RULES_SERVICE_TOKEN))
         private readonly kodyRulesService: IKodyRulesService,
         @Inject(GLOBAL_PARAMETERS_SERVICE_TOKEN)
         private readonly globalParametersService: IGlobalParametersService,
@@ -131,11 +131,12 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 preliminaryFiles || [],
             );
 
-            const kodyRules = this.kodyRulesValidationService.filterKodyRules(
-                kodyRulesEntity?.toObject()?.rules,
-                repository.id,
-                mergedConfigs.directoryId,
-            );
+            const { standardRules, memoryRules } =
+                this.kodyRulesValidationService.filterKodyRules(
+                    kodyRulesEntity?.toObject()?.rules,
+                    repository.id,
+                    mergedConfigs.directoryId,
+                ) || { standardRules: [], memoryRules: [] };
 
             const globalIgnorePaths = await this.getGlobalIgnorePaths(
                 organizationAndTeamData,
@@ -147,7 +148,8 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                     language?.configValue ??
                     this.DEFAULT_CONFIG.languageResultPrompt,
                 baseBranchDefault: defaultBranch,
-                kodyRules,
+                kodyRules: standardRules,
+                kodyMemoryRules: memoryRules,
                 reviewModeConfig,
                 kodyFineTuningConfig,
                 ignorePaths:

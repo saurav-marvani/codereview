@@ -175,6 +175,7 @@ export const codeReviewConfigRemovePropertiesNotInType = (
         "summary",
         "isRequestChangesActive",
         "kodyRulesGeneratorEnabled",
+        "llmGeneratedMemoriesRequireApproval",
         "runOnDraft",
         "codeReviewVersion",
         "enableCommittableSuggestions",
