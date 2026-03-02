@@ -5,6 +5,7 @@ import { Card, CardContent } from "@components/ui/card";
 import {
     Tooltip,
     TooltipContent,
+    TooltipPortal,
     TooltipTrigger,
 } from "@components/ui/tooltip";
 import { cn } from "src/core/utils/components";
@@ -75,7 +76,11 @@ function TagWithTooltip({
                     </Badge>
                 </span>
             </TooltipTrigger>
-            <TooltipContent side="bottom">{tooltip}</TooltipContent>
+            <TooltipPortal>
+                <TooltipContent side="bottom">
+                    {tooltip}
+                </TooltipContent>
+            </TooltipPortal>
         </Tooltip>
     );
 }
