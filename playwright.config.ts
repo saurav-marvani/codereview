@@ -12,7 +12,7 @@ import { defineConfig, devices } from '@playwright/test';
  * See https://playwright.dev/docs/test-configuration.
  */
 export default defineConfig({
-    testDir: './tests',
+    testDir: './test/e2e',
     testMatch: /.*\.e2e\.ts/,
     /* Run tests in files in parallel */
     fullyParallel: false,
@@ -24,6 +24,7 @@ export default defineConfig({
     workers: 1,
     /* Reporter to use. See https://playwright.dev/docs/test-reporters */
     reporter: 'html',
+    outputDir: 'test-results',
     /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
     use: {
         /* Base URL to use in actions like `await page.goto('')`. */
