@@ -142,4 +142,12 @@ export interface ICommentManagerService {
         dryRun?: CodeReviewPipelineContext['dryRun'],
         prLevelCommentResults?: Array<CommentResult>,
     ): Promise<void>;
+
+    createConsolidatedLLMPromptComment(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        repository: { name: string; id: string },
+        lineComments: CommentResult[],
+        dryRun?: CodeReviewPipelineContext['dryRun'],
+    ): Promise<void>;
 }
