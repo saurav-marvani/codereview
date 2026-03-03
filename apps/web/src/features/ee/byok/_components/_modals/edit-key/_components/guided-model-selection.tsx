@@ -10,20 +10,23 @@ import {
     TooltipPortal,
     TooltipTrigger,
 } from "@components/ui/tooltip";
-import { cn } from "src/core/utils/components";
 import {
-    CheckCircleIcon,
     AlertTriangleIcon,
+    CheckCircleIcon,
     ClockIcon,
     CoinsIcon,
-    FileTextIcon,
     ExternalLinkIcon,
+    FileTextIcon,
 } from "lucide-react";
 import { useFormContext } from "react-hook-form";
+import { cn } from "src/core/utils/components";
 
 import type { EditKeyForm } from "../_types";
 import catalog from "../../../../_data/curated-models.json";
-import type { CuratedModel, ModelTier } from "../../../../_data/curated-models.types";
+import type {
+    CuratedModel,
+    ModelTier,
+} from "../../../../_data/curated-models.types";
 
 const tierConfig: Record<ModelTier, { label: string; description: string }> = {
     recommended: {
@@ -79,9 +82,7 @@ function TagWithTooltip({
                 </span>
             </TooltipTrigger>
             <TooltipPortal>
-                <TooltipContent side="bottom">
-                    {tooltip}
-                </TooltipContent>
+                <TooltipContent side="bottom">{tooltip}</TooltipContent>
             </TooltipPortal>
         </Tooltip>
     );
@@ -202,8 +203,7 @@ export const GuidedModelSelection = ({
 
     const selectedCuratedModel = models.find((m) => m.id === selectedModel);
 
-    const isCollapsed =
-        collapseOnSelect && selectedCuratedModel && !expanded;
+    const isCollapsed = collapseOnSelect && selectedCuratedModel && !expanded;
 
     const handleSelectModel = (model: CuratedModel) => {
         const preserveKey =
@@ -263,9 +263,7 @@ export const GuidedModelSelection = ({
             {grouped.map((group) => (
                 <div key={group.tier} className="flex flex-col gap-2">
                     <div>
-                        <h4 className="text-sm font-semibold">
-                            {group.label}
-                        </h4>
+                        <h4 className="text-sm font-semibold">{group.label}</h4>
                         <p className="text-text-tertiary text-xs">
                             {group.description}
                         </p>

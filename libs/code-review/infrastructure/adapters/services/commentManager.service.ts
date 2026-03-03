@@ -48,10 +48,7 @@ import { prompt_repeated_suggestion_clustering_system } from '@libs/common/utils
 import { createLogger } from '@kodus/flow';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
 import { PriorityStatus } from '@libs/platformData/domain/pullRequests/enums/priorityStatus.enum';
-import {
-    estimateTokens,
-    tokensToChars,
-} from './utils/token-estimator';
+import { estimateTokens, tokensToChars } from './utils/token-estimator';
 
 interface ClusteredSuggestion {
     id: string;
@@ -234,8 +231,7 @@ export class CommentManagerService implements ICommentManagerService {
                 };
 
                 const llmMetadata = {
-                    organizationId:
-                        organizationAndTeamData?.organizationId,
+                    organizationId: organizationAndTeamData?.organizationId,
                     teamId: organizationAndTeamData?.teamId,
                     pullRequestId: pullRequest?.number,
                     repositoryId: repository?.id,
@@ -243,17 +239,14 @@ export class CommentManagerService implements ICommentManagerService {
                         byokConfigValue?.main?.provider ||
                         LLMModelProvider.GEMINI_2_5_FLASH,
                     fallbackProvider:
-                        byokConfigValue?.fallback?.provider ||
-                        fallbackProvider,
+                        byokConfigValue?.fallback?.provider || fallbackProvider,
                     model: byokConfigValue?.main?.model,
-                    fallbackModel:
-                        byokConfigValue?.fallback?.model,
+                    fallbackModel: byokConfigValue?.fallback?.model,
                     runName,
                 };
 
                 // --- Chunk changedFiles if maxInputTokens is configured ---
-                const maxInputTokens =
-                    byokConfigValue?.main?.maxInputTokens;
+                const maxInputTokens = byokConfigValue?.main?.maxInputTokens;
 
                 const fileChunks = this.chunkChangedFilesForSummary(
                     changedFiles,
@@ -352,7 +345,8 @@ export class CommentManagerService implements ICommentManagerService {
                                             .setLLMJsonMode(false)
                                             .setPayload(baseContext)
                                             .addPrompt({
-                                                prompt: promptBase +
+                                                prompt:
+                                                    promptBase +
                                                     `\n\n**Note**: This is chunk ${i + 1} of ${fileChunks.length}. Generate a summary for these files only.`,
                                                 role: PromptRole.SYSTEM,
                                             })
@@ -1077,7 +1071,8 @@ You must always respond in ${languageResultPrompt}.`;
         const isTransientError = (error: any): boolean => {
             const status = error?.status || error?.response?.status;
             if (status >= 500 && status < 600) return true;
-            if (error?.code === 'ECONNRESET' || error?.code === 'ETIMEDOUT') return true;
+            if (error?.code === 'ECONNRESET' || error?.code === 'ETIMEDOUT')
+                return true;
             return false;
         };
 
@@ -1086,11 +1081,10 @@ You must always respond in ${languageResultPrompt}.`;
             return NON_RETRYABLE_STATUS_CODES.includes(status);
         };
 
-        const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+        const sleep = (ms: number) =>
+            new Promise((resolve) => setTimeout(resolve, ms));
 
-        const attemptCreateComment = async (
-            comment: Comment,
-        ): Promise<any> => {
+        const attemptCreateComment = async (comment: Comment): Promise<any> => {
             return this.codeManagementService.createReviewComment(
                 {
                     ...restParams,
@@ -1152,10 +1146,14 @@ You must always respond in ${languageResultPrompt}.`;
             };
 
             try {
-                const createdComment = await attemptCreateComment(commentAttempt2);
+                const createdComment =
+                    await attemptCreateComment(commentAttempt2);
                 return { createdComment, attemptUsed: 2 };
             } catch (error2) {
-                if (isNonRetryableError(error2) || !isLineMismatchError(error2)) {
+                if (
+                    isNonRetryableError(error2) ||
+                    !isLineMismatchError(error2)
+                ) {
                     throw error2;
                 }
 
@@ -1176,7 +1174,8 @@ You must always respond in ${languageResultPrompt}.`;
                     line: lineComment.start_line,
                 };
 
-                const createdComment = await attemptCreateComment(commentAttempt3);
+                const createdComment =
+                    await attemptCreateComment(commentAttempt3);
                 return { createdComment, attemptUsed: 3 };
             }
         }

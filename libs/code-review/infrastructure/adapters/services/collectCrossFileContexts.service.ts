@@ -19,10 +19,7 @@ import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/
 import { BYOKPromptRunnerService } from '@libs/core/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import { TokenChunkingService } from '@libs/core/infrastructure/services/tokenChunking/tokenChunking.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
-import {
-    WarpGrepClient,
-    WarpGrepResult,
-} from '@morphllm/morphsdk';
+import { WarpGrepClient, WarpGrepResult } from '@morphllm/morphsdk';
 
 /**
  * Remote command executors for sandbox environments.
@@ -151,9 +148,7 @@ export class CollectCrossFileContextsService {
         });
 
         // 2. Execute search queries via WarpGrep
-        const changedFilePaths = new Set(
-            changedFiles.map((f) => f.filename),
-        );
+        const changedFilePaths = new Set(changedFiles.map((f) => f.filename));
 
         const searchResults = await this.executeSearchQueries(
             plannerQueries,
@@ -259,16 +254,15 @@ export class CollectCrossFileContextsService {
             // Chunk diff items by token limits
             const byokMaxInputTokens = byokConfig?.main?.maxInputTokens;
 
-            const chunkingResult =
-                this.tokenChunkingService.chunkDataByTokens({
-                    model: effectiveModel,
-                    data: fileDiffItems,
-                    usagePercentage: 50,
-                    defaultMaxTokens: 64000,
-                    ...(byokMaxInputTokens && byokMaxInputTokens > 0
-                        ? { overrideMaxTokens: byokMaxInputTokens }
-                        : {}),
-                });
+            const chunkingResult = this.tokenChunkingService.chunkDataByTokens({
+                model: effectiveModel,
+                data: fileDiffItems,
+                usagePercentage: 50,
+                defaultMaxTokens: 64000,
+                ...(byokMaxInputTokens && byokMaxInputTokens > 0
+                    ? { overrideMaxTokens: byokMaxInputTokens }
+                    : {}),
+            });
 
             this.logger.log({
                 message: `Planner chunked ${fileDiffItems.length} files into ${chunkingResult.totalChunks} batch(es) for PR#${prNumber}`,
@@ -391,21 +385,17 @@ export class CollectCrossFileContextsService {
                 runName,
             });
 
-        const { result } =
-            await this.observabilityService.runLLMInSpan({
-                spanName,
-                runName,
-                attrs: spanAttrs,
-                exec: (callbacks) =>
-                    builder.addCallbacks(callbacks).execute(),
-            });
+        const { result } = await this.observabilityService.runLLMInSpan({
+            spanName,
+            runName,
+            attrs: spanAttrs,
+            exec: (callbacks) => builder.addCallbacks(callbacks).execute(),
+        });
 
         return (result as CrossFileContextPlannerSchemaType)?.queries ?? [];
     }
 
-    private deduplicatePlannerQueries(
-        queries: PlannerQuery[],
-    ): PlannerQuery[] {
+    private deduplicatePlannerQueries(queries: PlannerQuery[]): PlannerQuery[] {
         const riskRank: Record<string, number> = {
             high: 3,
             medium: 2,
@@ -442,7 +432,10 @@ export class CollectCrossFileContextsService {
     ): Promise<CrossFileContextSnippet[]> {
         const allSnippets: CrossFileContextSnippet[] = [];
 
-        const client = new WarpGrepClient({ morphApiKey: this.configService.get<string>('API_MORPHLLM_API_KEY') ?? '' });
+        const client = new WarpGrepClient({
+            morphApiKey:
+                this.configService.get<string>('API_MORPHLLM_API_KEY') ?? '',
+        });
 
         for (const query of queries) {
             try {
@@ -565,8 +558,7 @@ export class CollectCrossFileContextsService {
                     1,
                     (snippet.startLine || 1) - window,
                 );
-                const endLine =
-                    (snippet.endLine || lineCount) + window;
+                const endLine = (snippet.endLine || lineCount) + window;
 
                 const expandedContent = await remoteCommands.read(
                     snippet.filePath,
@@ -619,26 +611,28 @@ export class CollectCrossFileContextsService {
         }
 
         try {
-            const client = new WarpGrepClient({ morphApiKey: this.configService.get<string>('API_MORPHLLM_API_KEY') ?? '' });
+            const client = new WarpGrepClient({
+                morphApiKey:
+                    this.configService.get<string>('API_MORPHLLM_API_KEY') ??
+                    '',
+            });
 
             // Extract function names only from high-risk hop 1 snippets
             const hop1FunctionNames = new Set<string>();
             const funcToTargetFiles = new Map<string, Set<string>>();
             for (const snippet of highRiskSnippets) {
-                const funcNames =
-                    this.extractFunctionNames(snippet.content);
+                const funcNames = this.extractFunctionNames(snippet.content);
                 for (const name of funcNames) {
                     hop1FunctionNames.add(name);
-                    const existing = funcToTargetFiles.get(name) || new Set<string>();
-                    snippet.targetFiles?.forEach(f => existing.add(f));
+                    const existing =
+                        funcToTargetFiles.get(name) || new Set<string>();
+                    snippet.targetFiles?.forEach((f) => existing.add(f));
                     funcToTargetFiles.set(name, existing);
                 }
             }
 
             // For each function found in hop 1, search for its callers
-            const hop1FilePaths = new Set(
-                hop1Snippets.map((s) => s.filePath),
-            );
+            const hop1FilePaths = new Set(hop1Snippets.map((s) => s.filePath));
             const excludedPaths = new Set([
                 ...changedFilePaths,
                 ...hop1FilePaths,
@@ -652,12 +646,7 @@ export class CollectCrossFileContextsService {
                         query: funcName,
                         repoRoot,
                         remoteCommands,
-                        excludes: [
-                            'node_modules',
-                            '.git',
-                            'dist',
-                            'build',
-                        ],
+                        excludes: ['node_modules', '.git', 'dist', 'build'],
                     });
 
                     if (!result.success || !result.contexts?.length) {
@@ -671,13 +660,14 @@ export class CollectCrossFileContextsService {
                             filePath: ctx.file,
                             content: ctx.content,
                             rationale: `Hop 2: caller of ${funcName} found in hop 1 results`,
-                            relevanceScore:
-                                this.getBaseScore('high') - 10,
+                            relevanceScore: this.getBaseScore('high') - 10,
                             relatedSymbol: funcName,
                             relationship: `indirect consumer (hop 2) of ${funcName}`,
                             hop: 2,
                             riskLevel: 'high',
-                            targetFiles: [...(funcToTargetFiles.get(funcName) || [])],
+                            targetFiles: [
+                                ...(funcToTargetFiles.get(funcName) || []),
+                            ],
                         });
                     }
                 } catch (error) {
@@ -722,9 +712,7 @@ export class CollectCrossFileContextsService {
         const merged: CrossFileContextSnippet[] = [];
         for (const [, fileSnippets] of byFile) {
             // Sort by relevance score desc, keep the best
-            fileSnippets.sort(
-                (a, b) => b.relevanceScore - a.relevanceScore,
-            );
+            fileSnippets.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
             const snippetsForThisFile: CrossFileContextSnippet[] = [];
             let totalChars = 0;
@@ -781,9 +769,7 @@ export class CollectCrossFileContextsService {
     //#endregion
 
     //#region Utilities
-    private getBaseScore(
-        riskLevel: 'low' | 'medium' | 'high',
-    ): number {
+    private getBaseScore(riskLevel: 'low' | 'medium' | 'high'): number {
         switch (riskLevel) {
             case 'high':
                 return 80;
@@ -865,7 +851,9 @@ export class CollectCrossFileContextsService {
         // Check if one contains a significant portion of the other
         const shorter = a.length < b.length ? a : b;
         const longer = a.length >= b.length ? a : b;
-        return longer.includes(shorter.substring(0, Math.min(200, shorter.length)));
+        return longer.includes(
+            shorter.substring(0, Math.min(200, shorter.length)),
+        );
     }
     //#endregion
 }

@@ -152,9 +152,11 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
                         message: `Saved ${discardedSuggestions.length} discarded suggestions to database for PR#${context.pullRequest.number}`,
                         context: this.stageName,
                         metadata: {
-                            organizationAndTeamData: context.organizationAndTeamData,
+                            organizationAndTeamData:
+                                context.organizationAndTeamData,
                             prNumber: context.pullRequest.number,
-                            discardedSuggestionsCount: discardedSuggestions.length,
+                            discardedSuggestionsCount:
+                                discardedSuggestions.length,
                         },
                     });
                 } catch (error) {
@@ -163,7 +165,8 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
                         context: this.stageName,
                         error,
                         metadata: {
-                            organizationAndTeamData: context.organizationAndTeamData,
+                            organizationAndTeamData:
+                                context.organizationAndTeamData,
                             prNumber: context.pullRequest.number,
                         },
                     });

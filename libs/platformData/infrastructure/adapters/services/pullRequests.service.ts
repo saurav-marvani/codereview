@@ -46,9 +46,7 @@ export class PullRequestsService implements IPullRequestsService {
             timeoutId = setTimeout(
                 () =>
                     reject(
-                        new Error(
-                            `Timeout after ${timeoutMs}ms in ${label}`,
-                        ),
+                        new Error(`Timeout after ${timeoutMs}ms in ${label}`),
                     ),
                 timeoutMs,
             );
@@ -487,8 +485,7 @@ export class PullRequestsService implements IPullRequestsService {
 
         // Sometimes gitlab sends an array of ids instead of assignees and reviewers
         const shouldGetAssigneesFromIds =
-            !enrichedPullRequest.assignees &&
-            enrichedPullRequest.assignee_ids;
+            !enrichedPullRequest.assignees && enrichedPullRequest.assignee_ids;
         if (shouldGetAssigneesFromIds) {
             const foundAssignees = await this.getUsers(
                 organizationAndTeamData,
@@ -541,8 +538,7 @@ export class PullRequestsService implements IPullRequestsService {
                 pullRequest?.number,
             ),
             reviewers: await this.extractUsers(
-                (pullRequest.reviewers ||
-                    pullRequest?.requested_reviewers) ??
+                (pullRequest.reviewers || pullRequest?.requested_reviewers) ??
                     enrichedPullRequest.reviewers,
                 organizationAndTeamData,
                 platformType,
@@ -1020,10 +1016,7 @@ export class PullRequestsService implements IPullRequestsService {
              */
             if (data?.role) {
                 const usernameForLookup =
-                    data?.login ||
-                    data?.username ||
-                    data?.nickname ||
-                    '';
+                    data?.login || data?.username || data?.nickname || '';
                 // Only call getUserByUsername if we have a non-empty username
                 const completeUser = usernameForLookup
                     ? await this.codeManagement.getUserByUsername(

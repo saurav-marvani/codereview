@@ -18,4 +18,4 @@ import { McpCoreModule } from '@libs/mcp-server/mcp-core.module';
     providers: [ForgejoService],
     exports: [ForgejoService],
 })
-export class ForgejoModule { }
+export class ForgejoModule {}

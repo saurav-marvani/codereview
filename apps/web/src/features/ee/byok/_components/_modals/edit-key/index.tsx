@@ -19,19 +19,15 @@ import { KeyRoundIcon, PencilIcon, SaveIcon, TrashIcon } from "lucide-react";
 import { ErrorBoundary } from "react-error-boundary";
 import { FormProvider, useForm } from "react-hook-form";
 
-import type { BYOKConfig } from "../../../_types";
 import curatedCatalog from "../../../_data/curated-models.json";
+import type { BYOKConfig } from "../../../_types";
 import { ByokAdvancedSettings } from "./_components/advanced-settings";
 import { ByokBaseURLInput } from "./_components/baseurl-input";
 import { GuidedModelSelection } from "./_components/guided-model-selection";
 import { ByokKeyInput } from "./_components/key-input";
-import { ByokModelSelect, ByokManualModelInput } from "./_components/models";
+import { ByokManualModelInput, ByokModelSelect } from "./_components/models";
 import { ByokProviderSelect } from "./_components/provider";
-import {
-    createKeySchema,
-    editKeySchema,
-    type EditKeyForm,
-} from "./_types";
+import { createKeySchema, editKeySchema, type EditKeyForm } from "./_types";
 
 const curatedModelIds = new Set(curatedCatalog.models.map((m) => m.id));
 
@@ -99,9 +95,7 @@ export const BYOKEditKeyModal = ({
                     <Dialog open onOpenChange={() => magicModal.hide()}>
                         <DialogContent
                             className={
-                                type === "main"
-                                    ? "max-w-3xl"
-                                    : "max-w-lg"
+                                type === "main" ? "max-w-3xl" : "max-w-lg"
                             }>
                             <DialogHeader>
                                 <DialogTitle>
@@ -393,9 +387,7 @@ export const BYOKEditKeyModal = ({
                                                     variant="tertiary"
                                                     size="xs"
                                                     leftIcon={
-                                                        <PencilIcon
-                                                            size={12}
-                                                        />
+                                                        <PencilIcon size={12} />
                                                     }
                                                     onClick={() =>
                                                         setShowKeyInput(true)

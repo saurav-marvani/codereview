@@ -26,10 +26,12 @@ import { ChevronsUpDownIcon } from "lucide-react";
 import { Controller, useFormContext } from "react-hook-form";
 import { ArrayHelpers } from "src/core/utils/array";
 
-import catalog from "../../../../_data/curated-models.json";
-import { getAnnotationForModel } from "../../../../_data/curated-models.types";
-import type { CuratedModelsCatalog } from "../../../../_data/curated-models.types";
 import type { EditKeyForm } from "../_types";
+import catalog from "../../../../_data/curated-models.json";
+import {
+    getAnnotationForModel,
+    type CuratedModelsCatalog,
+} from "../../../../_data/curated-models.types";
 
 const annotations = (catalog as CuratedModelsCatalog).annotations;
 
@@ -66,11 +68,7 @@ export const ByokModelSelect = () => {
 // Exported lightweight manual input for external fallbacks
 export const ByokManualModelInput = () => <ModelInput />;
 
-const ModelInput = ({
-    onBackToSelect,
-}: {
-    onBackToSelect?: () => void;
-}) => {
+const ModelInput = ({ onBackToSelect }: { onBackToSelect?: () => void }) => {
     const form = useFormContext<EditKeyForm>();
     const provider = form.watch("provider");
     const baseURL = form.watch("baseURL");
@@ -118,11 +116,7 @@ const ModelInput = ({
     );
 };
 
-const ModelSelect = ({
-    onUseManual,
-}: {
-    onUseManual?: () => void;
-}) => {
+const ModelSelect = ({ onUseManual }: { onUseManual?: () => void }) => {
     const form = useFormContext<EditKeyForm>();
     const [open, setOpen] = useState(false);
     const provider = form.watch("provider");
@@ -221,8 +215,7 @@ const ModelSelect = ({
                                         }}>
                                         <span className="flex items-center gap-2">
                                             {r.name}
-                                            {annotation?.badge ===
-                                                "tested" && (
+                                            {annotation?.badge === "tested" && (
                                                 <Badge
                                                     variant="success"
                                                     size="xs">
@@ -235,8 +228,7 @@ const ModelSelect = ({
                                                     {annotation.note}
                                                 </span>
                                             )}
-                                            {annotation?.badge ===
-                                                "legacy" && (
+                                            {annotation?.badge === "legacy" && (
                                                 <span className="text-text-tertiary text-xs">
                                                     {annotation.note}
                                                 </span>

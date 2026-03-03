@@ -400,7 +400,8 @@ describe('LLMAnalysisService', () => {
             mockPromptRunnerService.builder.mockReturnValue(mockBuilder);
 
             const fileContext = {
-                patchWithLinesStr: '@@ -143,3 +143,3 @@\n-var x = 1;\n+const x = 1;',
+                patchWithLinesStr:
+                    '@@ -143,3 +143,3 @@\n-var x = 1;\n+const x = 1;',
                 file: { filename: 'test.ts', fileContent: 'var x = 1;' },
             };
 

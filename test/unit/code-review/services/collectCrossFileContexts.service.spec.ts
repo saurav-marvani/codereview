@@ -66,9 +66,7 @@ describe('CollectCrossFileContextsService', () => {
         };
 
         mockObservabilityService = {
-            runLLMInSpan: jest
-                .fn()
-                .mockImplementation(({ exec }) => exec([])),
+            runLLMInSpan: jest.fn().mockImplementation(({ exec }) => exec([])),
         };
 
         mockTokenChunkingService = {
@@ -155,7 +153,8 @@ describe('CollectCrossFileContextsService', () => {
         });
 
         it('should detect overlap and remove duplicates', () => {
-            const shared = 'export function greet(name: string) { return name; }';
+            const shared =
+                'export function greet(name: string) { return name; }';
             const snippets = [
                 createSampleSnippet({
                     filePath: 'a.ts',
@@ -192,7 +191,8 @@ describe('CollectCrossFileContextsService', () => {
         });
 
         it('should merge targetFiles when deduplicating overlapping snippets', () => {
-            const shared = 'export function greet(name: string) { return name; }';
+            const shared =
+                'export function greet(name: string) { return name; }';
             const snippets = [
                 createSampleSnippet({
                     filePath: 'a.ts',
@@ -217,7 +217,8 @@ describe('CollectCrossFileContextsService', () => {
         });
 
         it('should deduplicate targetFiles entries during merge', () => {
-            const shared = 'export function greet(name: string) { return name; }';
+            const shared =
+                'export function greet(name: string) { return name; }';
             const snippets = [
                 createSampleSnippet({
                     filePath: 'a.ts',
@@ -497,9 +498,7 @@ const greet = () => {}
         it('should call WarpGrepClient.execute with correct params', async () => {
             const mockExecute = jest.fn().mockResolvedValue({
                 success: true,
-                contexts: [
-                    { file: 'other.ts', content: 'import { greet }' },
-                ],
+                contexts: [{ file: 'other.ts', content: 'import { greet }' }],
             });
             WarpGrepClient.mockImplementation(() => ({
                 execute: mockExecute,
@@ -521,10 +520,7 @@ const greet = () => {}
                     repoRoot: '.',
                     remoteCommands,
                     includes: [query.fileGlob],
-                    excludes: expect.arrayContaining([
-                        'node_modules',
-                        '.git',
-                    ]),
+                    excludes: expect.arrayContaining(['node_modules', '.git']),
                 }),
             );
         });
@@ -564,9 +560,7 @@ const greet = () => {}
                 }
                 return Promise.resolve({
                     success: true,
-                    contexts: [
-                        { file: 'result.ts', content: 'found it' },
-                    ],
+                    contexts: [{ file: 'result.ts', content: 'found it' }],
                 });
             });
             WarpGrepClient.mockImplementation(() => ({
@@ -720,9 +714,7 @@ const greet = () => {}
         it('should only process snippets with riskLevel high', async () => {
             const mockExecute = jest.fn().mockResolvedValue({
                 success: true,
-                contexts: [
-                    { file: 'hop2.ts', content: 'hop2 content' },
-                ],
+                contexts: [{ file: 'hop2.ts', content: 'hop2 content' }],
             });
             WarpGrepClient.mockImplementation(() => ({
                 execute: mockExecute,
@@ -794,7 +786,8 @@ const greet = () => {}
                 createSampleSnippet({
                     filePath: 'src/controllers/hello.controller.ts',
                     riskLevel: 'high',
-                    content: 'function processRequest(data) { greet(data.name); }',
+                    content:
+                        'function processRequest(data) { greet(data.name); }',
                 }),
             ];
 
@@ -820,9 +813,7 @@ const greet = () => {}
         it('should mark hop2 with hop: 2 and score getBaseScore("high") - 10', async () => {
             const mockExecute = jest.fn().mockResolvedValue({
                 success: true,
-                contexts: [
-                    { file: 'src/hop2.ts', content: 'hop2 content' },
-                ],
+                contexts: [{ file: 'src/hop2.ts', content: 'hop2 content' }],
             });
             WarpGrepClient.mockImplementation(() => ({
                 execute: mockExecute,
@@ -851,9 +842,7 @@ const greet = () => {}
         it('should propagate targetFiles from hop1 to hop2 snippets', async () => {
             const mockExecute = jest.fn().mockResolvedValue({
                 success: true,
-                contexts: [
-                    { file: 'src/hop2.ts', content: 'hop2 content' },
-                ],
+                contexts: [{ file: 'src/hop2.ts', content: 'hop2 content' }],
             });
             WarpGrepClient.mockImplementation(() => ({
                 execute: mockExecute,
@@ -915,7 +904,8 @@ const greet = () => {}
                 contexts: [
                     {
                         file: 'src/caller.ts',
-                        content: 'import { greet } from "./greet";\ngreet("world");',
+                        content:
+                            'import { greet } from "./greet";\ngreet("world");',
                         startLine: 1,
                         endLine: 2,
                     },

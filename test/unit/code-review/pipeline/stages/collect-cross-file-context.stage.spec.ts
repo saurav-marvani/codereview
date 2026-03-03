@@ -25,7 +25,6 @@ import {
 } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import { E2BSandboxService } from '@libs/code-review/infrastructure/adapters/services/e2bSandbox.service';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
-import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import {
     createCrossFileBaseContext,
@@ -159,9 +158,7 @@ describe('CollectCrossFileContextStage', () => {
 
             const result = await stage.execute(context);
 
-            expect(
-                mockCodeManagementService.getCloneParams,
-            ).toHaveBeenCalled();
+            expect(mockCodeManagementService.getCloneParams).toHaveBeenCalled();
             expect(
                 mockE2bSandboxService.createSandboxWithRepo,
             ).toHaveBeenCalled();
@@ -233,9 +230,7 @@ describe('CollectCrossFileContextStage', () => {
                 },
                 cleanup: failingCleanup,
             });
-            mockCollectContexts.mockRejectedValue(
-                new Error('some error'),
-            );
+            mockCollectContexts.mockRejectedValue(new Error('some error'));
 
             const context = createCrossFileBaseContext();
 
@@ -295,7 +290,11 @@ describe('CollectCrossFileContextStage', () => {
                 auth: { token: 'test-token' },
             });
             mockE2bSandboxService.createSandboxWithRepo.mockResolvedValue({
-                remoteCommands: { grep: jest.fn(), read: jest.fn(), listDir: jest.fn() },
+                remoteCommands: {
+                    grep: jest.fn(),
+                    read: jest.fn(),
+                    listDir: jest.fn(),
+                },
                 cleanup: jest.fn().mockResolvedValue(undefined),
             });
             mockCollectContexts.mockResolvedValue({
@@ -363,7 +362,6 @@ describe('CollectCrossFileContextStage', () => {
                 }),
             );
         });
-
     });
 
     // ─── CLI Mode Auth Fallback ─────────────────────────────────────────────
@@ -376,7 +374,11 @@ describe('CollectCrossFileContextStage', () => {
             );
             const mockCleanup = jest.fn().mockResolvedValue(undefined);
             mockE2bSandboxService.createSandboxWithRepo.mockResolvedValue({
-                remoteCommands: { grep: jest.fn(), read: jest.fn(), listDir: jest.fn() },
+                remoteCommands: {
+                    grep: jest.fn(),
+                    read: jest.fn(),
+                    listDir: jest.fn(),
+                },
                 cleanup: mockCleanup,
             });
             mockCollectContexts.mockResolvedValue({
@@ -433,9 +435,7 @@ describe('CollectCrossFileContextStage', () => {
         });
 
         it('should parse HTTPS URLs without .git suffix', () => {
-            const result = parseGitRemoteUrl(
-                'https://github.com/owner/repo',
-            );
+            const result = parseGitRemoteUrl('https://github.com/owner/repo');
             expect(result).toEqual({
                 fullName: 'owner/repo',
                 name: 'repo',
@@ -443,9 +443,7 @@ describe('CollectCrossFileContextStage', () => {
         });
 
         it('should parse SSH URLs', () => {
-            const result = parseGitRemoteUrl(
-                'git@github.com:owner/repo.git',
-            );
+            const result = parseGitRemoteUrl('git@github.com:owner/repo.git');
             expect(result).toEqual({
                 fullName: 'owner/repo',
                 name: 'repo',
@@ -453,9 +451,7 @@ describe('CollectCrossFileContextStage', () => {
         });
 
         it('should parse SSH URLs without .git suffix', () => {
-            const result = parseGitRemoteUrl(
-                'git@github.com:owner/repo',
-            );
+            const result = parseGitRemoteUrl('git@github.com:owner/repo');
             expect(result).toEqual({
                 fullName: 'owner/repo',
                 name: 'repo',

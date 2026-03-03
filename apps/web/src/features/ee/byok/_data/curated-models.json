@@ -16,9 +16,7 @@
                 "Best cross-file detection (90.7%, +4.9pp above avg)",
                 "Highest coverage score (85.0%, +5.2pp above avg)"
             ],
-            "weaknesses": [
-                "Noise generation at 10.8% (rank #6/8)"
-            ],
+            "weaknesses": ["Noise generation at 10.8% (rank #6/8)"],
             "apiKeyUrl": "https://console.anthropic.com/settings/keys",
             "defaults": {
                 "temperature": 0,
@@ -39,9 +37,7 @@
                 "Very low noise generation (4.3%, rank #2/8)",
                 "Strong local logic detection (86.5%, rank #3/8)"
             ],
-            "weaknesses": [
-                "Coverage below average (78.0%)"
-            ],
+            "weaknesses": ["Coverage below average (78.0%)"],
             "apiKeyUrl": "https://aistudio.google.com/apikey",
             "defaults": {
                 "temperature": 0,
@@ -62,9 +58,7 @@
                 "Highest coverage of all models (88.8%, +9.0pp above avg)",
                 "Fastest responses (p90: 16.7s, p99: 18.9s)"
             ],
-            "weaknesses": [
-                "Higher noise generation (18.8%, rank #7/8)"
-            ],
+            "weaknesses": ["Higher noise generation (18.8%, rank #7/8)"],
             "apiKeyUrl": "https://console.anthropic.com/settings/keys",
             "defaults": {
                 "temperature": 0,
@@ -85,9 +79,7 @@
                 "Best local logic detection (92.7%, +7.3pp above avg)",
                 "Highest pass rate / fewest errors (52%, 36/75)"
             ],
-            "weaknesses": [
-                "Highest noise generation (21.4%, rank #8/8)"
-            ],
+            "weaknesses": ["Highest noise generation (21.4%, rank #8/8)"],
             "apiKeyUrl": "https://openrouter.ai/keys",
             "defaults": {
                 "temperature": 0,
@@ -108,9 +100,7 @@
                 "High pass rate (42.7%, rank #3/8)",
                 "Low noise generation (9.8%)"
             ],
-            "weaknesses": [
-                "Coverage below average (77.6%)"
-            ],
+            "weaknesses": ["Coverage below average (77.6%)"],
             "apiKeyUrl": "https://aistudio.google.com/apikey",
             "defaults": {
                 "temperature": 0,
@@ -154,9 +144,7 @@
                 "Strong local logic (87.5%, rank #2/8)",
                 "Low noise generation (8.7%)"
             ],
-            "weaknesses": [
-                "Weakest cross-file detection (80.5%, last place)"
-            ],
+            "weaknesses": ["Weakest cross-file detection (80.5%, last place)"],
             "apiKeyUrl": "https://aistudio.google.com/apikey",
             "defaults": {
                 "temperature": 0,
@@ -177,9 +165,7 @@
                 "Most consistent latency (p50-p99: 19s-34s)",
                 "Low noise generation (8.2%)"
             ],
-            "weaknesses": [
-                "Coverage well below average (74.6%, rank #7/8)"
-            ],
+            "weaknesses": ["Coverage well below average (74.6%, rank #7/8)"],
             "apiKeyUrl": "https://platform.openai.com/api-keys",
             "defaults": {
                 "temperature": 0,
@@ -187,6 +173,5 @@
             }
         }
     ],
-    "annotations": {
-    }
+    "annotations": {}
 }

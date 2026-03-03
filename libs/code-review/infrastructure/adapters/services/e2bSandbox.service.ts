@@ -62,9 +62,10 @@ export class E2BSandboxService {
             await this.setupProxy(sandbox);
 
             // Shallow-fetch the PR ref or branch (minimal network transfer)
-            const refspec = prNumber != null
-                ? this.getPrRefspec(platform, prNumber)
-                : `refs/heads/${branch}`;
+            const refspec =
+                prNumber != null
+                    ? this.getPrRefspec(platform, prNumber)
+                    : `refs/heads/${branch}`;
             const localRef = prNumber != null ? 'pr-head' : 'cli-head';
             const authHeader = this.buildAuthHeader(platform, authToken);
 
@@ -115,7 +116,9 @@ export class E2BSandboxService {
     private async createSandbox(
         apiKey: string,
     ): Promise<{ sandbox: Sandbox; usedTemplate: boolean }> {
-        const templateId = this.configService.get<string>('API_E2B_TEMPLATE_ID');
+        const templateId = this.configService.get<string>(
+            'API_E2B_TEMPLATE_ID',
+        );
 
         if (templateId) {
             try {
@@ -144,13 +147,10 @@ export class E2BSandboxService {
         const host = this.configService.get<string>('E2B_PROXY_HOST');
         if (!host) return;
 
-        const port =
-            this.configService.get<string>('E2B_PROXY_PORT') ?? '8388';
-        const password =
-            this.configService.get<string>('E2B_PROXY_PASSWORD');
+        const port = this.configService.get<string>('E2B_PROXY_PORT') ?? '8388';
+        const password = this.configService.get<string>('E2B_PROXY_PASSWORD');
         const method =
-            this.configService.get<string>('E2B_PROXY_METHOD') ??
-            'aes-256-gcm';
+            this.configService.get<string>('E2B_PROXY_METHOD') ?? 'aes-256-gcm';
 
         if (!password) {
             throw new Error(
@@ -175,10 +175,7 @@ export class E2BSandboxService {
         );
     }
 
-    private buildAuthHeader(
-        platform: PlatformType,
-        token: string,
-    ): string {
+    private buildAuthHeader(platform: PlatformType, token: string): string {
         // Git http.extraHeader sends an Authorization header — token never embedded in URLs
         switch (platform) {
             case PlatformType.GITHUB:
@@ -192,10 +189,7 @@ export class E2BSandboxService {
         }
     }
 
-    private getPrRefspec(
-        platform: PlatformType,
-        prNumber: number,
-    ): string {
+    private getPrRefspec(platform: PlatformType, prNumber: number): string {
         switch (platform) {
             case PlatformType.GITHUB:
                 return `refs/pull/${prNumber}/head`;

@@ -18,11 +18,10 @@ import { QueryErrorResetBoundary } from "@tanstack/react-query";
 import { CheckCircle2Icon, SaveIcon } from "lucide-react";
 import { ErrorBoundary } from "react-error-boundary";
 import { FormProvider, useForm } from "react-hook-form";
-import curatedCatalog from "src/features/ee/byok/_data/curated-models.json";
+import { ByokAdvancedSettings } from "src/features/ee/byok/_components/_modals/edit-key/_components/advanced-settings";
 import { ByokBaseURLInput } from "src/features/ee/byok/_components/_modals/edit-key/_components/baseurl-input";
 import { GuidedModelSelection } from "src/features/ee/byok/_components/_modals/edit-key/_components/guided-model-selection";
 import { ByokKeyInput } from "src/features/ee/byok/_components/_modals/edit-key/_components/key-input";
-import { ByokAdvancedSettings } from "src/features/ee/byok/_components/_modals/edit-key/_components/advanced-settings";
 import {
     ByokManualModelInput,
     ByokModelSelect,
@@ -32,6 +31,7 @@ import {
     createKeySchema,
     type EditKeyForm,
 } from "src/features/ee/byok/_components/_modals/edit-key/_types";
+import curatedCatalog from "src/features/ee/byok/_data/curated-models.json";
 
 import { StepIndicators } from "../_components/step-indicators";
 
@@ -169,7 +169,7 @@ export const SetupByokPage = () => {
             </div>
 
             <div className="flex flex-14 flex-col items-center gap-10 overflow-y-auto p-10">
-                <div className="flex max-w-118 w-full flex-col gap-8">
+                <div className="flex w-full max-w-118 flex-col gap-8">
                     <StepIndicators.Auto />
 
                     <div className="flex flex-col gap-2">
@@ -202,7 +202,9 @@ export const SetupByokPage = () => {
                                         </TabsList>
 
                                         <TabsContent value="curated">
-                                            <GuidedModelSelection collapseOnSelect />
+                                            <GuidedModelSelection
+                                                collapseOnSelect
+                                            />
                                         </TabsContent>
 
                                         <TabsContent value="custom">
