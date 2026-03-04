@@ -145,7 +145,6 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                 organizationAndTeamData,
                 codeReviewConfig,
                 changedFiles,
-                batches: [],
                 validSuggestions: [],
                 discardedSuggestions: [],
                 preparedFileContexts: [],

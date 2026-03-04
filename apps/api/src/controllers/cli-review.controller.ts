@@ -1,4 +1,5 @@
 import { ExecuteCliReviewUseCase } from '@libs/cli-review/application/use-cases/execute-cli-review.use-case';
+import { IngestSessionEventUseCase } from '@libs/cli-review/application/use-cases/ingest-session-event.use-case';
 import { SubmitCliSessionCaptureUseCase } from '@libs/cli-review/application/use-cases/submit-cli-session-capture.use-case';
 import { AuthenticatedRateLimiterService } from '@libs/cli-review/infrastructure/services/authenticated-rate-limiter.service';
 import { TrialRateLimiterService } from '@libs/cli-review/infrastructure/services/trial-rate-limiter.service';
@@ -23,6 +24,8 @@ import {
     Query,
     Res,
     UnauthorizedException,
+    UsePipes,
+    ValidationPipe,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -55,6 +58,7 @@ import {
 } from '../dtos/cli-review.dto';
 import { CliSessionCaptureRequestDto } from '../dtos/cli-session-capture.dto';
 import { CliSessionCaptureResponseDto } from '../dtos/cli-session-capture.response.dto';
+import { SessionEventRequestDto } from '../dtos/session-event.dto';
 import {
     CliReviewRateLimitErrorDto,
     CliReviewResponseDto,
@@ -75,6 +79,7 @@ export class CliReviewController {
 
     constructor(
         private readonly executeCliReviewUseCase: ExecuteCliReviewUseCase,
+        private readonly ingestSessionEventUseCase: IngestSessionEventUseCase,
         private readonly submitCliSessionCaptureUseCase: SubmitCliSessionCaptureUseCase,
         private readonly trialRateLimiter: TrialRateLimiterService,
         private readonly authenticatedRateLimiter: AuthenticatedRateLimiterService,
@@ -761,6 +766,79 @@ export class CliReviewController {
         }
 
         return result;
+    }
+
+    /**
+     * Ingest a session lifecycle event from the CLI
+     */
+    @Post('sessions/events')
+    @ApiOperation({
+        summary: 'Ingest CLI session event',
+        description:
+            'Receives session lifecycle events (session_start, turn_start, turn_end, subagent_start, subagent_end, session_end) from the CLI agent.',
+    })
+    @ApiHeader({
+        name: 'authorization',
+        required: false,
+        description: 'Bearer token (JWT or kodus_* team key)',
+    })
+    @ApiHeader({
+        name: 'x-team-key',
+        required: false,
+        description: 'Team CLI key (alternative to Authorization: Bearer)',
+    })
+    @ApiCreatedResponse({
+        description: 'Event accepted',
+        schema: {
+            type: 'object',
+            properties: {
+                accepted: { type: 'boolean', example: true },
+            },
+        },
+    })
+    @ApiUnauthorizedResponse({
+        description: 'Invalid or missing authentication',
+        type: ApiErrorDto,
+    })
+    @UsePipes(new ValidationPipe({
+        transform: true,
+        whitelist: false,
+        forbidNonWhitelisted: false,
+    }))
+    async ingestSessionEvent(
+        @Body() body: SessionEventRequestDto,
+        @Headers('x-team-key') teamKey?: string,
+        @Headers('authorization') authHeader?: string,
+        @Query('teamId') queryTeamId?: string,
+    ) {
+        const auth = await this.validateKeyInternal(
+            teamKey,
+            authHeader,
+            queryTeamId,
+        );
+
+        if (!auth.valid || !auth.organizationId || !auth.teamId) {
+            throw new UnauthorizedException(
+                auth.error ||
+                    'Authentication required. Provide a team API key via X-Team-Key header, or a JWT via Authorization: Bearer header.',
+            );
+        }
+
+        const { sessionId, type, branch, timestamp, ...rest } = body;
+
+        return this.ingestSessionEventUseCase.execute({
+            organizationAndTeamData: {
+                organizationId: auth.organizationId,
+                teamId: auth.teamId,
+            },
+            event: {
+                sessionId,
+                type,
+                branch,
+                timestamp,
+                ...rest,
+            },
+        });
     }
 
     /**

@@ -35,6 +35,7 @@ e2b-sandbox/iptables-rules.sh
 _*
 !apps/web/src/**/_*
 !test/__mocks__/
+!**/__tests__/
 
 # Logs
 logs
