@@ -373,7 +373,7 @@ export class CollectCrossFileContextsService {
     ): Promise<CrossFileContextPlannerSchemaType['queries']> {
         const payload = { diffSummary, changedFilenames, language };
 
-        const provider = LLMModelProvider.CEREBRAS_GPT_OSS_120B;
+        const provider = LLMModelProvider.GEMINI_3_FLASH_PREVIEW;
         const fallbackProvider = LLMModelProvider.GEMINI_2_5_FLASH;
 
         const promptRunner = new BYOKPromptRunnerService(

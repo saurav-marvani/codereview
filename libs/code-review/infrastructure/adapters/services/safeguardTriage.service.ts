@@ -1,7 +1,6 @@
 import {
     SafeguardFeatureSet,
     STRUCTURAL_DEFECT_FEATURES,
-    SPECULATION_FEATURES,
 } from '@libs/common/utils/langchainCommon/prompts/codeReviewSafeguardFeatures';
 
 export type TriageDecision = 'keep' | 'discard' | 'verify';

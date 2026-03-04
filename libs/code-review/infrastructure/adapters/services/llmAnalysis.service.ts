@@ -579,19 +579,33 @@ export class LLMAnalysisService implements IAIAnalysisService {
             }
         });
 
-        return this.safeguardPipeline.execute({
-            organizationAndTeamData,
-            prNumber,
-            file,
-            relevantContent,
-            codeDiff,
-            suggestions,
-            languageResultPrompt,
-            reviewMode,
-            byokConfig,
-            crossFileSnippets,
-            remoteCommands,
-        });
+        try {
+            return await this.safeguardPipeline.execute({
+                organizationAndTeamData,
+                prNumber,
+                file,
+                relevantContent,
+                codeDiff,
+                suggestions,
+                languageResultPrompt,
+                reviewMode,
+                byokConfig,
+                crossFileSnippets,
+                remoteCommands,
+            });
+        } catch (error) {
+            this.logger.error({
+                message: `Error during suggestions safe guard analysis for PR#${prNumber}`,
+                context: LLMAnalysisService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
+                    file: file?.filename,
+                },
+                error,
+            });
+            return { suggestions };
+        }
     }
     //#endregion
 

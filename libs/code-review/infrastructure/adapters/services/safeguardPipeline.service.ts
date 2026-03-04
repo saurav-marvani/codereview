@@ -42,7 +42,7 @@ interface SafeguardPipelineParams {
     remoteCommands?: RemoteCommands;
 }
 
-const MAX_AGENT_TURNS = 12;
+const MAX_AGENT_TURNS = 6;
 
 @Injectable()
 export class SafeguardPipelineService {
@@ -73,13 +73,22 @@ export class SafeguardPipelineService {
             byokConfig,
         );
 
+        const pipelineStart = Date.now();
+        const fileLabel = file?.filename || 'unknown';
+
         try {
             // Step 1: Feature Extraction (batch — one LLM call for all suggestions in the file)
+            const feStart = Date.now();
             const featureResult = await this.extractFeatures(params, promptRunner);
+            const feMs = Date.now() - feStart;
 
             if (!featureResult?.codeSuggestions?.length) {
                 this.logger.warn({
                     message: `No features extracted for PR#${prNumber} file ${file?.filename}`,
+                    context: SafeguardPipelineService.name,
+                });
+                this.logger.log({
+                    message: `[TIMING] PR#${prNumber} ${fileLabel} — Feature Extraction: ${(feMs / 1000).toFixed(1)}s (no features) | Total: ${((Date.now() - pipelineStart) / 1000).toFixed(1)}s`,
                     context: SafeguardPipelineService.name,
                 });
                 return { suggestions, codeReviewModelUsed: { safeguard: provider } };
@@ -96,6 +105,7 @@ export class SafeguardPipelineService {
             // Step 2: Triage (deterministic — per suggestion)
             const kept: any[] = [];
             const toVerify: Array<{ suggestion: any; features: SafeguardFeatureSet }> = [];
+            let discardedCount = 0;
 
             for (const suggestion of suggestions) {
                 const features = featuresById.get(suggestion.id);
@@ -116,12 +126,18 @@ export class SafeguardPipelineService {
                     }
                 } else if (decision === 'discard') {
                     // Discarded — do not include in output
+                    discardedCount++;
                     continue;
                 } else {
                     // 'verify' — needs agent investigation
                     toVerify.push({ suggestion, features });
                 }
             }
+
+            this.logger.log({
+                message: `[TIMING] PR#${prNumber} ${fileLabel} — Feature Extraction: ${(feMs / 1000).toFixed(1)}s | Triage: ${kept.length} kept, ${discardedCount} discarded, ${toVerify.length} verify (of ${suggestions.length} total)`,
+                context: SafeguardPipelineService.name,
+            });
 
             // Step 3: Agent Verification (per suggestion that needs it)
             if (toVerify.length > 0 && remoteCommands) {
@@ -134,8 +150,14 @@ export class SafeguardPipelineService {
                     byokConfig,
                 );
 
+                const agentStart = Date.now();
+                let agentKept = 0;
+                let agentDiscarded = 0;
+                let totalTurns = 0;
+
                 for (const { suggestion, features } of toVerify) {
                     try {
+                        const suggStart = Date.now();
                         const result = await this.verifyWithAgent(
                             suggestion,
                             features,
@@ -146,26 +168,52 @@ export class SafeguardPipelineService {
                             prNumber,
                         );
 
+                        const suggMs = Date.now() - suggStart;
+
                         if (result.action === 'no_changes') {
-                            kept.push(suggestion);
+                            if (features.improvedCode_is_correct === false) {
+                                kept.push({ ...suggestion, improvedCode: null });
+                            } else {
+                                kept.push(suggestion);
+                            }
+                            agentKept++;
+                        } else {
+                            agentDiscarded++;
                         }
-                        // else: discard (don't include)
+
+                        this.logger.log({
+                            message: `[TIMING] PR#${prNumber} ${fileLabel} — Agent verified suggestion ${suggestion.id}: ${result.action} in ${(suggMs / 1000).toFixed(1)}s (${result.turnsUsed}/${MAX_AGENT_TURNS} turns) | Evidence: ${(result.evidence || '').substring(0, 120)}`,
+                            context: SafeguardPipelineService.name,
+                        });
+                        totalTurns += result.turnsUsed;
                     } catch (error) {
                         this.logger.warn({
                             message: `Agent verification failed for suggestion ${suggestion.id}, discarding (safe default)`,
                             context: SafeguardPipelineService.name,
                             error,
                         });
+                        agentDiscarded++;
                         // Safe default: discard on agent failure
                     }
                 }
+
+                const agentMs = Date.now() - agentStart;
+                this.logger.log({
+                    message: `[TIMING] PR#${prNumber} ${fileLabel} — Agent Verification: ${(agentMs / 1000).toFixed(1)}s (${toVerify.length} suggestions, ${agentKept} kept, ${agentDiscarded} discarded, ${totalTurns} total turns, avg ${(agentMs / toVerify.length / 1000).toFixed(1)}s each)`,
+                    context: SafeguardPipelineService.name,
+                });
             } else if (toVerify.length > 0 && !remoteCommands) {
                 // No sandbox available — discard all "verify" suggestions (safe default)
                 this.logger.log({
-                    message: `No E2B sandbox available for agent verification, discarding ${toVerify.length} ambiguous suggestions for PR#${prNumber}`,
+                    message: `[TIMING] PR#${prNumber} ${fileLabel} — No E2B sandbox available, discarding ${toVerify.length} ambiguous suggestions`,
                     context: SafeguardPipelineService.name,
                 });
             }
+
+            this.logger.log({
+                message: `[TIMING] PR#${prNumber} ${fileLabel} — Pipeline Total: ${((Date.now() - pipelineStart) / 1000).toFixed(1)}s | Input: ${suggestions.length} suggestions → Output: ${kept.length} kept`,
+                context: SafeguardPipelineService.name,
+            });
 
             return {
                 suggestions: kept,
@@ -173,7 +221,7 @@ export class SafeguardPipelineService {
             };
         } catch (error) {
             this.logger.error({
-                message: `Safeguard pipeline failed for PR#${prNumber} file ${file?.filename}, returning all suggestions`,
+                message: `Safeguard pipeline failed for PR#${prNumber} file ${file?.filename}, returning all suggestions (${((Date.now() - pipelineStart) / 1000).toFixed(1)}s)`,
                 context: SafeguardPipelineService.name,
                 error,
             });
@@ -303,7 +351,7 @@ export class SafeguardPipelineService {
         languageResultPrompt: string,
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
-    ): Promise<{ verified: boolean; action: string; evidence: string }> {
+    ): Promise<{ verified: boolean; action: string; evidence: string; turnsUsed: number }> {
         const claimedDefects = STRUCTURAL_DEFECT_FEATURES
             .filter((f) => features[f])
             .join(', ');
@@ -318,7 +366,7 @@ export class SafeguardPipelineService {
 
         // Build conversation history for multi-turn agent loop
         const messages: Array<{ prompt: string; role: PromptRole }> = [
-            { prompt: systemPrompt, role: PromptRole.USER },
+            { prompt: systemPrompt, role: PromptRole.SYSTEM },
         ];
 
         const runName = 'safeguardAgentVerification';
@@ -371,6 +419,7 @@ export class SafeguardPipelineService {
                     verified: parsed.verdict,
                     action: parsed.action || (parsed.verdict ? 'no_changes' : 'discard'),
                     evidence: parsed.evidence || '',
+                    turnsUsed: turn + 1,
                 };
             }
 
@@ -381,8 +430,8 @@ export class SafeguardPipelineService {
                     toolResult = await remoteCommands.grep(parsed.pattern || '', '.', undefined);
                     // Limit results to avoid blowing up context
                     const lines = toolResult.split('\n');
-                    if (lines.length > 25) {
-                        toolResult = lines.slice(0, 25).join('\n') + `\n... (${lines.length - 25} more matches)`;
+                    if (lines.length > 15) {
+                        toolResult = lines.slice(0, 15).join('\n') + `\n... (${lines.length - 15} more matches)`;
                     }
                 } else if (parsed.tool === 'read') {
                     toolResult = await remoteCommands.read(parsed.path || '', 0, 0);
@@ -396,8 +445,17 @@ export class SafeguardPipelineService {
             }
 
             messages.push({ prompt: JSON.stringify(parsed), role: PromptRole.AI });
+
+            const remainingTurns = MAX_AGENT_TURNS - turn - 1;
+            let followUp = `Tool result:\n${toolResult}`;
+            if (remainingTurns <= 1) {
+                followUp += `\n\nThis is your LAST tool call. You MUST respond with a verdict now.`;
+            } else if (remainingTurns <= 2) {
+                followUp += `\n\n${remainingTurns} tool call(s) remaining. Provide your verdict unless you need one critical search.`;
+            }
+
             messages.push({
-                prompt: `Tool result:\n${toolResult}\n\nContinue investigating or provide your final verdict as JSON.`,
+                prompt: followUp,
                 role: PromptRole.USER,
             });
         }
@@ -407,6 +465,7 @@ export class SafeguardPipelineService {
             verified: true,
             action: 'no_changes',
             evidence: 'Max agent turns reached — defaulting to keep',
+            turnsUsed: MAX_AGENT_TURNS,
         };
     }
 

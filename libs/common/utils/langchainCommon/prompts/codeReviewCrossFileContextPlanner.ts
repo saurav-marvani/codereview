@@ -90,16 +90,32 @@ ${payload.diffSummary}
 ## Query Prioritization
 Allocate your 10 queries wisely. Prioritize:
 1. **Symmetric counterparts** — #1 source of cross-file bugs when missed
-2. **Direct consumers/callers** of changed signatures
+2. **Direct consumers/callers** of changed signatures (use the EXACT exported function/class/type name)
 3. **Upstream dependencies** — #1 source of false positives when missed
-4. **Test ↔ implementation** pairs
+4. **Test ↔ implementation** pairs (search for the symbol name with glob \`*.spec.ts\`, do NOT guess filenames)
 5. **Configuration dependents**
+
+**Quality > Quantity**: 5 precise queries are better than 10 noisy ones. Only generate a query if you're confident the symbol name is correct and the search will return useful cross-file results.
 
 ## Constraints
 - Maximum 10 queries
 - Patterns must be valid ripgrep regex
 - Search for CONSUMERS, CALLERS, COUNTERPARTS, VERIFIERS, and UPSTREAM IMPLEMENTATIONS — not just definitions
 - Do NOT generate patterns that would only match inside the changed files themselves
+
+## CRITICAL: Query Quality Rules — READ CAREFULLY
+
+Before generating ANY query, verify it passes ALL these checks:
+
+1. **EXACT symbol names only** — The symbolName MUST appear verbatim in the diff code. If the diff shows \`import { triageSuggestion } from './safeguardTriage.service'\`, the symbol is \`triageSuggestion\` (the imported function). Do NOT infer class names like \`SafeguardTriageService\` — that name does not exist in the code. Copy-paste from the diff, do not invent.
+
+2. **Skip deleted symbols** — Lines starting with \`-\` are REMOVALS. If a symbol only appears in removed lines (e.g., \`-import { SPECULATION_FEATURES }\`), it was deleted. Searching for deleted symbols wastes a query because the goal is to find live consumers, not confirm the deletion.
+
+3. **No log/comment strings** — Strings inside \`logger.log()\`, \`console.log()\`, or comments are NOT code symbols. Never search for \`[TIMING]\`, \`error occurred\`, etc.
+
+4. **No generic parameter names** — \`config\`, \`options\`, \`params\`, \`context\`, \`data\` match hundreds of files. Search for the specific TYPE instead (e.g., \`BYOKConfig\` not \`byokConfig\`).
+
+5. **No private/internal symbols** — Constants like \`MAX_AGENT_TURNS\` or methods like \`extractFeatures\` that are private to one file will NOT have consumers outside that file. Skip them.
 
 ## CRITICAL: Ripgrep Pattern Rules
 ripgrep searches LINE-BY-LINE. Patterns CANNOT span multiple lines.

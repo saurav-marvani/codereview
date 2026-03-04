@@ -37,14 +37,6 @@ export const STRUCTURAL_DEFECT_FEATURES: (keyof SafeguardFeatureSet)[] = [
     'has_redundant_work_in_loop',
 ];
 
-export const SPECULATION_FEATURES: (keyof SafeguardFeatureSet)[] = [
-    'requires_assumed_input',
-    'requires_assumed_workload',
-    'is_quality_opinion',
-    'is_anti_pattern_only',
-    'targets_unchanged_code',
-];
-
 export const prompt_codeReviewSafeguard_featureExtraction = (params: {
     languageResultPrompt: string;
 }) => {
@@ -62,8 +54,8 @@ For each suggestion, extract these boolean features:
 6. **has_redundant_work_in_loop**: Does the code perform repeated unnecessary work inside a loop? (e.g., loading a template per iteration)
 7. **requires_assumed_input**: Does the issue ONLY manifest if you assume a specific input that no visible caller provides? ("if null is passed", "if attacker sends X")
 8. **requires_assumed_workload**: Does the issue ONLY manifest under assumed load conditions? ("under high traffic", "with many concurrent users")
-9. **is_quality_opinion**: Is the suggestion about test quality, code style, or "could be better" without identifying a defect?
-10. **is_anti_pattern_only**: Does the suggestion flag a known anti-pattern without showing structural harm in this specific code?
+9. **is_quality_opinion**: Is the suggestion about code style, design preferences, testability, function purity, naming, parameter optionality, or "could be better" — WITHOUT identifying a concrete runtime defect? Set to true if: suggesting optional→required or required→optional changes, recommending dependency injection, arguing about code organization, flagging impure functions for testability, or criticizing intentional design decisions (e.g., "you removed feature X" when X was deliberately removed).
+10. **is_anti_pattern_only**: Does the suggestion flag a known anti-pattern without showing structural harm in this specific code? Set to true if: the suggestion says "this pattern is bad practice" but cannot demonstrate a concrete failure scenario in the actual running code.
 11. **targets_unchanged_code**: Does the suggestion target code NOT modified in the PR diff?
 12. **improvedCode_is_correct**: Is the suggested fix syntactically and logically correct?
 
@@ -97,6 +89,8 @@ Output JSON:
 - Set speculation features to true if verifying the issue requires imagining callers, inputs, attackers, or workloads not visible in the provided context.
 - If a suggestion mentions a real pattern (e.g., "resource leak") but the resource IS properly closed in the visible code, set the structural feature to false.
 - Be honest: if unsure, prefer false for structural features and true for speculation features.
+- If a suggestion argues "what if caller X doesn't provide Y" or "what if this function fails" WITHOUT showing that X actually fails to provide Y in the visible code, set \`requires_assumed_input\` to true.
+- If a suggestion criticizes a deliberate refactoring choice (removing code, changing a schema, replacing one approach with another), set \`is_quality_opinion\` to true — the safeguard should not second-guess intentional design decisions.
 
 Respond in ${languageResultPrompt} for any explanations, but keep feature names in English.
 

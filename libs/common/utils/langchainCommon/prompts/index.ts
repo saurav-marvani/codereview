@@ -2,7 +2,6 @@ import { prompt_codeReviewSafeguard_system } from './codeReviewSafeguard';
 import {
     prompt_codeReviewSafeguard_featureExtraction,
     STRUCTURAL_DEFECT_FEATURES,
-    SPECULATION_FEATURES,
 } from './codeReviewSafeguardFeatures';
 export type {
     SafeguardFeatureSet,
@@ -26,5 +25,4 @@ export {
     prompt_codeReviewSafeguard_system,
     prompt_codeReviewSafeguard_featureExtraction,
     STRUCTURAL_DEFECT_FEATURES,
-    SPECULATION_FEATURES,
 };

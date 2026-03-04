@@ -315,6 +315,12 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
             );
             if (sshMatch) {
                 cloneUrl = `https://${sshMatch[1]}/${sshMatch[2]}`;
+            } else {
+                this.logger.warn({
+                    message: `Could not parse SSH-like git remote URL: ${cloneUrl}`,
+                    context: this.stageName,
+                });
+                return null;
             }
         }
 
