@@ -187,6 +187,11 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
 
             return this.updateContext(context, (draft) => {
                 draft.crossFileContexts = result;
+                // Keep sandbox alive for safeguard agent verification
+                draft.sandboxHandle = {
+                    remoteCommands: sandbox.remoteCommands,
+                    cleanup: sandbox.cleanup,
+                };
             });
         } catch (error) {
             // Non-fatal: log error and return context unchanged
@@ -199,11 +204,19 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
                     prNumber: context?.pullRequest?.number,
                 },
             });
-            return context;
-        } finally {
+            // Cleanup sandbox on error since we won't store it in context
             if (cleanup) {
-                await cleanup();
+                try {
+                    await cleanup();
+                } catch (cleanupErr) {
+                    this.logger.warn({
+                        message: `Sandbox cleanup failed after cross-file context error`,
+                        context: this.stageName,
+                        error: cleanupErr,
+                    });
+                }
             }
+            return context;
         }
     }
 
@@ -257,8 +270,9 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
         const platform = gitContext.inferredPlatform || PlatformType.GITHUB;
         const branch = gitContext.branch || 'main';
 
-        // Try to get auth token from team's platform integration
+        // Try to get clone params (HTTPS URL + auth token) from team's platform integration
         let authToken = '';
+        let cloneUrl = gitContext.remote;
         try {
             const cloneParams = await this.codeManagementService.getCloneParams(
                 {
@@ -273,6 +287,10 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
                 platform,
             );
             authToken = cloneParams.auth?.token || '';
+            // Use the HTTPS URL from the platform service (E2B sandbox requires HTTPS for token auth)
+            if (cloneParams.url) {
+                cloneUrl = cloneParams.url;
+            }
         } catch (error) {
             // Fallback: no auth (works for public repos)
             this.logger.warn({
@@ -282,8 +300,24 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
             });
         }
 
+        // Ensure we always use HTTPS (E2B sandbox uses http.extraHeader which only works over HTTPS)
+        if (cloneUrl.startsWith('git@')) {
+            const sshMatch = cloneUrl.match(
+                /git@([^:]+):(.+?)(?:\.git)?$/,
+            );
+            if (sshMatch) {
+                cloneUrl = `https://${sshMatch[1]}/${sshMatch[2]}`;
+            } else {
+                this.logger.warn({
+                    message: `Could not parse SSH-like git remote URL: ${cloneUrl}`,
+                    context: this.stageName,
+                });
+                return null;
+            }
+        }
+
         return {
-            url: gitContext.remote,
+            url: cloneUrl,
             authToken,
             branch,
             prNumber: undefined,

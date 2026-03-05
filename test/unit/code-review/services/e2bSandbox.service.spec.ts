@@ -536,7 +536,7 @@ describe('E2BSandboxService', () => {
                 );
 
                 expect(mockRun).toHaveBeenCalledWith(
-                    "rg --no-heading -n 'myFunc\\(' '/home/user/repo/src/index.ts'",
+                    "cd /home/user/repo && rg --no-heading -n 'myFunc\\(' 'src/index.ts'",
                     { timeoutMs: 30_000 },
                 );
                 expect(result).toBe('output');
@@ -546,7 +546,7 @@ describe('E2BSandboxService', () => {
                 await remoteCommands.grep('pattern', 'src', '*.ts');
 
                 expect(mockRun).toHaveBeenCalledWith(
-                    "rg --no-heading -n 'pattern' '/home/user/repo/src' --glob '*.ts'",
+                    "cd /home/user/repo && rg --no-heading -n 'pattern' 'src' --glob '*.ts'",
                     { timeoutMs: 30_000 },
                 );
             });

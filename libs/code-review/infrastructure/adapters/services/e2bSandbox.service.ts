@@ -211,16 +211,26 @@ export class E2BSandboxService {
                 path: string,
                 glob?: string,
             ): Promise<string> => {
-                const fullPath = this.resolvePath(path);
-                const escapedPath = fullPath.replace(/'/g, "'\\''");
+                // Validate path (same security checks as resolvePath)
+                if (path.startsWith('/')) {
+                    throw new Error('Absolute paths are not allowed');
+                }
+                if (path.includes('..')) {
+                    throw new Error(
+                        'Path traversal using ".." is not allowed',
+                    );
+                }
+                const escapedPath = path.replace(/'/g, "'\\''");
                 const globArg = glob
                     ? ` --glob '${glob.replace(/'/g, "'\\''")}'`
                     : '';
                 // Use single quotes to prevent bash from interpreting
                 // regex escape sequences (e.g. \b as backspace).
                 const escapedPattern = pattern.replace(/'/g, "'\\''");
+                // Run inside REPO_DIR so rg outputs relative paths (e.g. "./src/foo.ts")
+                // instead of absolute ones (which resolvePath rejects on read).
                 const result = await sandbox.commands.run(
-                    `rg --no-heading -n '${escapedPattern}' '${escapedPath}'${globArg}`,
+                    `cd ${REPO_DIR} && rg --no-heading -n '${escapedPattern}' '${escapedPath}'${globArg}`,
                     { timeoutMs: 30_000 },
                 );
                 return result.stdout;

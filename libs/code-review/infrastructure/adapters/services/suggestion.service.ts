@@ -4,11 +4,14 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { IAIAnalysisService } from '@libs/code-review/domain/contracts/AIAnalysisService.contract';
 import {
+    CrossFileContextSnippet,
+    RemoteCommands,
+} from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
+import {
     COMMENT_MANAGER_SERVICE_TOKEN,
     ICommentManagerService,
 } from '@libs/code-review/domain/contracts/CommentManagerService.contract';
 import { ISuggestionService } from '@libs/code-review/domain/contracts/SuggestionService.contract';
-import { CrossFileContextSnippet } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import {
     ClusteringType,
     CodeReviewConfig,
@@ -235,6 +238,7 @@ export class SuggestionService implements ISuggestionService {
         reviewMode: ReviewModeResponse,
         byokConfig: BYOKConfig,
         crossFileSnippets?: CrossFileContextSnippet[],
+        remoteCommands?: RemoteCommands,
         memories?: Array<Partial<IKodyRule>>,
         externalReferences?: unknown[],
         externalReferenceErrors?: unknown[] | string,
@@ -254,6 +258,7 @@ export class SuggestionService implements ISuggestionService {
             reviewMode,
             byokConfig,
             crossFileSnippets,
+            remoteCommands,
             memories,
             externalReferences,
             externalReferenceErrors,

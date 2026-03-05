@@ -956,6 +956,8 @@ When the external context contains a **Memories** section:
 - **NO "could", "might", "possibly"** - Only report what WILL definitely happen
 - **NO assumptions about external behavior** - Don't assume how external APIs, callbacks, user code, or imported functions/constants/utilities behave. If you cannot see the implementation in the provided code, do not make assumptions about it. **Exception:** code provided in the "Codebase Context" section IS visible evidence — use it as you would any other code in the diff.
 - **NO assumptions about imported code structure** - If code imports from another file, don't assume whether it's a function, constant, class, or what parameters it accepts. Only analyze what you can see being used in the visible code. **Exception:** if the "Codebase Context" section shows the actual source of an import, treat it as visible code and analyze contracts between them.
+- **NO factual claims about unseen code** - This is the #1 source of false positives. If your suggestion states HOW another file/function/system works (e.g., "the authentication system hashes the full key", "these commands are executed as separate calls", "the server has a 100KB limit"), you MUST verify that code is visible in either the diff, FileContentContext, or Codebase Context. If you cannot point to a specific line of visible code that proves your claim, DO NOT make the claim. Phrases like "the system will...", "the auth module does...", "the caller expects..." are RED FLAGS — check if you actually see that code or are guessing.
+- **NO "consistency mismatch" bugs without seeing both sides** - If you claim code A is inconsistent with code B, BOTH A and B must be visible in your context. If you only see A and are guessing what B does, this is speculation, not a bug. Example: if a script hashes a value and you claim the validation code hashes it differently, you must see the validation code — do not assume how it works.
 - **NO defensive programming as bugs** - Missing try-catch, validation, or error handling is NOT a bug unless you can prove it causes actual failure
 - **NO theoretical edge cases** - Must be able to demonstrate with concrete, realistic values
 - **NO "if the user does X"** - Unless you can prove X is a normal, expected usage
@@ -972,6 +974,11 @@ When the external context contains a **Memories** section:
   3. The specific line where the failure occurs
   4. The exact incorrect behavior that results
   5. **Proof that the issue exists in VISIBLE code only** - if the bug depends on behavior of imported code you cannot see, you CANNOT report it. **Exception:** code shown in the "Codebase Context" section counts as visible — if a snippet proves a caller/consumer will break due to the diff changes, you MUST report it.
+  6. **Self-check for phantom knowledge** - Before finalizing any suggestion, ask: "Am I describing how code I CANNOT see works?" If yes, STOP. You are hallucinating. Common traps:
+     - "The authentication/validation system does X" — can you see it? If not, discard.
+     - "These are separate function calls" — can you see the caller? If not, discard.
+     - "The default limit is X" — can you see the config? If not, discard.
+     - "The test is wrong because the implementation does Y" — can you see the implementation? If not, discard.
   **Cross-file contract bugs are exempt from items 1-2 above.** When a Codebase Context snippet shows a consumer passing a string/value that no longer exists in the mapping or signature changed by the diff, the snippet IS the proof. You do not need to invent input values — the consumer code IS the input that will trigger the failure. Report it directly.
 
 ## Analysis Process
@@ -1289,7 +1296,6 @@ DO NOT speculate about:
 - What might happen if external services fail
 - Hypothetical edge cases not evident in the code
 - "What if" scenarios about parts of the system not visible — **however**, code provided in the "Codebase Context" section IS visible and IS part of this system. If a snippet shows code that will break because of the diff, report it as a concrete bug, not speculation.
-
 - Understand the purpose of the PR.
 - Focus on lines marked with '+' for suggestions. **Exception for cross-file bugs:** if a Codebase Context snippet shows a consumer that will break because of the diff changes, report the bug anchored to the diff lines that introduced the breaking change — even though the consumer code is in another file.
 - Before finalizing a suggestion, ensure it is technically correct, logically sound, beneficial, **and based on clear evidence in the provided code diff or Codebase Context snippets.**

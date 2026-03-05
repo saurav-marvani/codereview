@@ -166,13 +166,17 @@ describe('CollectCrossFileContextStage', () => {
             expect(result.crossFileContexts).toEqual(collectResult);
         });
 
-        it('should call cleanup() after success', async () => {
+        it('should store sandboxHandle in context for safeguard agent (cleanup deferred)', async () => {
             const { mockCleanup } = setupHappyPath();
             const context = createCrossFileBaseContext();
 
-            await stage.execute(context);
+            const result = await stage.execute(context);
 
-            expect(mockCleanup).toHaveBeenCalledTimes(1);
+            // Cleanup is no longer called in the stage — sandbox is kept alive
+            // for safeguard agent verification in ProcessFilesReview
+            expect(mockCleanup).not.toHaveBeenCalled();
+            expect(result.sandboxHandle).toBeDefined();
+            expect(result.sandboxHandle.cleanup).toBe(mockCleanup);
         });
     });
 
@@ -212,7 +216,7 @@ describe('CollectCrossFileContextStage', () => {
             expect(mockCleanup).toHaveBeenCalled();
         });
 
-        it('should propagate cleanup failure (cleanup is expected to be safe via E2B wrapper)', async () => {
+        it('should swallow cleanup failure and return context unchanged', async () => {
             mockE2bSandboxService.isAvailable.mockReturnValue(true);
             mockCodeManagementService.getCloneParams.mockResolvedValue({
                 url: 'https://github.com/org/repo.git',
@@ -234,11 +238,12 @@ describe('CollectCrossFileContextStage', () => {
 
             const context = createCrossFileBaseContext();
 
-            // cleanup failure propagates because the finally block doesn't wrap it in try/catch
-            // In production, E2BSandboxService.cleanup() already catches errors internally
-            await expect(stage.execute(context)).rejects.toThrow(
-                'cleanup exploded',
-            );
+            // Cleanup failure is now caught and logged as a warning
+            // (sandbox is kept alive for safeguard agent verification on success,
+            //  and cleaned up in catch block on error with try/catch protection)
+            const result = await stage.execute(context);
+            expect(result.crossFileContexts).toBeUndefined();
+            expect(failingCleanup).toHaveBeenCalled();
         });
     });
 

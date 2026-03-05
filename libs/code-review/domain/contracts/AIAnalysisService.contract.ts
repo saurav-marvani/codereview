@@ -1,6 +1,9 @@
 import { BYOKConfig, LLMModelProvider } from '@kodus/kodus-common/llm';
 
-import { CrossFileContextSnippet } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
+import {
+    CrossFileContextSnippet,
+    RemoteCommands,
+} from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import {
     AIAnalysisResult,
     AnalysisContext,
@@ -46,6 +49,7 @@ export interface IAIAnalysisService {
         reviewMode: ReviewModeResponse,
         byokConfig: BYOKConfig,
         crossFileSnippets?: CrossFileContextSnippet[],
+        remoteCommands?: RemoteCommands,
         memories?: Array<Partial<IKodyRule>>,
         externalReferences?: unknown[],
         externalReferenceErrors?: unknown[] | string,
