@@ -58,7 +58,7 @@ export const ConfigsSidebar = () => {
             icon: LockKeyholeOpenIcon,
             label: "BYOK",
             href: `/organization/byok`,
-            visible: isBYOK || isTrial,
+            visible: true,
         },
         {
             icon: KeyRoundIcon,

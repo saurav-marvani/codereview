@@ -133,5 +133,68 @@ const ConfigTable = ({ config }: { config: BYOKConfig }) => (
                 </FormControl.Root>
             </>
         )}
+
+        {config.temperature != null && (
+            <>
+                <Separator className="bg-card-lv2 my-2" />
+
+                <FormControl.Root className="flex flex-row justify-between">
+                    <FormControl.Label>Temperature</FormControl.Label>
+                    <FormControl.Input>
+                        <span className="text-text-secondary text-sm">
+                            {config.temperature}
+                        </span>
+                    </FormControl.Input>
+                </FormControl.Root>
+            </>
+        )}
+
+        {config.maxOutputTokens != null && config.maxOutputTokens > 0 && (
+            <>
+                <Separator className="bg-card-lv2 my-2" />
+
+                <FormControl.Root className="flex flex-row justify-between">
+                    <FormControl.Label>Max output tokens</FormControl.Label>
+                    <FormControl.Input>
+                        <span className="text-text-secondary text-sm">
+                            {config.maxOutputTokens}
+                        </span>
+                    </FormControl.Input>
+                </FormControl.Root>
+            </>
+        )}
+
+        {config.maxInputTokens != null && config.maxInputTokens > 0 && (
+            <>
+                <Separator className="bg-card-lv2 my-2" />
+
+                <FormControl.Root className="flex flex-row justify-between">
+                    <FormControl.Label>Max input tokens</FormControl.Label>
+                    <FormControl.Input>
+                        <span className="text-text-secondary text-sm">
+                            {config.maxInputTokens}
+                        </span>
+                    </FormControl.Input>
+                </FormControl.Root>
+            </>
+        )}
+
+        {config.maxConcurrentRequests != null &&
+            config.maxConcurrentRequests > 0 && (
+                <>
+                    <Separator className="bg-card-lv2 my-2" />
+
+                    <FormControl.Root className="flex flex-row justify-between">
+                        <FormControl.Label>
+                            Max concurrent requests
+                        </FormControl.Label>
+                        <FormControl.Input>
+                            <span className="text-text-secondary text-sm">
+                                {config.maxConcurrentRequests}
+                            </span>
+                        </FormControl.Input>
+                    </FormControl.Root>
+                </>
+            )}
     </>
 );

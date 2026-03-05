@@ -40,6 +40,9 @@ interface SafeguardPipelineParams {
     byokConfig: BYOKConfig;
     crossFileSnippets?: CrossFileContextSnippet[];
     remoteCommands?: RemoteCommands;
+    memories?: Array<Partial<{ title?: string; rule?: string }>>;
+    externalReferences?: unknown[];
+    externalReferenceErrors?: unknown[] | string;
 }
 
 const MAX_AGENT_TURNS = 6;

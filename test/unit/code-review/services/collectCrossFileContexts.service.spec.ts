@@ -62,9 +62,7 @@ describe('CollectCrossFileContextsService', () => {
         };
 
         mockObservabilityService = {
-            runLLMInSpan: jest
-                .fn()
-                .mockImplementation(({ exec }) => exec([])),
+            runLLMInSpan: jest.fn().mockImplementation(({ exec }) => exec([])),
         };
 
         mockTokenChunkingService = {
@@ -162,7 +160,8 @@ describe('CollectCrossFileContextsService', () => {
         });
 
         it('should detect overlap and remove duplicates', () => {
-            const shared = 'export function greet(name: string) { return name; }';
+            const shared =
+                'export function greet(name: string) { return name; }';
             const snippets = [
                 createSampleSnippet({
                     filePath: 'a.ts',
@@ -199,7 +198,8 @@ describe('CollectCrossFileContextsService', () => {
         });
 
         it('should merge targetFiles when deduplicating overlapping snippets', () => {
-            const shared = 'export function greet(name: string) { return name; }';
+            const shared =
+                'export function greet(name: string) { return name; }';
             const snippets = [
                 createSampleSnippet({
                     filePath: 'a.ts',
@@ -224,7 +224,8 @@ describe('CollectCrossFileContextsService', () => {
         });
 
         it('should deduplicate targetFiles entries during merge', () => {
-            const shared = 'export function greet(name: string) { return name; }';
+            const shared =
+                'export function greet(name: string) { return name; }';
             const snippets = [
                 createSampleSnippet({
                     filePath: 'a.ts',
@@ -522,10 +523,7 @@ const greet = () => {}
                     query: query.pattern,
                     remoteCommands,
                     includes: [query.fileGlob],
-                    excludes: expect.arrayContaining([
-                        'node_modules',
-                        '.git',
-                    ]),
+                    excludes: expect.arrayContaining(['node_modules', '.git']),
                 }),
             );
         });
@@ -783,7 +781,8 @@ const greet = () => {}
                 createSampleSnippet({
                     filePath: 'src/controllers/hello.controller.ts',
                     riskLevel: 'high',
-                    content: 'function processRequest(data) { greet(data.name); }',
+                    content:
+                        'function processRequest(data) { greet(data.name); }',
                 }),
             ];
 

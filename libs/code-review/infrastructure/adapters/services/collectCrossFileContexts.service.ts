@@ -284,13 +284,17 @@ export class CollectCrossFileContextsService {
                 : LLMModelProvider.CEREBRAS_GPT_OSS_120B;
 
             // Chunk diff items by token limits
-            const chunkingResult =
-                this.tokenChunkingService.chunkDataByTokens({
-                    model: effectiveModel,
-                    data: fileDiffItems,
-                    usagePercentage: 50,
-                    defaultMaxTokens: 64000,
-                });
+            const byokMaxInputTokens = byokConfig?.main?.maxInputTokens;
+
+            const chunkingResult = this.tokenChunkingService.chunkDataByTokens({
+                model: effectiveModel,
+                data: fileDiffItems,
+                usagePercentage: 50,
+                defaultMaxTokens: 64000,
+                ...(byokMaxInputTokens && byokMaxInputTokens > 0
+                    ? { overrideMaxTokens: byokMaxInputTokens }
+                    : {}),
+            });
 
             this.logger.log({
                 message: `Planner chunked ${fileDiffItems.length} files into ${chunkingResult.totalChunks} batch(es) for PR#${prNumber}`,
@@ -414,21 +418,17 @@ export class CollectCrossFileContextsService {
                 runName,
             });
 
-        const { result } =
-            await this.observabilityService.runLLMInSpan({
-                spanName,
-                runName,
-                attrs: spanAttrs,
-                exec: (callbacks) =>
-                    builder.addCallbacks(callbacks).execute(),
-            });
+        const { result } = await this.observabilityService.runLLMInSpan({
+            spanName,
+            runName,
+            attrs: spanAttrs,
+            exec: (callbacks) => builder.addCallbacks(callbacks).execute(),
+        });
 
         return (result as CrossFileContextPlannerSchemaType)?.queries ?? [];
     }
 
-    private deduplicatePlannerQueries(
-        queries: PlannerQuery[],
-    ): PlannerQuery[] {
+    private deduplicatePlannerQueries(queries: PlannerQuery[]): PlannerQuery[] {
         const riskRank: Record<string, number> = {
             high: 3,
             medium: 2,
@@ -711,20 +711,18 @@ export class CollectCrossFileContextsService {
             const hop1FunctionNames = new Set<string>();
             const funcToTargetFiles = new Map<string, Set<string>>();
             for (const snippet of highRiskSnippets) {
-                const funcNames =
-                    this.extractFunctionNames(snippet.content);
+                const funcNames = this.extractFunctionNames(snippet.content);
                 for (const name of funcNames) {
                     hop1FunctionNames.add(name);
-                    const existing = funcToTargetFiles.get(name) || new Set<string>();
-                    snippet.targetFiles?.forEach(f => existing.add(f));
+                    const existing =
+                        funcToTargetFiles.get(name) || new Set<string>();
+                    snippet.targetFiles?.forEach((f) => existing.add(f));
                     funcToTargetFiles.set(name, existing);
                 }
             }
 
             // For each function found in hop 1, search for its callers
-            const hop1FilePaths = new Set(
-                hop1Snippets.map((s) => s.filePath),
-            );
+            const hop1FilePaths = new Set(hop1Snippets.map((s) => s.filePath));
             const excludedPaths = new Set([
                 ...changedFilePaths,
                 ...hop1FilePaths,
@@ -801,9 +799,7 @@ export class CollectCrossFileContextsService {
         const merged: CrossFileContextSnippet[] = [];
         for (const [, fileSnippets] of byFile) {
             // Sort by relevance score desc, keep the best
-            fileSnippets.sort(
-                (a, b) => b.relevanceScore - a.relevanceScore,
-            );
+            fileSnippets.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
             const snippetsForThisFile: CrossFileContextSnippet[] = [];
             let totalChars = 0;
@@ -1118,9 +1114,7 @@ export class CollectCrossFileContextsService {
     //#endregion
 
     //#region Utilities
-    private getBaseScore(
-        riskLevel: 'low' | 'medium' | 'high',
-    ): number {
+    private getBaseScore(riskLevel: 'low' | 'medium' | 'high'): number {
         switch (riskLevel) {
             case 'high':
                 return 80;
@@ -1263,7 +1257,9 @@ export class CollectCrossFileContextsService {
         // Check if one contains a significant portion of the other
         const shorter = a.length < b.length ? a : b;
         const longer = a.length >= b.length ? a : b;
-        return longer.includes(shorter.substring(0, Math.min(200, shorter.length)));
+        return longer.includes(
+            shorter.substring(0, Math.min(200, shorter.length)),
+        );
     }
     //#endregion
 

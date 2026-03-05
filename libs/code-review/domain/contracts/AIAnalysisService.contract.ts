@@ -13,6 +13,7 @@ import {
     ReviewModeResponse,
 } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
+import { IKodyRule } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 
 export interface IAIAnalysisService {
     analyzeCodeWithAI(
@@ -49,6 +50,9 @@ export interface IAIAnalysisService {
         byokConfig: BYOKConfig,
         crossFileSnippets?: CrossFileContextSnippet[],
         remoteCommands?: RemoteCommands,
+        memories?: Array<Partial<IKodyRule>>,
+        externalReferences?: unknown[],
+        externalReferenceErrors?: unknown[] | string,
     ): Promise<any>;
     validateImplementedSuggestions(
         organizationAndTeamData: OrganizationAndTeamData,

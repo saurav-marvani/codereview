@@ -24,6 +24,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { parsePatch } from 'diff';
 import pLimit from 'p-limit';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
+import { estimateTokens } from '@libs/code-review/infrastructure/adapters/services/utils/token-estimator';
 
 @Injectable()
 export class ValidateSuggestionsStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -72,9 +73,13 @@ export class ValidateSuggestionsStage extends BasePipelineStage<CodeReviewPipeli
                 return context;
             }
 
+            const maxInputTokens =
+                context.codeReviewConfig?.byokConfig?.main?.maxInputTokens;
+
             const candidates = await this.prepareValidationCandidates(
                 filtered,
                 changedFiles,
+                maxInputTokens,
             );
 
             if (candidates.length === 0) {
@@ -507,6 +512,7 @@ export class ValidateSuggestionsStage extends BasePipelineStage<CodeReviewPipeli
     private async prepareValidationCandidates(
         suggestions: Partial<CodeSuggestion>[],
         files: FileChange[],
+        maxInputTokens?: number,
     ): Promise<ValidationCandidate[]> {
         const limit = pLimit(this.CONCURRENCY_LIMIT);
         const grouped = this.groupSuggestionsByFile(suggestions, files);
@@ -517,6 +523,22 @@ export class ValidateSuggestionsStage extends BasePipelineStage<CodeReviewPipeli
         )) {
             if (!this.isLanguageSupported(filePath) || !fileData?.fileContent)
                 continue;
+
+            // If maxInputTokens is configured and the file content exceeds
+            // the budget, skip committable suggestions for this file.
+            // Committable suggestions require the full file content and
+            // cannot work with chunked content.
+            if (maxInputTokens && maxInputTokens > 0) {
+                const fileTokens = estimateTokens(fileData.fileContent);
+                const effectiveBudget = Math.floor(maxInputTokens * 0.95);
+                if (fileTokens > effectiveBudget) {
+                    this.logGeneral(
+                        `Skipping committable suggestions for ${filePath}: file content (${fileTokens} tokens) exceeds maxInputTokens budget (${effectiveBudget} tokens)`,
+                        { filePath, fileTokens, effectiveBudget },
+                    );
+                    continue;
+                }
+            }
 
             for (const suggestion of suggestions) {
                 tasks.push(

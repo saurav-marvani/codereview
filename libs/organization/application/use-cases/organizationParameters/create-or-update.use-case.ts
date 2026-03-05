@@ -72,11 +72,18 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
                 organizationAndTeamData,
             );
 
+        const existingConfig = getConfigValue?.configValue as
+            | BYOKConfig
+            | undefined;
+
         let processedConfigValue = configValue;
-        processedConfigValue = this.encryptByokConfigApiKey(configValue);
+        processedConfigValue = this.encryptByokConfigApiKey(
+            configValue,
+            existingConfig,
+        );
 
         const mergedConfigValue = {
-            ...getConfigValue?.configValue,
+            ...existingConfig,
             ...processedConfigValue,
         };
 
@@ -90,7 +97,10 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
         return !!result;
     }
 
-    private encryptByokConfigApiKey(configValue: any): BYOKConfig {
+    private encryptByokConfigApiKey(
+        configValue: any,
+        existingConfig?: BYOKConfig,
+    ): BYOKConfig {
         if (!configValue || typeof configValue !== 'object') {
             throw new Error('Invalid BYOK config value');
         }
@@ -103,23 +113,30 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
 
         let encryptedMain = null;
         if (byokConfig.main) {
-            if (!byokConfig.main.apiKey) {
+            if (!byokConfig.main.apiKey && !existingConfig?.main?.apiKey) {
                 throw new Error('apiKey is required for main BYOK config');
             }
             encryptedMain = {
                 ...byokConfig.main,
-                apiKey: encrypt(byokConfig.main.apiKey),
+                apiKey: byokConfig.main.apiKey
+                    ? encrypt(byokConfig.main.apiKey)
+                    : existingConfig!.main.apiKey,
             };
         }
 
         let encryptedFallback = null;
         if (byokConfig.fallback) {
-            if (!byokConfig.fallback.apiKey) {
+            if (
+                !byokConfig.fallback.apiKey &&
+                !existingConfig?.fallback?.apiKey
+            ) {
                 throw new Error('apiKey is required for fallback BYOK config');
             }
             encryptedFallback = {
                 ...byokConfig.fallback,
-                apiKey: encrypt(byokConfig.fallback.apiKey),
+                apiKey: byokConfig.fallback.apiKey
+                    ? encrypt(byokConfig.fallback.apiKey)
+                    : existingConfig!.fallback!.apiKey,
             };
         }
 

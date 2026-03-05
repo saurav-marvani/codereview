@@ -9,6 +9,14 @@ import {
 import { Injectable } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 
+import { LabelType } from '@libs/common/utils/codeManagement/labels';
+import {
+    CrossFileAnalysisPayload,
+    CrossFileAnalysisSchema,
+    CrossFileAnalysisSchemaType,
+    CrossFileContextForPrompt,
+    prompt_codereview_cross_file_analysis,
+} from '@libs/common/utils/langchainCommon/prompts/codeReviewCrossFileAnalysis';
 import {
     AnalysisContext,
     CodeSuggestion,
@@ -18,14 +26,6 @@ import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/
 import { TokenChunkingService } from '@libs/core/infrastructure/services/tokenChunking/tokenChunking.service';
 import { BYOKPromptRunnerService } from '@libs/core/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
-import {
-    CrossFileAnalysisPayload,
-    CrossFileAnalysisSchema,
-    CrossFileAnalysisSchemaType,
-    CrossFileContextForPrompt,
-    prompt_codereview_cross_file_analysis,
-} from '@libs/common/utils/langchainCommon/prompts/codeReviewCrossFileAnalysis';
-import { LabelType } from '@libs/common/utils/codeManagement/labels';
 
 //#region Interfaces
 interface BatchProcessingConfig {
@@ -57,7 +57,7 @@ interface PreparedFileData {
 @Injectable()
 export class CrossFileAnalysisService {
     private readonly logger = createLogger(CrossFileAnalysisService.name);
-    private readonly DEFAULT_USAGE_LLM_MODEL_PERCENTAGE = 70;
+    private readonly DEFAULT_USAGE_LLM_MODEL_PERCENTAGE = 90;
     private readonly DEFAULT_BATCH_CONFIG: BatchProcessingConfig = {
         maxConcurrentChunks: 10,
         batchDelay: 2000,
@@ -176,10 +176,16 @@ export class CrossFileAnalysisService {
         analysisType: AnalysisType,
         crossFileContexts?: CrossFileContextForPrompt[],
     ): Promise<CodeSuggestion[]> {
+        const byokMaxInputTokens =
+            context?.codeReviewConfig?.byokConfig?.main?.maxInputTokens;
+
         const chunkingResult = this.tokenChunkingService.chunkDataByTokens({
             model: provider,
             data: preparedFiles,
             usagePercentage: this.DEFAULT_USAGE_LLM_MODEL_PERCENTAGE,
+            ...(byokMaxInputTokens && byokMaxInputTokens > 0
+                ? { overrideMaxTokens: byokMaxInputTokens }
+                : {}),
         });
 
         this.logger.log({
@@ -198,6 +204,15 @@ export class CrossFileAnalysisService {
 
         // 3. Determinar configuração de batch
         const batchConfig = { ...this.DEFAULT_BATCH_CONFIG };
+
+        const byokMaxConcurrent =
+            context?.codeReviewConfig?.byokConfig?.main?.maxConcurrentRequests;
+        if (byokMaxConcurrent && byokMaxConcurrent > 0) {
+            batchConfig.maxConcurrentChunks = Math.min(
+                batchConfig.maxConcurrentChunks,
+                byokMaxConcurrent,
+            );
+        }
 
         // 4. Processar chunks em batches paralelos
         const allSuggestions = await this.processChunksInBatches(
@@ -453,6 +468,11 @@ export class CrossFileAnalysisService {
             language,
             v2PromptOverrides: context?.codeReviewConfig?.v2PromptOverrides,
             crossFileContexts,
+            memories: context?.codeReviewConfig?.kodyMemoryRules || [],
+            externalReferences:
+                context?.externalPromptContext?.generation?.main?.references,
+            externalReferenceErrors:
+                context?.externalPromptContext?.generation?.main?.error,
         };
 
         const fallbackProvider = LLMModelProvider.GEMINI_2_5_FLASH;

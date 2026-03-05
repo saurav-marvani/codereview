@@ -10,6 +10,8 @@ export interface TokenChunkingOptions {
     data: any[];
     usagePercentage?: number;
     defaultMaxTokens?: number;
+    /** When set, takes priority over model strategy lookup (used by BYOK maxInputTokens). */
+    overrideMaxTokens?: number;
 }
 
 export interface TokenChunkingResult {
@@ -40,6 +42,7 @@ export class TokenChunkingService {
             data,
             usagePercentage = 60,
             defaultMaxTokens = 64000,
+            overrideMaxTokens,
         } = options;
 
         // Validações de entrada
@@ -83,10 +86,10 @@ export class TokenChunkingService {
 
         try {
             // 1. Determine token limit
-            const maxTokens = this.getMaxTokensForModel(
-                model,
-                defaultMaxTokens,
-            );
+            const maxTokens =
+                overrideMaxTokens && overrideMaxTokens > 0
+                    ? overrideMaxTokens
+                    : this.getMaxTokensForModel(model, defaultMaxTokens);
             const tokenLimit = Math.floor(maxTokens * (usagePercentage / 100));
 
             this.logger.log({

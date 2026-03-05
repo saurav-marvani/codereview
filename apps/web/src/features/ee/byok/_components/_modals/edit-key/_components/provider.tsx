@@ -23,7 +23,11 @@ import { ArrayHelpers } from "src/core/utils/array";
 
 import type { EditKeyForm } from "../_types";
 
-export const ByokProviderSelect = () => {
+export const ByokProviderSelect = ({
+    onProviderChange,
+}: {
+    onProviderChange?: () => void;
+}) => {
     const form = useFormContext<EditKeyForm>();
     const [open, setOpen] = useState(false);
     const { providers } = useSuspenseGetLLMProviders();
@@ -109,6 +113,7 @@ export const ByokProviderSelect = () => {
                                             form.trigger("baseURL");
                                         }
 
+                                        onProviderChange?.();
                                         resetErrorBoundary();
                                         setOpen(false);
                                     }}>

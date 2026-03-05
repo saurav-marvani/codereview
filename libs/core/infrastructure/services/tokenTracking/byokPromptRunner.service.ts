@@ -54,6 +54,8 @@ export class BYOKPromptRunnerService {
                     apiKey: apiKey,
                     model: this.byokConfig.main.model,
                     baseURL: this.byokConfig.main.baseURL,
+                    temperature: this.byokConfig.main.temperature,
+                    maxOutputTokens: this.byokConfig.main.maxOutputTokens,
                 })
                 .setBYOKFallbackConfig(
                     this.byokConfig?.fallback?.apiKey
@@ -62,6 +64,9 @@ export class BYOKPromptRunnerService {
                               apiKey: fallbackApiKey,
                               model: this.byokConfig.fallback.model,
                               baseURL: this.byokConfig.fallback.baseURL,
+                              temperature: this.byokConfig.fallback.temperature,
+                              maxOutputTokens:
+                                  this.byokConfig.fallback.maxOutputTokens,
                           }
                         : null,
                 );

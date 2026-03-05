@@ -49,9 +49,7 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
     readonly label = 'Gathering Cross-File Context';
     readonly visibility = StageVisibility.PRIMARY;
 
-    private readonly logger = createLogger(
-        CollectCrossFileContextStage.name,
-    );
+    private readonly logger = createLogger(CollectCrossFileContextStage.name);
 
     constructor(
         @Inject(COLLECT_CROSS_FILE_CONTEXTS_SERVICE_TOKEN)
@@ -151,14 +149,13 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
             }
 
             // Create E2B sandbox and clone repo
-            const sandbox =
-                await this.e2bSandboxService.createSandboxWithRepo({
-                    cloneUrl: cloneInfo.url,
-                    authToken: cloneInfo.authToken,
-                    branch: cloneInfo.branch,
-                    prNumber: cloneInfo.prNumber,
-                    platform: cloneInfo.platform,
-                });
+            const sandbox = await this.e2bSandboxService.createSandboxWithRepo({
+                cloneUrl: cloneInfo.url,
+                authToken: cloneInfo.authToken,
+                branch: cloneInfo.branch,
+                prNumber: cloneInfo.prNumber,
+                platform: cloneInfo.platform,
+            });
 
             cleanup = sandbox.cleanup;
 
@@ -240,15 +237,13 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
     } | null> {
         if (context.origin !== 'cli') {
             // PR mode: use platform integration directly
-            const cloneParams =
-                await this.codeManagementService.getCloneParams(
-                    {
-                        repository: context.repository,
-                        organizationAndTeamData:
-                            context.organizationAndTeamData,
-                    },
-                    context.platformType,
-                );
+            const cloneParams = await this.codeManagementService.getCloneParams(
+                {
+                    repository: context.repository,
+                    organizationAndTeamData: context.organizationAndTeamData,
+                },
+                context.platformType,
+            );
 
             return {
                 url: cloneParams.url,
@@ -272,28 +267,25 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
             return null;
         }
 
-        const platform =
-            gitContext.inferredPlatform || PlatformType.GITHUB;
+        const platform = gitContext.inferredPlatform || PlatformType.GITHUB;
         const branch = gitContext.branch || 'main';
 
         // Try to get clone params (HTTPS URL + auth token) from team's platform integration
         let authToken = '';
         let cloneUrl = gitContext.remote;
         try {
-            const cloneParams =
-                await this.codeManagementService.getCloneParams(
-                    {
-                        repository: {
-                            id: '0',
-                            defaultBranch: branch,
-                            fullName: parsed.fullName,
-                            name: parsed.name,
-                        },
-                        organizationAndTeamData:
-                            context.organizationAndTeamData,
+            const cloneParams = await this.codeManagementService.getCloneParams(
+                {
+                    repository: {
+                        id: '0',
+                        defaultBranch: branch,
+                        fullName: parsed.fullName,
+                        name: parsed.name,
                     },
-                    platform,
-                );
+                    organizationAndTeamData: context.organizationAndTeamData,
+                },
+                platform,
+            );
             authToken = cloneParams.auth?.token || '';
             // Use the HTTPS URL from the platform service (E2B sandbox requires HTTPS for token auth)
             if (cloneParams.url) {

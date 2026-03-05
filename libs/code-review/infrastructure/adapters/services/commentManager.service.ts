@@ -48,6 +48,7 @@ import { prompt_repeated_suggestion_clustering_system } from '@libs/common/utils
 import { createLogger } from '@kodus/flow';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
 import { PriorityStatus } from '@libs/platformData/domain/pullRequests/enums/priorityStatus.enum';
+import { estimateTokens, tokensToChars } from './utils/token-estimator';
 
 interface ClusteredSuggestion {
     id: string;
@@ -198,21 +199,31 @@ export class CommentManagerService implements ICommentManagerService {
                     updatedPR,
                 };
 
-                let userPrompt = '';
+                let userPromptPrefix = '';
 
                 if (
                     isCommitRun &&
                     summaryConfig?.behaviourForNewCommits ===
                         BehaviourForNewCommits.REPLACE
                 ) {
-                    userPrompt = `
-                    This is the updated pull request summary:
-                    <pullRequestSummaryContext>${updatedPR?.body || 'No pull request summary'}</pullRequestSummaryContext>
-                    Use this summary to concatenate the existing pull request summary with the new changed files context:`;
+                    const existingBodyForPrompt = updatedPR?.body || '';
+                    const summaryBlockRegex =
+                        /<!-- kody-pr-summary:start -->([\s\S]*?)<!-- kody-pr-summary:end -->/;
+                    const previousMatch =
+                        existingBodyForPrompt.match(summaryBlockRegex);
+                    const previousSummary = previousMatch
+                        ? previousMatch[1].trim()
+                        : '';
+
+                    if (previousSummary) {
+                        userPromptPrefix = `
+                    This is the previous pull request summary (generated before the latest commits):
+                    <previousPullRequestSummary>${previousSummary}</previousPullRequestSummary>
+                    Generate a new, complete and updated summary that incorporates both the previous context and the new code changes. Do not include HTML comments or markers in your output.`;
+                    }
                 }
 
                 const fallbackProvider = LLMModelProvider.OPENAI_GPT_4O;
-                userPrompt += `<changedFilesContext>${JSON.stringify(baseContext?.changedFiles) || 'No files changed'}</changedFilesContext>`;
 
                 const promptRunner = new BYOKPromptRunnerService(
                     this.promptRunnerService,
@@ -230,48 +241,205 @@ export class CommentManagerService implements ICommentManagerService {
                     repositoryId: repository?.id,
                 };
 
-                const { result } =
-                    await this.observabilityService.runLLMInSpan<string>({
-                        spanName,
-                        runName,
-                        attrs: spanAttrs,
-                        exec: async (callbacks) => {
-                            return await promptRunner
-                                .builder()
-                                .setParser(ParserType.STRING)
-                                .setLLMJsonMode(false)
-                                .setPayload(baseContext)
-                                .addPrompt({
-                                    prompt: promptBase,
-                                    role: PromptRole.SYSTEM,
-                                })
-                                .addPrompt({
-                                    prompt: userPrompt,
-                                    role: PromptRole.USER,
-                                })
-                                .addMetadata({
-                                    organizationId:
-                                        organizationAndTeamData?.organizationId,
-                                    teamId: organizationAndTeamData?.teamId,
-                                    pullRequestId: pullRequest?.number,
-                                    repositoryId: repository?.id,
-                                    provider:
-                                        byokConfigValue?.main?.provider ||
-                                        LLMModelProvider.GEMINI_2_5_FLASH,
-                                    fallbackProvider:
-                                        byokConfigValue?.fallback?.provider ||
-                                        fallbackProvider,
-                                    model: byokConfigValue?.main?.model,
-                                    fallbackModel:
-                                        byokConfigValue?.fallback?.model,
-                                    runName,
-                                })
-                                .addCallbacks(callbacks)
-                                .setRunName(runName)
-                                .setTemperature(0)
-                                .execute();
+                const llmMetadata = {
+                    organizationId: organizationAndTeamData?.organizationId,
+                    teamId: organizationAndTeamData?.teamId,
+                    pullRequestId: pullRequest?.number,
+                    repositoryId: repository?.id,
+                    provider:
+                        byokConfigValue?.main?.provider ||
+                        LLMModelProvider.GEMINI_2_5_FLASH,
+                    fallbackProvider:
+                        byokConfigValue?.fallback?.provider || fallbackProvider,
+                    model: byokConfigValue?.main?.model,
+                    fallbackModel: byokConfigValue?.fallback?.model,
+                    runName,
+                };
+
+                // --- Chunk changedFiles if maxInputTokens is configured ---
+                const maxInputTokens = byokConfigValue?.main?.maxInputTokens;
+
+                const fileChunks = this.chunkChangedFilesForSummary(
+                    changedFiles,
+                    promptBase,
+                    userPromptPrefix,
+                    maxInputTokens,
+                );
+
+                // More than 4 chunks → skip summary generation
+                if (!fileChunks) {
+                    this.logger.warn({
+                        message: `Skipping PR summary generation: changedFiles exceed max 4 chunks for PR#${pullRequest?.number}`,
+                        context: CommentManagerService.name,
+                        metadata: {
+                            organizationAndTeamData,
+                            pullRequestNumber: pullRequest?.number,
+                            maxInputTokens,
                         },
                     });
+                    return null;
+                }
+
+                let result: string;
+
+                if (fileChunks.length === 1) {
+                    // Single chunk — normal path (no chunking needed)
+                    const userPrompt =
+                        userPromptPrefix +
+                        `<changedFilesContext>${JSON.stringify(fileChunks[0]) || 'No files changed'}</changedFilesContext>`;
+
+                    const llmResult =
+                        await this.observabilityService.runLLMInSpan<string>({
+                            spanName,
+                            runName,
+                            attrs: spanAttrs,
+                            exec: async (callbacks) => {
+                                return await promptRunner
+                                    .builder()
+                                    .setParser(ParserType.STRING)
+                                    .setLLMJsonMode(false)
+                                    .setPayload(baseContext)
+                                    .addPrompt({
+                                        prompt: promptBase,
+                                        role: PromptRole.SYSTEM,
+                                    })
+                                    .addPrompt({
+                                        prompt: userPrompt,
+                                        role: PromptRole.USER,
+                                    })
+                                    .addMetadata(llmMetadata)
+                                    .addCallbacks(callbacks)
+                                    .setRunName(runName)
+                                    .setTemperature(0)
+                                    .execute();
+                            },
+                        });
+
+                    result = llmResult.result;
+                } else {
+                    // Multiple chunks (2–4) — generate partial summaries then consolidate
+                    this.logger.log({
+                        message: `Generating PR summary in ${fileChunks.length} chunks for PR#${pullRequest?.number}`,
+                        context: CommentManagerService.name,
+                        metadata: {
+                            organizationAndTeamData,
+                            pullRequestNumber: pullRequest?.number,
+                            totalChunks: fileChunks.length,
+                            maxInputTokens,
+                        },
+                    });
+
+                    const partialSummaries: string[] = [];
+
+                    for (let i = 0; i < fileChunks.length; i++) {
+                        const chunkUserPrompt =
+                            userPromptPrefix +
+                            `<changedFilesContext>${JSON.stringify(fileChunks[i])}</changedFilesContext>`;
+
+                        const chunkRunName = `${runName}_chunk_${i + 1}`;
+                        const chunkSpanName = `${CommentManagerService.name}::${chunkRunName}`;
+
+                        const chunkResult =
+                            await this.observabilityService.runLLMInSpan<string>(
+                                {
+                                    spanName: chunkSpanName,
+                                    runName: chunkRunName,
+                                    attrs: {
+                                        ...spanAttrs,
+                                        chunkIndex: i,
+                                        totalChunks: fileChunks.length,
+                                    },
+                                    exec: async (callbacks) => {
+                                        return await promptRunner
+                                            .builder()
+                                            .setParser(ParserType.STRING)
+                                            .setLLMJsonMode(false)
+                                            .setPayload(baseContext)
+                                            .addPrompt({
+                                                prompt:
+                                                    promptBase +
+                                                    `\n\n**Note**: This is chunk ${i + 1} of ${fileChunks.length}. Generate a summary for these files only.`,
+                                                role: PromptRole.SYSTEM,
+                                            })
+                                            .addPrompt({
+                                                prompt: chunkUserPrompt,
+                                                role: PromptRole.USER,
+                                            })
+                                            .addMetadata({
+                                                ...llmMetadata,
+                                                runName: chunkRunName,
+                                            })
+                                            .addCallbacks(callbacks)
+                                            .setRunName(chunkRunName)
+                                            .setTemperature(0)
+                                            .execute();
+                                    },
+                                },
+                            );
+
+                        if (chunkResult.result) {
+                            partialSummaries.push(chunkResult.result);
+                        }
+                    }
+
+                    if (partialSummaries.length === 0) {
+                        this.logger.error({
+                            message: `All chunks returned empty for generateSummaryPR: PR#${pullRequest?.number}`,
+                            context: CommentManagerService.name,
+                            metadata: { organizationAndTeamData, pullRequest },
+                        });
+                        throw new Error(
+                            'No result returned from generateSummaryPR',
+                        );
+                    }
+
+                    // Consolidation call: merge partial summaries into one
+                    const consolidationRunName = `${runName}_consolidation`;
+                    const consolidationSpanName = `${CommentManagerService.name}::${consolidationRunName}`;
+
+                    const consolidationPrompt = `You are given ${partialSummaries.length} partial pull request summaries generated from different subsets of the changed files.
+Merge them into a single, cohesive pull request description. Remove duplicate information and organize the content logically.
+You must always respond in ${languageResultPrompt}.`;
+
+                    const consolidationUserPrompt = partialSummaries
+                        .map(
+                            (s, i) =>
+                                `<partialSummary index="${i + 1}">\n${s}\n</partialSummary>`,
+                        )
+                        .join('\n\n');
+
+                    const consolidationResult =
+                        await this.observabilityService.runLLMInSpan<string>({
+                            spanName: consolidationSpanName,
+                            runName: consolidationRunName,
+                            attrs: spanAttrs,
+                            exec: async (callbacks) => {
+                                return await promptRunner
+                                    .builder()
+                                    .setParser(ParserType.STRING)
+                                    .setLLMJsonMode(false)
+                                    .setPayload(baseContext)
+                                    .addPrompt({
+                                        prompt: consolidationPrompt,
+                                        role: PromptRole.SYSTEM,
+                                    })
+                                    .addPrompt({
+                                        prompt: consolidationUserPrompt,
+                                        role: PromptRole.USER,
+                                    })
+                                    .addMetadata({
+                                        ...llmMetadata,
+                                        runName: consolidationRunName,
+                                    })
+                                    .addCallbacks(callbacks)
+                                    .setRunName(consolidationRunName)
+                                    .setTemperature(0)
+                                    .execute();
+                            },
+                        });
+
+                    result = consolidationResult.result;
+                }
 
                 if (!result) {
                     this.logger.error({
@@ -324,8 +492,9 @@ export class CommentManagerService implements ICommentManagerService {
                                     `${startMarker}\n${newSummary}\n${endMarker}`,
                                 );
                             } else {
-                                // No block — replace whole body
-                                finalDescription = `${startMarker}\n${newSummary}\n${endMarker}`;
+                                finalDescription = existingBody
+                                    ? `${existingBody}\n\n${startMarker}\n${newSummary}\n${endMarker}`
+                                    : `${startMarker}\n${newSummary}\n${endMarker}`;
                             }
                             break;
                         case BehaviourForNewCommits.CONCATENATE:
@@ -914,7 +1083,8 @@ export class CommentManagerService implements ICommentManagerService {
         const isTransientError = (error: any): boolean => {
             const status = error?.status || error?.response?.status;
             if (status >= 500 && status < 600) return true;
-            if (error?.code === 'ECONNRESET' || error?.code === 'ETIMEDOUT') return true;
+            if (error?.code === 'ECONNRESET' || error?.code === 'ETIMEDOUT')
+                return true;
             return false;
         };
 
@@ -923,11 +1093,10 @@ export class CommentManagerService implements ICommentManagerService {
             return NON_RETRYABLE_STATUS_CODES.includes(status);
         };
 
-        const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+        const sleep = (ms: number) =>
+            new Promise((resolve) => setTimeout(resolve, ms));
 
-        const attemptCreateComment = async (
-            comment: Comment,
-        ): Promise<any> => {
+        const attemptCreateComment = async (comment: Comment): Promise<any> => {
             return this.codeManagementService.createReviewComment(
                 {
                     ...restParams,
@@ -989,10 +1158,14 @@ export class CommentManagerService implements ICommentManagerService {
             };
 
             try {
-                const createdComment = await attemptCreateComment(commentAttempt2);
+                const createdComment =
+                    await attemptCreateComment(commentAttempt2);
                 return { createdComment, attemptUsed: 2 };
             } catch (error2) {
-                if (isNonRetryableError(error2) || !isLineMismatchError(error2)) {
+                if (
+                    isNonRetryableError(error2) ||
+                    !isLineMismatchError(error2)
+                ) {
                     throw error2;
                 }
 
@@ -1013,7 +1186,8 @@ export class CommentManagerService implements ICommentManagerService {
                     line: lineComment.start_line,
                 };
 
-                const createdComment = await attemptCreateComment(commentAttempt3);
+                const createdComment =
+                    await attemptCreateComment(commentAttempt3);
                 return { createdComment, attemptUsed: 3 };
             }
         }
@@ -2070,5 +2244,92 @@ ${reviewOptions}
             language,
             platformType,
         };
+    }
+
+    /**
+     * Splits changedFiles into chunks that fit within the maxInputTokens budget.
+     *
+     * @returns Array of file groups (1–4 chunks), or null if more than 4 chunks
+     *          would be needed (caller should skip summary generation).
+     *          When maxInputTokens is not configured, returns a single chunk
+     *          containing all files.
+     */
+    private chunkChangedFilesForSummary(
+        changedFiles: Partial<FileChange>[],
+        promptBase: string,
+        userPromptPrefix: string,
+        maxInputTokens?: number,
+    ): Partial<FileChange>[][] | null {
+        // No limit configured — return all files as a single chunk
+        if (!maxInputTokens || maxInputTokens <= 0) {
+            return [changedFiles];
+        }
+
+        const MAX_CHUNKS = 4;
+
+        // Apply 90% safety margin
+        const effectiveBudget = Math.floor(maxInputTokens * 0.9);
+
+        // Estimate fixed token cost (system prompt + user prompt wrapper)
+        const fixedTokens =
+            estimateTokens(promptBase) +
+            estimateTokens(userPromptPrefix) +
+            estimateTokens('<changedFilesContext></changedFilesContext>') +
+            50; // tags and minor overhead
+
+        const availableTokens = effectiveBudget - fixedTokens;
+
+        if (availableTokens <= 0) {
+            // Budget consumed by fixed parts alone — send all best-effort
+            return [changedFiles];
+        }
+
+        // Check if all files fit in a single call
+        const allFilesSerialized = JSON.stringify(changedFiles);
+        const totalTokens = estimateTokens(allFilesSerialized);
+
+        if (totalTokens <= availableTokens) {
+            return [changedFiles];
+        }
+
+        // Need to split — group files into chunks by token cost
+        const maxCharsPerChunk = tokensToChars(availableTokens);
+
+        const chunks: Partial<FileChange>[][] = [];
+        let currentChunk: Partial<FileChange>[] = [];
+        let currentChunkChars = 2; // start with "[]" for JSON array wrapper
+
+        for (const file of changedFiles) {
+            const fileSerialized = JSON.stringify(file);
+            // +1 for the comma separator between items in JSON array
+            const fileChars = fileSerialized.length + 1;
+
+            if (
+                currentChunkChars + fileChars > maxCharsPerChunk &&
+                currentChunk.length > 0
+            ) {
+                chunks.push(currentChunk);
+
+                if (chunks.length > MAX_CHUNKS) {
+                    return null;
+                }
+
+                currentChunk = [file];
+                currentChunkChars = 2 + fileSerialized.length;
+            } else {
+                currentChunk.push(file);
+                currentChunkChars += fileChars;
+            }
+        }
+
+        if (currentChunk.length > 0) {
+            chunks.push(currentChunk);
+        }
+
+        if (chunks.length > MAX_CHUNKS) {
+            return null;
+        }
+
+        return chunks;
     }
 }

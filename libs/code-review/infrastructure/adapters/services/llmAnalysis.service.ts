@@ -16,11 +16,15 @@ import {
 import { ContextAugmentationsMap } from '@libs/ai-engine/infrastructure/adapters/services/context/interfaces/code-review-context-pack.interface';
 import { LLMResponseProcessor } from '@libs/ai-engine/infrastructure/adapters/services/llmResponseProcessor.transform';
 import { IAIAnalysisService } from '@libs/code-review/domain/contracts/AIAnalysisService.contract';
-import { prompt_validateImplementedSuggestions } from '@libs/common/utils/langchainCommon/prompts';
 import {
     CrossFileContextSnippet,
     RemoteCommands,
 } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
+import {
+    prompt_codeReviewSafeguard_system,
+    prompt_validateImplementedSuggestions,
+} from '@libs/common/utils/langchainCommon/prompts';
+import { SAFEGUARD_CROSS_FILE_CONTEXT_PREAMBLE } from '@libs/common/utils/langchainCommon/prompts/codeReviewSafeguard';
 import {
     prompt_codereview_system_gemini,
     prompt_codereview_system_gemini_v2,
@@ -41,6 +45,7 @@ import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/
 import { BYOKPromptRunnerService } from '@libs/core/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import { SafeguardPipelineService } from './safeguardPipeline.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
+import { IKodyRule } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 
 export const LLM_ANALYSIS_SERVICE_TOKEN = Symbol.for('LLMAnalysisService');
 
@@ -223,8 +228,16 @@ export class LLMAnalysisService implements IAIAnalysisService {
                                 existingCode: z.string().optional(),
                                 improvedCode: z.string(),
                                 oneSentenceSummary: z.string().optional(),
-                                relevantLinesStart: z.coerce.number().int().positive().optional(),
-                                relevantLinesEnd: z.coerce.number().int().positive().optional(),
+                                relevantLinesStart: z.coerce
+                                    .number()
+                                    .int()
+                                    .positive()
+                                    .optional(),
+                                relevantLinesEnd: z.coerce
+                                    .number()
+                                    .int()
+                                    .positive()
+                                    .optional(),
                                 label: z.string(),
                                 severity: z.string().optional(),
                                 rankScore: z.number().optional(),
@@ -352,6 +365,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
             } as ContextAugmentationsMap,
             contextPack: context?.sharedContextPack as ContextPack | undefined,
             crossFileSnippets: context?.crossFileSnippets,
+            memories: context?.codeReviewConfig?.kodyMemoryRules || [],
         };
 
         return baseContext;
@@ -566,6 +580,9 @@ export class LLMAnalysisService implements IAIAnalysisService {
         byokConfig: BYOKConfig,
         crossFileSnippets?: CrossFileContextSnippet[],
         remoteCommands?: RemoteCommands,
+        memories?: Array<Partial<IKodyRule>>,
+        externalReferences?: unknown[],
+        externalReferenceErrors?: unknown[] | string,
     ): Promise<ISafeguardResponse> {
         suggestions?.forEach((suggestion) => {
             if (
@@ -592,6 +609,9 @@ export class LLMAnalysisService implements IAIAnalysisService {
                 byokConfig,
                 crossFileSnippets,
                 remoteCommands,
+                memories,
+                externalReferences,
+                externalReferenceErrors,
             });
         } catch (error) {
             this.logger.error({

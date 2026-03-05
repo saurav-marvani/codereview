@@ -20,12 +20,20 @@ export interface BYOKConfig {
         model: string;
         baseURL?: string;
         disableReasoning?: boolean;
+        temperature?: number;
+        maxInputTokens?: number;
+        maxConcurrentRequests?: number;
+        maxOutputTokens?: number;
     };
     fallback?: {
         provider: BYOKProvider;
         apiKey: string;
         model: string;
         baseURL?: string;
+        temperature?: number;
+        maxInputTokens?: number;
+        maxConcurrentRequests?: number;
+        maxOutputTokens?: number;
     };
 }
 

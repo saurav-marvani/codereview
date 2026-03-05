@@ -13,7 +13,8 @@ export function createSampleFileChange(
     overrides: Partial<FileChange> = {},
 ): FileChange {
     return {
-        content: 'export function greet(name: string) { return `Hello ${name}`; }',
+        content:
+            'export function greet(name: string) { return `Hello ${name}`; }',
         sha: 'abc123',
         filename: 'src/utils/greet.ts',
         status: 'modified',

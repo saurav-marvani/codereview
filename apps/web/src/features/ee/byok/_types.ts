@@ -3,4 +3,8 @@ export type BYOKConfig = {
     apiKey: string;
     provider: string;
     baseURL?: string;
+    temperature?: number;
+    maxInputTokens?: number;
+    maxConcurrentRequests?: number;
+    maxOutputTokens?: number;
 };
