@@ -8,6 +8,7 @@ import { terminalFormatter } from '../formatters/terminal.js';
 import { jsonFormatter } from '../formatters/json.js';
 import { markdownFormatter } from '../formatters/markdown.js';
 import { promptFormatter } from '../formatters/prompt.js';
+import { resolveBusinessValidationMode } from './pr.business-validation-mode.js';
 import type {
     GlobalOptions,
     OutputFormat,
@@ -120,7 +121,7 @@ prCommand
     )
     .argument(
         '[files...]',
-        'Specific files to include when running in local diff mode',
+        'Specific files to include in local diff mode',
     )
     .option('--pr-url <url>', 'Pull request URL')
     .option('--pr-number <number>', 'Pull request number')
@@ -172,45 +173,28 @@ prCommand
                     options.prNumber !== undefined
                         ? Number(options.prNumber)
                         : undefined;
-                const hasPrContext = !!options.prUrl || prNumber !== undefined;
-                const hasLocalScopeOptions =
-                    (files?.length ?? 0) > 0 ||
-                    !!options.staged ||
-                    !!options.commit ||
-                    !!options.branch;
 
                 if (options.prNumber !== undefined && Number.isNaN(prNumber)) {
                     throw new Error('Invalid --pr-number value');
                 }
 
-                if (options.prUrl && prNumber) {
-                    throw new Error(
-                        'Provide only one of --pr-url or --pr-number.',
-                    );
-                }
-
-                if (prNumber && !options.repoId && !options.repo) {
-                    throw new Error(
-                        'When using --pr-number, provide --repo-id or --repo.',
-                    );
-                }
-
-                if (hasPrContext && hasLocalScopeOptions) {
-                    throw new Error(
-                        'Local diff scope options (--staged/--commit/--branch/[files]) cannot be used with --pr-url/--pr-number.',
-                    );
-                }
-
-                if (options.taskUrl && options.taskId) {
-                    throw new Error(
-                        'Provide only one of --task-url or --task-id.',
-                    );
-                }
+                const mode = resolveBusinessValidationMode({
+                    files,
+                    prUrl: options.prUrl,
+                    prNumber,
+                    repoId: options.repoId,
+                    repo: options.repo,
+                    taskUrl: options.taskUrl,
+                    taskId: options.taskId,
+                    staged: options.staged,
+                    commit: options.commit,
+                    branch: options.branch,
+                });
 
                 let diff: string | undefined;
                 let repository = options.repo;
 
-                if (!hasPrContext) {
+                if (mode.mode === 'local_diff') {
                     diff = await getLocalDiffForBusinessValidation(
                         files ?? [],
                         options,
@@ -219,7 +203,7 @@ prCommand
 
                     if (!diff.trim()) {
                         throw new Error(
-                            'No local changes found to validate. Provide --pr-url/--pr-number or make local changes.',
+                            'No local changes found for the selected scope. Stage files or pick another scope (--branch/--commit/[files]).',
                         );
                     }
 
@@ -232,8 +216,9 @@ prCommand
                 }
 
                 const payload = {
-                    prUrl: hasPrContext ? options.prUrl : undefined,
-                    prNumber: hasPrContext ? prNumber : undefined,
+                    prUrl: mode.mode === 'pull_request' ? options.prUrl : undefined,
+                    prNumber:
+                        mode.mode === 'pull_request' ? prNumber : undefined,
                     repositoryId: options.repoId,
                     repository,
                     taskUrl: options.taskUrl,
@@ -355,14 +340,9 @@ async function getLocalDiffForBusinessValidation(
         return gitService.getStagedDiff();
     }
 
-    if (verbose) {
-        cliDebug(
-            chalk.dim(
-                '[verbose] Getting local working tree diff (staged + unstaged)',
-            ),
-        );
-    }
-    return gitService.getWorkingTreeDiff();
+    throw new Error(
+        'No local diff scope provided. Use --staged, --branch, --commit, or [files].',
+    );
 }
 
 function formatOutput(result: ReviewResult, format: OutputFormat): string {

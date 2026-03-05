@@ -9,7 +9,7 @@ This directory contains the agent skills shipped with the Kodus CLI repository.
 - `kodus-review-dev`
     - Run the local Kodus CLI build against a dev API using `scripts/run-local-cli.sh`.
 - `business-rules-validation`
-    - Trigger PR-vs-task validation with `@kody -v business-logic`.
+    - Trigger business rules validation in PR mode or local diff mode with `@kody -v business-logic`.
 - `kodus-pr-suggestions-resolver`
     - Fetch PR suggestions and apply fixes with judgment.
 
