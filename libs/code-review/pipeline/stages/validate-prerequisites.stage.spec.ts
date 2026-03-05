@@ -5,10 +5,8 @@ import { ParametersKey } from '@libs/core/domain/enums/parameters-key.enum';
 import { PARAMETERS_SERVICE_TOKEN } from '@libs/organization/domain/parameters/contracts/parameters.service.contract';
 import {
     ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
-    IOrganizationParametersService,
 } from '@libs/organization/domain/organizationParameters/contracts/organizationParameters.service.contract';
 import {
-    IPullRequestsService,
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@libs/platformData/domain/pullRequests/contracts/pullRequests.service.contracts';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';

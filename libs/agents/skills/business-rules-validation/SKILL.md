@@ -33,7 +33,6 @@ metadata:
                 required-context-fields:
                     - organizationAndTeamData.organizationId
                     - organizationAndTeamData.teamId
-                    - prepareContext.pullRequest.pullRequestNumber
                     - prepareContext.repository.id
             output:
                 required-fields:
@@ -60,6 +59,10 @@ Every validation must be grounded in specific business requirements from the ext
 
 `TASK_QUALITY` is classified by the runtime deterministic stage. Do not reclassify it.
 Apply the task-quality policy exactly as provided in the user prompt.
+
+Mode-specific context notes:
+- Pull-request mode requires `prepareContext.pullRequest.pullRequestNumber` when diff is fetched from PR tools.
+- Local-diff mode works with `prepareContext.prDiff` and does not require pull request number.
 
 ## Grounding Rules (MANDATORY)
 

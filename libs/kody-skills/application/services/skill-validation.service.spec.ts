@@ -1,4 +1,4 @@
-import { validateSkillMdForIngest, SkillValidationResult } from './skill-validation.service';
+import { validateSkillMdForIngest } from './skill-validation.service';
 
 const VALID_SKILL_MD = `---
 name: code-review

@@ -34,6 +34,10 @@ export interface BusinessRulesSignals {
 
 export interface BusinessRulesPrepareContext extends Record<string, unknown> {
     userQuestion?: string;
+    taskId?: string;
+    taskUrl?: string;
+    taskReference?: string;
+    prDiff?: string;
     pullRequestDescription?: string;
     pullRequestNumber?: number;
     headRef?: string;

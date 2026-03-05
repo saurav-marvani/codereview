@@ -118,7 +118,7 @@ export class TeamCliKeyController {
         const keys = await this.teamCliKeyService.findByTeamId(teamId);
 
         // Don't return the actual key hash, only metadata
-        return keys.map((key) => ({
+        return (keys ?? []).map((key) => ({
             uuid: key.uuid,
             name: key.name,
             active: key.active,

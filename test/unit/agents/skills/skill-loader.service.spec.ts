@@ -123,7 +123,6 @@ describe('SkillLoaderService', () => {
                 requiredContextFields: [
                     'organizationAndTeamData.organizationId',
                     'organizationAndTeamData.teamId',
-                    'prepareContext.pullRequest.pullRequestNumber',
                     'prepareContext.repository.id',
                 ],
             },

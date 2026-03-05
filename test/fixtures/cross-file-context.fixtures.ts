@@ -1,7 +1,6 @@
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import {
     CrossFileContextSnippet,
-    CollectCrossFileContextsResult,
 } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import { FileChange } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';

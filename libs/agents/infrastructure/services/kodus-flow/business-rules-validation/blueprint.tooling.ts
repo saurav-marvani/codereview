@@ -236,6 +236,12 @@ export function createBusinessRulesBlueprintTooling(
                         'pullRequestDescription',
                     ),
                     taskContext: readPrepareContextString(ctx, 'taskContext'),
+                    taskId: readPrepareContextString(ctx, 'taskId'),
+                    taskUrl: readPrepareContextString(ctx, 'taskUrl'),
+                    taskReference: readPrepareContextString(
+                        ctx,
+                        'taskReference',
+                    ),
                     userLanguage: ctx.userLanguage,
                     thread: ctx.thread,
                     excludedTools: resolveExcludedTools(capabilityTools),
