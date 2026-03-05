@@ -1,6 +1,6 @@
 import { getTextOrDefault, sanitizePromptText } from './prompt.helpers';
 
-function formatSyncErrors(errors: unknown[] | string | undefined): string {
+export function formatSyncErrors(errors: unknown[] | string | undefined): string {
     if (!errors) {
         return '';
     }
@@ -33,7 +33,7 @@ function formatSyncErrors(errors: unknown[] | string | undefined): string {
     return `### Source: System Messages\n**Reference issues detected:**\n${formatted.join('\n')}`;
 }
 
-function formatReferenceSection(references: unknown[] | undefined): string {
+export function formatReferenceSection(references: unknown[] | undefined): string {
     if (!Array.isArray(references) || !references.length) {
         return '';
     }
@@ -59,7 +59,7 @@ function appendExternalContext(basePrompt: string, sections: string[]): string {
     return `${basePrompt}\n\n## External Context & Injected Knowledge\n\nThe following information is provided to ground your analysis in the broader system reality. Use this as your source of truth.\n\n---\n\n${contextBlocks.join('\n\n---\n\n')}`;
 }
 
-function formatMemoriesSection(
+export function formatMemoriesSection(
     memories?: Array<{ title?: string; rule?: string }>,
 ): string {
     if (!Array.isArray(memories) || !memories.length) {

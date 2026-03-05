@@ -20,8 +20,12 @@ import {
     prompt_codeReviewSafeguard_featureExtraction,
 } from '@libs/common/utils/langchainCommon/prompts/codeReviewSafeguardFeatures';
 import { prompt_codeReviewSafeguard_verification } from '@libs/common/utils/langchainCommon/prompts/codeReviewSafeguardVerification';
-import { triageSuggestion, TriageDecision } from './safeguardTriage.service';
-import { SAFEGUARD_CROSS_FILE_CONTEXT_PREAMBLE } from '@libs/common/utils/langchainCommon/prompts/codeReviewSafeguard';
+import {
+    SAFEGUARD_CROSS_FILE_CONTEXT_PREAMBLE,
+    formatMemoriesSection,
+    formatReferenceSection,
+    formatSyncErrors,
+} from '@libs/common/utils/langchainCommon/prompts/codeReviewSafeguard';
 import { BYOKPromptRunnerService } from '@libs/core/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
@@ -169,6 +173,7 @@ export class SafeguardPipelineService {
                             params.languageResultPrompt,
                             organizationAndTeamData,
                             prNumber,
+                            params.memories,
                         );
 
                         const suggMs = Date.now() - suggStart;
@@ -286,6 +291,9 @@ export class SafeguardPipelineService {
             filePath: file?.filename,
             suggestions,
             crossFileSnippets,
+            memories: params.memories,
+            externalReferences: params.externalReferences,
+            externalReferenceErrors: params.externalReferenceErrors,
         });
 
         const spanName = `${SafeguardPipelineService.name}::${runName}`;
@@ -354,6 +362,7 @@ export class SafeguardPipelineService {
         languageResultPrompt: string,
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
+        memories?: Array<Partial<{ title?: string; rule?: string }>>,
     ): Promise<{ verified: boolean; action: string; evidence: string; turnsUsed: number }> {
         const claimedDefects = STRUCTURAL_DEFECT_FEATURES
             .filter((f) => features[f])
@@ -367,11 +376,20 @@ export class SafeguardPipelineService {
             languageResultPrompt,
         });
 
+        // Build initial user message with optional memory rules context
+        let userMessage = 'Verify the suggestion. Begin by searching for the key symbol or reading the file.';
+        const memoriesBlock = formatMemoriesSection(
+            memories as Array<{ title?: string; rule?: string }>,
+        );
+        if (memoriesBlock) {
+            userMessage += `\n\n${memoriesBlock}\n\nConsider these team rules when evaluating the suggestion — if it contradicts a rule, lean towards discarding.`;
+        }
+
         // Build conversation history for multi-turn agent loop
         // Gemini requires at least one USER message in contents (SYSTEM goes to systemInstruction)
         const messages: Array<{ prompt: string; role: PromptRole }> = [
             { prompt: systemPrompt, role: PromptRole.SYSTEM },
-            { prompt: 'Verify the suggestion. Begin by searching for the key symbol or reading the file.', role: PromptRole.USER },
+            { prompt: userMessage, role: PromptRole.USER },
         ];
 
         const runName = 'safeguardAgentVerification';
@@ -554,6 +572,9 @@ export class SafeguardPipelineService {
         filePath: string;
         suggestions: any[];
         crossFileSnippets?: CrossFileContextSnippet[];
+        memories?: Array<Partial<{ title?: string; rule?: string }>>;
+        externalReferences?: unknown[];
+        externalReferenceErrors?: unknown[] | string;
     }): string {
         let crossFileBlock = '';
         if (context.crossFileSnippets?.length) {
@@ -562,6 +583,25 @@ export class SafeguardPipelineService {
                     `#### ${s.filePath}${s.relatedSymbol ? ` (symbol: ${s.relatedSymbol})` : ''}\n**Rationale:** ${s.rationale}\n\`\`\`\n${s.content}\n\`\`\``,
             );
             crossFileBlock = `\n\n<codebaseContext>\n${SAFEGUARD_CROSS_FILE_CONTEXT_PREAMBLE}\n${snippetLines.join('\n\n')}\n</codebaseContext>`;
+        }
+
+        // Build external context blocks (memories, references, errors)
+        const externalBlocks: string[] = [];
+
+        const memoriesBlock = formatMemoriesSection(
+            context.memories as Array<{ title?: string; rule?: string }>,
+        );
+        if (memoriesBlock) externalBlocks.push(memoriesBlock);
+
+        const referencesBlock = formatReferenceSection(context.externalReferences);
+        if (referencesBlock) externalBlocks.push(referencesBlock);
+
+        const errorsBlock = formatSyncErrors(context.externalReferenceErrors);
+        if (errorsBlock) externalBlocks.push(errorsBlock);
+
+        let externalContextBlock = '';
+        if (externalBlocks.length) {
+            externalContextBlock = `\n\n<externalContext>\n## External Context & Injected Knowledge\n\nThe following information is provided to ground your analysis in the broader system reality. Use this as your source of truth.\n\n---\n\n${externalBlocks.join('\n\n---\n\n')}\n</externalContext>`;
         }
 
         return `
@@ -581,6 +621,6 @@ export class SafeguardPipelineService {
 
 <suggestionsContext>
 ${JSON.stringify(context?.suggestions) || 'No suggestions provided'}
-</suggestionsContext>${crossFileBlock}`;
+</suggestionsContext>${crossFileBlock}${externalContextBlock}`;
     }
 }

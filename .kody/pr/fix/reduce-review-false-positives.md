@@ -1,10 +1,10 @@
 ---
 branch: fix/reduce-review-false-positives
 created: 2026-03-04T19:29:04.892Z
-updated: 2026-03-05T00:44:10.649Z
-last_sha: 116e4babfb2411b1893364b8998760f31ad2bc80
+updated: 2026-03-05T11:40:34.285Z
+last_sha: 5c4a337886201f8458e4d2fddfd4e06cd13f82de
 agent: claude-code
-sessions: 176
+sessions: 190
 ---
 
 # PR Memory: fix/reduce-review-false-positives
@@ -804,4 +804,49 @@ Enquanto isso, se não conseguir achar o dono, uma opção é invalidar por outr
 ### 2026-03-05T00:43:13.383Z | claude-code | post-tool-use-edit
 
 ### 2026-03-05T00:44:10.649Z | claude-code | post-tool-use-edit
+
+### 2026-03-05T00:46:37.846Z | claude-code | stop
+- assistant_message: Merge feito e pushed. 8 conflitos resolvidos, 176 testes passando.
+
+### 2026-03-05T11:28:32.139Z | claude-code | user-prompt-submit
+- prompt: como vc integrou a parte das rules de memoria com o que a gente fez?
+
+### 2026-03-05T11:29:40.051Z | claude-code | stop
+- assistant_message: É o que eu suspeitava. Resumo:
+
+**A main adicionou 3 campos novos** que passam contexto extra pro safeguard:
+- `memories` — kody rules (regras de memória do time)
+- `externalReferences` — referências externas (código de outros arquivos)
+- `externalReferenceErrors` — erros de sync dessas referências
+...
+
+### 2026-03-05T11:34:49.927Z | claude-code | user-prompt-submit
+- prompt: vamos resolver isso?
+
+### 2026-03-05T11:36:01.191Z | claude-code | post-tool-use-edit
+
+### 2026-03-05T11:36:12.197Z | claude-code | post-tool-use-edit
+
+### 2026-03-05T11:36:15.790Z | claude-code | post-tool-use-edit
+
+### 2026-03-05T11:36:19.176Z | claude-code | post-tool-use-edit
+
+### 2026-03-05T11:36:37.717Z | claude-code | post-tool-use-edit
+
+### 2026-03-05T11:36:48.761Z | claude-code | post-tool-use-edit
+
+### 2026-03-05T11:37:04.316Z | claude-code | post-tool-use-edit
+
+### 2026-03-05T11:37:18.511Z | claude-code | post-tool-use-edit
+
+### 2026-03-05T11:37:39.391Z | claude-code | stop
+- assistant_message: **8 suites, 176 testes, todos passando.**
+
+Resumo do que fiz:
+
+1. **Exportei** `formatMemoriesSection`, `formatReferenceSection`, `formatSyncErrors` do `codeReviewSafeguard.ts`
+2. **Feature extraction** — `buildUserPrompt` agora recebe e injeta `memories`, `externalReferences` e `externalReferenceEr...
+
+### 2026-03-05T11:40:34.285Z | claude-code | user-prompt-submit
+- prompt: sim, todos os testes passaram?
 
