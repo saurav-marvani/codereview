@@ -6,6 +6,7 @@ import {
 import { type IPullRequestManagerService } from '@libs/code-review/domain/contracts/PullRequestManagerService.contract';
 import { DocumentationLLMPlannerService } from '@libs/code-review/infrastructure/adapters/services/documentation-llm-planner.service';
 import { DocumentationPackageDiscoveryService } from '@libs/code-review/infrastructure/adapters/services/documentation-package-discovery.service';
+import { DocumentationSearchCacheService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-cache.service';
 import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
 import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
 import { GatherDocumentationContextStage } from '@libs/code-review/pipeline/stages/gather-documentation-context.stage';
@@ -391,6 +392,10 @@ describe('GatherDocumentationContextStage', () => {
 
         const independentSearchService = new DocumentationSearchExaService(
             new ConfigService({ API_EXA_KEY: process.env.API_EXA_KEY }),
+            {
+                get: jest.fn().mockResolvedValue(null),
+                set: jest.fn().mockResolvedValue(undefined),
+            } as unknown as DocumentationSearchCacheService,
         );
 
         const stage = new GatherDocumentationContextStage(

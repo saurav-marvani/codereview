@@ -197,7 +197,6 @@
         "@sentry/node": "^10.42.0",
         "@sentry/opentelemetry": "^10.42.0",
         "@sentry/profiling-node": "^10.42.0",
-        "@upstash/context7-sdk": "^0.3.0",
         "ajv": "^8.18.0",
         "amqp-connection-manager": "^5.0.0",
         "amqplib": "^0.10.9",

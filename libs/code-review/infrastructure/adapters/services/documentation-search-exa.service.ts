@@ -1,4 +1,5 @@
 import { createLogger } from '@kodus/flow';
+import { DocumentationSearchCacheService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-cache.service';
 import {
     DocumentationItem,
     DocumentationQueryPlanByFile,
@@ -7,12 +8,21 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Exa from 'exa-js';
 
+const CACHE_PROVIDER = 'exa';
+
 @Injectable()
 export class DocumentationSearchExaService {
     private readonly logger = createLogger(DocumentationSearchExaService.name);
     private readonly exaClient: Exa | null;
+    private readonly inFlightRequests = new Map<
+        string,
+        Promise<DocumentationItem | null>
+    >();
 
-    constructor(private readonly configService: ConfigService) {
+    constructor(
+        private readonly configService: ConfigService,
+        private readonly documentationSearchCacheService: DocumentationSearchCacheService,
+    ) {
         const apiKey = this.configService.get<string>('API_EXA_KEY');
         this.exaClient = apiKey ? new Exa(apiKey) : null;
     }
@@ -68,8 +78,52 @@ export class DocumentationSearchExaService {
         query: string;
         packageName: string;
     }): Promise<DocumentationItem | null> {
+        const queryNormalized = this.normalizeCacheSegment(task.query);
+        const packageNameNormalized = this.normalizeCacheSegment(
+            task.packageName,
+        );
+        const inFlightKey = this.buildInFlightKey(
+            packageNameNormalized,
+            queryNormalized,
+        );
+
+        const existingInFlight = this.inFlightRequests.get(inFlightKey);
+        if (existingInFlight) {
+            return existingInFlight;
+        }
+
+        const request = this.searchQueryWithCache(
+            task,
+            packageNameNormalized,
+            queryNormalized,
+        ).finally(() => {
+            this.inFlightRequests.delete(inFlightKey);
+        });
+
+        this.inFlightRequests.set(inFlightKey, request);
+        return request;
+    }
+
+    private async searchQueryWithCache(
+        task: {
+            query: string;
+            packageName: string;
+        },
+        packageNameNormalized: string,
+        queryNormalized: string,
+    ): Promise<DocumentationItem | null> {
         if (!this.exaClient) {
             return null;
+        }
+
+        const cached = await this.documentationSearchCacheService.get({
+            provider: CACHE_PROVIDER,
+            packageNameNormalized,
+            queryNormalized,
+        });
+
+        if (cached) {
+            return cached;
         }
 
         try {
@@ -83,7 +137,7 @@ export class DocumentationSearchExaService {
                     'Find relevant documentation from official sources. Focus on practical implementation guidance and API usage relevant to the query. Return concise markdown suitable for LLM prompt context.',
             });
 
-            return {
+            const item: DocumentationItem = {
                 url: response.citations[0]?.url || 'unknown',
                 title: `Documentation for ${task.packageName}`,
                 source: 'exa-search',
@@ -93,6 +147,15 @@ export class DocumentationSearchExaService {
                 ),
                 query: packageScopedQuery,
             };
+
+            await this.documentationSearchCacheService.set({
+                provider: CACHE_PROVIDER,
+                packageNameNormalized,
+                queryNormalized,
+                documentationItem: item,
+            });
+
+            return item;
         } catch (error) {
             this.logger.warn({
                 message: `Exa search failed for query: ${task.query}`,
@@ -160,5 +223,16 @@ export class DocumentationSearchExaService {
         }
 
         return [...byQuery.values()];
+    }
+
+    private buildInFlightKey(
+        packageNameNormalized: string,
+        queryNormalized: string,
+    ): string {
+        return `${CACHE_PROVIDER}:${packageNameNormalized}:${queryNormalized}`;
+    }
+
+    private normalizeCacheSegment(value: string): string {
+        return (value || '').trim().toLowerCase().replace(/\s+/g, ' ');
     }
 }

@@ -25,6 +25,8 @@ import { ValidatePrerequisitesStage } from './stages/validate-prerequisites.stag
 import { AgentsModule } from '@libs/agents/modules/agents.module';
 import { AIEngineModule } from '@libs/ai-engine/modules/ai-engine.module';
 import { AutomationModule } from '@libs/automation/modules/automation.module';
+import { DocumentationSearchCacheRepository } from '@libs/code-review/infrastructure/adapters/repositories/documentation-search-cache.repository';
+import { DocumentationSearchCacheModelInstance } from '@libs/code-review/infrastructure/adapters/repositories/schemas/mongoose/documentationSearchCache.model';
 import { PIPELINE_CHECKS_SERVICE_TOKEN } from '@libs/core/infrastructure/pipeline/interfaces/pipeline-checks-service.interface';
 import { ChecksAdapterFactory } from '@libs/core/infrastructure/pipeline/services/checks-adapter.factory';
 import { NullChecksAdapter } from '@libs/core/infrastructure/pipeline/services/null-checks.adapter';
@@ -46,10 +48,11 @@ import { ParametersModule } from '@libs/organization/modules/parameters.module';
 import { GithubChecksService } from '@libs/platform/infrastructure/adapters/services/github/github-checks.service';
 import { GithubModule } from '@libs/platform/modules/github.module';
 import { PlatformModule } from '@libs/platform/modules/platform.module';
+import { MongooseModule } from '@nestjs/mongoose';
 import { ASTContentFormatterService } from '../infrastructure/adapters/services/astContentFormatter.service';
 import { DocumentationLLMPlannerService } from '../infrastructure/adapters/services/documentation-llm-planner.service';
 import { DocumentationPackageDiscoveryService } from '../infrastructure/adapters/services/documentation-package-discovery.service';
-import { DocumentationSearchContext7Service } from '../infrastructure/adapters/services/documentation-search-context7.service';
+import { DocumentationSearchCacheService } from '../infrastructure/adapters/services/documentation-search-cache.service';
 import { DocumentationSearchExaService } from '../infrastructure/adapters/services/documentation-search-exa.service';
 import { CodeReviewPipelineObserver } from '../infrastructure/observers/code-review-pipeline.observer';
 import { CodebaseModule } from '../modules/codebase.module';
@@ -63,6 +66,7 @@ import { CodeReviewPipelineStrategy } from './strategy/code-review-pipeline.stra
 
 @Module({
     imports: [
+        MongooseModule.forFeature([DocumentationSearchCacheModelInstance]),
         forwardRef(() => CodebaseModule),
         forwardRef(() => FileReviewModule),
         forwardRef(() => PullRequestMessagesModule),
@@ -116,7 +120,8 @@ import { CodeReviewPipelineStrategy } from './strategy/code-review-pipeline.stra
         ValidateSuggestionsStage,
         DocumentationPackageDiscoveryService,
         DocumentationLLMPlannerService,
-        DocumentationSearchContext7Service,
+        DocumentationSearchCacheRepository,
+        DocumentationSearchCacheService,
         DocumentationSearchExaService,
 
         // EE Stages
