@@ -79,7 +79,15 @@ export const createManageBillingLink = async (params: { teamId: string }) => {
 };
 
 export const getUsersWithLicense = async (params: { teamId: string }) => {
-    if (isSelfHosted) return [];
+    if (isSelfHosted) {
+        try {
+            return await authorizedFetch<Array<{ git_id: string }>>(
+                pathToApiUrl("/license/users"),
+            );
+        } catch {
+            return [];
+        }
+    }
 
     const organizationId = await getOrganizationId();
     return billingFetch<Array<{ git_id: string }>>(`users-with-license`, {
@@ -105,6 +113,21 @@ export const assignOrDeassignUserLicense = async (params: {
     };
     userName?: string;
 }) => {
+    if (isSelfHosted) {
+        return authorizedFetch<{
+            successful: any[];
+            failed: any[];
+        }>(pathToApiUrl("/license/assign"), {
+            method: "POST",
+            body: JSON.stringify({
+                teamId: params.teamId,
+                users: [params.user],
+                editedBy: params.currentUser,
+                userName: params.userName,
+            }),
+        });
+    }
+
     const organizationId = await getOrganizationId();
 
     return billingFetch<{
@@ -126,6 +149,27 @@ export const validateOrganizationLicense = async (params: {
     teamId: string;
 }): Promise<OrganizationLicense> => {
     if (isSelfHosted) {
+        // Check if there's a self-hosted license key activated
+        try {
+            const result = await authorizedFetch<{
+                valid: boolean;
+                subscriptionStatus?: string;
+                planType?: string;
+                numberOfLicenses?: number;
+            }>(pathToApiUrl("/license/status"));
+
+            if (result?.valid && result.subscriptionStatus === "licensed-self-hosted") {
+                return {
+                    valid: true,
+                    subscriptionStatus: "licensed-self-hosted",
+                    planType: result.planType || "enterprise",
+                    numberOfLicenses: result.numberOfLicenses || 0,
+                };
+            }
+        } catch {
+            // License endpoint not available or failed, fall back to default
+        }
+
         return { valid: true, subscriptionStatus: "self-hosted" };
     }
 

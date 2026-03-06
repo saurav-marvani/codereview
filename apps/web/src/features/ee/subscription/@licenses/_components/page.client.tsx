@@ -101,7 +101,9 @@ export const LicensesPageClient = ({
 
     return (
         <div className="flex flex-col gap-4">
-            {canEdit && subscription.status === "active" && (
+            {canEdit &&
+                (subscription.status === "active" ||
+                    subscription.status === "licensed-self-hosted") && (
                 <div className="flex flex-col gap-4 rounded-lg border p-4">
                     <div className="flex items-center justify-between">
                         <div className="space-y-0.5">

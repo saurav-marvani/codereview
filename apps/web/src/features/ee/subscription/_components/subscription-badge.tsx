@@ -49,6 +49,14 @@ const SubscriptionPaymentFailed = () => {
     );
 };
 
+const SubscriptionLicensedSelfHosted = () => {
+    return (
+        <Button decorative size="sm" variant="secondary">
+            Enterprise License
+        </Button>
+    );
+};
+
 const components: Partial<
     Record<
         ReturnType<typeof useSubscriptionStatus>["status"],
@@ -61,6 +69,7 @@ const components: Partial<
     "free": SubscriptionUpgrade,
     "canceled": SubscriptionUpgrade,
     "payment-failed": SubscriptionPaymentFailed,
+    "licensed-self-hosted": SubscriptionLicensedSelfHosted,
 };
 
 export const SubscriptionBadge = () => {

@@ -36,11 +36,19 @@ export type OrganizationLicenseSelfHosted = {
     subscriptionStatus: "self-hosted";
 };
 
+export type OrganizationLicenseLicensedSelfHosted = {
+    valid: true;
+    subscriptionStatus: "licensed-self-hosted";
+    planType: string;
+    numberOfLicenses: number;
+};
+
 export type OrganizationLicense =
     | OrganizationLicenseInvalid
     | OrganizationLicenseTrial
     | OrganizationLicenseActive
-    | OrganizationLicenseSelfHosted;
+    | OrganizationLicenseSelfHosted
+    | OrganizationLicenseLicensedSelfHosted;
 
 type PlanOrAddonPricing = {
     amount: number;

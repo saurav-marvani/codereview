@@ -65,6 +65,7 @@ import { RuleLikeController } from './controllers/ruleLike.controller';
 import { SegmentController } from './controllers/segment.controller';
 import { SkillsController } from './controllers/skills.controller';
 import { SSOConfigController } from './controllers/ssoConfig.controller';
+import { LicenseController } from './controllers/license.controller';
 import { TeamCliKeyController } from './controllers/team-cli-key.controller';
 import { TeamController } from './controllers/team.controller';
 import { TeamMembersController } from './controllers/teamMembers.controller';
@@ -148,6 +149,7 @@ import { CronModule } from './cron/cron.module';
         UsersController,
         CliReviewController,
         SSOConfigController,
+        LicenseController,
         MetricsController,
     ],
 })

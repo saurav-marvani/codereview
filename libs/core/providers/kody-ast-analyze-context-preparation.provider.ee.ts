@@ -19,15 +19,10 @@ export const KODY_AST_ANALYZE_CONTEXT_PREPARATION_PROVIDER: Provider = {
         corePreparation: KodyASTAnalyzeContextPreparationService,
         codeAnalysisOrchestrator: CodeAnalysisOrchestrator,
     ): IKodyASTAnalyzeContextPreparationService => {
-        const isCloud = environment.API_CLOUD_MODE;
-
-        if (isCloud) {
-            return new KodyASTAnalyzeContextPreparationServiceEE(
-                codeAnalysisOrchestrator,
-            );
-        }
-
-        return corePreparation;
+        // Always use EE implementation — AST stage self-gates via API_ENABLE_CODE_REVIEW_AST env var
+        return new KodyASTAnalyzeContextPreparationServiceEE(
+            codeAnalysisOrchestrator,
+        );
     },
     inject: [KodyASTAnalyzeContextPreparationService, CodeAnalysisOrchestrator],
 };

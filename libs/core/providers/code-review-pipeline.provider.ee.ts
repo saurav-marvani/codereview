@@ -23,15 +23,13 @@ export const codeReviewPipelineProvider: Provider = {
         eeStrategy: CodeReviewPipelineStrategyEE,
         observer: CodeReviewPipelineObserver,
     ): IPipeline<CodeReviewPipelineContext> => {
-        const isCloud = environment.API_CLOUD_MODE;
-        const strategy = isCloud ? eeStrategy : ceStrategy;
+        // Always use EE strategy — EE-only stages have internal guards
+        // (e.g., KodyFineTuningStage checks config.enabled, CodeAnalysisASTStage checks env var)
+        const strategy = eeStrategy;
 
         logger.log({
-            message: `🔁 Modo de execução: ${isCloud ? 'Cloud (EE)' : 'Self-Hosted (CE)'}`,
+            message: `Pipeline strategy: EE (stages self-gate based on config)`,
             context: 'CodeReviewPipelineProvider',
-            metadata: {
-                mode: isCloud ? 'cloud' : 'selfhosted',
-            },
         });
 
         return {

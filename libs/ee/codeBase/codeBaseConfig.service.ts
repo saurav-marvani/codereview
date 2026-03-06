@@ -59,6 +59,7 @@ import {
 import { AuthMode } from '@libs/platform/domain/platformIntegrations/enums/codeManagement/authMode.enum';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { KodyRulesValidationService } from '../kodyRules/service/kody-rules-validation.service';
+import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 
 const GLOBAL_IGNORE_PATHS_CACHE_KEY = 'global:ignore_paths';
 const GLOBAL_IGNORE_PATHS_CACHE_TTL = 43200000; // 12 hours
@@ -86,6 +87,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         private readonly globalParametersService: IGlobalParametersService,
         private readonly codeManagementService: CodeManagementService,
         private readonly kodyRulesValidationService: KodyRulesValidationService,
+        private readonly permissionValidationService: PermissionValidationService,
         private readonly cacheService: CacheService,
     ) {
         this.DEFAULT_CONFIG = this.getDefaultConfigs();
@@ -131,11 +133,18 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 preliminaryFiles || [],
             );
 
+            const limited =
+                await this.permissionValidationService.shouldLimitResources(
+                    organizationAndTeamData,
+                    CodeBaseConfigService.name,
+                );
+
             const { standardRules, memoryRules } =
                 this.kodyRulesValidationService.filterKodyRules(
                     kodyRulesEntity?.toObject()?.rules,
                     repository.id,
                     mergedConfigs.directoryId,
+                    limited,
                 ) || { standardRules: [], memoryRules: [] };
 
             const globalIgnorePaths = await this.getGlobalIgnorePaths(

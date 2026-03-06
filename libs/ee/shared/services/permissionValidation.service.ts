@@ -433,13 +433,8 @@ export class PermissionValidationService {
         contextName?: string,
     ): Promise<boolean> {
         try {
-            // Development mode não limita recursos
+            // Development mode doesn't limit resources
             if (this.isDevelopment) {
-                return false;
-            }
-
-            // Self-hosted não limita recursos
-            if (!this.isCloud) {
                 return false;
             }
 
@@ -472,6 +467,19 @@ export class PermissionValidationService {
                 return true;
             }
 
+            // Self-hosted with valid license: don't limit
+            if (
+                !this.isCloud &&
+                validation.subscriptionStatus === 'licensed-self-hosted'
+            ) {
+                return false;
+            }
+
+            // Self-hosted without license (CE mode): limit resources
+            if (!this.isCloud) {
+                return true;
+            }
+
             const planType = validation?.planType;
             const limitResources = planType?.includes('free');
 
@@ -486,7 +494,7 @@ export class PermissionValidationService {
                 context: contextName || PermissionValidationService.name,
                 error: error,
             });
-            // Em caso de erro, limitar recursos por segurança
+            // In case of error, limit resources for safety
             return true;
         }
     }

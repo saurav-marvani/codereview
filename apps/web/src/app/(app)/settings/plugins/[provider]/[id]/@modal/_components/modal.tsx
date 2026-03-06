@@ -72,6 +72,13 @@ export const PluginModal = ({
         )
             return { canAddMoreRules: total < 3, total, limit: 3 };
 
+        if (subscription.status === "licensed-self-hosted")
+            return {
+                canAddMoreRules: true,
+                total,
+                limit: Number.POSITIVE_INFINITY,
+            };
+
         return {
             canAddMoreRules: true,
             total,

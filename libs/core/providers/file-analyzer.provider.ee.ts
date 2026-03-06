@@ -20,13 +20,8 @@ export const FILE_REVIEW_CONTEXT_PREPARATION_PROVIDER: Provider = {
         corePreparation: CoreFileReviewContextPreparation,
         aiAnalysisService: IAIAnalysisService,
     ): IFileReviewContextPreparation => {
-        const isCloud = environment.API_CLOUD_MODE;
-
-        if (isCloud) {
-            return new FileReviewContextPreparation(aiAnalysisService);
-        }
-
-        return corePreparation;
+        // Always use EE implementation — self-hosted uses BYOK keys for LLM calls
+        return new FileReviewContextPreparation(aiAnalysisService);
     },
     inject: [
         CoreFileReviewContextPreparation,
