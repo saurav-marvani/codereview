@@ -1,7 +1,7 @@
-import { PromptRunnerService } from '@kodus/kodus-common/llm';
-import { ObservabilityService } from '@/core/log/observability.service';
-import { SafeguardPipelineService } from '@/code-review/infrastructure/adapters/services/safeguardPipeline.service';
 import { DocumentationSearchExaService } from '@/code-review/infrastructure/adapters/services/documentation-search-exa.service';
+import { SafeguardPipelineService } from '@/code-review/infrastructure/adapters/services/safeguardPipeline.service';
+import { ObservabilityService } from '@/core/log/observability.service';
+import { PromptRunnerService } from '@kodus/kodus-common/llm';
 
 describe('SafeguardPipelineService', () => {
     let service: SafeguardPipelineService;

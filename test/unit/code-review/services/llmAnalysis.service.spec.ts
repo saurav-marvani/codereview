@@ -1,9 +1,9 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { LLMAnalysisService } from '@/code-review/infrastructure/adapters/services/llmAnalysis.service';
 import { DocumentationSearchExaService } from '@/code-review/infrastructure/adapters/services/documentation-search-exa.service';
-import { PromptRunnerService } from '@kodus/kodus-common/llm';
-import { ObservabilityService } from '@/core/log/observability.service';
+import { LLMAnalysisService } from '@/code-review/infrastructure/adapters/services/llmAnalysis.service';
 import { ReviewModeResponse } from '@/core/infrastructure/config/types/general/codeReview.type';
+import { ObservabilityService } from '@/core/log/observability.service';
+import { PromptRunnerService } from '@kodus/kodus-common/llm';
+import { Test, TestingModule } from '@nestjs/testing';
 
 // Mock logger to silence logs during tests
 jest.mock('@kodus/flow', () => ({

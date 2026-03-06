@@ -1,12 +1,11 @@
 import { BYOKConfig } from '@kodus/kodus-common/llm';
-import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
 import {
     CrossFileContextSnippet,
     RemoteCommands,
 } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
+import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
-import { Repository } from '@libs/core/infrastructure/config/types/general/codeReview.type';
-import { DocumentationContextItem } from '@libs/core/infrastructure/config/types/general/codeReview.type';
+import { DocumentationContextItem, Repository } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 
 import {
     CodeReviewConfig,
