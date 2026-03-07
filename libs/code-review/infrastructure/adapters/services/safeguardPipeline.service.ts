@@ -14,6 +14,11 @@ import {
     RemoteCommands,
 } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import {
+    CreateSandboxParams,
+    ISandboxProvider,
+    SandboxInstance,
+} from '@libs/code-review/domain/contracts/sandbox.provider';
+import {
     SafeguardFeatureExtractionResult,
     SafeguardFeatureSet,
     STRUCTURAL_DEFECT_FEATURES,
@@ -51,6 +56,7 @@ interface SafeguardPipelineParams {
     memories?: Array<Partial<{ title?: string; rule?: string }>>;
     externalReferences?: unknown[];
     externalReferenceErrors?: unknown[] | string;
+    sandboxCloneParams?: CreateSandboxParams;
 }
 
 const MAX_AGENT_TURNS = 6;
@@ -62,6 +68,7 @@ export class SafeguardPipelineService {
     constructor(
         private readonly promptRunnerService: PromptRunnerService,
         private readonly observability: ObservabilityService,
+        private readonly sandboxProvider?: ISandboxProvider,
     ) {}
 
     async execute(params: SafeguardPipelineParams): Promise<ISafeguardResponse> {
@@ -175,13 +182,64 @@ export class SafeguardPipelineService {
                 let agentDiscarded = 0;
                 let totalTurns = 0;
 
-                for (const { suggestion, features } of toVerify) {
+                let currentRemoteCommands = remoteCommands;
+                let renewedCleanup: (() => Promise<void>) | undefined;
+
+                const canRenew = !!(params.sandboxCloneParams && this.sandboxProvider);
+                this.logger.log({
+                    message: `[SAFEGUARD] PR#${prNumber} ${fileLabel} — Agent verification starting: ${toVerify.length} suggestions to verify, sandbox renewal ${canRenew ? 'available' : 'NOT available'}${!params.sandboxCloneParams ? ' (no sandboxCloneParams)' : ''}${!this.sandboxProvider ? ' (no sandboxProvider)' : ''}`,
+                    context: SafeguardPipelineService.name,
+                });
+
+                // Closure to attempt sandbox renewal; returns true on success
+                const tryRenewSandbox = async (): Promise<boolean> => {
+                    if (!params.sandboxCloneParams || !this.sandboxProvider) {
+                        this.logger.warn({
+                            message: `[SAFEGUARD] PR#${prNumber} ${fileLabel} — Cannot renew sandbox: ${!params.sandboxCloneParams ? 'sandboxCloneParams is missing' : 'sandboxProvider is missing'}`,
+                            context: SafeguardPipelineService.name,
+                        });
+                        return false;
+                    }
+                    let newSandbox: SandboxInstance | undefined;
                     try {
-                        const suggStart = Date.now();
-                        const result = await this.verifyWithAgent(
+                        newSandbox = await this.sandboxProvider.createSandboxWithRepo(params.sandboxCloneParams);
+                        currentRemoteCommands = newSandbox.remoteCommands;
+                        if (renewedCleanup) await renewedCleanup().catch(() => {});
+                        renewedCleanup = newSandbox.cleanup;
+                        this.logger.log({
+                            message: `Sandbox renewed for PR#${prNumber} ${fileLabel}`,
+                            context: SafeguardPipelineService.name,
+                        });
+                        return true;
+                    } catch (renewErr) {
+                        this.logger.warn({
+                            message: `Sandbox renewal failed for PR#${prNumber} ${fileLabel}, stopping agent verification`,
+                            context: SafeguardPipelineService.name,
+                            error: renewErr,
+                        });
+                        // Clean up the new sandbox if it was created but setup failed after
+                        if (newSandbox?.cleanup) {
+                            await newSandbox.cleanup().catch(() => {});
+                        }
+                        return false;
+                    }
+                };
+
+                let stopLoop = false;
+
+                for (const { suggestion, features } of toVerify) {
+                    if (stopLoop) break;
+
+                    const suggStart = Date.now();
+                    let result: { action: string; evidence: string; turnsUsed: number } | undefined;
+                    let sandboxError = false;
+
+                    // First attempt
+                    try {
+                        result = await this.verifyWithAgent(
                             suggestion,
                             features,
-                            remoteCommands,
+                            currentRemoteCommands,
                             agentPromptRunner,
                             params.languageResultPrompt,
                             organizationAndTeamData,
@@ -189,33 +247,88 @@ export class SafeguardPipelineService {
                             params.memories,
                         );
 
-                        const suggMs = Date.now() - suggStart;
-
-                        if (result.action === 'no_changes') {
-                            if (features.improvedCode_is_correct === false) {
-                                kept.push({ ...suggestion, improvedCode: null });
-                            } else {
-                                kept.push(suggestion);
-                            }
-                            agentKept++;
-                        } else {
+                        if (result.action !== 'no_changes' && this.isSandboxRelatedEvidence(result.evidence)) {
+                            sandboxError = true;
+                        }
+                    } catch (error) {
+                        sandboxError = this.isSandboxDeadError(error);
+                        if (!sandboxError) {
+                            // Non-sandbox error — discard and move on
+                            this.logger.warn({
+                                message: `Agent verification failed for suggestion ${suggestion.id}, discarding (safe default)`,
+                                context: SafeguardPipelineService.name,
+                                error,
+                            });
                             agentDiscarded++;
+                            continue;
+                        }
+                    }
+
+                    // If sandbox died, renew and retry this same suggestion
+                    if (sandboxError) {
+                        this.logger.warn({
+                            message: `[SAFEGUARD] Sandbox dead detected for suggestion ${suggestion.id} in PR#${prNumber} ${fileLabel}, attempting renewal | First attempt evidence: ${(result?.evidence || 'N/A (exception)').substring(0, 200)}`,
+                            context: SafeguardPipelineService.name,
+                        });
+
+                        if (!await tryRenewSandbox()) {
+                            agentDiscarded++;
+                            stopLoop = true;
+                            continue;
                         }
 
-                        this.logger.log({
-                            message: `[TIMING] PR#${prNumber} ${fileLabel} — Agent verified suggestion ${suggestion.id}: ${result.action} in ${(suggMs / 1000).toFixed(1)}s (${result.turnsUsed}/${MAX_AGENT_TURNS} turns) | Evidence: ${(result.evidence || '').substring(0, 120)}`,
-                            context: SafeguardPipelineService.name,
-                        });
-                        totalTurns += result.turnsUsed;
-                    } catch (error) {
-                        this.logger.warn({
-                            message: `Agent verification failed for suggestion ${suggestion.id}, discarding (safe default)`,
-                            context: SafeguardPipelineService.name,
-                            error,
-                        });
-                        agentDiscarded++;
-                        // Safe default: discard on agent failure
+                        // Retry with the renewed sandbox
+                        try {
+                            result = await this.verifyWithAgent(
+                                suggestion,
+                                features,
+                                currentRemoteCommands,
+                                agentPromptRunner,
+                                params.languageResultPrompt,
+                                organizationAndTeamData,
+                                prNumber,
+                                params.memories,
+                            );
+                        } catch (retryError) {
+                            this.logger.warn({
+                                message: `Agent verification retry failed for suggestion ${suggestion.id} after sandbox renewal, discarding`,
+                                context: SafeguardPipelineService.name,
+                                error: retryError,
+                            });
+                            agentDiscarded++;
+                            // If retry also fails with sandbox error, stop entirely
+                            if (this.isSandboxDeadError(retryError)) {
+                                stopLoop = true;
+                            }
+                            continue;
+                        }
                     }
+
+                    // Process result
+                    const suggMs = Date.now() - suggStart;
+                    const wasRetry = sandboxError; // sandboxError means this result came from a retry
+
+                    if (result.action === 'no_changes') {
+                        if (features.improvedCode_is_correct === false) {
+                            kept.push({ ...suggestion, improvedCode: null });
+                        } else {
+                            kept.push(suggestion);
+                        }
+                        agentKept++;
+                    } else {
+                        agentDiscarded++;
+                    }
+
+                    this.logger.log({
+                        message: `[TIMING] PR#${prNumber} ${fileLabel} — Agent verified suggestion ${suggestion.id}: ${result.action}${wasRetry ? ' (after sandbox renewal)' : ''} in ${(suggMs / 1000).toFixed(1)}s (${result.turnsUsed}/${MAX_AGENT_TURNS} turns) | Evidence: ${(result.evidence || '').substring(0, 120)}`,
+                        context: SafeguardPipelineService.name,
+                    });
+                    totalTurns += result.turnsUsed;
+                }
+
+                // Cleanup renewed sandbox
+                if (renewedCleanup) {
+                    await renewedCleanup().catch(() => {});
                 }
 
                 const agentMs = Date.now() - agentStart;
@@ -642,6 +755,11 @@ Evidence field in ${params.languageResultPrompt}.`;
                 toolResult = `Tool error: ${toolError instanceof Error ? toolError.message : String(toolError)}`;
             }
 
+            this.logger.log({
+                message: `[AGENT-TOOL] PR#${prNumber} ${suggestion.id} turn=${turn} tool=${parsed.tool} path=${parsed.path || parsed.pattern || ''} resultLength=${toolResult.length}${toolResult.startsWith('Tool error') ? ` error=${toolResult.substring(0, 150)}` : ''}`,
+                context: SafeguardPipelineService.name,
+            });
+
             messages.push({ prompt: JSON.stringify(parsed), role: PromptRole.AI });
 
             const remainingTurns = MAX_AGENT_TURNS - turn - 1;
@@ -785,5 +903,23 @@ Evidence field in ${params.languageResultPrompt}.`;
 <suggestionsContext>
 ${JSON.stringify(context?.suggestions) || 'No suggestions provided'}
 </suggestionsContext>${crossFileBlock}${externalContextBlock}`;
+    }
+
+    /**
+     * Detect if an error indicates the sandbox is no longer running.
+     */
+    private isSandboxDeadError(error: unknown): boolean {
+        const msg = error instanceof Error ? error.message : String(error);
+        return /sandbox/i.test(msg) || msg.includes('ECONNREFUSED') || msg.includes('not running');
+    }
+
+    /**
+     * Detect if the agent's discard evidence suggests the sandbox was dead
+     * (e.g. all tool calls returned "Sandbox is probably not running").
+     */
+    private isSandboxRelatedEvidence(evidence?: string): boolean {
+        if (!evidence) return false;
+        const lower = evidence.toLowerCase();
+        return lower.includes('sandbox') || lower.includes('not running') || lower.includes('econnrefused');
     }
 }

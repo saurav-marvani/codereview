@@ -578,7 +578,10 @@ export class ValidatePrerequisitesStage extends BasePipelineStage<CodeReviewPipe
             };
         }
 
-        if (pullRequest.state === 'closed' || pullRequest.state === 'merged') {
+        if (
+            (pullRequest.state === 'closed' || pullRequest.state === 'merged') &&
+            context.origin !== 'command'
+        ) {
             return {
                 canProceed: false,
                 details: {

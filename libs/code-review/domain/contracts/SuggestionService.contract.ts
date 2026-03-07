@@ -4,6 +4,7 @@ import {
     CrossFileContextSnippet,
     RemoteCommands,
 } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
+import { CreateSandboxParams } from '@libs/code-review/domain/contracts/sandbox.provider';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { Repository } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 
@@ -82,6 +83,7 @@ export interface ISuggestionService {
         memories?: Array<Partial<IKodyRule>>,
         externalReferences?: unknown[],
         externalReferenceErrors?: unknown[] | string,
+        sandboxCloneParams?: CreateSandboxParams,
     ): Promise<any>;
 
     /**

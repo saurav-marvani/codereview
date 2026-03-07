@@ -145,6 +145,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 // Release data no longer needed by subsequent stages
                 draft.crossFileContexts = undefined;
                 draft.sandboxHandle = undefined;
+                draft.sandboxCloneParams = undefined;
 
                 for (const file of draft.changedFiles) {
                     delete file.patchWithLinesStr;
@@ -1269,6 +1270,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 context?.codeReviewConfig?.kodyMemoryRules,
                 context?.externalPromptContext?.generation?.main?.references,
                 context?.externalPromptContext?.generation?.main?.error,
+                context?.sandboxCloneParams,
             );
 
         const safeguardLLMProvider =
@@ -1333,6 +1335,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             ),
             crossFileSnippets: context.crossFileContexts?.contexts,
             remoteCommands: context.sandboxHandle?.remoteCommands,
+            sandboxCloneParams: context.sandboxCloneParams,
         };
     }
 

@@ -3,7 +3,7 @@ import { IExternalPromptContext } from '@libs/ai-engine/domain/prompt/interfaces
 import { ContextAugmentationsMap } from '@libs/ai-engine/infrastructure/adapters/services/context/interfaces/code-review-context-pack.interface';
 import { AutomationExecutionEntity } from '@libs/automation/domain/automationExecution/entities/automation-execution.entity';
 import { CollectCrossFileContextsResult } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
-import { SandboxInstance } from '@libs/code-review/domain/contracts/sandbox.provider';
+import { CreateSandboxParams, SandboxInstance } from '@libs/code-review/domain/contracts/sandbox.provider';
 import { IPullRequestMessages } from '@libs/code-review/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import { PlatformType } from '@libs/core/domain/enums';
 import {
@@ -164,6 +164,9 @@ export interface CodeReviewPipelineContext extends PipelineContext {
 
     /** Sandbox handle kept alive for safeguard agent verification */
     sandboxHandle?: SandboxInstance;
+
+    /** Parameters used to create the sandbox — kept for renewal if it expires */
+    sandboxCloneParams?: CreateSandboxParams;
 
     correlationId?: string;
 }

@@ -3,6 +3,7 @@ import { LLMAnalysisService } from '@/code-review/infrastructure/adapters/servic
 import { PromptRunnerService } from '@kodus/kodus-common/llm';
 import { ObservabilityService } from '@/core/log/observability.service';
 import { ReviewModeResponse } from '@/core/infrastructure/config/types/general/codeReview.type';
+import { SANDBOX_PROVIDER_TOKEN } from '@libs/code-review/domain/contracts/sandbox.provider';
 
 // Mock logger to silence logs during tests
 jest.mock('@kodus/flow', () => ({
@@ -56,6 +57,13 @@ describe('LLMAnalysisService', () => {
                 {
                     provide: ObservabilityService,
                     useValue: mockObservabilityService,
+                },
+                {
+                    provide: SANDBOX_PROVIDER_TOKEN,
+                    useValue: {
+                        isAvailable: jest.fn().mockReturnValue(false),
+                        createSandboxWithRepo: jest.fn(),
+                    },
                 },
             ],
         }).compile();

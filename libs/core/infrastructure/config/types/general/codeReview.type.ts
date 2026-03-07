@@ -33,6 +33,7 @@ import {
     CrossFileContextSnippet,
     RemoteCommands,
 } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
+import { CreateSandboxParams } from '@libs/code-review/domain/contracts/sandbox.provider';
 import { IClusterizedSuggestion } from '@libs/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
 import { IKodyRule } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import { OrganizationAndTeamData } from './organizationAndTeamData';
@@ -137,6 +138,8 @@ export type AnalysisContext<TPullRequest = any> = {
     crossFileSnippets?: CrossFileContextSnippet[];
     /** Remote commands for safeguard agent verification (from E2B sandbox) */
     remoteCommands?: RemoteCommands;
+    /** Parameters used to create the sandbox — kept for renewal if it expires */
+    sandboxCloneParams?: CreateSandboxParams;
 };
 
 export type ASTAnalysisResult = {

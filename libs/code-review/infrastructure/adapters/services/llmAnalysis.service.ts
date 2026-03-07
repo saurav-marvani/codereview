@@ -6,7 +6,7 @@ import {
     PromptRole,
     PromptRunnerService,
 } from '@kodus/kodus-common/llm';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
 import {
@@ -21,10 +21,13 @@ import {
     RemoteCommands,
 } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import {
-    prompt_codeReviewSafeguard_system,
+    CreateSandboxParams,
+    ISandboxProvider,
+    SANDBOX_PROVIDER_TOKEN,
+} from '@libs/code-review/domain/contracts/sandbox.provider';
+import {
     prompt_validateImplementedSuggestions,
 } from '@libs/common/utils/langchainCommon/prompts';
-import { SAFEGUARD_CROSS_FILE_CONTEXT_PREAMBLE } from '@libs/common/utils/langchainCommon/prompts/codeReviewSafeguard';
 import {
     prompt_codereview_system_gemini,
     prompt_codereview_system_gemini_v2,
@@ -58,11 +61,14 @@ export class LLMAnalysisService implements IAIAnalysisService {
     constructor(
         private readonly promptRunnerService: PromptRunnerService,
         private readonly observability: ObservabilityService,
+        @Inject(SANDBOX_PROVIDER_TOKEN)
+        private readonly sandboxProvider: ISandboxProvider,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor();
         this.safeguardPipeline = new SafeguardPipelineService(
             promptRunnerService,
             observability,
+            sandboxProvider,
         );
     }
 
@@ -583,6 +589,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
         memories?: Array<Partial<IKodyRule>>,
         externalReferences?: unknown[],
         externalReferenceErrors?: unknown[] | string,
+        sandboxCloneParams?: CreateSandboxParams,
     ): Promise<ISafeguardResponse> {
         suggestions?.forEach((suggestion) => {
             if (
@@ -612,6 +619,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
                 memories,
                 externalReferences,
                 externalReferenceErrors,
+                sandboxCloneParams,
             });
         } catch (error) {
             this.logger.error({

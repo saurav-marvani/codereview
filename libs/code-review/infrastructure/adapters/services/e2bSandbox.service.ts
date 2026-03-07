@@ -11,7 +11,7 @@ import {
 } from '@libs/code-review/domain/contracts/sandbox.provider';
 import { RemoteCommands } from './collectCrossFileContexts.service';
 
-const SANDBOX_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const SANDBOX_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const REPO_DIR = '/home/user/repo';
 
 @Injectable()
@@ -296,10 +296,16 @@ export class E2BSandboxService implements ISandboxProvider {
             ): Promise<string> => {
                 const fullPath = this.resolvePath(path);
                 const escapedPath = fullPath.replace(/'/g, "'\\''");
-                const result = await sandbox.commands.run(
-                    `sed -n '${start},${end}p' '${escapedPath}'`,
-                    { timeoutMs: 10_000 },
-                );
+                // When start=0 and end=0, read the entire file (cat).
+                // GNU sed rejects address 0 so we must avoid `sed -n '0,0p'`.
+                const cmd =
+                    start === 0 && end === 0
+                        ? `cat '${escapedPath}'`
+                        // sed is 1-indexed; a start address of 0 is invalid in GNU sed.
+                        : `sed -n '${start < 1 ? 1 : start},${end}p' '${escapedPath}'`;
+                const result = await sandbox.commands.run(cmd, {
+                    timeoutMs: 10_000,
+                });
                 return result.stdout;
             },
 

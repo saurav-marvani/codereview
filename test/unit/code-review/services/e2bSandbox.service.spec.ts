@@ -192,7 +192,7 @@ describe('E2BSandboxService', () => {
             await service.createSandboxWithRepo(defaultParams);
 
             expect(Sandbox.create).toHaveBeenCalledWith({
-                timeoutMs: 5 * 60 * 1000,
+                timeoutMs: 10 * 60 * 1000,
                 apiKey: 'my-e2b-key',
             });
         });
@@ -257,7 +257,7 @@ describe('E2BSandboxService', () => {
             await service.createSandboxWithRepo(defaultParams);
 
             expect(Sandbox.create).toHaveBeenCalledWith('kodus-sandbox', {
-                timeoutMs: 5 * 60 * 1000,
+                timeoutMs: 10 * 60 * 1000,
                 apiKey: 'key',
             });
 
@@ -305,11 +305,11 @@ describe('E2BSandboxService', () => {
             // Should have tried template first, then fallback
             expect(Sandbox.create).toHaveBeenCalledTimes(2);
             expect(Sandbox.create).toHaveBeenNthCalledWith(1, 'bad-template', {
-                timeoutMs: 5 * 60 * 1000,
+                timeoutMs: 10 * 60 * 1000,
                 apiKey: 'key',
             });
             expect(Sandbox.create).toHaveBeenNthCalledWith(2, {
-                timeoutMs: 5 * 60 * 1000,
+                timeoutMs: 10 * 60 * 1000,
                 apiKey: 'key',
             });
 

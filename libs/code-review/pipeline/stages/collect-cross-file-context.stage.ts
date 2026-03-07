@@ -219,6 +219,14 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
                     remoteCommands: sandbox.remoteCommands,
                     cleanup: sandbox.cleanup,
                 };
+                // Save clone params so safeguard can renew sandbox if it expires
+                draft.sandboxCloneParams = {
+                    cloneUrl: cloneInfo.url,
+                    authToken: cloneInfo.authToken,
+                    branch: cloneInfo.branch,
+                    prNumber: cloneInfo.prNumber,
+                    platform: cloneInfo.platform,
+                };
             });
         } catch (error) {
             // Non-fatal: log error and return context unchanged
