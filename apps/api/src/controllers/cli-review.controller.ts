@@ -1,4 +1,5 @@
 import { ExecuteCliReviewUseCase } from '@libs/cli-review/application/use-cases/execute-cli-review.use-case';
+import { IngestSessionEventUseCase } from '@libs/cli-review/application/use-cases/ingest-session-event.use-case';
 import { SubmitCliSessionCaptureUseCase } from '@libs/cli-review/application/use-cases/submit-cli-session-capture.use-case';
 import { AuthenticatedRateLimiterService } from '@libs/cli-review/infrastructure/services/authenticated-rate-limiter.service';
 import { TrialRateLimiterService } from '@libs/cli-review/infrastructure/services/trial-rate-limiter.service';
@@ -11,6 +12,7 @@ import {
     TEAM_SERVICE_TOKEN,
 } from '@libs/organization/domain/team/contracts/team.service.contract';
 import {
+    BadRequestException,
     Body,
     Controller,
     ForbiddenException,
@@ -21,9 +23,11 @@ import {
     Inject,
     Post,
     Query,
+    Req,
     Res,
     UnauthorizedException,
 } from '@nestjs/common';
+import { validate } from 'class-validator';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { JWT } from '@libs/core/infrastructure/config/types/jwt/jwt';
@@ -57,6 +61,7 @@ import {
 } from '../dtos/cli-review.dto';
 import { CliSessionCaptureRequestDto } from '../dtos/cli-session-capture.dto';
 import { CliSessionCaptureResponseDto } from '../dtos/cli-session-capture.response.dto';
+import { SessionEventRequestDto } from '../dtos/session-event.dto';
 import {
     CliBusinessValidationResponseDto,
     CliReviewRateLimitErrorDto,
@@ -77,6 +82,11 @@ export class CliReviewController {
     private readonly jwtConfig: JWT;
 
     constructor(
+        private readonly executeCliReviewUseCase: ExecuteCliReviewUseCase,
+        private readonly ingestSessionEventUseCase: IngestSessionEventUseCase,
+        private readonly submitCliSessionCaptureUseCase: SubmitCliSessionCaptureUseCase,
+        private readonly trialRateLimiter: TrialRateLimiterService,
+        private readonly authenticatedRateLimiter: AuthenticatedRateLimiterService,
         @Inject(TEAM_CLI_KEY_SERVICE_TOKEN)
         private readonly teamCliKeyService: ITeamCliKeyService,
         @Inject(TEAM_SERVICE_TOKEN)
@@ -86,10 +96,6 @@ export class CliReviewController {
         @Inject(CLI_DEVICE_SERVICE_TOKEN)
         private readonly cliDeviceService: ICliDeviceService,
         private readonly triggerBusinessValidationUseCase: TriggerBusinessValidationUseCase,
-        private readonly executeCliReviewUseCase: ExecuteCliReviewUseCase,
-        private readonly submitCliSessionCaptureUseCase: SubmitCliSessionCaptureUseCase,
-        private readonly trialRateLimiter: TrialRateLimiterService,
-        private readonly authenticatedRateLimiter: AuthenticatedRateLimiterService,
         private readonly jwtService: JwtService,
         private readonly configService: ConfigService,
     ) {
@@ -841,6 +847,98 @@ export class CliReviewController {
         }
 
         return result;
+    }
+
+    /**
+     * Ingest a session lifecycle event from the CLI
+     */
+    @Post('sessions/events')
+    @ApiOperation({
+        summary: 'Ingest CLI session event',
+        description:
+            'Receives session lifecycle events (session_start, turn_start, turn_end, subagent_start, subagent_end, session_end) from the CLI agent.',
+    })
+    @ApiHeader({
+        name: 'authorization',
+        required: false,
+        description: 'Bearer token (JWT or kodus_* team key)',
+    })
+    @ApiHeader({
+        name: 'x-team-key',
+        required: false,
+        description: 'Team CLI key (alternative to Authorization: Bearer)',
+    })
+    @ApiCreatedResponse({
+        description: 'Event accepted',
+        schema: {
+            type: 'object',
+            properties: {
+                accepted: { type: 'boolean', example: true },
+            },
+        },
+    })
+    @ApiUnauthorizedResponse({
+        description: 'Invalid or missing authentication',
+        type: ApiErrorDto,
+    })
+    async ingestSessionEvent(
+        @Req() req: { body: Record<string, unknown> },
+        @Headers('x-team-key') teamKey?: string,
+        @Headers('authorization') authHeader?: string,
+        @Query('teamId') queryTeamId?: string,
+    ) {
+        const auth = await this.validateKeyInternal(
+            teamKey,
+            authHeader,
+            queryTeamId,
+        );
+
+        if (!auth.valid || !auth.organizationId || !auth.teamId) {
+            throw new UnauthorizedException(
+                auth.error ||
+                    'Authentication required. Provide a team API key via X-Team-Key header, or a JWT via Authorization: Bearer header.',
+            );
+        }
+
+        const rateLimitResult =
+            await this.authenticatedRateLimiter.checkRateLimit(auth.teamId);
+
+        if (!rateLimitResult.allowed) {
+            throw new HttpException(
+                {
+                    message:
+                        'Rate limit exceeded for this team. Please try again later.',
+                    remaining: rateLimitResult.remaining,
+                    resetAt: rateLimitResult.resetAt?.toISOString(),
+                },
+                HttpStatus.TOO_MANY_REQUESTS,
+            );
+        }
+
+        const body = req.body;
+        const dto = new SessionEventRequestDto();
+        Object.assign(dto, body);
+        const errors = await validate(dto);
+        if (errors.length > 0) {
+            const messages = errors.flatMap(e => Object.values(e.constraints || {}));
+            throw new BadRequestException(messages);
+        }
+
+        const { sessionId, type, branch, timestamp, ...rest } = body as any;
+
+        return this.ingestSessionEventUseCase.execute({
+            organizationAndTeamData: {
+                organizationId: auth.organizationId,
+                teamId: auth.teamId,
+            },
+            event: {
+                sessionId,
+                type,
+                branch,
+                timestamp,
+                ...rest,
+            },
+        });
     }
 
     /**

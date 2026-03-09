@@ -12,7 +12,8 @@ import {
     CliSessionClassifiedDecision,
     CliSessionDecisionType,
 } from '@libs/cli-review/domain/types/cli-session-capture.types';
-import { CliSessionCaptureRepository } from '@libs/cli-review/infrastructure/repositories/cli-session-capture.repository';
+import { SessionEventRepository } from '@libs/cli-review/infrastructure/repositories/session-event.repository';
+import { SessionEventModel } from '@libs/cli-review/infrastructure/repositories/schemas/session-event.model';
 
 const LLMDecisionSchema = z.object({
     type: z.enum([
@@ -33,121 +34,207 @@ const LLMDecisionExtractionSchema = z.object({
     decisions: z.array(LLMDecisionSchema).max(12),
 });
 
+interface AggregatedSession {
+    agentType?: string;
+    gitRemote?: string;
+    prompts: string[];
+    toolCalls: string[];
+    filesModified: string[];
+    filesRead: string[];
+    commands: string[];
+    subagents: Array<{ type?: string; task?: string }>;
+}
+
 @Injectable()
-export class ClassifyCliSessionCaptureUseCase {
-    private readonly logger = createLogger(
-        ClassifyCliSessionCaptureUseCase.name,
-    );
+export class ClassifySessionUseCase {
+    private readonly logger = createLogger(ClassifySessionUseCase.name);
 
     constructor(
-        private readonly cliSessionCaptureRepository: CliSessionCaptureRepository,
+        private readonly sessionEventRepository: SessionEventRepository,
         private readonly promptRunnerService: PromptRunnerService,
     ) {}
 
-    async execute(captureId: string): Promise<void> {
-        const capture =
-            await this.cliSessionCaptureRepository.findByCaptureId(captureId);
+    async execute(sessionEndEventUuid: string): Promise<void> {
+        const sessionEndEvent =
+            await this.sessionEventRepository.findByUuid(sessionEndEventUuid);
 
-        if (!capture) {
+        if (!sessionEndEvent) {
             this.logger.warn({
-                message: 'Capture not found for classification',
-                context: ClassifyCliSessionCaptureUseCase.name,
-                metadata: { captureId },
+                message: 'Session end event not found for classification',
+                context: ClassifySessionUseCase.name,
+                metadata: { sessionEndEventUuid },
             });
             return;
         }
 
-        if (capture.event !== 'stop') {
-            await this.cliSessionCaptureRepository.markSkipped(
-                captureId,
-                `Unsupported event: ${capture.event}`,
+        if (sessionEndEvent.type !== 'session_end') {
+            await this.sessionEventRepository.markClassificationSkipped(
+                sessionEndEventUuid,
+                `Unsupported event type: ${sessionEndEvent.type}`,
             );
             return;
         }
 
-        const textParts = [
-            capture.summary || '',
-            capture.signals?.prompt || '',
-            capture.signals?.assistantMessage || '',
-        ]
-            .map((part) => part.trim())
-            .filter(Boolean);
+        const allEvents = await this.sessionEventRepository.findBySessionId(
+            sessionEndEvent.sessionId,
+            sessionEndEvent.organizationId,
+        );
 
-        if (textParts.length === 0) {
-            await this.cliSessionCaptureRepository.markSkipped(
-                captureId,
+        const aggregated = this.aggregateEvents(allEvents);
+
+        if (!this.hasUsefulContent(aggregated)) {
+            await this.sessionEventRepository.markClassificationSkipped(
+                sessionEndEventUuid,
                 'No textual context for classification',
             );
             return;
         }
 
-        await this.cliSessionCaptureRepository.markProcessing(captureId);
+        await this.sessionEventRepository.markClassificationProcessing(
+            sessionEndEventUuid,
+        );
 
         try {
-            const decisions = await this.extractWithLLM(capture);
+            const decisions = await this.extractWithLLM(aggregated);
             if (decisions.length > 0) {
-                await this.cliSessionCaptureRepository.markCompleted(
-                    captureId,
+                await this.sessionEventRepository.markClassificationCompleted(
+                    sessionEndEventUuid,
                     decisions,
                     'llm',
                 );
                 return;
             }
 
-            const fallback = this.extractWithHeuristics(capture);
-            await this.cliSessionCaptureRepository.markCompleted(
-                captureId,
+            const fallback = this.extractWithHeuristics(aggregated);
+            await this.sessionEventRepository.markClassificationCompleted(
+                sessionEndEventUuid,
                 fallback,
                 fallback.length > 0 ? 'heuristic' : 'empty',
             );
         } catch (error) {
             this.logger.warn({
                 message:
-                    'LLM classification failed for CLI session capture, using fallback',
-                context: ClassifyCliSessionCaptureUseCase.name,
+                    'LLM classification failed for session, using fallback',
+                context: ClassifySessionUseCase.name,
                 metadata: {
-                    captureId,
+                    sessionEndEventUuid,
                     error: this.safeErrorMessage(error),
                 },
             });
 
             try {
-                const fallback = this.extractWithHeuristics(capture);
-                await this.cliSessionCaptureRepository.markCompleted(
-                    captureId,
+                const fallback = this.extractWithHeuristics(aggregated);
+                await this.sessionEventRepository.markClassificationCompleted(
+                    sessionEndEventUuid,
                     fallback,
                     fallback.length > 0 ? 'heuristic-fallback' : 'empty',
                 );
             } catch (fallbackError) {
-                await this.cliSessionCaptureRepository.markFailed(
-                    captureId,
+                await this.sessionEventRepository.markClassificationFailed(
+                    sessionEndEventUuid,
                     this.safeErrorMessage(fallbackError),
                 );
             }
         }
     }
 
-    private async extractWithLLM(capture: {
-        summary?: string;
-        signals?: {
-            prompt?: string;
-            assistantMessage?: string;
-            modifiedFiles?: string[];
-            toolUses?: Array<{
-                tool: string;
-                filePath?: string;
-                summary?: string;
-            }>;
+    private aggregateEvents(events: SessionEventModel[]): AggregatedSession {
+        const aggregated: AggregatedSession = {
+            prompts: [],
+            toolCalls: [],
+            filesModified: [],
+            filesRead: [],
+            commands: [],
+            subagents: [],
         };
-    }): Promise<CliSessionClassifiedDecision[]> {
+
+        for (const event of events) {
+            const p = event.payload || {};
+
+            switch (event.type) {
+                case 'session_start':
+                    aggregated.agentType = p.agentType as string | undefined;
+                    aggregated.gitRemote = p.gitRemote as string | undefined;
+                    break;
+
+                case 'turn_start':
+                    if (typeof p.prompt === 'string' && p.prompt.trim()) {
+                        aggregated.prompts.push(p.prompt as string);
+                    }
+                    break;
+
+                case 'turn_end':
+                    if (Array.isArray(p.toolCalls)) {
+                        for (const tc of p.toolCalls) {
+                            if (typeof tc === 'string') {
+                                aggregated.toolCalls.push(tc);
+                            } else if (tc?.toolName || tc?.tool) {
+                                const name = tc.toolName ?? tc.tool;
+                                aggregated.toolCalls.push(
+                                    tc.summary
+                                        ? `${name}: ${tc.summary}`
+                                        : name,
+                                );
+                            }
+                        }
+                    }
+                    if (Array.isArray(p.filesModified)) {
+                        for (const fm of p.filesModified) {
+                            if (typeof fm === 'string') {
+                                aggregated.filesModified.push(fm);
+                            } else if (fm?.path) {
+                                aggregated.filesModified.push(fm.path);
+                            }
+                        }
+                    }
+                    if (Array.isArray(p.filesRead)) {
+                        aggregated.filesRead.push(
+                            ...(p.filesRead as string[]),
+                        );
+                    }
+                    if (Array.isArray(p.commands)) {
+                        aggregated.commands.push(
+                            ...(p.commands as string[]),
+                        );
+                    }
+                    break;
+
+                case 'subagent_start':
+                    aggregated.subagents.push({
+                        type: p.subagentType as string | undefined,
+                        task: p.taskDescription as string | undefined,
+                    });
+                    break;
+            }
+        }
+
+        // Deduplicate file lists
+        aggregated.filesModified = [...new Set(aggregated.filesModified)];
+        aggregated.filesRead = [...new Set(aggregated.filesRead)];
+
+        return aggregated;
+    }
+
+    private hasUsefulContent(aggregated: AggregatedSession): boolean {
+        return (
+            aggregated.prompts.length > 0 ||
+            aggregated.toolCalls.length > 0 ||
+            aggregated.filesModified.length > 0 ||
+            aggregated.subagents.length > 0
+        );
+    }
+
+    private async extractWithLLM(
+        aggregated: AggregatedSession,
+    ): Promise<CliSessionClassifiedDecision[]> {
         const promptRunner = new BYOKPromptRunnerService(
             this.promptRunnerService,
             LLMModelProvider.CEREBRAS_GLM_47,
             LLMModelProvider.GEMINI_3_FLASH_PREVIEW,
         );
 
-        const prompt = [
-            'You are classifying coding session captures into reusable decisions.',
+        const systemPrompt = [
+            'You are classifying a complete coding session into reusable decisions.',
             '',
             'Return ONLY JSON with shape:',
             '{ "decisions": [ { "type": "...", "decision": "...", "rationale": "...", "confidence": 0.0, "evidence": ["..."] } ] }',
@@ -164,15 +251,19 @@ export class ClassifyCliSessionCaptureUseCase {
             '- Extract only concrete choices, not generic statements.',
             '- Keep each "decision" concise and self-contained.',
             '- confidence must be between 0 and 1.',
+            '- Consider the full session context: user prompts, tool calls, modified files, and subagents.',
             '- If nothing useful exists, return { "decisions": [] }.',
         ].join('\n');
 
         const userPayload = {
-            summary: capture.summary || '',
-            prompt: capture.signals?.prompt || '',
-            assistantMessage: capture.signals?.assistantMessage || '',
-            modifiedFiles: capture.signals?.modifiedFiles || [],
-            toolUses: capture.signals?.toolUses || [],
+            agentType: aggregated.agentType || '',
+            gitRemote: aggregated.gitRemote || '',
+            prompts: aggregated.prompts.slice(0, 20),
+            toolCalls: aggregated.toolCalls.slice(0, 50),
+            filesModified: aggregated.filesModified.slice(0, 30),
+            filesRead: aggregated.filesRead.slice(0, 20),
+            commands: aggregated.commands.slice(0, 20),
+            subagents: aggregated.subagents.slice(0, 10),
         };
 
         const result = await promptRunner
@@ -183,13 +274,13 @@ export class ClassifyCliSessionCaptureUseCase {
             .setPayload(userPayload)
             .addPrompt({
                 role: PromptRole.SYSTEM,
-                prompt,
+                prompt: systemPrompt,
             })
             .addPrompt({
                 role: PromptRole.USER,
                 prompt: JSON.stringify(userPayload),
             })
-            .setRunName('classifyCliSessionCapture')
+            .setRunName('classifySession')
             .execute();
 
         const rawDecisions = result?.decisions ?? [];
@@ -218,22 +309,10 @@ export class ClassifyCliSessionCaptureUseCase {
         });
     }
 
-    private extractWithHeuristics(capture: {
-        summary?: string;
-        signals?: {
-            prompt?: string;
-            assistantMessage?: string;
-            modifiedFiles?: string[];
-            toolUses?: Array<{ tool: string; filePath?: string }>;
-        };
-    }): CliSessionClassifiedDecision[] {
-        const sourceText = [
-            capture.summary || '',
-            capture.signals?.prompt || '',
-            capture.signals?.assistantMessage || '',
-        ]
-            .filter(Boolean)
-            .join('\n');
+    private extractWithHeuristics(
+        aggregated: AggregatedSession,
+    ): CliSessionClassifiedDecision[] {
+        const sourceText = aggregated.prompts.join('\n');
 
         if (!sourceText) {
             return [];
@@ -256,7 +335,7 @@ export class ClassifyCliSessionCaptureUseCase {
                 ? candidateSentences.slice(0, 8)
                 : sentences.slice(0, 3);
 
-        const evidence = (capture.signals?.modifiedFiles || []).slice(0, 3);
+        const evidence = aggregated.filesModified.slice(0, 3);
 
         return selected.map((sentence) => {
             const type = this.inferDecisionType(sentence);
@@ -283,9 +362,7 @@ export class ClassifyCliSessionCaptureUseCase {
             return 'architectural_decision';
         }
 
-        if (
-            /(convention|style|naming|format|lint|folder structure)/.test(value)
-        ) {
+        if (/(convention|style|naming|format|lint|folder structure)/.test(value)) {
             return 'convention';
         }
 
