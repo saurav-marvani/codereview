@@ -14,7 +14,7 @@ metadata:
 
 Use the local Kodus CLI build in this repository to review changes and resolve issues. Prefer machine-friendly output via `--prompt-only`, then apply fixes in code.
 
-If the request is to validate a pull request against business rules, task requirements, or acceptance criteria, use `business-rules-validation` instead. The local review command does not trigger `@kody -v business-logic`.
+If the request is to validate a pull request against business rules, task requirements, or acceptance criteria, use `kodus-business-rules-validation` instead (legacy alias: `business-rules-validation`). The local review command does not trigger `@kody -v business-logic`.
 
 ## Trigger Hints
 
@@ -62,6 +62,6 @@ If the request is to validate a pull request against business rules, task requir
 
 - Prefer `--prompt-only` for predictable parsing.
 - Avoid `--interactive` unless the user explicitly asks.
-- Redirect PR-vs-task validation requests to `business-rules-validation`.
+- Redirect PR-vs-task validation requests to `kodus-business-rules-validation` (legacy alias `business-rules-validation`).
 - The helper script respects `KODUS_API_URL`, `KODUS_VERBOSE`, and `KODUS_CLI_ENTRYPOINT`.
 - Do not use `--fix` unless the user explicitly asks.

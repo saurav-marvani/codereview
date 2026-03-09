@@ -105,14 +105,14 @@ Stored in `.kody/pr/by-sha/<head-sha>.md` — versioned with your code, readable
 
 Kodus is designed to work **inside AI coding agents**. While you can use it standalone, the real power comes when your agent runs reviews automatically and fixes issues in a loop — no manual intervention needed.
 
-**Works with:** Claude Code, Cursor, Windsurf, GitHub Copilot, Gemini CLI, and [20+ more environments](https://review-skill.com/).
+**Works with:** Claude Code, Cursor, Windsurf, GitHub Copilot, Gemini CLI, and 20+ more environments.
 
 ### Install the Skill (recommended)
 
 The fastest way to get started. Auto-detects your installed IDEs and sets everything up:
 
 ```bash
-curl -fsSL https://review-skill.com/install | bash
+curl -fsSL https://raw.githubusercontent.com/kodustech/cli/main/install.sh | bash
 ```
 
 This installs the Kodus CLI globally and deploys the review skill into every supported agent on your machine — Claude Code, Cursor, Windsurf, and others. One command, all environments.
@@ -184,25 +184,33 @@ The copied prompt includes file path, line numbers, severity, and detailed sugge
 ### Skill installer (recommended — CLI + all your agents)
 
 ```bash
-curl -fsSL https://review-skill.com/install | bash
+curl -fsSL https://raw.githubusercontent.com/kodustech/cli/main/install.sh | bash
 ```
 
 Installs the CLI and deploys the review skill to all detected agents in one step.
 
 ### Keep everything updated
 
-`kodus update` updates the CLI package only.
+`kodus update` updates the CLI package.
 
-To sync/refresh skills and commands in supported agents (Claude Code, Cursor, Codex, etc.), run:
+For end users, the recommended way to refresh skills and agent integrations is:
 
 ```bash
-curl -fsSL https://review-skill.com/install | bash
+curl -fsSL https://raw.githubusercontent.com/kodustech/cli/main/install.sh | bash
+```
+
+Advanced/local-only fallback via CLI:
+
+```bash
+kodus skills install        # install into detected local agent roots
+kodus skills resync         # re-sync/refresh managed skills
+kodus skills uninstall      # remove managed skills from detected targets
 ```
 
 If you want to inspect the script before execution:
 
 ```bash
-curl -fsSL https://review-skill.com/install -o /tmp/kodus-install.sh
+curl -fsSL https://raw.githubusercontent.com/kodustech/cli/main/install.sh -o /tmp/kodus-install.sh
 less /tmp/kodus-install.sh
 bash /tmp/kodus-install.sh
 ```
@@ -244,6 +252,59 @@ brew install kodus/tap/kodus
 ```
 
 </details>
+
+## Agent Mode
+
+Kodus now supports an explicit **agent mode** for deterministic automation output.
+
+### Global flag
+
+Use `--agent` on any command to return a stable JSON envelope:
+
+```json
+{
+    "ok": true,
+    "command": "review",
+    "data": {},
+    "error": null,
+    "meta": {
+        "schemaVersion": "1.0",
+        "cliVersion": "x.y.z",
+        "mode": "agent",
+        "durationMs": 123
+    }
+}
+```
+
+### Command schema introspection
+
+```bash
+kodus schema
+kodus schema --command "pr suggestions"
+```
+
+### Field selection for smaller payloads
+
+Available on `review` and `pr suggestions`:
+
+```bash
+kodus review --agent --fields summary,issues.file,issues.line
+kodus pr suggestions --agent --pr-url https://github.com/org/repo/pull/42 --fields summary,issues.file
+```
+
+`--fields` requires `--agent` or `--format json`.
+
+### Dry-run for mutable commands
+
+```bash
+kodus hook install --dry-run
+kodus hook uninstall --dry-run
+kodus decisions enable --dry-run
+kodus decisions disable --dry-run
+kodus decisions promote --dry-run
+```
+
+Dry-run prints the planned actions and does not mutate local hooks/config/files.
 
 ## Review Modes
 

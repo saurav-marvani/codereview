@@ -5,6 +5,7 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { discoverSkillDirs, exists, readSkill } from './skills-utils.mjs';
+import { renderAliasSkillContent, SKILL_ALIASES } from './skills-aliases.mjs';
 
 const errors = [];
 const warnings = [];
@@ -317,6 +318,42 @@ async function validateSkillDirectory(skillDir) {
     return validationResult;
 }
 
+async function validateSkillAliases(skillsRoot) {
+    for (const entry of SKILL_ALIASES) {
+        const canonicalFile = path.join(
+            skillsRoot,
+            entry.canonical,
+            'SKILL.md',
+        );
+        const aliasFile = path.join(skillsRoot, entry.alias, 'SKILL.md');
+
+        if (!(await exists(canonicalFile))) {
+            addError(
+                `[${entry.alias}] Missing canonical skill source: ${path.relative(cwd, canonicalFile)}.`,
+            );
+            continue;
+        }
+        if (!(await exists(aliasFile))) {
+            addError(
+                `[${entry.alias}] Missing alias skill file: ${path.relative(cwd, aliasFile)}.`,
+            );
+            continue;
+        }
+
+        const canonicalContent = await fs.readFile(canonicalFile, 'utf8');
+        const aliasContent = await fs.readFile(aliasFile, 'utf8');
+        const expectedAliasContent = renderAliasSkillContent(
+            canonicalContent,
+            entry.alias,
+        );
+        if (aliasContent !== expectedAliasContent) {
+            addError(
+                `[${entry.alias}] Alias content is out of sync with canonical "${entry.canonical}". Run: node scripts/sync-skills-aliases.mjs`,
+            );
+        }
+    }
+}
+
 async function main() {
     const inputPaths = process.argv.slice(2);
     const roots = inputPaths.length > 0 ? inputPaths : [defaultRoot];
@@ -340,6 +377,12 @@ async function main() {
                 skillNames.set(validationResult.name, path.basename(skillDir));
             }
         }
+    }
+
+    const defaultSkillsRoot = path.resolve(defaultRoot);
+    const resolvedRoots = roots.map((root) => path.resolve(root));
+    if (resolvedRoots.includes(defaultSkillsRoot)) {
+        await validateSkillAliases(defaultSkillsRoot);
     }
 
     if (errors.length > 0) {

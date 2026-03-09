@@ -1,5 +1,5 @@
 ---
-name: business-rules-validation
+name: kodus-business-rules-validation
 description: Use when asked for business validation, acceptance-criteria validation, PR-vs-task checks, or merge readiness with task compliance using `kodus pr business-validation`.
 license: MIT
 compatibility: Requires Kodus CLI auth plus Kodus task-management integration (Jira/Linear/Notion/ClickUp) for useful task context retrieval.
