@@ -27,6 +27,7 @@ describe('CliReviewController.ingestSessionEvent', () => {
     let controller: CliReviewController;
     let ingestUseCase: { execute: jest.Mock };
     let teamCliKeyService: { validateKey: jest.Mock };
+    let authenticatedRateLimiter: { checkRateLimit: jest.Mock };
 
     beforeEach(() => {
         ingestUseCase = { execute: jest.fn().mockResolvedValue({ accepted: true }) };
@@ -38,12 +39,16 @@ describe('CliReviewController.ingestSessionEvent', () => {
             }),
         };
 
+        authenticatedRateLimiter = {
+            checkRateLimit: jest.fn().mockResolvedValue({ allowed: true, remaining: 999 }),
+        };
+
         controller = new CliReviewController(
             {} as any,
             ingestUseCase as any,
             {} as any,
             {} as any,
-            {} as any,
+            authenticatedRateLimiter as any,
             teamCliKeyService as any,
             {} as any,
             {} as any,

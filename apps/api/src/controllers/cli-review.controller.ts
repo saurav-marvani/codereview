@@ -820,6 +820,21 @@ export class CliReviewController {
             );
         }
 
+        const rateLimitResult =
+            await this.authenticatedRateLimiter.checkRateLimit(auth.teamId);
+
+        if (!rateLimitResult.allowed) {
+            throw new HttpException(
+                {
+                    message:
+                        'Rate limit exceeded for this team. Please try again later.',
+                    remaining: rateLimitResult.remaining,
+                    resetAt: rateLimitResult.resetAt?.toISOString(),
+                },
+                HttpStatus.TOO_MANY_REQUESTS,
+            );
+        }
+
         const body = req.body;
         const dto = new SessionEventRequestDto();
         Object.assign(dto, body);

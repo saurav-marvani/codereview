@@ -28,9 +28,15 @@ export class IngestSessionEventUseCase implements IUseCase {
 
     async execute(params: IngestSessionEventInput): Promise<{ accepted: boolean }> {
         const { organizationAndTeamData, event } = params;
-        const { sessionId, type, branch, timestamp, ...rest } = event;
+
+        let sessionId: string | undefined;
+        let type: SessionEventType | undefined;
 
         try {
+            const { sessionId: sid, type: t, branch, timestamp, ...rest } = event;
+            sessionId = sid;
+            type = t;
+
             const saved = await this.sessionEventRepository.create({
                 organizationId: organizationAndTeamData.organizationId,
                 teamId: organizationAndTeamData.teamId,
@@ -45,12 +51,12 @@ export class IngestSessionEventUseCase implements IUseCase {
                 setImmediate(() => {
                     void this.classifySessionUseCase
                         .execute(saved.uuid)
-                        .catch((error) => {
+                        .catch((classifyError) => {
                             this.logger.error({
                                 message:
                                     'Failed to classify session after session_end',
                                 context: IngestSessionEventUseCase.name,
-                                error,
+                                error: classifyError,
                                 metadata: {
                                     sessionEndEventUuid: saved.uuid,
                                     sessionId,
