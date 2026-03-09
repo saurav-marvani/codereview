@@ -15,7 +15,6 @@ const pkg = require('../../package.json') as { version: string };
 
 const KODUS_HOOK_MARKER = '# kodus-hook';
 const DECISIONS_CAPTURE_COMMAND_PREFIX = 'kodus decisions capture';
-const MERGE_HOOK_MARKER = '# kodus-memory-post-merge';
 const CODEX_NOTIFY_LINE =
     'notify = ["kodus", "decisions", "capture", "--agent", "codex", "--event", "stop"]';
 const CODEX_NOTIFY_LINE_LEGACY =
@@ -95,17 +94,6 @@ async function getDecisionHooksStatus(
             // Not configured.
         }
 
-        try {
-            const postMergeHook = await fs.readFile(
-                path.join(repoRoot, '.git', 'hooks', 'post-merge'),
-                'utf-8',
-            );
-            if (postMergeHook.includes(MERGE_HOOK_MARKER)) {
-                configured.push('post-merge');
-            }
-        } catch {
-            // Not configured.
-        }
     }
 
     try {

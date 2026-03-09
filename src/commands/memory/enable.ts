@@ -1,16 +1,10 @@
 import chalk from 'chalk';
-import fs from 'fs/promises';
-import path from 'path';
 import { gitService } from '../../services/git.service.js';
-import { stringifyYaml } from '../../utils/module-matcher.js';
-import type { ModulesYml } from '../../types/memory.js';
 import {
     parseAgents,
     installClaudeCompatibleHooks,
     installCodexNotify,
-    installMergeHook,
     resolveCodexConfigPath,
-    detectModules,
 } from './hooks.js';
 import { installSessionHooks } from './session-hooks-install.js';
 import { exitWithCode } from '../../utils/cli-exit.js';
@@ -19,7 +13,6 @@ import { cliError, cliInfo } from '../../utils/logger.js';
 interface EnableOptions {
     agents?: string;
     codexConfig?: string;
-    force?: boolean;
 }
 
 export async function enableAction(options: EnableOptions): Promise<void> {
@@ -70,50 +63,9 @@ export async function enableAction(options: EnableOptions): Promise<void> {
         }
     }
 
-    // 4. Post-merge hook (always)
-    const mergeResult = await installMergeHook(gitRoot);
-    const mergeStatus = mergeResult.alreadyInstalled
-        ? 'already configured'
-        : 'installed';
-
-    // 5. Init modules.yml
-    const configPath = path.join(gitRoot, '.kody', 'modules.yml');
-    let modulesStatus: string;
-    let modulesExist = false;
-
-    try {
-        await fs.access(configPath);
-        modulesExist = true;
-    } catch {
-        // doesn't exist
-    }
-
-    if (modulesExist && !options.force) {
-        modulesStatus = 'already exists';
-    } else {
-        const srcPath = path.join(gitRoot, 'src');
-        const modules = await detectModules(srcPath);
-
-        const config: ModulesYml = { version: 1, modules };
-        const yamlContent = stringifyYaml(config);
-
-        await fs.mkdir(path.dirname(configPath), { recursive: true });
-        await fs.writeFile(configPath, yamlContent, 'utf-8');
-
-        modulesStatus =
-            modules.length > 0
-                ? `created (${modules.length} module${modules.length === 1 ? '' : 's'} detected)`
-                : 'created (no modules detected)';
-    }
-
-    // 6. Ensure logs directory (only local dir needed — session data lives in git)
-    await fs.mkdir(path.join(gitRoot, '.kody', 'logs'), { recursive: true });
-
     // Summary
     cliInfo(chalk.green('\u2713 Decisions enabled for this repository.'));
     cliInfo(`  Decision capture hooks: ${captureStatus}`);
     cliInfo(`  Session tracking hooks: ${sessionStatus}`);
     cliInfo(`  Codex notify: ${codexStatus}`);
-    cliInfo(`  Post-merge hook: ${mergeStatus}`);
-    cliInfo(`  Module config: ${modulesStatus}`);
 }

@@ -13,15 +13,6 @@ vi.mock('../../services/git.service.js', () => ({
     },
 }));
 
-vi.mock('../../services/memory.service.js', () => ({
-    memoryService: {
-        saveCapture: vi.fn().mockResolvedValue('/fake/path/capture.json'),
-        saveBranchCapture: vi
-            .fn()
-            .mockResolvedValue('/fake/path/branch-capture.md'),
-    },
-}));
-
 vi.mock('../../services/transcript-parser.service.js', () => ({
     transcriptParserService: {
         parse: vi.fn().mockReturnValue({

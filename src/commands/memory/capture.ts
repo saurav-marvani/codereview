@@ -2,7 +2,6 @@ import chalk from 'chalk';
 import { gitService } from '../../services/git.service.js';
 import { authService } from '../../services/auth.service.js';
 import { api } from '../../services/api/index.js';
-import { memoryService } from '../../services/memory.service.js';
 import { transcriptParserService } from '../../services/transcript-parser.service.js';
 import type {
     TranscriptSignals,
@@ -27,73 +26,41 @@ export async function captureAction(
             return;
         }
 
-        const repoRoot = (await gitService.getGitRoot()).trim();
+        if (options.event !== 'stop') {
+            // Only submit on stop event
+            return;
+        }
+
         const headSha = await gitService.getHeadSha();
 
         const payloadFromStdin = payloadArg
             ? undefined
             : await readStdinIfAvailable();
         const rawPayload = selectRawPayload(payloadFromStdin, payloadArg);
-
         const parsedPayload = parsePayload(rawPayload);
         const resolvedAgent = resolveAgent(options.agent);
 
-        // Resolve branch for new structured storage
         let branch: string | undefined;
         try {
             branch = (await gitService.getCurrentBranch()).trim();
         } catch {
-            // Detached HEAD or no branch - fall back to legacy
+            // Detached HEAD or no branch
         }
 
-        if (branch) {
-            const signals = transcriptParserService.parse(parsedPayload);
-
-            const filePath = await memoryService.saveBranchCapture(
-                {
-                    repoRoot,
-                    headSha,
-                    agent: resolvedAgent,
-                    event: options.event,
-                    branch,
-                    payload: parsedPayload,
-                    summary: options.summary,
-                },
-                signals,
-            );
-
-            if (isCliVerboseMode()) {
-                cliInfo(
-                    chalk.dim(`[memory] saved branch capture to ${filePath}`),
-                );
-            }
-
-            if (options.event === 'stop') {
-                submitCaptureToApi({
-                    repoRoot,
-                    headSha,
-                    branch,
-                    agent: resolvedAgent,
-                    event: options.event,
-                    signals,
-                    summary: options.summary,
-                }).catch(() => {}); // Intentionally swallowed — must not block hook
-            }
-        } else {
-            // Legacy per-SHA fallback
-            const filePath = await memoryService.saveCapture({
-                repoRoot,
-                headSha,
-                agent: resolvedAgent,
-                event: options.event,
-                payload: parsedPayload,
-                summary: options.summary,
-            });
-
-            if (isCliVerboseMode()) {
-                cliInfo(chalk.dim(`[memory] saved capture to ${filePath}`));
-            }
+        if (!branch) {
+            return;
         }
+
+        const signals = transcriptParserService.parse(parsedPayload);
+
+        await submitCaptureToApi({
+            headSha,
+            branch,
+            agent: resolvedAgent,
+            event: options.event,
+            signals,
+            summary: options.summary,
+        }).catch(() => {}); // Intentionally swallowed — must not block hook
     } catch (error) {
         // Hooks should not block development flow.
         if (isCliVerboseMode()) {
@@ -125,12 +92,9 @@ async function readStdinIfAvailable(): Promise<string | undefined> {
         let data = '';
         let settled = false;
         const noDataTimer = setTimeout(() => {
-            // Some hook runners keep stdin open forever without sending payload.
-            // In that case, fail open and continue without stdin payload.
             finish(undefined);
         }, 750);
         const brokenStreamTimer = setTimeout(() => {
-            // Safety net for broken streams that emit data but never close.
             finish(data.length > 0 ? data : undefined);
         }, 5000);
 
@@ -195,7 +159,6 @@ function selectRawPayload(
 const ASSISTANT_MESSAGE_MAX_CHARS = 10_000;
 
 interface SubmitCaptureParams {
-    repoRoot: string;
     headSha: string | null;
     branch: string;
     agent: string;

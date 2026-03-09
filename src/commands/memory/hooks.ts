@@ -25,23 +25,6 @@ export const CODEX_NOTIFY_LINE =
 export const CODEX_NOTIFY_LINE_LEGACY =
     'notify = ["kodus", "decisions", "capture", "--agent", "codex", "--event", "agent-turn-complete"]';
 
-export const MERGE_HOOK_MARKER = '# kodus-memory-post-merge';
-const MERGE_HOOK_END_MARKER = '# /kodus-memory-post-merge';
-const MERGE_PROMOTE_COMMAND = 'kodus decisions promote';
-
-const MERGE_HOOK_SCRIPT = `
-${MERGE_HOOK_MARKER}
-# Detect merged branch from the merge commit message
-MERGED_BRANCH=$(git log -1 --merges --format=%s HEAD 2>/dev/null | sed -n "s/.*Merge branch '\\([^']*\\)'.*/\\1/p")
-if [ -z "$MERGED_BRANCH" ]; then
-  MERGED_BRANCH=$(git log -1 --merges --format=%s HEAD 2>/dev/null | sed -n "s/.*Merge pull request .* from [^/]*\\/\\(.*\\)/\\1/p")
-fi
-if [ -n "$MERGED_BRANCH" ]; then
-  ${MERGE_PROMOTE_COMMAND} --branch "$MERGED_BRANCH" &
-fi
-${MERGE_HOOK_END_MARKER}
-`.trimStart();
-
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
@@ -299,57 +282,6 @@ export async function installCodexNotify(configPath: string): Promise<{
     return { configPath, changed: true, skipped: false, reason: '' };
 }
 
-export async function installMergeHook(
-    gitRoot: string,
-): Promise<{ hookPath: string; alreadyInstalled: boolean }> {
-    const hookPath = path.join(gitRoot, '.git', 'hooks', 'post-merge');
-
-    let existing = '';
-    try {
-        existing = await fs.readFile(hookPath, 'utf-8');
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-            throw error;
-        }
-    }
-
-    if (existing.includes(MERGE_HOOK_MARKER)) {
-        return { hookPath, alreadyInstalled: true };
-    }
-
-    let content: string;
-    if (existing.trim().length === 0) {
-        content = `#!/bin/sh\n${MERGE_HOOK_SCRIPT}`;
-    } else {
-        content = `${existing.replace(/\s*$/, '')}\n\n${MERGE_HOOK_SCRIPT}`;
-    }
-
-    await fs.mkdir(path.dirname(hookPath), { recursive: true });
-    await fs.writeFile(hookPath, content, { mode: 0o755 });
-
-    return { hookPath, alreadyInstalled: false };
-}
-
-export async function detectModules(
-    srcPath: string,
-): Promise<
-    Array<{ id: string; name: string; paths: string[]; memoryFile: string }>
-> {
-    try {
-        const entries = await fs.readdir(srcPath, { withFileTypes: true });
-        const dirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
-
-        return dirs.map((dir) => ({
-            id: dir,
-            name: dir.charAt(0).toUpperCase() + dir.slice(1),
-            paths: [`src/${dir}/**`],
-            memoryFile: `.kody/memory/${dir}.md`,
-        }));
-    } catch {
-        return [];
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Remove functions (for disable)
 // ---------------------------------------------------------------------------
@@ -473,53 +405,3 @@ export async function removeCodexNotify(
     return { configPath, removed: true };
 }
 
-export async function removeMergeHook(
-    gitRoot: string,
-): Promise<{ hookPath: string; removed: boolean }> {
-    const hookPath = path.join(gitRoot, '.git', 'hooks', 'post-merge');
-
-    let content: string;
-    try {
-        content = await fs.readFile(hookPath, 'utf-8');
-    } catch {
-        return { hookPath, removed: false };
-    }
-
-    if (!content.includes(MERGE_HOOK_MARKER)) {
-        return { hookPath, removed: false };
-    }
-
-    // Remove kodus block:
-    // - Preferred: marker -> end marker (current format)
-    // - Legacy fallback: marker -> end-of-file (older format without end marker)
-    const lines = content.split('\n');
-    const startIdx = lines.findIndex(
-        (line) => line.trim() === MERGE_HOOK_MARKER,
-    );
-    if (startIdx === -1) {
-        return { hookPath, removed: false };
-    }
-
-    const endIdx = lines.findIndex(
-        (line, idx) => idx > startIdx && line.trim() === MERGE_HOOK_END_MARKER,
-    );
-
-    const filtered =
-        endIdx === -1
-            ? lines.slice(0, startIdx)
-            : [...lines.slice(0, startIdx), ...lines.slice(endIdx + 1)];
-
-    const remaining = filtered
-        .join('\n')
-        .replace(/\n{3,}/g, '\n\n')
-        .replace(/\n*$/, '\n');
-
-    // If only shebang (or empty) remains, delete the file
-    if (remaining.trim() === '#!/bin/sh' || remaining.trim() === '') {
-        await fs.unlink(hookPath);
-    } else {
-        await fs.writeFile(hookPath, remaining, { mode: 0o755 });
-    }
-
-    return { hookPath, removed: true };
-}

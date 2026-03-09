@@ -10,14 +10,13 @@ vi.mock('../../services/git.service.js', () => ({
     },
 }));
 
-vi.mock('../../utils/module-matcher.js', () => ({
-    stringifyYaml: vi.fn((config: unknown) => JSON.stringify(config)),
+vi.mock('../memory/session-hooks-install.js', () => ({
+    installSessionHooks: vi.fn().mockResolvedValue({ changed: true }),
 }));
 
 import { gitService } from '../../services/git.service.js';
 import { enableAction } from '../memory/enable.js';
 import {
-    MERGE_HOOK_MARKER,
     CODEX_NOTIFY_LINE,
     CODEX_NOTIFY_LINE_LEGACY,
 } from '../memory/hooks.js';
@@ -27,8 +26,6 @@ let tmpDir: string;
 beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kodus-enable-test-'));
     await fs.mkdir(path.join(tmpDir, '.git', 'hooks'), { recursive: true });
-    await fs.mkdir(path.join(tmpDir, 'src', 'commands'), { recursive: true });
-    await fs.mkdir(path.join(tmpDir, 'src', 'services'), { recursive: true });
     vi.mocked(gitService.getGitRoot).mockResolvedValue(tmpDir);
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -40,7 +37,7 @@ afterEach(async () => {
 });
 
 describe('enableAction', () => {
-    it('installs all hooks + modules.yml when none exist', async () => {
+    it('installs all hooks when none exist', async () => {
         await enableAction({
             codexConfig: path.join(tmpDir, '.codex', 'config.toml'),
         });
@@ -58,21 +55,6 @@ describe('enableAction', () => {
             'utf-8',
         );
         expect(codexConfig).toContain(CODEX_NOTIFY_LINE);
-
-        // Post-merge hook created
-        const hookContent = await fs.readFile(
-            path.join(tmpDir, '.git', 'hooks', 'post-merge'),
-            'utf-8',
-        );
-        expect(hookContent).toContain(MERGE_HOOK_MARKER);
-
-        // modules.yml created
-        const modulesContent = await fs.readFile(
-            path.join(tmpDir, '.kody', 'modules.yml'),
-            'utf-8',
-        );
-        expect(modulesContent).toContain('commands');
-        expect(modulesContent).toContain('services');
     });
 
     it('is idempotent (second run reports already configured)', async () => {
@@ -114,35 +96,5 @@ describe('enableAction', () => {
         await expect(
             fs.access(path.join(tmpDir, '.codex', 'config.toml')),
         ).rejects.toThrow();
-    });
-
-    it('--force overwrites modules.yml', async () => {
-        const configPath = path.join(tmpDir, '.kody', 'modules.yml');
-        await fs.mkdir(path.dirname(configPath), { recursive: true });
-        await fs.writeFile(configPath, 'old-content', 'utf-8');
-
-        await enableAction({
-            force: true,
-            codexConfig: path.join(tmpDir, '.codex', 'config.toml'),
-        });
-
-        const content = await fs.readFile(configPath, 'utf-8');
-        expect(content).not.toBe('old-content');
-    });
-
-    it('without --force preserves existing modules.yml', async () => {
-        const configPath = path.join(tmpDir, '.kody', 'modules.yml');
-        await fs.mkdir(path.dirname(configPath), { recursive: true });
-        await fs.writeFile(configPath, 'old-content', 'utf-8');
-
-        await enableAction({
-            codexConfig: path.join(tmpDir, '.codex', 'config.toml'),
-        });
-
-        const content = await fs.readFile(configPath, 'utf-8');
-        expect(content).toBe('old-content');
-
-        const calls = vi.mocked(console.log).mock.calls.flat().join('\n');
-        expect(calls).toContain('already exists');
     });
 });
