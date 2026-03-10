@@ -191,7 +191,6 @@
         "@opentelemetry/sdk-node": "^0.213.0",
         "@opentelemetry/sdk-trace-base": "^2.6.0",
         "@opentelemetry/sdk-trace-node": "^2.6.0",
-        "@pierre/diffs": "^1.0.11",
         "@pyroscope/nodejs": "^0.4.10",
         "@segment/analytics-node": "^3.0.0",
         "@sentry/nestjs": "^10.42.0",
