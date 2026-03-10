@@ -1,6 +1,6 @@
 ---
 name: kodus-review-dev
-description: Use when the user explicitly asks for local/dev API CLI flow (localhost, QA API, or local `node dist/index.js`) while reviewing code. Run the dev review flow and apply fixes based on CLI output. Not the default review skill.
+description: Use when the user wants Kodus to review local changes through a local CLI build or non-production API such as `node dist/index.js`, localhost, or QA, including local `--prompt-only` flows.
 ---
 
 # Kodus Review (Dev)
@@ -9,7 +9,7 @@ description: Use when the user explicitly asks for local/dev API CLI flow (local
 
 Use the local Kodus CLI build in this repository to review changes and resolve issues. Prefer machine-friendly output via `--prompt-only`, then apply fixes in code.
 
-If the request is to validate a pull request against business rules, task requirements, or acceptance criteria, use `kodus-business-rules-validation` instead (legacy alias: `business-rules-validation`). The local review command does not trigger `@kody -v business-logic`.
+If the request is to validate local changes against business rules, task requirements, or acceptance criteria, use `kodus-business-rules-validation` instead. The local review command does not trigger local business validation.
 
 ## Trigger Hints
 
@@ -50,6 +50,6 @@ If the request is to validate a pull request against business rules, task requir
 
 - Prefer `--prompt-only` for predictable parsing.
 - Avoid `--interactive` unless the user explicitly asks.
-- Redirect PR-vs-task validation requests to `kodus-business-rules-validation` (legacy alias `business-rules-validation`).
+- Redirect PR-vs-task validation requests to `kodus-business-rules-validation`.
 - The helper script respects `KODUS_API_URL`, `KODUS_VERBOSE`, and `KODUS_CLI_ENTRYPOINT`.
 - Do not use `--fix` unless the user explicitly asks.

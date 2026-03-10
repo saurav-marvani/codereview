@@ -207,9 +207,6 @@ class ReviewService {
     }
 
     async triggerBusinessValidation(params: {
-        prUrl?: string;
-        prNumber?: number;
-        repositoryId?: string;
         repository?: string;
         taskUrl?: string;
         taskId?: string;

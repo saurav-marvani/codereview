@@ -7,6 +7,7 @@ import {
     type SkillSyncMode,
     syncSkillsToTargets,
 } from '../utils/skills-sync.js';
+import { resolveRemoteInstallInstructions } from '../utils/install-instructions.js';
 
 async function listAction(): Promise<void> {
     const skills = await listBundledSkills();
@@ -48,11 +49,11 @@ async function runSkillAction(
                 'No compatible local agent directories were detected.',
             ),
         );
-        cliInfo(
-            chalk.dim(
-                'Run: curl -fsSL https://raw.githubusercontent.com/kodustech/cli/main/install.sh | bash',
-            ),
-        );
+        const remoteInstall = resolveRemoteInstallInstructions();
+        cliInfo(chalk.dim(`Run: ${remoteInstall.primary}`));
+        if (remoteInstall.fallback) {
+            cliInfo(chalk.dim(`Fallback: ${remoteInstall.fallback}`));
+        }
         return;
     }
 

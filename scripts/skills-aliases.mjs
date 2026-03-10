@@ -1,11 +1,6 @@
 import { parseFrontmatter } from './skills-utils.mjs';
 
-export const SKILL_ALIASES = [
-    {
-        canonical: 'kodus-business-rules-validation',
-        alias: 'business-rules-validation',
-    },
-];
+export const SKILL_ALIASES = [];
 
 export function renderAliasSkillContent(canonicalContent, aliasName) {
     const parsed = parseFrontmatter(canonicalContent);

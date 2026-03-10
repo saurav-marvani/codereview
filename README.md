@@ -115,8 +115,16 @@ Kodus is designed to work **inside AI coding agents**. While you can use it stan
 
 The fastest way to get started. Auto-detects your installed IDEs and sets everything up:
 
+macOS/Linux:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kodustech/cli/main/install.sh | bash
+```
+
+Windows PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-RestMethod https://raw.githubusercontent.com/kodustech/cli/main/install.ps1 | Invoke-Expression"
 ```
 
 This installs the Kodus CLI globally and deploys the review skill into every supported agent on your machine — Claude Code, Cursor, Windsurf, and others. One command, all environments.
@@ -187,8 +195,16 @@ The copied prompt includes file path, line numbers, severity, and detailed sugge
 
 ### Skill installer (recommended — CLI + all your agents)
 
+macOS/Linux:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kodustech/cli/main/install.sh | bash
+```
+
+Windows PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-RestMethod https://raw.githubusercontent.com/kodustech/cli/main/install.ps1 | Invoke-Expression"
 ```
 
 Installs the CLI and deploys the review skill to all detected agents in one step.
@@ -199,8 +215,16 @@ Installs the CLI and deploys the review skill to all detected agents in one step
 
 For end users, the recommended way to refresh skills and agent integrations is:
 
+macOS/Linux:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kodustech/cli/main/install.sh | bash
+```
+
+Windows PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-RestMethod https://raw.githubusercontent.com/kodustech/cli/main/install.ps1 | Invoke-Expression"
 ```
 
 Fallback via CLI for common local agent roots:
@@ -213,10 +237,19 @@ kodus skills uninstall      # remove managed skills from detected targets
 
 If you want to inspect the script before execution:
 
+macOS/Linux:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kodustech/cli/main/install.sh -o /tmp/kodus-install.sh
 less /tmp/kodus-install.sh
 bash /tmp/kodus-install.sh
+```
+
+Windows PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest https://raw.githubusercontent.com/kodustech/cli/main/install.ps1 -OutFile install.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
 ### CLI only
@@ -244,6 +277,15 @@ npx @kodus/cli review
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kodustech/cli/main/install.sh | bash
+```
+
+</details>
+
+<details>
+<summary><strong>PowerShell</strong></summary>
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-RestMethod https://raw.githubusercontent.com/kodustech/cli/main/install.ps1 | Invoke-Expression"
 ```
 
 </details>

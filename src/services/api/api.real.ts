@@ -48,6 +48,7 @@ export function _resetConfigCache(): void {
  */
 function validateApiUrl(customUrl: string): string | null {
     const defaultUrl = 'https://api.kodus.io';
+
     try {
         const url = new URL(customUrl);
 
@@ -201,10 +202,11 @@ function normalizeApiErrorMessage(
     }
 
     // Keep auth/permission/server errors deterministic and always in CLI English.
+    // 404 is excluded: the backend may return meaningful "not found" details
+    // (e.g. "Pull request not found") that are more useful than the generic message.
     if (
         statusCode === 401 ||
         statusCode === 403 ||
-        statusCode === 404 ||
         statusCode === 429 ||
         statusCode >= 500
     ) {
@@ -640,9 +642,6 @@ class RealReviewApi implements IReviewApi {
     async triggerBusinessValidation(
         accessToken: string,
         params: {
-            prUrl?: string;
-            prNumber?: number;
-            repositoryId?: string;
             repository?: string;
             taskUrl?: string;
             taskId?: string;
@@ -652,15 +651,6 @@ class RealReviewApi implements IReviewApi {
         const isTeamKey = accessToken.startsWith('kodus_');
         const body: Record<string, unknown> = {};
 
-        if (params.prUrl) {
-            body.prUrl = params.prUrl;
-        }
-        if (params.prNumber !== undefined) {
-            body.prNumber = params.prNumber;
-        }
-        if (params.repositoryId) {
-            body.repositoryId = params.repositoryId;
-        }
         if (params.repository) {
             body.repository = params.repository;
         }

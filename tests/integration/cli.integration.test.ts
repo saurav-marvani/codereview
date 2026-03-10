@@ -515,6 +515,51 @@ describe('schema integration', () => {
     });
 });
 
+describe('business validation integration', () => {
+    it('does not advertise remote PR flags in help', async () => {
+        const { stdout, exitCode } = await runCli([
+            'pr',
+            'business-validation',
+            '--help',
+        ]);
+
+        expect(exitCode).toBe(0);
+        expect(stdout).not.toContain('--pr-url');
+        expect(stdout).not.toContain('--pr-number');
+        expect(stdout).toContain('--staged');
+        expect(stdout).toContain('--branch');
+    });
+
+    it('rejects removed remote PR flags', async () => {
+        const { stderr, exitCode } = await runCli([
+            'pr',
+            'business-validation',
+            '--pr-url',
+            'https://github.com/org/repo/pull/42',
+        ]);
+
+        expect(exitCode).toBe(1);
+        expect(stderr).toContain("unknown option '--pr-url'");
+    });
+
+    it('supports dry-run for local business validation payload', async () => {
+        const { stdout, exitCode } = await runCli([
+            'pr',
+            'business-validation',
+            '--task-id',
+            'KC-1441',
+            '--dry-run',
+        ]);
+
+        expect(exitCode).toBe(0);
+        expect(stdout).toContain('/cli/business-validation');
+        expect(stdout).toContain('"taskId": "KC-1441"');
+        expect(stdout).toContain('"diff":');
+        expect(stdout).not.toContain('"prUrl"');
+        expect(stdout).not.toContain('"prNumber"');
+    });
+});
+
 // ---------------------------------------------------------------------------
 // Auth status — team key and trial paths
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 ---
 name: kodus-business-rules-validation
-description: Use when asked for business validation, acceptance-criteria validation, PR-vs-task checks, or merge readiness with task compliance using `kodus pr business-validation`.
+description: Use when the user wants Kodus to validate local diff changes against task requirements, acceptance criteria, or business rules via `kodus pr business-validation`, especially for implementation-vs-task or merge readiness checks.
 license: MIT
 compatibility: Requires Kodus CLI auth plus Kodus task-management integration (Jira/Linear/Notion/ClickUp) for useful task context retrieval.
 metadata:
@@ -12,21 +12,16 @@ metadata:
 
 ## Goal
 
-Run Kodus business-rules validation using one explicit mode:
-
-- PR mode (remote PR context)
-- Local diff mode (git diff from the current repository)
-
-Do not mix the two modes in the same command.
+Run Kodus business-rules validation from the current repository diff only.
 
 ## Required Inputs
 
-- Exactly one execution mode:
-    - PR mode:
-        - `--pr-url <url>`
-        - or `--pr-number <number>` with `--repo-id <id>` or `--repo <owner/repo>`
-    - Local diff mode:
-        - one local scope: `--staged` or `--branch <name>` or `--commit <sha>` or `[files...]`
+- One local diff scope:
+    - default working tree diff
+    - or `--staged`
+    - or `--branch <name>`
+    - or `--commit <sha>`
+    - or `[files...]`
 - Optional task reference:
     - `--task-url <url>` or `--task-id <id>`
     - Do not pass both.
@@ -34,44 +29,37 @@ Do not mix the two modes in the same command.
 ## When to Use
 
 - The user asks for business-validation, business validation, business rules validation, or acceptance-criteria validation
-- The user wants to check implementation vs task requirements (PR or local diff)
-- The user mentions `@kody -v business-logic`
+- The user wants to check local implementation vs task requirements
+- The user mentions local business validation or `kodus pr business-validation`
 
 Do not use this skill as a substitute for `kodus review`. Local review and business-rules validation are different flows.
 
 ## Workflow
 
-1. Choose the mode.
+1. Choose the local scope.
 
-- PR mode: use PR flags only.
-- Local mode: use local scope flags only.
-- If both groups are present, stop and ask to choose one.
+- Default working tree diff when no scope flag is provided.
+- Use only one of `--staged`, `--branch`, `--commit`, or `[files...]`.
 
 2. Build and run the command.
 
-- PR mode examples:
+Examples:
 
 ```bash
-kodus pr business-validation --pr-url <url> --task-id KC-1441
-kodus pr business-validation --pr-number 140 --repo-id <id> --task-id KC-1441
-```
-
-- Local mode examples:
-
-```bash
+kodus pr business-validation
 kodus pr business-validation --staged --task-id KC-1441
 kodus pr business-validation --branch main --task-id KC-1441
+kodus pr business-validation --commit HEAD~1 --task-id KC-1441
 kodus pr business-validation src/service.ts src/use-case.ts --task-id KC-1441
 ```
 
 3. Interpret the result.
 
-- `Mode: pull request` means remote PR validation.
 - `Mode: local diff` means validation over the provided local diff scope.
 - If output says missing MCP/task context, report that directly and request integration/context setup.
 
 ## Notes
 
 - `kodus review` does not trigger this flow.
-- Prefer `--task-id` or `--task-url` when the task is not obvious from PR/task metadata.
+- Prefer `--task-id` or `--task-url` when the task is not obvious from local context.
 - `KC-1441`-style keys are valid.

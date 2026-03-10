@@ -98,24 +98,22 @@ describe('ReviewService triggerBusinessValidation auth fallback', () => {
     });
 
     it('falls back to team key on 401 from personal token', async () => {
+        const localDiff = 'diff --git a/src/a.ts b/src/a.ts\n+const x = 1;';
         mocks.getValidToken.mockResolvedValue('personal-token');
         mocks.loadConfig.mockResolvedValue({ teamKey: 'kodus_team_key' });
         mocks.triggerBusinessValidation
             .mockRejectedValueOnce(new ApiError(401, 'Unauthorized'))
             .mockResolvedValueOnce({
                 accepted: true,
-                mode: 'pull_request',
-                command: '@kody -v business-logic KD-1234',
-                prNumber: 1,
-                prUrl: 'https://github.com/org/repo/pull/1',
-                repositoryId: 'repo-id',
+                mode: 'local_diff',
+                command: 'kodus pr business-validation --task-id KD-1234',
                 repositoryName: 'org/repo',
                 taskReference: 'KD-1234',
                 result: 'ok',
             });
 
         const response = await reviewService.triggerBusinessValidation({
-            prUrl: 'https://github.com/org/repo/pull/1',
+            diff: localDiff,
             taskId: 'KD-1234',
         });
 
@@ -124,7 +122,7 @@ describe('ReviewService triggerBusinessValidation auth fallback', () => {
             1,
             'personal-token',
             expect.objectContaining({
-                prUrl: 'https://github.com/org/repo/pull/1',
+                diff: localDiff,
                 taskId: 'KD-1234',
             }),
         );
@@ -132,7 +130,7 @@ describe('ReviewService triggerBusinessValidation auth fallback', () => {
             2,
             'kodus_team_key',
             expect.objectContaining({
-                prUrl: 'https://github.com/org/repo/pull/1',
+                diff: localDiff,
                 taskId: 'KD-1234',
             }),
         );
@@ -145,8 +143,7 @@ describe('ReviewService triggerBusinessValidation auth fallback', () => {
         mocks.triggerBusinessValidation.mockResolvedValue({
             accepted: true,
             mode: 'local_diff',
-            command: '@kody -v business-logic KD-1234',
-            repositoryId: 'repo-id',
+            command: 'kodus pr business-validation --task-id KD-1234',
             repositoryName: 'org/repo',
             taskReference: 'KD-1234',
             result: 'ok',

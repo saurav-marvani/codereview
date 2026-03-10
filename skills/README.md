@@ -10,8 +10,6 @@ This directory contains the agent skills shipped with the Kodus CLI repository.
     - Run the local Kodus CLI build against a dev/localhost API using `scripts/run-local-cli.sh` (explicit dev request only).
 - `kodus-business-rules-validation`
     - Canonical skill name for business rules validation in installers and multi-agent integrations.
-- `business-rules-validation`
-    - Legacy-compatible alias kept for backward compatibility with existing local setups.
 - `kodus-pr-suggestions-resolver`
     - Fetch PR suggestions and apply fixes with judgment.
 
@@ -22,10 +20,12 @@ This directory contains the agent skills shipped with the Kodus CLI repository.
     - If the request is delivery action (commit/push/merge) and no fresh review ran, ask to run Kodus review first.
 - User explicitly mentions local/dev CLI execution (`node dist/index.js`, `localhost:3001`, `KODUS_API_URL`, dev API/QA API)
     - Use `kodus-review-dev` instead of `kodus-review`.
-- User mentions `business validation`, `acceptance criteria`, `PR vs task`, `local diff vs task`, `@kody -v business-logic`, `kodus pr business-validation`
-    - Prefer `kodus-business-rules-validation`; keep `business-rules-validation` as fallback alias.
+- User mentions `business validation`, `acceptance criteria`, `local diff vs task`, `implementation vs task`, `kodus pr business-validation`
+    - Use `kodus-business-rules-validation`.
 - User asks to apply Kodus PR suggestions
     - Use `kodus-pr-suggestions-resolver`.
+- User asks to validate local implementation against a task, acceptance criteria, or business rules
+    - Use `kodus-business-rules-validation`.
 
 ## Notes
 
@@ -36,7 +36,7 @@ This directory contains the agent skills shipped with the Kodus CLI repository.
 - `kodus skills install` installs bundled skills in detected local agent roots.
 - `kodus skills resync` re-syncs bundled skills in detected local agent directories.
 - `kodus skills uninstall` removes bundled managed skills from detected local agent directories.
-- For full multi-agent bootstrap/setup, use installer tooling (`curl -fsSL https://raw.githubusercontent.com/kodustech/cli/main/install.sh | bash`).
+- For full multi-agent bootstrap/setup, use the platform installer tooling (`install.sh` for macOS/Linux, `install.ps1` for Windows PowerShell).
 
 ## For Integrators
 

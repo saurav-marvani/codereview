@@ -226,21 +226,8 @@ prCommand
 
 prCommand
     .command('business-validation')
-    .alias('business-rules-validation')
-    .description(
-        'Run business rules validation for a pull request or local diff',
-    )
+    .description('Run business rules validation for local diff only')
     .argument('[files...]', 'Specific files to include in local diff mode')
-    .option('--pr-url <url>', 'Pull request URL')
-    .option('--pr-number <number>', 'Pull request number')
-    .option(
-        '--repo-id <id>',
-        'Repository ID (required with --pr-number if --repo is not provided)',
-    )
-    .option(
-        '--repo <name>',
-        'Repository full name/slug (required with --pr-number if --repo-id is not provided)',
-    )
     .option('--task-url <url>', 'Task URL to append to the validation command')
     .option('--task-id <id>', 'Task ID or issue key (e.g. KC-1441) to append')
     .option(
@@ -260,10 +247,6 @@ prCommand
         async (
             files: string[],
             options: {
-                prUrl?: string;
-                prNumber?: string;
-                repoId?: string;
-                repo?: string;
                 taskUrl?: string;
                 taskId?: string;
                 staged?: boolean;
@@ -283,80 +266,29 @@ prCommand
                     );
                 }
 
-                const normalizedPrUrl = options.prUrl
-                    ? validateHttpUrl(options.prUrl, '--pr-url')
-                    : undefined;
-                const prNumber = parseOptionalNumber(
-                    options.prNumber,
-                    '--pr-number',
+                const diff = await getLocalDiffForBusinessValidation(
+                    files ?? [],
+                    options,
+                    globalOpts.verbose,
                 );
-                const hasPrContext =
-                    !!normalizedPrUrl || prNumber !== undefined;
-                const hasLocalScopeOptions =
-                    (files?.length ?? 0) > 0 ||
-                    !!options.staged ||
-                    !!options.commit ||
-                    !!options.branch;
 
-                if (normalizedPrUrl && prNumber !== undefined) {
+                if (!diff.trim()) {
                     throw new Error(
-                        'Provide only one of --pr-url or --pr-number.',
+                        'No local changes found for the selected scope.',
                     );
                 }
 
-                if (
-                    prNumber !== undefined &&
-                    !options.repoId &&
-                    !options.repo
-                ) {
-                    throw new Error(
-                        'When using --pr-number, provide --repo-id or --repo.',
-                    );
-                }
-
-                if (hasPrContext && hasLocalScopeOptions) {
-                    throw new Error(
-                        'Local diff scope options (--staged/--commit/--branch/[files]) cannot be used with --pr-url/--pr-number.',
-                    );
-                }
-
-                const mode: 'pull_request' | 'local_diff' = hasPrContext
-                    ? 'pull_request'
-                    : 'local_diff';
-
-                let diff: string | undefined;
-                let repository = options.repo;
-
-                if (mode === 'local_diff') {
-                    diff = await getLocalDiffForBusinessValidation(
-                        files ?? [],
-                        options,
-                        globalOpts.verbose,
-                    );
-
-                    if (!diff.trim()) {
-                        throw new Error(
-                            'No local changes found for the selected scope.',
-                        );
-                    }
-
-                    if (!repository && !options.repoId) {
-                        const orgRepo = await gitService.extractOrgRepo();
-                        if (orgRepo) {
-                            repository = `${orgRepo.org}/${orgRepo.repo}`;
-                        }
-                    }
+                let repository: string | undefined;
+                const orgRepo = await gitService.extractOrgRepo();
+                if (orgRepo) {
+                    repository = `${orgRepo.org}/${orgRepo.repo}`;
                 }
 
                 const payload = {
-                    prUrl:
-                        mode === 'pull_request' ? normalizedPrUrl : undefined,
-                    prNumber: mode === 'pull_request' ? prNumber : undefined,
-                    repositoryId: options.repoId,
                     repository,
                     taskUrl: options.taskUrl,
                     taskId: options.taskId,
-                    diff: mode === 'local_diff' ? diff : undefined,
+                    diff,
                 };
 
                 if (options.dryRun) {
@@ -382,26 +314,9 @@ prCommand
                         chalk.green('Business validation completed.'),
                     );
                 }
-                const responseMode = response.mode ?? mode;
-                cliInfo(
-                    chalk.dim(
-                        `Mode: ${responseMode === 'pull_request' ? 'pull request' : 'local diff'}`,
-                    ),
-                );
+                cliInfo(chalk.dim('Mode: local diff'));
 
-                if (
-                    responseMode === 'pull_request' &&
-                    response.prNumber !== undefined
-                ) {
-                    const repositoryLabel = response.repositoryName
-                        ? ` (${response.repositoryName})`
-                        : '';
-                    cliInfo(
-                        chalk.dim(
-                            `PR: #${response.prNumber}${repositoryLabel}`,
-                        ),
-                    );
-                } else if (response.repositoryName) {
+                if (response.repositoryName) {
                     cliInfo(
                         chalk.dim(`Repository: ${response.repositoryName}`),
                     );

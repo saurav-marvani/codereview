@@ -1,6 +1,6 @@
 ---
 name: kodus-review
-description: Use when asked to review code with Kodus, run `kodus review`, use `--prompt-only`, or act on Kodus review results. Run the Kodus CLI review flow and apply fixes based on CLI output. Not for local dev CLI flow, PR suggestions, or business validation.
+description: Use when the user wants Kodus to review local changes, run `kodus review` or `--prompt-only`, fix Kodus review findings, or check commit, push, or merge readiness.
 ---
 
 # Kodus Review
@@ -9,7 +9,7 @@ description: Use when asked to review code with Kodus, run `kodus review`, use `
 
 Use the Kodus CLI to review changes and resolve issues. Prefer machine-friendly output via `--prompt-only`, then apply fixes in code.
 
-If the request is to validate a pull request against business rules, task requirements, or acceptance criteria, use `kodus-business-rules-validation` instead (legacy alias: `business-rules-validation`). `kodus review` does not trigger `@kody -v business-logic`.
+If the request is to validate local changes against business rules, task requirements, or acceptance criteria, use `kodus-business-rules-validation` instead. `kodus review` does not trigger local business validation.
 
 ## Trigger Hints
 
@@ -49,5 +49,5 @@ If the request is to validate a pull request against business rules, task requir
 
 - Prefer `--prompt-only` for predictable parsing.
 - Avoid `--interactive` unless the user explicitly asks.
-- Redirect PR-vs-task validation requests to `kodus-business-rules-validation` (legacy alias `business-rules-validation`).
+- Redirect PR-vs-task validation requests to `kodus-business-rules-validation`.
 - Use `review --help` to undertstand review possibilities

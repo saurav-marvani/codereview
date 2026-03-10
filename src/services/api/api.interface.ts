@@ -55,9 +55,6 @@ export interface IReviewApi {
     triggerBusinessValidation(
         accessToken: string,
         params: {
-            prUrl?: string;
-            prNumber?: number;
-            repositoryId?: string;
             repository?: string;
             taskUrl?: string;
             taskId?: string;

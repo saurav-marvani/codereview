@@ -121,11 +121,8 @@ export interface PullRequestSuggestionsResponse {
 
 export interface BusinessValidationResponse {
     accepted: boolean;
-    mode: 'pull_request' | 'local_diff';
+    mode: 'local_diff';
     command: string;
-    prNumber?: number;
-    prUrl?: string;
-    repositoryId?: string;
     repositoryName?: string;
     taskReference?: string;
     result: string;
