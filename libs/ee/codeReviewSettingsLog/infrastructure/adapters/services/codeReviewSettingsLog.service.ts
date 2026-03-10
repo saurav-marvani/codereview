@@ -37,6 +37,10 @@ import {
     OrgSettingsLogHandler,
     OrgSettingsLogParams,
 } from './orgSettingsLog.handler';
+import {
+    CliKeyLogHandler,
+    CliKeyLogParams,
+} from './cliKeyLog.handler';
 import { ICodeReviewSettingsLogService } from '@libs/ee/codeReviewSettingsLog/domain/contracts/codeReviewSettingsLog.service.contract';
 import {
     CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN,
@@ -63,6 +67,7 @@ export class CodeReviewSettingsLogService implements ICodeReviewSettingsLogServi
         private readonly userInviteLogHandler: UserInviteLogHandler,
         private readonly userManagementLogHandler: UserManagementLogHandler,
         private readonly orgSettingsLogHandler: OrgSettingsLogHandler,
+        private readonly cliKeyLogHandler: CliKeyLogHandler,
     ) {}
 
     /**
@@ -268,5 +273,19 @@ export class CodeReviewSettingsLogService implements ICodeReviewSettingsLogServi
         }
 
         await this.orgSettingsLogHandler.logOrgSettingsChange(params);
+    }
+
+    // CLI Keys
+    public async registerCliKeyLog(
+        params: CliKeyLogParams,
+    ): Promise<void> {
+        const canAudit = await this.shouldAllowAuditLogs(
+            params.organizationAndTeamData,
+        );
+        if (!canAudit) {
+            return;
+        }
+
+        await this.cliKeyLogHandler.logCliKeyAction(params);
     }
 }

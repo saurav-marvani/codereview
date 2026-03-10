@@ -11,4 +11,5 @@ export const AuditLogEvents = {
     USER_ROLE_CHANGE: 'audit.userRoleChange',
     USER_REPO_ACCESS: 'audit.userRepoAccess',
     ORG_SETTINGS: 'audit.orgSettings',
+    CLI_KEY: 'audit.cliKey',
 } as const;

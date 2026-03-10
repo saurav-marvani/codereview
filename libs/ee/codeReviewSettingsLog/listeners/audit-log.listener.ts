@@ -23,6 +23,7 @@ import {
     UserRepoAccessLogParams,
 } from '../infrastructure/adapters/services/userManagementLog.handler';
 import { OrgSettingsLogParams } from '../infrastructure/adapters/services/orgSettingsLog.handler';
+import { CliKeyLogParams } from '../infrastructure/adapters/services/cliKeyLog.handler';
 
 @Injectable()
 export class AuditLogListener {
@@ -160,6 +161,15 @@ export class AuditLogListener {
             );
         } catch (error) {
             this.logError('org settings', error, params);
+        }
+    }
+
+    @OnEvent(AuditLogEvents.CLI_KEY)
+    async handleCliKey(params: CliKeyLogParams) {
+        try {
+            await this.codeReviewSettingsLogService.registerCliKeyLog(params);
+        } catch (error) {
+            this.logError('cli key', error, params);
         }
     }
 

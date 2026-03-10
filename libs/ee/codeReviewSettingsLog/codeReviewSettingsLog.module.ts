@@ -24,6 +24,7 @@ import { UserStatusLogHandler } from './infrastructure/adapters/services/userSta
 import { UserInviteLogHandler } from './infrastructure/adapters/services/userInviteLog.handler';
 import { UserManagementLogHandler } from './infrastructure/adapters/services/userManagementLog.handler';
 import { OrgSettingsLogHandler } from './infrastructure/adapters/services/orgSettingsLog.handler';
+import { CliKeyLogHandler } from './infrastructure/adapters/services/cliKeyLog.handler';
 import { AuditLogListener } from './listeners/audit-log.listener';
 
 @Module({
@@ -57,6 +58,7 @@ import { AuditLogListener } from './listeners/audit-log.listener';
         UserInviteLogHandler,
         UserManagementLogHandler,
         OrgSettingsLogHandler,
+        CliKeyLogHandler,
         RegisterUserStatusLogUseCase,
         FindCodeReviewSettingsLogsUseCase,
         AuditLogListener,

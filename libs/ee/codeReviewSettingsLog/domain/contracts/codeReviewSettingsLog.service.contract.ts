@@ -14,6 +14,7 @@ import {
     UserRepoAccessLogParams,
 } from '../../infrastructure/adapters/services/userManagementLog.handler';
 import { OrgSettingsLogParams } from '../../infrastructure/adapters/services/orgSettingsLog.handler';
+import { CliKeyLogParams } from '../../infrastructure/adapters/services/cliKeyLog.handler';
 import { ICodeReviewSettingsLogRepository } from './codeReviewSettingsLog.repository.contract';
 
 export const CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN = Symbol(
@@ -45,4 +46,5 @@ export interface ICodeReviewSettingsLogService extends ICodeReviewSettingsLogRep
         params: UserRepoAccessLogParams,
     ): Promise<void>;
     registerOrgSettingsLog(params: OrgSettingsLogParams): Promise<void>;
+    registerCliKeyLog(params: CliKeyLogParams): Promise<void>;
 }
