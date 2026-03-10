@@ -341,7 +341,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         await this.logConfigUpdate({
             organizationAndTeamData,
             oldConfig,
-            newConfig: newConfigValue,
+            newConfig: newDelta,
             level,
             repository,
             directory,
