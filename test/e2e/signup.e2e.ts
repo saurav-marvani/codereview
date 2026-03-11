@@ -34,7 +34,7 @@ test.describe('Sign Up Flow', () => {
         );
 
         await page.goto('/sign-up');
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('domcontentloaded');
     });
 
     test('should show error for personal email', async ({ page }) => {
