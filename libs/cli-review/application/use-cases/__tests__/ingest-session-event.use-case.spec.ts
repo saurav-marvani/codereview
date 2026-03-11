@@ -2,6 +2,14 @@ import { IngestSessionEventUseCase } from '../ingest-session-event.use-case';
 import { ClassifySessionUseCase } from '../classify-session.use-case';
 import { SessionEventRepository } from '@libs/cli-review/infrastructure/repositories/session-event.repository';
 
+jest.mock('@kodus/flow', () => ({
+    createLogger: () => ({
+        log: jest.fn(),
+        error: jest.fn(),
+        warn: jest.fn(),
+    }),
+}));
+
 describe('IngestSessionEventUseCase', () => {
     let useCase: IngestSessionEventUseCase;
     let repo: jest.Mocked<SessionEventRepository>;
@@ -10,6 +18,7 @@ describe('IngestSessionEventUseCase', () => {
     beforeEach(() => {
         repo = {
             create: jest.fn(),
+            findBySessionId: jest.fn().mockResolvedValue([]),
         } as any;
 
         classifyUseCase = {
@@ -106,5 +115,38 @@ describe('IngestSessionEventUseCase', () => {
 
         // Wait for setImmediate — should not throw
         await new Promise((r) => setImmediate(r));
+    });
+
+    it('should check for prior turn_start when ingesting turn_end', async () => {
+        repo.create.mockResolvedValue({ uuid: 'evt-1' } as any);
+        repo.findBySessionId.mockResolvedValue([]);
+
+        await useCase.execute({
+            ...baseParams,
+            event: {
+                sessionId: 'sess-1',
+                type: 'turn_end' as const,
+                branch: 'main',
+                timestamp: '2025-01-01T00:00:00Z',
+            },
+        });
+
+        expect(repo.findBySessionId).toHaveBeenCalledWith('sess-1', 'org-1');
+    });
+
+    it('should not query prior events for non turn_end events', async () => {
+        repo.create.mockResolvedValue({ uuid: 'evt-1' } as any);
+
+        await useCase.execute({
+            ...baseParams,
+            event: {
+                sessionId: 'sess-1',
+                type: 'turn_start' as const,
+                branch: 'main',
+                timestamp: '2025-01-01T00:00:00Z',
+            },
+        });
+
+        expect(repo.findBySessionId).not.toHaveBeenCalled();
     });
 });

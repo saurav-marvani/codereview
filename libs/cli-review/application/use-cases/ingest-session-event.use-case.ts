@@ -47,6 +47,31 @@ export class IngestSessionEventUseCase implements IUseCase {
                 payload: rest,
             });
 
+            // Warn when turn_end arrives without a prior turn_start — helps
+            // verify the CLI-side synthetic turn_start fix is working.
+            if (type === 'turn_end') {
+                const prior =
+                    await this.sessionEventRepository.findBySessionId(
+                        sessionId,
+                        organizationAndTeamData.organizationId,
+                    );
+                const hasTurnStart = prior.some(
+                    (e) => e.type === 'turn_start',
+                );
+                if (!hasTurnStart) {
+                    this.logger.warn({
+                        message:
+                            'turn_end received without prior turn_start',
+                        context: IngestSessionEventUseCase.name,
+                        metadata: {
+                            sessionId,
+                            organizationId:
+                                organizationAndTeamData.organizationId,
+                        },
+                    });
+                }
+            }
+
             if (type === 'session_end') {
                 setImmediate(() => {
                     void this.classifySessionUseCase
