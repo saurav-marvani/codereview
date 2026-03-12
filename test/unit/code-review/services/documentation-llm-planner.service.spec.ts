@@ -101,9 +101,11 @@ describe('DocumentationLLMPlannerService', () => {
                 ecosystem: 'npm',
             }),
         ]);
+        expect(tsPayload.file.language).toBe('TypeScript');
         expect(rubyPayload.packages).toEqual([
             expect.objectContaining({ name: 'rails', ecosystem: 'ruby' }),
         ]);
+        expect(rubyPayload.file.language).toBe('Ruby');
     });
 
     it('should keep empty queryTasks when planner succeeds with no documentation need', async () => {
@@ -218,5 +220,92 @@ describe('DocumentationLLMPlannerService', () => {
                 sourceFile: 'apps/web/package.json',
             }),
         ]);
+    });
+
+    it('should return empty queryTasks when planner fails', async () => {
+        const promptRunner = {
+            builder: jest.fn(() => ({
+                setProviders: jest.fn().mockReturnThis(),
+                setBYOKConfig: jest.fn().mockReturnThis(),
+                setBYOKFallbackConfig: jest.fn().mockReturnThis(),
+                setParser: jest.fn().mockReturnThis(),
+                setLLMJsonMode: jest.fn().mockReturnThis(),
+                setPayload: jest.fn().mockReturnThis(),
+                addPrompt: jest.fn().mockReturnThis(),
+                setTemperature: jest.fn().mockReturnThis(),
+                setRunName: jest.fn().mockReturnThis(),
+                execute: jest.fn(async () => {
+                    throw new Error('forced failure');
+                }),
+            })),
+        } as unknown as PromptRunnerService;
+
+        const service = new DocumentationLLMPlannerService(promptRunner);
+
+        const result = await service.planDocumentationByFile({
+            packages: [
+                {
+                    name: '@nestjs/common',
+                    ecosystem: 'npm',
+                    sourceFile: 'package.json',
+                },
+            ],
+            changedFiles: [
+                {
+                    filename: 'apps/api/src/users.controller.ts',
+                    patch: '@@ -1,1 +1,2 @@\n+ import { Controller } from "@nestjs/common"',
+                    patchWithLinesStr:
+                        '@@ -1,1 +1,2 @@\n+ import { Controller } from "@nestjs/common"',
+                    fileContent:
+                        'import { Controller } from "@nestjs/common";\n@Controller("users")\nexport class UsersController {}',
+                } as FileChange,
+            ],
+        });
+
+        const task =
+            result['apps/api/src/users.controller.ts']?.queryTasks?.[0];
+        expect(task).toBeUndefined();
+        expect(result['apps/api/src/users.controller.ts']).toEqual({
+            queryTasks: [],
+        });
+    });
+
+    it('should pass entire file content and diff to planner payload without truncation', async () => {
+        const payloads: any[] = [];
+        const service = new DocumentationLLMPlannerService(
+            buildPromptRunnerMock(payloads),
+        );
+
+        const longFileContent = `HEADER\n${'a'.repeat(12000)}\nFOOTER`;
+        const longDiff = `@@ -1,1 +1,1 @@\n+${'b'.repeat(10000)}\n`;
+
+        await service.planDocumentationByFile({
+            packages: [
+                {
+                    name: '@nestjs/common',
+                    ecosystem: 'npm',
+                    sourceFile: 'package.json',
+                },
+            ],
+            changedFiles: [
+                {
+                    filename: 'apps/api/src/large.controller.ts',
+                    patch: longDiff,
+                    patchWithLinesStr: longDiff,
+                    fileContent: longFileContent,
+                } as FileChange,
+            ],
+        });
+
+        const payload = payloads.find(
+            (entry) =>
+                entry.file.filePath === 'apps/api/src/large.controller.ts',
+        );
+
+        expect(payload).toBeDefined();
+        expect(payload.file.fileContent.length).toBe(longFileContent.length);
+        expect(payload.file.fileContent).toBe(longFileContent);
+        expect(payload.file.diff.length).toBe(longDiff.length);
+        expect(payload.file.diff).toBe(longDiff);
     });
 });

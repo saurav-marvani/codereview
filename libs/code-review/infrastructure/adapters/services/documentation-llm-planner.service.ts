@@ -24,9 +24,6 @@ import { BYOKPromptRunnerService } from '@libs/core/infrastructure/services/toke
 import { Injectable } from '@nestjs/common';
 import path from 'path';
 
-const FILE_CONTENT_LIMIT = 5000;
-const PATCH_CONTENT_LIMIT = 4000;
-
 @Injectable()
 export class DocumentationLLMPlannerService {
     private readonly logger = createLogger(DocumentationLLMPlannerService.name);
@@ -59,7 +56,7 @@ export class DocumentationLLMPlannerService {
             byokConfig,
         );
 
-        const packageSlice = packages.slice(0, 200);
+        const packageSlice = packages;
         const plans: Record<string, DocumentationQueryPlanByFile> = {};
 
         try {
@@ -74,15 +71,11 @@ export class DocumentationLLMPlannerService {
                         packages: filePackages,
                         file: {
                             filePath: file.filename,
-                            fileContent: (file.fileContent || '').slice(
-                                0,
-                                FILE_CONTENT_LIMIT,
-                            ),
-                            diff: (
-                                file.patchWithLinesStr ||
-                                file.patch ||
-                                ''
-                            ).slice(0, PATCH_CONTENT_LIMIT),
+                            language:
+                                this.getLanguageNameForFile(file.filename) ||
+                                'Unknown',
+                            fileContent: file.fileContent || '',
+                            diff: file.patchWithLinesStr || file.patch || '',
                         },
                     };
 
@@ -126,16 +119,13 @@ export class DocumentationLLMPlannerService {
                     }
 
                     plans[settledResult.value.file.filename] =
-                        this.buildFallbackPlanForFile(
-                            settledResult.value.file,
-                            packages,
-                        );
+                        this.buildEmptyPlanForFile();
                     continue;
                 }
 
                 this.logger.warn({
                     message:
-                        'Documentation planner LLM failed for one file, using fallback for that file',
+                        'Documentation planner LLM failed for one file; documentation queries will be empty for that file',
                     context: DocumentationLLMPlannerService.name,
                     metadata: {
                         fileName: codeFiles[index]?.filename,
@@ -145,25 +135,25 @@ export class DocumentationLLMPlannerService {
 
                 const fallbackFile = codeFiles[index];
                 if (fallbackFile) {
-                    plans[fallbackFile.filename] =
-                        this.buildFallbackPlanForFile(fallbackFile, packages);
+                    plans[fallbackFile.filename] = this.buildEmptyPlanForFile();
                 }
             }
 
-            if (Object.keys(plans).length > 0) {
-                return plans;
-            }
-
-            return this.buildFallbackPlan(codeFiles, packages);
+            return plans;
         } catch (error) {
             this.logger.warn({
                 message:
-                    'Documentation planner LLM failed, using fallback query plan',
+                    'Documentation planner LLM failed; documentation queries will be empty',
                 context: DocumentationLLMPlannerService.name,
                 error,
             });
 
-            return this.buildFallbackPlan(codeFiles, packages);
+            return Object.fromEntries(
+                codeFiles.map((file) => [
+                    file.filename,
+                    this.buildEmptyPlanForFile(),
+                ]),
+            );
         }
     }
 
@@ -196,71 +186,10 @@ export class DocumentationLLMPlannerService {
         };
     }
 
-    private buildFallbackPlan(
-        changedFiles: FileChange[],
-        packages: RepositoryPackageReference[],
-    ): Record<string, DocumentationQueryPlanByFile> {
-        const plan: Record<string, DocumentationQueryPlanByFile> = {};
-
-        for (const file of changedFiles) {
-            const filePackages = this.filterPackagesForFile(
-                packages,
-                file.filename,
-            );
-            const topPackages = this.uniqueStrings(
-                filePackages.map((pkg) => pkg.name),
-            ).slice(0, 5);
-
-            if (!topPackages.length) {
-                plan[file.filename] = {
-                    queryTasks: [],
-                };
-                continue;
-            }
-
-            const fileText =
-                `${file.fileContent || ''}\n${file.patch || ''}`.toLowerCase();
-            const matched = topPackages.filter(
-                (pkg) =>
-                    fileText.includes(pkg.toLowerCase().replace('/', '')) ||
-                    fileText.includes(pkg.toLowerCase()),
-            );
-
-            const relevantPackages = (
-                matched.length > 0 ? matched : topPackages
-            ).slice(0, 3);
-
-            const queryTasks = relevantPackages.map((packageName) =>
-                this.createQueryTask(
-                    packageName,
-                    `Find official documentation and best practices for ${packageName} used in ${file.filename}`,
-                ),
-            );
-
-            plan[file.filename] = {
-                queryTasks,
-            };
-        }
-
-        return plan;
-    }
-
-    private buildFallbackPlanForFile(
-        file: FileChange,
-        packages: RepositoryPackageReference[],
-    ): DocumentationQueryPlanByFile {
-        const fileScopedPackages = this.filterPackagesForFile(
-            packages,
-            file.filename,
-        );
-
-        return (
-            this.buildFallbackPlan([file], fileScopedPackages)[
-                file.filename
-            ] || {
-                queryTasks: [],
-            }
-        );
+    private buildEmptyPlanForFile(): DocumentationQueryPlanByFile {
+        return {
+            queryTasks: [],
+        };
     }
 
     private uniqueQueryTasks(
@@ -392,15 +321,7 @@ export class DocumentationLLMPlannerService {
     private getAllowedEcosystemsForFile(
         filePath: string,
     ): RepositoryPackageReference['ecosystem'][] {
-        const extension = path.posix.extname(filePath).toLowerCase();
-
-        if (!extension) {
-            return [];
-        }
-
-        const language = Object.values(SUPPORTED_LANGUAGES).find((lang) =>
-            lang.extensions.includes(extension),
-        )?.name;
+        const language = this.getLanguageNameForFile(filePath)?.toLowerCase();
 
         switch (language) {
             case 'typescript':
@@ -421,6 +342,34 @@ export class DocumentationLLMPlannerService {
         }
     }
 
+    private getLanguageNameForFile(filePath: string): string | null {
+        const extension = path.posix.extname(filePath).toLowerCase();
+
+        if (!extension) {
+            return null;
+        }
+
+        const language = Object.values(SUPPORTED_LANGUAGES).find((lang) =>
+            lang.extensions.includes(extension),
+        )?.name;
+
+        if (!language) {
+            return null;
+        }
+
+        const normalizedLabels: Record<string, string> = {
+            typescript: 'TypeScript',
+            javascript: 'JavaScript',
+            python: 'Python',
+            java: 'Java',
+            go: 'Go',
+            ruby: 'Ruby',
+            rust: 'Rust',
+        };
+
+        return normalizedLabels[language.toLowerCase()] || language;
+    }
+
     private isCodeFile(filePath: string): boolean {
         const extension = path.posix.extname(filePath).toLowerCase();
 
@@ -431,24 +380,5 @@ export class DocumentationLLMPlannerService {
         return Object.values(SUPPORTED_LANGUAGES).some((lang) =>
             lang.extensions.includes(extension),
         );
-    }
-
-    private uniqueStrings(items: string[]): string[] {
-        const seen = new Set<string>();
-        const result: string[] = [];
-
-        for (const item of items || []) {
-            const normalized = (item || '').trim();
-            if (!normalized) {
-                continue;
-            }
-            if (seen.has(normalized.toLowerCase())) {
-                continue;
-            }
-            seen.add(normalized.toLowerCase());
-            result.push(normalized);
-        }
-
-        return result;
     }
 }

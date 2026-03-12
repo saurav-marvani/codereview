@@ -107,13 +107,17 @@ describe('DocumentationSearchExaService', () => {
                 queryTasks: [
                     {
                         packageName: '@nestjs/common',
-                        query: 'nestjs controllers',
+                        query: 'Language: TypeScript. Package: @nestjs/common. nestjs controllers',
                     },
                 ],
             },
         });
 
         expect(exaSearchMock).toHaveBeenCalledTimes(1);
+        const exaQuery = exaSearchMock.mock.calls[0][0] as string;
+        expect(exaQuery).toContain('Package: @nestjs/common');
+        expect(exaQuery).toContain('Language context: TypeScript');
+        expect(exaQuery.toLowerCase()).toContain('official');
         expect(result['src/a.ts']).toHaveLength(1);
         expect(result['src/a.ts'][0]).toEqual(
             expect.objectContaining({
@@ -164,5 +168,46 @@ describe('DocumentationSearchExaService', () => {
         expect(result['src/a.ts']).toHaveLength(1);
         expect(result['src/a.ts'][0].snippet).toBe('cached snippet');
         expect(exaSearchMock).not.toHaveBeenCalled();
+    });
+
+    it('should not cap the number of query tasks processed', async () => {
+        const configService = {
+            get: jest.fn((key: string) =>
+                key === 'API_EXA_KEY' ? 'exa_test_key' : undefined,
+            ),
+        } as unknown as ConfigService;
+
+        exaSearchMock.mockResolvedValue({
+            results: [
+                {
+                    title: 'Official Doc',
+                    url: 'https://docs.example.com',
+                    text: 'documentation content',
+                },
+            ],
+            citations: [{ url: 'https://docs.example.com' }],
+        });
+
+        const cacheService = buildCacheServiceMock();
+        const promptRunnerService = buildPromptRunnerServiceMock();
+        const service = new DocumentationSearchExaService(
+            configService,
+            cacheService as unknown as DocumentationSearchCacheService,
+            promptRunnerService,
+        );
+
+        const queryTasks = Array.from({ length: 7 }).map((_, index) => ({
+            packageName: `pkg-${index}`,
+            query: `Language: TypeScript. Package: pkg-${index}. official docs`,
+        }));
+
+        const result = await service.searchByFilePlan({
+            'src/a.ts': {
+                queryTasks,
+            },
+        });
+
+        expect(exaSearchMock).toHaveBeenCalledTimes(7);
+        expect(result['src/a.ts']).toHaveLength(7);
     });
 });

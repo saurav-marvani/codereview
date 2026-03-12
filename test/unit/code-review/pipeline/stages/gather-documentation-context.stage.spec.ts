@@ -397,4 +397,33 @@ describe('GatherDocumentationContextStage', () => {
 
         expect(result).toBe(baseContext);
     });
+
+    it('should skip documentation retrieval when planner returns no queries', async () => {
+        discoveryService.discoverPackages.mockResolvedValue({
+            packages: [
+                {
+                    name: '@nestjs/common',
+                    ecosystem: 'npm',
+                    sourceFile: 'package.json',
+                },
+            ],
+            manifestFiles: ['package.json'],
+        });
+
+        plannerService.planDocumentationByFile.mockResolvedValue({
+            'src/a.ts': {
+                queryTasks: [],
+            },
+        });
+
+        const result = await stage.execute(baseContext);
+
+        expect(searchService.searchByFilePlan).not.toHaveBeenCalled();
+        expect(result.documentationQueryPlanByFile).toEqual({
+            'src/a.ts': {
+                queryTasks: [],
+            },
+        });
+        expect(result.documentationByFile).toEqual({});
+    });
 });

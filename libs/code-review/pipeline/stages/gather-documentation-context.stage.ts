@@ -149,6 +149,30 @@ export class GatherDocumentationContextStage extends BasePipelineStage<CodeRevie
                     byokConfig: context.codeReviewConfig?.byokConfig,
                 });
 
+            const hasPlannerQueries = Object.values(
+                documentationQueryPlanByFile || {},
+            ).some((plan) => (plan?.queryTasks || []).length > 0);
+
+            if (!hasPlannerQueries) {
+                this.logger.log({
+                    message:
+                        'Documentation planner returned no queries; skipping documentation retrieval stage',
+                    context: this.stageName,
+                    metadata: {
+                        prNumber: context.pullRequest.number,
+                        repository: context.repository.name,
+                        discoveredPackages: discovery.packages.length,
+                    },
+                });
+
+                return this.updateContext(context, (draft) => {
+                    draft.discoveredPackages = discovery.packages;
+                    draft.documentationQueryPlanByFile =
+                        documentationQueryPlanByFile;
+                    draft.documentationByFile = {};
+                });
+            }
+
             const documentationByFile =
                 await this.documentationSearchService.searchByFilePlan(
                     documentationQueryPlanByFile,

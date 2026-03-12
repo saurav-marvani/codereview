@@ -216,4 +216,266 @@ describe('DocumentationPackageDiscoveryService', () => {
             ]),
         );
     });
+
+    it('should parse all supported manifest file formats', async () => {
+        const context = {
+            organizationAndTeamData: { organizationId: 'o1', teamId: 't1' },
+            repository: { id: 'r1', name: 'repo' },
+            pullRequest: { number: 14 },
+            changedFiles: [
+                {
+                    filename: 'package.json',
+                    fileContent: JSON.stringify({
+                        dependencies: {
+                            react: '^18.3.1',
+                        },
+                    }),
+                },
+                {
+                    filename: 'requirements.txt',
+                    fileContent: 'fastapi==0.115.0\nuvicorn>=0.30.0\n',
+                },
+                {
+                    filename: 'pyproject.toml',
+                    fileContent: `
+[project]
+dependencies = [
+  "django>=5.0.0",
+  "pydantic==2.8.2"
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+httpx = "^0.27.0"
+`,
+                },
+                {
+                    filename: 'pom.xml',
+                    fileContent: `
+<project>
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+      <version>3.3.2</version>
+    </dependency>
+  </dependencies>
+</project>
+`,
+                },
+                {
+                    filename: 'build.gradle',
+                    fileContent: `
+dependencies {
+  implementation 'org.apache.commons:commons-lang3:3.14.0'
+}
+`,
+                },
+                {
+                    filename: 'build.gradle.kts',
+                    fileContent: `
+dependencies {
+  implementation("com.squareup.okhttp3:okhttp:4.12.0")
+}
+`,
+                },
+                {
+                    filename: 'go.mod',
+                    fileContent: `
+module example.com/myapp
+
+go 1.22
+
+require (
+  github.com/gin-gonic/gin v1.10.0
+)
+`,
+                },
+                {
+                    filename: 'Cargo.toml',
+                    fileContent: `
+[dependencies]
+serde = "1.0.210"
+tokio = { version = "1.39.2", features = ["macros", "rt-multi-thread"] }
+`,
+                },
+                {
+                    filename: 'Gemfile',
+                    fileContent: `
+source 'https://rubygems.org'
+gem 'rails', '~> 7.1.0'
+gem 'pg'
+`,
+                },
+            ],
+        } as unknown as CodeReviewPipelineContext;
+
+        pullRequestManager.enrichFilesWithContent.mockResolvedValue([] as any);
+
+        const result = await service.discoverPackages(context);
+
+        expect(result.manifestFiles).toEqual(
+            expect.arrayContaining([
+                'package.json',
+                'requirements.txt',
+                'pyproject.toml',
+                'pom.xml',
+                'build.gradle',
+                'build.gradle.kts',
+                'go.mod',
+                'Cargo.toml',
+                'Gemfile',
+            ]),
+        );
+
+        expect(result.packages).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    name: 'react',
+                    ecosystem: 'npm',
+                    sourceFile: 'package.json',
+                }),
+                expect.objectContaining({
+                    name: 'fastapi',
+                    ecosystem: 'pip',
+                    sourceFile: 'requirements.txt',
+                }),
+                expect.objectContaining({
+                    name: 'django',
+                    ecosystem: 'pip',
+                    sourceFile: 'pyproject.toml',
+                }),
+                expect.objectContaining({
+                    name: 'httpx',
+                    ecosystem: 'pip',
+                    sourceFile: 'pyproject.toml',
+                }),
+                expect.objectContaining({
+                    name: 'org.springframework.boot:spring-boot-starter-web',
+                    ecosystem: 'maven',
+                    sourceFile: 'pom.xml',
+                }),
+                expect.objectContaining({
+                    name: 'org.apache.commons:commons-lang3',
+                    ecosystem: 'gradle',
+                    sourceFile: 'build.gradle',
+                }),
+                expect.objectContaining({
+                    name: 'com.squareup.okhttp3:okhttp',
+                    ecosystem: 'gradle',
+                    sourceFile: 'build.gradle.kts',
+                }),
+                expect.objectContaining({
+                    name: 'github.com/gin-gonic/gin',
+                    ecosystem: 'go',
+                    sourceFile: 'go.mod',
+                }),
+                expect.objectContaining({
+                    name: 'serde',
+                    ecosystem: 'cargo',
+                    sourceFile: 'Cargo.toml',
+                }),
+                expect.objectContaining({
+                    name: 'tokio',
+                    ecosystem: 'cargo',
+                    sourceFile: 'Cargo.toml',
+                }),
+                expect.objectContaining({
+                    name: 'rails',
+                    ecosystem: 'ruby',
+                    sourceFile: 'Gemfile',
+                }),
+            ]),
+        );
+    });
+
+    it('should fail open for invalid manifest contents and continue parsing valid files', async () => {
+        const context = {
+            organizationAndTeamData: { organizationId: 'o1', teamId: 't1' },
+            repository: { id: 'r1', name: 'repo' },
+            pullRequest: { number: 15 },
+            changedFiles: [
+                {
+                    filename: 'package.json',
+                    fileContent: '{"dependencies": {"react": "^18.3.1"}',
+                },
+                {
+                    filename: 'pyproject.toml',
+                    fileContent:
+                        '[project\ndependencies = ["fastapi>=0.115.0"]',
+                },
+                {
+                    filename: 'Cargo.toml',
+                    fileContent: '[dependencies\nserde = "1.0"',
+                },
+                {
+                    filename: 'pom.xml',
+                    fileContent:
+                        '<project><dependencies><dependency><groupId>org.springframework.boot</groupId>',
+                },
+                {
+                    filename: 'build.gradle',
+                    fileContent:
+                        "implementation 'org.apache.commons:commons-lang3:3.14.0'",
+                },
+                {
+                    filename: 'go.mod',
+                    fileContent:
+                        'module example.com/myapp\n\nrequire (\n  github.com/gin-gonic/gin v1.10.0\n)\n',
+                },
+                {
+                    filename: 'Gemfile',
+                    fileContent: "gem 'rails', '~> 7.1.0'",
+                },
+                {
+                    filename: 'requirements.txt',
+                    fileContent: 'fastapi==0.115.0\n',
+                },
+            ],
+        } as unknown as CodeReviewPipelineContext;
+
+        pullRequestManager.enrichFilesWithContent.mockResolvedValue([] as any);
+
+        await expect(service.discoverPackages(context)).resolves.toBeDefined();
+
+        const result = await service.discoverPackages(context);
+
+        expect(result.packages).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    name: 'org.apache.commons:commons-lang3',
+                    ecosystem: 'gradle',
+                    sourceFile: 'build.gradle',
+                }),
+                expect.objectContaining({
+                    name: 'github.com/gin-gonic/gin',
+                    ecosystem: 'go',
+                    sourceFile: 'go.mod',
+                }),
+                expect.objectContaining({
+                    name: 'rails',
+                    ecosystem: 'ruby',
+                    sourceFile: 'Gemfile',
+                }),
+                expect.objectContaining({
+                    name: 'fastapi',
+                    ecosystem: 'pip',
+                    sourceFile: 'requirements.txt',
+                }),
+            ]),
+        );
+
+        expect(
+            result.packages.some((pkg) => pkg.sourceFile === 'package.json'),
+        ).toBe(false);
+        expect(
+            result.packages.some((pkg) => pkg.sourceFile === 'pyproject.toml'),
+        ).toBe(false);
+        expect(
+            result.packages.some((pkg) => pkg.sourceFile === 'Cargo.toml'),
+        ).toBe(false);
+    });
 });

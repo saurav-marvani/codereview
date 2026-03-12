@@ -77,10 +77,7 @@ export class DocumentationSearchExaService {
     private async searchForPlan(
         plan: DocumentationQueryPlanByFile,
     ): Promise<DocumentationItem[]> {
-        const queryTasks = this.normalizeQueryTasks(plan.queryTasks).slice(
-            0,
-            5,
-        );
+        const queryTasks = this.normalizeQueryTasks(plan.queryTasks);
 
         if (!queryTasks.length || !this.exaClient) {
             return [];
@@ -98,7 +95,7 @@ export class DocumentationSearchExaService {
             }
         }
 
-        return this.deduplicateByQuery(items).slice(0, 20);
+        return this.deduplicateByQuery(items);
     }
 
     private async searchQuery(task: {
@@ -234,7 +231,18 @@ export class DocumentationSearchExaService {
         packageName: string,
         query: string,
     ): string {
-        return `Package: ${packageName}. Query: ${query}. Restrict results to this package's official documentation and APIs.`;
+        const language = this.extractLanguageFromQuery(query);
+
+        return `Package: ${packageName}. Language context: ${language}. Query: ${query}. Prefer official vendor/maintainer documentation and API references for this exact package. Use community sources only when official docs are unavailable.`;
+    }
+
+    private extractLanguageFromQuery(query: string): string {
+        const match = (query || '').match(/language\s*:\s*([^\.]+)\.?/i);
+        if (!match || !match[1]) {
+            return 'Unspecified';
+        }
+
+        return match[1].trim();
     }
 
     private buildSnippet(text: string | undefined, query: string): string {
@@ -244,7 +252,7 @@ export class DocumentationSearchExaService {
             return `No extract was returned by Exa for query: ${query}`;
         }
 
-        return sanitized.slice(0, 1200);
+        return sanitized;
     }
 
     private buildRawSearchContent(response: ExaSearchResponse): string {
@@ -281,7 +289,7 @@ export class DocumentationSearchExaService {
             );
         }
 
-        return sections.join('\n\n').slice(0, 12000);
+        return sections.join('\n\n');
     }
 
     private extractCitations(response: ExaSearchResponse): CitationLike[] {
@@ -303,8 +311,7 @@ export class DocumentationSearchExaService {
                 title:
                     typeof entry.title === 'string' ? entry.title : undefined,
                 url: typeof entry.url === 'string' ? entry.url : undefined,
-            }))
-            .slice(0, 8);
+            }));
     }
 
     private extractResults(response: ExaSearchResponse): ResultLike[] {
@@ -323,8 +330,7 @@ export class DocumentationSearchExaService {
                     typeof entry.title === 'string' ? entry.title : undefined,
                 url: typeof entry.url === 'string' ? entry.url : undefined,
                 text: typeof entry.text === 'string' ? entry.text : undefined,
-            }))
-            .slice(0, 5);
+            }));
     }
 
     private async formatDocumentationForPrompt(params: {
