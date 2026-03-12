@@ -415,6 +415,18 @@ export function buildDefaultSkillSyncTargets(
             activationPath: path.join(cwd, '.gemini'),
             baseDir: path.join(cwd, '.gemini', 'skills'),
         },
+        {
+            label: 'Kiro project skills',
+            type: 'skill',
+            activationPath: path.join(cwd, '.kiro'),
+            baseDir: path.join(cwd, '.kiro', 'skills'),
+        },
+        {
+            label: 'Kiro user skills',
+            type: 'skill',
+            activationPath: path.join(homeDir, '.kiro'),
+            baseDir: path.join(homeDir, '.kiro', 'skills'),
+        },
     ];
 }
 
