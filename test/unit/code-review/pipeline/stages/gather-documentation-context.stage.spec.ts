@@ -12,10 +12,21 @@ import { DocumentationPackageDiscoveryService } from '@libs/code-review/infrastr
 import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
 import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
 import { GatherDocumentationContextStage } from '@libs/code-review/pipeline/stages/gather-documentation-context.stage';
+import posthog from '@libs/common/utils/posthog';
 import { FileChange } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { Logger } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+
+jest.mock('@libs/common/utils/posthog', () => ({
+    __esModule: true,
+    FEATURE_FLAGS: {
+        documentationContext: 'documentation-context',
+    },
+    default: {
+        isFeatureEnabled: jest.fn().mockResolvedValue(true),
+    },
+}));
 
 describe('GatherDocumentationContextStage', () => {
     let stage: GatherDocumentationContextStage;
@@ -177,6 +188,8 @@ describe('GatherDocumentationContextStage', () => {
     }
 
     beforeEach(async () => {
+        (posthog.isFeatureEnabled as jest.Mock).mockResolvedValue(true);
+
         discoveryService = {
             discoverPackages: jest.fn(),
         } as unknown as jest.Mocked<DocumentationPackageDiscoveryService>;
