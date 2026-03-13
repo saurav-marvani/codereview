@@ -2,6 +2,7 @@ import { createLogger } from '@kodus/flow';
 import { Inject, Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
+import { AutomationStatus } from '@libs/automation/domain/automation/enum/automation-status';
 import {
     AUTOMATION_EXECUTION_REPOSITORY_TOKEN,
     IAutomationExecutionRepository,
@@ -9,13 +10,12 @@ import {
 import { IAutomationExecutionService } from '@libs/automation/domain/automationExecution/contracts/automation-execution.service';
 import { AutomationExecutionEntity } from '@libs/automation/domain/automationExecution/entities/automation-execution.entity';
 import { IAutomationExecution } from '@libs/automation/domain/automationExecution/interfaces/automation-execution.interface';
-import { CodeReviewExecution } from '@libs/automation/domain/codeReviewExecutions/interfaces/codeReviewExecution.interface';
-import { CodeReviewExecutionEntity } from '@libs/automation/domain/codeReviewExecutions/entities/codeReviewExecution.entity';
 import {
     CODE_REVIEW_EXECUTION_SERVICE,
     ICodeReviewExecutionService,
 } from '@libs/automation/domain/codeReviewExecutions/contracts/codeReviewExecution.service.contract';
-import { AutomationStatus } from '@libs/automation/domain/automation/enum/automation-status';
+import { CodeReviewExecutionEntity } from '@libs/automation/domain/codeReviewExecutions/entities/codeReviewExecution.entity';
+import { CodeReviewExecution } from '@libs/automation/domain/codeReviewExecutions/interfaces/codeReviewExecution.interface';
 import { CacheService } from '@libs/core/cache/cache.service';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 
@@ -166,6 +166,18 @@ export class AutomationExecutionService implements IAutomationExecutionService {
             endDate,
             teamAutomationId,
             status,
+        );
+    }
+
+    findEligiblePullRequestRefsForApprovalByPeriodAndTeamAutomationId(
+        startDate: Date,
+        endDate: Date,
+        teamAutomationId: string,
+    ): Promise<Array<{ repositoryId: string; pullRequestNumber: number }>> {
+        return this.automationExecutionRepository.findEligiblePullRequestRefsForApprovalByPeriodAndTeamAutomationId(
+            startDate,
+            endDate,
+            teamAutomationId,
         );
     }
 
