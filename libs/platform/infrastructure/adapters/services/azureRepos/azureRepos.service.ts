@@ -3836,82 +3836,100 @@ ${copyPrompt}
     async deleteWebhook(params: {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<void> {
-        const authDetails = await this.getAuthDetails(
-            params.organizationAndTeamData,
-        );
+        try {
+            const authDetails = await this.getAuthDetails(
+                params.organizationAndTeamData,
+            );
 
-        // Se for conexão via PAT, remove os webhooks
-        if (authDetails.authMode === AuthMode.TOKEN) {
-            const repositories =
-                await this.findOneByOrganizationAndTeamDataAndConfigKey(
-                    params.organizationAndTeamData,
-                    IntegrationConfigKey.REPOSITORIES,
-                );
+            // Se for conexão via PAT, remove os webhooks
+            if (authDetails.authMode === AuthMode.TOKEN) {
+                const repositories =
+                    await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                        params.organizationAndTeamData,
+                        IntegrationConfigKey.REPOSITORIES,
+                    );
 
-            if (repositories) {
-                for (const repo of repositories) {
-                    try {
-                        const projectId = await this.getProjectIdFromRepository(
-                            params.organizationAndTeamData,
-                            repo.id,
-                        );
+                if (repositories) {
+                    for (const repo of repositories) {
+                        try {
+                            const projectId =
+                                await this.getProjectIdFromRepository(
+                                    params.organizationAndTeamData,
+                                    repo.id,
+                                );
 
-                        if (!projectId) {
-                            continue;
-                        }
+                            if (!projectId) {
+                                continue;
+                            }
 
-                        const subs =
-                            await this.azureReposRequestHelper.listSubscriptionsByProject(
-                                {
-                                    orgName: authDetails.orgName,
-                                    token: authDetails.token,
-                                    projectId,
-                                },
+                            const subs =
+                                await this.azureReposRequestHelper.listSubscriptionsByProject(
+                                    {
+                                        orgName: authDetails.orgName,
+                                        token: authDetails.token,
+                                        projectId,
+                                    },
+                                );
+
+                            const webhookUrl =
+                                this.configService.get<string>(
+                                    'GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK'!,
+                                );
+                            const allMatching = subs.filter(
+                                (s) =>
+                                    s.publisherInputs?.repository ===
+                                        repo.id &&
+                                    s.consumerInputs?.url?.includes(
+                                        webhookUrl,
+                                    ),
                             );
 
-                        const webhookUrl = this.configService.get<string>(
-                            'GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK'!,
-                        );
-                        const allMatching = subs.filter(
-                            (s) =>
-                                s.publisherInputs?.repository === repo.id &&
-                                s.consumerInputs?.url?.includes(webhookUrl),
-                        );
+                            for (const existing of allMatching) {
+                                await this.azureReposRequestHelper.deleteWebhookById(
+                                    {
+                                        orgName: authDetails.orgName,
+                                        token: authDetails.token,
+                                        subscriptionId: existing.id,
+                                    },
+                                );
 
-                        for (const existing of allMatching) {
-                            await this.azureReposRequestHelper.deleteWebhookById(
-                                {
-                                    orgName: authDetails.orgName,
-                                    token: authDetails.token,
-                                    subscriptionId: existing.id,
-                                },
-                            );
-
-                            this.logger.log({
-                                message: `Webhook removed for repository ${repo.name} (id=${existing.id})`,
+                                this.logger.log({
+                                    message: `Webhook removed for repository ${repo.name} (id=${existing.id})`,
+                                    context: this.deleteWebhook.name,
+                                    metadata: {
+                                        organizationAndTeamData:
+                                            params.organizationAndTeamData,
+                                        repository: repo.name,
+                                        subscriptionId: existing.id,
+                                    },
+                                });
+                            }
+                        } catch (error) {
+                            this.logger.error({
+                                message: `Error deleting webhook for repository ${repo.name}`,
                                 context: this.deleteWebhook.name,
+                                error: error,
                                 metadata: {
                                     organizationAndTeamData:
                                         params.organizationAndTeamData,
                                     repository: repo.name,
-                                    subscriptionId: existing.id,
                                 },
                             });
                         }
-                    } catch (error) {
-                        this.logger.error({
-                            message: `Error deleting webhook for repository ${repo.name}`,
-                            context: this.deleteWebhook.name,
-                            error: error,
-                            metadata: {
-                                organizationAndTeamData:
-                                    params.organizationAndTeamData,
-                                repository: repo.name,
-                            },
-                        });
                     }
                 }
             }
+        } catch (error) {
+            this.logger.error({
+                message:
+                    'Error authenticating for webhook deletion',
+                context: 'AzureReposService',
+                error: error,
+                metadata: {
+                    organizationAndTeamData:
+                        params.organizationAndTeamData,
+                },
+            });
         }
     }
 

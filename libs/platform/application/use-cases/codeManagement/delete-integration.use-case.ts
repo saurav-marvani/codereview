@@ -52,12 +52,25 @@ export class DeleteIntegrationUseCase {
             return;
         }
 
-        await this.codeManagementService.deleteWebhook({
-            organizationAndTeamData: {
-                organizationId: params.organizationId,
-                teamId: params.teamId,
-            },
-        });
+        try {
+            await this.codeManagementService.deleteWebhook({
+                organizationAndTeamData: {
+                    organizationId: params.organizationId,
+                    teamId: params.teamId,
+                },
+            });
+        } catch (error) {
+            this.logger.error({
+                message:
+                    'Error deleting webhooks from remote provider — proceeding with local cleanup',
+                context: DeleteIntegrationUseCase.name,
+                error,
+                metadata: {
+                    organizationId: params.organizationId,
+                    teamId: params.teamId,
+                },
+            });
+        }
 
         const integrationConfig = await this.integrationConfigService.findOne({
             configKey: IntegrationConfigKey.REPOSITORIES,

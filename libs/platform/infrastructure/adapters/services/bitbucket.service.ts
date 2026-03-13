@@ -4172,57 +4172,71 @@ export class BitbucketService implements Omit<
     async deleteWebhook(params: {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<void> {
-        const authDetails = await this.getAuthDetails(
-            params.organizationAndTeamData,
-        );
-        const bitbucketAPI = this.instanceBitbucketApi(authDetails);
-
-        if (authDetails.authMode === AuthMode.TOKEN) {
-            const repositories = <Repositories[]>(
-                await this.findOneByOrganizationAndTeamDataAndConfigKey(
-                    params.organizationAndTeamData,
-                    IntegrationConfigKey.REPOSITORIES,
-                )
+        try {
+            const authDetails = await this.getAuthDetails(
+                params.organizationAndTeamData,
             );
+            const bitbucketAPI = this.instanceBitbucketApi(authDetails);
 
-            const webhookUrl = this.configService.get<string>(
-                'GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK',
-            );
+            if (authDetails.authMode === AuthMode.TOKEN) {
+                const repositories = <Repositories[]>(
+                    await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                        params.organizationAndTeamData,
+                        IntegrationConfigKey.REPOSITORIES,
+                    )
+                );
 
-            if (!webhookUrl) {
-                this.logger.error({
-                    message: 'Bitbucket webhook URL not found',
-                    context: BitbucketService.name,
-                });
-                return;
-            }
+                const webhookUrl = this.configService.get<string>(
+                    'GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK',
+                );
 
-            for (const repo of repositories) {
-                try {
-                    const existingHooks = await bitbucketAPI.webhooks
-                        .listForRepo({
-                            repo_slug: `{${repo.id}}`,
-                            workspace: `{${repo.workspaceId}}`,
-                            pagelen: 50,
-                        })
-                        .then((res) =>
-                            this.getPaginatedResults(bitbucketAPI, res),
+                if (!webhookUrl) {
+                    this.logger.error({
+                        message: 'Bitbucket webhook URL not found',
+                        context: BitbucketService.name,
+                    });
+                    return;
+                }
+
+                for (const repo of repositories) {
+                    try {
+                        const existingHooks = await bitbucketAPI.webhooks
+                            .listForRepo({
+                                repo_slug: `{${repo.id}}`,
+                                workspace: `{${repo.workspaceId}}`,
+                                pagelen: 50,
+                            })
+                            .then((res) =>
+                                this.getPaginatedResults(bitbucketAPI, res),
+                            );
+
+                        const webhook = existingHooks.find(
+                            (hook) => hook.url === webhookUrl,
                         );
 
-                    const webhook = existingHooks.find(
-                        (hook) => hook.url === webhookUrl,
-                    );
+                        if (webhook) {
+                            await bitbucketAPI.repositories.deleteWebhook({
+                                repo_slug: `{${repo.id}}`,
+                                workspace: `{${repo.workspaceId}}`,
+                                uid: webhook.uuid,
+                            });
 
-                    if (webhook) {
-                        await bitbucketAPI.repositories.deleteWebhook({
-                            repo_slug: `{${repo.id}}`,
-                            workspace: `{${repo.workspaceId}}`,
-                            uid: webhook.uuid,
-                        });
-
-                        this.logger.log({
-                            message: `Webhook deleted successfully for repository ${repo.name}`,
+                            this.logger.log({
+                                message: `Webhook deleted successfully for repository ${repo.name}`,
+                                context: this.deleteWebhook.name,
+                                metadata: {
+                                    repository: repo.name,
+                                    workspace: repo.workspaceId,
+                                    organizationAndTeamData:
+                                        params.organizationAndTeamData,
+                                },
+                            });
+                        }
+                    } catch (error) {
+                        this.logger.error({
+                            message: `Error deleting Bitbucket webhook for repository ${repo.name}`,
                             context: this.deleteWebhook.name,
+                            error: error,
                             metadata: {
                                 repository: repo.name,
                                 workspace: repo.workspaceId,
@@ -4231,20 +4245,19 @@ export class BitbucketService implements Omit<
                             },
                         });
                     }
-                } catch (error) {
-                    this.logger.error({
-                        message: `Error deleting Bitbucket webhook for repository ${repo.name}`,
-                        context: this.deleteWebhook.name,
-                        error: error,
-                        metadata: {
-                            repository: repo.name,
-                            workspace: repo.workspaceId,
-                            organizationAndTeamData:
-                                params.organizationAndTeamData,
-                        },
-                    });
                 }
             }
+        } catch (error) {
+            this.logger.error({
+                message:
+                    'Error authenticating for webhook deletion',
+                context: BitbucketService.name,
+                error: error,
+                metadata: {
+                    organizationAndTeamData:
+                        params.organizationAndTeamData,
+                },
+            });
         }
     }
 
