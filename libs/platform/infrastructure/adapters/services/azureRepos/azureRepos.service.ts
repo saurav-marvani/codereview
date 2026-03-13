@@ -3884,26 +3884,30 @@ ${copyPrompt}
                                     ),
                             );
 
-                            for (const existing of allMatching) {
-                                await this.azureReposRequestHelper.deleteWebhookById(
-                                    {
-                                        orgName: authDetails.orgName,
-                                        token: authDetails.token,
-                                        subscriptionId: existing.id,
-                                    },
-                                );
+                            const deletionPromises = allMatching.map(
+                                async (existing) => {
+                                    await this.azureReposRequestHelper.deleteWebhookById(
+                                        {
+                                            orgName: authDetails.orgName,
+                                            token: authDetails.token,
+                                            subscriptionId: existing.id,
+                                        },
+                                    );
 
-                                this.logger.log({
-                                    message: `Webhook removed for repository ${repo.name} (id=${existing.id})`,
-                                    context: this.deleteWebhook.name,
-                                    metadata: {
-                                        organizationAndTeamData:
-                                            params.organizationAndTeamData,
-                                        repository: repo.name,
-                                        subscriptionId: existing.id,
-                                    },
-                                });
-                            }
+                                    this.logger.log({
+                                        message: `Webhook removed for repository ${repo.name} (id=${existing.id})`,
+                                        context: this.deleteWebhook.name,
+                                        metadata: {
+                                            organizationAndTeamData:
+                                                params.organizationAndTeamData,
+                                            repository: repo.name,
+                                            subscriptionId: existing.id,
+                                        },
+                                    });
+                                },
+                            );
+
+                            await Promise.all(deletionPromises);
                         } catch (error) {
                             this.logger.error({
                                 message: `Error deleting webhook for repository ${repo.name}`,
