@@ -708,6 +708,10 @@ describe('ClassifySessionUseCase', () => {
             // Verify context was sliced for the LLM payload
             const payload = mockSetPayload.mock.calls[0][0];
             expect(payload.turns.length).toBeLessThanOrEqual(20);
+            for (const turn of payload.turns) {
+                expect(turn.toolCalls.length).toBeLessThanOrEqual(5);
+                expect(turn.filesModified.length).toBeLessThanOrEqual(5);
+            }
             expect(payload.filesModified.length).toBeLessThanOrEqual(30);
             expect(payload.filesRead.length).toBeLessThanOrEqual(20);
             expect(payload.commands.length).toBeLessThanOrEqual(20);
