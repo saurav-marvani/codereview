@@ -2,16 +2,16 @@ import { test, expect } from '@playwright/test';
 
 const MOCK_ADMIN = {
     id: 'admin-uuid',
-    email: 'admin@kodus.io',
+    email: 'nalu@kodus.io',
     name: 'Admin User',
     role: 'owner',
     status: 'active',
 };
 
-const MOCK_PARTICIPANT = {
-    id: 'participant-uuid',
-    email: 'participant@kodus.io',
-    name: 'Participant User',
+const MOCK_USER = {
+    id: 'user-uuid',
+    email: 'ana.sirino@kodus.io',
+    name: 'Ana Sirino',
     role: 'contributor',
     status: 'active',
 };
@@ -37,7 +37,7 @@ test.describe('BUG: Status change not reflecting - Team Member', () => {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    user: MOCK_PARTICIPANT,
+                    user: MOCK_USER,
                 }),
             });
         });
@@ -71,12 +71,12 @@ test.describe('BUG: Status change not reflecting - Team Member', () => {
                             teamRole: 'team_leader',
                         },
                         {
-                            uuid: MOCK_PARTICIPANT.id,
+                            uuid: MOCK_USER.id,
                             user: {
-                                email: MOCK_PARTICIPANT.email,
-                                name: MOCK_PARTICIPANT.name,
+                                email: MOCK_USER.email,
+                                name: MOCK_USER.name,
                             },
-                            role: MOCK_PARTICIPANT.role,
+                            role: MOCK_USER.role,
                             status: adminChangedParticipantStatus
                                 ? 'inactive'
                                 : 'active',
@@ -105,10 +105,10 @@ test.describe('BUG: Status change not reflecting - Team Member', () => {
 
         await page.goto('/sign-in');
         await page.waitForLoadState('domcontentloaded');
-        await page.fill('#email', MOCK_PARTICIPANT.email);
+        await page.fill('#email', MOCK_USER.email);
         await page.click('button:has-text("Continue")');
         await page.waitForTimeout(1000);
-        await page.fill('#password', 'Test@123');
+        await page.fill('#password', 'Kodus@2026');
         await page.click('button:has-text("Sign in")');
         await page.waitForURL(/\/cockpit|setup|sign-in|sign-up/, {
             timeout: 15000,
@@ -123,14 +123,14 @@ test.describe('BUG: Status change not reflecting - Team Member', () => {
         await page.goto('/settings/team');
         await page.waitForLoadState('networkidle');
 
-        const participantRow = page.locator(`text=${MOCK_PARTICIPANT.name}`);
+        const participantRow = page.locator(`text=${MOCK_USER.name}`);
         await expect(participantRow).toBeVisible();
 
         participantTokenIssued = true;
         console.log('Participant logged in, can see Kody Rules');
 
         const statusToggle = page
-            .locator(`text=${MOCK_PARTICIPANT.name}`)
+            .locator(`text=${MOCK_USER.name}`)
             .locator('..')
             .locator('button[role="switch"]');
         if ((await statusToggle.count()) > 0) {
@@ -163,7 +163,7 @@ test.describe('BUG: Status change not reflecting - Team Member', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     user: {
-                        ...MOCK_PARTICIPANT,
+                        ...MOCK_USER,
                         role: participantRoleInDb,
                     },
                 }),
@@ -197,10 +197,10 @@ test.describe('BUG: Status change not reflecting - Team Member', () => {
                             teamRole: 'team_leader',
                         },
                         {
-                            uuid: MOCK_PARTICIPANT.id,
+                            uuid: MOCK_USER.id,
                             user: {
-                                email: MOCK_PARTICIPANT.email,
-                                name: MOCK_PARTICIPANT.name,
+                                email: MOCK_USER.email,
+                                name: MOCK_USER.name,
                             },
                             role: participantRoleInDb,
                             status: 'active',
@@ -218,7 +218,7 @@ test.describe('BUG: Status change not reflecting - Team Member', () => {
             if (route.request().method() === 'PATCH') {
                 const body = await route.request().postDataJSON();
                 const participantUpdate = body.members?.find(
-                    (m: any) => m.uuid === MOCK_PARTICIPANT.id,
+                    (m: any) => m.uuid === MOCK_USER.id,
                 );
                 if (participantUpdate) {
                     participantRoleInDb = participantUpdate.role;
@@ -232,10 +232,10 @@ test.describe('BUG: Status change not reflecting - Team Member', () => {
 
         await page.goto('/sign-in');
         await page.waitForLoadState('domcontentloaded');
-        await page.fill('#email', MOCK_PARTICIPANT.email);
+        await page.fill('#email', MOCK_USER.email);
         await page.click('button:has-text("Continue")');
         await page.waitForTimeout(1000);
-        await page.fill('#password', 'Test@123');
+        await page.fill('#password', 'Kodus@2026');
         await page.click('button:has-text("Sign in")');
         await page.waitForURL(/\/cockpit|setup|sign-in|sign-up/, {
             timeout: 15000,

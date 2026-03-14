@@ -27,7 +27,7 @@ test.describe('Authentication', () => {
     });
 
     test('should order password after valid email', async ({ page }) => {
-        await page.fill('#email', 'test@test.io');
+        await page.fill('#email', 'ana.sirino@kodus.io');
         await page.click('button:has-text("Continue")');
 
         await expect(page.locator('#password')).toBeVisible();
@@ -43,12 +43,12 @@ test.describe('Authentication', () => {
     });
 
     test('should login and redirect to setup', async ({ page }) => {
-        await page.fill('#email', 'test@test.io');
+        await page.fill('#email', 'ana.sirino@kodus.io');
         await page.click('button:has-text("Continue")');
 
         await expect(page.locator('#password')).toBeVisible();
 
-        await page.fill('#password', 'Test@123');
+        await page.fill('#password', 'Kodus@2026');
         await page.click('button:has-text("Sign in")');
 
         await page.waitForURL(/\/setup|sign-in|sign-up/, { timeout: 10000 });
