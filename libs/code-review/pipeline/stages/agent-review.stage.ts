@@ -419,6 +419,15 @@ ${summaries}`,
                 const removed = fileSuggestions.length - kept.length;
 
                 if (removed > 0) {
+                    const removedSuggestions = fileSuggestions.filter(
+                        (_, i) => !keepIndices.has(i),
+                    );
+                    for (const s of removedSuggestions) {
+                        this.logger.log({
+                            message: `[DEDUP-REMOVED] PR#${prNumber} ${filename}:${s.relevantLinesStart}-${s.relevantLinesEnd} [${s.label}/${s.severity}] "${s.oneSentenceSummary || s.suggestionContent?.substring(0, 80)}"`,
+                            context: this.stageName,
+                        });
+                    }
                     this.logger.log({
                         message: `[DEDUP] PR#${prNumber} ${filename}: ${fileSuggestions.length} → ${kept.length} (removed ${removed} duplicates)`,
                         context: this.stageName,

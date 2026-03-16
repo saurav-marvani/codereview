@@ -247,6 +247,7 @@ export async function runAgentLoop(
 function tryParseFindings(text: string): FindingsOutput | null {
     if (!text) return null;
 
+    // Strategy 1: EnhancedJSONParser (handles code blocks, json5, jsonrepair)
     try {
         const parsed: any = EnhancedJSONParser.parse(text);
         if (parsed?.suggestions && Array.isArray(parsed.suggestions)) {
@@ -256,7 +257,45 @@ function tryParseFindings(text: string): FindingsOutput | null {
             };
         }
     } catch {
-        // Not valid JSON — will fallback
+        // Not valid JSON — try next strategy
+    }
+
+    // Strategy 2: Extract JSON from markdown code blocks manually
+    // Some models wrap JSON in ```json ... ``` with text before/after that confuses the parser
+    try {
+        const codeBlockMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+        if (codeBlockMatch?.[1]) {
+            const jsonStr = codeBlockMatch[1].trim();
+            const parsed = JSON.parse(jsonStr);
+            if (parsed?.suggestions && Array.isArray(parsed.suggestions)) {
+                return {
+                    reasoning: parsed.reasoning || '',
+                    suggestions: parsed.suggestions,
+                };
+            }
+        }
+    } catch {
+        // Malformed JSON in code block
+    }
+
+    // Strategy 3: Find the outermost { ... } that contains "suggestions"
+    try {
+        const firstBrace = text.indexOf('{');
+        const lastBrace = text.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+            const jsonStr = text.substring(firstBrace, lastBrace + 1);
+            if (jsonStr.includes('"suggestions"')) {
+                const parsed = JSON.parse(jsonStr);
+                if (parsed?.suggestions && Array.isArray(parsed.suggestions)) {
+                    return {
+                        reasoning: parsed.reasoning || '',
+                        suggestions: parsed.suggestions,
+                    };
+                }
+            }
+        }
+    } catch {
+        // Still not parseable — will go to fallback
     }
 
     return null;
@@ -284,21 +323,22 @@ async function structureWithFallbackModel(
         const result = await generateText({
             model: internalModel as any,
             output: Output.object({ schema: findingsSchema }) as any,
-            prompt: `Extract code review findings from the following review text into structured JSON.
+            system: `You are a JSON extraction assistant. You receive code review text and extract structured findings.
 
-If the text describes code issues/bugs/vulnerabilities, extract each one as a suggestion with:
-- relevantFile: the file path mentioned
-- suggestionContent: the issue description
-- existingCode: the problematic code mentioned
-- improvedCode: the fix suggested (or "See suggestion" if not provided)
-- oneSentenceSummary: brief summary
-- relevantLinesStart/End: line numbers if mentioned
-- severity: critical/high/medium/low based on the description
+Rules:
+- Extract EVERY issue/bug/vulnerability mentioned into a separate suggestion
+- Use exact file paths from the text (e.g. "src/auth/login.ts", not just "login.ts")
+- Copy code snippets exactly as written in the text
+- If line numbers are mentioned, include them
+- If no issues found, return empty suggestions array
+- Never invent issues not in the text`,
+            prompt: `Extract all code review findings from this text:
 
-If the text says no issues were found, return empty suggestions array.
+---
+${reviewText}
+---
 
-Review text:
-${reviewText}`,
+For each issue found, extract: relevantFile, language, suggestionContent (full description), existingCode, improvedCode, oneSentenceSummary, relevantLinesStart, relevantLinesEnd, severity (critical/high/medium/low).`,
         });
 
         const output = (result as any).object ?? (result as any).output;

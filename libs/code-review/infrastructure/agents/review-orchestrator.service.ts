@@ -132,6 +132,18 @@ export class ReviewOrchestratorService {
         // Deduplicate cross-agent suggestions by file + line range overlap
         const deduped = this.deduplicateSuggestions(allSuggestions);
 
+        // Log which suggestions were removed by dedup
+        if (deduped.length < allSuggestions.length) {
+            const dedupedSet = new Set(deduped);
+            const removed = allSuggestions.filter((s) => !dedupedSet.has(s));
+            for (const s of removed) {
+                this.logger.log({
+                    message: `[DEDUP-REMOVED] PR#${agentInput.prNumber} ${s.relevantFile}:${s.relevantLinesStart}-${s.relevantLinesEnd} [${s.label}/${s.severity}] "${s.oneSentenceSummary || s.suggestionContent?.substring(0, 80)}"`,
+                    context: ReviewOrchestratorService.name,
+                });
+            }
+        }
+
         const totalDurationMs = Date.now() - startTime;
 
         this.logger.log({

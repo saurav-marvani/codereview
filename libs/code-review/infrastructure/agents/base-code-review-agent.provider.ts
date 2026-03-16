@@ -116,6 +116,11 @@ export abstract class BaseCodeReviewAgentProvider {
         const systemPrompt = this.buildSystemPrompt(input);
         const userPrompt = this.buildUserPrompt(input);
 
+        this.agentLogger.log({
+            message: `[AGENT] ${identity.name} prompt context: memoryRules=${input.memoryRules?.length ?? 0}, overrides=${!!input.v2PromptOverrides}, language=${input.languageResultPrompt || 'default'}`,
+            context: identity.name,
+        });
+
         try {
             const agentResult = await runAgentLoop({
                 model,

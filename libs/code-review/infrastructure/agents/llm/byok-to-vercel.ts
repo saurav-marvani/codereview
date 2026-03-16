@@ -111,10 +111,10 @@ export function getModelName(byokConfig?: BYOKConfig): string {
 /**
  * Get a cheap/fast model for internal operations (fallback structuring, dedup).
  *
- * Respects the deployment mode:
- * - Cloud (API_LLM_PROVIDER_MODEL=auto): uses Google AI (Gemini Flash)
- * - Self-hosted (API_LLM_PROVIDER_MODEL=<model>): uses Vertex AI or OpenAI-compatible
- * - BYOK available: uses client's model (they're paying for it)
+ * Priority order:
+ * 1. BYOK fallback/main model (client is paying)
+ * 2. Self-hosted configured provider
+ * 3. Cloud: OpenAI GPT-4.1-mini (best at structured output) → Gemini 2.5 Flash (fallback)
  */
 export function getInternalModel(byokConfig?: BYOKConfig): LanguageModel | null {
     const envMode = process.env.API_LLM_PROVIDER_MODEL ?? 'auto';
@@ -151,7 +151,12 @@ export function getInternalModel(byokConfig?: BYOKConfig): LanguageModel | null 
         return null;
     }
 
-    // Cloud mode: use Google AI
+    // Cloud mode: prefer OpenAI GPT-5-mini (excellent structured output), fall back to Gemini
+    const openaiKey = process.env.API_OPEN_AI_API_KEY;
+    if (openaiKey) {
+        return createOpenAI({ apiKey: openaiKey })('gpt-5-mini');
+    }
+
     const googleKey =
         process.env.API_GOOGLE_AI_API_KEY ||
         process.env.GOOGLE_GENERATIVE_AI_API_KEY;
@@ -159,6 +164,6 @@ export function getInternalModel(byokConfig?: BYOKConfig): LanguageModel | null 
     if (!googleKey) return null;
 
     return createGoogleGenerativeAI({ apiKey: googleKey })(
-        'gemini-3-flash-preview',
+        'gemini-2.5-flash',
     );
 }

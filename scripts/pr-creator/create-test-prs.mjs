@@ -450,7 +450,7 @@ async function runTargeted(targetedPRs) {
     console.log(`🎯 Targeted mode: ${targetedPRs.length} PR(s) configured\n`);
 
     // Detect platform and get token
-    const token = CONFIG.githubToken || await getTokenFromEnvOrOP('github');
+    const token = CONFIG.githubToken || process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
     if (!token) {
         console.error('❌ GITHUB_TOKEN required for targeted PRs');
         process.exit(1);
