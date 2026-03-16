@@ -87,6 +87,8 @@ dev.env
 /temp
 
 .kodus-graph-cache.json
+.kody/sessions/*
+.kody/logs/*
 
 environment.ts
 src/ee/configs/environment/environment.ts
