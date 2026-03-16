@@ -450,15 +450,11 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                     'success',
                 );
 
-            const successRepositoryExpr =
-                'COALESCE("success"."repositoryId", "success"."dataExecution"->>\'repositoryId\')';
-            const successPullRequestExpr =
-                'COALESCE("success"."pullRequestNumber", CASE WHEN ("success"."dataExecution"->>\'pullRequestNumber\') ~ \'^[0-9]+$\' THEN ("success"."dataExecution"->>\'pullRequestNumber\')::integer ELSE NULL END)';
+            const successRepositoryExpr = '"success"."repositoryId"';
+            const successPullRequestExpr = '"success"."pullRequestNumber"';
 
-            const inProgressRepositoryExpr =
-                'COALESCE("in_progress"."repositoryId", "in_progress"."dataExecution"->>\'repositoryId\')';
-            const inProgressPullRequestExpr =
-                'COALESCE("in_progress"."pullRequestNumber", CASE WHEN ("in_progress"."dataExecution"->>\'pullRequestNumber\') ~ \'^[0-9]+$\' THEN ("in_progress"."dataExecution"->>\'pullRequestNumber\')::integer ELSE NULL END)';
+            const inProgressRepositoryExpr = '"in_progress"."repositoryId"';
+            const inProgressPullRequestExpr = '"in_progress"."pullRequestNumber"';
 
             const inProgressSubquery = queryBuilder
                 .subQuery()
@@ -466,6 +462,8 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                 .from(AutomationExecutionModel, 'in_progress')
                 .where('in_progress.team_automation_id = :teamAutomationId')
                 .andWhere('in_progress.status = :inProgressStatus')
+                .andWhere(`${inProgressRepositoryExpr} IS NOT NULL`)
+                .andWhere(`${inProgressPullRequestExpr} IS NOT NULL`)
                 .andWhere(
                     `${inProgressRepositoryExpr} = ${successRepositoryExpr}`,
                 )
