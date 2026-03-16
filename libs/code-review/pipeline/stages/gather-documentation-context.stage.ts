@@ -1,4 +1,5 @@
 import { createLogger } from '@kodus/flow';
+import { CodeReviewVersion } from '@libs/core/domain/enums/code-review.enum';
 import { CliReviewPipelineContext } from '@libs/cli-review/pipeline/context/cli-review-pipeline.context';
 import {
     ISandboxProvider,
@@ -65,6 +66,18 @@ export class GatherDocumentationContextStage extends BasePipelineStage<CodeRevie
     protected async executeStage(
         context: CodeReviewPipelineContext,
     ): Promise<CodeReviewPipelineContext> {
+        // V3 agents search docs on demand via searchDocs tool
+        if (
+            context.codeReviewConfig?.codeReviewVersion ===
+            CodeReviewVersion.V3_AGENT
+        ) {
+            this.logger.log({
+                message: 'Skipping documentation context: v3-agent mode (agents search on demand)',
+                context: this.stageName,
+            });
+            return context;
+        }
+
         const shouldRunDocumentationContext =
             await this.shouldRunDocumentationContext(context);
 

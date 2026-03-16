@@ -34,6 +34,10 @@ import { ValidateNewCommitsStage } from '@libs/code-review/pipeline/stages/valid
 import { ValidatePrerequisitesStage } from '@libs/code-review/pipeline/stages/validate-prerequisites.stage';
 import { ValidateSuggestionsStage } from '@libs/code-review/pipeline/stages/validate-suggestions.stage';
 
+// V3 Agent-First stages (self-gate based on codeReviewVersion)
+import { CreateSandboxStage } from '@libs/code-review/pipeline/stages/create-sandbox.stage';
+import { AgentReviewStage } from '@libs/code-review/pipeline/stages/agent-review.stage';
+
 @Injectable()
 export class CodeReviewPipelineStrategyEE implements IPipelineStrategy<CodeReviewPipelineContext> {
     constructor(
@@ -48,10 +52,12 @@ export class CodeReviewPipelineStrategyEE implements IPipelineStrategy<CodeRevie
         private readonly fileContextGateStage: FileContextGateStage,
         private readonly initialCommentStage: InitialCommentStage,
         private readonly collectCrossFileContextStage: CollectCrossFileContextStage,
+        private readonly createSandboxStage: CreateSandboxStage,
         private readonly kodyFineTuningStage: KodyFineTuningStage,
         private readonly codeAnalysisASTStage: CodeAnalysisASTStage,
         private readonly processFilesPrLevelReviewStage: ProcessFilesPrLevelReviewStage,
         private readonly processFilesReview: ProcessFilesReview,
+        private readonly agentReviewStage: AgentReviewStage,
         private readonly createPrLevelCommentsStage: CreatePrLevelCommentsStage,
         private readonly createFileCommentsStage: CreateFileCommentsStage,
         private readonly codeAnalysisASTCleanupStage: CodeAnalysisASTCleanupStage,
@@ -72,14 +78,16 @@ export class CodeReviewPipelineStrategyEE implements IPipelineStrategy<CodeRevie
             this.resolveConfigStage,
             this.validateConfigStage,
             this.fetchChangedFilesStage,
-            this.gatherDocumentationContextStage,
+            this.gatherDocumentationContextStage,        // self-gates: skips in v3
             this.loadExternalContextStage,
             this.fileContextGateStage,
             this.initialCommentStage,
-            this.collectCrossFileContextStage,
+            this.collectCrossFileContextStage,            // self-gates: skips in v3
+            this.createSandboxStage,                      // v3: creates sandbox; v2: skips if already exists
             this.kodyFineTuningStage,
             this.processFilesPrLevelReviewStage,
-            this.processFilesReview,
+            this.processFilesReview,                      // self-gates: skips in v3
+            this.agentReviewStage,                        // self-gates: only runs in v3
             this.createPrLevelCommentsStage,
             this.validateSuggestionsStage,
             this.createFileCommentsStage,

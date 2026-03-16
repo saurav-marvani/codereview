@@ -118,6 +118,18 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
     protected async executeStage(
         context: CodeReviewPipelineContext,
     ): Promise<CodeReviewPipelineContext> {
+        // V3 uses AgentReviewStage instead
+        if (
+            context.codeReviewConfig?.codeReviewVersion ===
+            CodeReviewVersion.V3_AGENT
+        ) {
+            this.logger.log({
+                message: `Skipping standard review: v3-agent mode (AgentReviewStage handles this)`,
+                context: this.stageName,
+            });
+            return context;
+        }
+
         if (!context.changedFiles || context.changedFiles.length === 0) {
             this.logger.warn({
                 message: `No files to analyze for PR#${context.pullRequest.number}`,

@@ -195,6 +195,7 @@ import { DocumentationContextModule } from './documentation-context.module';
         MessageTemplateProcessor,
         pipelineProvider,
         AST_ANALYSIS_SERVICE_TOKEN,
+        SafeguardPipelineService,
     ],
 })
 export class CodebaseModule {}

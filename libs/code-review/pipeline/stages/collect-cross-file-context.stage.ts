@@ -1,4 +1,5 @@
 import { createLogger } from '@kodus/flow';
+import { CodeReviewVersion } from '@libs/core/domain/enums/code-review.enum';
 import { Inject, Injectable } from '@nestjs/common';
 
 import {
@@ -67,6 +68,18 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
     protected async executeStage(
         context: CodeReviewPipelineContext,
     ): Promise<CodeReviewPipelineContext> {
+        // V3 agents use sandbox tools directly — cross-file context is collected on demand
+        if (
+            context.codeReviewConfig?.codeReviewVersion ===
+            CodeReviewVersion.V3_AGENT
+        ) {
+            this.logger.log({
+                message: 'Skipping cross-file context: v3-agent mode (agents search on demand)',
+                context: this.stageName,
+            });
+            return context;
+        }
+
         const isCliMode = context.origin === 'cli';
         const cliContext = isCliMode
             ? (context as unknown as CliReviewPipelineContext)

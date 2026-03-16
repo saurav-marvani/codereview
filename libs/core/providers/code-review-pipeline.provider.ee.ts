@@ -25,6 +25,7 @@ export const codeReviewPipelineProvider: Provider = {
     ): IPipeline<CodeReviewPipelineContext> => {
         // Always use EE strategy — EE-only stages have internal guards
         // (e.g., KodyFineTuningStage checks config.enabled, CodeAnalysisASTStage checks env var)
+        // V3 agent stages also self-gate based on codeReviewVersion in the resolved config.
         const strategy = eeStrategy;
 
         logger.log({

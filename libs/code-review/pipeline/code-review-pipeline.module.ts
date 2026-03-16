@@ -58,6 +58,18 @@ import { LOAD_EXTERNAL_CONTEXT_STAGE_TOKEN } from './stages/contracts/loadExtern
 import { ValidateSuggestionsStage } from './stages/validate-suggestions.stage';
 import { CodeReviewPipelineStrategy } from './strategy/code-review-pipeline.strategy';
 
+// V3 Agent-First
+import { CreateSandboxStage } from './stages/create-sandbox.stage';
+import {
+    AgentReviewStage,
+    DOCUMENTATION_SEARCH_ADAPTER_TOKEN,
+} from './stages/agent-review.stage';
+import { BugAgentProvider } from '../infrastructure/agents/bug-agent.provider';
+import { SecurityAgentProvider } from '../infrastructure/agents/security-agent.provider';
+import { PerformanceAgentProvider } from '../infrastructure/agents/performance-agent.provider';
+import { ReviewOrchestratorService } from '../infrastructure/agents/review-orchestrator.service';
+import { DocumentationSearchExaService } from '../infrastructure/adapters/services/documentation-search-exa.service';
+
 @Module({
     imports: [
         forwardRef(() => CodebaseModule),
@@ -84,6 +96,7 @@ import { CodeReviewPipelineStrategy } from './strategy/code-review-pipeline.stra
         // Strategy
         CodeReviewPipelineStrategyEE,
         CodeReviewPipelineStrategy,
+
 
         // Job Processor
         CodeReviewJobProcessorService,
@@ -113,6 +126,18 @@ import { CodeReviewPipelineStrategy } from './strategy/code-review-pipeline.stra
         RequestChangesOrApproveStage,
         ValidateSuggestionsStage,
 
+        // V3 Agent-First stages + providers
+        CreateSandboxStage,
+        AgentReviewStage,
+        {
+            provide: DOCUMENTATION_SEARCH_ADAPTER_TOKEN,
+            useExisting: DocumentationSearchExaService,
+        },
+        BugAgentProvider,
+        SecurityAgentProvider,
+        PerformanceAgentProvider,
+        ReviewOrchestratorService,
+
         // EE Stages
         KodyFineTuningStage,
         CodeAnalysisASTStage,
@@ -136,6 +161,7 @@ import { CodeReviewPipelineStrategy } from './strategy/code-review-pipeline.stra
     exports: [
         CodeReviewPipelineStrategyEE,
         CodeReviewPipelineStrategy,
+
         CodeReviewJobProcessorService,
         CodeReviewPipelineObserver,
         // Export stages if needed by tests or other modules
@@ -157,6 +183,10 @@ import { CodeReviewPipelineStrategy } from './strategy/code-review-pipeline.stra
         LOAD_EXTERNAL_CONTEXT_STAGE_TOKEN,
         ValidateSuggestionsStage,
         ImplementationVerificationProcessor,
+        // V3
+        CreateSandboxStage,
+        AgentReviewStage,
+        ReviewOrchestratorService,
     ],
 })
 export class CodeReviewPipelineModule {}
