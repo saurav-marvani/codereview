@@ -7,13 +7,8 @@ import { getInternalModel } from '@libs/code-review/infrastructure/agents/llm/by
 import { BasePipelineStage } from '@libs/core/infrastructure/pipeline/abstracts/base-stage.abstract';
 import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-visibility.enum';
 import { CodeReviewVersion } from '@libs/core/domain/enums/code-review.enum';
-import {
-    CodeSuggestion,
-    FileChange,
-} from '@libs/core/infrastructure/config/types/general/codeReview.type';
-import {
-    ReviewOrchestratorService,
-} from '@libs/code-review/infrastructure/agents/review-orchestrator.service';
+import { CodeSuggestion } from '@libs/core/infrastructure/config/types/general/codeReview.type';
+import { ReviewOrchestratorService } from '@libs/code-review/infrastructure/agents/review-orchestrator.service';
 import { DocumentationSearchAdapter } from '@libs/code-review/infrastructure/agents/tools/sandbox-tools';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 
@@ -35,9 +30,7 @@ function extractValidDiffLines(patch?: string): Array<[number, number]> {
 
     for (const line of lines) {
         // Parse hunk header: @@ -oldStart,oldCount +newStart,newCount @@
-        const hunkMatch = line.match(
-            /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/,
-        );
+        const hunkMatch = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
         if (hunkMatch) {
             // Save previous hunk
             if (hunkStart > 0 && rightLine > hunkStart) {
@@ -304,10 +297,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             }
 
             return this.updateContext(context, (draft) => {
-                const byFile = new Map<
-                    string,
-                    Partial<CodeSuggestion>[]
-                >();
+                const byFile = new Map<string, Partial<CodeSuggestion>[]>();
                 for (const s of deduped) {
                     const file = s.relevantFile || '';
                     if (!byFile.has(file)) byFile.set(file, []);
@@ -401,7 +391,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                         ),
                 });
 
-                const dedupResult = await generateText({
+                const dedupResult: any = await generateText({
                     model: model as any,
                     output: Output.object({ schema: dedupSchema }) as any,
                     prompt: `These suggestions are for the same file "${filename}". Remove duplicates and return the indices to KEEP.
@@ -413,10 +403,9 @@ Two suggestions are NOT duplicates if they have DIFFERENT root causes — even i
 ${summaries}`,
                 });
 
-                const dedupOutput = (dedupResult as any).object ?? (dedupResult as any).output;
-                const keepIndices = new Set(
-                    dedupOutput?.keep || [],
-                );
+                const dedupOutput =
+                    (dedupResult as any).object ?? (dedupResult as any).output;
+                const keepIndices = new Set(dedupOutput?.keep || []);
                 const kept = fileSuggestions.filter((_, i) =>
                     keepIndices.has(i),
                 );

@@ -1,3 +1,4 @@
+import { CloneParamsResolverService } from '../services/clone-params-resolver.service';
 import { createLogger } from '@kodus/flow';
 import { Inject, Injectable } from '@nestjs/common';
 
@@ -7,11 +8,8 @@ import {
 } from '@libs/code-review/domain/contracts/sandbox.provider';
 import { BasePipelineStage } from '@libs/core/infrastructure/pipeline/abstracts/base-stage.abstract';
 import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-visibility.enum';
-import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
-import { PlatformType } from '@libs/core/domain/enums';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 import { CliReviewPipelineContext } from '@libs/cli-review/pipeline/context/cli-review-pipeline.context';
-import { parseGitRemoteUrl } from './collect-cross-file-context.stage';
 
 /**
  * Creates and stores a sandbox instance in the pipeline context.
@@ -31,7 +29,7 @@ export class CreateSandboxStage extends BasePipelineStage<CodeReviewPipelineCont
     constructor(
         @Inject(SANDBOX_PROVIDER_TOKEN)
         private readonly sandboxProvider: ISandboxProvider,
-        private readonly codeManagementService: CodeManagementService,
+        private readonly cloneParamsResolver: CloneParamsResolverService,
     ) {
         super();
     }
@@ -95,7 +93,10 @@ export class CreateSandboxStage extends BasePipelineStage<CodeReviewPipelineCont
         let cleanup: (() => Promise<void>) | undefined;
 
         try {
-            const cloneInfo = await this.resolveCloneParams(context, cliContext);
+            const cloneInfo = await this.cloneParamsResolver.resolve(
+                context,
+                cliContext,
+            );
             if (!cloneInfo) {
                 this.logger.warn({
                     message: `resolveCloneParams returned null for ${label}`,
@@ -137,13 +138,25 @@ export class CreateSandboxStage extends BasePipelineStage<CodeReviewPipelineCont
                     remoteCommands: sandbox.remoteCommands,
                     cleanup: sandbox.cleanup,
                 };
-                draft.sandboxCloneParams = {
-                    cloneUrl: cloneInfo.url,
-                    authToken: cloneInfo.authToken,
-                    authUsername: cloneInfo.authUsername,
-                    branch: cloneInfo.branch,
-                    prNumber: cloneInfo.prNumber,
-                    platform: cloneInfo.platform,
+                draft.getFreshCloneParams = async () => {
+                    const freshCloneInfo =
+                        await this.cloneParamsResolver.resolve(
+                            context,
+                            cliContext,
+                        );
+                    if (!freshCloneInfo) {
+                        throw new Error(
+                            'Failed to resolve fresh clone parameters',
+                        );
+                    }
+                    return {
+                        cloneUrl: freshCloneInfo.url,
+                        authToken: freshCloneInfo.authToken,
+                        authUsername: freshCloneInfo.authUsername,
+                        branch: freshCloneInfo.branch,
+                        prNumber: freshCloneInfo.prNumber,
+                        platform: freshCloneInfo.platform,
+                    };
                 };
             });
         } catch (error) {
@@ -169,107 +182,5 @@ export class CreateSandboxStage extends BasePipelineStage<CodeReviewPipelineCont
             }
             return context;
         }
-    }
-
-    private async resolveCloneParams(
-        context: CodeReviewPipelineContext,
-        cliContext?: CliReviewPipelineContext,
-    ): Promise<{
-        url: string;
-        authToken: string;
-        authUsername?: string;
-        branch: string;
-        prNumber?: number;
-        platform: PlatformType;
-    } | null> {
-        if (context.origin !== 'cli') {
-            const cloneParams = await this.codeManagementService.getCloneParams(
-                {
-                    repository: context.repository,
-                    organizationAndTeamData: context.organizationAndTeamData,
-                },
-                context.platformType,
-            );
-
-            return {
-                url: cloneParams.url,
-                authToken: cloneParams.auth?.token || '',
-                authUsername: cloneParams.auth?.username,
-                branch: context.branch,
-                prNumber: context.pullRequest.number,
-                platform: context.platformType,
-            };
-        }
-
-        // CLI mode
-        const gitContext = cliContext?.gitContext;
-        if (!gitContext?.remote) return null;
-
-        const parsed = parseGitRemoteUrl(gitContext.remote);
-        if (!parsed) {
-            this.logger.warn({
-                message: `Could not parse git remote URL: ${gitContext.remote}`,
-                context: this.stageName,
-            });
-            return null;
-        }
-
-        const platform = gitContext.inferredPlatform || PlatformType.GITHUB;
-        const branch = gitContext.branch || 'main';
-
-        let authToken = '';
-        let authUsername: string | undefined;
-        let cloneUrl = gitContext.remote;
-
-        try {
-            const cloneParams = await this.codeManagementService.getCloneParams(
-                {
-                    repository: {
-                        id: '0',
-                        defaultBranch: branch,
-                        fullName: parsed.fullName,
-                        name: parsed.name,
-                    },
-                    organizationAndTeamData: context.organizationAndTeamData,
-                },
-                platform,
-            );
-            authToken = cloneParams.auth?.token || '';
-            authUsername = cloneParams.auth?.username;
-            if (cloneParams.url) {
-                cloneUrl = cloneParams.url;
-            }
-        } catch (error) {
-            this.logger.warn({
-                message: `Could not get auth token for CLI sandbox, trying without auth`,
-                context: this.stageName,
-                error,
-            });
-        }
-
-        // Ensure HTTPS (E2B requires HTTPS for token auth)
-        if (cloneUrl.startsWith('git@')) {
-            const sshMatch = cloneUrl.match(
-                /git@([^:]+):(.+?)(?:\.git)?$/,
-            );
-            if (sshMatch) {
-                cloneUrl = `https://${sshMatch[1]}/${sshMatch[2]}`;
-            } else {
-                this.logger.warn({
-                    message: `Could not parse SSH-like git remote URL: ${cloneUrl}`,
-                    context: this.stageName,
-                });
-                return null;
-            }
-        }
-
-        return {
-            url: cloneUrl,
-            authToken,
-            authUsername,
-            branch,
-            prNumber: undefined,
-            platform,
-        };
     }
 }

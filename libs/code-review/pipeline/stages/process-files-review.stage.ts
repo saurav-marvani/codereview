@@ -159,7 +159,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 // Release data no longer needed by subsequent stages
                 draft.crossFileContexts = undefined;
                 draft.sandboxHandle = undefined;
-                draft.sandboxCloneParams = undefined;
+                draft.getFreshCloneParams = undefined;
 
                 for (const file of draft.changedFiles) {
                     delete file.patchWithLinesStr;
@@ -927,7 +927,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
 
         const validSuggestionsToAnalyze: Partial<CodeSuggestion>[] = [];
         const discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[] = [];
-        let safeguardLLMProvider = '';
 
         const crossFileAnalysisSuggestions =
             context?.validCrossFileSuggestions || [];
@@ -991,7 +990,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             context.crossFileSnippets,
         );
 
-        safeguardLLMProvider = safeGuardResult.safeguardLLMProvider;
+        const safeguardLLMProvider = safeGuardResult.safeguardLLMProvider;
 
         discardedSuggestionsBySafeGuard.push(
             ...safeGuardResult.allDiscardedSuggestions,
@@ -1304,7 +1303,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 context?.codeReviewConfig?.kodyMemoryRules,
                 context?.externalPromptContext?.generation?.main?.references,
                 context?.externalPromptContext?.generation?.main?.error,
-                context?.sandboxCloneParams,
+                context?.getFreshCloneParams,
                 context?.documentationContext,
             );
 
@@ -1371,7 +1370,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             crossFileSnippets: context.crossFileContexts?.contexts,
             documentationByFile: context.documentationByFile,
             remoteCommands: context.sandboxHandle?.remoteCommands,
-            sandboxCloneParams: context.sandboxCloneParams,
+            getFreshCloneParams: context.getFreshCloneParams,
         };
     }
 

@@ -4,11 +4,11 @@ import { RemoteCommands } from '../../infrastructure/adapters/services/collectCr
 export interface CreateSandboxParams {
     cloneUrl: string;
     authToken: string;
+    branch: string;
+    platform: PlatformType;
     /** Platform username for auth (required by Bitbucket App Passwords) */
     authUsername?: string;
-    branch: string;
     prNumber?: number;
-    platform: PlatformType;
 }
 
 export interface SandboxInstance {

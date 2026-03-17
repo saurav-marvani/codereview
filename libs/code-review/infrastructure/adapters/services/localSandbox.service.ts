@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { execFile, ExecFileOptions } from 'child_process';
 import { lstat, mkdtemp, realpath, rm } from 'fs/promises';
 import { tmpdir } from 'os';
-import { join, resolve } from 'path';
+import { join } from 'path';
 import { promisify } from 'util';
 
 import {
@@ -169,11 +169,10 @@ export class LocalSandboxService implements ISandboxProvider {
                 // When start=0 and end=0, read the entire file (cat).
                 // GNU sed rejects address 0 so we must avoid `sed -n '0,0p'`.
                 if (start === 0 && end === 0) {
-                    const { stdout } = await execFileAsync(
-                        'cat',
-                        [safePath],
-                        { timeout: CMD_TIMEOUT_MS, maxBuffer: MAX_BUFFER },
-                    );
+                    const { stdout } = await execFileAsync('cat', [safePath], {
+                        timeout: CMD_TIMEOUT_MS,
+                        maxBuffer: MAX_BUFFER,
+                    });
                     return stdout;
                 }
                 const { stdout } = await execFileAsync(
@@ -219,9 +218,9 @@ export class LocalSandboxService implements ISandboxProvider {
                 // This runs on the host machine (no container isolation),
                 // so we must prevent arbitrary command execution.
                 const ALLOWED_PROGRAMS = new Set([
-                    'sg',        // ast-grep
-                    'tsc',       // TypeScript compiler
-                    'npx',       // npx (further validated by tool-level whitelist)
+                    'sg', // ast-grep
+                    'tsc', // TypeScript compiler
+                    'npx', // npx (further validated by tool-level whitelist)
                     'eslint',
                     'python',
                     'python3',
@@ -235,7 +234,8 @@ export class LocalSandboxService implements ISandboxProvider {
                 ]);
 
                 // Split command into program + args for execFile (no shell interpretation)
-                const parts = command.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
+                const parts =
+                    command.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
                 if (parts.length === 0) {
                     return { stdout: '', exitCode: 1 };
                 }
@@ -264,9 +264,7 @@ export class LocalSandboxService implements ISandboxProvider {
                 // Check for path traversal: ".." as a path segment (not substring).
                 // Matches: "../x", "a/../../b", ".." alone — but NOT "./..." (Go idiom)
                 const hasTraversal = positionalArgs.some(
-                    (a) =>
-                        a.startsWith('/') ||
-                        /(^|\/)\.\.($|\/)/.test(a),
+                    (a) => a.startsWith('/') || /(^|\/)\.\.($|\/)/.test(a),
                 );
                 if (hasTraversal) {
                     return {
@@ -288,8 +286,7 @@ export class LocalSandboxService implements ISandboxProvider {
                     return { stdout: stdout + (stderr || ''), exitCode: 0 };
                 } catch (error: any) {
                     return {
-                        stdout:
-                            (error.stdout || '') + (error.stderr || ''),
+                        stdout: (error.stdout || '') + (error.stderr || ''),
                         exitCode: error.code ?? 1,
                     };
                 }

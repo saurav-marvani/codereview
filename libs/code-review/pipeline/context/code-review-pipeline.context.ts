@@ -173,7 +173,7 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     sandboxHandle?: SandboxInstance;
 
     /** Parameters used to create the sandbox — kept for renewal if it expires */
-    sandboxCloneParams?: CreateSandboxParams;
+    getFreshCloneParams?: () => Promise<CreateSandboxParams>;
 
     correlationId?: string;
 }

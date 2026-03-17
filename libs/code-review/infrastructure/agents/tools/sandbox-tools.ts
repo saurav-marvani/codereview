@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { SDKOrchestrator } from '@kodus/flow/dist/orchestration';
-import { RemoteCommands } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
+import { RemoteCommands } from '../../adapters/services/collectCrossFileContexts.service';
 
 /**
  * Minimal interface for the documentation search capability.
@@ -76,11 +76,7 @@ export function registerSandboxTools(
                 glob?: string;
                 path?: string;
             };
-            let result = await remoteCommands.grep(
-                pattern,
-                path || '.',
-                glob,
-            );
+            let result = await remoteCommands.grep(pattern, path || '.', glob);
             const lines = result.split('\n');
             if (lines.length > MAX_GREP_MATCHES) {
                 result =
@@ -104,11 +100,15 @@ export function registerSandboxTools(
             startLine: z
                 .number()
                 .optional()
-                .describe('Start line (1-based, inclusive). Omit to start from beginning.'),
+                .describe(
+                    'Start line (1-based, inclusive). Omit to start from beginning.',
+                ),
             endLine: z
                 .number()
                 .optional()
-                .describe('End line (1-based, inclusive). Omit to read to end of file.'),
+                .describe(
+                    'End line (1-based, inclusive). Omit to read to end of file.',
+                ),
         }),
         execute: async (input: unknown) => {
             const { path, startLine, endLine } = input as {
@@ -224,9 +224,13 @@ export function registerSandboxTools(
                     const fallbackPattern = pattern
                         .replace(/\$[A-Z_]+/g, '.*')
                         .replace(/[{}()]/g, '\\$&');
+                    //TODO: Tá certo ter somente ts e js?
                     const langExt =
-                        lang === 'typescript' ? 'ts' :
-                        lang === 'javascript' ? 'js' : lang;
+                        lang === 'typescript'
+                            ? 'ts'
+                            : lang === 'javascript'
+                              ? 'js'
+                              : lang;
                     result = await remoteCommands.grep(
                         fallbackPattern,
                         path || '.',

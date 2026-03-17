@@ -6,7 +6,7 @@
  * - Severity is always classified using the CLIENT's criteria (v2PromptOverrides)
  * - Classification is consistent regardless of which BYOK model the client uses
  */
-import { generateObject } from 'ai';
+import { generateText, Output } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import { createLogger } from '@kodus/flow';
@@ -76,9 +76,9 @@ export async function classifySeverity(
             'gemini-3-flash-preview',
         );
 
-        const result = await generateObject({
+        const result: any = await generateText({
             model: model as any,
-            schema: severityResultSchema,
+            output: Output.object({ schema: severityResultSchema }) as any,
             prompt: `Classify the severity of each code review suggestion based on these criteria:
 
 **CRITICAL**: ${flags.critical || DEFAULT_SEVERITY_FLAGS.critical}

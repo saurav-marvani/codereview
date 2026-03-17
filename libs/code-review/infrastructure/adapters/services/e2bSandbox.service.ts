@@ -14,6 +14,15 @@ import { RemoteCommands } from './collectCrossFileContexts.service';
 const SANDBOX_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const REPO_DIR = '/home/user/repo';
 
+const TIMEOUTS = {
+    CLONE_MS: 120_000,
+    PROXY_DAEMON_MS: 10_000,
+    PROXY_CONFIG_MS: 5_000,
+    VERIFY_MS: 10_000,
+    COMMAND_LONG_MS: 30_000,
+    COMMAND_SHORT_MS: 10_000,
+};
+
 @Injectable()
 export class E2BSandboxService implements ISandboxProvider {
     private readonly logger = createLogger(E2BSandboxService.name);
@@ -69,97 +78,13 @@ export class E2BSandboxService implements ISandboxProvider {
             // Install dependencies only when not using a pre-built template
             // When using a template, git/ripgrep and proxy are already configured
             if (!usedTemplate) {
-                const installResult = await sandbox.commands.run(
-                    'apt-get update -qq && apt-get install -y -qq git ripgrep shadowsocks-libev > /dev/null 2>&1',
-                    { timeoutMs: 120_000, user: 'root' },
-                );
-                this.logger.log({
-                    message: `[DEBUG] apt-get install exitCode=${installResult.exitCode}`,
-                    context: E2BSandboxService.name,
-                    metadata: {
-                        exitCode: installResult.exitCode,
-                        stderr: installResult.stderr?.slice(0, 300),
-                    },
-                });
+                await this.installDependencies(sandbox);
             }
 
             // Configure Shadowsocks proxy for IP tunneling (clients with restricted git access)
             await this.setupProxy(sandbox);
 
-            // Shallow-fetch the PR ref or branch (minimal network transfer)
-            const refspec =
-                prNumber != null
-                    ? this.getPrRefspec(platform, prNumber)
-                    : `refs/heads/${branch}`;
-            const localRef = prNumber != null ? 'pr-head' : 'cli-head';
-            const authHeader = this.buildAuthHeader(
-                platform,
-                authToken,
-                authUsername,
-            );
-
-            this.logger.log({
-                message: `[DEBUG] Git clone starting: refspec=${refspec} localRef=${localRef} cloneUrl=${cloneUrl}`,
-                context: E2BSandboxService.name,
-                metadata: {
-                    refspec,
-                    localRef,
-                    cloneUrl,
-                    platform,
-                    hasProxy: this.isProxyConfigured(),
-                },
-            });
-
-            const cloneResult = await sandbox.commands.run(
-                [
-                    `git init ${REPO_DIR}`,
-                    `cd ${REPO_DIR}`,
-                    // Fetch using token from env var via git credential header (never touches disk/process args)
-                    `git -c http.extraHeader="$GIT_AUTH_HEADER" fetch --depth=1 ${cloneUrl} ${refspec}:${localRef}`,
-                    `git checkout ${localRef}`,
-                    // Set a dummy remote for any tools that expect "origin" to exist
-                    `git remote add origin ${cloneUrl}`,
-                    // Block any push from the sandbox
-                    `git remote set-url --push origin no-push-allowed`,
-                ].join(' && '),
-                {
-                    timeoutMs: 120_000,
-                    envs: { GIT_AUTH_HEADER: authHeader },
-                },
-            );
-
-            this.logger.log({
-                message: `[DEBUG] Git clone finished: exitCode=${cloneResult.exitCode} stdout=${(cloneResult.stdout || '').length}chars stderr=${(cloneResult.stderr || '').length}chars`,
-                context: E2BSandboxService.name,
-                metadata: {
-                    exitCode: cloneResult.exitCode,
-                    stdout: cloneResult.stdout?.slice(0, 500),
-                    stderr: cloneResult.stderr?.slice(0, 500),
-                },
-            });
-
-            if (cloneResult.exitCode !== 0) {
-                throw new Error(
-                    `Git clone failed in E2B sandbox (exit code ${cloneResult.exitCode}): ${cloneResult.stderr || cloneResult.stdout}`.slice(
-                        0,
-                        500,
-                    ),
-                );
-            }
-
-            // Verify repo contents after clone
-            const verifyResult = await sandbox.commands.run(
-                `ls -la ${REPO_DIR} && echo "---FILE-COUNT---" && find ${REPO_DIR} -maxdepth 2 -type f | head -20`,
-                { timeoutMs: 10_000 },
-            );
-            this.logger.log({
-                message: `[DEBUG] Repo contents after clone (first 500 chars): ${verifyResult.stdout?.slice(0, 500)}`,
-                context: E2BSandboxService.name,
-                metadata: {
-                    exitCode: verifyResult.exitCode,
-                    stdout: verifyResult.stdout?.slice(0, 500),
-                },
-            });
+            await this.cloneRepository(sandbox, params);
 
             const remoteCommands = this.buildRemoteCommands(sandbox);
 
@@ -185,6 +110,110 @@ export class E2BSandboxService implements ISandboxProvider {
             }
             throw error;
         }
+    }
+
+    private async installDependencies(sandbox: Sandbox): Promise<void> {
+        const installResult = await sandbox.commands.run(
+            'apt-get update -qq && apt-get install -y -qq git ripgrep shadowsocks-libev > /dev/null 2>&1',
+            { timeoutMs: TIMEOUTS.CLONE_MS, user: 'root' },
+        );
+        this.logger.log({
+            message: `[DEBUG] apt-get install exitCode=${installResult.exitCode}`,
+            context: E2BSandboxService.name,
+            metadata: {
+                exitCode: installResult.exitCode,
+                stderr: installResult.stderr?.slice(0, 300),
+            },
+        });
+    }
+
+    private async cloneRepository(
+        sandbox: Sandbox,
+        params: CreateSandboxParams,
+    ): Promise<void> {
+        const {
+            cloneUrl,
+            authToken,
+            authUsername,
+            branch,
+            prNumber,
+            platform,
+        } = params;
+
+        // Shallow-fetch the PR ref or branch (minimal network transfer)
+        const refspec =
+            prNumber != null
+                ? this.getPrRefspec(platform, prNumber)
+                : `refs/heads/${branch}`;
+        const localRef = prNumber != null ? 'pr-head' : 'cli-head';
+        const authHeader = this.buildAuthHeader(
+            platform,
+            authToken,
+            authUsername,
+        );
+
+        this.logger.log({
+            message: `[DEBUG] Git clone starting: refspec=${refspec} localRef=${localRef} cloneUrl=${cloneUrl}`,
+            context: E2BSandboxService.name,
+            metadata: {
+                refspec,
+                localRef,
+                cloneUrl,
+                platform,
+                hasProxy: this.isProxyConfigured(),
+            },
+        });
+
+        const cloneResult = await sandbox.commands.run(
+            [
+                `git init ${REPO_DIR}`,
+                `cd ${REPO_DIR}`,
+                // Fetch using token from env var via git credential header (never touches disk/process args)
+                `git -c http.extraHeader="$GIT_AUTH_HEADER" fetch --depth=1 ${cloneUrl} ${refspec}:${localRef}`,
+                `git checkout ${localRef}`,
+                // Set a dummy remote for any tools that expect "origin" to exist
+                `git remote add origin ${cloneUrl}`,
+                // Block any push from the sandbox
+                `git remote set-url --push origin no-push-allowed`,
+            ].join(' && '),
+            {
+                timeoutMs: TIMEOUTS.CLONE_MS,
+                envs: { GIT_AUTH_HEADER: authHeader },
+            },
+        );
+
+        this.logger.log({
+            message: `[DEBUG] Git clone finished: exitCode=${cloneResult.exitCode} stdout=${(cloneResult.stdout || '').length}chars stderr=${(cloneResult.stderr || '').length}chars`,
+            context: E2BSandboxService.name,
+            metadata: {
+                exitCode: cloneResult.exitCode,
+                stdout: cloneResult.stdout?.slice(0, 500),
+                stderr: cloneResult.stderr?.slice(0, 500),
+            },
+        });
+
+        if (cloneResult.exitCode !== 0) {
+            throw new Error(
+                `Git clone failed in E2B sandbox (exit code ${cloneResult.exitCode}): ${cloneResult.stderr || cloneResult.stdout}`.slice(
+                    0,
+                    500,
+                ),
+            );
+        }
+
+        // Verify repo contents after clone
+        const verifyResult = await sandbox.commands.run(
+            `ls -la ${REPO_DIR} && echo "---FILE-COUNT---" && find ${REPO_DIR} -maxdepth 2 -type f | head -20`,
+            { timeoutMs: TIMEOUTS.VERIFY_MS },
+        );
+        this.logger.log({
+            message: `[DEBUG] Repo contents after clone (first 500 chars): ${verifyResult.stdout?.slice(0, 500)}`,
+            context: E2BSandboxService.name,
+            metadata: {
+                exitCode: verifyResult.exitCode,
+                stdout: verifyResult.stdout?.slice(0, 500),
+            },
+        });
     }
 
     private async createSandbox(
@@ -242,7 +271,7 @@ export class E2BSandboxService implements ISandboxProvider {
         await sandbox.commands.run(
             `ss-local -s ${host} -p ${port} -l 1080 -k "$SS_PASSWORD" -m ${method} -d start`,
             {
-                timeoutMs: 10_000,
+                timeoutMs: TIMEOUTS.PROXY_DAEMON_MS,
                 user: 'root',
                 envs: { SS_PASSWORD: password },
             },
@@ -251,7 +280,7 @@ export class E2BSandboxService implements ISandboxProvider {
         // Route all git traffic through the SOCKS5 proxy
         await sandbox.commands.run(
             'git config --global http.proxy socks5://127.0.0.1:1080',
-            { timeoutMs: 5_000 },
+            { timeoutMs: TIMEOUTS.PROXY_CONFIG_MS },
         );
 
         this.logger.log({
@@ -307,25 +336,24 @@ export class E2BSandboxService implements ISandboxProvider {
                 path: string,
                 glob?: string,
             ): Promise<string> => {
-                // Validate path (same security checks as resolvePath)
-                if (path.startsWith('/')) {
-                    throw new Error('Absolute paths are not allowed');
-                }
-                if (path.includes('..')) {
-                    throw new Error('Path traversal using ".." is not allowed');
-                }
-                const escapedPath = path.replace(/'/g, "'\\''");
+                // Validate path with the same security checks
+                const fullPath = this.resolvePath(path);
+                const escapedPath = fullPath.replace(/'/g, "'\\''");
                 const globArg = glob
                     ? ` --glob '${glob.replace(/'/g, "'\\''")}'`
                     : '';
                 // Use single quotes to prevent bash from interpreting
                 // regex escape sequences (e.g. \b as backspace).
                 const escapedPattern = pattern.replace(/'/g, "'\\''");
+
                 // Run inside REPO_DIR so rg outputs relative paths (e.g. "./src/foo.ts")
-                // instead of absolute ones (which resolvePath rejects on read).
+                // instead of absolute ones. We pass the original `path` parameter instead of `fullPath`
+                // because `resolvePath` already validated that `path` is safe (no .. or /).
+                const safeRelativePath = path.replace(/'/g, "'\\''");
+
                 const result = await sandbox.commands.run(
-                    `cd ${REPO_DIR} && rg --no-heading -n '${escapedPattern}' '${escapedPath}'${globArg}`,
-                    { timeoutMs: 30_000 },
+                    `cd ${REPO_DIR} && rg --no-heading -n '${escapedPattern}' '${safeRelativePath}'${globArg}`,
+                    { timeoutMs: TIMEOUTS.COMMAND_LONG_MS },
                 );
                 return result.stdout;
             },
@@ -345,7 +373,7 @@ export class E2BSandboxService implements ISandboxProvider {
                         : // sed is 1-indexed; a start address of 0 is invalid in GNU sed.
                           `sed -n '${start < 1 ? 1 : start},${end}p' '${escapedPath}'`;
                 const result = await sandbox.commands.run(cmd, {
-                    timeoutMs: 10_000,
+                    timeoutMs: TIMEOUTS.COMMAND_SHORT_MS,
                 });
                 return result.stdout;
             },
@@ -358,7 +386,7 @@ export class E2BSandboxService implements ISandboxProvider {
                 const escapedPath = fullPath.replace(/'/g, "'\\''");
                 const result = await sandbox.commands.run(
                     `find '${escapedPath}' -maxdepth ${maxDepth} -type f`,
-                    { timeoutMs: 30_000 },
+                    { timeoutMs: TIMEOUTS.COMMAND_LONG_MS },
                 );
                 return result.stdout;
             },
@@ -368,7 +396,7 @@ export class E2BSandboxService implements ISandboxProvider {
             ): Promise<{ stdout: string; exitCode: number }> => {
                 const result = await sandbox.commands.run(
                     `cd ${REPO_DIR} && ${command}`,
-                    { timeoutMs: 30_000 },
+                    { timeoutMs: TIMEOUTS.COMMAND_LONG_MS },
                 );
                 return {
                     stdout: result.stdout + (result.stderr || ''),

@@ -12,8 +12,7 @@ import {
 } from '@libs/code-review/domain/contracts/sandbox.provider';
 import { BasePipelineStage } from '@libs/core/infrastructure/pipeline/abstracts/base-stage.abstract';
 import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-visibility.enum';
-import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
-import { PlatformType } from '@libs/core/domain/enums';
+import { CloneParamsResolverService } from '../services/clone-params-resolver.service';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 import { CliReviewPipelineContext } from '@libs/cli-review/pipeline/context/cli-review-pipeline.context';
 
@@ -60,7 +59,7 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
         private readonly collectCrossFileContextsService: CollectCrossFileContextsService,
         @Inject(SANDBOX_PROVIDER_TOKEN)
         private readonly sandboxProvider: ISandboxProvider,
-        private readonly codeManagementService: CodeManagementService,
+        private readonly cloneParamsResolver: CloneParamsResolverService,
     ) {
         super();
     }
@@ -74,7 +73,8 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
             CodeReviewVersion.V3_AGENT
         ) {
             this.logger.log({
-                message: 'Skipping cross-file context: v3-agent mode (agents search on demand)',
+                message:
+                    'Skipping cross-file context: v3-agent mode (agents search on demand)',
                 context: this.stageName,
             });
             return context;
@@ -148,7 +148,7 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
         let cleanup: (() => Promise<void>) | undefined;
 
         try {
-            const cloneInfo = await this.resolveCloneParams(
+            const cloneInfo = await this.cloneParamsResolver.resolve(
                 context,
                 cliContext,
             );
@@ -224,14 +224,26 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
                     remoteCommands: sandbox.remoteCommands,
                     cleanup: sandbox.cleanup,
                 };
-                // Save clone params so safeguard can renew sandbox if it expires
-                draft.sandboxCloneParams = {
-                    cloneUrl: cloneInfo.url,
-                    authToken: cloneInfo.authToken,
-                    authUsername: cloneInfo.authUsername,
-                    branch: cloneInfo.branch,
-                    prNumber: cloneInfo.prNumber,
-                    platform: cloneInfo.platform,
+                // Save a factory for clone params so safeguard can renew sandbox if it expires
+                draft.getFreshCloneParams = async () => {
+                    const freshCloneInfo =
+                        await this.cloneParamsResolver.resolve(
+                            context,
+                            cliContext,
+                        );
+                    if (!freshCloneInfo) {
+                        throw new Error(
+                            'Failed to resolve fresh clone parameters',
+                        );
+                    }
+                    return {
+                        cloneUrl: freshCloneInfo.url,
+                        authToken: freshCloneInfo.authToken,
+                        authUsername: freshCloneInfo.authUsername,
+                        branch: freshCloneInfo.branch,
+                        prNumber: freshCloneInfo.prNumber,
+                        platform: freshCloneInfo.platform,
+                    };
                 };
             });
         } catch (error) {
@@ -266,106 +278,4 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
      * - PR mode: uses codeManagementService.getCloneParams() as before
      * - CLI mode: parses git remote URL and tries to get auth from platform integration
      */
-    private async resolveCloneParams(
-        context: CodeReviewPipelineContext,
-        cliContext?: CliReviewPipelineContext,
-    ): Promise<{
-        url: string;
-        authToken: string;
-        authUsername?: string;
-        branch: string;
-        prNumber?: number;
-        platform: PlatformType;
-    } | null> {
-        if (context.origin !== 'cli') {
-            // PR mode: use platform integration directly
-            const cloneParams = await this.codeManagementService.getCloneParams(
-                {
-                    repository: context.repository,
-                    organizationAndTeamData: context.organizationAndTeamData,
-                },
-                context.platformType,
-            );
-
-            return {
-                url: cloneParams.url,
-                authToken: cloneParams.auth?.token || '',
-                authUsername: cloneParams.auth?.username,
-                branch: context.branch,
-                prNumber: context.pullRequest.number,
-                platform: context.platformType,
-            };
-        }
-
-        // CLI mode: resolve from gitContext
-        const gitContext = cliContext?.gitContext;
-        if (!gitContext?.remote) return null;
-
-        const parsed = parseGitRemoteUrl(gitContext.remote);
-        if (!parsed) {
-            this.logger.warn({
-                message: `Could not parse git remote URL: ${gitContext.remote}`,
-                context: this.stageName,
-            });
-            return null;
-        }
-
-        const platform = gitContext.inferredPlatform || PlatformType.GITHUB;
-        const branch = gitContext.branch || 'main';
-
-        // Try to get clone params (HTTPS URL + auth token) from team's platform integration
-        let authToken = '';
-        let authUsername: string | undefined;
-        let cloneUrl = gitContext.remote;
-        try {
-            const cloneParams = await this.codeManagementService.getCloneParams(
-                {
-                    repository: {
-                        id: '0',
-                        defaultBranch: branch,
-                        fullName: parsed.fullName,
-                        name: parsed.name,
-                    },
-                    organizationAndTeamData: context.organizationAndTeamData,
-                },
-                platform,
-            );
-            authToken = cloneParams.auth?.token || '';
-            authUsername = cloneParams.auth?.username;
-            // Use the HTTPS URL from the platform service (E2B sandbox requires HTTPS for token auth)
-            if (cloneParams.url) {
-                cloneUrl = cloneParams.url;
-            }
-        } catch (error) {
-            // Fallback: no auth (works for public repos)
-            this.logger.warn({
-                message: `Could not get auth token for CLI cross-file context, trying without auth`,
-                context: this.stageName,
-                error,
-            });
-        }
-
-        // Ensure we always use HTTPS (E2B sandbox uses http.extraHeader which only works over HTTPS)
-        if (cloneUrl.startsWith('git@')) {
-            const sshMatch = cloneUrl.match(/git@([^:]+):(.+?)(?:\.git)?$/);
-            if (sshMatch) {
-                cloneUrl = `https://${sshMatch[1]}/${sshMatch[2]}`;
-            } else {
-                this.logger.warn({
-                    message: `Could not parse SSH-like git remote URL: ${cloneUrl}`,
-                    context: this.stageName,
-                });
-                return null;
-            }
-        }
-
-        return {
-            url: cloneUrl,
-            authToken,
-            authUsername,
-            branch,
-            prNumber: undefined,
-            platform,
-        };
-    }
 }

@@ -143,7 +143,7 @@ export type AnalysisContext<TPullRequest = any> = {
     /** Remote commands for safeguard agent verification (from E2B sandbox) */
     remoteCommands?: RemoteCommands;
     /** Parameters used to create the sandbox — kept for renewal if it expires */
-    sandboxCloneParams?: CreateSandboxParams;
+    getFreshCloneParams?: () => Promise<CreateSandboxParams>;
 };
 
 export type DocumentationContextItem = {

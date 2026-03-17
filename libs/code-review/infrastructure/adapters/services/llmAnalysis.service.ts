@@ -578,7 +578,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
         memories?: Array<Partial<IKodyRule>>,
         externalReferences?: unknown[],
         externalReferenceErrors?: unknown[] | string,
-        sandboxCloneParams?: CreateSandboxParams,
+        getFreshCloneParams?: () => Promise<CreateSandboxParams>,
         documentationContext?: DocumentationContextItem[],
     ): Promise<ISafeguardResponse> {
         suggestions?.forEach((suggestion) => {
@@ -609,7 +609,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
                 memories,
                 externalReferences,
                 externalReferenceErrors,
-                sandboxCloneParams,
+                getFreshCloneParams,
                 documentationContext,
             });
         } catch (error) {

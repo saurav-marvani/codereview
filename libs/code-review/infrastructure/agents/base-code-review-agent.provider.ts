@@ -1,5 +1,5 @@
 import { createLogger } from '@kodus/flow';
-import { BYOKConfig, PromptRunnerService } from '@kodus/kodus-common/llm';
+import { PromptRunnerService } from '@kodus/kodus-common/llm';
 import { Injectable } from '@nestjs/common';
 
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
@@ -68,7 +68,6 @@ export interface ReviewAgentOutput {
 @Injectable()
 export abstract class BaseCodeReviewAgentProvider {
     private readonly agentLogger = createLogger('CodeReviewAgent');
-    protected byokConfig?: BYOKConfig;
 
     constructor(
         protected readonly promptRunnerService: PromptRunnerService,
@@ -98,15 +97,14 @@ export abstract class BaseCodeReviewAgentProvider {
             },
         });
 
-        // Resolve BYOK config
-        this.byokConfig =
-            await this.permissionValidationService.getBYOKConfig(
-                input.organizationAndTeamData,
-            );
+        // Resolve BYOK config - Scoped locally to prevent race conditions across parallel PR reviews
+        const byokConfig = await this.permissionValidationService.getBYOKConfig(
+            input.organizationAndTeamData,
+        );
 
         // Create Vercel AI SDK model from BYOK config
-        const model = byokToVercelModel(this.byokConfig);
-        const modelName = getModelName(this.byokConfig);
+        const model = byokToVercelModel(byokConfig);
+        const modelName = getModelName(byokConfig);
 
         this.agentLogger.log({
             message: `[AGENT] ${identity.name} using model: ${modelName}`,
@@ -127,14 +125,12 @@ export abstract class BaseCodeReviewAgentProvider {
                 systemPrompt,
                 userPrompt,
                 remoteCommands: input.remoteCommands,
-                documentationSearchService:
-                    input.documentationSearchService,
+                documentationSearchService: input.documentationSearchService,
                 documentationSearchOptions: {
-                    organizationAndTeamData:
-                        input.organizationAndTeamData,
-                    byokConfig: this.byokConfig,
+                    organizationAndTeamData: input.organizationAndTeamData,
+                    byokConfig: byokConfig,
                 },
-                byokConfig: this.byokConfig,
+                byokConfig: byokConfig,
                 onStepFinish: (step: any) => {
                     if (step.toolCalls) {
                         for (const tc of step.toolCalls) {
@@ -155,20 +151,23 @@ export abstract class BaseCodeReviewAgentProvider {
                 const span = this.observabilityService.startSpan(
                     `${identity.name}::review`,
                     {
-                        'gen_ai.usage.input_tokens': agentResult.usage.inputTokens,
-                        'gen_ai.usage.output_tokens': agentResult.usage.outputTokens,
-                        'gen_ai.usage.total_tokens': agentResult.usage.totalTokens,
+                        'gen_ai.usage.input_tokens':
+                            agentResult.usage.inputTokens,
+                        'gen_ai.usage.output_tokens':
+                            agentResult.usage.outputTokens,
+                        'gen_ai.usage.total_tokens':
+                            agentResult.usage.totalTokens,
                         'gen_ai.response.model': modelName,
                         'gen_ai.run.name': `code-review-${this.getCategoryLabel()}`,
-                        type: this.byokConfig ? 'byok' : 'system',
-                        organizationId:
+                        'type': byokConfig ? 'byok' : 'system',
+                        'organizationId':
                             input.organizationAndTeamData?.organizationId,
-                        teamId: input.organizationAndTeamData?.teamId,
-                        prNumber: input.prNumber,
-                        steps: agentResult.steps,
-                        toolCalls: agentResult.toolCalls.length,
-                        finishReason: agentResult.finishReason,
-                        source: agentResult.source,
+                        'teamId': input.organizationAndTeamData?.teamId,
+                        'prNumber': input.prNumber,
+                        'steps': agentResult.steps,
+                        'toolCalls': agentResult.toolCalls.length,
+                        'finishReason': agentResult.finishReason,
+                        'source': agentResult.source,
                         durationMs,
                     },
                 );
@@ -376,18 +375,18 @@ RULES:
                 .map(([k, v]) => `- **${k}**: ${v}`)
                 .join('\n');
             if (flags) {
-                parts.push(`## Severity Classification\nClassify each suggestion using these criteria:\n${flags}`);
+                parts.push(
+                    `## Severity Classification\nClassify each suggestion using these criteria:\n${flags}`,
+                );
             }
         }
 
         const generationMain =
-            input.generationMain ??
-            input.v2PromptOverrides?.generation?.main;
+            input.generationMain ?? input.v2PromptOverrides?.generation?.main;
         if (generationMain) {
             parts.push(`## Writing Guidelines\n${generationMain}`);
         }
 
         return parts.join('\n\n');
     }
-
 }

@@ -55,7 +55,7 @@ export interface IAIAnalysisService {
         memories?: Array<Partial<IKodyRule>>,
         externalReferences?: unknown[],
         externalReferenceErrors?: unknown[] | string,
-        sandboxCloneParams?: CreateSandboxParams,
+        getFreshCloneParams?: () => Promise<CreateSandboxParams>,
         documentationContext?: DocumentationContextItem[],
     ): Promise<any>;
     validateImplementedSuggestions(

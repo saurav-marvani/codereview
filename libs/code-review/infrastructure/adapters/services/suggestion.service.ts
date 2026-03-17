@@ -246,7 +246,7 @@ export class SuggestionService implements ISuggestionService {
         memories?: Array<Partial<IKodyRule>>,
         externalReferences?: unknown[],
         externalReferenceErrors?: unknown[] | string,
-        sandboxCloneParams?: CreateSandboxParams,
+        getFreshCloneParams?: () => Promise<CreateSandboxParams>,
         documentationContext?: DocumentationContextItem[],
     ) {
         if (!suggestions?.length) {
@@ -268,7 +268,7 @@ export class SuggestionService implements ISuggestionService {
             memories,
             externalReferences,
             externalReferenceErrors,
-            sandboxCloneParams,
+            getFreshCloneParams,
             documentationContext,
         );
     }

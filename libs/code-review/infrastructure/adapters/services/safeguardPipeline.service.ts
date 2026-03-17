@@ -62,7 +62,7 @@ interface SafeguardPipelineParams {
     memories?: Array<Partial<{ title?: string; rule?: string }>>;
     externalReferences?: unknown[];
     externalReferenceErrors?: unknown[] | string;
-    sandboxCloneParams?: CreateSandboxParams;
+    getFreshCloneParams?: () => Promise<CreateSandboxParams>;
     documentationContext?: DocumentationContextItem[];
 }
 
@@ -206,27 +206,29 @@ export class SafeguardPipelineService {
                 let renewedCleanup: (() => Promise<void>) | undefined;
 
                 const canRenew = !!(
-                    params.sandboxCloneParams && this.sandboxProvider
+                    params.getFreshCloneParams && this.sandboxProvider
                 );
                 this.logger.log({
-                    message: `[SAFEGUARD] PR#${prNumber} ${fileLabel} — Agent verification starting: ${toVerify.length} suggestions to verify, sandbox renewal ${canRenew ? 'available' : 'NOT available'}${!params.sandboxCloneParams ? ' (no sandboxCloneParams)' : ''}${!this.sandboxProvider ? ' (no sandboxProvider)' : ''}`,
+                    message: `[SAFEGUARD] PR#${prNumber} ${fileLabel} — Agent verification starting: ${toVerify.length} suggestions to verify, sandbox renewal ${canRenew ? 'available' : 'NOT available'}${!params.getFreshCloneParams ? ' (no getFreshCloneParams)' : ''}${!this.sandboxProvider ? ' (no sandboxProvider)' : ''}`,
                     context: SafeguardPipelineService.name,
                 });
 
                 // Closure to attempt sandbox renewal; returns true on success
                 const tryRenewSandbox = async (): Promise<boolean> => {
-                    if (!params.sandboxCloneParams || !this.sandboxProvider) {
+                    if (!params.getFreshCloneParams || !this.sandboxProvider) {
                         this.logger.warn({
-                            message: `[SAFEGUARD] PR#${prNumber} ${fileLabel} — Cannot renew sandbox: ${!params.sandboxCloneParams ? 'sandboxCloneParams is missing' : 'sandboxProvider is missing'}`,
+                            message: `[SAFEGUARD] PR#${prNumber} ${fileLabel} — Cannot renew sandbox: ${!params.getFreshCloneParams ? 'getFreshCloneParams is missing' : 'sandboxProvider is missing'}`,
                             context: SafeguardPipelineService.name,
                         });
                         return false;
                     }
                     let newSandbox: SandboxInstance | undefined;
                     try {
+                        const freshCloneParams =
+                            await params.getFreshCloneParams();
                         newSandbox =
                             await this.sandboxProvider.createSandboxWithRepo(
-                                params.sandboxCloneParams,
+                                freshCloneParams,
                             );
                         currentRemoteCommands = newSandbox.remoteCommands;
                         if (renewedCleanup)

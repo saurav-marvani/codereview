@@ -119,7 +119,6 @@ export class PipelineExecutor<TContext extends PipelineContext> {
                     stage,
                     pipelineName,
                     pipelineId,
-                    observers,
                 );
 
                 context = result.newContext;
@@ -342,7 +341,6 @@ export class PipelineExecutor<TContext extends PipelineContext> {
         stage: PipelineStage<TContext>,
         pipelineName: string,
         pipelineId: string,
-        observers: IPipelineObserver[],
     ): Promise<{ decision: SkipDecision; newContext: TContext }> {
         const targetStage = context.statusInfo.jumpToStage;
 

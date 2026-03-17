@@ -1,3 +1,4 @@
+import { CloneParamsResolverService } from './services/clone-params-resolver.service';
 import { Module, forwardRef } from '@nestjs/common';
 
 // Stages
@@ -97,9 +98,11 @@ import { DocumentationSearchExaService } from '../infrastructure/adapters/servic
         CodeReviewPipelineStrategyEE,
         CodeReviewPipelineStrategy,
 
-
         // Job Processor
         CodeReviewJobProcessorService,
+
+        // Services
+        CloneParamsResolverService,
 
         // Stages
         ValidateNewCommitsStage,

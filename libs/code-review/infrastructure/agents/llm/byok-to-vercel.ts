@@ -36,11 +36,18 @@ export function byokToVercelModel(
     byokConfig?: BYOKConfig,
     role: 'main' | 'fallback' = 'main',
 ): LanguageModel {
-    const config = role === 'fallback' ? byokConfig?.fallback : byokConfig?.main;
+    const config =
+        role === 'fallback' ? byokConfig?.fallback : byokConfig?.main;
 
     if (!config) {
-        // No BYOK — use default
-        return createGoogleGenerativeAI()('gemini-2.5-pro');
+        // No BYOK — use default with environment API key
+        const googleKey =
+            process.env.API_GOOGLE_AI_API_KEY ||
+            process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
+            '';
+        return createGoogleGenerativeAI({ apiKey: googleKey })(
+            'gemini-2.5-pro',
+        );
     }
 
     const { provider, model, baseURL } = config;
@@ -116,7 +123,9 @@ export function getModelName(byokConfig?: BYOKConfig): string {
  * 2. Self-hosted configured provider
  * 3. Cloud: OpenAI GPT-4.1-mini (best at structured output) → Gemini 2.5 Flash (fallback)
  */
-export function getInternalModel(byokConfig?: BYOKConfig): LanguageModel | null {
+export function getInternalModel(
+    byokConfig?: BYOKConfig,
+): LanguageModel | null {
     const envMode = process.env.API_LLM_PROVIDER_MODEL ?? 'auto';
 
     // If BYOK is configured, use the client's fallback or main model
@@ -163,7 +172,5 @@ export function getInternalModel(byokConfig?: BYOKConfig): LanguageModel | null 
 
     if (!googleKey) return null;
 
-    return createGoogleGenerativeAI({ apiKey: googleKey })(
-        'gemini-2.5-flash',
-    );
+    return createGoogleGenerativeAI({ apiKey: googleKey })('gemini-2.5-flash');
 }

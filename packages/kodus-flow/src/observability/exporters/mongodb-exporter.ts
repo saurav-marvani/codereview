@@ -269,10 +269,6 @@ export class MongoDBExporter implements LogProcessor, ObservabilityExporter {
 
             // Ensure Time-Series collection exists (MongoDB 5.0+)
             await this.ensureTimeSeriesCollection(this.config.collections.logs);
-            // Also optimize Telemetry collection as Time-Series
-            await this.ensureTimeSeriesCollection(
-                this.config.collections.telemetry,
-            );
 
             // Creating indexes for performance
             await this.createIndexes();

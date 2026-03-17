@@ -1,3 +1,4 @@
+import { buildAgentTools } from './agent-tools.factory';
 /**
  * Simple agent loop using Vercel AI SDK with native function calling.
  *
@@ -5,82 +6,19 @@
  * 2. Parse JSON from response text — zero cost if model cooperates
  * 3. If JSON parse fails — `generateText` with `Output.object` (cheap model) to structure the text
  */
-import {
-    generateText,
-    tool,
-    stepCountIs,
-    Output,
-    jsonSchema,
-    type LanguageModel,
-} from 'ai';
+import { generateText, stepCountIs, Output, type LanguageModel } from 'ai';
 import { z } from 'zod';
-
-/**
- * Workaround for Zod v4 + zod-to-json-schema incompatibility.
- * zod-to-json-schema doesn't convert Zod v4 schemas correctly (returns empty {}).
- * This helper manually converts simple Zod object schemas to JSON Schema.
- */
-function zodToJsonSchemaManual(schema: z.ZodObject<any>): any {
-    const properties: Record<string, any> = {};
-    const required: string[] = [];
-
-    for (const [key, value] of Object.entries(schema.shape)) {
-        const zodType = value as any;
-        let prop: any = {};
-
-        // Unwrap optional
-        let innerType = zodType;
-        let isOptional = false;
-        if (zodType._def?.type === 'optional' || zodType._def?.innerType) {
-            isOptional = true;
-            innerType = zodType._def.innerType || zodType;
-        }
-        // Check if it's ZodOptional
-        if (innerType.constructor?.name === 'ZodOptional') {
-            isOptional = true;
-            innerType = innerType._def?.innerType || innerType.unwrap?.() || innerType;
-        }
-
-        // Map Zod type to JSON Schema type
-        const typeName = innerType._def?.type || innerType.constructor?.name;
-        if (typeName === 'string' || typeName === 'ZodString') {
-            prop.type = 'string';
-        } else if (typeName === 'number' || typeName === 'ZodNumber') {
-            prop.type = 'number';
-        } else if (typeName === 'boolean' || typeName === 'ZodBoolean') {
-            prop.type = 'boolean';
-        } else {
-            prop.type = 'string'; // fallback
-        }
-
-        // Get description
-        if (zodType.description) prop.description = zodType.description;
-        if (innerType.description) prop.description = innerType.description;
-
-        properties[key] = prop;
-        if (!isOptional) required.push(key);
-    }
-
-    return jsonSchema({
-        type: 'object' as const,
-        properties,
-        ...(required.length > 0 ? { required } : {}),
-    });
-}
 import { createLogger } from '@kodus/flow';
 import { EnhancedJSONParser } from '@kodus/flow';
 import { BYOKConfig } from '@kodus/kodus-common/llm';
 import { getInternalModel } from './byok-to-vercel';
-import { RemoteCommands } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
+import { RemoteCommands } from '../../adapters/services/collectCrossFileContexts.service';
 import { DocumentationSearchAdapter } from '../tools/sandbox-tools';
 
 const logger = createLogger('AgentLoop');
 
 const MAX_STEPS = 35;
-const MAX_GREP_MATCHES = 30;
-const MAX_READ_LENGTH = 30_000;
-const MAX_LIST_LENGTH = 15_000;
-const MAX_SHELL_OUTPUT = 15_000;
+const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes max per agent to prevent hanging on slow/dead providers
 
 /** Schema for structured output */
 const suggestionSchema = z.object({
@@ -135,7 +73,7 @@ export interface AgentLoopOutput {
 export async function runAgentLoop(
     input: AgentLoopInput,
 ): Promise<AgentLoopOutput> {
-    const tools = buildTools(
+    const tools = buildAgentTools(
         input.remoteCommands,
         input.documentationSearchService,
         input.documentationSearchOptions,
@@ -148,7 +86,6 @@ export async function runAgentLoop(
     let totalOutputTokens = 0;
 
     // Timeout: 5 minutes max per agent to prevent hanging on slow/dead providers
-    const AGENT_TIMEOUT_MS = 5 * 60 * 1000;
     const abortController = new AbortController();
     const timeoutHandle = setTimeout(() => {
         logger.warn({
@@ -186,7 +123,8 @@ export async function runAgentLoop(
 
                 if (event.toolCalls) {
                     for (const tc of event.toolCalls) {
-                        const args = (tc as any).args || (tc as any).input || {};
+                        const args =
+                            (tc as any).args || (tc as any).input || {};
                         allToolCalls.push({ tool: tc.toolName, args });
 
                         const toolResult = (event.toolResults || []).find(
@@ -255,9 +193,16 @@ export async function runAgentLoop(
                 // Strategy 2: Only use fallback LLM if text clearly contains findings
                 // (not just investigation text). This prevents the LLM from fabricating
                 // suggestions to fill the schema when the agent was still investigating.
-                if (!findings && lastStepText.length > 100 && looksLikeFindings(lastStepText)) {
+                if (
+                    !findings &&
+                    lastStepText.length > 100 &&
+                    looksLikeFindings(lastStepText)
+                ) {
                     try {
-                        findings = await structureWithFallbackModel(lastStepText, input.byokConfig);
+                        findings = await structureWithFallbackModel(
+                            lastStepText,
+                            input.byokConfig,
+                        );
                         if (findings && findings.suggestions.length > 0) {
                             source = 'generate-object';
                             logger.log({
@@ -277,7 +222,10 @@ export async function runAgentLoop(
             });
 
             return {
-                findings: findings || { reasoning: 'Agent timed out', suggestions: [] },
+                findings: findings || {
+                    reasoning: 'Agent timed out',
+                    suggestions: [],
+                },
                 text: lastStepText,
                 steps: stepCount,
                 toolCalls: allToolCalls,
@@ -326,7 +274,10 @@ export async function runAgentLoop(
             context: 'AgentLoop',
         });
 
-        findings = await structureWithFallbackModel(finalText, input.byokConfig);
+        findings = await structureWithFallbackModel(
+            finalText,
+            input.byokConfig,
+        );
         source = findings ? 'generate-object' : 'empty';
     }
 
@@ -343,9 +294,18 @@ export async function runAgentLoop(
         finishReason: result.finishReason,
         source,
         usage: {
-            inputTokens: (result as any).totalUsage?.inputTokens ?? result.usage?.inputTokens ?? 0,
-            outputTokens: (result as any).totalUsage?.outputTokens ?? result.usage?.outputTokens ?? 0,
-            totalTokens: (result as any).totalUsage?.totalTokens ?? result.usage?.totalTokens ?? 0,
+            inputTokens:
+                (result as any).totalUsage?.inputTokens ??
+                result.usage?.inputTokens ??
+                0,
+            outputTokens:
+                (result as any).totalUsage?.outputTokens ??
+                result.usage?.outputTokens ??
+                0,
+            totalTokens:
+                (result as any).totalUsage?.totalTokens ??
+                result.usage?.totalTokens ??
+                0,
         },
     };
 }
@@ -443,13 +403,14 @@ async function structureWithFallbackModel(
 
         if (!internalModel) {
             logger.warn({
-                message: '[AGENT-FALLBACK] No internal model available for fallback',
+                message:
+                    '[AGENT-FALLBACK] No internal model available for fallback',
                 context: 'AgentLoop',
             });
             return null;
         }
 
-        const result = await generateText({
+        const result: any = await generateText({
             model: internalModel as any,
             output: Output.object({ schema: findingsSchema }) as any,
             system: `You are a JSON extraction assistant. You receive code review text and extract structured findings.
@@ -470,7 +431,7 @@ ${reviewText}
 For each issue found, extract: relevantFile, language, suggestionContent (full description), existingCode, improvedCode, oneSentenceSummary, relevantLinesStart, relevantLinesEnd, severity (critical/high/medium/low).`,
         });
 
-        const output = (result as any).object ?? (result as any).output;
+        const output: any = (result as any).object ?? (result as any).output;
 
         logger.log({
             message: `[AGENT-FALLBACK] structured output returned ${output?.suggestions?.length ?? 0} suggestions`,
@@ -488,178 +449,4 @@ For each issue found, extract: relevantFile, language, suggestionContent (full d
     }
 }
 
-/**
- * Build the tool set for the agent from RemoteCommands.
- */
-function buildTools(
-    remoteCommands: RemoteCommands,
-    docSearchService?: DocumentationSearchAdapter,
-    docSearchOptions?: Record<string, unknown>,
-): Record<string, any> {
-    // Helper to create tool definitions compatible with all providers.
-    // Uses `type: 'function'` + `inputSchema` (not `parameters`) to bypass
-    // the broken Zod v4 → JSON Schema conversion in AI SDK.
-    const mkTool = (desc: string, schema: Record<string, any>, exec: (args: any) => Promise<string>) => ({
-        type: 'function' as const,
-        description: desc,
-        inputSchema: jsonSchema(schema),
-        execute: exec,
-    });
-
-    const tools: Record<string, any> = {
-        grep: mkTool(
-            'Search the repository for a regex pattern. Returns matching lines with file paths.',
-            {
-                type: 'object',
-                properties: {
-                    pattern: { type: 'string', description: 'Regex pattern to search for' },
-                    glob: { type: 'string', description: 'Optional glob to filter files (e.g. "*.ts")' },
-                    path: { type: 'string', description: 'Optional directory to scope the search' },
-                },
-                required: ['pattern'],
-            },
-            async (args: any) => {
-                const pattern = args.pattern || args.regex || '';
-                const glob = args.glob || args.include || undefined;
-                let searchPath = (args.path || args.directory || args.dir || '.').replace(/^\/+/, '') || '.';
-                if (!pattern) return 'Error: pattern is required';
-                let result = await remoteCommands.grep(
-                    pattern,
-                    searchPath,
-                    glob,
-                );
-                const lines = result.split('\n');
-                if (lines.length > MAX_GREP_MATCHES) {
-                    result =
-                        lines.slice(0, MAX_GREP_MATCHES).join('\n') +
-                        `\n... (${lines.length - MAX_GREP_MATCHES} more matches)`;
-                }
-                return result;
-            },
-        ),
-
-        readFile: mkTool(
-            'Read file contents. Prefer reading specific sections with startLine/endLine to save context. Only read entire file if you need to understand the full structure.',
-            {
-                type: 'object',
-                properties: {
-                    path: { type: 'string', description: 'File path relative to repo root' },
-                    startLine: { type: 'number', description: 'Start line (1-based). Use this to read around the changed lines (e.g. 50 lines before/after the diff)' },
-                    endLine: { type: 'number', description: 'End line (1-based)' },
-                },
-                required: ['path'],
-            },
-            async (args: any) => {
-                let filePath: string = args.path || args.filePath || args.file || '';
-                const startLine = args.startLine || args.start_line || 0;
-                const endLine = args.endLine || args.end_line || 0;
-                filePath = filePath.replace(/^\/+/, '');
-                if (!filePath) return 'Error: path is required';
-                let result = await remoteCommands.read(
-                    filePath,
-                    startLine,
-                    endLine,
-                );
-                if (result.length > MAX_READ_LENGTH) {
-                    const lines = result.split('\n');
-                    result =
-                        result.substring(0, MAX_READ_LENGTH) +
-                        `\n... (truncated — showing ${MAX_READ_LENGTH} chars of ${result.length}. File has ~${lines.length} lines. Use startLine/endLine to read specific sections.)`;
-                }
-                return result;
-            },
-        ),
-
-        listDir: mkTool(
-            'List files and directories. Use maxDepth to control recursion (default 2).',
-            {
-                type: 'object',
-                properties: {
-                    path: { type: 'string', description: 'Directory path (default: ".")' },
-                    maxDepth: { type: 'number', description: 'Max recursion depth (default: 2, max: 4)' },
-                },
-            },
-            async (args: any) => {
-                let dirPath = (args.path || args.directory || args.dir || '.').replace(/^\/+/, '') || '.';
-                const depth = Math.min(args.maxDepth || args.max_depth || 2, 4);
-                let result = await remoteCommands.listDir(dirPath, depth);
-                if (result.length > MAX_LIST_LENGTH) {
-                    result =
-                        result.substring(0, MAX_LIST_LENGTH) +
-                        `\n... (truncated)`;
-                }
-                return result;
-            },
-        ),
-    };
-
-    // Add exec-based tools if available
-    if (remoteCommands.exec) {
-        const exec = remoteCommands.exec;
-
-        tools.shell = mkTool(
-            'Execute a read-only shell command. Allowed: tsc, eslint, npx, python, go vet, cargo check.',
-            {
-                type: 'object',
-                properties: {
-                    command: { type: 'string', description: 'Command to run (e.g. "npx tsc --noEmit src/file.ts")' },
-                },
-                required: ['command'],
-            },
-            async ({ command }: any) => {
-                const ALLOWED = [
-                    'tsc ', 'npx ', 'eslint ', 'python ', 'python3 ',
-                    'go ', 'cargo ', 'cat ', 'wc ', 'head ', 'tail ', 'file ',
-                ];
-                const isAllowed = ALLOWED.some((p) =>
-                    command.trimStart().startsWith(p),
-                );
-                if (!isAllowed) {
-                    return `Command not allowed. Allowed prefixes: ${ALLOWED.join(', ')}`;
-                }
-                if (/[;&|`$>]|\brm\b|\bsudo\b/.test(command)) {
-                    return 'Command contains blocked patterns.';
-                }
-                const { stdout } = await exec(command);
-                return stdout.length > MAX_SHELL_OUTPUT
-                    ? stdout.substring(0, MAX_SHELL_OUTPUT) + '\n... (truncated)'
-                    : stdout;
-            },
-        );
-    }
-
-    // Add searchDocs if available
-    if (docSearchService) {
-        tools.searchDocs = mkTool(
-            'Search external documentation for a package/library.',
-            {
-                type: 'object',
-                properties: {
-                    packageName: { type: 'string', description: 'Package name (e.g. "express")' },
-                    query: { type: 'string', description: 'What to search for in docs' },
-                },
-                required: ['packageName', 'query'],
-            },
-            async ({ packageName, query }: any) => {
-                if (!packageName || !query)
-                    return 'Both packageName and query are required.';
-                try {
-                    const results = await docSearchService.searchByFilePlan(
-                        { agent: { queryTasks: [{ packageName, query }] } },
-                        docSearchOptions,
-                    );
-                    const docs = results['agent'] || [];
-                    if (docs.length === 0)
-                        return `No docs found for "${packageName}": ${query}`;
-                    return docs
-                        .map((d) => `### ${d.title}\n${d.url}\n${d.snippet}`)
-                        .join('\n---\n');
-                } catch (e) {
-                    return `Doc search error: ${e instanceof Error ? e.message : String(e)}`;
-                }
-            },
-        );
-    }
-
-    return tools;
-}
+// Tools are defined in agent-tools.factory.ts (buildAgentTools)
