@@ -18,6 +18,7 @@ import { CodeManagementService } from '@libs/platform/infrastructure/adapters/se
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
+import { CloneParamsResolverService } from '@libs/code-review/pipeline/services/clone-params-resolver.service';
 
 jest.mock('@libs/common/utils/posthog', () => ({
     __esModule: true,
@@ -241,6 +242,10 @@ describe('GatherDocumentationContextStage', () => {
                 {
                     provide: SANDBOX_PROVIDER_TOKEN,
                     useValue: sandboxProvider,
+                },
+                {
+                    provide: CloneParamsResolverService,
+                    useValue: { resolve: jest.fn() },
                 },
                 {
                     provide: CodeManagementService,
