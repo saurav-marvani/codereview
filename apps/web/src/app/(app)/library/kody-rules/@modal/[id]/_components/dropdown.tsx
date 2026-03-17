@@ -100,20 +100,8 @@ export const SelectRepositoriesDropdown = ({
                 side="top"
                 sideOffset={10}
                 alignOffset={-40}
-                className="w-72 p-0">
-                <Command
-                    filter={(value, search) => {
-                        const repo = repositories.find((r) => r.id === value);
-                        if (!repo) return 0;
-                        if (
-                            repo.name
-                                .toLowerCase()
-                                .startsWith(search.toLowerCase())
-                        ) {
-                            return 1;
-                        }
-                        return 0;
-                    }}>
+                className="translate-x-6 w-72 p-0">
+                <Command filter={() => 1}>
                     <CommandInput
                         placeholder="Search repositories..."
                         onValueChange={setSearch}
@@ -166,7 +154,7 @@ export const SelectRepositoriesDropdown = ({
                             </div>
                         )}
 
-                        <CommandList className="max-h-[220px] overflow-y-auto">
+                        <CommandList className="max-h-[300px] overflow-y-auto">
                             <CommandEmpty>No repository found.</CommandEmpty>
 
                         <div className="m-0 p-0 max-h-[220px] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
