@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
-import path from 'node:path';
 import os from 'node:os';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { startMockServer, type MockServer } from './mock-server.js';
 
 const execFileAsync = promisify(execFile);
@@ -547,7 +547,10 @@ describe('business validation integration', () => {
         ]);
 
         expect(exitCode).toBe(1);
-        expect(stderr).toContain("unknown option '--pr-url'");
+        expect(stderr).toContain('Unknown option: `--pr-url`.');
+        expect(stderr).toContain(
+            'Run `kodus pr --help` to see available options.',
+        );
     });
 
     it('supports dry-run for local business validation payload', async () => {
