@@ -40,6 +40,8 @@ export interface ReviewAgentInput {
     v2PromptOverrides?: CodeReviewConfig['v2PromptOverrides'];
     generationMain?: string;
     documentationSearchService?: DocumentationSearchAdapter;
+    prTitle?: string;
+    prBody?: string;
 }
 
 /**
@@ -145,11 +147,12 @@ export abstract class BaseCodeReviewAgentProvider {
 
             const durationMs = Date.now() - startTime;
 
-            // Record token usage to observability span
-            // Uses runInSpan directly (not runLLMInSpan which depends on LangChain callbacks)
+            // Record token usage to observability (MongoDB spans)
+            // Uses runInSpan to ensure proper span lifecycle and MongoDB persistence
             try {
-                const span = this.observabilityService.startSpan(
+                await this.observabilityService.runInSpan(
                     `${identity.name}::review`,
+                    async () => agentResult,
                     {
                         'gen_ai.usage.input_tokens':
                             agentResult.usage.inputTokens,
@@ -171,7 +174,6 @@ export abstract class BaseCodeReviewAgentProvider {
                         durationMs,
                     },
                 );
-                span?.end?.();
             } catch {
                 // Observability is best-effort
             }
@@ -200,6 +202,7 @@ export abstract class BaseCodeReviewAgentProvider {
                 relevantLinesEnd: s.relevantLinesEnd,
                 label: this.getCategoryLabel(),
                 severity: s.severity || 'medium',
+                level: s.level || 'issue', // Default to issue — if agent didn't classify, assume it's real
                 llmPrompt: s.suggestionContent,
             }));
 
@@ -232,13 +235,14 @@ export abstract class BaseCodeReviewAgentProvider {
         } catch (error) {
             const durationMs = Date.now() - startTime;
             this.agentLogger.error({
-                message: `[AGENT] ${identity.name} failed for PR#${input.prNumber} after ${durationMs}ms`,
+                message: `[AGENT] ${identity.name} failed for PR#${input.prNumber} after ${durationMs}ms: ${error instanceof Error ? error.message : String(error)}`,
                 context: identity.name,
                 error,
                 metadata: {
                     prNumber: input.prNumber,
                     durationMs,
                     model: modelName,
+                    errorStack: error instanceof Error ? error.stack?.substring(0, 500) : undefined,
                 },
             });
             return {
@@ -256,42 +260,57 @@ export abstract class BaseCodeReviewAgentProvider {
         const overridesSection = this.formatOverrides(input);
         const memoryRulesSection = this.formatMemoryRules(input.memoryRules);
 
-        const langInstruction = input.languageResultPrompt
-            ? `\nIMPORTANT: Write all review comments in ${input.languageResultPrompt}.`
+        const langSection = input.languageResultPrompt
+            ? `\n  <Language>Write all review comments in ${input.languageResultPrompt}.</Language>`
             : '';
 
-        return `You are ${identity.name}, ${identity.description}.
+        return `<CodeReviewAgent>
+  <Identity name="${identity.name}">${identity.description}</Identity>
+  <Date>${new Date().toLocaleDateString('en-GB')}</Date>${langSection}
 
-Date: ${new Date().toLocaleDateString('en-GB')}.
-
+  <Expertise>
 ${categoryPrompt}
+  </Expertise>
 
 ${overridesSection}
 
 ${memoryRulesSection}
 
-## Scope — CRITICAL
+  <Scope>
+    <Rule id="changed-only">Review ONLY lines that changed in the diff (lines with + or -). Do NOT suggest improvements to unchanged code.</Rule>
+    <Rule id="context-via-tools">Use tools to read surrounding code for CONTEXT, but only report issues in CHANGED lines.</Rule>
+    <Rule id="worse-or-reachable">If unchanged code has a bug, only report it if the PR changes make it worse or newly reachable.</Rule>
+    <Rule id="line-numbers">relevantLinesStart/relevantLinesEnd MUST point to lines shown in the diff hunks.</Rule>
+  </Scope>
 
-You are reviewing ONLY the lines that changed in the diff (lines with + or -).
-- Use tools to read surrounding code for CONTEXT, but only report issues in CHANGED lines.
-- Do NOT suggest improvements to existing code that was not modified in this PR.
-- If unchanged code has a bug, only report it if the PR changes make it worse or newly reachable.
-- The \`relevantLinesStart\`/\`relevantLinesEnd\` MUST point to lines shown in the diff hunks (lines starting with + or context lines in the @@ sections).
+  <Workflow>
+    <Step id="investigate">Use tools (readFile, grep, listDir) to understand the context around changed code. Read the full files, search for callers, check how changed functions are used, look at related tests.</Step>
+    <Step id="analyze">For each suspicious change, trace the execution path mentally. What happens with edge cases? Concurrent access? Null values? Error paths?</Step>
+    <Step id="decide">Only report issues you confirmed with evidence from your investigation. Skip style opinions, theoretical concerns, and issues in unchanged code.</Step>
+    <Step id="respond">Respond with a JSON block containing your findings.</Step>
+  </Workflow>
 
-## How to work
+  <ToolGuidelines>
+    <Guideline id="investigate-first">You MUST use tools to investigate before responding. Do not guess about code you haven't read.</Guideline>
+    <Guideline id="read-full-files">Use readFile to read the full content of changed files, not just the diff snippet. The diff shows what changed but you need the full file to understand the context.</Guideline>
+    <Guideline id="search-callers">Use grep to find callers, usages, and related code when you need to understand impact of a change.</Guideline>
+    <Guideline id="no-loops">Do not repeat the same tool call with the same arguments. If a search returns empty, that IS useful information — move on.</Guideline>
+  </ToolGuidelines>
 
-1. **Investigate**: Use tools (grep, readFile, listDir) to understand the CONTEXT around changed code. Search for callers, related code, tests.
-2. **Decide**: Only report issues in CHANGED lines that you confirmed with evidence. Skip style opinions, theoretical concerns, and issues in unchanged code.
-3. **Respond**: After investigating, respond with a JSON block containing your findings.${langInstruction}`;
+</CodeReviewAgent>`;
     }
 
     private buildUserPrompt(input: ReviewAgentInput): string {
         const diffsSection = this.formatDiffs(input.changedFiles);
 
-        return `Review the following pull request changes.
+        const prContextSection = this.formatPRContext(input.prTitle, input.prBody);
 
+        return `<ReviewTask>${prContextSection}
+  <Diffs>
 ${diffsSection}
+  </Diffs>
 
+  <OutputFormat>
 After investigating with tools, respond with ONLY a JSON block:
 
 \`\`\`json
@@ -301,7 +320,7 @@ After investigating with tools, respond with ONLY a JSON block:
     {
       "relevantFile": "path/to/file.ts",
       "language": "typescript",
-      "suggestionContent": "Description of the issue with evidence",
+      "suggestionContent": "Description of the issue with evidence from investigation",
       "existingCode": "problematic code snippet",
       "improvedCode": "fixed code snippet",
       "oneSentenceSummary": "Brief summary",
@@ -314,12 +333,25 @@ After investigating with tools, respond with ONLY a JSON block:
 \`\`\`
 
 If no issues found, respond with \`{"reasoning": "...", "suggestions": []}\`.
+  </OutputFormat>
 
-RULES:
-- You MUST use tools to investigate before responding.
-- ONLY report issues in code that was CHANGED in this PR (lines with + or - in the diff).
-- Use readFile/grep for context, but do NOT suggest fixes for unchanged code.
-- Every suggestion's relevantFile and line numbers MUST match a file and lines from the diff above.`;
+  <Rules>
+    <Rule>You MUST use tools to investigate before responding.</Rule>
+    <Rule>ONLY report issues in code that was CHANGED in this PR (lines with + or - in the diff).</Rule>
+    <Rule>Use readFile/grep for context, but do NOT suggest fixes for unchanged code.</Rule>
+    <Rule>Every suggestion's relevantFile and line numbers MUST match a file and lines from the diff above.</Rule>
+  </Rules>
+</ReviewTask>`;
+    }
+
+    private formatPRContext(prTitle?: string, prBody?: string): string {
+        if (!prTitle && !prBody) return '';
+
+        const parts: string[] = [];
+        if (prTitle) parts.push(`Title: ${prTitle}`);
+        if (prBody) parts.push(prBody.substring(0, 500));
+
+        return `\n  <PRContext>${parts.join('\n')}</PRContext>`;
     }
 
     private formatDiffs(files: FileChange[]): string {
@@ -355,20 +387,8 @@ RULES:
             parts.push(`## Category Guidelines\n${categoryDesc}`);
         }
 
-        // Severity criteria from client config — agent classifies during analysis
-        // because it has full context (code, callers, impact)
-        const severityFlags = input.v2PromptOverrides?.severity?.flags;
-        if (severityFlags) {
-            const flags = Object.entries(severityFlags)
-                .filter(([, v]) => v)
-                .map(([k, v]) => `- **${k}**: ${v}`)
-                .join('\n');
-            if (flags) {
-                parts.push(
-                    `## Severity Classification\nClassify each suggestion using these criteria:\n${flags}`,
-                );
-            }
-        }
+        // Level classification is done in a separate step after agent generation
+        // by GPT 5.4 mini (more consistent than letting the BYOK model classify)
 
         const generationMain =
             input.generationMain ?? input.v2PromptOverrides?.generation?.main;

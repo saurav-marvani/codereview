@@ -231,6 +231,8 @@ export class LocalSandboxService implements ISandboxProvider {
                     'head',
                     'tail',
                     'file',
+                    'fd', // fast file finder (respects .gitignore)
+                    'find', // fallback file finder
                 ]);
 
                 // Split command into program + args for execFile (no shell interpretation)

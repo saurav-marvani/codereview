@@ -129,36 +129,24 @@ export class ReviewOrchestratorService {
             }
         }
 
-        // Deduplicate cross-agent suggestions by file + line range overlap
-        const deduped = this.deduplicateSuggestions(allSuggestions);
-
-        // Log which suggestions were removed by dedup
-        if (deduped.length < allSuggestions.length) {
-            const dedupedSet = new Set(deduped);
-            const removed = allSuggestions.filter((s) => !dedupedSet.has(s));
-            for (const s of removed) {
-                this.logger.log({
-                    message: `[DEDUP-REMOVED] PR#${agentInput.prNumber} ${s.relevantFile}:${s.relevantLinesStart}-${s.relevantLinesEnd} [${s.label}/${s.severity}] "${s.oneSentenceSummary || s.suggestionContent?.substring(0, 80)}"`,
-                    context: ReviewOrchestratorService.name,
-                });
-            }
-        }
+        // No deterministic dedup here — LLM dedup in AgentReviewStage handles it better.
+        // Deterministic dedup by line overlap was too aggressive, removing findings from
+        // different categories (bug vs security) that happened to be on the same lines.
 
         const totalDurationMs = Date.now() - startTime;
 
         this.logger.log({
-            message: `[AGENT] Orchestrator completed for PR#${agentInput.prNumber}: ${deduped.length} suggestions (${allSuggestions.length} before dedup) in ${totalDurationMs}ms`,
+            message: `[AGENT] Orchestrator completed for PR#${agentInput.prNumber}: ${allSuggestions.length} suggestions in ${totalDurationMs}ms`,
             context: ReviewOrchestratorService.name,
             metadata: {
                 prNumber: agentInput.prNumber,
                 totalSuggestions: allSuggestions.length,
-                afterDedup: deduped.length,
                 totalDurationMs,
             },
         });
 
         return {
-            suggestions: deduped,
+            suggestions: allSuggestions,
             agentResults,
             totalDurationMs,
         };
@@ -166,7 +154,10 @@ export class ReviewOrchestratorService {
 
     /**
      * Deduplicate suggestions from different agents that target the same
-     * file + overlapping line range. Keeps the one with higher severity.
+     * file + overlapping line range + same category. Only removes true
+     * duplicates (same category, high line overlap). Keeps suggestions
+     * from different categories even if they overlap in lines — a bug
+     * and a security issue on the same line are different findings.
      */
     private deduplicateSuggestions(
         suggestions: Partial<CodeSuggestion>[],
@@ -201,13 +192,14 @@ export class ReviewOrchestratorService {
             const kept: Partial<CodeSuggestion>[] = [];
 
             for (const candidate of fileSuggestions) {
-                const overlaps = kept.some((existing) =>
-                    this.linesOverlap(existing, candidate),
+                const isDuplicate = kept.some(
+                    (existing) =>
+                        this.sameCategory(existing, candidate) &&
+                        this.highLineOverlap(existing, candidate),
                 );
-                if (!overlaps) {
+                if (!isDuplicate) {
                     kept.push(candidate);
                 }
-                // If overlaps, the higher-severity one is already in `kept`
             }
 
             result.push(...kept);
@@ -216,7 +208,25 @@ export class ReviewOrchestratorService {
         return result;
     }
 
-    private linesOverlap(
+    /**
+     * Check if two suggestions are from the same category (bug, security, performance).
+     * Different categories = different findings, even on the same lines.
+     */
+    private sameCategory(
+        a: Partial<CodeSuggestion>,
+        b: Partial<CodeSuggestion>,
+    ): boolean {
+        const catA = (a.label || '').toLowerCase();
+        const catB = (b.label || '').toLowerCase();
+        if (!catA || !catB) return true; // If no label, assume same to be safe
+        return catA === catB;
+    }
+
+    /**
+     * Check if two suggestions have >70% line overlap.
+     * Small overlaps (e.g., adjacent functions) are not duplicates.
+     */
+    private highLineOverlap(
         a: Partial<CodeSuggestion>,
         b: Partial<CodeSuggestion>,
     ): boolean {
@@ -227,6 +237,16 @@ export class ReviewOrchestratorService {
 
         if (aStart === 0 || bStart === 0) return false;
 
-        return aStart <= bEnd && bStart <= aEnd;
+        // No overlap at all
+        if (aStart > bEnd || bStart > aEnd) return false;
+
+        // Calculate overlap percentage
+        const overlapStart = Math.max(aStart, bStart);
+        const overlapEnd = Math.min(aEnd, bEnd);
+        const overlapSize = overlapEnd - overlapStart + 1;
+        const smallerRange = Math.min(aEnd - aStart + 1, bEnd - bStart + 1);
+
+        // Only deduplicate if >70% of the smaller range overlaps
+        return overlapSize / smallerRange > 0.7;
     }
 }

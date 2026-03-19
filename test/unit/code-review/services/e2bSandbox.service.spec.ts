@@ -227,7 +227,7 @@ describe('E2BSandboxService', () => {
             expect(firstCall[0]).toContain('apt-get');
             expect(firstCall[0]).toContain('git');
             expect(firstCall[0]).toContain('ripgrep');
-            expect(firstCall[1]).toEqual({ timeoutMs: 120_000, user: 'root' });
+            expect(firstCall[1]).toEqual({ timeoutMs: 300_000, user: 'root' });
         });
 
         it('should run git commands with correct refspec and auth header', async () => {
@@ -251,7 +251,7 @@ describe('E2BSandboxService', () => {
             // Auth header passed via envs, not embedded in URL
             const opts = gitCall[1];
             expect(opts.envs.GIT_AUTH_HEADER).toContain('Authorization: Basic');
-            expect(opts.timeoutMs).toBe(120_000);
+            expect(opts.timeoutMs).toBe(300_000);
         });
 
         it('should return remoteCommands and cleanup function', async () => {

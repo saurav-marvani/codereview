@@ -159,16 +159,49 @@ export class CreateSandboxStage extends BasePipelineStage<CodeReviewPipelineCont
                     };
                 };
             });
-        } catch (error) {
-            this.logger.error({
-                message: `Failed to create sandbox for ${label}, continuing without it`,
+        } catch (firstError) {
+            // Retry once — large repos may need a second attempt (network/timeout)
+            this.logger.warn({
+                message: `Sandbox creation failed for ${label}, retrying once...`,
                 context: this.stageName,
-                error,
-                metadata: {
-                    organizationAndTeamData: context?.organizationAndTeamData,
-                    prNumber: context?.pullRequest?.number,
-                },
+                error: firstError,
             });
+
+            try {
+                if (cleanup) {
+                    try {
+                        await cleanup();
+                    } catch {
+                        // ignore cleanup errors on retry
+                    }
+                }
+
+                // Second attempt with same params
+                const retryResult = await this.sandboxProvider.create(
+                    resolveCloneParams,
+                );
+                sandboxHandle = retryResult.sandboxHandle;
+                cleanup = retryResult.cleanup;
+
+                return this.updateContext(context, (draft) => {
+                    draft.sandboxHandle = sandboxHandle;
+                    draft.sandboxCloneParams =
+                        context.sandboxCloneParams || undefined;
+                });
+            } catch (retryError) {
+                this.logger.error({
+                    message: `Failed to create sandbox for ${label} after retry, continuing without it`,
+                    context: this.stageName,
+                    error: retryError,
+                    metadata: {
+                        organizationAndTeamData:
+                            context?.organizationAndTeamData,
+                        prNumber: context?.pullRequest?.number,
+                    },
+                });
+            }
+
+            const error = firstError;
             if (cleanup) {
                 try {
                     await cleanup();

@@ -1,4 +1,5 @@
 import { createLogger, createThreadId } from '@kodus/flow';
+import { CodeReviewVersion } from '@libs/core/domain/enums/code-review.enum';
 import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
 import posthog, { FEATURE_FLAGS } from '@libs/common/utils/posthog';
 import { LabelType } from '@libs/common/utils/codeManagement/labels';
@@ -319,6 +320,18 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
     private async runCrossFileAnalysis(
         context: CodeReviewPipelineContext,
     ): Promise<{ suggestions: CodeSuggestion[]; error?: PipelineError }> {
+        // V3: agents handle cross-file investigation via tools (grep, readFile)
+        if (
+            context.codeReviewConfig?.codeReviewVersion ===
+            CodeReviewVersion.V3_AGENT
+        ) {
+            this.logger.log({
+                message: `Skipping cross-file analysis for PR#${context.pullRequest.number}: v3-agent mode (agents investigate cross-file via tools)`,
+                context: this.stageName,
+            });
+            return { suggestions: [] };
+        }
+
         try {
             const preparedFilesData = context.changedFiles.map((file) => ({
                 filename: file.filename,

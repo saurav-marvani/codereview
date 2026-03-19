@@ -1,0 +1,98 @@
+description: "Quick test - GPT 5.4 mini reasoning levels"
+
+providers:
+  - id: openai:chat:gpt-5.4-mini
+    label: chat-no-reasoning
+    config:
+      temperature: 0
+      max_tokens: 1024
+  - id: openai:responses:gpt-5.4-mini
+    label: responses-high
+    config:
+      temperature: 0
+      max_output_tokens: 4096
+      reasoning:
+        effort: high
+  - id: openai:responses:gpt-5.4-mini
+    label: responses-xhigh
+    config:
+      temperature: 0
+      max_output_tokens: 8192
+      reasoning:
+        effort: xhigh
+  - id: openai:responses:gpt-5.4-nano
+    label: nano-xhigh
+    config:
+      temperature: 0
+      max_output_tokens: 8192
+      reasoning:
+        effort: xhigh
+
+prompts:
+  - id: "xml-prompt"
+    raw: |
+      <LevelClassifier>
+        <Context>Each finding was already confirmed by an expert code review agent.</Context>
+        <Definitions>
+          <Level name="issue">Code has a defect causing wrong behavior in at least one scenario.</Level>
+          <Level name="warning">Code is CORRECT in all scenarios but suboptimal. ONLY speed, memory, style, readability.</Level>
+        </Definitions>
+        <DecisionRule>CAN cause wrong behavior → issue. ONLY "faster/cleaner" → warning.</DecisionRule>
+        <Finding>{{finding}}</Finding>
+      </LevelClassifier>
+      Respond with ONLY valid JSON: {"classifications": [{"index": 0, "level": "issue or warning"}]}
+
+tests:
+  - vars:
+      finding: "[0] [performance] N+1 query. Loop calls User.find_by_username individually instead of batch."
+    assert:
+      - type: javascript
+        value: "JSON.parse(output.replace(/```json\\n?/g,'').replace(/```/g,'').trim()).classifications?.[0]?.level === 'warning'"
+    metadata:
+      expected: warning
+      case: "N+1 query"
+
+  - vars:
+      finding: "[0] [security] SQL injection in stub code that always returns 'not implemented'. fmt.Sprintf with string interpolation."
+    assert:
+      - type: javascript
+        value: "JSON.parse(output.replace(/```json\\n?/g,'').replace(/```/g,'').trim()).classifications?.[0]?.level === 'warning'"
+    metadata:
+      expected: warning
+      case: "SQL injection in stub"
+
+  - vars:
+      finding: "[0] [bug] Race condition in BuildIndex. Multiple goroutines build same index concurrently causing file corruption."
+    assert:
+      - type: javascript
+        value: "JSON.parse(output.replace(/```json\\n?/g,'').replace(/```/g,'').trim()).classifications?.[0]?.level === 'issue'"
+    metadata:
+      expected: issue
+      case: "Race condition"
+
+  - vars:
+      finding: "[0] [security] Missing rate limiting on backup code verification endpoint allows brute force."
+    assert:
+      - type: javascript
+        value: "JSON.parse(output.replace(/```json\\n?/g,'').replace(/```/g,'').trim()).classifications?.[0]?.level === 'warning'"
+    metadata:
+      expected: warning
+      case: "Missing rate limiting"
+
+  - vars:
+      finding: "[0] [security] Unbounded limit parameter allows DoS via large result sets."
+    assert:
+      - type: javascript
+        value: "JSON.parse(output.replace(/```json\\n?/g,'').replace(/```/g,'').trim()).classifications?.[0]?.level === 'warning'"
+    metadata:
+      expected: warning
+      case: "Unbounded limit"
+
+  - vars:
+      finding: "[0] [security] Denial cache not invalidated after permission grant. Users denied for 30s after being granted access."
+    assert:
+      - type: javascript
+        value: "JSON.parse(output.replace(/```json\\n?/g,'').replace(/```/g,'').trim()).classifications?.[0]?.level === 'issue'"
+    metadata:
+      expected: issue
+      case: "Stale denial cache"

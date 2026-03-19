@@ -6,7 +6,20 @@ import { buildAgentTools } from './agent-tools.factory';
  * 2. Parse JSON from response text — zero cost if model cooperates
  * 3. If JSON parse fails — `generateText` with `Output.object` (cheap model) to structure the text
  */
-import { generateText, stepCountIs, Output, type LanguageModel } from 'ai';
+import * as aiSdk from 'ai';
+import { stepCountIs, Output, jsonSchema, type LanguageModel } from 'ai';
+
+// Wrap AI SDK with LangSmith tracing when LANGCHAIN_TRACING_V2=true
+let generateText = aiSdk.generateText;
+if (process.env.LANGCHAIN_TRACING_V2 === 'true') {
+    try {
+        const { wrapAISDK } = require('langsmith/experimental/vercel');
+        const wrapped = wrapAISDK(aiSdk);
+        generateText = wrapped.generateText;
+    } catch {
+        // LangSmith wrapping not available — use original
+    }
+}
 import { z } from 'zod';
 import { createLogger } from '@kodus/flow';
 import { EnhancedJSONParser } from '@kodus/flow';
@@ -30,7 +43,8 @@ const suggestionSchema = z.object({
     oneSentenceSummary: z.string().optional(),
     relevantLinesStart: z.number().optional(),
     relevantLinesEnd: z.number().optional(),
-    severity: z.enum(['critical', 'high', 'medium', 'low']).optional(),
+    severity: z.enum(['critical', 'high', 'medium', 'low']).optional(), // V2 compat
+    level: z.enum(['issue', 'warning']).optional(), // V3: binary classification
 });
 
 const findingsSchema = z.object({
@@ -48,6 +62,7 @@ export interface AgentLoopInput {
     documentationSearchService?: DocumentationSearchAdapter;
     documentationSearchOptions?: Record<string, unknown>;
     byokConfig?: BYOKConfig;
+    agentName?: string; // e.g. 'kodus-bug-review-agent' — used for LangSmith trace identification
     maxSteps?: number;
     onStepFinish?: (event: any) => void;
 }
@@ -104,11 +119,11 @@ export async function runAgentLoop(
             prompt: input.userPrompt,
             tools,
             stopWhen: stepCountIs(input.maxSteps || MAX_STEPS),
-            // After 80% of steps, disable tools and force the model to respond with text.
-            // This prevents models that keep calling tools indefinitely from never producing output.
+            // Last 2 steps: force text response (prevent infinite tool loops)
             prepareStep: ({ stepNumber }: any) => {
                 const maxSteps = input.maxSteps || MAX_STEPS;
-                const forceTextAfter = maxSteps - 2; // Last 2 steps: force text response
+                const forceTextAfter = maxSteps - 2;
+
                 if (stepNumber >= forceTextAfter) {
                     logger.log({
                         message: `[AGENT-FORCE-TEXT] step=${stepNumber}/${maxSteps} — disabling tools, forcing text response`,
@@ -244,8 +259,15 @@ export async function runAgentLoop(
 
     const finalText = result.text || '';
 
+    if (allToolCalls.length === 0) {
+        logger.warn({
+            message: `[AGENT-NO-TOOLS] Agent responded without any tool calls (${result.steps?.length ?? 0} steps). Investigation was skipped.`,
+            context: 'AgentLoop',
+        });
+    }
+
     logger.log({
-        message: `[AGENT-FINAL] steps=${result.steps?.length ?? 0} finishReason=${result.finishReason} textLength=${finalText.length} hasJSON=${finalText.includes('"suggestions"')}`,
+        message: `[AGENT-FINAL] steps=${result.steps?.length ?? 0} finishReason=${result.finishReason} textLength=${finalText.length} toolCalls=${allToolCalls.length} hasJSON=${finalText.includes('"suggestions"')}`,
         context: 'AgentLoop',
         metadata: {
             steps: result.steps?.length ?? 0,
@@ -375,7 +397,7 @@ function looksLikeFindings(text: string): boolean {
         /\b(bug|issue|vulnerability|problem|error|flaw|defect)\b/,
         /\b(fix|should|must|incorrect|missing|broken|unsafe|race condition)\b/,
         /\b(line\s*\d+|\.ts\b|\.js\b|\.go\b|\.rb\b|\.py\b)/,
-        /\b(severity|critical|high|medium)\b/,
+        /\b(severity|critical|high|medium|issue|warning)\b/,
         /\b(existing.?code|improved.?code|suggestion)\b/,
         /```/,
     ];
@@ -405,7 +427,34 @@ async function structureWithFallbackModel(
 
         const result: any = await generateText({
             model: internalModel as any,
-            output: Output.object({ schema: findingsSchema }) as any,
+            output: Output.object({
+                schema: jsonSchema({
+                    type: 'object',
+                    properties: {
+                        reasoning: { type: 'string' },
+                        suggestions: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    relevantFile: { type: 'string' },
+                                    language: { type: 'string' },
+                                    suggestionContent: { type: 'string' },
+                                    existingCode: { type: 'string' },
+                                    improvedCode: { type: 'string' },
+                                    oneSentenceSummary: { type: 'string' },
+                                    relevantLinesStart: { type: 'number' },
+                                    relevantLinesEnd: { type: 'number' },
+                                    severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
+                                    level: { type: 'string', enum: ['issue', 'warning'] },
+                                },
+                                required: ['relevantFile', 'suggestionContent', 'existingCode', 'improvedCode'],
+                            },
+                        },
+                    },
+                    required: ['reasoning', 'suggestions'],
+                }),
+            }) as any,
             system: `You are a JSON extraction assistant. You receive code review text and extract structured findings.
 
 Rules:
@@ -421,7 +470,7 @@ Rules:
 ${reviewText}
 ---
 
-For each issue found, extract: relevantFile, language, suggestionContent (full description), existingCode, improvedCode, oneSentenceSummary, relevantLinesStart, relevantLinesEnd, severity (critical/high/medium/low).`,
+For each issue found, extract: relevantFile, language, suggestionContent (full description), existingCode, improvedCode, oneSentenceSummary, relevantLinesStart, relevantLinesEnd, severity (critical/high/medium/low), level (issue or warning).`,
         });
 
         const output: any = (result as any).object ?? (result as any).output;
@@ -442,6 +491,4 @@ For each issue found, extract: relevantFile, language, suggestionContent (full d
     }
 }
 
-/**
- * Build the tool set for the agent from RemoteCommands.
- */
+// Tools are defined in agent-tools.factory.ts (buildAgentTools)

@@ -92,7 +92,7 @@ export type CodeReviewGlobalConfig = {
     kodyRulesGeneratorEnabled?: boolean;
     llmGeneratedMemoriesRequireApproval?: boolean;
     runOnDraft: boolean;
-    codeReviewVersion?: "legacy" | "v2";
+    codeReviewVersion?: "legacy" | "v2" | "v3-agent";
     ideRulesSyncEnabled: boolean;
     v2PromptOverrides?: {
         categories?: {

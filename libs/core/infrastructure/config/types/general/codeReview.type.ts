@@ -193,6 +193,7 @@ export type CodeSuggestion = {
     label: string;
     llmPrompt?: string;
     severity?: string;
+    level?: 'issue' | 'warning'; // V3: binary classification (issue = must fix, warning = evaluate)
     crossFileEvidence?: boolean;
     rankScore?: number;
     priorityStatus?: PriorityStatus;

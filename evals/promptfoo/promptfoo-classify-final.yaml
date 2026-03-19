@@ -1,0 +1,44 @@
+description: "Final classifier eval - XML + few-shot + no labels + reasoning"
+
+providers:
+  - id: openai:responses:gpt-5.4-mini
+    label: gpt5.4mini-medium
+    config:
+      temperature: 0
+      max_output_tokens: 4096
+      reasoning:
+        effort: medium
+
+prompts:
+  - id: "v6-xml-fewshot-nolabel"
+    raw: |
+      <LevelClassifier>
+        <Context>Each finding was already confirmed by an expert code review agent. Your job is ONLY to classify — not to question validity.</Context>
+
+        <Definitions>
+          <Level name="issue">The code produces WRONG results, crashes, or corrupts data in at least one scenario that a user or caller can trigger.</Level>
+          <Level name="warning">The code produces CORRECT results in ALL scenarios. The finding is about making it faster, cleaner, or adding a defense layer that doesn't fix incorrect behavior.</Level>
+        </Definitions>
+
+        <DecisionRule>Ask: "If I deploy this code as-is, will any user/request/operation get an INCORRECT result, crash, or lose data?" YES → issue. NO → warning. Missing hardening (rate limiting, input bounds, entropy, indexes) is NOT broken behavior — it is a missing defense layer. The code still returns correct results for every request.</DecisionRule>
+
+        <Examples>
+          <Example input="Cache returns stale denial after permission grant — users denied access for 30s" level="issue" reason="Users get WRONG access decisions" />
+          <Example input="Race condition allows concurrent builds of same index causing file corruption" level="issue" reason="Code produces CORRUPTED output under concurrency" />
+          <Example input="Missing rate limiting on verification endpoint allows brute force" level="warning" reason="Every request still gets CORRECT response — rate limiting is defense-in-depth" />
+          <Example input="Unbounded limit parameter allows large result sets" level="warning" reason="Query returns CORRECT data — limit is resource protection, not correctness" />
+          <Example input="N+1 query fetches users individually instead of batch" level="warning" reason="Returns CORRECT results, just slower" />
+        </Examples>
+
+        <Finding>{{finding}}</Finding>
+      </LevelClassifier>
+
+      Respond with ONLY valid JSON: {"classifications": [{"index": 0, "level": "issue or warning"}]}
+
+defaultTest:
+  options:
+    transformOutput: "output.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim()"
+
+tests: file://datasets/classify-level-cases.json
+
+outputPath: results/classify-final-results.json

@@ -1,0 +1,81 @@
+description: "DecisionRule variations - no few-shot"
+
+providers:
+  - id: openai:responses:gpt-5.4-nano
+    label: nano-medium
+    config:
+      temperature: 0
+      max_output_tokens: 4096
+      reasoning:
+        effort: medium
+  - id: openai:responses:gpt-5.4-mini
+    label: mini-medium
+    config:
+      temperature: 0
+      max_output_tokens: 4096
+      reasoning:
+        effort: medium
+
+prompts:
+  - id: "dr1-wrong-result"
+    raw: |
+      <LevelClassifier>
+        <Context>Each finding was confirmed by an expert code review agent. Classify only — do not question validity.</Context>
+        <Definitions>
+          <Level name="issue">The code produces WRONG results, crashes, or corrupts data in at least one scenario.</Level>
+          <Level name="warning">The code produces CORRECT results in ALL scenarios but is suboptimal.</Level>
+        </Definitions>
+        <DecisionRule>Ask: "Will any user/request ever get an INCORRECT result, crash, or lose data because of this?" YES → issue. NO → warning. Note: "missing hardening" (rate limits, input caps, entropy) means every request still gets the correct answer — that is warning, not issue. But "concurrent requests get wrong state" or "stale cache serves wrong data" IS wrong results — that is issue.</DecisionRule>
+        <Finding>{{finding}}</Finding>
+      </LevelClassifier>
+      Respond with ONLY valid JSON: {"classifications": [{"index": 0, "level": "issue or warning"}]}
+
+  - id: "dr2-behavior-change"
+    raw: |
+      <LevelClassifier>
+        <Context>Each finding was confirmed by an expert code review agent. Classify only.</Context>
+        <Definitions>
+          <Level name="issue">The code BEHAVES INCORRECTLY — it does something it should not do, or fails to do something it should do. Includes: wrong output, wrong state, wrong side effects, crashes, data corruption, incorrect access control decisions.</Level>
+          <Level name="warning">The code BEHAVES CORRECTLY but could be more efficient, cleaner, or more robust. The behavior is right — only the implementation quality can improve.</Level>
+        </Definitions>
+        <DecisionRule>Focus on BEHAVIOR, not RISK. "The function returns the wrong value" → issue (wrong behavior). "The function is slow" → warning (correct behavior). "Concurrent calls corrupt shared state" → issue (wrong behavior). "Missing rate limit lets attackers call it many times" → warning (each call behaves correctly).</DecisionRule>
+        <Finding>{{finding}}</Finding>
+      </LevelClassifier>
+      Respond with ONLY valid JSON: {"classifications": [{"index": 0, "level": "issue or warning"}]}
+
+  - id: "dr3-output-test"
+    raw: |
+      <LevelClassifier>
+        <Context>Each finding was confirmed by an expert code review agent. Classify only.</Context>
+        <DecisionRule>Run this mental test for the finding:
+
+      1. Pick ANY valid input to this code
+      2. Run the code mentally
+      3. Check: does the OUTPUT or STATE differ from what is CORRECT?
+
+      If YES for any input → "issue" (the code is wrong)
+      If NO for all inputs → "warning" (the code is correct but improvable)
+
+      Important: "the code is slow" or "the code lacks a safeguard" does NOT mean the output is wrong. But "the code returns stale data" or "the code skips a required check" DOES mean the output is wrong.</DecisionRule>
+        <Finding>{{finding}}</Finding>
+      </LevelClassifier>
+      Respond with ONLY valid JSON: {"classifications": [{"index": 0, "level": "issue or warning"}]}
+
+  - id: "dr4-litmus"
+    raw: |
+      <LevelClassifier>
+        <Context>Each finding was confirmed by an expert code review agent. Classify only.</Context>
+        <Step1>First answer YES or NO: "Does this code give a WRONG answer, crash, or put the system in an INCORRECT state for any possible input or execution order?"</Step1>
+        <Step2>If YES → "issue". If NO → "warning".</Step2>
+        <Clarification>Slow performance, missing indexes, missing rate limits, low entropy = the answer is still CORRECT → warning. Race conditions, stale cache, null dereference, wrong return value, lost updates = the answer is WRONG → issue.</Clarification>
+        <Finding>{{finding}}</Finding>
+      </LevelClassifier>
+      Respond with ONLY valid JSON: {"classifications": [{"index": 0, "level": "issue or warning"}]}
+
+defaultTest:
+  options:
+    transformOutput: "output.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim()"
+
+tests: file://datasets/classify-level-cases.json
+
+outputPath: results/classify-decisionrule.json

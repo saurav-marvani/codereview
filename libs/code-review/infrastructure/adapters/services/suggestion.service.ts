@@ -811,6 +811,16 @@ export class SuggestionService implements ISuggestionService {
         discardedSuggestionsBySeverityOrQuantity: any[];
     }> {
         try {
+            // V3 level-based filtering: if suggestions have `level` field, filter by level
+            const hasLevelField = suggestions.some((s) => s.level);
+            if (hasLevelField) {
+                return this.prioritizeSuggestionsByLevel(
+                    suggestionControl,
+                    prNumber,
+                    suggestions,
+                );
+            }
+
             const hasKodyRules = suggestions.some((s) => {
                 const normalizedLabel = this.normalizeLabel(s.label);
                 return normalizedLabel === 'kody_rules';
@@ -983,6 +993,70 @@ export class SuggestionService implements ISuggestionService {
         return {
             prioritizedSuggestions: allPrioritized,
             discardedSuggestionsBySeverityOrQuantity: allDiscarded,
+        };
+    }
+
+    /**
+     * V3 level-based filtering: filters by issue/warning level.
+     * - severityLevelFilter = "low" or "medium" → show all (issues + warnings)
+     * - severityLevelFilter = "high" or "critical" → show only issues
+     */
+    private prioritizeSuggestionsByLevel(
+        suggestionControl: SuggestionControlConfig,
+        prNumber: number,
+        suggestions: any[],
+    ): {
+        prioritizedSuggestions: any[];
+        discardedSuggestionsBySeverityOrQuantity: any[];
+    } {
+        const filter = suggestionControl?.severityLevelFilter;
+        const issueOnly = filter === 'high' || filter === 'critical';
+
+        this.logger.log({
+            message: `[V3-LEVEL] PR#${prNumber}: filtering by level (${issueOnly ? 'issues only' : 'all findings'}), ${suggestions.length} suggestions`,
+            context: SuggestionService.name,
+        });
+
+        if (!issueOnly) {
+            // Show everything
+            return {
+                prioritizedSuggestions: suggestions.map((s) => ({
+                    ...s,
+                    priorityStatus: PriorityStatus.PRIORITIZED,
+                    deliveryStatus: DeliveryStatus.NOT_SENT,
+                })),
+                discardedSuggestionsBySeverityOrQuantity: [],
+            };
+        }
+
+        // Issues only: filter out warnings
+        const prioritized: any[] = [];
+        const discarded: any[] = [];
+
+        for (const s of suggestions) {
+            if (s.level === 'issue') {
+                prioritized.push({
+                    ...s,
+                    priorityStatus: PriorityStatus.PRIORITIZED,
+                    deliveryStatus: DeliveryStatus.NOT_SENT,
+                });
+            } else {
+                discarded.push({
+                    ...s,
+                    priorityStatus: PriorityStatus.DISCARDED_BY_SEVERITY,
+                    deliveryStatus: DeliveryStatus.NOT_SENT,
+                });
+            }
+        }
+
+        this.logger.log({
+            message: `[V3-LEVEL] PR#${prNumber}: ${prioritized.length} issues kept, ${discarded.length} warnings filtered`,
+            context: SuggestionService.name,
+        });
+
+        return {
+            prioritizedSuggestions: prioritized,
+            discardedSuggestionsBySeverityOrQuantity: discarded,
         };
     }
 

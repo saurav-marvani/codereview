@@ -1,6 +1,5 @@
 import { createLogger } from '@kodus/flow';
-import { generateText, Output } from 'ai';
-import { z } from 'zod';
+import { generateText, Output, jsonSchema } from 'ai';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { getInternalModel } from '@libs/code-review/infrastructure/agents/llm/byok-to-vercel';
 
@@ -238,6 +237,8 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                         ?.main,
                 documentationSearchService:
                     this.documentationSearchService || undefined,
+                prTitle: context.pullRequest?.title,
+                prBody: context.pullRequest?.body,
                 reviewOptions,
             });
 
@@ -280,11 +281,31 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 return snapped;
             });
 
+            // Classify level (issue/warning) using GPT 5.4 mini
+            // Separated from agent generation for consistency — BYOK models
+            // are unreliable at classification but good at finding bugs.
+            const prContext = [
+                context.pullRequest?.title
+                    ? `PR: ${context.pullRequest.title}`
+                    : '',
+                context.pullRequest?.body
+                    ? context.pullRequest.body.substring(0, 500)
+                    : '',
+            ]
+                .filter(Boolean)
+                .join('\n');
+
+            const classified = await this.classifyLevels(
+                validatedSuggestions,
+                prNumber,
+                prContext,
+            );
+
             // Deduplicate suggestions that describe the same issue
-            let deduped = validatedSuggestions;
+            let deduped = classified;
             try {
                 deduped = await this.deduplicateSuggestions(
-                    validatedSuggestions,
+                    classified,
                     prNumber,
                     context.codeReviewConfig?.byokConfig,
                 );
@@ -344,12 +365,144 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
      * Deduplicate suggestions that describe the same issue using LLM.
      * Groups by file, then asks Gemini Flash which suggestions are duplicates.
      */
+    /**
+     * Classify each suggestion as "issue" or "warning" using GPT 5.4 nano
+     * with reasoning. Separated from agent generation because BYOK models
+     * are inconsistent at classification.
+     *
+     * Uses XML prompt (dr1) + stripped category labels to avoid keyword
+     * anchoring bias. Eval score: 88% on 18 test cases.
+     */
+    private async classifyLevels(
+        suggestions: Partial<CodeSuggestion>[],
+        prNumber: number,
+        prContext?: string,
+    ): Promise<Partial<CodeSuggestion>[]> {
+        if (suggestions.length === 0) return suggestions;
+
+        // Use GPT 5.4 nano with reasoning for classification
+        // Falls back to getInternalModel() if OpenAI key not available
+        let model: any;
+        const openaiKey = process.env.API_OPEN_AI_API_KEY;
+        if (openaiKey) {
+            const { createOpenAI } = require('@ai-sdk/openai');
+            model = createOpenAI({ apiKey: openaiKey })(
+                'gpt-5.4-nano',
+                { reasoningEffort: 'medium' },
+            );
+        } else {
+            model = getInternalModel();
+        }
+        if (!model) {
+            return suggestions.map((s) => ({ ...s, level: 'issue' as const }));
+        }
+
+        try {
+            // Strip category labels ([security], [bug], [performance]) to avoid
+            // keyword anchoring bias — the classifier should reason from the
+            // description, not the label.
+            const summaries = suggestions
+                .map(
+                    (s, i) =>
+                        `[${i}] ${s.relevantFile}:${s.relevantLinesStart}-${s.relevantLinesEnd}
+  Description: ${s.suggestionContent?.substring(0, 300) || s.oneSentenceSummary || 'N/A'}
+  Existing code: ${s.existingCode?.substring(0, 150) || 'N/A'}
+  Suggested fix: ${s.improvedCode?.substring(0, 150) || 'N/A'}`,
+                )
+                .join('\n\n');
+
+            const classifyResult: any = await generateText({
+                model: model as any,
+                output: Output.object({
+                    schema: jsonSchema({
+                        type: 'object',
+                        properties: {
+                            classifications: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        index: { type: 'number' },
+                                        level: {
+                                            type: 'string',
+                                            enum: ['issue', 'warning'],
+                                        },
+                                    },
+                                    required: ['index', 'level'],
+                                    additionalProperties: false,
+                                },
+                            },
+                        },
+                        required: ['classifications'],
+                        additionalProperties: false,
+                    }),
+                }) as any,
+                prompt: `<LevelClassifier>
+  <Context>Each finding was confirmed by an expert code review agent. Classify only — do not question validity.</Context>${prContext ? `\n  <PRContext>${prContext}</PRContext>` : ''}
+  <Definitions>
+    <Level name="issue">The code produces WRONG results, crashes, or corrupts data in at least one scenario.</Level>
+    <Level name="warning">The code produces CORRECT results in ALL scenarios but is suboptimal.</Level>
+  </Definitions>
+  <DecisionRule>Ask: "Will any user/request ever get an INCORRECT result, crash, or lose data because of this?" YES → issue. NO → warning. Note: "missing hardening" (rate limits, input caps, entropy) means every request still gets the correct answer — that is warning, not issue. But "concurrent requests get wrong state" or "stale cache serves wrong data" IS wrong results — that is issue.</DecisionRule>
+  <Findings>
+${summaries}
+  </Findings>
+</LevelClassifier>`,
+            });
+
+            const output =
+                (classifyResult as any).object ??
+                (classifyResult as any).output;
+            const classifications = output?.classifications || [];
+
+            const levelMap = new Map<number, 'issue' | 'warning'>();
+            for (const c of classifications) {
+                if (c.index != null && c.level) {
+                    levelMap.set(c.index, c.level);
+                }
+            }
+
+            const result = suggestions.map((s, i) => ({
+                ...s,
+                level: levelMap.get(i) || ('issue' as const),
+            }));
+
+            const issueCount = result.filter(
+                (s) => s.level === 'issue',
+            ).length;
+            const warningCount = result.filter(
+                (s) => s.level === 'warning',
+            ).length;
+
+            this.logger.log({
+                message: `[CLASSIFY] PR#${prNumber}: ${issueCount} issues, ${warningCount} warnings (${suggestions.length} total)`,
+                context: this.stageName,
+            });
+
+            return result;
+        } catch (error) {
+            this.logger.warn({
+                message: `[CLASSIFY] Failed for PR#${prNumber}, defaulting all to issue`,
+                context: this.stageName,
+                error,
+            });
+            // On failure, default to issue (inclusive)
+            return suggestions.map((s) => ({
+                ...s,
+                level: 'issue' as const,
+            }));
+        }
+    }
+
     private async deduplicateSuggestions(
         suggestions: Partial<CodeSuggestion>[],
         prNumber: number,
         byokConfig?: any,
     ): Promise<Partial<CodeSuggestion>[]> {
         if (suggestions.length <= 1) return suggestions;
+
+        // LLM dedup implementation below
+        // (classifyLevels is defined above this method)
 
         // Group by file
         const byFile = new Map<string, Partial<CodeSuggestion>[]>();
@@ -369,7 +522,9 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             // Use LLM to find duplicates
             try {
-                const model = getInternalModel(byokConfig);
+                // Use internal model (GPT 5.4 mini) for dedup, NOT the BYOK model.
+                // BYOK models (e.g., Kimi) return unreliable structured output for dedup.
+                const model = getInternalModel();
 
                 if (!model) {
                     result.push(...fileSuggestions);
@@ -379,29 +534,59 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 const summaries = fileSuggestions
                     .map(
                         (s, i) =>
-                            `[${i}] ${s.oneSentenceSummary || s.suggestionContent?.substring(0, 150)}`,
+                            `[${i}] [${s.label || 'unknown'}/${s.level || 'warning'}] lines ${s.relevantLinesStart}-${s.relevantLinesEnd}: ${s.oneSentenceSummary || s.suggestionContent?.substring(0, 200)}${s.improvedCode ? `\n    fix: ${s.improvedCode.substring(0, 100)}` : ''}`,
                     )
                     .join('\n');
 
-                const dedupSchema = z.object({
-                    keep: z
-                        .array(z.number())
-                        .describe(
-                            'Indices of suggestions to keep (remove duplicates, keep the most detailed one)',
-                        ),
-                });
-
                 const dedupResult: any = await generateText({
                     model: model as any,
-                    output: Output.object({ schema: dedupSchema }) as any,
-                    prompt: `These suggestions are for the same file "${filename}". Identify duplicates (suggestions describing the same issue) and return only the indices to KEEP. When two suggestions describe the same issue, keep the one with more detail.
+                    output: Output.object({
+                        schema: jsonSchema({
+                            type: 'object',
+                            properties: {
+                                keep: {
+                                    type: 'array',
+                                    items: { type: 'number' },
+                                    description: 'Indices of suggestions to keep',
+                                },
+                            },
+                            required: ['keep'],
+                            additionalProperties: false,
+                        }),
+                    }) as any,
+                    prompt: `You have ${fileSuggestions.length} code review suggestions for file "${filename}". Remove duplicates and return the indices to KEEP. You MUST keep at least 1 suggestion.
+
+Two suggestions are DUPLICATES if:
+- They point to the same lines AND the fix is the same (e.g., both say "use Regexp.escape" — keep only the more detailed one)
+- They describe the same problem from different angles (e.g., "ReDoS vulnerability" and "regex injection" on the same line — same root cause, same fix)
+
+Two suggestions are NOT duplicates if:
+- They point to different lines
+- They require different fixes (e.g., one says "add nil check" and another says "add SQL parameterization" — different problems even if nearby)
 
 ${summaries}`,
                 });
 
                 const dedupOutput =
                     (dedupResult as any).object ?? (dedupResult as any).output;
+
+                this.logger.log({
+                    message: `[DEDUP-DEBUG] PR#${prNumber} ${filename}: input=${fileSuggestions.length} summaries, LLM returned keep=${JSON.stringify(dedupOutput?.keep)}, raw=${JSON.stringify(dedupOutput)}`,
+                    context: this.stageName,
+                });
+
                 const keepIndices = new Set(dedupOutput?.keep || []);
+
+                // Safety: if LLM returns empty keep list, keep all (never discard everything)
+                if (keepIndices.size === 0) {
+                    this.logger.warn({
+                        message: `[DEDUP] PR#${prNumber} ${filename}: LLM returned empty keep list, keeping all ${fileSuggestions.length} suggestions`,
+                        context: this.stageName,
+                    });
+                    result.push(...fileSuggestions);
+                    continue;
+                }
+
                 const kept = fileSuggestions.filter((_, i) =>
                     keepIndices.has(i),
                 );

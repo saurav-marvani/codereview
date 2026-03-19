@@ -15,7 +15,7 @@ const SANDBOX_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const REPO_DIR = '/home/user/repo';
 
 const TIMEOUTS = {
-    CLONE_MS: 120_000,
+    CLONE_MS: 300_000, // 5 min — large repos (cal.com, grafana) need more time for shallow clone
     PROXY_DAEMON_MS: 10_000,
     PROXY_CONFIG_MS: 5_000,
     VERIFY_MS: 10_000,
@@ -355,6 +355,11 @@ export class E2BSandboxService implements ISandboxProvider {
                     `cd ${REPO_DIR} && rg --no-heading -n '${escapedPattern}' '${safeRelativePath}'${globArg}`,
                     { timeoutMs: TIMEOUTS.COMMAND_LONG_MS },
                 );
+                // rg returns exit code 1 for "no matches" (not an error)
+                // but stderr may contain actual errors like "permission denied"
+                if (!result.stdout && result.stderr && result.exitCode !== 1) {
+                    return `Error: ${result.stderr}`;
+                }
                 return result.stdout;
             },
 
@@ -375,6 +380,17 @@ export class E2BSandboxService implements ISandboxProvider {
                 const result = await sandbox.commands.run(cmd, {
                     timeoutMs: TIMEOUTS.COMMAND_SHORT_MS,
                 });
+                // Debug: log when read returns empty
+                if (!result.stdout) {
+                    this.logger.warn({
+                        message: `[SANDBOX-READ] Empty result for ${path}: exitCode=${result.exitCode} stderr=${(result.stderr || '').substring(0, 200)} cmd=${cmd}`,
+                        context: E2BSandboxService.name,
+                    });
+                }
+                // Return stderr if stdout is empty (e.g. "No such file or directory")
+                if (!result.stdout && result.stderr) {
+                    return `Error: ${result.stderr}`;
+                }
                 return result.stdout;
             },
 

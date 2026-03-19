@@ -1,0 +1,106 @@
+description: "Level Classifier Evaluation - issue vs warning"
+
+providers:
+  - id: openai:chat:gpt-5.4-mini
+    label: gpt5.4mini-no-reasoning
+    config:
+      temperature: 0
+      max_tokens: 1024
+  - id: openai:chat:gpt-5.4-mini
+    label: gpt5.4mini-reasoning-low
+    config:
+      temperature: 0
+      max_tokens: 4096
+      reasoning:
+        effort: low
+  - id: openai:chat:gpt-5.4-mini
+    label: gpt5.4mini-reasoning-medium
+    config:
+      temperature: 0
+      max_tokens: 4096
+      reasoning:
+        effort: medium
+  - id: google:gemini-2.5-flash
+    config:
+      temperature: 0
+      maxOutputTokens: 1024
+  - id: google:gemini-2.5-flash
+    label: gemini-2.5-flash-thinking
+    config:
+      temperature: 0
+      maxOutputTokens: 4096
+      thinkingConfig:
+        thinkingBudget: 1024
+
+prompts:
+  - id: "v3-any-scenario"
+    raw: |
+      Each finding below was already confirmed by an expert code review agent who investigated the codebase. Your job is NOT to question whether the finding is valid — it is. You only classify it.
+
+      Classify as "issue" or "warning":
+
+      "warning" ONLY if ALL of these are true:
+      1. The code produces correct results in every scenario
+      2. No user will ever experience wrong behavior because of this
+      3. The fix is purely about speed, memory, style, or readability
+
+      Everything else is "issue" — including:
+      - Code that works most of the time but fails in some scenario
+      - Incorrect behavior that users might not notice immediately
+      - Security problems, even theoretical ones
+      - Wrong data served from cache, stale state, lost updates
+      - Breaking changes in API responses or behavior
+
+      Default to "issue" if unsure.
+
+      {{finding}}
+
+      Respond with ONLY valid JSON (no markdown, no code blocks): {"classifications": [{"index": 0, "level": "issue or warning"}]}
+
+  - id: "v2-trust-agent"
+    raw: |
+      Each finding below was already confirmed by an expert code review agent who investigated the codebase. Your job is NOT to question whether the finding is valid — it is. You only classify it.
+
+      Classify as:
+      - "issue": The finding describes broken behavior — wrong output, crash, security hole, data corruption, incorrect logic, missing error handling that causes failures. The code does something WRONG.
+      - "warning": The finding describes a quality improvement — performance optimization, missing cache, code style, missing index, best practice suggestion. The code works but could be BETTER.
+
+      {{finding}}
+
+      Respond with ONLY valid JSON (no markdown, no code blocks): {"classifications": [{"index": 0, "level": "issue or warning"}]}
+
+  - id: "v4-minimal"
+    raw: |
+      Classify this code review finding as "issue" or "warning".
+
+      "warning" = the code works correctly but could be faster/cleaner.
+      "issue" = everything else.
+
+      {{finding}}
+
+      Respond with ONLY valid JSON (no markdown, no code blocks): {"classifications": [{"index": 0, "level": "issue or warning"}]}
+
+  - id: "v5-xml"
+    raw: |
+      <LevelClassifier>
+        <Context>Each finding was already confirmed by an expert code review agent. The agent investigated the codebase, read files, searched for callers, and verified the issue exists. Your job is ONLY to classify — not to question validity.</Context>
+
+        <Definitions>
+          <Level name="issue">The code has a defect that causes wrong behavior in at least one scenario. The code does something INCORRECT — produces wrong output, crashes, corrupts data, or creates a security vulnerability that can be exploited.</Level>
+          <Level name="warning">The code is CORRECT in all scenarios but suboptimal. The ONLY problems are: speed, memory usage, code style, readability, or missing best practices. No user will ever experience wrong behavior.</Level>
+        </Definitions>
+
+        <DecisionRule>If the finding describes something that CAN cause wrong behavior (even rarely, under concurrency, with edge-case inputs, or in specific configurations) → issue. If the finding ONLY describes "this could be faster/cleaner/more secure as a hardening measure" → warning.</DecisionRule>
+
+        <Finding>{{finding}}</Finding>
+      </LevelClassifier>
+
+      Respond with ONLY valid JSON (no markdown, no code blocks): {"classifications": [{"index": 0, "level": "issue or warning"}]}
+
+defaultTest:
+  options:
+    transformOutput: "output.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim()"
+
+tests: file://datasets/classify-level-cases.json
+
+outputPath: results/classify-level-results.json

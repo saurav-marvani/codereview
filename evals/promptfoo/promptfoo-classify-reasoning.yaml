@@ -1,0 +1,48 @@
+description: "Classifier eval - with agent reasoning context"
+
+providers:
+  - id: openai:responses:gpt-5.4-nano
+    label: nano-medium
+    config:
+      temperature: 0
+      max_output_tokens: 4096
+      reasoning:
+        effort: medium
+
+prompts:
+  - id: "no-reasoning"
+    raw: |
+      <LevelClassifier>
+        <Context>Each finding was confirmed by an expert code review agent. Classify only.</Context>
+        <PRContext>{{pr_context}}</PRContext>
+        <Definitions>
+          <Level name="issue">The code produces WRONG results, crashes, or corrupts data in at least one scenario.</Level>
+          <Level name="warning">The code produces CORRECT results in ALL scenarios but is suboptimal.</Level>
+        </Definitions>
+        <DecisionRule>Ask: "Will any user/request ever get an INCORRECT result, crash, or lose data because of this?" YES → issue. NO → warning. Missing hardening (rate limits, input caps, entropy) = warning. Wrong state/data under concurrency or edge cases = issue.</DecisionRule>
+        <Finding>{{finding}}</Finding>
+      </LevelClassifier>
+      Respond with ONLY valid JSON: {"classifications": [{"index": 0, "level": "issue or warning"}]}
+
+  - id: "with-reasoning"
+    raw: |
+      <LevelClassifier>
+        <Context>Each finding was confirmed by an expert code review agent who investigated the codebase. Below is the agent's finding AND their investigation reasoning.</Context>
+        <PRContext>{{pr_context}}</PRContext>
+        <Definitions>
+          <Level name="issue">The code produces WRONG results, crashes, or corrupts data in at least one scenario.</Level>
+          <Level name="warning">The code produces CORRECT results in ALL scenarios but is suboptimal.</Level>
+        </Definitions>
+        <DecisionRule>Ask: "Will any user/request ever get an INCORRECT result, crash, or lose data because of this?" YES → issue. NO → warning. Missing hardening (rate limits, input caps, entropy) = warning. Wrong state/data under concurrency or edge cases = issue.</DecisionRule>
+        <Finding>{{finding}}</Finding>
+        <AgentReasoning>{{reasoning}}</AgentReasoning>
+      </LevelClassifier>
+      Respond with ONLY valid JSON: {"classifications": [{"index": 0, "level": "issue or warning"}]}
+
+defaultTest:
+  options:
+    transformOutput: "output.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim()"
+
+tests: file://datasets/classify-level-with-reasoning.json
+
+outputPath: results/classify-reasoning.json

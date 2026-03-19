@@ -83,9 +83,9 @@ export class CodeReviewPipelineStrategyEE implements IPipelineStrategy<CodeRevie
             this.fileContextGateStage,
             this.initialCommentStage,
             this.collectCrossFileContextStage,            // self-gates: skips in v3
-            this.createSandboxStage,                      // v3: creates sandbox; v2: skips if already exists
             this.kodyFineTuningStage,
             this.processFilesPrLevelReviewStage,
+            this.createSandboxStage,                      // moved here: sandbox is fresh for agents (was expiring during PRLevel review)
             this.processFilesReview,                      // self-gates: skips in v3
             this.agentReviewStage,                        // self-gates: only runs in v3
             this.createPrLevelCommentsStage,

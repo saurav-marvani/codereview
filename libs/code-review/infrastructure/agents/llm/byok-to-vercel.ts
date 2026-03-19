@@ -163,7 +163,7 @@ export function getInternalModel(
     // Cloud mode: prefer OpenAI GPT-5-mini (excellent structured output), fall back to Gemini
     const openaiKey = process.env.API_OPEN_AI_API_KEY;
     if (openaiKey) {
-        return createOpenAI({ apiKey: openaiKey })('gpt-5-mini');
+        return createOpenAI({ apiKey: openaiKey })('gpt-5.4-mini');
     }
 
     const googleKey =

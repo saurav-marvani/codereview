@@ -172,10 +172,10 @@ describe('ReviewOrchestratorService', () => {
                 reviewOptions: { bug: true, security: true, performance: true },
             });
 
-            // Should keep only 1 (the critical one)
-            expect(result.suggestions).toHaveLength(1);
-            expect(result.suggestions[0].severity).toBe('critical');
-            expect(result.suggestions[0].label).toBe('security');
+            // Deterministic dedup was removed — both are kept since they
+            // have different categories (bug vs security). LLM dedup in
+            // AgentReviewStage handles semantic dedup downstream.
+            expect(result.suggestions).toHaveLength(2);
         });
 
         it('should NOT deduplicate suggestions on different lines in same file', async () => {
