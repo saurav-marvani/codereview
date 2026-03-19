@@ -65,7 +65,17 @@ echo "$REPOS" | while IFS=: read -r SRC_REPO TARGET_NAME; do
         echo "   ${TARGET_FULL} already exists, syncing branches..."
     else
         echo "   Creating fork..."
-        gh repo fork "$SRC_FULL" --org "$TARGET_ORG" --fork-name "$TARGET_NAME" --clone=false
+
+        # Detect if target is an org or a personal account
+        TARGET_TYPE=$(gh api "users/${TARGET_ORG}" --jq '.type' 2>/dev/null || echo "User")
+
+        if [[ "$TARGET_TYPE" == "Organization" ]]; then
+            gh repo fork "$SRC_FULL" --org "$TARGET_ORG" --fork-name "$TARGET_NAME" --clone=false
+        else
+            # Personal account: fork to own account, then rename
+            gh repo fork "$SRC_FULL" --fork-name "$TARGET_NAME" --clone=false 2>/dev/null || true
+        fi
+
         echo "   Fork created"
 
         # Wait for GitHub to finish creating the fork
