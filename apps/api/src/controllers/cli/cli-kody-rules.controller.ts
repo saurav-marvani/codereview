@@ -264,6 +264,23 @@ export class CliKodyRulesController {
         body: Partial<IKodyRule>,
         ruleId: string,
     ): CreateKodyRuleDto {
+        const fields: Array<keyof IKodyRule> = [
+            'title',
+            'rule',
+            'repositoryId',
+            'severity',
+            'scope',
+            'path',
+        ];
+
+        for (const field of fields) {
+            if (field in body && body[field] == null) {
+                throw new ForbiddenException(
+                    `Field '${field}' cannot be set to null or undefined.`,
+                );
+            }
+        }
+
         return {
             ...body,
             uuid: ruleId,

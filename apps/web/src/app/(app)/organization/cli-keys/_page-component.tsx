@@ -167,7 +167,15 @@ export const CliKeysPage = ({
     ) => {
         setUpdatingKeyId(cliKey.uuid);
         try {
-            const capabilities: CLIKeyCapability[] = [];
+            const otherCapabilities =
+                cliKey.config?.capabilities?.filter(
+                    (capability) =>
+                        capability !==
+                            CLI_KEY_CAPABILITIES.CONFIG_REPO_MANAGE &&
+                        capability !== CLI_KEY_CAPABILITIES.KODY_RULES_MANAGE,
+                ) ?? [];
+
+            const capabilities: CLIKeyCapability[] = [...otherCapabilities];
 
             if (draft.repositoryConfig) {
                 capabilities.push(CLI_KEY_CAPABILITIES.CONFIG_REPO_MANAGE);
