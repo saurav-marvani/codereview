@@ -4,7 +4,7 @@ import {
     type PermissionsMap,
     ResourceType,
 } from '@services/permissions/types';
-import { hasPermission } from 'src/core/utils/permissions';
+import { hasPermission } from 'src/core/utils/permission-map';
 import type { BYOKConfig } from './_types';
 import type { OrganizationLicense } from '../subscription/_services/billing/types';
 

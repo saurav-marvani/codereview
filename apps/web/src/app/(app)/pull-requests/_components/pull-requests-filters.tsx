@@ -29,7 +29,7 @@ import { Action, ResourceType } from "@services/permissions/types";
 import { CheckIcon, ListFilterIcon } from "lucide-react";
 import { useAuth } from "src/core/providers/auth.provider";
 import { usePermissions } from "src/core/providers/permissions.provider";
-import { hasPermission } from "src/core/utils/permissions";
+import { hasPermission } from "src/core/utils/permission-map";
 
 type SuggestionsFilterValue = "all" | "true" | "false";
 type AuthorPolicyFilterValue = "all" | "reviewable" | "excluded";
