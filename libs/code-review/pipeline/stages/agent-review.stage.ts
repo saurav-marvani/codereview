@@ -9,6 +9,7 @@ import { CodeReviewVersion } from '@libs/core/domain/enums/code-review.enum';
 import { CodeSuggestion } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { ReviewOrchestratorService } from '@libs/code-review/infrastructure/agents/review-orchestrator.service';
 import { DocumentationSearchAdapter } from '@libs/code-review/infrastructure/agents/tools/sandbox-tools';
+import { ObservabilityService } from '@libs/core/log/observability.service';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 
 /**
@@ -157,6 +158,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
     constructor(
         private readonly reviewOrchestrator: ReviewOrchestratorService,
+        private readonly observabilityService: ObservabilityService,
         @Optional()
         @Inject(DOCUMENTATION_SEARCH_ADAPTER_TOKEN)
         private readonly documentationSearchService?: DocumentationSearchAdapter,
@@ -450,6 +452,29 @@ ${summaries}
 </LevelClassifier>`,
             });
 
+            // Track token usage for classification LLM call
+            try {
+                const classifyUsage = classifyResult.usage ?? classifyResult.totalUsage;
+                if (classifyUsage) {
+                    const classifyModelName = openaiKey ? 'gpt-5.4-nano' : 'gpt-5.4-mini';
+                    await this.observabilityService.runInSpan(
+                        'classify-levels',
+                        async () => classifyResult,
+                        {
+                            'gen_ai.usage.input_tokens': classifyUsage.inputTokens ?? 0,
+                            'gen_ai.usage.output_tokens': classifyUsage.outputTokens ?? 0,
+                            'gen_ai.usage.total_tokens': classifyUsage.totalTokens ?? (classifyUsage.inputTokens ?? 0) + (classifyUsage.outputTokens ?? 0),
+                            'gen_ai.response.model': classifyModelName,
+                            'gen_ai.run.name': 'code-review-classify',
+                            'type': 'system',
+                            'prNumber': prNumber,
+                        },
+                    );
+                }
+            } catch {
+                // Observability is best-effort
+            }
+
             const output =
                 (classifyResult as any).object ??
                 (classifyResult as any).output;
@@ -566,6 +591,28 @@ Two suggestions are NOT duplicates if:
 
 ${summaries}`,
                 });
+
+                // Track token usage for dedup LLM call
+                try {
+                    const dedupUsage = dedupResult.usage ?? dedupResult.totalUsage;
+                    if (dedupUsage) {
+                        await this.observabilityService.runInSpan(
+                            'dedup-suggestions',
+                            async () => dedupResult,
+                            {
+                                'gen_ai.usage.input_tokens': dedupUsage.inputTokens ?? 0,
+                                'gen_ai.usage.output_tokens': dedupUsage.outputTokens ?? 0,
+                                'gen_ai.usage.total_tokens': dedupUsage.totalTokens ?? (dedupUsage.inputTokens ?? 0) + (dedupUsage.outputTokens ?? 0),
+                                'gen_ai.response.model': 'gpt-5.4-mini',
+                                'gen_ai.run.name': 'code-review-dedup',
+                                'type': 'system',
+                                'prNumber': prNumber,
+                            },
+                        );
+                    }
+                } catch {
+                    // Observability is best-effort
+                }
 
                 const dedupOutput =
                     (dedupResult as any).object ?? (dedupResult as any).output;

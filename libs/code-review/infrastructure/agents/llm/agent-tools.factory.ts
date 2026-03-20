@@ -300,6 +300,7 @@ export function buildAgentTools(
                     'head ',
                     'tail ',
                     'file ',
+                    'sg ',
                 ];
                 const isAllowed = ALLOWED.some((p) =>
                     command.trimStart().startsWith(p),
@@ -315,6 +316,74 @@ export function buildAgentTools(
                     ? stdout.substring(0, MAX_SHELL_OUTPUT) +
                           '\n... (truncated)'
                     : stdout;
+            },
+        );
+
+        tools.astGrep = mkTool(
+            'Structural code search using ast-grep. Finds code patterns based on AST structure, not just text. More precise than regex grep for code patterns.',
+            {
+                type: 'object',
+                properties: {
+                    pattern: {
+                        type: 'string',
+                        description:
+                            "ast-grep pattern (e.g. 'if ($COND) { return false }', 'function $NAME($ARGS) { $$$ }')",
+                    },
+                    lang: {
+                        type: 'string',
+                        description:
+                            "Language hint (e.g. 'java', 'typescript', 'python', 'go', 'ruby')",
+                    },
+                    path: {
+                        type: 'string',
+                        description:
+                            "Directory to search in (default: '.')",
+                    },
+                },
+                required: ['pattern'],
+            },
+            async (args: any) => {
+                const pattern = args.pattern || '';
+                if (!pattern) return 'Error: pattern is required';
+
+                // Sanitize pattern to prevent command injection
+                const safePattern = pattern.replace(/'/g, "'\\''");
+                const searchPath =
+                    (args.path || '.').replace(/^\/+/, '') || '.';
+                const safePath = searchPath.replace(/'/g, "'\\''");
+
+                let cmd = `sg --pattern '${safePattern}' --json`;
+                if (args.lang) {
+                    const safeLang = String(args.lang).replace(
+                        /[^a-zA-Z0-9_-]/g,
+                        '',
+                    );
+                    cmd += ` --lang ${safeLang}`;
+                }
+                cmd += ` '${safePath}'`;
+
+                try {
+                    const { stdout } = await exec(cmd);
+                    const output = stdout || 'No matches found.';
+                    return output.length > MAX_SHELL_OUTPUT
+                        ? output.substring(0, MAX_SHELL_OUTPUT) +
+                              '\n... (truncated)'
+                        : output;
+                } catch (err) {
+                    const msg =
+                        err instanceof Error
+                            ? err.message
+                            : String(err);
+                    if (
+                        msg.includes('not found') ||
+                        msg.includes('No such file') ||
+                        msg.includes('command not found') ||
+                        msg.includes('ENOENT')
+                    ) {
+                        return 'ast-grep not available in this sandbox. Use the grep tool with regex patterns instead.';
+                    }
+                    return `ast-grep error: ${msg}`;
+                }
             },
         );
     }

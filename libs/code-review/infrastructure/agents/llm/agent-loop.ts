@@ -71,7 +71,7 @@ export interface AgentLoopOutput {
     findings: FindingsOutput;
     text: string;
     steps: number;
-    toolCalls: Array<{ tool: string; args: Record<string, unknown> }>;
+    toolCalls: Array<{ tool: string; toolName?: string; args: Record<string, unknown>; result?: string }>;
     finishReason: string;
     /** Whether findings came from direct JSON parse or fallback generateObject */
     source: 'json-parse' | 'generate-object' | 'empty';
@@ -236,11 +236,14 @@ export async function runAgentLoop(
                 );
                 if (bestText) {
                     try {
-                        findings = await structureWithFallbackModel(
+                        const fallbackResult = await structureWithFallbackModel(
                             bestText,
                             input.byokConfig,
                         );
-                        if (findings && findings.suggestions.length > 0) {
+                        if (fallbackResult && fallbackResult.findings.suggestions.length > 0) {
+                            findings = fallbackResult.findings;
+                            totalInputTokens += fallbackResult.usage.inputTokens;
+                            totalOutputTokens += fallbackResult.usage.outputTokens;
                             source = 'generate-object';
                             logger.log({
                                 message: `[AGENT-TIMEOUT-RECOVERY] Recovered ${findings.suggestions.length} suggestions via fallback model (${bestText.length} chars)`,
@@ -350,7 +353,7 @@ Based on your investigation above, respond NOW with your findings as a JSON bloc
 \`\`\`
 
 If no issues were found during investigation, respond with \`{"reasoning": "...", "suggestions": []}\`.`,
-                maxSteps: 1, // No tools, just respond
+                stopWhen: stepCountIs(1), // No tools, just respond
             });
 
             finalText = secondChanceResult.text || '';
@@ -409,17 +412,42 @@ If no issues were found during investigation, respond with \`{"reasoning": "..."
             context: 'AgentLoop',
         });
 
-        findings = await structureWithFallbackModel(
+        const fallbackResult = await structureWithFallbackModel(
             finalText,
             input.byokConfig,
         );
-        source = findings ? 'generate-object' : 'empty';
+        if (fallbackResult) {
+            findings = fallbackResult.findings;
+            totalInputTokens += fallbackResult.usage.inputTokens;
+            totalOutputTokens += fallbackResult.usage.outputTokens;
+            source = 'generate-object';
+        } else {
+            source = 'empty';
+        }
     }
 
     if (!findings) {
         findings = { reasoning: finalText || 'No findings', suggestions: [] };
         source = 'empty';
     }
+
+    // Base usage from the main agent loop
+    const baseInputTokens =
+        (result as any).totalUsage?.inputTokens ??
+        result.usage?.inputTokens ??
+        0;
+    const baseOutputTokens =
+        (result as any).totalUsage?.outputTokens ??
+        result.usage?.outputTokens ??
+        0;
+
+    // totalInputTokens/totalOutputTokens include second-chance + fallback overhead
+    // Subtract the per-step accumulation (already in base) to avoid double-counting,
+    // then add only the extra tokens from second-chance and fallback calls.
+    // Since totalInputTokens starts at 0 and accumulates per-step + extras,
+    // and baseInputTokens is the SDK's own total, use whichever is larger.
+    const finalInputTokens = Math.max(baseInputTokens, totalInputTokens);
+    const finalOutputTokens = Math.max(baseOutputTokens, totalOutputTokens);
 
     return {
         findings,
@@ -429,18 +457,9 @@ If no issues were found during investigation, respond with \`{"reasoning": "..."
         finishReason: result.finishReason,
         source,
         usage: {
-            inputTokens:
-                (result as any).totalUsage?.inputTokens ??
-                result.usage?.inputTokens ??
-                0,
-            outputTokens:
-                (result as any).totalUsage?.outputTokens ??
-                result.usage?.outputTokens ??
-                0,
-            totalTokens:
-                (result as any).totalUsage?.totalTokens ??
-                result.usage?.totalTokens ??
-                0,
+            inputTokens: finalInputTokens,
+            outputTokens: finalOutputTokens,
+            totalTokens: finalInputTokens + finalOutputTokens,
         },
     };
 }
@@ -532,7 +551,7 @@ function looksLikeFindings(text: string): boolean {
 async function structureWithFallbackModel(
     reviewText: string,
     byokConfig?: BYOKConfig,
-): Promise<FindingsOutput | null> {
+): Promise<{ findings: FindingsOutput; usage: { inputTokens: number; outputTokens: number; totalTokens: number } } | null> {
     try {
         const internalModel = getInternalModel(byokConfig);
 
@@ -595,12 +614,21 @@ For each issue found, extract: relevantFile, language, suggestionContent (full d
 
         const output: any = (result as any).object ?? (result as any).output;
 
+        const fallbackUsage = result.usage ?? (result as any).totalUsage;
+
         logger.log({
-            message: `[AGENT-FALLBACK] structured output returned ${output?.suggestions?.length ?? 0} suggestions`,
+            message: `[AGENT-FALLBACK] structured output returned ${output?.suggestions?.length ?? 0} suggestions (input=${fallbackUsage?.inputTokens ?? 0}, output=${fallbackUsage?.outputTokens ?? 0})`,
             context: 'AgentLoop',
         });
 
-        return output as FindingsOutput;
+        return {
+            findings: output as FindingsOutput,
+            usage: {
+                inputTokens: fallbackUsage?.inputTokens ?? 0,
+                outputTokens: fallbackUsage?.outputTokens ?? 0,
+                totalTokens: fallbackUsage?.totalTokens ?? (fallbackUsage?.inputTokens ?? 0) + (fallbackUsage?.outputTokens ?? 0),
+            },
+        };
     } catch (error) {
         logger.error({
             message: `[AGENT-FALLBACK] generateObject failed`,
