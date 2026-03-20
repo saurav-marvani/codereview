@@ -357,19 +357,54 @@ export class GithubService
                 return;
             }
 
-            await this.integrationConfigService.createOrUpdateConfig(
+            const githubAuthDetail = await this.getGithubAuthDetails(
+                params.organizationAndTeamData,
+            );
+
+            const shouldRefreshTokenWebhooks =
+                githubAuthDetail?.authMode === AuthMode.TOKEN &&
+                params.configKey === IntegrationConfigKey.REPOSITORIES;
+
+            const previousRepositories = shouldRefreshTokenWebhooks
+                ? ((await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                      params.organizationAndTeamData,
+                      IntegrationConfigKey.REPOSITORIES,
+                  )) ?? [])
+                : [];
+
+            const updatedConfig =
+                await this.integrationConfigService.createOrUpdateConfig(
                 params.configKey,
                 params.configValue,
                 integration?.uuid,
                 params.organizationAndTeamData,
                 params.type,
-            );
+                );
 
-            const githubAuthDetail = await this.getGithubAuthDetails(
-                params.organizationAndTeamData,
-            );
+            if (shouldRefreshTokenWebhooks) {
+                const nextRepositories = <Repositories[]>(
+                    updatedConfig?.configValue ??
+                        params.configValue ??
+                        []
+                );
+                const removedRepositories = previousRepositories.filter(
+                    (previousRepository) =>
+                        !nextRepositories.some(
+                            (nextRepository) =>
+                                nextRepository.id?.toString() ===
+                                    previousRepository.id?.toString() ||
+                                nextRepository.name === previousRepository.name,
+                        ),
+                );
 
-            if (githubAuthDetail?.authMode === AuthMode.TOKEN) {
+                if (removedRepositories.length > 0) {
+                    await this.deleteWebhook({
+                        organizationAndTeamData:
+                            params.organizationAndTeamData,
+                        repositories: removedRepositories,
+                    });
+                }
+
                 await this.createPullRequestWebhook({
                     organizationAndTeamData: params.organizationAndTeamData,
                 });
@@ -4125,9 +4160,11 @@ This is an experimental feature that generates committable changes. Review the d
             )
         );
 
-        const webhookUrl = this.configService.get<string>(
-            'API_GITHUB_CODE_MANAGEMENT_WEBHOOK',
-        );
+        const webhookUrl = this.getGithubWebhookUrl();
+
+        if (!webhookUrl || !repositories?.length) {
+            return;
+        }
 
         // Usar método centralizado para determinar o owner correto
         const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
@@ -4139,7 +4176,6 @@ This is an experimental feature that generates committable changes. Review the d
                     repo: repo.name,
                 });
 
-                // Verificação segura do config para evitar erro "Parameter config does not exist"
                 const webhookToDelete = webhooks.find(
                     (webhook) =>
                         webhook.config && webhook.config.url === webhookUrl,
@@ -4195,6 +4231,12 @@ This is an experimental feature that generates committable changes. Review the d
             });
             throw error;
         }
+    }
+
+    private getGithubWebhookUrl(): string | undefined {
+        return this.configService.get<string>(
+            'API_GITHUB_CODE_MANAGEMENT_WEBHOOK',
+        );
     }
 
     async countReactions(params: any) {
@@ -5295,10 +5337,9 @@ This is an experimental feature that generates committable changes. Review the d
                 repo: repository.name,
             });
 
-            const webhookUrl =
-                this.configService.get<string>(
-                    'API_GITHUB_CODE_MANAGEMENT_WEBHOOK',
-                ) ?? process.env.API_GITHUB_CODE_MANAGEMENT_WEBHOOK;
+            const webhookUrl = this.configService.get<string>(
+                'API_GITHUB_CODE_MANAGEMENT_WEBHOOK',
+            );
 
             if (!webhookUrl) {
                 return false;
@@ -5325,6 +5366,7 @@ This is an experimental feature that generates committable changes. Review the d
 
     async deleteWebhook(params: {
         organizationAndTeamData: OrganizationAndTeamData;
+        repositories?: Repositories[];
     }): Promise<void> {
         const integration = await this.integrationService.findOne({
             organization: {
@@ -5372,10 +5414,11 @@ This is an experimental feature that generates committable changes. Review the d
                 );
 
                 const repositories =
-                    await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    params.repositories ??
+                    (await this.findOneByOrganizationAndTeamDataAndConfigKey(
                         params.organizationAndTeamData,
                         IntegrationConfigKey.REPOSITORIES,
-                    );
+                    ));
 
                 if (repositories) {
                     // Usar método centralizado para determinar o owner correto
