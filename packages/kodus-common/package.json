@@ -123,6 +123,7 @@
         "testEnvironment": "node"
     },
     "resolutions": {
-        "minimatch": ">=10.2.2"
+        "flatted": "^3.4.2",
+        "minimatch": "^10.2.4"
     }
 }
