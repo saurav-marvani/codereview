@@ -12,6 +12,7 @@ import { Module, forwardRef } from '@nestjs/common';
 
 import { ApplyCodeReviewPresetUseCase } from '../application/use-cases/configuration/apply-code-review-preset.use-case';
 import { DeleteRepositoryCodeReviewParameterUseCase } from '../application/use-cases/configuration/delete-repository-code-review-parameter.use-case';
+import { DownloadCentralizedConfigUseCase } from '../application/use-cases/configuration/download-centralized-config.use-case';
 import { GenerateKodusConfigFileUseCase } from '../application/use-cases/configuration/generate-kodus-config-file.use-case';
 import { GetCliRepositorySettingsUseCase } from '../application/use-cases/configuration/get-cli-repository-settings.use-case';
 import { GetCodeReviewParameterUseCase } from '../application/use-cases/configuration/get-code-review-parameter.use-case';
@@ -41,6 +42,7 @@ import { CentralizedConfigSyncListener } from '../infrastructure/adapters/listen
         ApplyCodeReviewPresetUseCase,
         DeleteRepositoryCodeReviewParameterUseCase,
         GenerateKodusConfigFileUseCase,
+        DownloadCentralizedConfigUseCase,
         GetCliRepositorySettingsUseCase,
         GetCodeReviewParameterUseCase,
         ListCodeReviewAutomationLabelsUseCase,
@@ -56,6 +58,7 @@ import { CentralizedConfigSyncListener } from '../infrastructure/adapters/listen
         ApplyCodeReviewPresetUseCase,
         DeleteRepositoryCodeReviewParameterUseCase,
         GenerateKodusConfigFileUseCase,
+        DownloadCentralizedConfigUseCase,
         GetCliRepositorySettingsUseCase,
         GetCodeReviewParameterUseCase,
         ListCodeReviewAutomationLabelsUseCase,

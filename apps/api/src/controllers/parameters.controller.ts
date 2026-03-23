@@ -51,6 +51,7 @@ import {
 } from '@libs/identity/infrastructure/adapters/services/permissions/policy.guard';
 
 import { DeleteRepositoryCodeReviewParameterUseCase } from '@libs/code-review/application/use-cases/configuration/delete-repository-code-review-parameter.use-case';
+import { DownloadCentralizedConfigUseCase } from '@libs/code-review/application/use-cases/configuration/download-centralized-config.use-case';
 import { GenerateKodusConfigFileUseCase } from '@libs/code-review/application/use-cases/configuration/generate-kodus-config-file.use-case';
 import { GetCodeReviewParameterUseCase } from '@libs/code-review/application/use-cases/configuration/get-code-review-parameter.use-case';
 import { ListCodeReviewAutomationLabelsWithStatusUseCase } from '@libs/code-review/application/use-cases/configuration/list-code-review-automation-labels-with-status.use-case';
@@ -68,6 +69,7 @@ import { GetDefaultConfigUseCase } from '@libs/organization/application/use-case
 import { CreateOrUpdateCodeReviewParameterDto } from '@libs/organization/dtos/create-or-update-code-review-parameter.dto';
 import { DeleteRepositoryCodeReviewParameterDto } from '@libs/organization/dtos/delete-repository-code-review-parameter.dto';
 import { PreviewPrSummaryDto } from '@libs/organization/dtos/preview-pr-summary.dto';
+import archiver from 'archiver';
 import { ApplyCodeReviewPresetDto } from '../dtos/apply-code-review-preset.dto';
 
 @ApiTags('Parameters')
@@ -84,6 +86,7 @@ export class ParametersController {
         private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
         private readonly updateCodeReviewParameterRepositoriesUseCase: UpdateCodeReviewParameterRepositoriesUseCase,
         private readonly generateKodusConfigFileUseCase: GenerateKodusConfigFileUseCase,
+        private readonly downloadCentralizedConfigUseCase: DownloadCentralizedConfigUseCase,
         private readonly deleteRepositoryCodeReviewParameterUseCase: DeleteRepositoryCodeReviewParameterUseCase,
         private readonly previewPrSummaryUseCase: PreviewPrSummaryUseCase,
         private readonly listCodeReviewAutomationLabelsWithStatusUseCase: ListCodeReviewAutomationLabelsWithStatusUseCase,
@@ -414,6 +417,56 @@ export class ParametersController {
         });
 
         return response.send(yamlString);
+    }
+
+    @Get('/download-centralized-config')
+    @ApiQuery({ name: 'teamId', type: String, required: true })
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.CodeReviewSettings,
+        }),
+    )
+    @ApiOperation({
+        summary: 'Download centralized config ZIP',
+        description:
+            "Download a ZIP containing the team's centralized kodus-config.yml files (global, per-repo and per-directory) ready to be placed in the central config repository.",
+    })
+    @ApiOkResponse({ content: { 'application/zip': {} } })
+    public async downloadCentralizedConfig(
+        @Res() response: Response,
+        @Query('teamId') teamId: string,
+    ) {
+        const organizationId = this.request?.user?.organization?.uuid;
+
+        if (!organizationId) {
+            throw new Error('Organization ID is missing from request');
+        }
+
+        const entries = await this.downloadCentralizedConfigUseCase.execute(
+            this.request.user,
+            teamId,
+        );
+
+        response.set({
+            'Content-Type': 'application/zip',
+            'Content-Disposition':
+                'attachment; filename=centralized-config.zip',
+        });
+
+        const archive = archiver('zip', { zlib: { level: 9 } });
+        archive.on('error', (err) => {
+            throw err;
+        });
+        archive.pipe(response);
+
+        for (const entry of entries) {
+            archive.append(entry.yamlString, { name: entry.name });
+        }
+
+        await archive.finalize();
+        return;
     }
 
     @Post('/delete-repository-code-review-parameter')
