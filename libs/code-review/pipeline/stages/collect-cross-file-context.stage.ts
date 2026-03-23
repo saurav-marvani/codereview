@@ -80,6 +80,10 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
             this.logger.log({
                 message: `Skipping cross-file context collection: fast mode`,
                 context: this.stageName,
+                metadata: {
+                    sandboxDecision: 'skipped',
+                    sandboxSkipReason: 'fast_mode',
+                },
             });
             return context;
         }
@@ -90,6 +94,8 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
                 message: `Skipping cross-file context collection: crossFileDependenciesAnalysis is disabled for ${label}`,
                 context: this.stageName,
                 metadata: {
+                    sandboxDecision: 'skipped',
+                    sandboxSkipReason: 'disabled',
                     organizationAndTeamData: context?.organizationAndTeamData,
                     prNumber: context?.pullRequest?.number,
                 },
@@ -103,6 +109,8 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
                 message: `Skipping cross-file context collection: no changed files for ${label}`,
                 context: this.stageName,
                 metadata: {
+                    sandboxDecision: 'skipped',
+                    sandboxSkipReason: 'no_changed_files',
                     organizationAndTeamData: context?.organizationAndTeamData,
                     prNumber: context?.pullRequest?.number,
                 },
@@ -116,6 +124,8 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
                 message: `Skipping cross-file context collection: no sandbox provider configured for ${label}`,
                 context: this.stageName,
                 metadata: {
+                    sandboxDecision: 'skipped',
+                    sandboxSkipReason: 'no_provider',
                     organizationAndTeamData: context?.organizationAndTeamData,
                     prNumber: context?.pullRequest?.number,
                 },
@@ -128,6 +138,10 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
             this.logger.log({
                 message: `Skipping cross-file context collection: no git remote in CLI context`,
                 context: this.stageName,
+                metadata: {
+                    sandboxDecision: 'skipped',
+                    sandboxSkipReason: 'no_git_remote',
+                },
             });
             return context;
         }
@@ -143,6 +157,11 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
                 this.logger.warn({
                     message: `[DEBUG] resolveCloneParams returned null for ${label}`,
                     context: this.stageName,
+                    metadata: {
+                        sandboxDecision: 'skipped',
+                        sandboxSkipReason: 'no_clone_params',
+                        prNumber: context?.pullRequest?.number,
+                    },
                 });
                 return context;
             }
@@ -176,6 +195,11 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
             this.logger.log({
                 message: `[DEBUG] Sandbox created successfully for ${label}, starting collectContexts`,
                 context: this.stageName,
+                metadata: {
+                    sandboxDecision: 'created',
+                    sandboxSkipReason: null,
+                    prNumber: context?.pullRequest?.number,
+                },
             });
 
             // Collect cross-file contexts using sandbox remoteCommands

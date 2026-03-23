@@ -188,6 +188,20 @@ export class SafeguardPipelineService {
 
             // Step 3: Agent Verification (per suggestion that needs it)
             if (toVerify.length > 0 && remoteCommands) {
+                this.logger.log({
+                    message: `[SAFEGUARD_DECISION] PR#${prNumber} ${fileLabel} — using agent verification with sandbox`,
+                    context: SafeguardPipelineService.name,
+                    metadata: {
+                        safeguardMode: 'agent_verification',
+                        sandboxAvailable: true,
+                        safeguardReason: 'remote_commands_available',
+                        prNumber,
+                        filePath: file?.filename,
+                        toVerifyCount: toVerify.length,
+                        hasSandboxCloneParams: !!params.sandboxCloneParams,
+                    },
+                });
+
                 // Create a separate prompt runner for agent turns (use Flash for cost efficiency)
                 const agentProvider = LLMModelProvider.GEMINI_2_5_FLASH;
                 const agentPromptRunner = new BYOKPromptRunnerService(
@@ -376,6 +390,20 @@ export class SafeguardPipelineService {
                     context: SafeguardPipelineService.name,
                 });
             } else if (toVerify.length > 0 && !remoteCommands) {
+                this.logger.log({
+                    message: `[SAFEGUARD_DECISION] PR#${prNumber} ${fileLabel} — falling back to prompt-only verification`,
+                    context: SafeguardPipelineService.name,
+                    metadata: {
+                        safeguardMode: 'prompt_only',
+                        sandboxAvailable: false,
+                        safeguardReason: 'no_remote_commands',
+                        prNumber,
+                        filePath: file?.filename,
+                        toVerifyCount: toVerify.length,
+                        hasSandboxCloneParams: !!params.sandboxCloneParams,
+                    },
+                });
+
                 // No sandbox available — fallback to prompt-only verification
                 const fallbackStart = Date.now();
                 let fallbackKept = 0;
@@ -627,6 +655,9 @@ Evidence field in ${params.languageResultPrompt}.`;
                 organizationId: params.organizationAndTeamData?.organizationId,
                 prNumber: params.prNumber,
                 suggestionId: suggestion.id,
+                safeguardMode: 'prompt_only',
+                sandboxAvailable: false,
+                sandboxReason: 'no_remote_commands',
             },
             exec: async (callbacks) => {
                 return await promptRunner
@@ -735,6 +766,9 @@ Evidence field in ${params.languageResultPrompt}.`;
                     prNumber,
                     turn,
                     suggestionId: suggestion.id,
+                    safeguardMode: 'agent_verification',
+                    sandboxAvailable: true,
+                    sandboxReason: 'remote_commands_available',
                 },
                 exec: async (callbacks) => {
                     let builder = promptRunner
