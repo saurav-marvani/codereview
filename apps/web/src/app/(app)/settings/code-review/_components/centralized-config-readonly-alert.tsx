@@ -57,7 +57,7 @@ export function CentralizedConfigReadOnlyAlert() {
             <AlertCircleIcon />
             <AlertDescription className="text-pretty">
                 Centralized config is enabled. Code review parameter fields on
-                this page are read-only and controlled by the {repositoryName}
+                this page are read-only and controlled by the {repositoryName}{" "}
                 repository.
             </AlertDescription>
         </Alert>
