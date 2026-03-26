@@ -201,11 +201,7 @@ function normalizeApiErrorMessage(
         return `Repository configuration access denied: ${trimmed}`;
     }
 
-    if (
-        statusCode === 401 ||
-        statusCode === 429 ||
-        statusCode >= 500
-    ) {
+    if (statusCode === 401 || statusCode === 429 || statusCode >= 500) {
         return fallbackMessage;
     }
 
@@ -357,6 +353,94 @@ export async function request<T>(
     return json as T;
 }
 
+export async function requestBinary(
+    endpoint: string,
+    options: RequestInit = {},
+): Promise<Uint8Array> {
+    const baseUrl = await resolveApiBaseUrl();
+    const url = `${baseUrl}${endpoint}`;
+    let deviceIdentity: { deviceId: string; deviceToken?: string } | undefined;
+
+    if (isCliVerboseMode()) {
+        cliDebug(`[API] ${options.method || 'GET'} ${url} (binary)`);
+    }
+
+    try {
+        deviceIdentity = await getDeviceIdentity();
+    } catch (error) {
+        if (isCliVerboseMode()) {
+            cliDebug('[API] Unable to resolve device id:', error);
+        }
+    }
+
+    const cfHeaders = await getCloudflareAccessHeaders();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    let response: Response;
+    try {
+        response = await fetch(url, {
+            ...options,
+            signal: controller.signal,
+            headers: {
+                ...cfHeaders,
+                ...(deviceIdentity?.deviceId
+                    ? { 'X-Kodus-Device-Id': deviceIdentity.deviceId }
+                    : {}),
+                ...(deviceIdentity?.deviceToken
+                    ? { 'X-Kodus-Device-Token': deviceIdentity.deviceToken }
+                    : {}),
+                ...options.headers,
+            },
+        });
+    } catch (error) {
+        clearTimeout(timeout);
+        if (error instanceof DOMException && error.name === 'AbortError') {
+            throw new ApiError(
+                408,
+                'Request timed out. The server took too long to respond. Please try again.',
+            );
+        }
+        throw error;
+    }
+
+    clearTimeout(timeout);
+
+    const responseDeviceToken = response.headers.get('x-kodus-device-token');
+    if (responseDeviceToken) {
+        await updateDeviceToken(responseDeviceToken).catch(() => {});
+    }
+
+    if (!response.ok) {
+        const contentType = response.headers.get('content-type') || '';
+        const isJson = contentType.includes('application/json');
+        const rawError = isJson
+            ? await response.json().catch(() => ({ message: 'Request failed' }))
+            : { message: `Request failed with status ${response.status}` };
+        const errorData: ApiErrorPayload =
+            rawError &&
+            typeof rawError === 'object' &&
+            'data' in rawError &&
+            rawError.data &&
+            typeof rawError.data === 'object' &&
+            !('message' in rawError) &&
+            !('code' in rawError)
+                ? (rawError.data as ApiErrorPayload)
+                : (rawError as ApiErrorPayload);
+
+        const errorMessage = normalizeApiErrorMessage(
+            response.status,
+            endpoint,
+            errorData,
+        );
+
+        throw new ApiError(response.status, errorMessage);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    return new Uint8Array(arrayBuffer);
+}
+
 const RETRY_BACKOFF_MS = [1000, 3000];
 const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 
@@ -369,6 +453,47 @@ export async function requestWithRetry<T>(
     for (let attempt = 0; attempt <= RETRY_BACKOFF_MS.length; attempt++) {
         try {
             return await request<T>(endpoint, options);
+        } catch (error) {
+            lastError = error;
+
+            const isLastAttempt = attempt >= RETRY_BACKOFF_MS.length;
+            if (isLastAttempt) {
+                break;
+            }
+
+            const isRetryable =
+                (error instanceof ApiError &&
+                    RETRYABLE_STATUS_CODES.has(error.statusCode)) ||
+                (!(error instanceof ApiError) && error instanceof Error);
+
+            if (!isRetryable) {
+                break;
+            }
+
+            if (isCliVerboseMode()) {
+                cliDebug(
+                    `[API] Retry ${attempt + 1}/${RETRY_BACKOFF_MS.length} after ${RETRY_BACKOFF_MS[attempt]}ms`,
+                );
+            }
+
+            await new Promise((resolve) =>
+                setTimeout(resolve, RETRY_BACKOFF_MS[attempt]),
+            );
+        }
+    }
+
+    throw lastError;
+}
+
+export async function requestBinaryWithRetry(
+    endpoint: string,
+    options: RequestInit = {},
+): Promise<Uint8Array> {
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt <= RETRY_BACKOFF_MS.length; attempt++) {
+        try {
+            return await requestBinary(endpoint, options);
         } catch (error) {
             lastError = error;
 

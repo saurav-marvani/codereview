@@ -12,6 +12,8 @@ This directory contains the agent skills shipped with the Kodus CLI repository.
     - Canonical skill name for business rules validation in installers and multi-agent integrations.
 - `kodus-pr-suggestions-resolver`
     - Fetch PR suggestions and apply fixes with judgment.
+- `kodus-centralized-config`
+    - Manage centralized config from CLI (status, init, sync, disable, download).
 
 ## Trigger Map (recommended)
 
@@ -26,6 +28,8 @@ This directory contains the agent skills shipped with the Kodus CLI repository.
     - Use `kodus-pr-suggestions-resolver`.
 - User asks to validate local implementation against a task, acceptance criteria, or business rules
     - Use `kodus-business-rules-validation`.
+- User asks to enable/disable/sync/download centralized config or choose centralized config source repository
+    - Use `kodus-centralized-config`.
 
 ## Notes
 

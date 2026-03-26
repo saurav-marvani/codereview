@@ -1,4 +1,6 @@
 import type {
+    CentralizedConfigActionResponse,
+    CentralizedConfigStatus,
     CodeReviewParameter,
     ConfigAddRepositoriesResponse,
     ConfigRepository,
@@ -6,7 +8,7 @@ import type {
 } from '../../types/config.js';
 import type { RepositorySettings } from '../../types/repo-config.js';
 import type { IConfigApi } from './api.interface.js';
-import { requestWithRetry } from './api-core.js';
+import { requestBinaryWithRetry, requestWithRetry } from './api-core.js';
 
 type RequestWithRetry = <T>(
     endpoint: string,
@@ -14,7 +16,9 @@ type RequestWithRetry = <T>(
 ) => Promise<T>;
 
 export class RealConfigApi implements IConfigApi {
-    constructor(private readonly requester: RequestWithRetry = requestWithRetry) {}
+    constructor(
+        private readonly requester: RequestWithRetry = requestWithRetry,
+    ) {}
 
     private buildAuthHeaders(accessToken: string): Record<string, string> {
         return accessToken.startsWith('kodus_')
@@ -145,5 +149,64 @@ export class RealConfigApi implements IConfigApi {
                 body: JSON.stringify(settings),
             },
         );
+    }
+
+    async getCentralizedConfigStatus(
+        accessToken: string,
+    ): Promise<CentralizedConfigStatus> {
+        return this.requester<CentralizedConfigStatus>(
+            '/cli/config/centralized/status',
+            {
+                headers: this.buildAuthHeaders(accessToken),
+            },
+        );
+    }
+
+    async initCentralizedConfig(
+        accessToken: string,
+        params: {
+            repositoryId: string;
+            syncOption: 'pr' | 'manual';
+        },
+    ): Promise<CentralizedConfigActionResponse> {
+        return this.requester<CentralizedConfigActionResponse>(
+            '/cli/config/centralized/init',
+            {
+                method: 'POST',
+                headers: this.buildAuthHeaders(accessToken),
+                body: JSON.stringify(params),
+            },
+        );
+    }
+
+    async syncCentralizedConfig(
+        accessToken: string,
+    ): Promise<CentralizedConfigActionResponse> {
+        return this.requester<CentralizedConfigActionResponse>(
+            '/cli/config/centralized/sync',
+            {
+                method: 'POST',
+                headers: this.buildAuthHeaders(accessToken),
+            },
+        );
+    }
+
+    async disableCentralizedConfig(
+        accessToken: string,
+    ): Promise<CentralizedConfigActionResponse> {
+        return this.requester<CentralizedConfigActionResponse>(
+            '/cli/config/centralized/disable',
+            {
+                method: 'POST',
+                headers: this.buildAuthHeaders(accessToken),
+            },
+        );
+    }
+
+    async downloadCentralizedConfig(accessToken: string): Promise<Uint8Array> {
+        return requestBinaryWithRetry('/cli/config/centralized/download', {
+            method: 'GET',
+            headers: this.buildAuthHeaders(accessToken),
+        });
     }
 }

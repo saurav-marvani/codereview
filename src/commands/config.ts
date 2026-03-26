@@ -7,6 +7,15 @@ import {
     registerRemoteRepositoryConfig,
     registerRepoAliasConfig,
 } from '../features/repo-config/command.js';
+import { registerCentralizedConfigCommand } from '../features/centralized-config/command.js';
+
+export {
+    configCentralizedDisableAction,
+    configCentralizedDownloadAction,
+    configCentralizedInitAction,
+    configCentralizedStatusAction,
+    configCentralizedSyncAction,
+} from '../features/centralized-config/actions.js';
 
 export {
     configRemoteAction,
@@ -46,6 +55,7 @@ configCommand
     });
 
 registerRemoteRepositoryConfig(configCommand.command('remote'));
+registerCentralizedConfigCommand(configCommand.command('centralized'));
 
 const repoAliasCommand = configCommand.command('repo');
 (repoAliasCommand as Command & { _hidden?: boolean })._hidden = true;

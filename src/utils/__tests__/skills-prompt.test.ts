@@ -22,6 +22,7 @@ describe('skills prompt metadata', () => {
         const names = skills.map((skill) => skill.name);
 
         expect(names).toContain('kodus-business-rules-validation');
+        expect(names).toContain('kodus-centralized-config');
         expect(names).not.toContain('business-rules-validation');
     });
 });

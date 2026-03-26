@@ -1,5 +1,7 @@
 import type { AuthResponse, UserInfo } from '../../types/auth.js';
 import type {
+    CentralizedConfigActionResponse,
+    CentralizedConfigStatus,
     CodeReviewParameter,
     ConfigAddRepositoriesResponse,
     ConfigRepository,
@@ -122,6 +124,23 @@ export interface IConfigApi {
         repositoryId: string,
         settings: RepositorySettings,
     ): Promise<RepositorySettings>;
+    getCentralizedConfigStatus(
+        accessToken: string,
+    ): Promise<CentralizedConfigStatus>;
+    initCentralizedConfig(
+        accessToken: string,
+        params: {
+            repositoryId: string;
+            syncOption: 'pr' | 'manual';
+        },
+    ): Promise<CentralizedConfigActionResponse>;
+    syncCentralizedConfig(
+        accessToken: string,
+    ): Promise<CentralizedConfigActionResponse>;
+    disableCentralizedConfig(
+        accessToken: string,
+    ): Promise<CentralizedConfigActionResponse>;
+    downloadCentralizedConfig(accessToken: string): Promise<Uint8Array>;
 }
 
 export interface ISessionsApi {

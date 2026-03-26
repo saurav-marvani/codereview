@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
     buildDefaultSkillSyncTargets,
+    DEFAULT_SYNC_SKILL_NAMES,
     syncSkillsToTargets,
     type SkillSyncTarget,
 } from '../skills-sync.js';
@@ -72,6 +73,10 @@ describe('skills-sync utilities', () => {
             activationPath: '/repo/workspace/.kiro',
             baseDir: '/repo/workspace/.kiro/skills',
         });
+    });
+
+    it('includes centralized config in default synced skill names', () => {
+        expect(DEFAULT_SYNC_SKILL_NAMES).toContain('kodus-centralized-config');
     });
 
     it('syncs skill and command targets and removes legacy entries', async () => {

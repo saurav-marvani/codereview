@@ -48,3 +48,19 @@ export interface CodeReviewParameter {
         [key: string]: unknown;
     };
 }
+
+export interface CentralizedConfigRepository {
+    id: string;
+    name: string;
+}
+
+export interface CentralizedConfigStatus {
+    enabled: boolean;
+    repository: CentralizedConfigRepository | null;
+}
+
+export interface CentralizedConfigActionResponse {
+    success: boolean;
+    message: string;
+    prUrl?: string;
+}
