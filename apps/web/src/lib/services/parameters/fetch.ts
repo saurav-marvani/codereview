@@ -219,8 +219,6 @@ export const centralizedConfigInit = async (body: {
             body,
         );
 
-        console.log("centralizedConfigInit response", response);
-
         return response.data as {
             success: boolean;
             message: string;
