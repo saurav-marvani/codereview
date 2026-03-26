@@ -1200,6 +1200,7 @@ export class AzureReposRequestHelper {
         branchName: string;
         baseBranch?: string;
         commitMessage: string;
+        author?: { name: string; email?: string };
         changes: Array<{
             changeType: 'add' | 'edit' | 'delete';
             filePath: string;
@@ -1242,6 +1243,18 @@ export class AzureReposRequestHelper {
             commits: [
                 {
                     comment: params.commitMessage,
+                    ...(params.author
+                        ? {
+                              author: {
+                                  name: params.author.name,
+                                  email: params.author.email,
+                              },
+                              committer: {
+                                  name: params.author.name,
+                                  email: params.author.email,
+                              },
+                          }
+                        : {}),
                     changes: params.changes.map((change) => ({
                         changeType: change.changeType,
                         item: {

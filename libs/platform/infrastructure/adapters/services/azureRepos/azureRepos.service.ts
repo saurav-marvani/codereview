@@ -165,6 +165,7 @@ export class AzureReposService implements Omit<
         title?: string;
         description?: string;
         commitMessage?: string;
+        author?: { name: string; email?: string };
         files: { path: string; content: string }[];
     }): Promise<Partial<PullRequest> | null> {
         const {
@@ -176,6 +177,7 @@ export class AzureReposService implements Omit<
             title,
             description = '',
             commitMessage,
+            author,
             files,
         } = params;
 
@@ -210,6 +212,7 @@ export class AzureReposService implements Omit<
                 baseBranch: resolvedBaseBranch,
                 files,
                 message: resolvedCommitMessage,
+                author,
             });
 
             if (!uploadResult) {
@@ -249,6 +252,7 @@ export class AzureReposService implements Omit<
         baseBranch?: string;
         files: { path: string; content: string }[];
         message?: string;
+        author?: { name: string; email?: string };
     }): Promise<boolean> {
         const {
             organizationAndTeamData,
@@ -257,6 +261,7 @@ export class AzureReposService implements Omit<
             baseBranch,
             files,
             message,
+            author,
         } = params;
 
         try {
@@ -268,9 +273,19 @@ export class AzureReposService implements Omit<
             const resolvedBranchName = branchName || resolvedBaseBranch;
             const resolvedMessage = message?.trim() || DEFAULT_COMMIT_MESSAGE;
 
-            const { orgName, token } = await this.getAuthDetails(
+            const authDetails = await this.getAuthDetails(
                 organizationAndTeamData,
             );
+
+            const { orgName, token } = authDetails;
+
+            const tokenAuthorIdentity =
+                authDetails?.authMode === AuthMode.TOKEN && author?.name
+                    ? {
+                          name: author.name,
+                          email: author.email || 'kody@kodus.io',
+                      }
+                    : undefined;
 
             const projectId = await this.getProjectIdFromRepository(
                 organizationAndTeamData,
@@ -287,6 +302,7 @@ export class AzureReposService implements Omit<
                     content: file.content,
                 })),
                 commitMessage: resolvedMessage,
+                author: tokenAuthorIdentity,
                 projectId,
                 repositoryId: repository.id,
                 token,

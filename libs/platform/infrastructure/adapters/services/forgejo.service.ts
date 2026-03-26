@@ -258,6 +258,7 @@ export class ForgejoService implements Omit<
         title?: string;
         description?: string;
         commitMessage?: string;
+        author?: { name: string; email?: string };
         files: { path: string; content: string }[];
     }): Promise<Partial<PullRequest> | null> {
         const {
@@ -269,6 +270,7 @@ export class ForgejoService implements Omit<
             title,
             description = '',
             commitMessage,
+            author,
             files,
         } = params;
 
@@ -313,6 +315,7 @@ export class ForgejoService implements Omit<
                 baseBranch: resolvedBaseBranch,
                 files,
                 message: resolvedCommitMessage,
+                author,
             });
 
             if (!uploadResult) {
@@ -360,6 +363,7 @@ export class ForgejoService implements Omit<
         baseBranch?: string;
         files: { path: string; content: string }[];
         message?: string;
+        author?: { name: string; email?: string };
     }): Promise<boolean> {
         const {
             organizationAndTeamData,
@@ -368,6 +372,7 @@ export class ForgejoService implements Omit<
             baseBranch,
             files,
             message,
+            author,
         } = params;
 
         try {
@@ -397,6 +402,14 @@ export class ForgejoService implements Omit<
 
             const client = this.createForgejoClient(authDetail);
 
+            const tokenAuthorIdentity =
+                authDetail.authMode === AuthMode.TOKEN && author?.name
+                    ? {
+                          name: author.name,
+                          email: author.email || 'kody@kodus.io',
+                      }
+                    : undefined;
+
             const res = await repoChangeFiles({
                 client,
                 path: repoInfo,
@@ -408,6 +421,12 @@ export class ForgejoService implements Omit<
                     })),
                     message: resolvedMessage,
                     branch: resolvedBaseBranch,
+                    ...(tokenAuthorIdentity
+                        ? {
+                              author: tokenAuthorIdentity,
+                              committer: tokenAuthorIdentity,
+                          }
+                        : {}),
                     ...(resolvedBranchName !== resolvedBaseBranch
                         ? {
                               new_branch: resolvedBranchName,

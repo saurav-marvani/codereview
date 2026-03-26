@@ -693,6 +693,7 @@ export class GithubService
         title?: string;
         description?: string;
         commitMessage?: string;
+        author?: { name: string; email?: string };
         files: { path: string; content: string }[];
     }): Promise<Partial<PullRequest> | null> {
         const {
@@ -704,6 +705,7 @@ export class GithubService
             title,
             description = '',
             commitMessage,
+            author,
             files,
         } = params;
 
@@ -729,6 +731,7 @@ export class GithubService
                 baseBranch: resolvedBaseBranch,
                 files,
                 message: resolvedCommitMessage,
+                author,
             });
 
             if (!uploadResult) {
@@ -819,6 +822,7 @@ export class GithubService
         baseBranch?: string;
         files: { path: string; content: string }[];
         message?: string;
+        author?: { name: string; email?: string };
     }): Promise<boolean> {
         const {
             organizationAndTeamData,
@@ -827,6 +831,7 @@ export class GithubService
             baseBranch,
             files,
             message,
+            author,
         } = params;
 
         const resolvedBaseBranch =
@@ -842,6 +847,14 @@ export class GithubService
             const githubAuthDetail = await this.getGithubAuthDetails(
                 organizationAndTeamData,
             );
+
+            const tokenAuthorIdentity =
+                githubAuthDetail?.authMode === AuthMode.TOKEN && author?.name
+                    ? {
+                          name: author.name,
+                          email: author.email || 'kody@kodus.io',
+                      }
+                    : undefined;
 
             const octokit = await this.instanceOctokit(
                 organizationAndTeamData,
@@ -888,6 +901,12 @@ export class GithubService
                 message: resolvedMessage,
                 tree: tree.sha,
                 parents: [baseSha],
+                ...(tokenAuthorIdentity
+                    ? {
+                          author: tokenAuthorIdentity,
+                          committer: tokenAuthorIdentity,
+                      }
+                    : {}),
             });
 
             if (resolvedBranchName === resolvedBaseBranch) {

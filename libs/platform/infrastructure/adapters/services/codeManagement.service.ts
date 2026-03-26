@@ -108,6 +108,7 @@ export class CodeManagementService implements ICodeManagementService {
             title?: string;
             description?: string;
             commitMessage?: string;
+            author?: { name: string; email?: string };
             files: { path: string; content: string }[];
         },
         type?: PlatformType,
@@ -132,6 +133,7 @@ export class CodeManagementService implements ICodeManagementService {
             baseBranch?: string;
             files: { path: string; content: string }[];
             message?: string;
+            author?: { name: string; email?: string };
         },
         type?: PlatformType,
     ): Promise<boolean> {

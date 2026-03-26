@@ -247,6 +247,10 @@ export class CentralizedConfigInitUseCase {
             description,
             commitMessage,
             sourceBranch,
+            author: {
+                name: 'kody',
+                email: 'kody@kodus.io',
+            },
         });
     }
 }

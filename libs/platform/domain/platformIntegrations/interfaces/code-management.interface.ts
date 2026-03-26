@@ -22,6 +22,11 @@ import { Repositories } from '../types/codeManagement/repositories.type';
 import { RepositoryFile } from '../types/codeManagement/repositoryFile.type';
 import { ICommonPlatformIntegrationService } from './common.interface';
 
+type GitActor = {
+    name: string;
+    email?: string;
+};
+
 export type CodeManagementConnectionStatus = {
     hasConnection: boolean; // Whether there is a connection with the tool (e.g., GitHub)
     isSetupComplete: boolean; // Whether the tool is configured (e.g., repositories)
@@ -44,6 +49,7 @@ export interface ICodeManagementService extends ICommonPlatformIntegrationServic
         title?: string;
         description?: string;
         commitMessage?: string;
+        author?: GitActor;
         files: { path: string; content: string }[];
     }): Promise<Partial<PullRequest> | null>;
     uploadFiles(params: {
@@ -53,6 +59,7 @@ export interface ICodeManagementService extends ICommonPlatformIntegrationServic
         baseBranch?: string;
         files: { path: string; content: string }[];
         message?: string;
+        author?: GitActor;
     }): Promise<boolean>;
 
     getPullRequests(params: {

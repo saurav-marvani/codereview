@@ -159,6 +159,7 @@ export class BitbucketService implements Omit<
         title?: string;
         description?: string;
         commitMessage?: string;
+        author?: { name: string; email?: string };
         files: { path: string; content: string }[];
     }): Promise<Partial<PullRequest> | null> {
         const {
@@ -170,6 +171,7 @@ export class BitbucketService implements Omit<
             title,
             description = '',
             commitMessage,
+            author,
             files,
         } = params;
 
@@ -218,6 +220,7 @@ export class BitbucketService implements Omit<
                 repository,
                 files,
                 message: resolvedCommitMessage,
+                author,
             });
 
             if (!uploadResult) {
@@ -272,6 +275,7 @@ export class BitbucketService implements Omit<
         baseBranch?: string;
         files: { path: string; content: string }[];
         message?: string;
+        author?: { name: string; email?: string };
     }): Promise<boolean> {
         const {
             organizationAndTeamData,
@@ -280,6 +284,7 @@ export class BitbucketService implements Omit<
             baseBranch,
             files,
             message,
+            author,
         } = params;
 
         try {
@@ -318,6 +323,16 @@ export class BitbucketService implements Omit<
 
             form.append('branch', resolvedBranchName);
             form.append('message', resolvedMessage);
+
+            if (
+                bitbucketAuthDetail.authMode === AuthMode.TOKEN &&
+                author?.name
+            ) {
+                form.append(
+                    'author',
+                    `${author.name} <${author.email || 'kody@kodus.io'}>`,
+                );
+            }
 
             files.forEach((file) => {
                 const repoPath = file.path.startsWith('/')

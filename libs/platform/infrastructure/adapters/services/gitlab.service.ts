@@ -351,6 +351,7 @@ export class GitlabService implements Omit<
         title?: string;
         description?: string;
         commitMessage?: string;
+        author?: { name: string; email?: string };
         files: { path: string; content: string }[];
     }): Promise<Partial<PullRequest> | null> {
         const {
@@ -362,6 +363,7 @@ export class GitlabService implements Omit<
             title,
             description = '',
             commitMessage,
+            author,
             files,
         } = params;
 
@@ -397,6 +399,7 @@ export class GitlabService implements Omit<
                 baseBranch: resolvedBaseBranch,
                 files,
                 message: resolvedCommitMessage,
+                author,
             });
 
             if (!uploadResult) {
@@ -439,6 +442,7 @@ export class GitlabService implements Omit<
         baseBranch?: string;
         files: { path: string; content: string }[];
         message?: string;
+        author?: { name: string; email?: string };
     }): Promise<boolean> {
         const {
             organizationAndTeamData,
@@ -447,6 +451,7 @@ export class GitlabService implements Omit<
             baseBranch,
             files,
             message,
+            author,
         } = params;
 
         try {
@@ -475,6 +480,14 @@ export class GitlabService implements Omit<
                           startBranch: resolvedBaseBranch,
                       };
 
+            const tokenAuthorIdentity =
+                gitlabAuthDetail.authMode === AuthMode.TOKEN && author?.name
+                    ? {
+                          authorName: author.name,
+                          authorEmail: author.email || 'kody@kodus.io',
+                      }
+                    : undefined;
+
             const res = await gitlabAPI.Commits.create(
                 repository.id,
                 resolvedBranchName,
@@ -485,7 +498,10 @@ export class GitlabService implements Omit<
                     content: f.content,
                     encoding: 'text',
                 })),
-                commitOptions,
+                {
+                    ...(commitOptions || {}),
+                    ...(tokenAuthorIdentity || {}),
+                },
             );
 
             if (!res || !res.id) {
