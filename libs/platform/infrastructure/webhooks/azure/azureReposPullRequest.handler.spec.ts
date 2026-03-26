@@ -15,6 +15,8 @@ describe('AzureReposPullRequestHandler', () => {
     let handler: AzureReposPullRequestHandler;
     let pullRequestsService: any;
     let webhookContextService: any;
+    let savePullRequestUseCase: any;
+    let enqueueCodeReviewJobUseCase: any;
 
     beforeEach(async () => {
         pullRequestsService = {
@@ -23,11 +25,20 @@ describe('AzureReposPullRequestHandler', () => {
         webhookContextService = {
             getContext: jest.fn(),
         };
+        savePullRequestUseCase = {
+            execute: jest.fn(),
+        };
+        enqueueCodeReviewJobUseCase = {
+            execute: jest.fn(),
+        };
 
         const module: TestingModule = await Test.createTestingModule({
             providers: [
                 AzureReposPullRequestHandler,
-                { provide: SavePullRequestUseCase, useValue: {} },
+                {
+                    provide: SavePullRequestUseCase,
+                    useValue: savePullRequestUseCase,
+                },
                 {
                     provide: WebhookContextService,
                     useValue: webhookContextService,
@@ -37,7 +48,10 @@ describe('AzureReposPullRequestHandler', () => {
                 { provide: GenerateIssuesFromPrClosedUseCase, useValue: {} },
                 { provide: EventEmitter2, useValue: {} },
                 { provide: CodeManagementService, useValue: {} },
-                { provide: EnqueueCodeReviewJobUseCase, useValue: {} },
+                {
+                    provide: EnqueueCodeReviewJobUseCase,
+                    useValue: enqueueCodeReviewJobUseCase,
+                },
                 { provide: EnqueueImplementationCheckUseCase, useValue: {} },
                 {
                     provide: PULL_REQUESTS_SERVICE_TOKEN,
@@ -182,6 +196,37 @@ describe('AzureReposPullRequestHandler', () => {
                 context,
             );
             expect(result).toBe(false);
+        });
+    });
+
+    describe('handleComment', () => {
+        it('should skip start-review command when no active automation exists', async () => {
+            webhookContextService.getContext.mockResolvedValue(null);
+
+            await handler.execute({
+                event: 'ms.vss-code.git-pullrequest-comment-event',
+                correlationId: 'corr-1',
+                platformType: 'AZURE_REPOS',
+                payload: {
+                    resource: {
+                        comment: {
+                            id: 10,
+                            content: '@kody start-review',
+                        },
+                        pullRequest: {
+                            pullRequestId: 123,
+                            status: 'active',
+                            repository: {
+                                id: 'repo-1',
+                                name: 'repo',
+                            },
+                        },
+                    },
+                },
+            } as any);
+
+            expect(savePullRequestUseCase.execute).not.toHaveBeenCalled();
+            expect(enqueueCodeReviewJobUseCase.execute).not.toHaveBeenCalled();
         });
     });
 });

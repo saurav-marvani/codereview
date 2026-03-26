@@ -71,7 +71,7 @@ KEYS=(
     "/prod/kodus-orchestrator/LANGCHAIN_PROJECT"
     "/prod/kodus-orchestrator/LANGCHAIN_CALLBACKS_BACKGROUND"
 
-    "/prod/kodus-orchestrator/API_SENTRY_DNS"
+    "/prod/kodus-orchestrator/API_BETTERSTACK_DSN"
 
     "/prod/kodus-orchestrator/API_CRON_AUTOMATION_INTERACTION_MONITOR"
     "/prod/kodus-orchestrator/API_CRON_AUTOMATION_TEAM_PROGRESS_TRACKER"

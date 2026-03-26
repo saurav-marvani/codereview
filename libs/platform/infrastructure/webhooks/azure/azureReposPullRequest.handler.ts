@@ -456,6 +456,21 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                     },
                 };
 
+                if (!context?.organizationAndTeamData) {
+                    this.logger.log({
+                        message:
+                            'No active automation found for Azure Repos comment command, skipping code review enqueue',
+                        serviceName: AzureReposPullRequestHandler.name,
+                        metadata: {
+                            prId,
+                            repository,
+                            commentId: comment?.id,
+                        },
+                        context: AzureReposPullRequestHandler.name,
+                    });
+                    return;
+                }
+
                 // Execute the necessary use cases
                 await this.savePullRequestUseCase.execute(updatedParams);
                 if (context.organizationAndTeamData) {

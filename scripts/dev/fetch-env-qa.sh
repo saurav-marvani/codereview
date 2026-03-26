@@ -51,7 +51,7 @@ KEYS=(
     "/qa/kodus-orchestrator/LANGCHAIN_PROJECT"
     "/qa/kodus-orchestrator/LANGCHAIN_CALLBACKS_BACKGROUND"
 
-    "/qa/kodus-orchestrator/API_SENTRY_DNS"
+    "/qa/kodus-orchestrator/API_BETTERSTACK_DSN"
 
     "/qa/kodus-orchestrator/API_CRON_SYNC_CODE_REVIEW_REACTIONS"
     "/qa/kodus-orchestrator/API_CRON_KODY_LEARNING"

@@ -4,14 +4,16 @@ jest.mock('e2b', () => ({
     Sandbox: { create: jest.fn() },
 }));
 
+const mockLogger = {
+    log: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    info: jest.fn(),
+};
+
 jest.mock('@kodus/flow', () => ({
-    createLogger: () => ({
-        log: jest.fn(),
-        error: jest.fn(),
-        warn: jest.fn(),
-        debug: jest.fn(),
-        info: jest.fn(),
-    }),
+    createLogger: () => mockLogger,
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
@@ -109,6 +111,16 @@ describe('CollectCrossFileContextStage', () => {
 
             expect(result.crossFileContexts).toBeUndefined();
             expect(mockCollectContexts).not.toHaveBeenCalled();
+            expect(mockLogger.log).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    context: 'CollectCrossFileContextStage',
+                    metadata: expect.objectContaining({
+                        sandboxDecision: 'skipped',
+                        sandboxSkipReason: 'no_provider',
+                        prNumber: context.pullRequest.number,
+                    }),
+                }),
+            );
         });
     });
 
