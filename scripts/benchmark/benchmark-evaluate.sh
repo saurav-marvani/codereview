@@ -105,7 +105,7 @@ for (const entry of manifest.prs) {
   if (entry.prNumber) {
     // Use exact PR number + repo name from manifest
     try {
-      const query = 'JSON.stringify(db.pullRequests.findOne({number: ' + entry.prNumber + ', \"repository.name\": \"' + entry.repo + '\"}, {number: 1, files: 1}))';
+      const query = 'JSON.stringify(db.pullRequests.findOne({number: ' + entry.prNumber + ', \"repository.name\": \"' + entry.repo + '\"}, {number: 1, files: 1, createdAt: 1, updatedAt: 1}))';
       const raw = mongoCmd(query);
       prData = JSON.parse(raw);
     } catch {}
@@ -130,9 +130,27 @@ for (const entry of manifest.prs) {
 
   const prNum = prData ? prData.number : (entry.prNumber || '?');
 
-  if (!prData || totalSugg === 0) {
+  // Check if review actually completed by querying automation_execution in Postgres
+  let wasProcessed = false;
+  if (entry.prNumber) {
+    try {
+      const result = execSync('node $SCRIPT_DIR/check-processed.js ' + entry.prNumber, { encoding: 'utf8', timeout: 15000 }).trim();
+      wasProcessed = result === 'true';
+    } catch {}
+  }
+
+  if (!prData && !wasProcessed) {
     skippedPrs.push({ repo: entry.repo, title: bpr.title.substring(0, 50), head: entry.head, prNum });
     console.log(entry.repo.padEnd(18) + ' PR#' + String(prNum).padEnd(5) + ' ⚠ NOT PROCESSED (skipped)');
+    continue;
+  }
+  if (!prData) {
+    // Processed but no MongoDB record — unlikely but handle gracefully
+    golden.push(bpr);
+    const prInfo = { pr_title: bpr.title, head: entry.head, repo: entry.repo, tool: 'kodus' };
+    results.issueCritical.push({ ...prInfo, issues: [] });
+    results.withWarning.push({ ...prInfo, issues: [] });
+    console.log(entry.repo.padEnd(18) + ' PR#' + String(prNum).padEnd(5) + ' issue+critical= 0  +warning= 0  (processed, no findings)');
     continue;
   }
 
