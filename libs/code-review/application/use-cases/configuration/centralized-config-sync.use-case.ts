@@ -50,7 +50,10 @@ export class CentralizedConfigSyncUseCase {
     async execute(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository?: { name: string; id: string };
-    }) {
+    }): Promise<{
+        success: boolean;
+        message: string;
+    }> {
         const { organizationAndTeamData } = params;
 
         try {
@@ -64,7 +67,10 @@ export class CentralizedConfigSyncUseCase {
                 !centralizedConfigParameter ||
                 !centralizedConfigParameter.configValue?.enabled
             ) {
-                return;
+                return {
+                    success: false,
+                    message: 'Centralized config is not enabled for this team',
+                };
             }
 
             if (params.repository) {
@@ -85,7 +91,11 @@ export class CentralizedConfigSyncUseCase {
                             centralizedRepoId,
                         },
                     });
-                    return;
+                    return {
+                        success: false,
+                        message:
+                            'Centralized config does not apply to this repository',
+                    };
                 }
             }
 
@@ -175,6 +185,11 @@ export class CentralizedConfigSyncUseCase {
                 organizationAndTeamData,
                 configFilesMeta,
             });
+
+            return {
+                success: true,
+                message: 'Centralized config sync completed successfully',
+            };
         } catch (error) {
             this.logger.error({
                 message: 'Error syncing centralized config',
@@ -185,7 +200,10 @@ export class CentralizedConfigSyncUseCase {
                 error,
             });
 
-            return;
+            return {
+                success: false,
+                message: 'Error syncing centralized config',
+            };
         }
     }
 

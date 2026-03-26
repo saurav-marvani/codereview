@@ -515,6 +515,10 @@ export class ParametersController {
             type: 'object',
             properties: {
                 success: { type: 'boolean', example: true },
+                message: {
+                    type: 'string',
+                    example: 'Centralized config synced successfully',
+                },
             },
         },
     })
@@ -530,14 +534,14 @@ export class ParametersController {
             throw new Error('Organization ID is missing from request');
         }
 
-        await this.centralizedConfigSyncUseCase.execute({
+        const result = await this.centralizedConfigSyncUseCase.execute({
             organizationAndTeamData: {
                 organizationId,
                 teamId: body.teamId,
             },
         });
 
-        return { success: true };
+        return result;
     }
 
     @Get('/centralized-config-download')
@@ -608,6 +612,15 @@ export class ParametersController {
             type: 'object',
             properties: {
                 success: { type: 'boolean', example: true },
+                message: {
+                    type: 'string',
+                    example: 'Centralized config initialized successfully',
+                },
+                prUrl: {
+                    type: 'string',
+                    example: 'https://github.com/foo/bar/pull/123',
+                    nullable: true,
+                },
             },
         },
     })
@@ -619,7 +632,7 @@ export class ParametersController {
                 id: string;
                 name: string;
             };
-            method: 'pr' | 'manual';
+            syncOption: 'pr' | 'manual';
         },
     ) {
         const organizationId = this.request?.user?.organization?.uuid;
@@ -628,17 +641,17 @@ export class ParametersController {
             throw new Error('Organization ID is missing from request');
         }
 
-        await this.centralizedConfigInitUseCase.execute({
+        const result = await this.centralizedConfigInitUseCase.execute({
             user: this.request.user,
             organizationAndTeamData: {
                 organizationId,
                 teamId: body.teamId,
             },
             repository: body.repository,
-            method: body.method,
+            syncOption: body.syncOption,
         });
 
-        return { success: true };
+        return result;
     }
     //#endregion
 }

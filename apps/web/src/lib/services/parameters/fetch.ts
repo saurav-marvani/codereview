@@ -195,15 +195,51 @@ export const applyCodeReviewPreset = async (params: {
     }
 };
 
-export const syncCentralizedConfig = async (teamId: string) => {
+export const centralizedConfigSync = async (teamId: string) => {
     try {
         const response = await axiosAuthorized.post<any>(
-            PARAMETERS_PATHS.SYNC_CENTRALIZED_CONFIG,
+            PARAMETERS_PATHS.CENTRALIZED_CONFIG_SYNC,
             { teamId },
         );
 
         return response.data;
     } catch (error: any) {
-        return { error: error.response?.status || "Erro desconhecido" };
+        return { error: error.response?.status || "Unknown error" };
+    }
+};
+
+export const centralizedConfigInit = async (body: {
+    teamId: string;
+    repository: { id: string; name: string };
+    syncOption: "pr" | "manual";
+}) => {
+    try {
+        const response = await axiosAuthorized.post<any>(
+            PARAMETERS_PATHS.CENTRALIZED_CONFIG_INIT,
+            body,
+        );
+
+        console.log("centralizedConfigInit response", response);
+
+        return response.data as {
+            success: boolean;
+            message: string;
+            prUrl?: string;
+        };
+    } catch (error: any) {
+        return { error: error.response?.status || "Unknown error" };
+    }
+};
+
+export const centralizedConfigDownload = async (teamId: string) => {
+    try {
+        const data = await axiosAuthorized.fetcher<Blob>(
+            PARAMETERS_PATHS.CENTRALIZED_CONFIG_DOWNLOAD,
+            { params: { teamId }, responseType: "blob" },
+        );
+
+        return data;
+    } catch (error: any) {
+        return { error: error.response?.status || "Unknown error" };
     }
 };

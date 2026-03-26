@@ -774,6 +774,7 @@ export class GithubService
                     id: prData.id.toString(),
                     number: prData.number,
                     title: prData.title,
+                    prURL: prData.html_url,
                 };
             } else {
                 this.logger.error({

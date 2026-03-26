@@ -340,6 +340,7 @@ export class ForgejoService implements Omit<
                 id: pr.data?.id?.toString() ?? '',
                 number: pr.data?.number ?? -1,
                 title: pr.data?.title ?? '',
+                prURL: pr.data?.html_url ?? '',
             };
         } catch (error) {
             this.logger.error({

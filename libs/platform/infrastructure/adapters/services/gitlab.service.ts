@@ -419,6 +419,7 @@ export class GitlabService implements Omit<
                 id: newMergeRequest.iid.toString(),
                 number: newMergeRequest.iid,
                 title: newMergeRequest.title,
+                prURL: newMergeRequest.web_url,
             };
         } catch (error) {
             this.logger.error({

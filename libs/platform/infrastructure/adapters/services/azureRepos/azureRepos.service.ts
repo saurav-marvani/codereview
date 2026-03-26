@@ -229,11 +229,7 @@ export class AzureReposService implements Omit<
                 description,
             });
 
-            return {
-                id: pr.pullRequestId.toString(),
-                number: pr.pullRequestId,
-                title: pr.title,
-            };
+            return this.transformPullRequest(pr, organizationAndTeamData);
         } catch (error) {
             this.logger.error({
                 message:

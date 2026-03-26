@@ -30,9 +30,14 @@ export class CentralizedConfigInitUseCase {
             id: string;
             name: string;
         };
-        method: 'pr' | 'manual';
-    }) {
-        const { user, organizationAndTeamData, repository, method } = params;
+        syncOption: 'pr' | 'manual';
+    }): Promise<{
+        success: boolean;
+        message: string;
+        prUrl?: string;
+    }> {
+        const { user, organizationAndTeamData, repository, syncOption } =
+            params;
         const { organizationId, teamId } = organizationAndTeamData;
 
         let enabledParameter = false;
@@ -70,7 +75,7 @@ export class CentralizedConfigInitUseCase {
                 repository,
             );
 
-            if (method === 'manual') {
+            if (syncOption === 'manual') {
                 const message =
                     'Centralized config initialized with manual method, skipping sync';
 
@@ -84,7 +89,7 @@ export class CentralizedConfigInitUseCase {
                         repositoryName: repository
                             ? repository.name
                             : 'unknown',
-                        method,
+                        method: syncOption,
                     },
                 });
 
@@ -144,12 +149,14 @@ export class CentralizedConfigInitUseCase {
                     repositoryId: repository ? repository.id : 'unknown',
                     repositoryName: repository ? repository.name : 'unknown',
                     pullRequestNumber: pr.number,
+                    prUrl: pr.prURL,
                 },
             });
 
             return {
                 success: true,
                 message,
+                prUrl: pr.prURL,
             };
         } catch (error) {
             const message = 'Failed to initialize centralized config';

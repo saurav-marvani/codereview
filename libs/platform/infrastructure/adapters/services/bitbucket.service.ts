@@ -252,6 +252,7 @@ export class BitbucketService implements Omit<
                 id: pr.data.id.toString(),
                 number: pr.data.id,
                 title: pr.data.title,
+                prURL: pr.data.links.html.href,
             };
         } catch (error) {
             this.logger.error({
