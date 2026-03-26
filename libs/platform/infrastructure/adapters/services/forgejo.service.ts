@@ -68,6 +68,11 @@ import {
 } from '@libs/platform/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { RepositoryFile } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
+import {
+    buildDefaultSourceBranchName,
+    DEFAULT_COMMIT_MESSAGE,
+    DEFAULT_PR_TITLE,
+} from './code-management-defaults.constants';
 
 import { Reaction } from '@libs/code-review/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
 import {
@@ -267,10 +272,11 @@ export class ForgejoService implements Omit<
             files,
         } = params;
 
-        const resolvedSourceBranch = sourceBranch || `kodus-pr-${Date.now()}`;
-        const resolvedTitle = title?.trim() || 'Kodus automated changes';
+        const resolvedSourceBranch =
+            sourceBranch || buildDefaultSourceBranchName();
+        const resolvedTitle = title?.trim() || DEFAULT_PR_TITLE;
         const resolvedCommitMessage =
-            commitMessage?.trim() || 'chore: update files';
+            commitMessage?.trim() || DEFAULT_COMMIT_MESSAGE;
 
         try {
             const resolvedTargetBranch =
@@ -370,7 +376,7 @@ export class ForgejoService implements Omit<
             });
             const resolvedBaseBranch = baseBranch || defaultBranch;
             const resolvedBranchName = branchName || resolvedBaseBranch;
-            const resolvedMessage = message?.trim() || 'chore: update files';
+            const resolvedMessage = message?.trim() || DEFAULT_COMMIT_MESSAGE;
 
             const authDetail = await this.getAuthDetails(
                 organizationAndTeamData,

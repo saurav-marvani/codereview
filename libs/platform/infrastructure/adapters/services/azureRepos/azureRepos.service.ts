@@ -81,6 +81,11 @@ import { CodeManagementConnectionStatus } from '@libs/platform/domain/platformIn
 import { Repositories } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { RepositoryFile } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
 import axios, { AxiosInstance } from 'axios';
+import {
+    buildDefaultSourceBranchName,
+    DEFAULT_COMMIT_MESSAGE,
+    DEFAULT_PR_TITLE,
+} from '../code-management-defaults.constants';
 import { AzureReposRequestHelper } from './azure-repos-request-helper';
 
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
@@ -174,10 +179,11 @@ export class AzureReposService implements Omit<
             files,
         } = params;
 
-        const resolvedSourceBranch = sourceBranch || `kodus-pr-${Date.now()}`;
-        const resolvedTitle = title?.trim() || 'Kodus automated changes';
+        const resolvedSourceBranch =
+            sourceBranch || buildDefaultSourceBranchName();
+        const resolvedTitle = title?.trim() || DEFAULT_PR_TITLE;
         const resolvedCommitMessage =
-            commitMessage?.trim() || 'chore: update files';
+            commitMessage?.trim() || DEFAULT_COMMIT_MESSAGE;
 
         try {
             const resolvedTargetBranch =
@@ -264,7 +270,7 @@ export class AzureReposService implements Omit<
             });
             const resolvedBaseBranch = baseBranch || defaultBranch;
             const resolvedBranchName = branchName || resolvedBaseBranch;
-            const resolvedMessage = message?.trim() || 'chore: update files';
+            const resolvedMessage = message?.trim() || DEFAULT_COMMIT_MESSAGE;
 
             const { orgName, token } = await this.getAuthDetails(
                 organizationAndTeamData,

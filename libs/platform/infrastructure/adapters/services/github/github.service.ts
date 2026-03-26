@@ -100,6 +100,11 @@ import {
     ETagCacheEntry,
     ETagStore,
 } from './octokit-etag-allowlist';
+import {
+    buildDefaultSourceBranchName,
+    DEFAULT_COMMIT_MESSAGE,
+    DEFAULT_PR_TITLE,
+} from '../code-management-defaults.constants';
 
 interface GitHubAuthResponse {
     token: string;
@@ -702,7 +707,7 @@ export class GithubService
             files,
         } = params;
 
-        const pullRequestTitle = title?.trim() || 'Kodus automated changes';
+        const pullRequestTitle = title?.trim() || DEFAULT_PR_TITLE;
         const resolvedBaseBranch =
             baseBranch ||
             targetBranch ||
@@ -710,10 +715,11 @@ export class GithubService
                 organizationAndTeamData,
                 repository,
             }));
-        const resolvedSourceBranch = sourceBranch || `kodus-pr-${Date.now()}`;
+        const resolvedSourceBranch =
+            sourceBranch || buildDefaultSourceBranchName();
         const resolvedTargetBranch = targetBranch || resolvedBaseBranch;
         const resolvedCommitMessage =
-            commitMessage?.trim() || 'chore: update files';
+            commitMessage?.trim() || DEFAULT_COMMIT_MESSAGE;
 
         try {
             const uploadResult = await this.uploadFiles({
@@ -829,7 +835,7 @@ export class GithubService
                 repository,
             }));
         const resolvedBranchName = branchName || resolvedBaseBranch;
-        const resolvedMessage = message?.trim() || 'chore: update files';
+        const resolvedMessage = message?.trim() || DEFAULT_COMMIT_MESSAGE;
 
         try {
             const githubAuthDetail = await this.getGithubAuthDetails(
