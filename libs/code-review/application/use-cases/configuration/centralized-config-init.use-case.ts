@@ -31,6 +31,7 @@ export class CentralizedConfigInitUseCase {
             name: string;
         };
         syncOption: 'pr' | 'manual';
+        skipAuthorizationForDownload?: boolean;
     }): Promise<{
         success: boolean;
         message: string;
@@ -102,6 +103,11 @@ export class CentralizedConfigInitUseCase {
             const configs = await this.centralizedConfigDownloadUseCase.execute(
                 user,
                 organizationAndTeamData.teamId,
+                {
+                    skipAuthorization:
+                        params.skipAuthorizationForDownload ?? false,
+                    organizationId: organizationAndTeamData.organizationId,
+                },
             );
 
             const pr = await this.createPullRequestForCentralizedConfigInit({

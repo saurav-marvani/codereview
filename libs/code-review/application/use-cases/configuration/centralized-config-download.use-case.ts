@@ -19,6 +19,10 @@ export class CentralizedConfigDownloadUseCase {
     public async execute(
         user: Partial<IUser>,
         teamId: string,
+        options: {
+            skipAuthorization?: boolean;
+            organizationId?: string;
+        } = {},
     ): Promise<Array<{ path: string; content: string }>> {
         const entries: Array<{ path: string; content: string }> = [];
 
@@ -48,6 +52,7 @@ export class CentralizedConfigDownloadUseCase {
         const codeReview = await this.getCodeReviewParameterUseCase.execute(
             user,
             teamId,
+            options,
         );
 
         for (const repo of codeReview.configValue.repositories ?? []) {
