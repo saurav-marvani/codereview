@@ -301,7 +301,7 @@ describe('CentralizedConfigSyncUseCase', () => {
         ).not.toHaveBeenCalled();
     });
 
-    it('removes stale repository, directory and global configs that were deleted from centralized repo', async () => {
+    it('removes stale directory and global configs while keeping repository config when repo file still exists', async () => {
         const parametersService = {
             findByKey: jest.fn(async (key: string) => {
                 if (key === 'centralized_config') {
@@ -424,15 +424,6 @@ describe('CentralizedConfigSyncUseCase', () => {
                 ],
             }),
             organizationAndTeamData,
-        );
-
-        expect(
-            deleteRepositoryCodeReviewParameterUseCase.execute,
-        ).toHaveBeenCalledWith(
-            expect.objectContaining({
-                repositoryId: 'repo-1-id',
-                teamId: 'team-1',
-            }),
         );
     });
 

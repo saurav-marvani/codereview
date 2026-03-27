@@ -237,7 +237,7 @@ export const centralizedConfigDownload = async (teamId: string) => {
         );
 
         return data;
-    } catch (error: any) {
-        return { error: error.response?.status || "Unknown error" };
+    } catch (error) {
+        throw error;
     }
 };

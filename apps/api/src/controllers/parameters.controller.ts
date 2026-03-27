@@ -71,6 +71,7 @@ import { CreateOrUpdateCodeReviewParameterDto } from '@libs/organization/dtos/cr
 import { DeleteRepositoryCodeReviewParameterDto } from '@libs/organization/dtos/delete-repository-code-review-parameter.dto';
 import { PreviewPrSummaryDto } from '@libs/organization/dtos/preview-pr-summary.dto';
 import archiver from 'archiver';
+import { finished } from 'stream/promises';
 import { ApplyCodeReviewPresetDto } from '../dtos/apply-code-review-preset.dto';
 
 @ApiTags('Parameters')
@@ -582,7 +583,7 @@ export class ParametersController {
 
         const archive = archiver('zip', { zlib: { level: 9 } });
         archive.on('error', (err) => {
-            throw err;
+            response.destroy(err);
         });
         archive.pipe(response);
 
@@ -591,6 +592,7 @@ export class ParametersController {
         }
 
         await archive.finalize();
+        await finished(response);
         return;
     }
 

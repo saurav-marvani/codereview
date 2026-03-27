@@ -101,6 +101,23 @@ export class CentralizedConfigSyncUseCase {
 
             const { repository } = centralizedConfigParameter.configValue;
 
+            if (!repository?.id) {
+                this.logger.error({
+                    message:
+                        'Centralized config is enabled, but no repository is configured to store the files',
+                    context: CentralizedConfigSyncUseCase.name,
+                    metadata: {
+                        organizationAndTeamData,
+                    },
+                });
+
+                return {
+                    success: false,
+                    message:
+                        'Centralized config is enabled, but no repository is configured',
+                };
+            }
+
             this.logger.log({
                 message: 'Starting centralized config sync',
                 context: CentralizedConfigSyncUseCase.name,

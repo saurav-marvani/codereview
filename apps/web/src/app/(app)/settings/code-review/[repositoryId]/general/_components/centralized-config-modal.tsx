@@ -279,9 +279,8 @@ export const CentralizedConfigModal = ({
     const handleDownload = async () => {
         setLoadingAction("downloading");
         try {
-            const res = await centralizedConfigDownload(teamId);
-            if (res && "error" in res) throw new Error(String(res.error));
-            const url = window.URL.createObjectURL(res as Blob);
+            const blob = await centralizedConfigDownload(teamId);
+            const url = window.URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
             a.download = "centralized-config.zip";

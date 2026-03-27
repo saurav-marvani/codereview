@@ -41,14 +41,15 @@ export class CentralizedConfigInitUseCase {
             params;
         const { organizationId, teamId } = organizationAndTeamData;
 
-        let enabledParameter = false;
+        let wasInitiallyEnabled = false;
+        let shouldRollbackEnable = false;
 
         try {
-            enabledParameter = await this.checkIfCentralizedConfigEnabled(
+            wasInitiallyEnabled = await this.checkIfCentralizedConfigEnabled(
                 organizationAndTeamData,
             );
 
-            if (enabledParameter) {
+            if (wasInitiallyEnabled) {
                 const message =
                     'Centralized config already enabled for this team, skipping initialization';
 
@@ -75,6 +76,7 @@ export class CentralizedConfigInitUseCase {
                 organizationAndTeamData,
                 repository,
             );
+            shouldRollbackEnable = true;
 
             if (syncOption === 'manual') {
                 const message =
@@ -136,6 +138,7 @@ export class CentralizedConfigInitUseCase {
                 await this.disableCentralizedConfigForRepository(
                     organizationAndTeamData,
                 );
+                shouldRollbackEnable = false;
 
                 return {
                     success: false,
@@ -179,7 +182,7 @@ export class CentralizedConfigInitUseCase {
                 },
             });
 
-            if (enabledParameter) {
+            if (shouldRollbackEnable) {
                 await this.disableCentralizedConfigForRepository(
                     organizationAndTeamData,
                 );

@@ -19,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 import { Response } from 'express';
 import archiver from 'archiver';
+import { finished } from 'stream/promises';
 
 import { Public } from '@libs/identity/infrastructure/adapters/services/auth/public.decorator';
 import {
@@ -345,7 +346,7 @@ export class CliCentralizedConfigController {
 
         const archive = archiver('zip', { zlib: { level: 9 } });
         archive.on('error', (err) => {
-            throw err;
+            response.destroy(err);
         });
 
         archive.pipe(response);
@@ -355,6 +356,7 @@ export class CliCentralizedConfigController {
         }
 
         await archive.finalize();
+        await finished(response);
         return;
     }
 

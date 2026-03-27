@@ -43,21 +43,22 @@ export default function Layout(props: React.PropsWithChildren) {
         },
     );
 
-    const centralizedConfig = useOptionalParameterQuery<CentralizedConfigValue>(
-        ParametersConfigKey.CENTRALIZED_CONFIG,
-        teamId,
-        {
-            uuid: "",
-            configKey: ParametersConfigKey.CENTRALIZED_CONFIG,
-            configValue: {
-                enabled: false,
-                repository: {
-                    id: "",
-                    name: "",
+    const { data: centralizedConfig, isLoading: isCentralizedConfigLoading } =
+        useOptionalParameterQuery<CentralizedConfigValue>(
+            ParametersConfigKey.CENTRALIZED_CONFIG,
+            teamId,
+            {
+                uuid: "",
+                configKey: ParametersConfigKey.CENTRALIZED_CONFIG,
+                configValue: {
+                    enabled: false,
+                    repository: {
+                        id: "",
+                        name: "",
+                    },
                 },
             },
-        },
-    );
+        );
 
     const params = useParams();
     const repositoryId = params.repositoryId as string;
@@ -101,7 +102,8 @@ export default function Layout(props: React.PropsWithChildren) {
 
     const isCentralizedConfigEnabled =
         centralizedConfigParameter === true &&
-        centralizedConfig.data?.configValue?.enabled === true;
+        (isCentralizedConfigLoading ||
+            centralizedConfig?.configValue?.enabled === true);
 
     const canEditWithCentralizedConfig =
         canEdit && (!isCentralizedConfigEnabled || !isCodeReviewParameterPage);
