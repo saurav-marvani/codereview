@@ -1287,11 +1287,20 @@ export class AzureReposRequestHelper {
     }): Promise<AzureRepoPullRequest> {
         const instance = await this.azureRequest(params);
 
+        const normalizedSourceBranch = params.sourceBranch.replace(
+            /^refs\/heads\//,
+            '',
+        );
+        const normalizedTargetBranch = params.targetBranch.replace(
+            /^refs\/heads\//,
+            '',
+        );
+
         const url = `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullrequests?api-version=7.1`;
 
         const payload = {
-            sourceRefName: `refs/heads/${params.sourceBranch}`,
-            targetRefName: `refs/heads/${params.targetBranch}`,
+            sourceRefName: `refs/heads/${normalizedSourceBranch}`,
+            targetRefName: `refs/heads/${normalizedTargetBranch}`,
             title: params.title,
             description: params.description || '',
         };

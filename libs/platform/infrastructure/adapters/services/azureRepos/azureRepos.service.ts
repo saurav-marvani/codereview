@@ -4841,7 +4841,7 @@ ${copyPrompt}
             },
             message: pr?.description ?? '',
             state: this._prStateMap.get(pr?.status) ?? PullRequestState.ALL,
-            prURL: pr?.url ?? '',
+            prURL: this.transformPullRequestUrl(pr) ?? pr?.url ?? '',
             organizationId: organizationAndTeamData?.organizationId ?? '',
             body: pr?.description ?? '',
             title: pr?.title ?? '',
@@ -4893,6 +4893,12 @@ ${copyPrompt}
             },
             isDraft: pr?.isDraft ?? false,
         };
+    }
+
+    private transformPullRequestUrl(pr: AzureRepoPullRequest): string {
+        const repositoryUrl = pr?.repository?.webUrl ?? '';
+        const prId = pr?.pullRequestId ?? '';
+        return `${repositoryUrl}/pullrequest/${prId}`;
     }
 
     private transformRepositoryFile(file: AzureRepoFileItem): RepositoryFile {
