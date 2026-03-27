@@ -592,7 +592,9 @@ export class ParametersController {
         }
 
         await archive.finalize();
-        await finished(response);
+        if (typeof (response as any).on === 'function') {
+            await finished(response as any);
+        }
         return;
     }
 
