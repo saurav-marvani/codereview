@@ -153,7 +153,9 @@ export default function ReviewModePage() {
     const [isApplyingPreset, setIsApplyingPreset] = useState(false);
 
     const selectedRepoIds = useMemo(() => {
-        return safeArray<{ id: string; selected?: boolean }>(repositories).filter((r) => r.selected).map((r) => r.id);
+        return safeArray<{ id: string; selected?: boolean }>(repositories)
+            .filter((r) => r.selected)
+            .map((r) => r.id);
     }, [repositories]);
 
     const onboardingEnabled =
@@ -174,36 +176,35 @@ export default function ReviewModePage() {
     >(
         onboardingEnabled
             ? PULL_REQUEST_API.GET_ONBOARDING_SIGNALS({
-                teamId,
-                repositoryIds: selectedRepoIds,
-                limit: 5,
-            })
+                  teamId,
+                  repositoryIds: selectedRepoIds,
+                  limit: 5,
+              })
             : null,
         undefined,
         onboardingEnabled,
         {
-            staleTime: 0,
+            staleTime: 10000,
             refetchOnMount: "always",
             refetchOnReconnect: true,
             retry: 3,
             retryDelay: (attempt) => Math.min(2000 * (attempt + 1), 8000),
             refetchInterval: onboardingEnabled
                 ? (data) => {
-                    const signals = Array.isArray(data) ? data : [];
-                    const hasRecommendation = signals.some((signal) => {
-                        const mode =
-                            signal?.recommendation?.mode?.toLowerCase();
-                        return (
-                            mode === "safety" ||
-                            mode === "speed" ||
-                            mode === "coach" ||
-                            mode === "default"
-                        );
-                    });
-                    return hasRecommendation ? false : 5000;
-                }
+                      const signals = Array.isArray(data) ? data : [];
+                      const hasRecommendation = signals.some((signal) => {
+                          const mode =
+                              signal?.recommendation?.mode?.toLowerCase();
+                          return (
+                              mode === "safety" ||
+                              mode === "speed" ||
+                              mode === "coach" ||
+                              mode === "default"
+                          );
+                      });
+                      return hasRecommendation ? false : 15000;
+                  }
                 : false,
-            refetchIntervalInBackground: true,
         },
     );
 
@@ -417,7 +418,9 @@ export default function ReviewModePage() {
                             className="w-full"
                             onClick={handleContinue}
                             loading={isApplyingPreset || isLoadingRepositories}
-                            disabled={isApplyingPreset || isLoadingRepositories}>
+                            disabled={
+                                isApplyingPreset || isLoadingRepositories
+                            }>
                             {isLoadingRepositories
                                 ? "Loading configuration..."
                                 : `Continue with ${selectedModeLabel}`}

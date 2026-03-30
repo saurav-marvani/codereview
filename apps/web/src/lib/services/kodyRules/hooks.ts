@@ -4,6 +4,7 @@ import { useSubscriptionStatus } from "src/features/ee/subscription/_hooks/use-s
 import { KODY_RULES_PATHS } from ".";
 import type {
     KodyRule,
+    KodyRulesType,
     KodyRuleWithInheritanceDetails,
     LibraryRule,
 } from "./types";
@@ -36,22 +37,31 @@ export const useKodyRulesLimits = () => {
     if (subscription.status === "free" || subscription.status === "self-hosted")
         return { canAddMoreRules: total < 10, total, limit: 10 };
 
+    if (subscription.status === "licensed-self-hosted")
+        return {
+            canAddMoreRules: true,
+            total,
+            limit: Number.POSITIVE_INFINITY,
+        };
+
     return { canAddMoreRules: true, total, limit: Number.POSITIVE_INFINITY };
 };
 
 export const useSuspenseKodyRulesByRepositoryId = (
     repositoryId: string,
     directoryId?: string,
+    type?: KodyRulesType,
 ) => {
     return useSuspenseFetch<Array<KodyRule>>(
         KODY_RULES_PATHS.FIND_BY_ORGANIZATION_ID_AND_FILTER,
-        { params: { repositoryId, directoryId } },
+        { params: { repositoryId, directoryId, type } },
     );
 };
 
-export const useSuspenseAllOrganizationKodyRules = () => {
+export const useSuspenseAllOrganizationKodyRules = (type?: KodyRulesType) => {
     return useSuspenseFetch<Array<KodyRule>>(
         KODY_RULES_PATHS.FIND_BY_ORGANIZATION_ID_AND_FILTER,
+        type !== undefined ? { params: { type } } : undefined,
     );
 };
 

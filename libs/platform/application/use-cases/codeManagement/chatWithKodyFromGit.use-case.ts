@@ -1,4 +1,4 @@
-import { createThreadId, createLogger } from '@kodus/flow';
+import { createLogger, createThreadId } from '@kodus/flow';
 import { Injectable } from '@nestjs/common';
 
 import { BusinessRulesValidationAgentUseCase } from '@libs/agents/application/use-cases/business-rules-validation-agent.use-case';
@@ -106,6 +106,7 @@ interface WebhookParams {
 interface Repository {
     name: string;
     id: string;
+    owner?: string;
 }
 
 interface Sender {
@@ -232,6 +233,8 @@ export class ChatWithKodyFromGitUseCase {
                     pullRequestNumber,
                     pullRequestDescription,
                     organizationAndTeamData,
+                    headRef,
+                    baseRef,
                 );
             }
 
@@ -269,10 +272,17 @@ export class ChatWithKodyFromGitUseCase {
     private isRelevantAction(params: WebhookParams): boolean {
         const action = params.payload?.action;
         const eventType = params.payload?.event_type;
+        const allowedActions = new Set(['created', 'edited']);
+        const allowedEventTypes = new Set([
+            'note',
+            'note_edited',
+            'comment_created',
+            'comment_updated',
+        ]);
 
         if (
-            (action && action !== 'created') ||
-            (!action && eventType && eventType !== 'note')
+            (action && !allowedActions.has(action)) ||
+            (!action && eventType && !allowedEventTypes.has(eventType))
         ) {
             return false;
         }
@@ -366,6 +376,8 @@ export class ChatWithKodyFromGitUseCase {
         pullRequestNumber: number,
         pullRequestDescription: string,
         organizationAndTeamData: OrganizationAndTeamData,
+        headRef?: string,
+        baseRef?: string,
     ): Promise<void> {
         const sender = this.getSender(params);
         const commentBody =
@@ -404,7 +416,7 @@ export class ChatWithKodyFromGitUseCase {
             params.platformType,
         );
 
-        let ackResponse = null;
+        let ackResponse;
         let ackResponseId = null;
         let parentId = null;
         const commentId = this.getCommentId(params);
@@ -459,10 +471,15 @@ export class ChatWithKodyFromGitUseCase {
 
         const prepareContext = {
             userQuestion: commentBody,
-            pullRequestNumber,
+            pullRequest: {
+                pullRequestNumber,
+                headRef,
+                baseRef,
+            },
             repository,
             pullRequestDescription,
             platformType: params.platformType,
+            customInstructions: this.extractCustomInstructions(params),
         };
 
         const response = await this.businessRulesValidationAgentUseCase.execute(
@@ -666,7 +683,7 @@ export class ChatWithKodyFromGitUseCase {
             params.platformType,
         );
 
-        let ackResponse = null;
+        let ackResponse;
         let ackResponseId = null;
         let parentId = null;
 
@@ -726,8 +743,6 @@ export class ChatWithKodyFromGitUseCase {
             }
         }
 
-        let response = '';
-
         const gitUser = this.getGitUser(params);
 
         const prepareContext = this.prepareContext({
@@ -742,6 +757,7 @@ export class ChatWithKodyFromGitUseCase {
             headRef,
             baseRef,
             defaultBranch,
+            customInstructions: this.extractCustomInstructions(params),
         });
 
         const thread = createThreadId(
@@ -761,7 +777,7 @@ export class ChatWithKodyFromGitUseCase {
             prepareContext.userQuestion,
         );
 
-        response = await this.processCommand(commandType, {
+        const response = await this.processCommand(commandType, {
             prepareContext,
             organizationAndTeamData,
             thread,
@@ -979,15 +995,33 @@ export class ChatWithKodyFromGitUseCase {
 
     private getRepository(params: WebhookParams): Repository {
         switch (params.platformType) {
-            case PlatformType.GITHUB:
+            case PlatformType.GITHUB: {
+                const fallbackRepository =
+                    this.extractRepositoryFromGitHubPullRequestUrl(params);
+
                 return {
-                    name: params.payload?.repository?.name,
+                    name:
+                        params.payload?.repository?.name ||
+                        fallbackRepository.name ||
+                        '',
                     id: params.payload?.repository?.id,
+                    owner:
+                        params.payload?.repository?.owner?.login ||
+                        fallbackRepository.owner ||
+                        '',
                 };
+            }
             case PlatformType.GITLAB:
                 return {
                     name: params.payload?.project?.name,
                     id: params.payload?.project?.id,
+                    owner:
+                        params.payload?.project?.namespace ||
+                        params.payload?.project?.path_with_namespace
+                            ?.split('/')
+                            ?.slice(0, -1)
+                            ?.join('/') ||
+                        '',
                 };
             case PlatformType.BITBUCKET:
                 return {
@@ -995,12 +1029,23 @@ export class ChatWithKodyFromGitUseCase {
                     id:
                         params.payload?.repository?.uuid?.slice(1, -1) ||
                         params.payload?.repository?.id,
+                    owner:
+                        params.payload?.repository?.workspace?.slug ||
+                        params.payload?.repository?.owner?.username ||
+                        params.payload?.repository?.full_name
+                            ?.split('/')
+                            ?.at(0) ||
+                        '',
                 };
             case PlatformType.AZURE_REPOS:
                 return {
                     name: params.payload?.resource?.pullRequest?.repository
                         ?.name,
                     id: params.payload?.resource?.pullRequest?.repository?.id,
+                    owner:
+                        params.payload?.resource?.repository?.project?.name ||
+                        params.payload?.resourceContainers?.project?.id ||
+                        '',
                 };
             default:
                 this.logger.warn({
@@ -1010,6 +1055,75 @@ export class ChatWithKodyFromGitUseCase {
                 });
                 return { name: '', id: '' };
         }
+    }
+
+    private getRepositoryOwner(
+        params: WebhookParams,
+        repository?: Repository,
+    ): string {
+        if (repository?.owner?.trim()) {
+            return repository.owner.trim();
+        }
+
+        switch (params.platformType) {
+            case PlatformType.GITHUB: {
+                const fallbackRepository =
+                    this.extractRepositoryFromGitHubPullRequestUrl(params);
+                return (
+                    params.payload?.repository?.owner?.login ||
+                    fallbackRepository.owner ||
+                    ''
+                );
+            }
+            case PlatformType.GITLAB:
+                return (
+                    params.payload?.project?.namespace ||
+                    params.payload?.project?.path_with_namespace
+                        ?.split('/')
+                        ?.slice(0, -1)
+                        ?.join('/') ||
+                    ''
+                );
+            case PlatformType.BITBUCKET:
+                return (
+                    params.payload?.repository?.workspace?.slug ||
+                    params.payload?.repository?.owner?.username ||
+                    params.payload?.repository?.full_name?.split('/')?.at(0) ||
+                    ''
+                );
+            case PlatformType.AZURE_REPOS:
+                return (
+                    params.payload?.resource?.repository?.project?.name ||
+                    params.payload?.resourceContainers?.project?.id ||
+                    ''
+                );
+            default:
+                return '';
+        }
+    }
+
+    private extractRepositoryFromGitHubPullRequestUrl(params: WebhookParams): {
+        owner: string;
+        name: string;
+    } {
+        const pullRequestUrl = params.payload?.issue?.pull_request?.url;
+
+        if (typeof pullRequestUrl !== 'string' || !pullRequestUrl.length) {
+            return { owner: '', name: '' };
+        }
+
+        const match = pullRequestUrl.match(
+            /\/repos\/([^/]+)\/([^/]+)\/pulls\/\d+/,
+        );
+
+        if (!match) {
+            return { owner: '', name: '' };
+        }
+
+        return {
+            owner: match[1],
+            name: match[2],
+        };
     }
 
     private getPullRequestNumber(params: WebhookParams): number {
@@ -1135,7 +1249,7 @@ export class ChatWithKodyFromGitUseCase {
     }
 
     private getPullRequestDescription(params: WebhookParams): string {
-        let description = '';
+        let description: string;
 
         switch (params.platformType) {
             case PlatformType.GITHUB:
@@ -1503,6 +1617,7 @@ export class ChatWithKodyFromGitUseCase {
         headRef,
         baseRef,
         defaultBranch,
+        customInstructions,
     }: {
         comment?: Comment;
         originalKodyComment?: Comment;
@@ -1515,6 +1630,7 @@ export class ChatWithKodyFromGitUseCase {
         headRef?: string;
         baseRef?: string;
         defaultBranch?: string;
+        customInstructions?: string;
     }): any {
         const userQuestion =
             comment.body.trim() === '@kody'
@@ -1530,6 +1646,7 @@ export class ChatWithKodyFromGitUseCase {
             },
             pullRequestDescription,
             platformType,
+            customInstructions,
             pullRequest: {
                 pullRequestNumber,
                 headRef: headRef,
@@ -1744,5 +1861,57 @@ export class ChatWithKodyFromGitUseCase {
             });
         }
         return gitUser;
+    }
+
+    private extractCustomInstructions(
+        params: WebhookParams,
+    ): string | undefined {
+        const payload = params.payload;
+        const candidates: unknown[] = [
+            payload?.customInstructions,
+            payload?.custom_instructions,
+            payload?.kody?.customInstructions,
+            payload?.kody?.custom_instructions,
+            payload?.configuration?.customInstructions,
+            payload?.configuration?.custom_instructions,
+            payload?.summary?.customInstructions,
+            payload?.codeReviewConfig?.summary?.customInstructions,
+            payload?.codeReview?.summary?.customInstructions,
+        ];
+
+        for (const candidate of candidates) {
+            const normalized = this.normalizeCustomInstructions(candidate);
+            if (normalized) {
+                return normalized;
+            }
+        }
+
+        return undefined;
+    }
+
+    private normalizeCustomInstructions(value: unknown): string | undefined {
+        if (typeof value === 'string' && value.trim().length > 0) {
+            return value.trim();
+        }
+
+        if (!value || typeof value !== 'object') {
+            return undefined;
+        }
+
+        const record = value as Record<string, unknown>;
+        const directTextCandidates = [
+            record.text,
+            record.value,
+            record.content,
+            record.body,
+            record.instructions,
+        ];
+        for (const candidate of directTextCandidates) {
+            if (typeof candidate === 'string' && candidate.trim().length > 0) {
+                return candidate.trim();
+            }
+        }
+
+        return undefined;
     }
 }

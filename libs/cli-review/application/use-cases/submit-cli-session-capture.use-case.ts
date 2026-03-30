@@ -55,7 +55,7 @@ export class SubmitCliSessionCaptureUseCase implements IUseCase {
                 signals: input.signals,
                 summary: input.summary,
                 capturedAt,
-                rawPayload: input,
+                rawPayload: input as unknown as Record<string, unknown>,
             });
 
             setImmediate(() => {
@@ -90,7 +90,8 @@ export class SubmitCliSessionCaptureUseCase implements IUseCase {
                         context: SubmitCliSessionCaptureUseCase.name,
                         metadata: {
                             dedupKey,
-                            organizationId: organizationAndTeamData.organizationId,
+                            organizationId:
+                                organizationAndTeamData.organizationId,
                             teamId: organizationAndTeamData.teamId,
                             branch: input.branch,
                             orgRepo: input.orgRepo,

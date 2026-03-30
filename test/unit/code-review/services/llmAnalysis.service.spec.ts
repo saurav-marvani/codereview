@@ -1,8 +1,10 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { LLMAnalysisService } from '@/code-review/infrastructure/adapters/services/llmAnalysis.service';
-import { PromptRunnerService } from '@kodus/kodus-common/llm';
-import { ObservabilityService } from '@/core/log/observability.service';
+import { SafeguardPipelineService } from '@/code-review/infrastructure/adapters/services/safeguardPipeline.service';
 import { ReviewModeResponse } from '@/core/infrastructure/config/types/general/codeReview.type';
+import { ObservabilityService } from '@/core/log/observability.service';
+import { PromptRunnerService } from '@kodus/kodus-common/llm';
+import { SANDBOX_PROVIDER_TOKEN } from '@libs/code-review/domain/contracts/sandbox.provider';
+import { Test, TestingModule } from '@nestjs/testing';
 
 // Mock logger to silence logs during tests
 jest.mock('@kodus/flow', () => ({
@@ -45,6 +47,10 @@ describe('LLMAnalysisService', () => {
         teamId: 'team-456',
     };
 
+    const mockSafeguardPipelineService = {
+        execute: jest.fn(),
+    };
+
     beforeEach(async () => {
         const module: TestingModule = await Test.createTestingModule({
             providers: [
@@ -57,82 +63,22 @@ describe('LLMAnalysisService', () => {
                     provide: ObservabilityService,
                     useValue: mockObservabilityService,
                 },
+                {
+                    provide: SANDBOX_PROVIDER_TOKEN,
+                    useValue: {
+                        isAvailable: jest.fn().mockReturnValue(false),
+                        createSandboxWithRepo: jest.fn(),
+                    },
+                },
+                {
+                    provide: SafeguardPipelineService,
+                    useValue: mockSafeguardPipelineService,
+                },
             ],
         }).compile();
 
         service = module.get<LLMAnalysisService>(LLMAnalysisService);
         jest.clearAllMocks();
-    });
-
-    describe('preparePrefixChainForCache', () => {
-        it('should throw error when patchWithLinesStr is missing', () => {
-            const context = {
-                patchWithLinesStr: null,
-                fileContent: 'const x = 1;',
-                relevantContent: '',
-                language: 'typescript',
-                filePath: 'test.ts',
-                reviewMode: ReviewModeResponse.HEAVY_MODE,
-            };
-
-            expect(() =>
-                (service as any).preparePrefixChainForCache(context),
-            ).toThrow('Required context parameters are missing');
-        });
-
-        it('should generate heavy mode context with fileContent', () => {
-            const context = {
-                patchWithLinesStr: '@@ -1,1 +1,1 @@\n-var x;\n+const x;',
-                fileContent: 'const x = 1;',
-                relevantContent: 'relevant code here',
-                language: 'typescript',
-                filePath: 'test.ts',
-                suggestions: [],
-                reviewMode: ReviewModeResponse.HEAVY_MODE,
-            };
-
-            const result = (service as any).preparePrefixChainForCache(context);
-
-            expect(result).toContain('<fileContent>');
-            expect(result).toContain('<codeDiff>');
-            expect(result).toContain('<filePath>');
-            expect(result).toContain('relevant code here'); // Uses relevantContent when available
-        });
-
-        it('should use fileContent when relevantContent is not available in heavy mode', () => {
-            const context = {
-                patchWithLinesStr: '@@ -1,1 +1,1 @@',
-                fileContent: 'full file content',
-                relevantContent: '',
-                language: 'typescript',
-                filePath: 'test.ts',
-                suggestions: [],
-                reviewMode: ReviewModeResponse.HEAVY_MODE,
-            };
-
-            const result = (service as any).preparePrefixChainForCache(context);
-
-            expect(result).toContain('full file content');
-        });
-
-        it('should include suggestions in context', () => {
-            const suggestions = [{ id: 's1', suggestionContent: 'Use const' }];
-
-            const context = {
-                patchWithLinesStr: '@@ -1,1 +1,1 @@',
-                fileContent: 'const x = 1;',
-                relevantContent: '',
-                language: 'typescript',
-                filePath: 'test.ts',
-                suggestions,
-                reviewMode: ReviewModeResponse.HEAVY_MODE,
-            };
-
-            const result = (service as any).preparePrefixChainForCache(context);
-
-            expect(result).toContain('<suggestionsContext>');
-            expect(result).toContain('Use const');
-        });
     });
 
     describe('prepareAnalysisContext', () => {
@@ -295,24 +241,9 @@ describe('LLMAnalysisService', () => {
                 },
             ];
 
-            const mockBuilder = {
-                setParser: jest.fn().mockReturnThis(),
-                setLLMJsonMode: jest.fn().mockReturnThis(),
-                setPayload: jest.fn().mockReturnThis(),
-                addPrompt: jest.fn().mockReturnThis(),
-                addMetadata: jest.fn().mockReturnThis(),
-                addCallbacks: jest.fn().mockReturnThis(),
-                setRunName: jest.fn().mockReturnThis(),
-                setTemperature: jest.fn().mockReturnThis(),
-                setMaxReasoningTokens: jest.fn().mockReturnThis(),
-                execute: jest.fn().mockResolvedValue({
-                    result: {
-                        codeSuggestions: [{ id: 's1', action: 'keep' }],
-                    },
-                }),
-            };
-
-            mockPromptRunnerService.builder.mockReturnValue(mockBuilder);
+            mockSafeguardPipelineService.execute.mockResolvedValue({
+                suggestions,
+            });
 
             // After the function runs, suggestionEmbedded should be deleted
             await service.filterSuggestionsSafeGuard(
@@ -333,21 +264,9 @@ describe('LLMAnalysisService', () => {
 
         it('should return original suggestions on error', async () => {
             const suggestions = [{ id: 's1', suggestionContent: 'original' }];
-
-            const mockBuilder = {
-                setParser: jest.fn().mockReturnThis(),
-                setLLMJsonMode: jest.fn().mockReturnThis(),
-                setPayload: jest.fn().mockReturnThis(),
-                addPrompt: jest.fn().mockReturnThis(),
-                addMetadata: jest.fn().mockReturnThis(),
-                addCallbacks: jest.fn().mockReturnThis(),
-                setRunName: jest.fn().mockReturnThis(),
-                setTemperature: jest.fn().mockReturnThis(),
-                setMaxReasoningTokens: jest.fn().mockReturnThis(),
-                execute: jest.fn().mockRejectedValue(new Error('LLM error')),
-            };
-
-            mockPromptRunnerService.builder.mockReturnValue(mockBuilder);
+            mockSafeguardPipelineService.execute.mockRejectedValue(
+                new Error('LLM error'),
+            );
 
             const result = await service.filterSuggestionsSafeGuard(
                 mockOrganizationAndTeamData as any,
@@ -400,7 +319,8 @@ describe('LLMAnalysisService', () => {
             mockPromptRunnerService.builder.mockReturnValue(mockBuilder);
 
             const fileContext = {
-                patchWithLinesStr: '@@ -143,3 +143,3 @@\n-var x = 1;\n+const x = 1;',
+                patchWithLinesStr:
+                    '@@ -143,3 +143,3 @@\n-var x = 1;\n+const x = 1;',
                 file: { filename: 'test.ts', fileContent: 'var x = 1;' },
             };
 

@@ -115,6 +115,8 @@ interface MCPIntegrationOAuth2 extends MCPIntegrationBase {
 }
 
 export const KODUS_MCP_INTEGRATION_ID = 'kd_mcp_oTUrzqsaxTg';
+export const KODUS_MCP_GITHUB_ISSUES_INTEGRATION_ID =
+    'kodus-github-issues-default';
 
 @Injectable()
 export class MCPManagerService {
@@ -266,20 +268,58 @@ export class MCPManagerService {
         }
     }
 
+    public async deleteConnectionByIntegrationId(
+        organizationAndTeamData: OrganizationAndTeamData,
+        integrationId: string,
+    ): Promise<boolean> {
+        try {
+            const data: MCPData = await this.axiosMCPManagerService.get(
+                'mcp/connections',
+                {
+                    headers: this.getAuthHeaders(organizationAndTeamData),
+                    params: { status: 'ACTIVE' },
+                },
+            );
+
+            const connection = data?.items?.find(
+                (item) => item.integrationId === integrationId,
+            );
+
+            if (!connection) {
+                return false;
+            }
+
+            await this.axiosMCPManagerService.delete(
+                `mcp/connections/${connection.id}`,
+                {},
+                {
+                    headers: this.getAuthHeaders(organizationAndTeamData),
+                },
+            );
+
+            return true;
+        } catch (error) {
+            this.logger.warn({
+                message: 'Failed to delete MCP connection by integration ID',
+                context: MCPManagerService.name,
+                error,
+                metadata: {
+                    organizationAndTeamData,
+                    integrationId,
+                },
+            });
+            return false;
+        }
+    }
+
     private async formatConnection(
         connection: MCPItem,
     ): Promise<MCPServerConfig> {
         let headers: Record<string, string> = {};
         let type: string = 'http';
         if (connection.provider === 'custom') {
-            const integration: any = await this.axiosMCPManagerService.get(
-                `mcp/integration/custom/${connection.integrationId}`,
-                {
-                    headers: this.getAuthHeaders({
-                        organizationId: connection.organizationId,
-                    }),
-                },
-            );
+            const integration =
+                await this.fetchCustomIntegrationConfig(connection);
 
             if (!integration) {
                 throw new Error(
@@ -336,5 +376,20 @@ export class MCPManagerService {
             timeout: 60_000,
             allowedTools: connection.allowedTools,
         };
+    }
+
+    private async fetchCustomIntegrationConfig(
+        connection: MCPItem,
+    ): Promise<MCPIntegrationInterface | undefined> {
+        const headers = {
+            headers: this.getAuthHeaders({
+                organizationId: connection.organizationId,
+            }),
+        };
+
+        return (await this.axiosMCPManagerService.get(
+            `mcp/integration/custom/${connection.integrationId}/connection-config`,
+            headers,
+        )) as MCPIntegrationInterface | undefined;
     }
 }

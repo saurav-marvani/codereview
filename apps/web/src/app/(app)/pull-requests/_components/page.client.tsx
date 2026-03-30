@@ -5,8 +5,9 @@ import { Page } from "@components/ui/page";
 import { Spinner } from "@components/ui/spinner";
 import { useDebounce } from "@hooks/use-debounce";
 import {
-    type PullRequestExecution,
     useInfinitePullRequestExecutions,
+    usePullRequestExecutionSSE,
+    type PullRequestExecution,
 } from "@services/pull-requests";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 
@@ -15,6 +16,7 @@ import { PullRequestsFilters } from "./pull-requests-filters";
 
 export function PullRequestsPageClient() {
     const { teamId } = useSelectedTeamId();
+    usePullRequestExecutionSSE();
     const [selectedRepository, setSelectedRepository] = useState<string>();
     const [pullRequestTitle, setPullRequestTitle] = useState("");
     const [pullRequestNumber, setPullRequestNumber] = useState("");
@@ -125,7 +127,9 @@ export function PullRequestsPageClient() {
             <Page.Header className="max-w-full">
                 <div className="flex w-full items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <Page.Title className="text-balance">Pull Requests</Page.Title>
+                        <Page.Title className="text-balance">
+                            Pull Requests
+                        </Page.Title>
 
                         {groupedPullRequests.length > 0 && (
                             <span className="text-text-tertiary text-sm tabular-nums">
@@ -133,7 +137,8 @@ export function PullRequestsPageClient() {
                                 {groupedPullRequests.length > 1 ? "s" : ""}
                                 {selectedRepository && (
                                     <>
-                                        {" "}in{" "}
+                                        {" "}
+                                        in{" "}
                                         <span className="text-text-secondary font-medium">
                                             {selectedRepository}
                                         </span>
@@ -191,10 +196,10 @@ export function PullRequestsPageClient() {
                         />
                         {isFetchingNextPage &&
                             groupedPullRequests.length > 0 && (
-                            <div className="flex justify-center py-4">
-                                <Spinner className="size-5" />
-                            </div>
-                        )}
+                                <div className="flex justify-center py-4">
+                                    <Spinner className="size-5" />
+                                </div>
+                            )}
                     </>
                 )}
             </Page.Content>

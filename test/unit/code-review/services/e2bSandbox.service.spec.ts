@@ -87,8 +87,11 @@ describe('E2BSandboxService', () => {
             service = await createService({ API_E2B_KEY: 'key' });
         });
 
-        const buildAuthHeader = (platform: PlatformType, token: string) =>
-            (service as any).buildAuthHeader(platform, token);
+        const buildAuthHeader = (
+            platform: PlatformType,
+            token: string,
+            username?: string,
+        ) => (service as any).buildAuthHeader(platform, token, username);
 
         it('should use x-access-token for GitHub', () => {
             const header = buildAuthHeader(PlatformType.GITHUB, 'mytoken');
@@ -100,12 +103,27 @@ describe('E2BSandboxService', () => {
 
         it('should use oauth2 for GitLab', () => {
             const header = buildAuthHeader(PlatformType.GITLAB, 'mytoken');
-            const expectedBase64 = Buffer.from('oauth2:mytoken').toString(
-                'base64',
-            );
+            const expectedBase64 =
+                Buffer.from('oauth2:mytoken').toString('base64');
             expect(header).toBe(`Authorization: Basic ${expectedBase64}`);
         });
 
+        it('should use actual username for Bitbucket when provided', () => {
+            const header = buildAuthHeader(
+                PlatformType.BITBUCKET,
+                'app-pass',
+                'bbuser',
+            );
+            const expectedBase64 =
+                Buffer.from('bbuser:app-pass').toString('base64');
+            expect(header).toBe(`Authorization: Basic ${expectedBase64}`);
+        });
+
+        it('should throw when Bitbucket username is missing', () => {
+            expect(() =>
+                buildAuthHeader(PlatformType.BITBUCKET, 'app-pass'),
+            ).toThrow('Bitbucket authentication requires a username');
+        });
     });
 
     // ─── getPrRefspec ──────────────────────────────────────────────────────
@@ -129,7 +147,6 @@ describe('E2BSandboxService', () => {
                 'refs/merge-requests/42/head',
             );
         });
-
     });
 
     // ─── createSandboxWithRepo ─────────────────────────────────────────────
@@ -145,7 +162,9 @@ describe('E2BSandboxService', () => {
 
         const setupSandboxMock = () => {
             const mockKill = jest.fn().mockResolvedValue(undefined);
-            const mockRun = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
+            const mockRun = jest
+                .fn()
+                .mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
             const mockSandbox = {
                 commands: { run: mockRun },
                 kill: mockKill,
@@ -193,7 +212,7 @@ describe('E2BSandboxService', () => {
             await service.createSandboxWithRepo(defaultParams);
 
             expect(Sandbox.create).toHaveBeenCalledWith({
-                timeoutMs: 5 * 60 * 1000,
+                timeoutMs: 10 * 60 * 1000,
                 apiKey: 'my-e2b-key',
             });
         });
@@ -224,7 +243,9 @@ describe('E2BSandboxService', () => {
             expect(gitCommand).toContain('git init /home/user/repo');
             expect(gitCommand).toContain('refs/pull/42/head:pr-head');
             expect(gitCommand).toContain('git checkout pr-head');
-            expect(gitCommand).toContain(`git remote add origin ${defaultParams.cloneUrl}`);
+            expect(gitCommand).toContain(
+                `git remote add origin ${defaultParams.cloneUrl}`,
+            );
             expect(gitCommand).toContain('no-push-allowed');
 
             // Auth header passed via envs, not embedded in URL
@@ -256,13 +277,15 @@ describe('E2BSandboxService', () => {
             await service.createSandboxWithRepo(defaultParams);
 
             expect(Sandbox.create).toHaveBeenCalledWith('kodus-sandbox', {
-                timeoutMs: 5 * 60 * 1000,
+                timeoutMs: 10 * 60 * 1000,
                 apiKey: 'key',
             });
 
             // Should NOT run apt-get install when using template
             const commands = mockRun.mock.calls.map((c: any[]) => c[0]);
-            expect(commands.some((cmd: string) => cmd.includes('apt-get'))).toBe(false);
+            expect(
+                commands.some((cmd: string) => cmd.includes('apt-get')),
+            ).toBe(false);
         });
 
         it('should install git, ripgrep and shadowsocks-libev via apt-get when no template is configured', async () => {
@@ -283,7 +306,9 @@ describe('E2BSandboxService', () => {
                 API_E2B_TEMPLATE_ID: 'bad-template',
             });
 
-            const mockRun = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
+            const mockRun = jest
+                .fn()
+                .mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
             const mockKill = jest.fn().mockResolvedValue(undefined);
             const fallbackSandbox = {
                 commands: { run: mockRun },
@@ -300,17 +325,19 @@ describe('E2BSandboxService', () => {
             // Should have tried template first, then fallback
             expect(Sandbox.create).toHaveBeenCalledTimes(2);
             expect(Sandbox.create).toHaveBeenNthCalledWith(1, 'bad-template', {
-                timeoutMs: 5 * 60 * 1000,
+                timeoutMs: 10 * 60 * 1000,
                 apiKey: 'key',
             });
             expect(Sandbox.create).toHaveBeenNthCalledWith(2, {
-                timeoutMs: 5 * 60 * 1000,
+                timeoutMs: 10 * 60 * 1000,
                 apiKey: 'key',
             });
 
             // Should install deps via apt-get since fallback doesn't have template
             const commands = mockRun.mock.calls.map((c: any[]) => c[0]);
-            expect(commands.some((cmd: string) => cmd.includes('apt-get'))).toBe(true);
+            expect(
+                commands.some((cmd: string) => cmd.includes('apt-get')),
+            ).toBe(true);
 
             expect(result.remoteCommands).toBeDefined();
         });
@@ -332,7 +359,6 @@ describe('E2BSandboxService', () => {
             expect(gitCommand).toContain('git checkout cli-head');
             expect(gitCommand).not.toContain('pr-head');
         });
-
     });
 
     // ─── setupProxy ─────────────────────────────────────────────────────────
@@ -348,7 +374,9 @@ describe('E2BSandboxService', () => {
 
         const setupSandboxMock = () => {
             const mockKill = jest.fn().mockResolvedValue(undefined);
-            const mockRun = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
+            const mockRun = jest
+                .fn()
+                .mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
             const mockSandbox = {
                 commands: { run: mockRun },
                 kill: mockKill,
@@ -417,8 +445,12 @@ describe('E2BSandboxService', () => {
             await service.createSandboxWithRepo(defaultParams);
 
             const commands = mockRun.mock.calls.map((c: any[]) => c[0]);
-            expect(commands.some((cmd: string) => cmd.includes('ss-local'))).toBe(false);
-            expect(commands.some((cmd: string) => cmd.includes('http.proxy'))).toBe(false);
+            expect(
+                commands.some((cmd: string) => cmd.includes('ss-local')),
+            ).toBe(false);
+            expect(
+                commands.some((cmd: string) => cmd.includes('http.proxy')),
+            ).toBe(false);
         });
 
         it('should throw when E2B_PROXY_HOST is set but E2B_PROXY_PASSWORD is missing', async () => {
@@ -445,7 +477,11 @@ describe('E2BSandboxService', () => {
             const mockKill = jest.fn().mockResolvedValue(undefined);
             const { Sandbox } = require('e2b');
             Sandbox.create.mockResolvedValue({
-                commands: { run: jest.fn().mockResolvedValue({ stdout: '' }) },
+                commands: {
+                    run: jest
+                        .fn()
+                        .mockResolvedValue({ exitCode: 0, stdout: '' }),
+                },
                 kill: mockKill,
             });
 
@@ -465,10 +501,16 @@ describe('E2BSandboxService', () => {
         it('should swallow sandbox.kill() errors (logged internally)', async () => {
             service = await createService({ API_E2B_KEY: 'key' });
 
-            const mockKill = jest.fn().mockRejectedValue(new Error('kill failed'));
+            const mockKill = jest
+                .fn()
+                .mockRejectedValue(new Error('kill failed'));
             const { Sandbox } = require('e2b');
             Sandbox.create.mockResolvedValue({
-                commands: { run: jest.fn().mockResolvedValue({ stdout: '' }) },
+                commands: {
+                    run: jest
+                        .fn()
+                        .mockResolvedValue({ exitCode: 0, stdout: '' }),
+                },
                 kill: mockKill,
             });
 
@@ -494,7 +536,9 @@ describe('E2BSandboxService', () => {
         beforeEach(async () => {
             service = await createService({ API_E2B_KEY: 'key' });
 
-            mockRun = jest.fn().mockResolvedValue({ stdout: 'output' });
+            mockRun = jest
+                .fn()
+                .mockResolvedValue({ exitCode: 0, stdout: 'output' });
             const { Sandbox } = require('e2b');
             Sandbox.create.mockResolvedValue({
                 commands: { run: mockRun },
@@ -516,10 +560,13 @@ describe('E2BSandboxService', () => {
 
         describe('grep()', () => {
             it('should run rg with pattern and resolved path', async () => {
-                const result = await remoteCommands.grep('myFunc\\(', 'src/index.ts');
+                const result = await remoteCommands.grep(
+                    'myFunc\\(',
+                    'src/index.ts',
+                );
 
                 expect(mockRun).toHaveBeenCalledWith(
-                    "rg --no-heading -n 'myFunc\\(' '/home/user/repo/src/index.ts'",
+                    "cd /home/user/repo && rg --no-heading -n 'myFunc\\(' 'src/index.ts'",
                     { timeoutMs: 30_000 },
                 );
                 expect(result).toBe('output');
@@ -529,7 +576,7 @@ describe('E2BSandboxService', () => {
                 await remoteCommands.grep('pattern', 'src', '*.ts');
 
                 expect(mockRun).toHaveBeenCalledWith(
-                    "rg --no-heading -n 'pattern' '/home/user/repo/src' --glob '*.ts'",
+                    "cd /home/user/repo && rg --no-heading -n 'pattern' 'src' --glob '*.ts'",
                     { timeoutMs: 30_000 },
                 );
             });
@@ -593,6 +640,5 @@ describe('E2BSandboxService', () => {
                 'Path traversal using ".." is not allowed',
             );
         });
-
     });
 });

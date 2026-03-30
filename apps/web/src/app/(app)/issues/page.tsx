@@ -9,12 +9,12 @@ import { parseAsJson, useQueryState } from "nuqs";
 import { useAuth } from "src/core/providers/auth.provider";
 import { usePermissions } from "src/core/providers/permissions.provider";
 import { filterArray, type FilterValueGroup } from "src/core/utils/filtering";
-import { hasPermission } from "src/core/utils/permissions";
+import { hasPermission } from "src/core/utils/permission-map";
 import { safeArray } from "src/core/utils/safe-array";
 
 import { IssuesDataTable } from "./_components/data-table";
-import { IssueCreationToggle } from "./_components/issue-creation-toggle";
 import { IssuesFilters } from "./_components/filters";
+import { IssueCreationToggle } from "./_components/issue-creation-toggle";
 import { IssueDetailsRightSheet } from "./_components/issue-details-right-sheet";
 import { DEFAULT_FILTERS, getFiltersInLocalStorage } from "./_constants";
 import { FiltersContext } from "./_contexts/filters";

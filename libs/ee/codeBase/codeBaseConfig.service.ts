@@ -1,5 +1,5 @@
 import { createLogger } from '@kodus/flow';
-import { Inject, Injectable } from '@nestjs/common';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
 
 import { LanguageValue } from '@libs/core/domain/enums/language-parameter.enum';
 
@@ -32,6 +32,7 @@ import { ValidateCodeManagementIntegration } from '@libs/common/utils/decorators
 import { deepMerge } from '@libs/common/utils/deep';
 import { getDefaultKodusConfigFile } from '@libs/common/utils/validateCodeReviewConfigFile';
 import { CacheService } from '@libs/core/cache/cache.service';
+import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import {
     IIntegrationConfigService,
     INTEGRATION_CONFIG_SERVICE_TOKEN,
@@ -80,12 +81,13 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         private readonly organizationParametersService: IOrganizationParametersService,
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
-        @Inject(KODY_RULES_SERVICE_TOKEN)
+        @Inject(forwardRef(() => KODY_RULES_SERVICE_TOKEN))
         private readonly kodyRulesService: IKodyRulesService,
         @Inject(GLOBAL_PARAMETERS_SERVICE_TOKEN)
         private readonly globalParametersService: IGlobalParametersService,
         private readonly codeManagementService: CodeManagementService,
         private readonly kodyRulesValidationService: KodyRulesValidationService,
+        private readonly permissionValidationService: PermissionValidationService,
         private readonly cacheService: CacheService,
     ) {
         this.DEFAULT_CONFIG = this.getDefaultConfigs();
@@ -131,11 +133,19 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 preliminaryFiles || [],
             );
 
-            const kodyRules = this.kodyRulesValidationService.filterKodyRules(
-                kodyRulesEntity?.toObject()?.rules,
-                repository.id,
-                mergedConfigs.directoryId,
-            );
+            const limited =
+                await this.permissionValidationService.shouldLimitResources(
+                    organizationAndTeamData,
+                    CodeBaseConfigService.name,
+                );
+
+            const { standardRules, memoryRules } =
+                this.kodyRulesValidationService.filterKodyRules(
+                    kodyRulesEntity?.toObject()?.rules,
+                    repository.id,
+                    mergedConfigs.directoryId,
+                    limited,
+                ) || { standardRules: [], memoryRules: [] };
 
             const globalIgnorePaths = await this.getGlobalIgnorePaths(
                 organizationAndTeamData,
@@ -147,7 +157,8 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                     language?.configValue ??
                     this.DEFAULT_CONFIG.languageResultPrompt,
                 baseBranchDefault: defaultBranch,
-                kodyRules,
+                kodyRules: standardRules,
+                kodyMemoryRules: memoryRules,
                 reviewModeConfig,
                 kodyFineTuningConfig,
                 ignorePaths:
@@ -167,6 +178,92 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 metadata: { organizationAndTeamData },
             });
             throw new Error('Error getting code review config parameters');
+        }
+    }
+
+    async getSimpleConfig(
+        organizationAndTeamData: OrganizationAndTeamData,
+        params: {
+            repositoryId?: string;
+            directoryId?: string;
+            preliminaryFiles?: FileChange[];
+        },
+    ): Promise<CodeReviewConfigWithoutLLMProvider> {
+        try {
+            const parameter = await this.parametersService.findOne({
+                configKey: ParametersKey.CODE_REVIEW_CONFIG,
+                team: { uuid: organizationAndTeamData.teamId },
+                active: true,
+            });
+
+            if (!parameter?.configValue) {
+                return this.DEFAULT_CONFIG;
+            }
+
+            const globalDelta = parameter.configValue?.configs;
+
+            const repoConfig = params.repositoryId
+                ? parameter.configValue?.repositories?.find(
+                      (repo) => repo.id === params.repositoryId,
+                  )
+                : undefined;
+
+            const repoDelta = repoConfig?.configs;
+
+            const directoryConfig = params.directoryId
+                ? repoConfig?.directories?.find(
+                      (directory) => directory.id === params.directoryId,
+                  )
+                : repoConfig
+                  ? this.resolveConfigByDirectories(
+                        organizationAndTeamData,
+                        repoConfig,
+                        this.extractUniqueDirectoryPaths(
+                            params.preliminaryFiles || [],
+                        ),
+                    )
+                  : undefined;
+
+            const directoryDelta = directoryConfig?.configs;
+
+            const merged = deepMerge(
+                this.DEFAULT_CONFIG,
+                globalDelta || {},
+                repoDelta || {},
+                directoryDelta || {},
+            );
+
+            let configLevel = ConfigLevel.GLOBAL;
+            let directoryId: string | undefined = undefined;
+            let directoryPath: string | undefined = undefined;
+
+            if (directoryDelta) {
+                configLevel = ConfigLevel.DIRECTORY;
+                directoryId = directoryConfig?.id;
+                directoryPath = directoryConfig?.path;
+            } else if (repoDelta) {
+                configLevel = ConfigLevel.REPOSITORY;
+            }
+
+            return {
+                ...merged,
+                configLevel,
+                directoryId,
+                directoryPath,
+                v2PromptOverrides: this.sanitizeV2PromptOverrides(
+                    merged.v2PromptOverrides,
+                ),
+            } as CodeReviewConfigWithoutLLMProvider;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting simple code review config parameters',
+                context: CodeBaseConfigService.name,
+                error,
+                metadata: { organizationAndTeamData, params },
+            });
+            throw new Error(
+                'Error getting simple code review config parameters',
+            );
         }
     }
 
@@ -534,6 +631,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         overrideConfig?: boolean;
         directoryPath?: string;
         defaultBranch?: string;
+        removeProperties?: boolean;
     }): Promise<KodusConfigFile | undefined> {
         const {
             organizationAndTeamData,
@@ -541,6 +639,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
             directoryPath,
             defaultBranch,
             overrideConfig = true,
+            removeProperties = true,
         } = params;
 
         if (!overrideConfig) {
@@ -579,8 +678,10 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
             }
         }
 
-        delete kodusConfigYMLfile.version;
-        delete kodusConfigYMLfile.kodusConfigFileOverridesWebPreferences;
+        if (removeProperties) {
+            delete kodusConfigYMLfile.version;
+            delete kodusConfigYMLfile.kodusConfigFileOverridesWebPreferences;
+        }
 
         return kodusConfigYMLfile;
     }
@@ -626,7 +727,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
     }
 
     private async getReviewModeConfigParameter(
-        organizationAndTeamData: OrganizationAndTeamData,
+        _organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<ReviewModeConfig> {
         return ReviewModeConfig.HEAVY_MODE;
     }
