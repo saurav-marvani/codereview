@@ -209,6 +209,24 @@ export class CodeManagementController {
         return this.getCodeManagementMemberListUseCase.execute();
     }
 
+    @Post('/organization-members/refresh')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Update,
+            resource: ResourceType.UserSettings,
+        }),
+    )
+    @ApiOperation({
+        summary: 'Refresh organization members',
+        description:
+            'Clears the cached members list and re-fetches from the code platform.',
+    })
+    @ApiOkResponse({ type: ApiArrayResponseDto })
+    public async refreshOrganizationMembers() {
+        return this.getCodeManagementMemberListUseCase.refreshMembers();
+    }
+
     @Get('/get-prs')
     @UseGuards(PolicyGuard)
     @CheckPolicies(

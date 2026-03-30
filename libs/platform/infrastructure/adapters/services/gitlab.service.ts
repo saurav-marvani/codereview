@@ -1257,9 +1257,28 @@ export class GitlabService implements Omit<
 
         const repositories = integrationConfig.configValue;
         const users = [];
+        const batchSize = 10;
 
-        for (const repository of repositories) {
-            users.push(...(await gitlabAPI.Projects.allUsers(repository.id)));
+        for (let i = 0; i < repositories.length; i += batchSize) {
+            const batch = repositories.slice(i, i + batchSize);
+            const results = await Promise.allSettled(
+                batch.map((repository) =>
+                    gitlabAPI.Projects.allUsers(repository.id),
+                ),
+            );
+
+            results.forEach((result, index) => {
+                if (result.status === 'fulfilled') {
+                    users.push(...result.value);
+                } else {
+                    this.logger.error({
+                        message: 'Failed to fetch users for repository',
+                        context: GitlabService.name,
+                        error: result.reason,
+                        metadata: { repositoryId: batch[index].id },
+                    });
+                }
+            });
         }
 
         // Removing duplicates based on a unique identifier, such as 'id'

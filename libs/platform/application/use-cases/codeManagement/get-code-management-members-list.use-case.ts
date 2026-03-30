@@ -4,6 +4,7 @@ import { REQUEST } from '@nestjs/core';
 import { Request } from 'express';
 
 import { PULL_REQUEST_MANAGER_SERVICE_TOKEN } from '@libs/code-review/domain/contracts/PullRequestManagerService.contract';
+import { CacheService } from '@libs/core/cache/cache.service';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
@@ -14,10 +15,13 @@ export class GetCodeManagementMemberListUseCase implements IUseCase {
     private readonly logger = createLogger(
         GetCodeManagementMemberListUseCase.name,
     );
+    private static readonly CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
     constructor(
         private readonly codeManagementService: CodeManagementService,
         @Inject(PULL_REQUEST_MANAGER_SERVICE_TOKEN)
         private readonly pullRequestHandlerService: PullRequestHandlerService,
+        private readonly cacheService: CacheService,
         @Inject(REQUEST)
         private readonly request: Request & {
             user: { organization: { uuid: string } };
@@ -29,15 +33,59 @@ export class GetCodeManagementMemberListUseCase implements IUseCase {
             organizationId: this.request.user.organization.uuid,
         };
 
+        const cacheKey = `org_members_${organizationAndTeamData.organizationId}`;
+
+        try {
+            const cached = await this.cacheService.getFromCache<
+                { name: string; id: string | number }[]
+            >(cacheKey);
+
+            if (cached?.length > 0) {
+                return cached;
+            }
+        } catch {
+            // Cache miss or error, proceed with fetch
+        }
+
         const platformMembers = await this.fetchMembersFromCodeIntegration(
             organizationAndTeamData,
         );
 
         if (platformMembers.length > 0) {
+            await this.cacheService
+                .addToCache(
+                    cacheKey,
+                    platformMembers,
+                    GetCodeManagementMemberListUseCase.CACHE_TTL,
+                )
+                .catch(() => {});
             return platformMembers;
         }
 
-        return await this.fetchMembersFromPullRequests(organizationAndTeamData);
+        const prMembers =
+            await this.fetchMembersFromPullRequests(organizationAndTeamData);
+
+        if (prMembers.length > 0) {
+            await this.cacheService
+                .addToCache(
+                    cacheKey,
+                    prMembers,
+                    GetCodeManagementMemberListUseCase.CACHE_TTL,
+                )
+                .catch(() => {});
+        }
+
+        return prMembers;
+    }
+
+    public async refreshMembers(): Promise<
+        { name: string; id: string | number }[]
+    > {
+        const cacheKey = `org_members_${this.request.user.organization.uuid}`;
+
+        await this.cacheService.removeFromCache(cacheKey);
+
+        return this.execute();
     }
 
     private async fetchMembersFromCodeIntegration(
