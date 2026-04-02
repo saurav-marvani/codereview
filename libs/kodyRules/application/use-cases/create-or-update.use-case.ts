@@ -53,6 +53,7 @@ export class CreateOrUpdateKodyRulesUseCase {
         kodyRule: CreateKodyRuleDto,
         organizationId: string,
         userInfo?: { userId: string; userEmail: string },
+        skipAuthorization?: boolean,
     ) {
         try {
             const organizationAndTeamData: OrganizationAndTeamData = {
@@ -67,7 +68,11 @@ export class CreateOrUpdateKodyRulesUseCase {
                     ? { userId: reqUser.uuid, userEmail: reqUser.email }
                     : { userId: 'kody-system', userEmail: 'kody@kodus.io' });
 
-            if (userInfoData.userId !== 'kody-system' && this.request?.user) {
+            if (
+                !skipAuthorization &&
+                userInfoData.userId !== 'kody-system' &&
+                this.request?.user
+            ) {
                 await this.authorizationService.ensure({
                     user: this.request.user,
                     action: Action.Create,

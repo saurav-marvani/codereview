@@ -6,6 +6,7 @@ import {
 import {
     ICentralizedConfigService,
     IConfigFileMeta,
+    IKodyRuleFileMeta,
 } from '@libs/code-review/domain/contracts/CentralizedConfigService.contract';
 import { ParametersKey } from '@libs/core/domain/enums';
 import { IntegrationConfigKey } from '@libs/core/domain/enums/Integration-config-key.enum';
@@ -16,6 +17,10 @@ import {
     IIntegrationConfigService,
     INTEGRATION_CONFIG_SERVICE_TOKEN,
 } from '@libs/integrations/domain/integrationConfigs/contracts/integration-config.service.contracts';
+import {
+    IKodyRulesService,
+    KODY_RULES_SERVICE_TOKEN,
+} from '@libs/kodyRules/domain/contracts/kodyRules.service.contract';
 import { CreateOrUpdateParametersUseCase } from '@libs/organization/application/use-cases/parameters/create-or-update-use-case';
 import {
     IParametersService,
@@ -38,6 +43,20 @@ import { KodusConfigFile } from '@libs/core/infrastructure/config/types/general/
 import { DeepPartial } from 'typeorm';
 import { CreateOrUpdateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/create-or-update.use-case';
 import { DeleteRuleInOrganizationByIdKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/delete-rule-in-organization-by-id.use-case';
+import {
+    IKodyRule,
+    kodyRuleSchema,
+    kodyRulesExampleSchema,
+    kodyRulesInheritanceSchema,
+    KodyRulesOrigin,
+    KodyRulesScope,
+    KodyRulesStatus,
+    KodyRulesType,
+} from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
+import * as yaml from 'js-yaml';
+import { KodyRuleSeverity } from '@libs/ee/kodyRules/dtos/create-kody-rule.dto';
+import z from 'zod';
+import { TreeItem } from '@libs/core/infrastructure/config/types/general/tree.type';
 
 @Injectable()
 export class CentralizedConfigService implements ICentralizedConfigService {
@@ -61,6 +80,8 @@ export class CentralizedConfigService implements ICentralizedConfigService {
         private readonly codeBaseConfigService: ICodeBaseConfigService,
         private readonly createOrUpdateKodyRulesUseCase: CreateOrUpdateKodyRulesUseCase,
         private readonly deleteRuleInOrganizationByIdKodyRulesUseCase: DeleteRuleInOrganizationByIdKodyRulesUseCase,
+        @Inject(KODY_RULES_SERVICE_TOKEN)
+        private readonly kodyRulesService: IKodyRulesService,
     ) {}
 
     async validateCentralizedConfig(params: {
@@ -161,86 +182,45 @@ export class CentralizedConfigService implements ICentralizedConfigService {
     }): Promise<IConfigFileMeta[]> {
         const { organizationAndTeamData, repository } = params;
 
-        const repoTree = await this.codeManagementService.getRepositoryTree({
+        const configFilePaths = await this.scanRepositoryTree<IConfigFileMeta>(
             organizationAndTeamData,
-            repositoryId: repository.id,
-        });
+            repository,
+            (item, resolvedRepoIds) => {
+                const fileName = path.basename(item.path);
 
-        const repositories =
-            await this.integrationConfigService.findIntegrationConfigFormatted<
-                Repositories[]
-            >(IntegrationConfigKey.REPOSITORIES, {
-                organizationId: organizationAndTeamData.organizationId,
-                teamId: organizationAndTeamData.teamId,
-            });
+                if (fileName !== 'kodus-config.yml') return null;
 
-        if (!repositories || !Array.isArray(repositories)) {
-            this.logger.warn({
-                message: 'No repositories found in integration config',
-                context: CentralizedConfigService.name,
-                metadata: {
-                    organizationAndTeamData,
-                },
-            });
-            return [];
-        }
+                if (item.path.includes('/.kody-rules/')) return null;
 
-        const resolvedRepoIds = new Map<string, string>();
-        for (const repo of repositories) {
-            if (repo.name) {
-                resolvedRepoIds.set(repo.name.toLowerCase(), repo.id);
-            }
+                const dirName = path.dirname(item.path);
+                if (dirName === '.') return {}; // Global config
 
-            if (repo.full_name) {
-                resolvedRepoIds.set(repo.full_name.toLowerCase(), repo.id);
-            }
-        }
+                const directorySegments = dirName.split('/');
+                const repoName = directorySegments[0];
+                const repoId = resolvedRepoIds.get(repoName.toLowerCase());
 
-        const configFilePaths: IConfigFileMeta[] = [];
+                if (!repoId) {
+                    this.logger.warn({
+                        message: `Could not resolve repository ID for repository name: ${repoName}`,
+                        context: CentralizedConfigService.name,
+                        metadata: { organizationAndTeamData, repoName },
+                    });
+                    return null;
+                }
 
-        for (const item of repoTree) {
-            if (item.type === 'directory') {
-                continue;
-            }
+                const relativeDirectoryPath = directorySegments
+                    .slice(1)
+                    .join('/');
 
-            const fileName = path.basename(item.path);
-
-            if (fileName !== 'kodus-config.yml') {
-                continue;
-            }
-
-            const dirName = path.dirname(item.path);
-            if (dirName === '.') {
-                configFilePaths.push({});
-                continue;
-            }
-
-            const directorySegments = dirName.split('/');
-            const repoName = directorySegments[0];
-
-            const repoId = resolvedRepoIds.get(repoName.toLowerCase());
-            if (!repoId) {
-                this.logger.warn({
-                    message: `Could not resolve repository ID for repository name: ${repoName}`,
-                    context: CentralizedConfigService.name,
-                    metadata: {
-                        organizationAndTeamData,
-                        repoName,
-                    },
-                });
-                continue;
-            }
-
-            const relativeDirectoryPath = directorySegments.slice(1).join('/');
-
-            configFilePaths.push({
-                repositoryId: repoId,
-                centralizedDirectoryPath: dirName,
-                directoryPath: relativeDirectoryPath
-                    ? `/${relativeDirectoryPath}`
-                    : undefined,
-            });
-        }
+                return {
+                    repositoryId: repoId,
+                    centralizedDirectoryPath: dirName,
+                    directoryPath: relativeDirectoryPath
+                        ? `/${relativeDirectoryPath}`
+                        : undefined,
+                };
+            },
+        );
 
         return this.sortConfigFiles(configFilePaths);
     }
@@ -1281,17 +1261,608 @@ export class CentralizedConfigService implements ICentralizedConfigService {
     //#endregion
 
     //#region Kody Rules Sync Helpers
-    private async syncKodyRules(
-        configFile: KodusConfigFile,
-        organizationAndTeamData: OrganizationAndTeamData,
+    async discoverKodyRulesFiles(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { name: string; id: string };
+    }): Promise<IKodyRuleFileMeta[]> {
+        const { organizationAndTeamData, repository } = params;
+
+        const ruleFilePaths = await this.scanRepositoryTree<IKodyRuleFileMeta>(
+            organizationAndTeamData,
+            repository,
+            (item, resolvedRepoIds) => {
+                const fileName = path.basename(item.path);
+                const fileExt = path.extname(fileName).toLowerCase();
+
+                if (!['.yml', '.yaml'].includes(fileExt)) return null;
+
+                const dirName = path.dirname(item.path);
+
+                let ruleType: KodyRulesType;
+                if (dirName.includes('.kody-rules/memories')) {
+                    ruleType = KodyRulesType.MEMORY;
+                } else if (dirName.includes('.kody-rules/review')) {
+                    ruleType = KodyRulesType.STANDARD;
+                } else {
+                    return null;
+                }
+
+                const pathSegments = dirName.split('/');
+                const kodyRulesIndex = pathSegments.indexOf('.kody-rules');
+
+                if (
+                    kodyRulesIndex === -1 ||
+                    pathSegments.length < kodyRulesIndex + 2
+                ) {
+                    return null;
+                }
+
+                let repositoryId: string | undefined;
+                let directoryPath: string | undefined;
+                let centralizedDirectoryPath: string;
+
+                if (kodyRulesIndex === 0) {
+                    // Global rules
+                    centralizedDirectoryPath = `.kody-rules/${ruleType === KodyRulesType.MEMORY ? 'memories' : 'review'}`;
+                } else {
+                    // Repository/Directory rules
+                    const repoName = pathSegments[0];
+                    repositoryId = resolvedRepoIds.get(repoName.toLowerCase());
+
+                    if (!repositoryId) {
+                        this.logger.warn({
+                            message: `Could not resolve repository ID for repository name: ${repoName}`,
+                            context: CentralizedConfigService.name,
+                            metadata: { organizationAndTeamData, repoName },
+                        });
+                        return null;
+                    }
+
+                    const directorySegments = pathSegments.slice(
+                        1,
+                        kodyRulesIndex,
+                    );
+                    if (directorySegments.length > 0) {
+                        directoryPath = `/${directorySegments.join('/')}`;
+                        centralizedDirectoryPath = `${repoName}/${directorySegments.join('/')}/.kody-rules/${ruleType === KodyRulesType.MEMORY ? 'memories' : 'review'}`;
+                    } else {
+                        centralizedDirectoryPath = `${repoName}/.kody-rules/${ruleType === KodyRulesType.MEMORY ? 'memories' : 'review'}`;
+                    }
+                }
+
+                return {
+                    centralizedDirectoryPath,
+                    repositoryId,
+                    directoryPath,
+                    ruleType,
+                    ruleFilePath: item.path,
+                    sourcePath: item.path,
+                };
+            },
+        );
+
+        return this.sortKodyRuleFiles(ruleFilePaths);
+    }
+
+    private sortKodyRuleFiles(
+        ruleFiles: IKodyRuleFileMeta[],
+    ): IKodyRuleFileMeta[] {
+        const getPriority = (ruleFile: IKodyRuleFileMeta) => {
+            if (!ruleFile.repositoryId) {
+                return 0; // Global
+            }
+
+            if (!ruleFile.directoryPath) {
+                return 1; // Repository
+            }
+
+            return 2; // Directory
+        };
+
+        return [...ruleFiles].sort((a, b) => {
+            const priorityA = getPriority(a);
+            const priorityB = getPriority(b);
+
+            if (priorityA !== priorityB) {
+                return priorityA - priorityB;
+            }
+
+            // For same priority, sort by directory depth
+            const depthA =
+                a.directoryPath?.split('/').filter(Boolean).length ?? 0;
+            const depthB =
+                b.directoryPath?.split('/').filter(Boolean).length ?? 0;
+
+            return depthA - depthB;
+        });
+    }
+
+    async fetchKodyRuleFile(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { name: string; id: string };
+        filePath: string;
+    }): Promise<DeepPartial<IKodyRule> | null> {
+        const { organizationAndTeamData, repository, filePath } = params;
+
+        try {
+            const defaultBranch =
+                await this.codeManagementService.getDefaultBranch({
+                    organizationAndTeamData,
+                    repository,
+                });
+
+            const response =
+                await this.codeManagementService.getRepositoryContentFile({
+                    organizationAndTeamData,
+                    repository,
+                    file: filePath,
+                    pullRequest: {
+                        head: { ref: defaultBranch },
+                        base: { ref: defaultBranch },
+                    },
+                });
+
+            if (!response || !response.data || !response.data.content) {
+                return null;
+            }
+
+            let content = response.data.content;
+
+            if (response.data.encoding === 'base64') {
+                content = Buffer.from(content, 'base64').toString('utf-8');
+            }
+
+            const parsedRule = yaml.load(content);
+
+            return parsedRule;
+        } catch (error) {
+            this.logger.error({
+                message:
+                    'Error fetching centralized Kody rule file from repository',
+                context: CentralizedConfigService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    repository,
+                    filePath,
+                },
+                error,
+            });
+
+            return null;
+        }
+    }
+
+    async synchronizeKodyRules(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        ruleFiles: IKodyRuleFileMeta[];
         actor: {
             organizationId: string;
             source: 'web' | 'sync' | 'cli';
             userEmail: string;
             userId: string;
-        },
-    ): Promise<{
+        };
+    }): Promise<{
         success: boolean;
         message: string;
-    }> {}
+        syncedRuleCount?: number;
+        failureDetails?: Array<{ file: string; error: string }>;
+    }> {
+        const { organizationAndTeamData, ruleFiles, actor } = params;
+
+        try {
+            const centralizedRepository =
+                await this.getCentralizedConfigRepository(
+                    organizationAndTeamData,
+                );
+
+            let syncedCount = 0;
+            const failureDetails: Array<{ file: string; error: string }> = [];
+
+            const repositories =
+                await this.integrationConfigService.findIntegrationConfigFormatted<
+                    Repositories[]
+                >(IntegrationConfigKey.REPOSITORIES, {
+                    organizationId: organizationAndTeamData.organizationId,
+                    teamId: organizationAndTeamData.teamId,
+                });
+
+            const repositoriesMap = new Map<
+                string,
+                { id: string; name: string }
+            >();
+
+            repositories?.forEach((repo) => {
+                if (repo.id && repo.name) {
+                    repositoriesMap.set(repo.id, {
+                        id: repo.id,
+                        name: repo.name,
+                    });
+                }
+            });
+
+            const directoryIdCache = new Map<string, string>();
+
+            for (const ruleFileMeta of ruleFiles) {
+                try {
+                    const ruleContent = await this.fetchKodyRuleFile({
+                        organizationAndTeamData,
+                        repository: centralizedRepository,
+                        filePath: ruleFileMeta.ruleFilePath,
+                    });
+
+                    if (!ruleContent) {
+                        failureDetails.push({
+                            file: ruleFileMeta.ruleFilePath,
+                            error: 'Could not fetch or parse rule file',
+                        });
+                        continue;
+                    }
+
+                    if (!ruleContent.title || !ruleContent.rule) {
+                        failureDetails.push({
+                            file: ruleFileMeta.ruleFilePath,
+                            error: 'Missing required fields: title and/or rule',
+                        });
+                        continue;
+                    }
+
+                    let directoryId: string | undefined;
+                    if (
+                        ruleFileMeta.directoryPath &&
+                        ruleFileMeta.repositoryId
+                    ) {
+                        const targetRepo = repositoriesMap.get(
+                            ruleFileMeta.repositoryId,
+                        );
+
+                        if (targetRepo?.name) {
+                            directoryId = directoryIdCache.get(
+                                ruleFileMeta.directoryPath,
+                            );
+
+                            if (!directoryId) {
+                                try {
+                                    directoryId =
+                                        await this.codeBaseConfigService.getDirectoryIdForPath(
+                                            organizationAndTeamData,
+                                            {
+                                                id: targetRepo.id,
+                                                name: targetRepo.name,
+                                            },
+                                            ruleFileMeta.directoryPath,
+                                        );
+
+                                    if (directoryId) {
+                                        directoryIdCache.set(
+                                            ruleFileMeta.directoryPath,
+                                            directoryId,
+                                        );
+                                    }
+                                } catch (error) {
+                                    this.logger.warn({
+                                        message:
+                                            'Could not resolve directory ID for rule',
+                                        context: CentralizedConfigService.name,
+                                        metadata: {
+                                            organizationAndTeamData,
+                                            repositoryId:
+                                                ruleFileMeta.repositoryId,
+                                            directoryPath:
+                                                ruleFileMeta.directoryPath,
+                                            filePath: ruleFileMeta.ruleFilePath,
+                                        },
+                                        error,
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    const compliantRule =
+                        this.ensureKodyRuleCompliance(ruleContent);
+
+                    if (!compliantRule) {
+                        failureDetails.push({
+                            file: ruleFileMeta.ruleFilePath,
+                            error: 'Rule file does not comply with required schema',
+                        });
+                        continue;
+                    }
+
+                    const ruleDto = {
+                        ...compliantRule,
+                        type: ruleFileMeta.ruleType,
+                        status: KodyRulesStatus.ACTIVE,
+                        repositoryId: ruleFileMeta.repositoryId || 'global',
+                        directoryId,
+                        sourcePath: ruleFileMeta.sourcePath,
+                        origin: KodyRulesOrigin.USER,
+                    };
+
+                    await this.createOrUpdateKodyRulesUseCase.execute(
+                        ruleDto,
+                        organizationAndTeamData.organizationId,
+                        actor,
+                        true,
+                    );
+
+                    syncedCount++;
+                } catch (error) {
+                    failureDetails.push({
+                        file: ruleFileMeta.ruleFilePath,
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : 'Unknown error',
+                    });
+
+                    this.logger.error({
+                        message: 'Error syncing individual Kody rule file',
+                        context: CentralizedConfigService.name,
+                        metadata: {
+                            organizationAndTeamData,
+                            filePath: ruleFileMeta.ruleFilePath,
+                        },
+                        error,
+                    });
+                }
+            }
+
+            const message = `Kody rules synchronized successfully. Synced: ${syncedCount}, Failed: ${failureDetails.length}`;
+
+            if (failureDetails.length > 0) {
+                this.logger.warn({
+                    message,
+                    context: CentralizedConfigService.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        syncedCount,
+                        failureCount: failureDetails.length,
+                        failureDetails,
+                    },
+                });
+            } else {
+                this.logger.log({
+                    message,
+                    context: CentralizedConfigService.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        syncedCount,
+                    },
+                });
+            }
+
+            return {
+                success: true,
+                message,
+                syncedRuleCount: syncedCount,
+                failureDetails:
+                    failureDetails.length > 0 ? failureDetails : undefined,
+            };
+        } catch (error) {
+            this.logger.error({
+                message: 'Error synchronizing Kody rules',
+                context: CentralizedConfigService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    ruleFilesCount: ruleFiles.length,
+                },
+                error,
+            });
+
+            return {
+                success: false,
+                message: 'Error synchronizing Kody rules',
+                failureDetails: [
+                    {
+                        file: 'general',
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : 'Unknown error',
+                    },
+                ],
+            };
+        }
+    }
+
+    private ensureKodyRuleCompliance(ruleContent: any) {
+        const result = kodyRuleSchema
+            .pick({
+                title: true,
+                rule: true,
+                severity: true,
+                examples: true,
+                inheritance: true,
+                scope: true,
+                path: true,
+            })
+            .extend({
+                severity: z
+                    .enum(KodyRuleSeverity)
+                    .default(KodyRuleSeverity.MEDIUM),
+                examples: z.array(kodyRulesExampleSchema).default([]),
+                path: z.string().default('**/*'),
+                scope: z.enum(KodyRulesScope).default(KodyRulesScope.FILE),
+                inheritance: kodyRulesInheritanceSchema.default({
+                    inheritable: true,
+                    include: [],
+                    exclude: [],
+                }),
+            })
+            .safeParse(ruleContent);
+
+        return result.success ? result.data : null;
+    }
+
+    async removeStaleKodyRules(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        ruleFiles: IKodyRuleFileMeta[];
+        actor: {
+            organizationId: string;
+            source: 'sync' | 'web' | 'cli';
+            userEmail: string;
+            userId: string;
+        };
+    }): Promise<{
+        success: boolean;
+        message: string;
+        removedRuleCount?: number;
+    }> {
+        const { organizationAndTeamData, ruleFiles, actor } = params;
+
+        try {
+            const existingEntity =
+                await this.kodyRulesService.findByOrganizationId(
+                    organizationAndTeamData.organizationId,
+                );
+
+            if (!existingEntity) {
+                return {
+                    success: true,
+                    message: 'No existing Kody rules to check for staleness',
+                };
+            }
+
+            const currentSourcePaths = new Set(
+                ruleFiles.map((meta) => meta.sourcePath),
+            );
+
+            let removedCount = 0;
+
+            const existingRules = existingEntity?.toJson?.()?.rules || [];
+
+            for (const rule of existingRules) {
+                const sourcePath = rule.sourcePath;
+
+                if (
+                    !sourcePath ||
+                    !(
+                        sourcePath.startsWith('.kody-rules/') ||
+                        sourcePath.includes('/.kody-rules/')
+                    )
+                ) {
+                    continue;
+                }
+
+                if (!currentSourcePaths.has(sourcePath)) {
+                    try {
+                        await this.deleteRuleInOrganizationByIdKodyRulesUseCase.execute(
+                            rule.uuid,
+                            actor,
+                        );
+
+                        removedCount++;
+
+                        this.logger.log({
+                            message:
+                                'Marked stale centralized Kody rule as deleted',
+                            context: CentralizedConfigService.name,
+                            metadata: {
+                                organizationAndTeamData,
+                                ruleId: rule.uuid,
+                                sourcePath,
+                                title: rule.title,
+                            },
+                        });
+                    } catch (error) {
+                        this.logger.error({
+                            message: 'Error marking stale Kody rule as deleted',
+                            context: CentralizedConfigService.name,
+                            metadata: {
+                                organizationAndTeamData,
+                                ruleId: rule.uuid,
+                                sourcePath,
+                            },
+                            error,
+                        });
+                    }
+                }
+            }
+
+            const message =
+                removedCount > 0
+                    ? `Removed ${removedCount} stale Kody rules`
+                    : 'No stale Kody rules to remove';
+
+            this.logger.log({
+                message,
+                context: CentralizedConfigService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    removedCount,
+                },
+            });
+
+            return {
+                success: true,
+                message,
+                removedRuleCount: removedCount,
+            };
+        } catch (error) {
+            this.logger.error({
+                message: 'Error removing stale Kody rules',
+                context: CentralizedConfigService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    ruleFilesCount: ruleFiles.length,
+                },
+                error,
+            });
+
+            return {
+                success: false,
+                message: 'Error removing stale Kody rules',
+            };
+        }
+    }
+
+    //#region Helpers
+    async scanRepositoryTree<T>(
+        organizationAndTeamData: OrganizationAndTeamData,
+        repository: { name: string; id: string },
+        matcher: (
+            item: TreeItem,
+            resolvedRepoIds: Map<string, string>,
+        ) => T | null,
+    ): Promise<T[]> {
+        const repoTree = await this.codeManagementService.getRepositoryTree({
+            organizationAndTeamData,
+            repositoryId: repository.id,
+        });
+        const repositories =
+            await this.integrationConfigService.findIntegrationConfigFormatted<
+                Repositories[]
+            >(IntegrationConfigKey.REPOSITORIES, {
+                organizationId: organizationAndTeamData.organizationId,
+                teamId: organizationAndTeamData.teamId,
+            });
+
+        if (!repositories || !Array.isArray(repositories)) {
+            this.logger.warn({
+                message:
+                    'No repositories found in integration config during tree scan',
+                context: CentralizedConfigService.name,
+                metadata: { organizationAndTeamData },
+            });
+            return [];
+        }
+
+        const resolvedRepoIds = new Map(
+            repositories.flatMap((repo) =>
+                [
+                    [repo.name?.toLowerCase(), repo.id] as const,
+                    [repo.full_name?.toLowerCase(), repo.id] as const,
+                ].filter(Boolean),
+            ),
+        );
+
+        const results: T[] = [];
+        for (const item of repoTree) {
+            if (item.type === 'directory') continue;
+            const matched = matcher(item, resolvedRepoIds);
+            if (matched) results.push(matched);
+        }
+        return results;
+    }
 }

@@ -1,11 +1,12 @@
 import { createLogger } from '@kodus/flow';
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, Optional } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 
 import {
     KODY_RULES_SERVICE_TOKEN,
     IKodyRulesService,
 } from '@libs/kodyRules/domain/contracts/kodyRules.service.contract';
+import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';
 
 @Injectable()
 export class DeleteRuleInOrganizationByIdKodyRulesUseCase {
@@ -13,32 +14,34 @@ export class DeleteRuleInOrganizationByIdKodyRulesUseCase {
         DeleteRuleInOrganizationByIdKodyRulesUseCase.name,
     );
     constructor(
+        @Optional()
         @Inject(REQUEST)
-        private readonly request: Request & {
-            user: {
-                organization: { uuid: string };
-                uuid: string;
-                email: string;
-            };
-        },
+        private readonly request: UserRequest,
+
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: IKodyRulesService,
     ) {}
 
-    async execute(ruleId: string) {
+    async execute(
+        ruleId: string,
+        actor?: {
+            source?: 'cli' | 'web' | 'sync';
+            organizationId?: string;
+            userId?: string;
+            userEmail?: string;
+        },
+    ) {
         try {
-            if (!this.request.user.organization.uuid) {
-                throw new Error('Organization ID not found');
-            }
-
             return await this.kodyRulesService.deleteRuleWithLogging(
                 {
-                    organizationId: this.request.user.organization.uuid,
+                    organizationId:
+                        actor?.organizationId ||
+                        this.request.user.organization.uuid,
                 },
                 ruleId,
                 {
-                    userId: this.request.user.uuid,
-                    userEmail: this.request.user.email,
+                    userId: actor?.userId || this.request.user.uuid,
+                    userEmail: actor?.userEmail || this.request.user.email,
                 },
             );
         } catch (error) {
@@ -47,7 +50,9 @@ export class DeleteRuleInOrganizationByIdKodyRulesUseCase {
                 context: DeleteRuleInOrganizationByIdKodyRulesUseCase.name,
                 error: error,
                 metadata: {
-                    organizationId: this.request.user.organization.uuid,
+                    organizationId:
+                        actor?.organizationId ||
+                        this.request.user.organization.uuid,
                     ruleId,
                 },
             });

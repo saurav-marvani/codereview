@@ -15,7 +15,9 @@ import { CreateOrUpdatePullRequestMessagesUseCase } from '@libs/code-review/appl
 import { PULL_REQUEST_MESSAGES_SERVICE_TOKEN } from '@libs/code-review/domain/pullRequestMessages/contracts/pullRequestMessages.service.contract';
 import { CreateOrUpdateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/create-or-update.use-case';
 import { DeleteRuleInOrganizationByIdKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/delete-rule-in-organization-by-id.use-case';
+import { KODY_RULES_SERVICE_TOKEN } from '@libs/kodyRules/domain/contracts/kodyRules.service.contract';
 import { CentralizedConfigService } from '../centralized-config.service';
+import * as yaml from 'js-yaml';
 
 describe('CentralizedConfigService', () => {
     let service: CentralizedConfigService;
@@ -30,6 +32,7 @@ describe('CentralizedConfigService', () => {
     let mockCodeBaseConfigService: any;
     let mockCreateOrUpdateKodyRulesUseCase: any;
     let mockDeleteRuleInOrganizationByIdKodyRulesUseCase: any;
+    let mockKodyRulesService: any;
 
     const organizationAndTeamData: OrganizationAndTeamData = {
         organizationId: 'org-1',
@@ -55,6 +58,8 @@ describe('CentralizedConfigService', () => {
 
         mockCodeManagementService = {
             getRepositoryTree: jest.fn(),
+            getRepositoryContentFile: jest.fn(),
+            getDefaultBranch: jest.fn(),
         };
 
         mockUpdateOrCreateCodeReviewParameterUseCase = {
@@ -88,6 +93,11 @@ describe('CentralizedConfigService', () => {
 
         mockDeleteRuleInOrganizationByIdKodyRulesUseCase = {
             execute: jest.fn(),
+        };
+
+        mockKodyRulesService = {
+            find: jest.fn(),
+            updateRulesStatusByFilter: jest.fn(),
         };
 
         const module: TestingModule = await Test.createTestingModule({
@@ -136,6 +146,10 @@ describe('CentralizedConfigService', () => {
                 {
                     provide: DeleteRuleInOrganizationByIdKodyRulesUseCase,
                     useValue: mockDeleteRuleInOrganizationByIdKodyRulesUseCase,
+                },
+                {
+                    provide: KODY_RULES_SERVICE_TOKEN,
+                    useValue: mockKodyRulesService,
                 },
             ],
         }).compile();
@@ -575,6 +589,239 @@ describe('CentralizedConfigService', () => {
             expect(result.success).toBe(true);
             expect(result.message).toBe(
                 'Config files synchronized successfully',
+            );
+        });
+    });
+
+    describe('discoverKodyRulesFiles', () => {
+        it('should discover Kody rule files from centralized repository', async () => {
+            const mockRepoTree = [
+                {
+                    path: 'kodus-config.yml',
+                    type: 'file' as const,
+                },
+                {
+                    path: '.kody-rules/memories/logging.yml',
+                    type: 'file' as const,
+                },
+                {
+                    path: '.kody-rules/review/security.yml',
+                    type: 'file' as const,
+                },
+                {
+                    path: 'org-a/.kody-rules/memories/auth.yml',
+                    type: 'file' as const,
+                },
+                {
+                    path: 'org-a/services/api/.kody-rules/review/api.yml',
+                    type: 'file' as const,
+                },
+            ];
+
+            mockCodeManagementService.getRepositoryTree.mockResolvedValue(
+                mockRepoTree,
+            );
+
+            mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue(
+                [{ id: 'org-a-id', name: 'org-a', full_name: 'org-a' }],
+            );
+
+            const result = await service.discoverKodyRulesFiles({
+                organizationAndTeamData,
+                repository: { name: 'central-repo', id: 'central-repo-id' },
+            });
+
+            expect(result).toHaveLength(4);
+            expect(result).toEqual(
+                expect.arrayContaining([
+                    {
+                        centralizedDirectoryPath: '.kody-rules/memories',
+                        repositoryId: undefined,
+                        directoryPath: undefined,
+                        ruleType: 'memory' as any,
+                        ruleFilePath: '.kody-rules/memories/logging.yml',
+                        sourcePath: '.kody-rules/memories/logging.yml',
+                    },
+                    {
+                        centralizedDirectoryPath: '.kody-rules/review',
+                        repositoryId: undefined,
+                        directoryPath: undefined,
+                        ruleType: 'standard' as any,
+                        ruleFilePath: '.kody-rules/review/security.yml',
+                        sourcePath: '.kody-rules/review/security.yml',
+                    },
+                    {
+                        centralizedDirectoryPath: 'org-a/.kody-rules/memories',
+                        repositoryId: 'org-a-id',
+                        directoryPath: undefined,
+                        ruleType: 'memory' as any,
+                        ruleFilePath: 'org-a/.kody-rules/memories/auth.yml',
+                        sourcePath: 'org-a/.kody-rules/memories/auth.yml',
+                    },
+                    {
+                        centralizedDirectoryPath:
+                            'org-a/services/api/.kody-rules/review',
+                        repositoryId: 'org-a-id',
+                        directoryPath: '/services/api',
+                        ruleType: 'standard' as any,
+                        ruleFilePath:
+                            'org-a/services/api/.kody-rules/review/api.yml',
+                        sourcePath:
+                            'org-a/services/api/.kody-rules/review/api.yml',
+                    },
+                ]),
+            );
+        });
+
+        it('should exclude files not in .kody-rules directories', async () => {
+            const mockRepoTree = [
+                {
+                    path: 'kodus-config.yml',
+                    type: 'file' as const,
+                },
+                {
+                    path: 'rules.yml',
+                    type: 'file' as const,
+                },
+                {
+                    path: '.kody-rules/memories/logging.yml',
+                    type: 'file' as const,
+                },
+            ];
+
+            mockCodeManagementService.getRepositoryTree.mockResolvedValue(
+                mockRepoTree,
+            );
+
+            mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue(
+                [],
+            );
+
+            const result = await service.discoverKodyRulesFiles({
+                organizationAndTeamData,
+                repository: { name: 'central-repo', id: 'central-repo-id' },
+            });
+
+            expect(result).toHaveLength(1);
+            expect(result[0].ruleFilePath).toBe(
+                '.kody-rules/memories/logging.yml',
+            );
+        });
+    });
+
+    describe('synchronizeKodyRules', () => {
+        it('should synchronize Kody rules successfully', async () => {
+            const ruleFiles: any[] = [
+                {
+                    centralizedDirectoryPath: '.kody-rules/memories',
+                    repositoryId: undefined,
+                    directoryPath: undefined,
+                    ruleType: 'memory' as any,
+                    ruleFilePath: '.kody-rules/memories/logging.yml',
+                    sourcePath: '.kody-rules/memories/logging.yml',
+                },
+            ];
+
+            const mockRuleContent = {
+                title: 'Logging Rule',
+                rule: 'Use structured logging',
+                examples: [
+                    { snippet: 'console.log("test")', isCorrect: false },
+                ],
+                inheritance: { inheritable: true, exclude: [], include: [] },
+            };
+
+            mockCodeManagementService.getRepositoryTree.mockResolvedValue([]);
+            mockCodeManagementService.getDefaultBranch.mockResolvedValue(
+                'main',
+            );
+            mockCodeManagementService.getRepositoryContentFile.mockResolvedValue(
+                {
+                    data: {
+                        content: Buffer.from(
+                            yaml.dump(mockRuleContent),
+                        ).toString('base64'),
+                        encoding: 'base64',
+                    },
+                },
+            );
+
+            mockParametersService.findByKey.mockResolvedValue({
+                configValue: {
+                    repository: { name: 'central-repo', id: 'central-repo-id' },
+                },
+            });
+
+            mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue(
+                [],
+            );
+            mockCreateOrUpdateKodyRulesUseCase.execute.mockResolvedValue({
+                uuid: 'rule-uuid',
+            });
+
+            const result = await service.synchronizeKodyRules({
+                organizationAndTeamData,
+                ruleFiles,
+                actor,
+            });
+
+            expect(result.success).toBe(true);
+            expect(result.message).toContain(
+                'Kody rules synchronized successfully',
+            );
+            expect(result.syncedRuleCount).toBe(1);
+            expect(
+                mockCreateOrUpdateKodyRulesUseCase.execute,
+            ).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    title: 'Logging Rule',
+                    rule: 'Use structured logging',
+                    type: 'memory',
+                    status: 'active',
+                    repositoryId: 'global',
+                    sourcePath: '.kody-rules/memories/logging.yml',
+                }),
+                'org-1',
+                expect.any(Object),
+                true,
+            );
+        });
+
+        it('should handle YAML parsing errors gracefully', async () => {
+            const ruleFiles: any[] = [
+                {
+                    centralizedDirectoryPath: '.kody-rules/memories',
+                    ruleFilePath: '.kody-rules/memories/invalid.yml',
+                    sourcePath: '.kody-rules/memories/invalid.yml',
+                    ruleType: 'memory' as any,
+                },
+            ];
+
+            mockParametersService.findByKey.mockResolvedValue({
+                configValue: {
+                    repository: { name: 'central-repo', id: 'central-repo-id' },
+                },
+            });
+
+            mockCodeManagementService.getRepositoryContentFile.mockResolvedValue(
+                {
+                    data: {
+                        content: Buffer.from('invalid: yaml: content: ['), // Invalid YAML
+                        encoding: 'base64',
+                    },
+                },
+            );
+
+            const result = await service.synchronizeKodyRules({
+                organizationAndTeamData,
+                ruleFiles,
+                actor,
+            });
+
+            expect(result.success).toBe(true);
+            expect(result.failureDetails).toHaveLength(1);
+            expect(result.failureDetails![0].file).toBe(
+                '.kody-rules/memories/invalid.yml',
             );
         });
     });

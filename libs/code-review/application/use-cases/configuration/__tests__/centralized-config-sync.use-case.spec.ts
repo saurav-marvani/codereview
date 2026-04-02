@@ -23,13 +23,22 @@ describe('CentralizedConfigSyncUseCase', () => {
                     centralizedDirectoryPath: 'repo1',
                 }, // repo config
             ]),
+            discoverKodyRulesFiles: jest.fn().mockResolvedValue([]),
             synchronizeConfigs: jest.fn().mockResolvedValue({
                 success: true,
                 message: 'Config files synchronized successfully',
             }),
+            synchronizeKodyRules: jest.fn().mockResolvedValue({
+                success: true,
+                message: 'Kody rules synchronized successfully',
+            }),
             removeStaleConfigs: jest.fn().mockResolvedValue({
                 success: true,
                 message: 'Stale configs removed successfully',
+            }),
+            removeStaleKodyRules: jest.fn().mockResolvedValue({
+                success: true,
+                message: 'Stale Kody rules removed successfully',
             }),
         };
 
@@ -119,9 +128,22 @@ describe('CentralizedConfigSyncUseCase', () => {
                 name: 'kodus',
             }),
             discoverConfigFiles: jest.fn().mockResolvedValue([]),
+            discoverKodyRulesFiles: jest.fn().mockResolvedValue([]),
             synchronizeConfigs: jest.fn().mockResolvedValue({
                 success: false,
                 message: 'Failed to update parameters',
+            }),
+            synchronizeKodyRules: jest.fn().mockResolvedValue({
+                success: true,
+                message: 'Kody rules synchronized successfully',
+            }),
+            removeStaleConfigs: jest.fn().mockResolvedValue({
+                success: true,
+                message: 'Stale configs removed successfully',
+            }),
+            removeStaleKodyRules: jest.fn().mockResolvedValue({
+                success: true,
+                message: 'Stale Kody rules removed successfully',
             }),
         };
 
@@ -151,13 +173,22 @@ describe('CentralizedConfigSyncUseCase', () => {
                 name: 'kodus',
             }),
             discoverConfigFiles: jest.fn().mockResolvedValue([]),
+            discoverKodyRulesFiles: jest.fn().mockResolvedValue([]),
             synchronizeConfigs: jest.fn().mockResolvedValue({
                 success: true,
                 message: 'Config files synchronized successfully',
             }),
+            synchronizeKodyRules: jest.fn().mockResolvedValue({
+                success: true,
+                message: 'Kody rules synchronized successfully',
+            }),
             removeStaleConfigs: jest.fn().mockResolvedValue({
                 success: false,
                 message: 'Failed to clean up configs',
+            }),
+            removeStaleKodyRules: jest.fn().mockResolvedValue({
+                success: true,
+                message: 'Stale Kody rules removed successfully',
             }),
         };
 

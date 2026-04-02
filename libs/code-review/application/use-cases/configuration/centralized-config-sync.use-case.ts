@@ -110,6 +110,61 @@ export class CentralizedConfigSyncUseCase {
                 };
             }
 
+            // Discover Kody rule files in the repository
+            const ruleFilesMeta =
+                await this.centralizedConfigService.discoverKodyRulesFiles({
+                    organizationAndTeamData,
+                    repository,
+                });
+
+            // Synchronize Kody rules
+            const syncRulesResult =
+                await this.centralizedConfigService.synchronizeKodyRules({
+                    organizationAndTeamData,
+                    ruleFiles: ruleFilesMeta,
+                    actor,
+                });
+
+            if (!syncRulesResult.success) {
+                this.logger.error({
+                    message: 'Failed to synchronize Kody rules',
+                    context: CentralizedConfigSyncUseCase.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        message: syncRulesResult.message,
+                    },
+                });
+
+                return {
+                    success: false,
+                    message: `Failed to synchronize Kody rules: ${syncRulesResult.message}`,
+                };
+            }
+
+            // Remove stale Kody rules
+            const cleanupRulesResult =
+                await this.centralizedConfigService.removeStaleKodyRules({
+                    organizationAndTeamData,
+                    ruleFiles: ruleFilesMeta,
+                    actor,
+                });
+
+            if (!cleanupRulesResult.success) {
+                this.logger.error({
+                    message: 'Failed to remove stale Kody rules',
+                    context: CentralizedConfigSyncUseCase.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        message: cleanupRulesResult.message,
+                    },
+                });
+
+                return {
+                    success: false,
+                    message: `Failed to remove stale Kody rules: ${cleanupRulesResult.message}`,
+                };
+            }
+
             return {
                 success: true,
                 message: 'Centralized config sync completed successfully',

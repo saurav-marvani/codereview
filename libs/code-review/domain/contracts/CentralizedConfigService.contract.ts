@@ -1,5 +1,10 @@
 import { KodusConfigFile } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
+import {
+    IKodyRule,
+    KodyRulesType,
+} from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
+import { DeepPartial } from 'typeorm';
 
 export const CENTRALIZED_CONFIG_SERVICE_TOKEN =
     'CENTRALIZED_CONFIG_SERVICE_TOKEN';
@@ -8,6 +13,15 @@ export interface IConfigFileMeta {
     centralizedDirectoryPath?: string;
     repositoryId?: string;
     directoryPath?: string;
+}
+
+export interface IKodyRuleFileMeta {
+    centralizedDirectoryPath: string; // Path in centralized repo, e.g., "org-a/.kody-rules/memories"
+    repositoryId?: string; // Target repository ID or undefined for global
+    directoryPath?: string; // Target directory path or undefined for repo-level
+    ruleType: KodyRulesType; // MEMORY or STANDARD based on subdirectory
+    ruleFilePath: string; // Full path in centralized repo, e.g., "org-a/.kody-rules/memories/logging.yml"
+    sourcePath: string; // Canonical source path for DB tracking, e.g., "org-a/.kody-rules/memories/logging.yml"
 }
 
 export interface ICentralizedConfigService {
@@ -78,5 +92,59 @@ export interface ICentralizedConfigService {
     }): Promise<{
         success: boolean;
         message: string;
+    }>;
+
+    /**
+     * Discovers all .kody-rules YAML files in the centralized config repository
+     */
+    discoverKodyRulesFiles(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { name: string; id: string };
+    }): Promise<IKodyRuleFileMeta[]>;
+
+    /**
+     * Fetches and parses a Kody rule file from the centralized repository
+     */
+    fetchKodyRuleFile(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { name: string; id: string };
+        filePath: string;
+    }): Promise<DeepPartial<IKodyRule> | null>;
+
+    /**
+     * Synchronizes Kody rules from centralized repository to target scopes
+     */
+    synchronizeKodyRules(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        ruleFiles: IKodyRuleFileMeta[];
+        actor: {
+            organizationId: string;
+            source: string;
+            userEmail: string;
+            userId: string;
+        };
+    }): Promise<{
+        success: boolean;
+        message: string;
+        syncedRuleCount?: number;
+        failureDetails?: Array<{ file: string; error: string }>;
+    }>;
+
+    /**
+     * Removes stale Kody rules that are no longer present in centralized repository
+     */
+    removeStaleKodyRules(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        ruleFiles: IKodyRuleFileMeta[];
+        actor: {
+            organizationId: string;
+            source: string;
+            userEmail: string;
+            userId: string;
+        };
+    }): Promise<{
+        success: boolean;
+        message: string;
+        removedRuleCount?: number;
     }>;
 }

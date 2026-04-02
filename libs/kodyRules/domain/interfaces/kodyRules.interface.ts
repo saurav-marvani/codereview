@@ -84,7 +84,6 @@ export interface IKodyRuleMemory extends Omit<
     | 'inheritance'
     | 'contextReferenceId'
     | 'extendedContext'
-    | 'sourcePath'
     | 'sourceAnchor'
 > {
     type: KodyRulesType.MEMORY;
