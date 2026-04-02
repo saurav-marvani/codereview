@@ -1,5 +1,6 @@
 import { createLogger } from '@kodus/flow';
 import { Inject, Injectable } from '@nestjs/common';
+import * as yaml from 'js-yaml';
 
 import { GenerateKodyRulesDTO } from '@libs/core/domain/dtos/generate-kody-rules.dto';
 
@@ -19,7 +20,11 @@ import {
     IIntegrationService,
     INTEGRATION_SERVICE_TOKEN,
 } from '@libs/integrations/domain/integrations/contracts/integration.service.contracts';
-import { KodyRulesStatus } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
+import {
+    IKodyRule,
+    KodyRulesStatus,
+    KodyRulesType,
+} from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
@@ -122,6 +127,17 @@ export class GenerateKodyRulesUseCase {
                 },
                 organizationAndTeamData,
             );
+
+            const centralizedRepository = await this.getCentralizedRepository(
+                organizationAndTeamData,
+            );
+            const shouldCreateCentralizedRulesPr =
+                !!centralizedRepository?.id && !!centralizedRepository?.name;
+            const centralizedRuleFiles: Array<{
+                path: string;
+                content: string;
+            }> = [];
+            const usedCentralizedPaths = new Set<string>();
 
             const allRules = [];
             const createdRules = []; // To track created rules for notification
@@ -234,6 +250,7 @@ export class GenerateKodyRulesUseCase {
 
                 for (const rule of rules) {
                     const dto: CreateKodyRuleDto = {
+                        type: KodyRulesType.STANDARD,
                         examples: rule.examples,
                         origin: rule.origin,
                         rule: rule.rule,
@@ -255,11 +272,40 @@ export class GenerateKodyRulesUseCase {
                         { strict: false },
                     );
 
-                    await createOrUpdateUseCase.execute(
+                    const createdRule = await createOrUpdateUseCase.execute(
                         dto,
                         organizationId,
                         userInfo,
                     );
+
+                    if (shouldCreateCentralizedRulesPr && createdRule?.uuid) {
+                        const centralizedSourcePath = this.getUniquePath(
+                            this.getCentralizedRuleEntryPath(
+                                repository.name || repository.id,
+                                rule.title,
+                            ),
+                            usedCentralizedPaths,
+                        );
+
+                        await createOrUpdateUseCase.execute(
+                            {
+                                ...dto,
+                                uuid: createdRule.uuid,
+                                centralizedSourcePath,
+                                status: KodyRulesStatus.PENDING,
+                            },
+                            organizationId,
+                            userInfo,
+                        );
+
+                        centralizedRuleFiles.push({
+                            path: centralizedSourcePath,
+                            content: this.formatRuleToYaml({
+                                ...rule,
+                                status: KodyRulesStatus.PENDING,
+                            }),
+                        });
+                    }
 
                     // Add rule to notification data
                     createdRules.push({
@@ -311,6 +357,32 @@ export class GenerateKodyRulesUseCase {
                 context: GenerateKodyRulesUseCase.name,
                 metadata: { body, organizationAndTeamData },
             });
+
+            if (shouldCreateCentralizedRulesPr && centralizedRuleFiles.length) {
+                const pr =
+                    await this.codeManagementService.createPullRequestWithFiles(
+                        {
+                            organizationAndTeamData,
+                            repository: centralizedRepository,
+                            files: centralizedRuleFiles,
+                            title: 'Add Generated Kody Rules',
+                            description:
+                                'This pull request adds newly generated Kody rules as pending review rules in centralized configuration.',
+                            commitMessage: 'Add generated Kody rules',
+                            sourceBranch: `kodus-generated-rules-${Date.now()}`,
+                            author: {
+                                name: 'kody',
+                                email: 'kody@kodus.io',
+                            },
+                        },
+                    );
+
+                if (!pr) {
+                    throw new Error(
+                        'Failed to create pull request for generated Kody rules in centralized repository',
+                    );
+                }
+            }
 
             // Send email notification if rules were created
             if (createdRules.length > 0) {
@@ -403,5 +475,84 @@ export class GenerateKodyRulesUseCase {
         }
 
         return integrationConfig.configValue as Repositories[];
+    }
+
+    private async getCentralizedRepository(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<{ id: string; name: string } | null> {
+        const centralizedConfig = await this.parametersService.findByKey(
+            ParametersKey.CENTRALIZED_CONFIG,
+            organizationAndTeamData,
+        );
+
+        if (!centralizedConfig?.configValue?.enabled) {
+            return null;
+        }
+
+        const repository = centralizedConfig.configValue.repository;
+        if (!repository?.id || !repository?.name) {
+            return null;
+        }
+
+        return {
+            id: repository.id,
+            name: repository.name,
+        };
+    }
+
+    private formatRuleToYaml(rule: Partial<IKodyRule>): string {
+        const ruleForYaml = {
+            title: rule.title,
+            rule: rule.rule,
+            severity: rule.severity,
+            ...(rule.scope ? { scope: rule.scope } : {}),
+            ...(rule.path ? { path: rule.path } : {}),
+            ...(rule.examples ? { examples: rule.examples } : {}),
+            ...(rule.inheritance ? { inheritance: rule.inheritance } : {}),
+        };
+
+        return yaml.dump(ruleForYaml);
+    }
+
+    private sanitizeRuleFileName(name?: string): string {
+        const normalized = (name || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 30);
+
+        return normalized || 'rule';
+    }
+
+    private getCentralizedRuleEntryPath(
+        repositoryFolderName: string,
+        ruleTitle: string,
+    ): string {
+        const fileName = `${this.sanitizeRuleFileName(ruleTitle)}.yml`;
+        return `${repositoryFolderName}/.kody-rules/review/${fileName}`;
+    }
+
+    private getUniquePath(path: string, usedPaths: Set<string>): string {
+        if (!path) return path;
+
+        if (!usedPaths.has(path)) {
+            usedPaths.add(path);
+            return path;
+        }
+
+        const suffix = path.endsWith('.yaml') ? '.yaml' : '.yml';
+        const pathWithoutExt = path.replace(/\.(yml|yaml)$/i, '');
+
+        let index = 2;
+        let candidate = `${pathWithoutExt}-${index}${suffix}`;
+
+        while (usedPaths.has(candidate)) {
+            index++;
+            candidate = `${pathWithoutExt}-${index}${suffix}`;
+        }
+
+        usedPaths.add(candidate);
+        return candidate;
     }
 }
