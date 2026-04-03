@@ -16,6 +16,7 @@ describe('ReviewOrchestratorService', () => {
     let mockBugAgent: any;
     let mockSecurityAgent: any;
     let mockPerformanceAgent: any;
+    let mockGeneralistAgent: any;
 
     const makeOutput = (
         agentName: string,
@@ -89,17 +90,49 @@ describe('ReviewOrchestratorService', () => {
             ),
         };
 
+        mockGeneralistAgent = {
+            execute: jest.fn().mockResolvedValue(
+                makeOutput('generalist-agent', [
+                    {
+                        relevantFile: 'src/index.ts',
+                        suggestionContent: 'Generalist finding',
+                        label: 'bug',
+                        severity: 'high',
+                        relevantLinesStart: 10,
+                        relevantLinesEnd: 15,
+                    },
+                ]),
+            ),
+        };
+
         orchestrator = new ReviewOrchestratorService(
             mockBugAgent,
             mockSecurityAgent,
             mockPerformanceAgent,
+            mockGeneralistAgent,
         );
     });
 
     describe('agent dispatch', () => {
+        it('should dispatch the generalist agent in normal mode', async () => {
+            const result = await orchestrator.execute({
+                ...baseInput,
+                reviewMode: 'normal',
+                reviewOptions: { bug: true, security: true, performance: true },
+            });
+
+            expect(mockGeneralistAgent.execute).toHaveBeenCalledTimes(1);
+            expect(mockBugAgent.execute).not.toHaveBeenCalled();
+            expect(mockSecurityAgent.execute).not.toHaveBeenCalled();
+            expect(mockPerformanceAgent.execute).not.toHaveBeenCalled();
+            expect(result.suggestions).toHaveLength(1);
+            expect(result.agentResults).toHaveLength(1);
+        });
+
         it('should dispatch all agents when all categories enabled', async () => {
             const result = await orchestrator.execute({
                 ...baseInput,
+                reviewMode: 'deep',
                 reviewOptions: { bug: true, security: true, performance: true },
             });
 
@@ -113,6 +146,7 @@ describe('ReviewOrchestratorService', () => {
         it('should skip disabled categories', async () => {
             const result = await orchestrator.execute({
                 ...baseInput,
+                reviewMode: 'deep',
                 reviewOptions: {
                     bug: true,
                     security: false,
@@ -147,6 +181,7 @@ describe('ReviewOrchestratorService', () => {
 
             const result = await orchestrator.execute({
                 ...baseInput,
+                reviewMode: 'deep',
                 reviewOptions: { bug: true, security: true, performance: true },
             });
 
@@ -189,6 +224,7 @@ describe('ReviewOrchestratorService', () => {
 
             const result = await orchestrator.execute({
                 ...baseInput,
+                reviewMode: 'deep',
                 reviewOptions: { bug: true, security: true, performance: true },
             });
 
@@ -229,6 +265,7 @@ describe('ReviewOrchestratorService', () => {
 
             const result = await orchestrator.execute({
                 ...baseInput,
+                reviewMode: 'deep',
                 reviewOptions: { bug: true, security: true, performance: true },
             });
 
@@ -264,6 +301,7 @@ describe('ReviewOrchestratorService', () => {
 
             const result = await orchestrator.execute({
                 ...baseInput,
+                reviewMode: 'deep',
                 reviewOptions: { bug: true, security: true, performance: true },
             });
 
@@ -295,6 +333,7 @@ describe('ReviewOrchestratorService', () => {
 
             const result = await orchestrator.execute({
                 ...baseInput,
+                reviewMode: 'deep',
                 reviewOptions: { bug: true, security: true, performance: true },
             });
 
