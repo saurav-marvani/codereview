@@ -29,6 +29,9 @@ import { TeamModel } from '../../../../organization/infrastructure/adapters/repo
 import { TeamMemberModel } from '../../../../organization/infrastructure/adapters/repositories/schemas/teamMember.model';
 import { PullRequestsModel } from '../../../../platformData/infrastructure/adapters/repositories/schemas/pullRequests.model';
 import { SessionEventModel } from '../../../../cli-review/infrastructure/repositories/schemas/session-event.model';
+import { RepositoryModel } from '../../../../code-review/infrastructure/adapters/repositories/schemas/repository.model';
+import { AstNodeModel } from '../../../../code-review/infrastructure/adapters/repositories/schemas/astNode.model';
+import { AstEdgeModel } from '../../../../code-review/infrastructure/adapters/repositories/schemas/astEdge.model';
 import { InboxMessageModel } from '../../../workflow/infrastructure/repositories/schemas/inbox-message.model';
 import { OutboxMessageModel } from '../../../workflow/infrastructure/repositories/schemas/outbox-message.model';
 import { WorkflowJobModel } from '../../../workflow/infrastructure/repositories/schemas/workflow-job.model';
@@ -68,4 +71,7 @@ export const ENTITIES = [
     InteractionModel,
     CliDeviceModel,
     SessionEventModel,
+    RepositoryModel,
+    AstNodeModel,
+    AstEdgeModel,
 ];
