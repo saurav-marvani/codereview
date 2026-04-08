@@ -19,6 +19,7 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from "@components/ui/tooltip";
+import { useKodyRulesCount } from "@services/kodyRules/hooks";
 import type { useSuspenseGetParameterPlatformConfigs } from "@services/parameters/hooks";
 import { KodyLearningStatus } from "@services/parameters/types";
 import { usePermission } from "@services/permissions/hooks";
@@ -70,6 +71,12 @@ const RepositoryCollapsibleItem = ({
             shouldFetchRepositoryCounts,
         );
 
+    const repositoryKodyRulesCount = useKodyRulesCount(
+        repository.id,
+        undefined,
+        shouldFetchRepositoryCounts,
+    );
+
     const repositoryCustomMessagesOverrideCount = hasRepositoryConfig
         ? (repositoryOverrideCountsData?.repositoryOverrideCount ?? 0)
         : 0;
@@ -100,6 +107,7 @@ const RepositoryCollapsibleItem = ({
     const overrideCount =
         repositoryConfigOverrideCount +
         repositoryCustomMessagesOverrideCount +
+        repositoryKodyRulesCount +
         nestedDirectoryOverrideCount;
 
     return (
@@ -171,6 +179,9 @@ const RepositoryCollapsibleItem = ({
                                         config={repository.configs}
                                         customMessagesOverrideCount={
                                             repositoryCustomMessagesOverrideCount
+                                        }
+                                        kodyRulesOverrideCount={
+                                            repositoryKodyRulesCount
                                         }
                                     />
                                 </SidebarMenuSubItem>

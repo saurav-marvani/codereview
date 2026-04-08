@@ -80,6 +80,8 @@ KEYS=(
     "/qa/kodus-orchestrator/API_SEGMENT_KEY"
 
     "/qa/kodus-orchestrator/API_VERTEX_AI_API_KEY"
+    "/qa/kodus-orchestrator/API_VERTEX_AI_LOCATION"
+    "/qa/kodus-orchestrator/API_GOOGLE_AI_PROVIDER"
 
     "/qa/kodus-orchestrator/API_NOVITA_AI_API_KEY"
 

@@ -3388,24 +3388,24 @@ export class BitbucketService implements Omit<
                 .getWorkspaces({})
                 .then((res) => res.data.values);
 
-            const workspace = workspaces[0];
+            for (const workspace of workspaces) {
+                const repositories = await bitbucketAPI.repositories
+                    .list({
+                        workspace: workspace.uuid,
+                    })
+                    .then((res) => res.data.values);
 
-            const repositories = await bitbucketAPI.repositories
-                .list({
-                    workspace: workspace.uuid,
-                })
-                .then((res) => res.data.values);
-
-            if (repositories.length === 0) {
-                return {
-                    success: false,
-                    status: CreateAuthIntegrationStatus.NO_REPOSITORIES,
-                };
+                if (repositories.length > 0) {
+                    return {
+                        success: true,
+                        status: CreateAuthIntegrationStatus.SUCCESS,
+                    };
+                }
             }
 
             return {
-                success: true,
-                status: CreateAuthIntegrationStatus.SUCCESS,
+                success: false,
+                status: CreateAuthIntegrationStatus.NO_REPOSITORIES,
             };
         } catch (error) {
             this.logger.error({

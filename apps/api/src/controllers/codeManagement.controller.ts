@@ -204,9 +204,12 @@ export class CodeManagementController {
         summary: 'List organization members',
         description: 'Returns members from the connected code platform.',
     })
+    @ApiQuery({ name: 'teamId', required: true })
     @ApiOkResponse({ type: ApiArrayResponseDto })
-    public async getOrganizationMembers() {
-        return this.getCodeManagementMemberListUseCase.execute();
+    public async getOrganizationMembers(
+        @Query() query: { teamId: string },
+    ) {
+        return this.getCodeManagementMemberListUseCase.execute(query.teamId);
     }
 
     @Post('/organization-members/refresh')
@@ -222,9 +225,12 @@ export class CodeManagementController {
         description:
             'Clears the cached members list and re-fetches from the code platform.',
     })
+    @ApiQuery({ name: 'teamId', required: true })
     @ApiOkResponse({ type: ApiArrayResponseDto })
-    public async refreshOrganizationMembers() {
-        return this.getCodeManagementMemberListUseCase.refreshMembers();
+    public async refreshOrganizationMembers(
+        @Query() query: { teamId: string },
+    ) {
+        return this.getCodeManagementMemberListUseCase.refreshMembers(query.teamId);
     }
 
     @Get('/get-prs')

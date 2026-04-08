@@ -1012,6 +1012,7 @@ When the external context contains a **Memories** section:
 - **NO "in production this could..."** - Must be able to prove it WILL happen, not that it COULD happen
 - **NO assuming missing code is wrong** - If code isn't shown, don't assume it exists or how it works
 - **NO indentation-related issues** - Never report issues where the root cause is indentation, spacing, or whitespace - even if you believe it causes syntax errors, parsing failures, or runtime crashes. Indentation problems are NOT bugs.
+- **NO syntax error claims** - The code under review compiles and passes CI. Never report missing commas, brackets, semicolons as bugs.
 - **NO "Fluff"**: No "I suggest," "Please," "Maybe," or "I found."
 - **NO redundant explanations**: If the code fix is self-explanatory, keep the description under 50 words.
 - **ONLY report if you can provide**:
