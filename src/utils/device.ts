@@ -10,8 +10,13 @@ interface DeviceData {
     tokenUpdatedAt?: string;
 }
 
-const KODUS_DIR = path.join(os.homedir(), '.kodus');
-const DEVICE_FILE = path.join(KODUS_DIR, 'device.json');
+function getKodusDir(): string {
+    return path.join(os.homedir(), '.kodus');
+}
+
+function getDeviceFile(): string {
+    return path.join(getKodusDir(), 'device.json');
+}
 
 const UUID_REGEX =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -31,7 +36,7 @@ function isValidDeviceToken(value: unknown): value is string {
 
 async function ensureKodusDir(): Promise<void> {
     try {
-        await fs.mkdir(KODUS_DIR, { recursive: true, mode: 0o700 });
+        await fs.mkdir(getKodusDir(), { recursive: true, mode: 0o700 });
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
             throw error;
@@ -41,17 +46,17 @@ async function ensureKodusDir(): Promise<void> {
 
 async function writeDeviceData(data: DeviceData): Promise<void> {
     await ensureKodusDir();
-    const tmpFile = `${DEVICE_FILE}.${process.pid}.${Date.now()}.tmp`;
+    const tmpFile = `${getDeviceFile()}.${process.pid}.${Date.now()}.tmp`;
     await fs.writeFile(tmpFile, JSON.stringify(data, null, 2), {
         encoding: 'utf-8',
         mode: 0o600,
     });
-    await fs.rename(tmpFile, DEVICE_FILE);
+    await fs.rename(tmpFile, getDeviceFile());
 }
 
 async function readStoredDeviceData(): Promise<DeviceData | null> {
     try {
-        const content = await fs.readFile(DEVICE_FILE, 'utf-8');
+        const content = await fs.readFile(getDeviceFile(), 'utf-8');
         const parsed = JSON.parse(content) as Partial<DeviceData>;
         if (!isValidDeviceId(parsed.deviceId)) {
             return null;
