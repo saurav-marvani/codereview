@@ -19,7 +19,7 @@ import {
 } from '@libs/automation/domain/automationExecution/contracts/automation-execution.service';
 import { AutomationStatus } from '@libs/automation/domain/automation/enum/automation-status';
 import { AgentProgressEvent } from '@libs/code-review/infrastructure/agents/base-code-review-agent.provider';
-import { generateCallGraph, generateCallGraphFromJSON } from '@libs/code-review/infrastructure/agents/call-graph.helper';
+
 import { KodusGraphService } from '@libs/code-review/infrastructure/adapters/services/kodusGraph.service';
 import { RepositoryRepository } from '@libs/code-review/infrastructure/adapters/repositories/repository.repository';
 import { AstGraphStatus } from '@libs/code-review/infrastructure/adapters/repositories/schemas/repository.model';
@@ -292,15 +292,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 repositoryId,
             );
 
-            // Generate call graph context using kodus-graph in E2B sandbox
+            // Generate call graph context from AST graph in DB (via kodus-graph in E2B sandbox)
             let callGraph = '';
             try {
-                this.logger.log({
-                    message: `[AGENT] sandboxHandle check: type=${context.sandboxHandle?.type}, hasSandboxHandle=${!!context.sandboxHandle?.sandboxHandle}`,
-                    context: this.stageName,
-                });
                 if (context.sandboxHandle?.sandboxHandle) {
-                    // Try DB-backed flow first (real diff against main branch)
                     const repo = await this.repositoryRepository.findByExternalId(
                         context.platformType,
                         String(context.repository?.id || ''),
@@ -313,11 +308,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                             repo.uuid,
                         );
                     } else {
-                        // Fallback: legacy flow (parse --all in sandbox)
-                        callGraph = await this.kodusGraphService.generateContextLegacy(
-                            context.sandboxHandle.sandboxHandle,
-                            changedFiles,
-                        );
+                        this.logger.log({
+                            message: `[AGENT] No AST graph available for PR#${prNumber} (status=${repo?.astGraphStatus || 'not found'}), proceeding without call graph`,
+                            context: this.stageName,
+                        });
                     }
                 }
 
@@ -331,18 +325,6 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                             callGraphPreview: callGraph.substring(0, 320),
                         },
                     });
-                } else {
-                    // Fallback to pre-computed JSON if kodus-graph didn't produce output
-                    const repoFullName = context.repository?.fullName ||
-                        context.pullRequest?.base?.repo?.fullName || '';
-                    callGraph = generateCallGraphFromJSON(changedFiles, repoFullName);
-                    if (callGraph) {
-                        this.logger.log({
-                            message: `[AGENT] Fallback to JSON call graph: ${callGraph.length} chars for PR#${prNumber}`,
-                            context: this.stageName,
-                            metadata: { prNumber, callGraphChars: callGraph.length },
-                        });
-                    }
                 }
             } catch (err) {
                 this.logger.warn({

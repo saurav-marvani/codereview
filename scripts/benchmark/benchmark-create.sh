@@ -37,11 +37,11 @@ TOTAL_PRS=${2:-20}
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RUNS_DIR="$SCRIPT_DIR/runs"
-BENCHMARK_OWNER="${BENCHMARK_OWNER:-Wellington01}"
+BENCHMARK_OWNER="${BENCHMARK_OWNER:-ai-code-review-benchmark}"
+BASE_ENV_FILE="${ENV_FILE:-.env}"
 mkdir -p "$RUNS_DIR"
 WORKER=$(docker ps --format '{{.Names}}' | grep worker | head -1)
 WORKER="${WORKER:-kodus_worker}"
-BASE_ENV_FILE="${BASE_ENV_FILE:-.env}"
 
 if [[ "$BASE_ENV_FILE" = /* ]]; then
   SOURCE_ENV_FILE="$BASE_ENV_FILE"
@@ -108,7 +108,7 @@ fi
 
 # Close ALL open PRs in benchmark repos first
 echo "▸ Closing all open PRs..."
-for repo in sentry-greptile grafana-greptile discourse-greptile cal.com-greptile keycloak-greptile; do
+for repo in sentry grafana-codex discourse-cursor cal.com keycloak; do
   OPEN_PRS=$(gh api "repos/$BENCHMARK_OWNER/$repo/pulls?state=open&per_page=100" --jq '.[].number' 2>/dev/null || true)
   for pr in $OPEN_PRS; do
     gh api "repos/$BENCHMARK_OWNER/$repo/pulls/$pr" -X PATCH -f state=closed --silent 2>/dev/null || true
@@ -144,52 +144,42 @@ echo "▸ Building run manifest..."
 node -e "
 const fs = require('fs');
 const { execSync } = require('child_process');
-
-// prs.json has the real repo names (Wellington01/sentry-greptile etc.)
-const prsConfig = JSON.parse(fs.readFileSync('scripts/pr-creator/prs.json', 'utf8'));
-const sourcePrs = Array.isArray(prsConfig) ? prsConfig : prsConfig.prs;
-
-// prs-benchmark.json has golden comments (matched by head branch)
 const benchmark = JSON.parse(fs.readFileSync('scripts/benchmark/prs-benchmark.json', 'utf8'));
-const goldenByHead = {};
-for (const pr of benchmark.prs) { goldenByHead[pr.head] = pr; }
-
-// Group by repo and distribute evenly
+const owner = '$BENCHMARK_OWNER';
+const repos = ['sentry', 'grafana-codex', 'discourse-cursor', 'cal.com', 'keycloak'];
 const byRepo = {};
-for (const pr of sourcePrs) {
-  const repo = pr.repo; // e.g. 'Wellington01/sentry-greptile'
+for (const pr of benchmark.prs) {
+  const repo = pr.repo.split('/').pop();
   if (!byRepo[repo]) byRepo[repo] = [];
   byRepo[repo].push(pr);
 }
-const repos = Object.keys(byRepo);
-const perRepo = Math.ceil($TOTAL_PRS / repos.length);
-const selected = [];
-for (const repo of repos) {
-  selected.push(...byRepo[repo].slice(0, perRepo));
-}
-selected.splice($TOTAL_PRS);
 
+const perRepo = Math.ceil($TOTAL_PRS / repos.length);
 const prs = [];
-// For each selected PR, find the actual GitHub PR number by head branch
-for (const spr of selected) {
-  const [owner, repoName] = spr.repo.split('/');
+
+// For each benchmark PR, find the actual GitHub PR by head branch
+for (const repo of repos) {
+  const benchPrs = (byRepo[repo] || []).slice(0, perRepo);
+  // Get all open+closed PRs from this repo
   let ghPrs = [];
   try {
     ghPrs = JSON.parse(execSync(
-      'gh api \"repos/' + owner + '/' + repoName + '/pulls?state=all&per_page=50&sort=created&direction=desc\" --jq \"[.[] | {number, head: .head.ref}]\"',
+      'gh api \"repos/' + owner + '/' + repo + '/pulls?state=open&per_page=50&sort=created&direction=desc\" --jq \"[.[] | {number, head: .head.ref}]\"',
       { encoding: 'utf8', timeout: 30000 }
     ));
   } catch {}
-  const match = ghPrs.find(p => p.head === spr.head);
-  const golden = goldenByHead[spr.head];
-  prs.push({
-    repo: repoName,
-    head: spr.head,
-    title: spr.title || golden?.title || spr.head,
-    prNumber: match ? match.number : null,
-  });
-  const status = match ? 'PR#' + match.number : 'NOT FOUND';
-  console.log('  ' + repoName.padEnd(22) + spr.head.substring(0,35).padEnd(37) + status);
+
+  for (const bpr of benchPrs) {
+    const match = ghPrs.find(p => p.head === bpr.head);
+    prs.push({
+      repo,
+      head: bpr.head,
+      title: bpr.title,
+      prNumber: match ? match.number : null,
+    });
+    const status = match ? 'PR#' + match.number : 'NOT FOUND';
+    console.log('  ' + repo.padEnd(18) + bpr.head.substring(0,35).padEnd(37) + status);
+  }
 }
 
 const manifest = {
@@ -202,13 +192,13 @@ const manifest = {
 
 fs.writeFileSync('$RUNS_DIR/$RUN_NAME.json', JSON.stringify(manifest, null, 2));
 const mapped = prs.filter(p => p.prNumber).length;
+const uniqueHeads = new Set(prs.map(p => p.repo + '::' + p.head)).size;
 console.log('');
-console.log('Manifest: scripts/benchmark/runs/$RUN_NAME.json (' + mapped + '/' + prs.length + ' mapped)');
+console.log('Manifest: scripts/benchmark/runs/$RUN_NAME.json (' + mapped + '/' + prs.length + ' mapped, ' + uniqueHeads + ' unique repo/head pairs)');
 if (mapped !== prs.length) {
-  const missing = prs.filter(p => !p.prNumber).map(p => p.repo + '/' + p.head);
   console.error('');
-  console.error('⚠ Not all PRs mapped: ' + missing.join(', '));
-  console.error('Some PRs may not have been created. Continuing...');
+  console.error('✗ Manifest validation failed: not all benchmark entries were mapped to PR numbers.');
+  process.exit(2);
 }
 "
 

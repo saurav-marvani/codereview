@@ -1,7 +1,7 @@
 {
     "prs": [
         {
-            "repo": "Wellington01/sentry-greptile",
+            "repo": "ai-code-review-benchmark/sentry",
             "head": "performance-enhancement-complete",
             "base": "master",
             "title": "Enhanced Pagination Performance for High-Volume Audit Logs",
@@ -26,8 +26,8 @@
             ]
         },
         {
-            "repo": "Wellington01/sentry-greptile",
-            "head": "performance-enhancement-complete-v2",
+            "repo": "ai-code-review-benchmark/sentry",
+            "head": "performance-pagination-auditlogs",
             "base": "performance-optimization-baseline",
             "title": "Optimize spans buffer insertion with eviction during insert",
             "source_url": "https://github.com/getsentry/sentry/pull/92393",
@@ -47,7 +47,7 @@
             ]
         },
         {
-            "repo": "Wellington01/sentry-greptile",
+            "repo": "ai-code-review-benchmark/sentry",
             "head": "error-upsampling-race-condition",
             "base": "feature-stats-enhancement",
             "title": "feat(upsampling) - Support upsampled error count with performance optimizations",
@@ -68,7 +68,7 @@
             ]
         },
         {
-            "repo": "Wellington01/sentry-greptile",
+            "repo": "ai-code-review-benchmark/sentry",
             "head": "oauth-state-secure",
             "base": "oauth-state-vulnerable",
             "title": "GitHub OAuth Security Enhancement",
@@ -89,7 +89,7 @@
             ]
         },
         {
-            "repo": "Wellington01/sentry-greptile",
+            "repo": "ai-code-review-benchmark/sentry",
             "head": "replays-delete-stable",
             "base": "replays-delete-vulnerable",
             "title": "Replays Self-Serve Bulk Delete System",
@@ -110,7 +110,7 @@
             ]
         },
         {
-            "repo": "Wellington01/sentry-greptile",
+            "repo": "ai-code-review-benchmark/sentry",
             "head": "span-flusher-multiprocess",
             "base": "span-flusher-stable",
             "title": "Span Buffer Multiprocess Enhancement with Health Monitoring",
@@ -139,7 +139,7 @@
             ]
         },
         {
-            "repo": "Wellington01/sentry-greptile",
+            "repo": "ai-code-review-benchmark/sentry",
             "head": "ecosystem-sync-integration-after",
             "base": "ecosystem-sync-integration-before",
             "title": "feat(ecosystem): Implement cross-system issue synchronization",
@@ -164,7 +164,7 @@
             ]
         },
         {
-            "repo": "Wellington01/sentry-greptile",
+            "repo": "ai-code-review-benchmark/sentry",
             "head": "monitor-incident-refactor-after",
             "base": "monitor-incident-refactor-before",
             "title": "ref(crons): Reorganize incident creation / issue occurrence logic",
@@ -181,7 +181,7 @@
             ]
         },
         {
-            "repo": "Wellington01/sentry-greptile",
+            "repo": "ai-code-review-benchmark/sentry",
             "head": "queue-assignment-enhancement-after",
             "base": "queue-assignment-enhancement-before",
             "title": "feat(uptime): Add ability to use queues to manage parallelism",
@@ -202,7 +202,7 @@
             ]
         },
         {
-            "repo": "Wellington01/sentry-greptile",
+            "repo": "ai-code-review-benchmark/sentry",
             "head": "workflow-engine-stateful-detector-after",
             "base": "workflow-engine-stateful-detector-before",
             "title": "feat(workflow_engine): Add in hook for producing occurrences from the stateful detector",
@@ -219,7 +219,7 @@
             ]
         },
         {
-            "repo": "Wellington01/grafana-greptile",
+            "repo": "ai-code-review-benchmark/grafana-codex",
             "head": "implement-device-limits",
             "base": "enhance-anonymous-access",
             "title": "Anonymous: Add configurable device limit",
@@ -248,7 +248,7 @@
             ]
         },
         {
-            "repo": "Wellington01/grafana-greptile",
+            "repo": "ai-code-review-benchmark/grafana-codex",
             "head": "authz-service-improve-caching-pr",
             "base": "cache-optimization-baseline",
             "title": "AuthZService: improve authz caching",
@@ -265,7 +265,7 @@
             ]
         },
         {
-            "repo": "Wellington01/grafana-greptile",
+            "repo": "ai-code-review-benchmark/grafana-codex",
             "head": "plugins/rename-instrumentation-middleware-to-metrics-middleware",
             "base": "plugin-loading-baseline",
             "title": "Plugins: Chore: Renamed instrumentation middleware to metrics middleware",
@@ -282,7 +282,7 @@
             ]
         },
         {
-            "repo": "Wellington01/grafana-greptile",
+            "repo": "ai-code-review-benchmark/grafana-codex",
             "head": "query-splitting-enhancements",
             "base": "query-splitting-baseline",
             "title": "Advanced Query Processing Architecture",
@@ -295,7 +295,7 @@
             ]
         },
         {
-            "repo": "Wellington01/grafana-greptile",
+            "repo": "ai-code-review-benchmark/grafana-codex",
             "head": "notification-rule-enhancements",
             "base": "notification-rule-baseline",
             "title": "Notification Rule Processing Engine",
@@ -312,7 +312,7 @@
             ]
         },
         {
-            "repo": "Wellington01/grafana-greptile",
+            "repo": "ai-code-review-benchmark/grafana-codex",
             "head": "dual-storage-enhanced",
             "base": "dual-storage-baseline",
             "title": "Dual Storage Architecture",
@@ -333,7 +333,7 @@
             ]
         },
         {
-            "repo": "Wellington01/grafana-greptile",
+            "repo": "ai-code-review-benchmark/grafana-codex",
             "head": "db-cleanup-optimized",
             "base": "db-cleanup-baseline",
             "title": "Database Performance Optimizations",
@@ -346,7 +346,7 @@
             ]
         },
         {
-            "repo": "Wellington01/grafana-greptile",
+            "repo": "ai-code-review-benchmark/grafana-codex",
             "head": "asset-loading-optimized",
             "base": "asset-loading-baseline",
             "title": "Frontend Asset Optimization",
@@ -363,7 +363,7 @@
             ]
         },
         {
-            "repo": "Wellington01/grafana-greptile",
+            "repo": "ai-code-review-benchmark/grafana-codex",
             "head": "advanced-sql-analytics",
             "base": "data-analysis-features",
             "title": "Advanced SQL Analytics Framework",
@@ -380,7 +380,7 @@
             ]
         },
         {
-            "repo": "Wellington01/grafana-greptile",
+            "repo": "ai-code-review-benchmark/grafana-codex",
             "head": "unified-storage-enhancements",
             "base": "performance-optimization-baseline",
             "title": "Unified Storage Performance Optimizations",
@@ -397,7 +397,7 @@
             ]
         },
         {
-            "repo": "Wellington01/discourse-greptile",
+            "repo": "ai-code-review-benchmark/discourse-cursor",
             "head": "large-image-processing",
             "base": "image-processing-optimization",
             "title": "FEATURE: automatically downsize large images",
@@ -418,7 +418,7 @@
             ]
         },
         {
-            "repo": "Wellington01/discourse-greptile",
+            "repo": "ai-code-review-benchmark/discourse-cursor",
             "head": "topic-email-management",
             "base": "email-notifications-enhancement",
             "title": "FEATURE: per-topic unsubscribe option in emails",
@@ -435,7 +435,7 @@
             ]
         },
         {
-            "repo": "Wellington01/discourse-greptile",
+            "repo": "ai-code-review-benchmark/discourse-cursor",
             "head": "blocked-email-validation-post",
             "base": "blocked-email-validation-pre",
             "title": "Add comprehensive email validation for blocked users",
@@ -452,7 +452,7 @@
             ]
         },
         {
-            "repo": "Wellington01/discourse-greptile",
+            "repo": "ai-code-review-benchmark/discourse-cursor",
             "head": "embed-url-handling-post",
             "base": "embed-url-handling-pre",
             "title": "Enhance embed URL handling and validation system",
@@ -485,7 +485,7 @@
             ]
         },
         {
-            "repo": "Wellington01/discourse-greptile",
+            "repo": "ai-code-review-benchmark/discourse-cursor",
             "head": "header-layout-optimization-post",
             "base": "header-layout-optimization-pre",
             "title": "Optimize header layout performance with flexbox mixins",
@@ -502,7 +502,7 @@
             ]
         },
         {
-            "repo": "Wellington01/discourse-greptile",
+            "repo": "ai-code-review-benchmark/discourse-cursor",
             "head": "website-url-display",
             "base": "user-profile-enhancement",
             "title": "UX: show complete URL path if website domain is same as instance domain",
@@ -515,7 +515,7 @@
             ]
         },
         {
-            "repo": "Wellington01/discourse-greptile",
+            "repo": "ai-code-review-benchmark/discourse-cursor",
             "head": "theme-color-scheme-post",
             "base": "theme-color-scheme-pre",
             "title": "scale-color $lightness must use $secondary for dark themes",
@@ -536,7 +536,7 @@
             ]
         },
         {
-            "repo": "Wellington01/discourse-greptile",
+            "repo": "ai-code-review-benchmark/discourse-cursor",
             "head": "group-dm-user-addition-post",
             "base": "group-dm-user-addition-pre",
             "title": "FIX: proper handling of group memberships",
@@ -557,7 +557,7 @@
             ]
         },
         {
-            "repo": "Wellington01/discourse-greptile",
+            "repo": "ai-code-review-benchmark/discourse-cursor",
             "head": "localization-system-post",
             "base": "localization-system-pre",
             "title": "FEATURE: Localization fallbacks (server-side)",
@@ -574,7 +574,7 @@
             ]
         },
         {
-            "repo": "Wellington01/discourse-greptile",
+            "repo": "ai-code-review-benchmark/discourse-cursor",
             "head": "rest-serializer-enhancement-post",
             "base": "rest-serializer-enhancement-pre",
             "title": "FEATURE: Can edit category/host relationships for embedding",
@@ -599,7 +599,7 @@
             ]
         },
         {
-            "repo": "Wellington01/cal.com-greptile",
+            "repo": "ai-code-review-benchmark/cal.com",
             "head": "appstore-async-improvements",
             "base": "appstore-sync-refactor-base",
             "title": "Async import of the appStore packages",
@@ -616,7 +616,7 @@
             ]
         },
         {
-            "repo": "Wellington01/cal.com-greptile",
+            "repo": "ai-code-review-benchmark/cal.com",
             "head": "improve-two-factor-authentication-features",
             "base": "enhance-two-factor-security-foundation",
             "title": "feat: 2fa backup codes",
@@ -641,7 +641,7 @@
             ]
         },
         {
-            "repo": "Wellington01/cal.com-greptile",
+            "repo": "ai-code-review-benchmark/cal.com",
             "head": "fix/handle-collective-multiple-host-destinations",
             "base": "enhance-collective-scheduling-foundation",
             "title": "fix: handle collective multiple host on destinationCalendar",
@@ -670,7 +670,7 @@
             ]
         },
         {
-            "repo": "Wellington01/cal.com-greptile",
+            "repo": "ai-code-review-benchmark/cal.com",
             "head": "insights-performance-optimization",
             "base": "insights-query-foundation",
             "title": "feat: convert InsightsBookingService to use Prisma.sql raw queries",
@@ -687,7 +687,7 @@
             ]
         },
         {
-            "repo": "Wellington01/cal.com-greptile",
+            "repo": "ai-code-review-benchmark/cal.com",
             "head": "workflow-system-enhanced",
             "base": "workflow-system-base",
             "title": "Comprehensive workflow reminder management for booking lifecycle events",
@@ -704,7 +704,7 @@
             ]
         },
         {
-            "repo": "Wellington01/cal.com-greptile",
+            "repo": "ai-code-review-benchmark/cal.com",
             "head": "date-algorithm-enhanced",
             "base": "date-algorithm-base",
             "title": "Advanced date override handling and timezone compatibility improvements",
@@ -721,7 +721,7 @@
             ]
         },
         {
-            "repo": "Wellington01/cal.com-greptile",
+            "repo": "ai-code-review-benchmark/cal.com",
             "head": "oauth-security-enhanced",
             "base": "oauth-security-base",
             "title": "OAuth credential sync and app integration enhancements",
@@ -750,7 +750,7 @@
             ]
         },
         {
-            "repo": "Wellington01/cal.com-greptile",
+            "repo": "ai-code-review-benchmark/cal.com",
             "head": "sms-retry-enhanced",
             "base": "sms-retry-base",
             "title": "SMS workflow reminder retry count tracking",
@@ -767,7 +767,7 @@
             ]
         },
         {
-            "repo": "Wellington01/cal.com-greptile",
+            "repo": "ai-code-review-benchmark/cal.com",
             "head": "guest-management-enhanced",
             "base": "guest-management-base",
             "title": "Add guest management functionality to existing bookings",
@@ -796,7 +796,7 @@
             ]
         },
         {
-            "repo": "Wellington01/cal.com-greptile",
+            "repo": "ai-code-review-benchmark/cal.com",
             "head": "calendar-cache-enhanced",
             "base": "calendar-cache-base",
             "title": "feat: add calendar cache status and actions (#22532)",
@@ -813,7 +813,7 @@
             ]
         },
         {
-            "repo": "Wellington01/keycloak-greptile",
+            "repo": "ai-code-review-benchmark/keycloak",
             "head": "passkey-integration-buggy",
             "base": "passkey-auth-baseline",
             "title": "Fixing Re-authentication with passkeys",
@@ -830,7 +830,7 @@
             ]
         },
         {
-            "repo": "Wellington01/keycloak-greptile",
+            "repo": "ai-code-review-benchmark/keycloak",
             "head": "feature-idp-cache-implementation",
             "base": "feature-idp-cache-baseline",
             "title": "Add caching support for IdentityProviderStorageProvider.getForLogin operations",
@@ -847,7 +847,7 @@
             ]
         },
         {
-            "repo": "Wellington01/keycloak-greptile",
+            "repo": "ai-code-review-benchmark/keycloak",
             "head": "feature-authz-crypto-implementation",
             "base": "feature-authz-crypto-baseline",
             "title": "Add AuthzClientCryptoProvider for authorization client cryptographic operations",
@@ -864,7 +864,7 @@
             ]
         },
         {
-            "repo": "Wellington01/keycloak-greptile",
+            "repo": "ai-code-review-benchmark/keycloak",
             "head": "feature-rolling-updates-implementation",
             "base": "feature-rolling-updates-baseline",
             "title": "Add rolling-updates feature flag and compatibility framework",
@@ -877,8 +877,8 @@
             ]
         },
         {
-            "repo": "Wellington01/keycloak-greptile",
-            "head": "feature-authz-crypto-implementation-v2",
+            "repo": "ai-code-review-benchmark/keycloak",
+            "head": "feature-clients-authz-implementation",
             "base": "feature-authz-crypto-baseline",
             "title": "Add Client resource type and scopes to authorization schema",
             "source_url": "https://github.com/keycloak/keycloak/pull/36880",
@@ -898,7 +898,7 @@
             ]
         },
         {
-            "repo": "Wellington01/keycloak-greptile",
+            "repo": "ai-code-review-benchmark/keycloak",
             "head": "feature-groups-authz-implementation",
             "base": "feature-groups-authz-baseline",
             "title": "Add Groups resource type and scopes to authorization schema",
@@ -915,7 +915,7 @@
             ]
         },
         {
-            "repo": "Wellington01/keycloak-greptile",
+            "repo": "ai-code-review-benchmark/keycloak",
             "head": "feature-html-sanitizer-implementation",
             "base": "feature-html-sanitizer-baseline",
             "title": "Add HTML sanitizer for translated message resources",
@@ -940,7 +940,7 @@
             ]
         },
         {
-            "repo": "Wellington01/keycloak-greptile",
+            "repo": "ai-code-review-benchmark/keycloak",
             "head": "feature-token-context-implementation",
             "base": "feature-token-context-baseline",
             "title": "Implement access token context encoding framework",
@@ -965,7 +965,7 @@
             ]
         },
         {
-            "repo": "Wellington01/keycloak-greptile",
+            "repo": "ai-code-review-benchmark/keycloak",
             "head": "feature-recovery-keys-implementation",
             "base": "feature-recovery-keys-foundation",
             "title": "Implement recovery key support for user storage providers",
@@ -982,7 +982,7 @@
             ]
         },
         {
-            "repo": "Wellington01/keycloak-greptile",
+            "repo": "ai-code-review-benchmark/keycloak",
             "head": "feature-group-concurrency-implementation",
             "base": "feature-group-concurrency-update",
             "title": "Fix concurrent group access to prevent NullPointerException",

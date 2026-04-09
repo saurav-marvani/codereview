@@ -2,31 +2,6 @@
   "prs": [
     {
       "repo": "ai-code-review-benchmark/sentry",
-      "head": "performance-enhancement-complete",
-      "base": "master",
-      "title": "Enhanced Pagination Performance for High-Volume Audit Logs",
-      "source_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/1",
-      "golden_comments": [
-        {
-          "comment": "Importing non-existent OptimizedCursorPaginator",
-          "severity": "Low"
-        },
-        {
-          "comment": "Django querysets do not support negative slicing",
-          "severity": "High"
-        },
-        {
-          "comment": "When requests are authenticated with API keys or org auth tokens (which have user_id=None), organization_context.member is None. Line 71 attempts to access organization_context.member.has_global_access without checking if member is None, causing an AttributeError crash when optimized_pagination=true is used, even though the request passed all permission checks with valid org:write scope.",
-          "severity": "High"
-        },
-        {
-          "comment": "get_item_key assumes a numeric key, but the paginator is used with order_by=-datetime in the audit logs endpoint; calling math.floor/ceil on a datetime will raise a TypeError.",
-          "severity": "High"
-        }
-      ]
-    },
-    {
-      "repo": "ai-code-review-benchmark/sentry",
       "head": "performance-pagination-auditlogs",
       "base": "master",
       "title": "Enhanced Pagination Performance for High-Volume Audit Logs",
@@ -48,7 +23,7 @@
     },
     {
       "repo": "ai-code-review-benchmark/sentry",
-      "head": "performance-enhancement-complete-v2",
+      "head": "performance-enhancement-complete",
       "base": "performance-optimization-baseline",
       "title": "Optimize spans buffer insertion with eviction during insert",
       "source_url": "https://github.com/getsentry/sentry/pull/92393",
@@ -79,7 +54,7 @@
           "severity": "Low"
         },
         {
-          "comment": "Using Python\u2019s built-in hash() to build cache keys is non-deterministic across processes (hash randomization), so keys won\u2019t match across workers and invalidate_upsampling_cache may fail to delete them. Use a deterministic serialization of project_ids for the cache key.",
+          "comment": "Using Python’s built-in hash() to build cache keys is non-deterministic across processes (hash randomization), so keys won’t match across workers and invalidate_upsampling_cache may fail to delete them. Use a deterministic serialization of project_ids for the cache key.",
           "severity": "Low"
         },
         {
@@ -150,7 +125,7 @@
           "severity": "High"
         },
         {
-          "comment": "Sleep in test_consumer.py won\u2019t actually wait because time.sleep was monkeypatched above; consider restoring sleep or using a different sync to ensure the flusher has time to process.",
+          "comment": "Sleep in test_consumer.py won’t actually wait because time.sleep was monkeypatched above; consider restoring sleep or using a different sync to ensure the flusher has time to process.",
           "severity": "Medium"
         },
         {
@@ -255,7 +230,7 @@
           "severity": "Medium"
         },
         {
-          "comment": "This call won\u2019t compile: dbSession.Exec(args...) is given a []interface{} where the first element is the query, but Exec\u2019s signature requires a first parameter of type string (not an interface{} splat).",
+          "comment": "This call won’t compile: dbSession.Exec(args...) is given a []interface{} where the first element is the query, but Exec’s signature requires a first parameter of type string (not an interface{} splat).",
           "severity": "Medium"
         },
         {
@@ -610,11 +585,11 @@
           "severity": "Medium"
         },
         {
-          "comment": "record_for_host compares lower(host) = ? but does not normalize the parameter\u2019s case, so mixed\u2011case referer hosts may fail to match even though comparison intends to be case\u2011insensitive.",
+          "comment": "record_for_host compares lower(host) = ? but does not normalize the parameter’s case, so mixed‑case referer hosts may fail to match even though comparison intends to be case‑insensitive.",
           "severity": "Medium"
         },
         {
-          "comment": "Because this migration inserts embeddable_hosts rows with raw SQL, any existing embeddable_hosts values that include http:// or /https:// or path segments won\u2019t go through the EmbeddableHost model\u2019s normalization, so the new host lookup (which compares only the bare host) may fail for migrated data. Consider ensuring that migrated hosts are normalized to the same format as newly created EmbeddableHost records so existing embedding configurations keep working.",
+          "comment": "Because this migration inserts embeddable_hosts rows with raw SQL, any existing embeddable_hosts values that include http:// or /https:// or path segments won’t go through the EmbeddableHost model’s normalization, so the new host lookup (which compares only the bare host) may fail for migrated data. Consider ensuring that migrated hosts are normalized to the same format as newly created EmbeddableHost records so existing embedding configurations keep working.",
           "severity": "High"
         }
       ]
@@ -685,7 +660,7 @@
           "severity": "Medium"
         },
         {
-          "comment": "The Calendar interface now requires createEvent(event, credentialId), but some implementations (e.g., Lark/Office365) still declare createEvent(event) only\u2014this breaks the interface contract (also applies to other locations in the PR).",
+          "comment": "The Calendar interface now requires createEvent(event, credentialId), but some implementations (e.g., Lark/Office365) still declare createEvent(event) only—this breaks the interface contract (also applies to other locations in the PR).",
           "severity": "Low"
         }
       ]
@@ -765,7 +740,7 @@
           "severity": "High"
         },
         {
-          "comment": "When the sync endpoint path is used, res is a fetch Response and has no .data; res?.data will be undefined and token.access_token will throw at runtime. This relies on a consistent return shape from refreshOAuthTokens, which isn\u2019t guaranteed currently.",
+          "comment": "When the sync endpoint path is used, res is a fetch Response and has no .data; res?.data will be undefined and token.access_token will throw at runtime. This relies on a consistent return shape from refreshOAuthTokens, which isn’t guaranteed currently.",
           "severity": "High"
         }
       ]
@@ -947,7 +922,7 @@
           "severity": "Medium"
         },
         {
-          "comment": "The totpStep1 value uses Traditional Chinese terms in the Simplified Chinese file (zh_CN), which is likely incorrect for this locale. Please verify the locale\u2011appropriate translation.",
+          "comment": "The totpStep1 value uses Traditional Chinese terms in the Simplified Chinese file (zh_CN), which is likely incorrect for this locale. Please verify the locale‑appropriate translation.",
           "severity": "Medium"
         },
         {
@@ -972,7 +947,7 @@
           "severity": "Critical"
         },
         {
-          "comment": "In isAccessTokenId, the substring for the grant shortcut and the equality check look inverted: the grant shortcut occupies indices 4\u20135 (substring(4,6)), and a match should return true (combined with UUID check), not false.",
+          "comment": "In isAccessTokenId, the substring for the grant shortcut and the equality check look inverted: the grant shortcut occupies indices 4–5 (substring(4,6)), and a match should return true (combined with UUID check), not false.",
           "severity": "High"
         },
         {
@@ -1014,7 +989,7 @@
           "severity": "Critical"
         },
         {
-          "comment": "The reader thread isn\u2019t waited for; flipping deletedAll to true and asserting immediately can race and miss exceptions added just after the flag change, making this test flaky.",
+          "comment": "The reader thread isn’t waited for; flipping deletedAll to true and asserting immediately can race and miss exceptions added just after the flag change, making this test flaky.",
           "severity": "Medium"
         }
       ]
