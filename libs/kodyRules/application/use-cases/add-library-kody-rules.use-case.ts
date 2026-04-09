@@ -74,8 +74,7 @@ export class AddLibraryKodyRulesUseCase {
                     throw new Error('Failed to add library Kody rule');
                 }
                 if (
-                    (result as CentralizedPrMetadata)?.mode ===
-                    'centralized-pr'
+                    (result as CentralizedPrMetadata)?.mode === 'centralized-pr'
                 ) {
                     centralizedPrResult = result as CentralizedPrMetadata;
                 } else {
@@ -118,8 +117,7 @@ export class AddLibraryKodyRulesUseCase {
                         (result as CentralizedPrMetadata)?.mode ===
                         'centralized-pr'
                     ) {
-                        centralizedPrResult =
-                            result as CentralizedPrMetadata;
+                        centralizedPrResult = result as CentralizedPrMetadata;
                     } else {
                         results.push(result);
                     }
