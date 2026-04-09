@@ -140,7 +140,7 @@ export class KodyRulesTools {
         return {
             name: 'KODUS_GET_KODY_RULES',
             description:
-                'Get all active Kody Rules at organization level. Use this to see organization-wide coding standards, global rules that apply across all repositories, or when you need a complete overview of all active rules. Returns only ACTIVE status rules.',
+                'Get all Kody Rules at organization level. Use this to see organization-wide coding standards, global rules that apply across all repositories, or when you need a complete overview of rules. Returns rules with ACTIVE and PENDING status.',
             inputSchema,
             outputSchema: z.object({
                 success: z.boolean(),
@@ -190,7 +190,8 @@ export class KodyRulesTools {
 
                     const rules: Partial<IKodyRule>[] = allRules.filter(
                         (rule: Partial<IKodyRule>) =>
-                            rule.status === KodyRulesStatus.ACTIVE,
+                            rule.status === KodyRulesStatus.ACTIVE ||
+                            rule.status === KodyRulesStatus.PENDING,
                     );
 
                     return {
@@ -222,7 +223,7 @@ export class KodyRulesTools {
         return {
             name: 'KODUS_GET_KODY_RULES_REPOSITORY',
             description:
-                'Get active Kody Rules specific to a particular repository. Use this to see repository-specific coding standards, rules that only apply to one codebase, or when analyzing rules for a specific project. More focused than get_kody_rules.',
+                'Get Kody Rules specific to a particular repository. Use this to see repository-specific coding standards, rules that only apply to one codebase, or when analyzing rules for a specific project. More focused than get_kody_rules. Returns rules with ACTIVE and PENDING status.',
             inputSchema,
             outputSchema: z.object({
                 success: z.boolean(),
@@ -276,7 +277,8 @@ export class KodyRulesTools {
                             (rule: Partial<IKodyRule>) =>
                                 rule.repositoryId &&
                                 rule.repositoryId === params.repositoryId &&
-                                rule.status === KodyRulesStatus.ACTIVE,
+                                (rule.status === KodyRulesStatus.ACTIVE ||
+                                    rule.status === KodyRulesStatus.PENDING),
                         );
 
                     return {
@@ -322,7 +324,7 @@ export class KodyRulesTools {
                         .string()
                         .optional()
                         .describe(
-                            'Repository unique identifier - can be used with both scopes to limit rule to specific repository',
+                            'Repository unique identifier to limit the rule to a specific repository. By default, when creating a rule from a PR suggestion, use the current repository ID. If the user explicitly asks for a global rule (e.g., "for all repositories", "organization-wide", "global", "for the entire organization"), omit this field or do not provide it so the rule defaults to global scope.',
                         ),
                     path: z
                         .string()
@@ -495,7 +497,12 @@ export class KodyRulesTools {
                     return {
                         success: true,
                         count: 1,
-                        data: result,
+                        data: {
+                            uuid: result?.uuid,
+                            title: result?.title,
+                            rule: result?.rule,
+                            status: result?.status,
+                        },
                     };
                 },
             ),
@@ -544,7 +551,7 @@ export class KodyRulesTools {
                         .string()
                         .optional()
                         .describe(
-                            'Updated repository unique identifier - can be used with both scopes to limit rule to specific repository',
+                            'Updated repository unique identifier. Set to a specific repository ID to limit the rule to that repository, or set to "global" to make the rule apply to all repositories in the organization. Use "global" when the user asks for organization-wide, global, or all-repositories scope.',
                         ),
                     path: z
                         .string()

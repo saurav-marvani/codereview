@@ -28,12 +28,15 @@ export class GetCodeManagementMemberListUseCase implements IUseCase {
         },
     ) {}
 
-    public async execute(): Promise<{ name: string; id: string | number }[]> {
+    public async execute(teamId?: string): Promise<{ name: string; id: string | number }[]> {
         const organizationAndTeamData: OrganizationAndTeamData = {
             organizationId: this.request.user.organization.uuid,
+            teamId,
         };
 
-        const cacheKey = `org_members_${organizationAndTeamData.organizationId}`;
+        const cacheKey = teamId !== undefined
+            ? `org_members_${organizationAndTeamData.organizationId}_${teamId}`
+            : `org_members_${organizationAndTeamData.organizationId}`;
 
         try {
             const cached = await this.cacheService.getFromCache<
@@ -78,14 +81,17 @@ export class GetCodeManagementMemberListUseCase implements IUseCase {
         return prMembers;
     }
 
-    public async refreshMembers(): Promise<
+    public async refreshMembers(teamId?: string): Promise<
         { name: string; id: string | number }[]
     > {
-        const cacheKey = `org_members_${this.request.user.organization.uuid}`;
+        const organizationId = this.request.user.organization.uuid;
+        const cacheKey = teamId !== undefined
+            ? `org_members_${organizationId}_${teamId}`
+            : `org_members_${organizationId}`;
 
         await this.cacheService.removeFromCache(cacheKey);
 
-        return this.execute();
+        return this.execute(teamId);
     }
 
     private async fetchMembersFromCodeIntegration(

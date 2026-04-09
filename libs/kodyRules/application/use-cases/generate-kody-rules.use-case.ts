@@ -340,25 +340,6 @@ export class GenerateKodyRulesUseCase {
                 allRules.push(rules);
             }
 
-            if (allRules.length === 0) {
-                this.logger.log({
-                    message: 'No rules generated',
-                    context: GenerateKodyRulesUseCase.name,
-                    metadata: { body, organizationAndTeamData },
-                });
-
-                await this.createOrUpdateParametersUseCase.execute(
-                    ParametersKey.PLATFORM_CONFIGS,
-                    {
-                        ...platformConfig.configValue,
-                        kodyLearningStatus: KodyLearningStatus.DISABLED,
-                    },
-                    organizationAndTeamData,
-                );
-
-                return [];
-            }
-
             await this.createOrUpdateParametersUseCase.execute(
                 ParametersKey.PLATFORM_CONFIGS,
                 {
@@ -367,6 +348,16 @@ export class GenerateKodyRulesUseCase {
                 },
                 organizationAndTeamData,
             );
+
+            if (allRules.length === 0) {
+                this.logger.log({
+                    message: 'No rules generated',
+                    context: GenerateKodyRulesUseCase.name,
+                    metadata: { body, organizationAndTeamData },
+                });
+
+                return [];
+            }
 
             this.logger.log({
                 message: 'Kody rules generated successfully',
@@ -437,7 +428,7 @@ export class GenerateKodyRulesUseCase {
                     ParametersKey.PLATFORM_CONFIGS,
                     {
                         ...platformConfig.configValue,
-                        kodyLearningStatus: KodyLearningStatus.DISABLED,
+                        kodyLearningStatus: KodyLearningStatus.ENABLED,
                     },
                     organizationAndTeamData ?? { teamId: body.teamId },
                 );

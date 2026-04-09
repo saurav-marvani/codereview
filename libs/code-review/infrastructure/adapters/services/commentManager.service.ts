@@ -976,14 +976,35 @@ You must always respond in ${languageResultPrompt}.`;
                         });
                     }
 
+                    const commentId = createdComment?.id;
+                    const pullRequestReviewId =
+                        createdComment?.pull_request_review_id ??
+                        createdComment?.pullRequestReviewId;
+
+                    if (!commentId || !pullRequestReviewId) {
+                        this.logger.error({
+                            message: `Comment created but missing critical IDs in response for PR#${prNumber}`,
+                            context: CommentManagerService.name,
+                            metadata: {
+                                prNumber,
+                                repository,
+                                suggestionId: comment.suggestion?.id,
+                                commentId,
+                                pullRequestReviewId,
+                                createdCommentKeys: createdComment
+                                    ? Object.keys(createdComment)
+                                    : [],
+                                organizationAndTeamData,
+                            },
+                        });
+                    }
+
                     commentResults.push({
                         comment,
                         deliveryStatus: DeliveryStatus.SENT,
                         codeReviewFeedbackData: {
-                            commentId: createdComment?.id,
-                            pullRequestReviewId:
-                                createdComment?.pull_request_review_id ??
-                                createdComment?.pullRequestReviewId,
+                            commentId,
+                            pullRequestReviewId,
                             suggestionId: comment.suggestion.id,
                         },
                     });
@@ -1010,16 +1031,47 @@ You must always respond in ${languageResultPrompt}.`;
                         });
 
                         // Fallback suggestion was sent successfully
+                        const fallbackCommentId =
+                            fallbackResult.createdComment?.id;
+                        const fallbackPullRequestReviewId =
+                            fallbackResult.createdComment
+                                ?.pull_request_review_id ??
+                            fallbackResult.createdComment?.pullRequestReviewId;
+
+                        if (
+                            !fallbackCommentId ||
+                            !fallbackPullRequestReviewId
+                        ) {
+                            this.logger.error({
+                                message: `Fallback comment created but missing critical IDs in response for PR#${prNumber}`,
+                                context: CommentManagerService.name,
+                                metadata: {
+                                    prNumber,
+                                    repository,
+                                    suggestionId:
+                                        fallbackResult.fallbackComment.suggestion
+                                            ?.id,
+                                    commentId: fallbackCommentId,
+                                    pullRequestReviewId:
+                                        fallbackPullRequestReviewId,
+                                    createdCommentKeys:
+                                        fallbackResult.createdComment
+                                            ? Object.keys(
+                                                  fallbackResult.createdComment,
+                                              )
+                                            : [],
+                                    organizationAndTeamData,
+                                },
+                            });
+                        }
+
                         commentResults.push({
                             comment: fallbackResult.fallbackComment,
                             deliveryStatus: DeliveryStatus.SENT,
                             codeReviewFeedbackData: {
-                                commentId: fallbackResult.createdComment?.id,
+                                commentId: fallbackCommentId,
                                 pullRequestReviewId:
-                                    fallbackResult.createdComment
-                                        ?.pull_request_review_id ??
-                                    fallbackResult.createdComment
-                                        ?.pullRequestReviewId,
+                                    fallbackPullRequestReviewId,
                                 suggestionId:
                                     fallbackResult.fallbackComment.suggestion
                                         .id,

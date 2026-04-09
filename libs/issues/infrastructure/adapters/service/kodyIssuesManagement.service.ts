@@ -722,6 +722,10 @@ export class KodyIssuesManagementService implements IKodyIssuesManagementService
             return allSuggestions;
         }
 
+        if (typeof issuesConfigValue === 'boolean') {
+            return issuesConfigValue ? allSuggestions : [];
+        }
+
         const { severityFilters, sourceFilters } = issuesConfigValue;
 
         return allSuggestions.filter((suggestion) => {

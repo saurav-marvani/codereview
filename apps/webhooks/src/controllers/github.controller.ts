@@ -64,6 +64,9 @@ export class GithubController {
                         context: GithubController.name,
                         metadata: {
                             event,
+                            action: payload?.action,
+                            commentId: payload?.comment?.id,
+                            deliveryId: req.headers['x-github-delivery'],
                             installationId: payload?.installation?.id,
                             repository: payload?.repository?.name,
                         },
