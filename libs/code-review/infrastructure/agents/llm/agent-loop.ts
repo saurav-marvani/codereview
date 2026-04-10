@@ -476,6 +476,10 @@ export async function runAgentLoop(
     const tools = buildAgentTools(secrets.remoteCommands, secrets.gitHubToken);
     const coverageTargets = buildCoverageLedger(input.changedFiles);
 
+    // Pass 0: Triage — identify high-risk functions before main investigation
+    const triageSuspects = await runTriagePass(input, secrets);
+    const effectiveUserPrompt = injectFocusTargets(input.userPrompt, triageSuspects);
+
     const allToolCalls: AgentLoopOutput['toolCalls'] = [];
     let stepCount = 0;
     let lastStepText = ''; // Capture text from intermediate steps for timeout recovery
@@ -509,7 +513,7 @@ export async function runAgentLoop(
                     model: input.model,
                     abortSignal: abortController.signal,
                     system: input.systemPrompt,
-                    prompt: input.userPrompt,
+                    prompt: effectiveUserPrompt,
                     experimental_telemetry: {
                         isEnabled: true,
                         functionId: input.agentName ?? 'agent-loop',
@@ -1171,6 +1175,18 @@ Respond with ONLY the JSON:
         baseReasoningTokens,
         totalReasoningTokens,
     );
+
+    if (triageSuspects.length > 0) {
+        logger.log({
+            message: `[TRIAGE] Triage directed investigation: ${triageSuspects.length} suspects → ${findings.suggestions.length} findings`,
+            context: 'AgentLoop',
+            metadata: {
+                triageSuspects: triageSuspects.length,
+                findings: findings.suggestions.length,
+                suspects: triageSuspects.map((s) => `${s.function}@${s.file}`),
+            },
+        });
+    }
 
     return {
         findings,
