@@ -28,9 +28,11 @@ const _rawGenerateText = generateText;
 generateText = (async (...args: Parameters<typeof _rawGenerateText>) => {
     // Extract timeout from the abortSignal if present, otherwise use AGENT_TIMEOUT_MS
     const opts = args[0] as any;
-    const ms = opts?.__kodusHardTimeoutMs ?? (opts?.abortSignal
-        ? LLM_CALL_TIMEOUT_MS  // secondary calls already set timeoutSignal
-        : AGENT_TIMEOUT_MS);     // main call uses agent-level timeout
+    const ms =
+        opts?.__kodusHardTimeoutMs ??
+        (opts?.abortSignal
+            ? LLM_CALL_TIMEOUT_MS // secondary calls already set timeoutSignal
+            : AGENT_TIMEOUT_MS); // main call uses agent-level timeout
     const label = opts?.experimental_telemetry?.functionId || 'generateText';
     return hardTimeout(_rawGenerateText(...args), ms, label);
 }) as typeof generateText;
@@ -140,13 +142,22 @@ function timeoutSignal(ms: number): AbortSignal {
  * but some providers (OpenAI-compatible proxies like Synthetic, Z.AI) ignore it.
  * This is the safety net.
  */
-function hardTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+function hardTimeout<T>(
+    promise: Promise<T>,
+    ms: number,
+    label: string,
+): Promise<T> {
     let timer: ReturnType<typeof setTimeout>;
     return Promise.race([
         promise,
         new Promise<never>((_, reject) => {
             timer = setTimeout(
-                () => reject(new Error(`[HARD-TIMEOUT] ${label} exceeded ${ms / 1000}s`)),
+                () =>
+                    reject(
+                        new Error(
+                            `[HARD-TIMEOUT] ${label} exceeded ${ms / 1000}s`,
+                        ),
+                    ),
                 ms + 5_000, // +5s grace so AbortSignal fires first when it works
             );
         }),
@@ -332,7 +343,7 @@ export async function runAgentLoop(
             abortSignal: abortController.signal,
             fn: () =>
                 generateText({
-                    ...( { __kodusHardTimeoutMs: AGENT_TIMEOUT_MS } as any ),
+                    ...({ __kodusHardTimeoutMs: AGENT_TIMEOUT_MS } as any),
                     model: input.model,
                     abortSignal: abortController.signal,
                     system: input.systemPrompt,
@@ -362,7 +373,8 @@ export async function runAgentLoop(
                                 ? MAX_STEPS_DEEP
                                 : MAX_STEPS_NORMAL);
                         const forceTextAfter = maxSteps - 2;
-                        const coverageDebt = formatCoverageDebt(coverageTargets);
+                        const coverageDebt =
+                            formatCoverageDebt(coverageTargets);
 
                         if (coverageDebt) {
                             if (stepNumber >= forceTextAfter) {
@@ -411,110 +423,118 @@ export async function runAgentLoop(
                         return {};
                     },
                     onStepFinish: (event: any) => {
-                stepCount++;
+                        stepCount++;
 
-                if (event.toolCalls) {
-                    // Build a lookup of tool results — different providers use different structures
-                    const resultLookup = new Map<string, string>();
-                    const toolResults: any[] = event.toolResults || [];
+                        if (event.toolCalls) {
+                            // Build a lookup of tool results — different providers use different structures
+                            const resultLookup = new Map<string, string>();
+                            const toolResults: any[] = event.toolResults || [];
 
-                    for (const tr of toolResults) {
-                        const id = tr?.toolCallId || tr?.id || '';
-                        const val =
-                            tr?.result ?? tr?.output ?? tr?.content ?? '';
-                        if (id) resultLookup.set(id, String(val));
-                    }
-
-                    for (const tc of event.toolCalls) {
-                        const args =
-                            (tc as any).args || (tc as any).input || {};
-
-                        // Try multiple ID fields to match tool call → result
-                        const callId = tc.toolCallId || (tc as any).id || '';
-                        let resultStr = resultLookup.get(callId) || '';
-
-                        // Fallback: if toolResults has same count as toolCalls, match by index
-                        if (
-                            !resultStr &&
-                            toolResults.length === event.toolCalls.length
-                        ) {
-                            const idx = event.toolCalls.indexOf(tc);
-                            if (idx >= 0 && toolResults[idx]) {
-                                const tr = toolResults[idx];
-                                resultStr = String(
+                            for (const tr of toolResults) {
+                                const id = tr?.toolCallId || tr?.id || '';
+                                const val =
                                     tr?.result ??
-                                        tr?.output ??
-                                        tr?.content ??
-                                        '',
+                                    tr?.output ??
+                                    tr?.content ??
+                                    '';
+                                if (id) resultLookup.set(id, String(val));
+                            }
+
+                            for (const tc of event.toolCalls) {
+                                const args =
+                                    (tc as any).args || (tc as any).input || {};
+
+                                // Try multiple ID fields to match tool call → result
+                                const callId =
+                                    tc.toolCallId || (tc as any).id || '';
+                                let resultStr = resultLookup.get(callId) || '';
+
+                                // Fallback: if toolResults has same count as toolCalls, match by index
+                                if (
+                                    !resultStr &&
+                                    toolResults.length ===
+                                        event.toolCalls.length
+                                ) {
+                                    const idx = event.toolCalls.indexOf(tc);
+                                    if (idx >= 0 && toolResults[idx]) {
+                                        const tr = toolResults[idx];
+                                        resultStr = String(
+                                            tr?.result ??
+                                                tr?.output ??
+                                                tr?.content ??
+                                                '',
+                                        );
+                                    }
+                                }
+
+                                allToolCalls.push({
+                                    tool: tc.toolName,
+                                    toolName: tc.toolName,
+                                    args,
+                                    result: resultStr.substring(0, 500),
+                                });
+
+                                const newlyTouched = markCoverageFromToolCall(
+                                    coverageTargets,
+                                    tc.toolName,
+                                    args,
+                                    stepCount,
                                 );
+                                if (newlyTouched.length > 0) {
+                                    logger.log({
+                                        message: `[AGENT-COVERAGE] step=${stepCount} touched ${newlyTouched.map((target) => target.file).join(', ')}`,
+                                        context: 'AgentLoop',
+                                        metadata: {
+                                            step: stepCount,
+                                            touchedFiles: newlyTouched.map(
+                                                (target) => target.file,
+                                            ),
+                                            coverage:
+                                                getCoverageSummary(
+                                                    coverageTargets,
+                                                ),
+                                        },
+                                    });
+                                }
+
+                                logger.log({
+                                    message: `[AGENT-TOOL] step=${stepCount} ${tc.toolName}(${JSON.stringify(args).substring(0, 200)}) → ${resultStr ? resultStr.substring(0, 150) : '(empty)'}${resultStr.length > 150 ? '...' : ''}`,
+                                    context: 'AgentLoop',
+                                    metadata: {
+                                        step: stepCount,
+                                        tool: tc.toolName,
+                                        args,
+                                        resultLength: resultStr.length,
+                                    },
+                                });
                             }
                         }
 
-                        allToolCalls.push({
-                            tool: tc.toolName,
-                            toolName: tc.toolName,
-                            args,
-                            result: resultStr.substring(0, 500),
-                        });
-
-                        const newlyTouched = markCoverageFromToolCall(
-                            coverageTargets,
-                            tc.toolName,
-                            args,
-                            stepCount,
-                        );
-                        if (newlyTouched.length > 0) {
+                        if (event.text) {
+                            lastStepText = event.text;
+                            allStepTexts.push(event.text);
                             logger.log({
-                                message: `[AGENT-COVERAGE] step=${stepCount} touched ${newlyTouched.map((target) => target.file).join(', ')}`,
+                                message: `[AGENT-TEXT] step=${stepCount} finishReason=${event.finishReason} textLength=${event.text.length} tokens=${event.usage?.totalTokens ?? 0}`,
                                 context: 'AgentLoop',
                                 metadata: {
                                     step: stepCount,
-                                    touchedFiles: newlyTouched.map(
-                                        (target) => target.file,
-                                    ),
-                                    coverage:
-                                        getCoverageSummary(coverageTargets),
+                                    finishReason: event.finishReason,
+                                    textLength: event.text.length,
+                                    textPreview: event.text.substring(0, 300),
+                                    usage: event.usage,
                                 },
                             });
                         }
 
-                        logger.log({
-                            message: `[AGENT-TOOL] step=${stepCount} ${tc.toolName}(${JSON.stringify(args).substring(0, 200)}) → ${resultStr ? resultStr.substring(0, 150) : '(empty)'}${resultStr.length > 150 ? '...' : ''}`,
-                            context: 'AgentLoop',
-                            metadata: {
-                                step: stepCount,
-                                tool: tc.toolName,
-                                args,
-                                resultLength: resultStr.length,
-                            },
-                        });
-                    }
-                }
+                        // Track cumulative token usage for timeout recovery
+                        if (event.usage) {
+                            totalInputTokens += event.usage.inputTokens ?? 0;
+                            totalOutputTokens += event.usage.outputTokens ?? 0;
+                            totalReasoningTokens +=
+                                event.usage.reasoningTokens ?? 0;
+                        }
 
-                if (event.text) {
-                    lastStepText = event.text;
-                    allStepTexts.push(event.text);
-                    logger.log({
-                        message: `[AGENT-TEXT] step=${stepCount} finishReason=${event.finishReason} textLength=${event.text.length} tokens=${event.usage?.totalTokens ?? 0}`,
-                        context: 'AgentLoop',
-                        metadata: {
-                            step: stepCount,
-                            finishReason: event.finishReason,
-                            textLength: event.text.length,
-                            textPreview: event.text.substring(0, 300),
-                            usage: event.usage,
-                        },
-                    });
-                }
-
-                // Track cumulative token usage for timeout recovery
-                if (event.usage) {
-                    totalInputTokens += event.usage.inputTokens ?? 0;
-                    totalOutputTokens += event.usage.outputTokens ?? 0;
-                    totalReasoningTokens += event.usage.reasoningTokens ?? 0;
-                }
-
-                input.onStepFinish?.(event);
+                        input.onStepFinish?.(event);
                     },
                 }),
         });
@@ -1675,17 +1695,15 @@ async function verifyFindingsWithTools(params: {
         // Light verify: 2 steps max, tools available
         const lightResults = await Promise.allSettled(
             toVerifyLight.map(({ index, suggestion }) => {
-                return (
-                    verifySingleFindingWithTools({
-                        index,
-                        suggestion,
-                        input,
-                        secrets,
-                        allToolCalls,
-                        tools,
-                        maxVerifySteps: 2,
-                    })
-                );
+                return verifySingleFindingWithTools({
+                    index,
+                    suggestion,
+                    input,
+                    secrets,
+                    allToolCalls,
+                    tools,
+                    maxVerifySteps: 2,
+                });
             }),
         );
 
@@ -1708,16 +1726,14 @@ async function verifyFindingsWithTools(params: {
         // Full verify: 5 steps, all tools
         const fullResults = await Promise.allSettled(
             toVerifyFull.map(({ index, suggestion }) => {
-                return (
-                    verifySingleFindingWithTools({
-                        index,
-                        suggestion,
-                        input,
-                        secrets,
-                        allToolCalls,
-                        tools,
-                    })
-                );
+                return verifySingleFindingWithTools({
+                    index,
+                    suggestion,
+                    input,
+                    secrets,
+                    allToolCalls,
+                    tools,
+                });
             }),
         );
 
@@ -2014,7 +2030,8 @@ async function verifySingleFindingWithTools(params: {
                     if (event.usage) {
                         totalInputTokens += event.usage.inputTokens ?? 0;
                         totalOutputTokens += event.usage.outputTokens ?? 0;
-                        totalReasoningTokens += event.usage.reasoningTokens ?? 0;
+                        totalReasoningTokens +=
+                            event.usage.reasoningTokens ?? 0;
                     }
                     if (event.toolCalls) {
                         const resultLookup = new Map<string, string>();
@@ -2093,7 +2110,8 @@ async function verifySingleFindingWithTools(params: {
             .join('\n');
 
         try {
-            const verifierSecondChanceSignal = timeoutSignal(LLM_CALL_TIMEOUT_MS);
+            const verifierSecondChanceSignal =
+                timeoutSignal(LLM_CALL_TIMEOUT_MS);
             const secondChanceResult: any = await throttledGenerateText({
                 byokConfig: secrets.byokConfig,
                 organizationId: input.telemetryMetadata?.organizationId,
@@ -2717,7 +2735,7 @@ Rules:
 - Preserve refined suggestion text only if the verifier clearly provided it.
 - If the text contains uncertainty, keep the rationale faithful to that uncertainty.
 - Output only the structured decision object.`,
-            prompt: `Extract the verifier verdict from this text:
+                    prompt: `Extract the verifier verdict from this text:
 
 ---
 ${verificationText}
@@ -2975,12 +2993,17 @@ async function structureWithFallbackModel(
                                             relevantFile: { type: 'string' },
                                             language: nullableStringSchema,
                                             label: nullableLabelSchema,
-                                            suggestionContent: { type: 'string' },
+                                            suggestionContent: {
+                                                type: 'string',
+                                            },
                                             existingCode: { type: 'string' },
                                             improvedCode: { type: 'string' },
-                                            oneSentenceSummary: nullableStringSchema,
-                                            relevantLinesStart: nullableNumberSchema,
-                                            relevantLinesEnd: nullableNumberSchema,
+                                            oneSentenceSummary:
+                                                nullableStringSchema,
+                                            relevantLinesStart:
+                                                nullableNumberSchema,
+                                            relevantLinesEnd:
+                                                nullableNumberSchema,
                                             severity: nullableSeveritySchema,
                                         },
                                         required: [
@@ -3010,7 +3033,7 @@ Rules:
 - If line numbers are mentioned, include them
 - If no issues found, return empty suggestions array
 - Never invent issues not in the text`,
-            prompt: `Extract all code review findings from this text:
+                    prompt: `Extract all code review findings from this text:
 
 ---
 ${reviewText}

@@ -100,6 +100,7 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
             });
             throw new Error(
                 'Error creating or updating organization parameters',
+                { cause: error },
             );
         }
     }
@@ -119,8 +120,7 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
             | BYOKConfig
             | undefined;
 
-        let processedConfigValue = configValue;
-        processedConfigValue = this.encryptByokConfigApiKey(
+        const processedConfigValue = this.encryptByokConfigApiKey(
             configValue,
             existingConfig,
         );

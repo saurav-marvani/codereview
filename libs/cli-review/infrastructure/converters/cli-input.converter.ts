@@ -56,9 +56,12 @@ export class CliInputConverter {
                 files.push({
                     filename,
                     patch: block,
-                    patchWithLinesStr: convertToUnifiedDiffWithLineNumbers(block, {
-                        filename,
-                    }),
+                    patchWithLinesStr: convertToUnifiedDiffWithLineNumbers(
+                        block,
+                        {
+                            filename,
+                        },
+                    ),
                     status,
                     additions,
                     deletions,

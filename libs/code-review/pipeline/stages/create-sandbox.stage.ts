@@ -133,7 +133,10 @@ export class CreateSandboxStage extends BasePipelineStage<CodeReviewPipelineCont
             this.logger.log({
                 message: `Sandbox created successfully for ${label} (type=${sandbox.type}, baseBranch=${sandbox.baseBranch || 'none'})`,
                 context: this.stageName,
-                metadata: { sandboxType: sandbox.type, baseBranch: sandbox.baseBranch },
+                metadata: {
+                    sandboxType: sandbox.type,
+                    baseBranch: sandbox.baseBranch,
+                },
             });
 
             return this.updateContext(context, (draft) => {
@@ -194,7 +197,9 @@ export class CreateSandboxStage extends BasePipelineStage<CodeReviewPipelineCont
                     cliCtxRetry,
                 );
                 if (!cloneInfoRetry)
-                    throw new Error('Could not resolve clone params on retry');
+                    throw new Error('Could not resolve clone params on retry', {
+                        cause: firstError,
+                    });
 
                 const retryResult =
                     await this.sandboxProvider.createSandboxWithRepo({

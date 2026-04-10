@@ -18,7 +18,7 @@ export interface GraphNodeJson {
     line_end: number;
     language: string;
     is_test: boolean;
-    file_hash?: string;  // optional - only present in parse output, not in export
+    file_hash?: string; // optional - only present in parse output, not in export
     parent_name?: string;
     params?: string;
     return_type?: string;
@@ -92,24 +92,38 @@ export class AstGraphRepository {
     // Bulk insert helpers
     // -----------------------------------------------------------------------
 
-    async bulkInsertNodes(repoId: string, nodes: GraphNodeJson[]): Promise<number> {
+    async bulkInsertNodes(
+        repoId: string,
+        nodes: GraphNodeJson[],
+    ): Promise<number> {
         if (nodes.length === 0) return 0;
         let count = 0;
         for (let i = 0; i < nodes.length; i += NODE_CHUNK_SIZE) {
             const chunk = nodes.slice(i, i + NODE_CHUNK_SIZE);
-            const { sql, params } = this.buildNodeInsertSQL(repoId, chunk, true);
+            const { sql, params } = this.buildNodeInsertSQL(
+                repoId,
+                chunk,
+                true,
+            );
             await this.dataSource.query(sql, params);
             count += chunk.length;
         }
         return count;
     }
 
-    async bulkInsertEdges(repoId: string, edges: GraphEdgeJson[]): Promise<number> {
+    async bulkInsertEdges(
+        repoId: string,
+        edges: GraphEdgeJson[],
+    ): Promise<number> {
         if (edges.length === 0) return 0;
         let count = 0;
         for (let i = 0; i < edges.length; i += EDGE_CHUNK_SIZE) {
             const chunk = edges.slice(i, i + EDGE_CHUNK_SIZE);
-            const { sql, params } = this.buildEdgeInsertSQL(repoId, chunk, true);
+            const { sql, params } = this.buildEdgeInsertSQL(
+                repoId,
+                chunk,
+                true,
+            );
             await this.dataSource.query(sql, params);
             count += chunk.length;
         }
@@ -131,18 +145,30 @@ export class AstGraphRepository {
         edges: GraphEdgeJson[],
     ): Promise<{ nodeCount: number; edgeCount: number }> {
         return this.dataSource.transaction(async (manager) => {
-            await manager.query(`DELETE FROM ast_edges WHERE repo_id = $1`, [repoId]);
-            await manager.query(`DELETE FROM ast_nodes WHERE repo_id = $1`, [repoId]);
+            await manager.query(`DELETE FROM ast_edges WHERE repo_id = $1`, [
+                repoId,
+            ]);
+            await manager.query(`DELETE FROM ast_nodes WHERE repo_id = $1`, [
+                repoId,
+            ]);
 
             for (let i = 0; i < nodes.length; i += NODE_CHUNK_SIZE) {
                 const chunk = nodes.slice(i, i + NODE_CHUNK_SIZE);
-                const { sql, params } = this.buildNodeInsertSQL(repoId, chunk, true);
+                const { sql, params } = this.buildNodeInsertSQL(
+                    repoId,
+                    chunk,
+                    true,
+                );
                 await manager.query(sql, params);
             }
 
             for (let i = 0; i < edges.length; i += EDGE_CHUNK_SIZE) {
                 const chunk = edges.slice(i, i + EDGE_CHUNK_SIZE);
-                const { sql, params } = this.buildEdgeInsertSQL(repoId, chunk, true);
+                const { sql, params } = this.buildEdgeInsertSQL(
+                    repoId,
+                    chunk,
+                    true,
+                );
                 await manager.query(sql, params);
             }
 
@@ -189,13 +215,21 @@ export class AstGraphRepository {
 
             for (let i = 0; i < nodes.length; i += NODE_CHUNK_SIZE) {
                 const chunk = nodes.slice(i, i + NODE_CHUNK_SIZE);
-                const { sql, params } = this.buildNodeInsertSQL(repoId, chunk, true);
+                const { sql, params } = this.buildNodeInsertSQL(
+                    repoId,
+                    chunk,
+                    true,
+                );
                 await manager.query(sql, params);
             }
 
             for (let i = 0; i < edges.length; i += EDGE_CHUNK_SIZE) {
                 const chunk = edges.slice(i, i + EDGE_CHUNK_SIZE);
-                const { sql, params } = this.buildEdgeInsertSQL(repoId, chunk, true);
+                const { sql, params } = this.buildEdgeInsertSQL(
+                    repoId,
+                    chunk,
+                    true,
+                );
                 await manager.query(sql, params);
             }
 
@@ -227,7 +261,11 @@ export class AstGraphRepository {
     async exportAsGraphJson(
         repoId: string,
         sha?: string,
-    ): Promise<{ sha: string; nodes: GraphNodeJson[]; edges: GraphEdgeJson[] }> {
+    ): Promise<{
+        sha: string;
+        nodes: GraphNodeJson[];
+        edges: GraphEdgeJson[];
+    }> {
         const [rawNodes, rawEdges] = await Promise.all([
             this.dataSource.query(
                 `SELECT kind, name, qualified_name, file_path,
@@ -278,7 +316,10 @@ export class AstGraphRepository {
      * Export the full graph as a JSON **string** built entirely in PostgreSQL.
      * Zero intermediate JS objects — ideal for writing to the E2B sandbox.
      */
-    async exportAsGraphJsonString(repoId: string, sha?: string): Promise<string> {
+    async exportAsGraphJsonString(
+        repoId: string,
+        sha?: string,
+    ): Promise<string> {
         const result = await this.dataSource.query(
             `SELECT json_build_object(
                 'sha', $2::text,

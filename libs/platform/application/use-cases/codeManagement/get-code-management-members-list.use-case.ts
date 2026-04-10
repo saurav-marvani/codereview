@@ -28,20 +28,24 @@ export class GetCodeManagementMemberListUseCase implements IUseCase {
         },
     ) {}
 
-    public async execute(teamId?: string): Promise<{ name: string; id: string | number }[]> {
+    public async execute(
+        teamId?: string,
+    ): Promise<{ name: string; id: string | number }[]> {
         const organizationAndTeamData: OrganizationAndTeamData = {
             organizationId: this.request.user.organization.uuid,
             teamId,
         };
 
-        const cacheKey = teamId !== undefined
-            ? `org_members_${organizationAndTeamData.organizationId}_${teamId}`
-            : `org_members_${organizationAndTeamData.organizationId}`;
+        const cacheKey =
+            teamId !== undefined
+                ? `org_members_${organizationAndTeamData.organizationId}_${teamId}`
+                : `org_members_${organizationAndTeamData.organizationId}`;
 
         try {
-            const cached = await this.cacheService.getFromCache<
-                { name: string; id: string | number }[]
-            >(cacheKey);
+            const cached =
+                await this.cacheService.getFromCache<
+                    { name: string; id: string | number }[]
+                >(cacheKey);
 
             if (cached?.length > 0) {
                 return cached;
@@ -65,8 +69,9 @@ export class GetCodeManagementMemberListUseCase implements IUseCase {
             return platformMembers;
         }
 
-        const prMembers =
-            await this.fetchMembersFromPullRequests(organizationAndTeamData);
+        const prMembers = await this.fetchMembersFromPullRequests(
+            organizationAndTeamData,
+        );
 
         if (prMembers.length > 0) {
             await this.cacheService
@@ -81,13 +86,14 @@ export class GetCodeManagementMemberListUseCase implements IUseCase {
         return prMembers;
     }
 
-    public async refreshMembers(teamId?: string): Promise<
-        { name: string; id: string | number }[]
-    > {
+    public async refreshMembers(
+        teamId?: string,
+    ): Promise<{ name: string; id: string | number }[]> {
         const organizationId = this.request.user.organization.uuid;
-        const cacheKey = teamId !== undefined
-            ? `org_members_${organizationId}_${teamId}`
-            : `org_members_${organizationId}`;
+        const cacheKey =
+            teamId !== undefined
+                ? `org_members_${organizationId}_${teamId}`
+                : `org_members_${organizationId}`;
 
         await this.cacheService.removeFromCache(cacheKey);
 

@@ -300,7 +300,9 @@ export class ValidatePrerequisitesStage extends BasePipelineStage<CodeReviewPipe
         ) {
             const userPrs = await this.pullRequestsService.find({
                 'organizationId': organizationAndTeamData.organizationId,
-                'user.id': isNaN(Number(userGitId)) ? userGitId : Number(userGitId),
+                'user.id': isNaN(Number(userGitId))
+                    ? userGitId
+                    : Number(userGitId),
             } as any);
 
             const autoAssignResult =

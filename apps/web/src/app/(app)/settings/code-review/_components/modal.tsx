@@ -58,9 +58,9 @@ import {
     KodyRulesStatus,
     KodyRulesType,
     KodyRuleWithInheritanceDetails,
+    resolveKodyRuleDisplaySeverity,
     type KodyRule,
     type LibraryRule,
-    resolveKodyRuleDisplaySeverity,
 } from "@services/kodyRules/types";
 import {
     AtSign,
@@ -525,9 +525,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
                         : "",
             rule: rule?.rule ?? "",
             title: rule?.title ?? "",
-            severity: rule
-                ? resolveKodyRuleDisplaySeverity(rule)
-                : "high",
+            severity: rule ? resolveKodyRuleDisplaySeverity(rule) : "high",
             scope: initialScope,
             badExample:
                 rule?.examples?.find(({ isCorrect }) => !isCorrect)?.snippet ??
@@ -1425,8 +1423,8 @@ export const KodyRuleAddOrUpdateItemModal = ({
                                                     align="start"
                                                     className="flex max-w-prose flex-col gap-1 text-xs">
                                                     <p>
-                                                        Severity defines
-                                                        how this rule&apos;s
+                                                        Severity defines how
+                                                        this rule&apos;s
                                                         violations will be
                                                         classified in code
                                                         reviews.
@@ -1438,8 +1436,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
                                                                 Low:
                                                             </strong>{" "}
                                                             Minor improvements
-                                                            and low-risk
-                                                            issues.
+                                                            and low-risk issues.
                                                         </li>
                                                         <li>
                                                             <strong className="text-alert">
@@ -1455,8 +1452,8 @@ export const KodyRuleAddOrUpdateItemModal = ({
                                                                 High:
                                                             </strong>{" "}
                                                             Important problems
-                                                            that should be
-                                                            fixed in the PR.
+                                                            that should be fixed
+                                                            in the PR.
                                                         </li>
                                                         <li>
                                                             <strong className="text-danger">
@@ -1506,8 +1503,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
                                                                 ([, option]) =>
                                                                     option.value ===
                                                                     value,
-                                                            )?.[0] ??
-                                                                "high",
+                                                            )?.[0] ?? "high",
                                                         )
                                                     }
                                                     className={cn({

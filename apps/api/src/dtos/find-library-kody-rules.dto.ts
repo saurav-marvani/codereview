@@ -43,7 +43,11 @@ export class FindLibraryKodyRulesDto
 
     @IsOptional()
     @IsEnum(SeverityLevel)
-    @ApiPropertyOptional({ type: String, enum: SeverityLevel, enumName: 'SeverityLevel' })
+    @ApiPropertyOptional({
+        type: String,
+        enum: SeverityLevel,
+        enumName: 'SeverityLevel',
+    })
     severityLevel?: SeverityLevel;
 
     @IsOptional()

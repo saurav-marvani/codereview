@@ -1,7 +1,7 @@
-import { MigrationInterface, QueryRunner } from "typeorm";
+import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AstGraphTables1775690886942 implements MigrationInterface {
-    name = 'AstGraphTables1775690886942'
+    name = 'AstGraphTables1775690886942';
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`
@@ -192,5 +192,4 @@ export class AstGraphTables1775690886942 implements MigrationInterface {
             DROP TYPE "public"."repositories_ast_graph_status_enum"
         `);
     }
-
 }

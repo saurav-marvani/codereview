@@ -290,12 +290,12 @@ export function SetupConnectingGitToolPage(props: {
 
                                     const response =
                                         await magicModal.show<true>(() => (
-                                        <BitbucketTokenModal
-                                            teamId={teamId}
-                                            userId={userId!}
-                                            userEmail={email}
-                                        />
-                                    ));
+                                            <BitbucketTokenModal
+                                                teamId={teamId}
+                                                userId={userId!}
+                                                userEmail={email}
+                                            />
+                                        ));
 
                                     if (!response) return;
 
@@ -324,12 +324,12 @@ export function SetupConnectingGitToolPage(props: {
 
                                     const response =
                                         await magicModal.show<true>(() => (
-                                        <AzureReposTokenModal
-                                            teamId={teamId}
-                                            userId={userId!}
-                                            userEmail={email}
-                                        />
-                                    ));
+                                            <AzureReposTokenModal
+                                                teamId={teamId}
+                                                userId={userId!}
+                                                userEmail={email}
+                                            />
+                                        ));
 
                                     if (!response) return;
 

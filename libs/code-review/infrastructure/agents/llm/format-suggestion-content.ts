@@ -77,10 +77,7 @@ export async function formatSuggestionContent(
 
     try {
         const controller = new AbortController();
-        const timeout = setTimeout(
-            () => controller.abort(),
-            FORMAT_TIMEOUT_MS,
-        );
+        const timeout = setTimeout(() => controller.abort(), FORMAT_TIMEOUT_MS);
 
         const result: any = await generateText({
             model: model as any,

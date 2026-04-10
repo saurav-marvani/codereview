@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { UserRole } from "@enums";
 import { ResourceType } from "@services/permissions/types";
 import type { Session } from "next-auth";
+
 import { hasPermission } from "./permission-map";
 
 const resourceRoutes = {

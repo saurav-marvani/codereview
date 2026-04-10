@@ -177,7 +177,9 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 error,
                 metadata: { organizationAndTeamData },
             });
-            throw new Error('Error getting code review config parameters');
+            throw new Error('Error getting code review config parameters', {
+                cause: error,
+            });
         }
     }
 
@@ -263,6 +265,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
             });
             throw new Error(
                 'Error getting simple code review config parameters',
+                { cause: error },
             );
         }
     }
@@ -481,7 +484,9 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 error,
                 metadata: { organizationAndTeamData },
             });
-            throw new Error('Error getting code management pat config');
+            throw new Error('Error getting code management pat config', {
+                cause: error,
+            });
         }
     }
 
@@ -560,6 +565,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
             });
             throw new Error(
                 'Error getting code management config with repositories',
+                { cause: error },
             );
         }
     }

@@ -10,9 +10,7 @@ export default async function ConnectingGitToolPage() {
 
     return (
         <SetupConnectingGitToolPage
-            githubEnterpriseServerPatEnabled={
-                githubEnterpriseServerPatEnabled
-            }
+            githubEnterpriseServerPatEnabled={githubEnterpriseServerPatEnabled}
         />
     );
 }

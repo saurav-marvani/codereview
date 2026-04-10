@@ -35,7 +35,7 @@ jest.mock('@/common/utils/crypto', () => ({
 describe('Code Review Workflow Logic Integrity (No AST)', () => {
     let useCase: RunCodeReviewAutomationUseCase;
     let githubService: GithubService;
-    let llmAnalysisService: any; // Mocked
+    let _llmAnalysisService: any; // Mocked
 
     // --- SERVICE MOCKS ---
     const mockIntegrationConfigService = {
@@ -174,7 +174,7 @@ describe('Code Review Workflow Logic Integrity (No AST)', () => {
 
         useCase = module.get(RunCodeReviewAutomationUseCase);
         githubService = module.get(GithubService);
-        llmAnalysisService = module.get(LLM_ANALYSIS_SERVICE_TOKEN);
+        _llmAnalysisService = module.get(LLM_ANALYSIS_SERVICE_TOKEN);
 
         const factory = module.get(PlatformIntegrationFactory);
         factory.registerCodeManagementService(
@@ -218,7 +218,7 @@ describe('Code Review Workflow Logic Integrity (No AST)', () => {
         );
 
         // Mock criação de comentário (Output)
-        const createCommentSpy = jest
+        const _createCommentSpy = jest
             .spyOn(githubService, 'createReviewComment')
             .mockResolvedValue({ id: 1 } as any);
 

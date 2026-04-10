@@ -7,7 +7,6 @@ export const MAX_READ_LENGTH = 8_000;
 export const MAX_LIST_LENGTH = 4_000;
 export const MAX_SHELL_OUTPUT = 10_000;
 
-
 /**
  * Create a tool definition compatible with all AI SDK providers (including Anthropic).
  *
@@ -790,7 +789,6 @@ fi
             },
         );
     }
-
 
     // DISABLED: readReference — adds noise to tool list, not needed for code review
     /* if (gitHubToken) {

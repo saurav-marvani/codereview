@@ -372,7 +372,11 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
             this.logger.log({
                 message: `[AST-GRAPH] Graph not ready (status=${repo.astGraphStatus}), skipping incremental update`,
                 context: GitHubPullRequestHandler.name,
-                metadata: { repoExternalId, fullName: repo.fullName, astGraphStatus: repo.astGraphStatus },
+                metadata: {
+                    repoExternalId,
+                    fullName: repo.fullName,
+                    astGraphStatus: repo.astGraphStatus,
+                },
             });
             return;
         }
@@ -386,7 +390,10 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
                 this.logger.log({
                     message: `[AST-GRAPH] Push has ${changedFiles.size} files (>${MAX_INCREMENTAL_FILES}), enqueuing full rebuild instead of incremental`,
                     context: GitHubPullRequestHandler.name,
-                    metadata: { fullName: repo.fullName, changedFilesCount: changedFiles.size },
+                    metadata: {
+                        fullName: repo.fullName,
+                        changedFilesCount: changedFiles.size,
+                    },
                 });
 
                 await this.jobQueueService.enqueue({
@@ -399,7 +406,8 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
                         defaultBranch: repo.defaultBranch,
                         fullName: repo.fullName,
                         platform: repo.platform,
-                        organizationAndTeamData: context.organizationAndTeamData,
+                        organizationAndTeamData:
+                            context.organizationAndTeamData,
                     },
                     status: JobStatus.PENDING,
                     priority: 0,
@@ -419,7 +427,8 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
                         defaultBranch: repo.defaultBranch,
                         fullName: repo.fullName,
                         platform: repo.platform,
-                        organizationAndTeamData: context.organizationAndTeamData,
+                        organizationAndTeamData:
+                            context.organizationAndTeamData,
                     },
                     status: JobStatus.PENDING,
                     priority: 0,

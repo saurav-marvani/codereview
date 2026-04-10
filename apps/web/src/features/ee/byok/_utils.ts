@@ -1,24 +1,25 @@
-import { UserRole } from '@enums';
+import { UserRole } from "@enums";
 import {
     Action,
-    type PermissionsMap,
     ResourceType,
-} from '@services/permissions/types';
-import { hasPermission } from 'src/core/utils/permission-map';
-import type { BYOKConfig } from './_types';
-import type { OrganizationLicense } from '../subscription/_services/billing/types';
+    type PermissionsMap,
+} from "@services/permissions/types";
+import { hasPermission } from "src/core/utils/permission-map";
+
+import type { OrganizationLicense } from "../subscription/_services/billing/types";
+import type { BYOKConfig } from "./_types";
 
 export const isBYOKSubscriptionPlan = (license: OrganizationLicense) => {
     if (
-        license.subscriptionStatus === 'self-hosted' ||
-        license.subscriptionStatus === 'licensed-self-hosted'
+        license.subscriptionStatus === "self-hosted" ||
+        license.subscriptionStatus === "licensed-self-hosted"
     ) {
         return true;
     }
-    if (license.subscriptionStatus !== 'active') {
+    if (license.subscriptionStatus !== "active") {
         return false;
     }
-    return license.planType.includes('byok');
+    return license.planType.includes("byok");
 };
 
 export const shouldShowBYOKMissingKeyTopbar = (params: {

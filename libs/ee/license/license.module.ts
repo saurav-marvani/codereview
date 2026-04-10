@@ -14,8 +14,6 @@ import { AutoAssignLicenseUseCase } from './use-cases/auto-assign-license.use-ca
 import { OrganizationParametersModule } from '@libs/organization/modules/organizationParameters.module';
 import { environment } from '@libs/ee/configs/environment';
 
-
-
 @Module({
     imports: [
         forwardRef(() => TeamModule),

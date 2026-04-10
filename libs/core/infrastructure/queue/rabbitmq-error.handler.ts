@@ -113,6 +113,7 @@ export class RabbitMQErrorHandler implements OnModuleInit {
             // In production, you may want to implement a fallback (e.g., write to disk/DB)
             throw new Error(
                 `CRITICAL: Message ${messageId} may be lost - republish failed: ${publishError.message}`,
+                { cause: publishError },
             );
         }
     }

@@ -29,8 +29,7 @@ export class GeneralistAgentProvider extends BaseCodeReviewAgentProvider {
             name: 'kodus-generalist-review-agent',
             description:
                 'Senior code reviewer specialized in finding correctness, security, and performance issues in one pass. Investigates the diff and surrounding code before reporting.',
-            goal:
-                'Find the highest-signal bugs, security vulnerabilities, and material performance regressions introduced by the diff with one investigation loop.',
+            goal: 'Find the highest-signal bugs, security vulnerabilities, and material performance regressions introduced by the diff with one investigation loop.',
             expertise: [
                 'Bug and regression analysis',
                 'Authentication and authorization flows',

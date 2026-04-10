@@ -244,7 +244,9 @@ export class OutboxRelayService
 
         try {
             const reclaimed =
-                await this.outboxRepository.reclaimStaleMessages(fiveMinutesAgo);
+                await this.outboxRepository.reclaimStaleMessages(
+                    fiveMinutesAgo,
+                );
 
             if (reclaimed > 0) {
                 this.logger.log({
@@ -389,11 +391,13 @@ export class OutboxRelayService
                             this.incidentManager
                                 ?.failHeartbeat(
                                     'API_BETTERSTACK_HEARTBEAT_OUTBOX_URL',
-                                    `High inbox reclaim rate for ${consumerId}: ${reclaimed} stale messages reclaimed. Possible cause: worker crashes, memory issues, or job timeouts. ${this.formatContext({
-                                        monitor: 'inbox_reclaim_rate',
-                                        consumerId,
-                                        reclaimed,
-                                    })}`,
+                                    `High inbox reclaim rate for ${consumerId}: ${reclaimed} stale messages reclaimed. Possible cause: worker crashes, memory issues, or job timeouts. ${this.formatContext(
+                                        {
+                                            monitor: 'inbox_reclaim_rate',
+                                            consumerId,
+                                            reclaimed,
+                                        },
+                                    )}`,
                                 )
                                 .catch((err) => {
                                     this.logger.error({
@@ -614,12 +618,14 @@ export class OutboxRelayService
                         this.incidentManager
                             ?.failHeartbeat(
                                 'API_BETTERSTACK_HEARTBEAT_OUTBOX_URL',
-                                `Outbox message permanently failed: ${message.uuid} (job: ${jobId || 'N/A'}) after ${this.maxAttemptsOutbox} attempts. Exchange: ${message.exchange}, Routing: ${message.routingKey}. Error: ${error.message}. ${this.formatContext({
-                                    monitor: 'outbox_permanent_failure',
-                                    instanceId: this.instanceId,
-                                    messageId: message.uuid,
-                                    jobId,
-                                })}`,
+                                `Outbox message permanently failed: ${message.uuid} (job: ${jobId || 'N/A'}) after ${this.maxAttemptsOutbox} attempts. Exchange: ${message.exchange}, Routing: ${message.routingKey}. Error: ${error.message}. ${this.formatContext(
+                                    {
+                                        monitor: 'outbox_permanent_failure',
+                                        instanceId: this.instanceId,
+                                        messageId: message.uuid,
+                                        jobId,
+                                    },
+                                )}`,
                             )
                             .catch((err) => {
                                 this.logger.error({

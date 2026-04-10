@@ -6,7 +6,7 @@
  * - Severity is always classified using the CLIENT's criteria (v2PromptOverrides)
  * - Classification is consistent regardless of which BYOK model the client uses
  */
-import { generateText, Output } from 'ai';
+import { generateText } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import { createLogger } from '@kodus/flow';

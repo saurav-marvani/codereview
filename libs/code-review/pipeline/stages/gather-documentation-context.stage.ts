@@ -11,7 +11,6 @@ import { DocumentationLLMPlannerService } from '@libs/code-review/infrastructure
 import { DocumentationPackageDiscoveryService } from '@libs/code-review/infrastructure/adapters/services/documentation-package-discovery.service';
 import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
 import posthog, { FEATURE_FLAGS } from '@libs/common/utils/posthog';
-import { PlatformType } from '@libs/core/domain/enums';
 import { BasePipelineStage } from '@libs/core/infrastructure/pipeline/abstracts/base-stage.abstract';
 import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-visibility.enum';
 import { Inject, Injectable } from '@nestjs/common';

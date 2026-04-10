@@ -22,12 +22,16 @@ export class ListCodeReviewAutomationLabelsUseCase {
                 ? labelsDataV2
                 : labelsDataLegacy;
         } catch (error) {
+            const err =
+                error instanceof Error ? error : new Error(String(error));
             this.logger.error({
                 message: 'Error listing code review automation labels',
                 context: ListCodeReviewAutomationLabelsUseCase.name,
-                error: error,
+                error: err,
             });
-            throw new Error('Error listing code review automation labels');
+            throw new Error('Error listing code review automation labels', {
+                cause: error,
+            });
         }
     }
 }

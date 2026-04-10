@@ -16,8 +16,8 @@ import {
 } from "@components/ui/tooltip";
 import {
     KodyRulesType,
-    type KodyRuleWithInheritanceDetails,
     resolveKodyRuleDisplaySeverity,
+    type KodyRuleWithInheritanceDetails,
 } from "@services/kodyRules/types";
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";

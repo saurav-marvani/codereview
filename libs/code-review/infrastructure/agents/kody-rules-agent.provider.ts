@@ -147,9 +147,7 @@ You validate code against the team's custom rules listed below. Your ONLY job is
                 })
                 .join('\n\n') || 'No changed files provided.';
 
-        const prDescription = input.prBody
-            ? input.prBody
-            : '';
+        const prDescription = input.prBody ? input.prBody : '';
         const prContextSection = input.prTitle
             ? `\n  <PRContext>Title: ${input.prTitle}\nDescription: ${prDescription || '(empty)'}</PRContext>`
             : '';

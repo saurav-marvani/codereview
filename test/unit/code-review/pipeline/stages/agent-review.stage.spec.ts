@@ -177,7 +177,7 @@ describe('AgentReviewStage', () => {
                 sandboxHandle: undefined,
             });
 
-            const result = await (stage as any).executeStage(context);
+            const _result = await (stage as any).executeStage(context);
 
             expect(mockOrchestrator.execute).not.toHaveBeenCalled();
         });

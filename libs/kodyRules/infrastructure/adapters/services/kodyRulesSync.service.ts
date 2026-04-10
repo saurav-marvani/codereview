@@ -650,8 +650,11 @@ export class KodyRulesSyncService {
     }
 
     async syncRepositoryMain(params: SyncTarget): Promise<void> {
-        const { organizationAndTeamData, repository, path: requestedPath } =
-            params;
+        const {
+            organizationAndTeamData,
+            repository,
+            path: requestedPath,
+        } = params;
         try {
             const syncEnabled = await this.isIdeRulesSyncEnabled(
                 organizationAndTeamData,
@@ -1039,8 +1042,10 @@ export class KodyRulesSyncService {
             path: (oneRule.path as string) ?? filePath,
             sourcePath: filePath,
             severity:
-                (((oneRule.severity as any)?.toLowerCase?.() as
-                    KodyRuleSeverity) || KodyRuleSeverity.MEDIUM),
+                ((
+                    oneRule.severity as any
+                )?.toLowerCase?.() as KodyRuleSeverity) ||
+                KodyRuleSeverity.MEDIUM,
             repositoryId: repository.id,
             directoryId: (
                 await this.resolveDirectoryForFile({
@@ -1051,8 +1056,7 @@ export class KodyRulesSyncService {
             )?.id,
             origin: KodyRulesOrigin.USER,
             status: oneRule.status as any,
-            scope:
-                (oneRule.scope as KodyRulesScope) || KodyRulesScope.FILE,
+            scope: (oneRule.scope as KodyRulesScope) || KodyRulesScope.FILE,
             examples: Array.isArray(oneRule.examples)
                 ? (oneRule.examples as any)
                 : [],

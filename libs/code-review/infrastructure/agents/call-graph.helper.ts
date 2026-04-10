@@ -87,7 +87,7 @@ const NOISE_NAMES = new Set([
 const NAME_PATTERNS: RegExp[] = [
     /func\s*\([^)]+\)\s+(\w+)\s*\(/,
     /(?:def |func |fn |function |class )\s*(\w+)/,
-    /(?:public|private|protected)\s+(?:static\s+)?(?:abstract\s+)?(?:async\s+)?(?:override\s+)?[\w<>\[\]]+\s+(\w+)\s*\(/,
+    /(?:public|private|protected)\s+(?:static\s+)?(?:abstract\s+)?(?:async\s+)?(?:override\s+)?[\w<>[\]]+\s+(\w+)\s*\(/,
     /export\s+(?:default\s+)?(?:function|class|const)\s+(\w+)/,
 ];
 
@@ -507,7 +507,7 @@ async function generateCallGraphGrep(
         const shortFile = func.file.split('/').slice(-2).join('/');
         const globExt = func.ext ? `--glob '*${func.ext}'` : '';
 
-        let callers: string[] = [];
+        const callers: string[] = [];
         try {
             const { stdout } = await remoteCommands.exec(
                 `rg -n "${func.name}\\(" ${globExt} --glob '!*test*' --glob '!*Test*' --glob '!*spec*' --glob '!*Spec*' --glob '!*_test*' --glob '!*__tests__*' --glob '!*mock*' --glob '!*Mock*' --glob '!*.min.*' --glob '!vendor/*' . 2>/dev/null | grep -v "${func.file}" | grep -v "^Binary" | head -8`,
@@ -787,12 +787,16 @@ const REPO_NAME_MAP: Record<string, string> = {
 };
 
 function resolveCallGraphDir(): string {
-    return process.env.CALLGRAPH_DIR || path.resolve(process.cwd(), 'callgraph');
+    return (
+        process.env.CALLGRAPH_DIR || path.resolve(process.cwd(), 'callgraph')
+    );
 }
 
 function resolveRepoKey(repositoryFullName: string): string | null {
     const repoName = repositoryFullName.split('/').pop() || '';
-    return REPO_NAME_MAP[repoName] || REPO_NAME_MAP[repoName.toLowerCase()] || null;
+    return (
+        REPO_NAME_MAP[repoName] || REPO_NAME_MAP[repoName.toLowerCase()] || null
+    );
 }
 
 /**
@@ -800,7 +804,11 @@ function resolveRepoKey(repositoryFullName: string): string | null {
  * Used when the sandbox-based code-review-graph build is not available.
  */
 export function generateCallGraphFromJSON(
-    changedFiles: Array<{ filename: string; patch?: string; patchWithLinesStr?: string }>,
+    changedFiles: Array<{
+        filename: string;
+        patch?: string;
+        patchWithLinesStr?: string;
+    }>,
     repositoryFullName?: string,
 ): string {
     if (!repositoryFullName || !changedFiles?.length) return '';
@@ -808,11 +816,18 @@ export function generateCallGraphFromJSON(
     const repoKey = resolveRepoKey(repositoryFullName);
     if (!repoKey) return '';
 
-    const jsonPath = path.join(resolveCallGraphDir(), repoKey, 'call-graph.json');
+    const jsonPath = path.join(
+        resolveCallGraphDir(),
+        repoKey,
+        'call-graph.json',
+    );
     if (!fs.existsSync(jsonPath)) return '';
 
     try {
-        const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8')) as Record<string, any>;
+        const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8')) as Record<
+            string,
+            any
+        >;
 
         // Find functions in changed files
         const changedPaths = new Set(changedFiles.map((f) => f.filename));
@@ -841,7 +856,9 @@ export function generateCallGraphFromJSON(
             seen.add(key);
 
             const shortFile = (fn.file || '').split('/').slice(-2).join('/');
-            const sig = fn.params ? `${fn.short_name || fn.name}${fn.params}` : (fn.short_name || fn.name);
+            const sig = fn.params
+                ? `${fn.short_name || fn.name}${fn.params}`
+                : fn.short_name || fn.name;
             const ret = fn.returnType ? ` -> ${fn.returnType}` : '';
 
             const lines: string[] = [`${sig}${ret}  (${shortFile}:${fn.line})`];
@@ -852,27 +869,43 @@ export function generateCallGraphFromJSON(
                 lines.push('  (no production callers found)');
             } else {
                 for (const c of callers.slice(0, MAX_CALLERS)) {
-                    const callerShort = (c.file || '').split('/').slice(-2).join('/');
-                    lines.push(`  ← called by ${c.name} (${callerShort}:${c.line})`);
+                    const callerShort = (c.file || '')
+                        .split('/')
+                        .slice(-2)
+                        .join('/');
+                    lines.push(
+                        `  ← called by ${c.name} (${callerShort}:${c.line})`,
+                    );
                 }
             }
 
             // Callees
             const callees = fn.callees || [];
             for (const c of callees.slice(0, MAX_CALLEES)) {
-                const calleeShort = (c.file || c.file_path || '').split('/').slice(-2).join('/');
+                const calleeShort = (c.file || c.file_path || '')
+                    .split('/')
+                    .slice(-2)
+                    .join('/');
                 const calleeSig = c.params ? `${c.name}${c.params}` : c.name;
-                const calleeRet = c.returnType || c.return_type ? ` -> ${c.returnType || c.return_type}` : '';
-                lines.push(`  → calls ${calleeSig}${calleeRet}  (${calleeShort}:${c.line || c.line_start || '?'})`);
+                const calleeRet =
+                    c.returnType || c.return_type
+                        ? ` -> ${c.returnType || c.return_type}`
+                        : '';
+                lines.push(
+                    `  → calls ${calleeSig}${calleeRet}  (${calleeShort}:${c.line || c.line_start || '?'})`,
+                );
             }
 
             sections.push(lines.join('\n'));
         }
 
-        let result = 'Changed functions and their production callers (AST):\n\n' + sections.join('\n\n');
+        let result =
+            'Changed functions and their production callers (AST):\n\n' +
+            sections.join('\n\n');
 
         if (result.length > MAX_CALLGRAPH_CHARS) {
-            result = result.substring(0, MAX_CALLGRAPH_CHARS) + '\n... (truncated)';
+            result =
+                result.substring(0, MAX_CALLGRAPH_CHARS) + '\n... (truncated)';
         }
 
         logger.log({

@@ -328,9 +328,17 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                             );
                     } else {
                         this.logger.log({
-                            message: `[AGENT] No AST graph available for PR#${prNumber} (status=${repo?.astGraphStatus || 'not found'}), proceeding without call graph`,
+                            message: `[AGENT] No AST graph in DB for PR#${prNumber} (status=${repo?.astGraphStatus || 'not found'}), falling back to legacy (changed-files only)`,
                             context: this.stageName,
                         });
+                        callGraph =
+                            await this.kodusGraphService.generateContextLegacy(
+                                context.sandboxHandle.sandboxHandle,
+                                changedFiles,
+                                context.sandboxHandle?.baseBranch ||
+                                    context.pullRequest?.base?.ref ||
+                                    context.repository?.defaultBranch,
+                            );
                     }
                 } else {
                     this.logger.warn({

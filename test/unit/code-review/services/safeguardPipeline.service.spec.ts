@@ -71,12 +71,13 @@ describe('SafeguardPipelineService', () => {
                     },
                 ],
             });
-            jest.spyOn(service as any, 'verifyWithPromptOnly').mockResolvedValue(
-                {
-                    keep: false,
-                    evidence: 'discarded',
-                },
-            );
+            jest.spyOn(
+                service as any,
+                'verifyWithPromptOnly',
+            ).mockResolvedValue({
+                keep: false,
+                evidence: 'discarded',
+            });
 
             await service.execute({
                 organizationAndTeamData: {
@@ -112,7 +113,7 @@ describe('SafeguardPipelineService', () => {
                         sandboxAvailable: false,
                         safeguardReason: 'no_remote_commands',
                         prNumber: 14282,
-                        hasSandboxCloneParams: false,
+                        hasFreshCloneParams: false,
                         toVerifyCount: 1,
                     }),
                 }),

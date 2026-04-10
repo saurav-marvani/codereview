@@ -43,7 +43,8 @@ export const RouteButtonWithOverrideCount = ({
     if (isCustomMessagesRoute) {
         routeOverrideCount = customMessagesOverrideCount ?? 0;
     } else if (isKodyRulesRoute) {
-        routeOverrideCount = configOverrideCount + (kodyRulesOverrideCount ?? 0);
+        routeOverrideCount =
+            configOverrideCount + (kodyRulesOverrideCount ?? 0);
     } else {
         routeOverrideCount = configOverrideCount;
     }

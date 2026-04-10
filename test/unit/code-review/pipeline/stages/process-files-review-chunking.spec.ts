@@ -341,7 +341,7 @@ describe('ProcessFilesReview – file content chunking', () => {
 
             // Each chunk analysis returns 1 suggestion
             mockCodeAnalysisOrchestrator.executeStandardAnalysis.mockImplementation(
-                async (_org, _pr, fileContext) => ({
+                async (_org, _pr, _fileContext) => ({
                     codeSuggestions: [
                         makeSuggestion(
                             `s-${mockCodeAnalysisOrchestrator.executeStandardAnalysis.mock.calls.length}`,

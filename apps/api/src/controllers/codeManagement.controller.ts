@@ -206,9 +206,7 @@ export class CodeManagementController {
     })
     @ApiQuery({ name: 'teamId', required: true })
     @ApiOkResponse({ type: ApiArrayResponseDto })
-    public async getOrganizationMembers(
-        @Query() query: { teamId: string },
-    ) {
+    public async getOrganizationMembers(@Query() query: { teamId: string }) {
         return this.getCodeManagementMemberListUseCase.execute(query.teamId);
     }
 
@@ -230,7 +228,9 @@ export class CodeManagementController {
     public async refreshOrganizationMembers(
         @Query() query: { teamId: string },
     ) {
-        return this.getCodeManagementMemberListUseCase.refreshMembers(query.teamId);
+        return this.getCodeManagementMemberListUseCase.refreshMembers(
+            query.teamId,
+        );
     }
 
     @Get('/get-prs')

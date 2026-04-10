@@ -24,9 +24,7 @@ const normalizeSeverityLevel = (
     }
 };
 
-const getSeverityLevelShield = (
-    severityLevel?: SeverityLevel | string,
-) => {
+const getSeverityLevelShield = (severityLevel?: SeverityLevel | string) => {
     const normalizedSeverity = normalizeSeverityLevel(severityLevel);
     if (!normalizedSeverity) return '';
 

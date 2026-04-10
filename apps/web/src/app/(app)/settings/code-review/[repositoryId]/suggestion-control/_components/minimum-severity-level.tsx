@@ -29,9 +29,7 @@ export const MinimumSeverityLevel = () => {
                 <div className="flex flex-col gap-1">
                     <div className="flex flex-row items-center gap-2">
                         <Heading variant="h3">Minimum severity level</Heading>
-                        <OverrideIndicatorForm
-                            fieldName="suggestionControl.severityLevelFilter"
-                        />
+                        <OverrideIndicatorForm fieldName="suggestionControl.severityLevelFilter" />
                     </div>
                     <p className="text-text-secondary text-sm">
                         Select the minimum severity level for Kody to post code

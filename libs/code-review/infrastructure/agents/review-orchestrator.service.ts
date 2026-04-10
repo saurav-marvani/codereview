@@ -38,10 +38,10 @@ export interface OrchestratorOutput {
 export class ReviewOrchestratorService {
     private readonly logger = createLogger(ReviewOrchestratorService.name);
     private static readonly NORMAL_MODE_MAX_STEPS: Record<string, number> = {
-        generalist: 18,
-        bug: 18,
-        security: 12,
-        performance: 12,
+        'generalist': 18,
+        'bug': 18,
+        'security': 12,
+        'performance': 12,
         'kody-rules': 18,
     };
     private static readonly DEEP_MODE_MAX_STEPS = 100;
@@ -65,13 +65,11 @@ export class ReviewOrchestratorService {
             provider: { execute: (input: any) => Promise<ReviewAgentOutput> };
         }> = [];
 
-        const enabledCategories = (
-            [
-                reviewOptions.bug !== false && 'bug',
-                reviewOptions.security !== false && 'security',
-                reviewOptions.performance !== false && 'performance',
-            ].filter(Boolean) as Array<'bug' | 'security' | 'performance'>
-        );
+        const enabledCategories = [
+            reviewOptions.bug !== false && 'bug',
+            reviewOptions.security !== false && 'security',
+            reviewOptions.performance !== false && 'performance',
+        ].filter(Boolean) as Array<'bug' | 'security' | 'performance'>;
 
         if (agentInput.reviewMode === 'deep') {
             if (enabledCategories.includes('bug')) {
@@ -145,7 +143,9 @@ export class ReviewOrchestratorService {
         // Agents access full source on demand via readFile in the sandbox.
         const agentInputWithoutContent: ReviewAgentInput = {
             ...agentInput,
-            changedFiles: agentInput.changedFiles.map(({ content, fileContent, ...rest }) => rest as any),
+            changedFiles: agentInput.changedFiles.map(
+                ({ content, fileContent, ...rest }) => rest as any,
+            ),
         };
 
         const runAgent = async (task: (typeof agentTasks)[0]) => {
@@ -230,9 +230,7 @@ export class ReviewOrchestratorService {
             return ReviewOrchestratorService.DEEP_MODE_MAX_STEPS;
         }
 
-        return (
-            ReviewOrchestratorService.NORMAL_MODE_MAX_STEPS[agentName] ?? 20
-        );
+        return ReviewOrchestratorService.NORMAL_MODE_MAX_STEPS[agentName] ?? 20;
     }
 
     /**

@@ -38,7 +38,6 @@ import {
 import { EnrichedPullRequestsQueryDto } from '@libs/code-review/dtos/dashboard/enriched-pull-requests-query.dto';
 import { EnrichedPullRequestResponse } from '@libs/code-review/dtos/dashboard/enriched-pull-request-response.dto';
 import { Repositories } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositories.type';
-import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-visibility.enum';
 import {
     IOrganizationParametersService,
     ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
@@ -245,22 +244,23 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
 
                 // PERF: Fetch PR basics first so author-policy filtering can reduce
                 // downstream heavy queries (suggestion aggregation + code review logs).
-                const pullRequestsList = (await this.pullRequestsService
-                    .findManyByNumbersAndRepositoryIds(
-                        prCriteria,
-                        organizationId,
-                    )
-                    .catch((error) => {
-                        this.logger.error({
-                            message: 'Error bulk fetching pull requests',
-                            context: GetEnrichedPullRequestsUseCase.name,
-                            error,
-                            metadata: {
-                                organizationId,
-                            },
-                        });
-                        return [];
-                    })) ?? [];
+                const pullRequestsList =
+                    (await this.pullRequestsService
+                        .findManyByNumbersAndRepositoryIds(
+                            prCriteria,
+                            organizationId,
+                        )
+                        .catch((error) => {
+                            this.logger.error({
+                                message: 'Error bulk fetching pull requests',
+                                context: GetEnrichedPullRequestsUseCase.name,
+                                error,
+                                metadata: {
+                                    organizationId,
+                                },
+                            });
+                            return [];
+                        })) ?? [];
 
                 const allFetchedPrKeys = new Set<string>();
                 pullRequestsList.forEach((pr) => {

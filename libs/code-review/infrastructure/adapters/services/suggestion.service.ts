@@ -1848,8 +1848,7 @@ export class SuggestionService implements ISuggestionService {
                         metadata: {
                             suggestionId: suggestion?.id,
                             commentId: repriorizedCommentId,
-                            pullRequestReviewId:
-                                repriorizedPullRequestReviewId,
+                            pullRequestReviewId: repriorizedPullRequestReviewId,
                             deliveryStatus: result?.deliveryStatus,
                         },
                     });
@@ -1920,10 +1919,7 @@ export class SuggestionService implements ISuggestionService {
                                       result.codeReviewFeedbackData
                                           .pullRequestReviewId;
 
-                                  if (
-                                      !prLevelCommentId ||
-                                      !prLevelReviewId
-                                  ) {
+                                  if (!prLevelCommentId || !prLevelReviewId) {
                                       this.logger.error({
                                           message: `PR-level suggestion missing comment IDs`,
                                           context: SuggestionService.name,

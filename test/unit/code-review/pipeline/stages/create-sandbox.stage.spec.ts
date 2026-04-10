@@ -147,7 +147,7 @@ describe('CreateSandboxStage', () => {
         it('should skip if no changed files', async () => {
             const context = createBaseContext({ changedFiles: [] });
 
-            const result = await (stage as any).executeStage(context);
+            const _result = await (stage as any).executeStage(context);
 
             expect(
                 mockSandboxProvider.createSandboxWithRepo,
@@ -161,7 +161,7 @@ describe('CreateSandboxStage', () => {
                 changedFiles: [{ filename: 'test.ts' } as any],
             });
 
-            const result = await (stage as any).executeStage(context);
+            const _result = await (stage as any).executeStage(context);
 
             expect(
                 mockSandboxProvider.createSandboxWithRepo,

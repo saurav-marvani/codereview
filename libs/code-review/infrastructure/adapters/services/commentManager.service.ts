@@ -1052,8 +1052,8 @@ You must always respond in ${languageResultPrompt}.`;
                                     prNumber,
                                     repository,
                                     suggestionId:
-                                        fallbackResult.fallbackComment.suggestion
-                                            ?.id,
+                                        fallbackResult.fallbackComment
+                                            .suggestion?.id,
                                     commentId: fallbackCommentId,
                                     pullRequestReviewId:
                                         fallbackPullRequestReviewId,
@@ -2229,8 +2229,6 @@ ${reviewOptions}
         let commentBody: string;
 
         if (endReviewMessage) {
-            commentBody = endReviewMessage;
-
             const placeholderContext = await this.getTemplateContext(
                 changedFiles,
                 organizationAndTeamData,

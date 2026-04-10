@@ -188,7 +188,7 @@ export class KodyRulesPrLevelAnalysisService implements IKodyRulesAnalysisServic
             return { codeSuggestions: [] };
         }
 
-        let filteredKodyRules: Array<Partial<IKodyRule>> = [];
+        let filteredKodyRules: Array<Partial<IKodyRule>>;
 
         // Safe check for suggestionControl
         const suggestionControl = context.codeReviewConfig?.suggestionControl;

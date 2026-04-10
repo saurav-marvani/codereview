@@ -57,7 +57,7 @@ export class AddLibraryKodyRulesUseCase {
                     repositoryId: repoId,
                     examples: libraryKodyRules.examples,
                     origin: KodyRulesOrigin.LIBRARY,
-                    type: KodyRulesType.STANDARD
+                    type: KodyRulesType.STANDARD,
                 };
 
                 const result =
@@ -88,7 +88,7 @@ export class AddLibraryKodyRulesUseCase {
                         directoryId: directoryInfo.directoryId,
                         examples: libraryKodyRules.examples,
                         origin: KodyRulesOrigin.LIBRARY,
-                        type: KodyRulesType.STANDARD
+                        type: KodyRulesType.STANDARD,
                     };
 
                     const result =

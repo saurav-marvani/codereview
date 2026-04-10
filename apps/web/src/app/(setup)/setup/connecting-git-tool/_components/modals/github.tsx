@@ -29,8 +29,8 @@ import { AuthMode, PlatformType } from "src/core/types";
 import { captureSegmentEvent } from "src/core/utils/segment";
 
 import {
-    getGithubTokenErrorMessage,
     getGithubTokenConfig,
+    getGithubTokenErrorMessage,
     isValidGithubEnterpriseUrl,
     resolveGithubTokenHost,
 } from "./github-token-config";

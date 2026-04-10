@@ -255,7 +255,9 @@ class BYOKConcurrencyLimiter {
                     if (task.started || task.cancelled) return;
                     task.cancelled = true;
                     task.cleanup?.();
-                    const index = this.queue.findIndex((item) => item.id === task.id);
+                    const index = this.queue.findIndex(
+                        (item) => item.id === task.id,
+                    );
                     if (index >= 0) {
                         this.queue.splice(index, 1);
                     }

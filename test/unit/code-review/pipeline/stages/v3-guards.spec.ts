@@ -70,7 +70,7 @@ describe('V3 guards on existing stages', () => {
                 changedFiles: [],
             });
             // With v2 and no files, it should hit the "no files" guard, not the V3 guard
-            const result = await stage.executeStage(ctx);
+            const _result = await stage.executeStage(ctx);
 
             expect(stage.logger.warn).toHaveBeenCalledWith(
                 expect.objectContaining({

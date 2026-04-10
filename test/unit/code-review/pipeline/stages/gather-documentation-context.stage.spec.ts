@@ -66,7 +66,7 @@ describe('GatherDocumentationContextStage', () => {
         >;
     };
 
-    const independentFixture: FixtureInput = {
+    const _independentFixture: FixtureInput = {
         pullRequestNumber: 123,
         repositoryId: 'tmp-repo-id',
         repositoryName: 'kodus-ai',
@@ -96,7 +96,7 @@ describe('GatherDocumentationContextStage', () => {
         ],
     };
 
-    function buildIndependentContext(
+    function _buildIndependentContext(
         fixtureInput: FixtureInput,
     ): CodeReviewPipelineContext {
         return {
@@ -125,7 +125,7 @@ describe('GatherDocumentationContextStage', () => {
         } as unknown as CodeReviewPipelineContext;
     }
 
-    function buildPromptRunnerServiceMock(): PromptRunnerService {
+    function _buildPromptRunnerServiceMock(): PromptRunnerService {
         const service = {
             builder: jest.fn(() => {
                 const state: { payload?: any } = {};
@@ -179,7 +179,7 @@ describe('GatherDocumentationContextStage', () => {
         return service as unknown as PromptRunnerService;
     }
 
-    function buildRealPromptRunnerService(): PromptRunnerService {
+    function _buildRealPromptRunnerService(): PromptRunnerService {
         const logger = new Logger('DocumentationPromptIntegrationTest');
         const byokProviderService = new BYOKProviderService();
         const llmProviderService = new LLMProviderService(

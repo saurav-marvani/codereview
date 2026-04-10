@@ -330,17 +330,13 @@ export class AzureReposRequestHelper {
         projectId: string;
         subscriptionPayload: any;
     }): Promise<AzureRepoSubscription> {
-        try {
-            const instance = await this.azureRequest(params);
+        const instance = await this.azureRequest(params);
 
-            const res = await instance.post(
-                '/_apis/hooks/subscriptions?api-version=7.1',
-                params.subscriptionPayload,
-            );
-            return res.data;
-        } catch (error) {
-            throw new Error(error);
-        }
+        const res = await instance.post(
+            '/_apis/hooks/subscriptions?api-version=7.1',
+            params.subscriptionPayload,
+        );
+        return res.data;
     }
 
     async getLanguageRepository(params: {
@@ -599,6 +595,7 @@ export class AzureReposRequestHelper {
             if (error.response && error.response.status === 404) {
                 throw new Error(
                     `Arquivo não encontrado: ${params.filePath} no commit ${params.commitId}`,
+                    { cause: error },
                 );
             }
 
@@ -611,6 +608,7 @@ export class AzureReposRequestHelper {
             ) {
                 throw new Error(
                     `O commit ${params.commitId} não pode ser encontrado no repositório ou você não tem permissão para acessá-lo.`,
+                    { cause: error },
                 );
             }
 
@@ -654,6 +652,7 @@ export class AzureReposRequestHelper {
             ) {
                 throw new Error(
                     `Error fetching diff for file '${params.filePath || 'ALL'}' between ${params.baseCommit} and ${params.targetCommitId}.`,
+                    { cause: error },
                 );
             }
             throw error;
@@ -685,6 +684,7 @@ export class AzureReposRequestHelper {
             ) {
                 throw new Error(
                     `O commit ${params.commitId} não pode ser encontrado no repositório ou você não tem permissão para acessá-lo.`,
+                    { cause: error },
                 );
             }
 
@@ -905,12 +905,9 @@ export class AzureReposRequestHelper {
 
         const isDescriptor = /^(aad|msa|vss|svc)\./.test(params.identifier);
 
-        let url = '';
-        if (isDescriptor) {
-            url = `https://vssps.dev.azure.com/${params.orgName}/_apis/graph/users/${params.identifier}?api-version=7.1-preview.1`;
-        } else {
-            url = `https://vssps.dev.azure.com/${params.orgName}/_apis/graph/users?filterValue=${encodeURIComponent(params.identifier)}&api-version=7.1-preview.1`;
-        }
+        const url = isDescriptor
+            ? `https://vssps.dev.azure.com/${params.orgName}/_apis/graph/users/${params.identifier}?api-version=7.1-preview.1`
+            : `https://vssps.dev.azure.com/${params.orgName}/_apis/graph/users?filterValue=${encodeURIComponent(params.identifier)}&api-version=7.1-preview.1`;
 
         const { data } = await instance.get(url);
 

@@ -293,7 +293,7 @@ export class UserDatabaseRepository implements IUserRepository {
         } catch (error) {
             // Logging the error and throwing an exception
             console.error('Error updating user:', error);
-            throw new Error('Failed to update user');
+            throw new Error('Failed to update user', { cause: error });
         }
     }
 

@@ -53,7 +53,9 @@ const getTranslationsForLanguage = (
         );
         const dictionaryPath = findDictionaryPath(LanguageValue.ENGLISH);
         if (!dictionaryPath) {
-            throw new Error('Fallback translation file not found for en-US');
+            throw new Error('Fallback translation file not found for en-US', {
+                cause: error,
+            });
         }
 
         return loadJsonFile(dictionaryPath);

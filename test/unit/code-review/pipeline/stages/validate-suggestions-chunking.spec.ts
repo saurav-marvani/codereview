@@ -124,7 +124,7 @@ describe('ValidateSuggestionsStage – maxInputTokens file skip', () => {
                 makeSuggestion('s2', 'medium.ts'),
             ];
 
-            const candidates = await stageAny.prepareValidationCandidates(
+            const _candidates = await stageAny.prepareValidationCandidates(
                 suggestions,
                 files,
                 undefined, // no maxInputTokens
@@ -235,7 +235,7 @@ describe('ValidateSuggestionsStage – maxInputTokens file skip', () => {
                 makeSuggestion('s3', 'large.ts'),
             ];
 
-            const candidates = await stageAny.prepareValidationCandidates(
+            const _candidates = await stageAny.prepareValidationCandidates(
                 suggestions,
                 files,
                 10000,
@@ -267,7 +267,7 @@ describe('ValidateSuggestionsStage – maxInputTokens file skip', () => {
                 makeSuggestion('s4', 'huge.ts'),
             ];
 
-            const candidates = await stageAny.prepareValidationCandidates(
+            const _candidates = await stageAny.prepareValidationCandidates(
                 suggestions,
                 files,
                 10000,
@@ -293,7 +293,7 @@ describe('ValidateSuggestionsStage – maxInputTokens file skip', () => {
             const files = [makeFile('exact.ts', content)];
             const suggestions = [makeSuggestion('s1', 'exact.ts')];
 
-            const candidates = await stageAny.prepareValidationCandidates(
+            const _candidates = await stageAny.prepareValidationCandidates(
                 suggestions,
                 files,
                 10000,

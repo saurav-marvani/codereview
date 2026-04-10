@@ -83,7 +83,9 @@ describe('GithubService', () => {
             organizationAndTeamData,
             repositories: [{ id: '1', name: 'repo-one' }],
         });
-        expect(integrationConfigService.createOrUpdateConfig).toHaveBeenCalledWith(
+        expect(
+            integrationConfigService.createOrUpdateConfig,
+        ).toHaveBeenCalledWith(
             IntegrationConfigKey.REPOSITORIES,
             nextRepositories,
             integration.uuid,
@@ -91,7 +93,8 @@ describe('GithubService', () => {
             undefined,
         );
         expect(
-            integrationConfigService.createOrUpdateConfig.mock.invocationCallOrder[0],
+            integrationConfigService.createOrUpdateConfig.mock
+                .invocationCallOrder[0],
         ).toBeLessThan(deleteWebhook.mock.invocationCallOrder[0]);
         expect(createPullRequestWebhook).toHaveBeenCalledWith({
             organizationAndTeamData,

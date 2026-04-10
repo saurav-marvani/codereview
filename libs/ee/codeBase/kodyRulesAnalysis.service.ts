@@ -137,7 +137,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 }
 
                 const escapeMarkdownSyntax = (text: string): string =>
-                    text.replace(/([\[\]\\`*_{}()#+\-.!])/g, '\\$1');
+                    text.replace(/([[\\`*_{}()#+\-.!\]])/g, '\\$1');
                 const markdownLink = `[${escapeMarkdownSyntax(rule.title)}](${ruleLink})`;
 
                 // Check if ID is between single backticks `id`
@@ -429,7 +429,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
 
         for (const [ruleId, dependencies] of dependenciesByRule.entries()) {
             const ruleAugmentations: Record<string, unknown> = {};
-            for (const dep of dependencies) {
+            for (const _dep of dependencies) {
                 for (const fileName in augmentationsByFile) {
                     const fileAugmentations = augmentationsByFile[fileName];
                     for (const pathKey in fileAugmentations) {
@@ -952,7 +952,11 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         }
 
         const updatedSuggestions = suggestions.codeSuggestions.map(
-            (suggestion: CodeSuggestion & { brokenKodyRulesIds: string[] }) => {
+            (
+                suggestion: Partial<CodeSuggestion> & {
+                    brokenKodyRulesIds?: string[];
+                },
+            ) => {
                 if (!suggestion.brokenKodyRulesIds?.length) {
                     return suggestion;
                 }
@@ -1215,8 +1219,8 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         prNumber: number,
         response: string,
         fileContext: FileChangeContext,
-        provider: LLMModelProvider,
-        extendedContext: KodyRulesExtendedContext,
+        _provider: LLMModelProvider,
+        _extendedContext: KodyRulesExtendedContext,
     ): AIAnalysisResult | null {
         // Tipo específico para a resposta do UPDATE
         interface KodyRulesUpdateResponse {

@@ -46,7 +46,6 @@ interface GeminiResponse {
     models: GeminiModel[];
 }
 
-
 export interface ModelResponse {
     provider: BYOKProvider;
     models: Array<{

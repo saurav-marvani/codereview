@@ -107,8 +107,9 @@ export const KodyRuleLibraryItemModal = ({
             const newRule: KodyRule = {
                 title: rule.title,
                 rule: rule.rule,
-                severity:
-                    resolveKodyRuleDisplaySeverity(rule) as KodyRule["severity"],
+                severity: resolveKodyRuleDisplaySeverity(
+                    rule,
+                ) as KodyRule["severity"],
                 severityLevel: resolveKodyRuleDisplaySeverity(rule),
                 path: "",
                 examples: rule.examples,

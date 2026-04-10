@@ -1,5 +1,6 @@
 {
     "compilerOptions": {
+        "ignoreDeprecations": "6.0",
         "declaration": true,
         "removeComments": true,
         "emitDecoratorMetadata": true,
@@ -15,6 +16,7 @@
         "incremental": true,
         "skipLibCheck": true,
         "strictNullChecks": false,
+        "useUnknownInCatchVariables": false,
         "noImplicitAny": false,
         "strictBindCallApply": false,
         "forceConsistentCasingInFileNames": false,

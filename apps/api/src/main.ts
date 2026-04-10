@@ -254,7 +254,10 @@ async function bootstrap() {
         console.error('=== BOOTSTRAP ERROR FULL DUMP ===');
         console.error('Message:', error.message);
         console.error('Stack:', error.stack);
-        console.error('Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+        console.error(
+            'Full error:',
+            JSON.stringify(error, Object.getOwnPropertyNames(error), 2),
+        );
         console.error('=================================');
         logger.error(
             `Bootstrap failed inside catch block: ${error.message}`,

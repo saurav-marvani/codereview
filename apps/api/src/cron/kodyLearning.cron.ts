@@ -189,8 +189,10 @@ export class KodyLearningCronProvider {
                     repo.configs ?? {},
                 );
 
-                return (resolvedRepoConfig as any)
-                    ?.kodyRulesGeneratorEnabled === true;
+                return (
+                    (resolvedRepoConfig as any)?.kodyRulesGeneratorEnabled ===
+                    true
+                );
             });
 
             if (!filteredRepos || filteredRepos.length === 0) {

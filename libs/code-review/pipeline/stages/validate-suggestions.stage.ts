@@ -119,6 +119,7 @@ export class ValidateSuggestionsStage extends BasePipelineStage<CodeReviewPipeli
                     PipelineReasons.SUGGESTIONS.VALIDATION_FAILED.message,
                     error,
                 ),
+                { cause: error },
             );
         }
     }

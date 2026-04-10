@@ -115,8 +115,7 @@ export const useKodyRulesCount = (
     return useMemo(() => {
         if (!data) return 0;
 
-        return data.filter(
-            (rule) => rule.status === KodyRulesStatus.ACTIVE,
-        ).length;
+        return data.filter((rule) => rule.status === KodyRulesStatus.ACTIVE)
+            .length;
     }, [data]);
 };

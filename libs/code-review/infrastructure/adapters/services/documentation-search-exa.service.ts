@@ -289,7 +289,7 @@ export class DocumentationSearchExaService {
     }
 
     private extractLanguageFromQuery(query: string): string {
-        const match = (query || '').match(/language\s*:\s*([^\.]+)\.?/i);
+        const match = (query || '').match(/language\s*:\s*([^.]+)\.?/i);
         if (!match || !match[1]) {
             return 'Unspecified';
         }

@@ -181,8 +181,10 @@ export class AstGraphBuildService {
                 repositoryId,
                 AstGraphStatus.FAILED,
             );
+            const errorMessage =
+                error instanceof Error ? error.message : String(error);
             this.logger.error({
-                message: `[AST-GRAPH] Full build FAILED for repo ${repositoryId} after ${totalMs}ms — ${error?.message || String(error)}`,
+                message: `[AST-GRAPH] Full build FAILED for repo ${repositoryId} after ${totalMs}ms — ${errorMessage}`,
                 context: AstGraphBuildService.name,
                 metadata: { repositoryId, headSha, durationMs: totalMs },
             });
@@ -304,8 +306,10 @@ export class AstGraphBuildService {
             });
         } catch (error) {
             const totalMs = Date.now() - updateStart;
+            const errorMessage =
+                error instanceof Error ? error.message : String(error);
             this.logger.warn({
-                message: `[AST-GRAPH] Incremental update FAILED for repo ${repositoryId} after ${totalMs}ms — ${error?.message || String(error)}`,
+                message: `[AST-GRAPH] Incremental update FAILED for repo ${repositoryId} after ${totalMs}ms — ${errorMessage}`,
                 context: AstGraphBuildService.name,
                 metadata: {
                     repositoryId,
@@ -339,8 +343,11 @@ export class AstGraphBuildService {
                 requestTimeoutMs: TIMEOUTS.READ_FILE_MS,
             });
         } catch (err) {
+            const errorMessage =
+                err instanceof Error ? err.message : String(err);
             throw new Error(
-                `Failed to read graph file from sandbox (${filePath}): ${err?.message || String(err)}`,
+                `Failed to read graph file from sandbox (${filePath}): ${errorMessage}`,
+                { cause: err },
             );
         }
 
@@ -348,12 +355,10 @@ export class AstGraphBuildService {
             throw new Error('kodus-graph parse produced empty output file');
         }
 
-        let graphData = JSON.parse(rawJson);
-        rawJson = null as any; // allow GC of the raw string
+        const graphData = JSON.parse(rawJson);
 
         const nodes = graphData.nodes || [];
         const edges = graphData.edges || [];
-        graphData = null as any; // allow GC of the wrapper object
 
         this.logger.log({
             message: `[AST-GRAPH] Graph read from sandbox (${Date.now() - readStart}ms): ${nodes.length} nodes, ${edges.length} edges`,

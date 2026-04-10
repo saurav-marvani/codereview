@@ -32,7 +32,9 @@ interface AstGraphIncrementalJobPayload {
 
 @Injectable()
 export class AstGraphIncrementalJobProcessor implements IJobProcessorService {
-    private readonly logger = createLogger(AstGraphIncrementalJobProcessor.name);
+    private readonly logger = createLogger(
+        AstGraphIncrementalJobProcessor.name,
+    );
 
     constructor(
         @Inject(WORKFLOW_JOB_REPOSITORY_TOKEN)
@@ -52,7 +54,8 @@ export class AstGraphIncrementalJobProcessor implements IJobProcessorService {
         }
 
         const payload = job.payload as unknown as AstGraphIncrementalJobPayload;
-        const repoLabel = payload?.fullName || payload?.repositoryId || 'unknown';
+        const repoLabel =
+            payload?.fullName || payload?.repositoryId || 'unknown';
 
         this.logger.log({
             message: `[AST-GRAPH-INCR] Starting incremental update for ${repoLabel}`,
@@ -70,8 +73,14 @@ export class AstGraphIncrementalJobProcessor implements IJobProcessorService {
 
         await this.updateJobStage(jobId, 'VALIDATING');
 
-        if (!payload?.repositoryId || !payload?.changedFiles?.length || !payload?.newSha) {
-            throw new Error('Invalid payload: missing required fields (repositoryId, changedFiles, newSha)');
+        if (
+            !payload?.repositoryId ||
+            !payload?.changedFiles?.length ||
+            !payload?.newSha
+        ) {
+            throw new Error(
+                'Invalid payload: missing required fields (repositoryId, changedFiles, newSha)',
+            );
         }
 
         let sandbox: SandboxInstance | undefined;
@@ -88,7 +97,9 @@ export class AstGraphIncrementalJobProcessor implements IJobProcessorService {
                         id: '0',
                         defaultBranch: payload.defaultBranch,
                         fullName: payload.fullName,
-                        name: payload.fullName.split('/').pop() || payload.fullName,
+                        name:
+                            payload.fullName.split('/').pop() ||
+                            payload.fullName,
                     },
                     organizationAndTeamData: payload.organizationAndTeamData,
                 },
@@ -114,7 +125,10 @@ export class AstGraphIncrementalJobProcessor implements IJobProcessorService {
                 sandboxMetadata: { stage: 'graph-incremental' },
             });
 
-            sandboxId = (sandbox.sandboxHandle as any)?.sandboxId || (sandbox as any)?.id || 'unknown';
+            sandboxId =
+                (sandbox.sandboxHandle as any)?.sandboxId ||
+                (sandbox as any)?.id ||
+                'unknown';
 
             await this.jobRepository.update(jobId, {
                 metadata: { sandboxId, stage: 'CLONING' },

@@ -532,20 +532,24 @@ export abstract class BaseCodeReviewAgentProvider {
 
             return {
                 suggestions,
-                discardedBySeverity: (agentResult.discardedBySeverity || []).map((s) => ({
+                discardedBySeverity: (
+                    agentResult.discardedBySeverity || []
+                ).map((s) => ({
                     relevantFile: s.relevantFile,
                     suggestionContent: s.suggestionContent,
                     severity: s.severity || 'medium',
                     label: this.getCategoryLabel(),
                     oneSentenceSummary: s.oneSentenceSummary || '',
                 })),
-                discardedByVerify: (agentResult.droppedByVerify || []).map((s) => ({
-                    relevantFile: s.relevantFile,
-                    suggestionContent: s.suggestionContent,
-                    severity: s.severity || 'medium',
-                    label: this.getCategoryLabel(),
-                    oneSentenceSummary: s.oneSentenceSummary || '',
-                })),
+                discardedByVerify: (agentResult.droppedByVerify || []).map(
+                    (s) => ({
+                        relevantFile: s.relevantFile,
+                        suggestionContent: s.suggestionContent,
+                        severity: s.severity || 'medium',
+                        label: this.getCategoryLabel(),
+                        oneSentenceSummary: s.oneSentenceSummary || '',
+                    }),
+                ),
                 agentName: identity.name,
                 agentCategory,
                 agentReplicaIndex: input.agentReplicaIndex,

@@ -44,7 +44,6 @@ import {
 import { MinimumSeverityLevel } from "../suggestion-control/_components/minimum-severity-level";
 import { AutomatedReviewActive } from "./_components/automated-review-active";
 import { BaseBranches } from "./_components/base-branches";
-
 import { CentralizedConfigModal } from "./_components/centralized-config-modal";
 import { CrossfileDependenciesAnalysis } from "./_components/crossfile-dependencies-analysis";
 import { EnableCommittableSuggestions } from "./_components/enable-committable-suggestions";
@@ -106,8 +105,8 @@ export default function General() {
         currentLevel === FormattedConfigLevel.GLOBAL
             ? "default"
             : currentLevel === FormattedConfigLevel.REPOSITORY
-                ? "repository"
-                : "directory";
+              ? "repository"
+              : "directory";
 
     const handleFileDownload = async () => {
         try {

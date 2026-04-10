@@ -27,13 +27,9 @@ export class DeleteTeamMembersUseCase implements IUseCase {
             true,
         );
 
-        let teamMembers: TeamMemberEntity[] = [];
-
-        if (removeAll) {
-            teamMembers = teamMembersRelated;
-        } else {
-            teamMembers = [memberToRemove];
-        }
+        const teamMembers: TeamMemberEntity[] = removeAll
+            ? teamMembersRelated
+            : [memberToRemove];
 
         const countTeamMembers = await this.teamMembersService.countByUser(
             memberToRemove.user.uuid,

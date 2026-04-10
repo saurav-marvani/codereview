@@ -41,13 +41,13 @@ export class CentralizedConfigInitUseCase {
             params;
         const { organizationId, teamId } = organizationAndTeamData;
 
-        let wasInitiallyEnabled = false;
         let shouldRollbackEnable = false;
 
         try {
-            wasInitiallyEnabled = await this.checkIfCentralizedConfigEnabled(
-                organizationAndTeamData,
-            );
+            const wasInitiallyEnabled =
+                await this.checkIfCentralizedConfigEnabled(
+                    organizationAndTeamData,
+                );
 
             if (wasInitiallyEnabled) {
                 const message =

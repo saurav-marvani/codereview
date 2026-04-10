@@ -27,7 +27,11 @@ export class ConversationAgentUseCase implements IUseCase {
                 thread,
             });
         } catch (error) {
-            throw new Error(`Falha ao processar conversação: ${error.message}`);
+            const errorMessage =
+                error instanceof Error ? error.message : String(error);
+            throw new Error(`Falha ao processar conversação: ${errorMessage}`, {
+                cause: error,
+            });
         }
     }
 }

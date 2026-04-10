@@ -45,37 +45,39 @@ describe('KodyRulesSyncService.syncRepositoryMain', () => {
             }),
         };
         const contextResolutionService = {
-            getRepositoryNameByOrganizationAndRepository:
-                jest.fn().mockResolvedValue('backend-services'),
-            getTeamIdByOrganizationAndRepository:
-                jest.fn().mockResolvedValue('team-1'),
+            getRepositoryNameByOrganizationAndRepository: jest
+                .fn()
+                .mockResolvedValue('backend-services'),
+            getTeamIdByOrganizationAndRepository: jest
+                .fn()
+                .mockResolvedValue('team-1'),
         };
         const codeManagementService = {
             getDefaultBranch: jest.fn().mockResolvedValue('main'),
             getRepositoryAllFiles: jest.fn(),
-            getRepositoryContentFile: jest
-                .fn()
-                .mockResolvedValue({
-                    data: {
-                        content: Buffer.from(
-                            [
-                                '---',
-                                '# @kody-sync',
-                                '---',
-                                'Logging rule content',
-                            ].join('\n'),
-                            'utf-8',
-                        ).toString('base64'),
-                        encoding: 'base64',
-                    },
-                }),
+            getRepositoryContentFile: jest.fn().mockResolvedValue({
+                data: {
+                    content: Buffer.from(
+                        [
+                            '---',
+                            '# @kody-sync',
+                            '---',
+                            'Logging rule content',
+                        ].join('\n'),
+                        'utf-8',
+                    ).toString('base64'),
+                    encoding: 'base64',
+                },
+            }),
         };
         const updateOrCreateCodeReviewParameterUseCase = {
             execute: jest.fn().mockResolvedValue(undefined),
         };
         const promptRunnerService = {};
         const permissionValidationService = {
-            validateBasicLicense: jest.fn().mockResolvedValue({ allowed: true }),
+            validateBasicLicense: jest
+                .fn()
+                .mockResolvedValue({ allowed: true }),
             getBYOKConfig: jest.fn().mockResolvedValue(undefined),
         };
         const observabilityService = {};
@@ -103,9 +105,10 @@ describe('KodyRulesSyncService.syncRepositoryMain', () => {
                 examples: [],
             },
         ]);
-        jest.spyOn(service as any, 'processContextReferences').mockResolvedValue(
-            undefined,
-        );
+        jest.spyOn(
+            service as any,
+            'processContextReferences',
+        ).mockResolvedValue(undefined);
 
         return {
             service,
@@ -124,8 +127,12 @@ describe('KodyRulesSyncService.syncRepositoryMain', () => {
             path: 'qantilever/.cursor/rules/logging.mdc',
         });
 
-        expect(codeManagementService.getRepositoryAllFiles).not.toHaveBeenCalled();
-        expect(codeManagementService.getRepositoryContentFile).toHaveBeenCalledWith(
+        expect(
+            codeManagementService.getRepositoryAllFiles,
+        ).not.toHaveBeenCalled();
+        expect(
+            codeManagementService.getRepositoryContentFile,
+        ).toHaveBeenCalledWith(
             expect.objectContaining({
                 file: { filename: 'qantilever/.cursor/rules/logging.mdc' },
             }),

@@ -50,7 +50,8 @@ export class AstGraphBuildJobProcessor implements IJobProcessorService {
         }
 
         const payload = job.payload as unknown as AstGraphBuildJobPayload;
-        const repoLabel = payload?.fullName || payload?.repositoryId || 'unknown';
+        const repoLabel =
+            payload?.fullName || payload?.repositoryId || 'unknown';
 
         this.logger.log({
             message: `[AST-GRAPH-JOB] Starting build for ${repoLabel}`,
@@ -67,8 +68,14 @@ export class AstGraphBuildJobProcessor implements IJobProcessorService {
 
         await this.updateJobStage(jobId, 'VALIDATING');
 
-        if (!payload?.repositoryId || !payload?.fullName || !payload?.defaultBranch) {
-            throw new Error('Invalid payload: missing required fields (repositoryId, fullName, defaultBranch)');
+        if (
+            !payload?.repositoryId ||
+            !payload?.fullName ||
+            !payload?.defaultBranch
+        ) {
+            throw new Error(
+                'Invalid payload: missing required fields (repositoryId, fullName, defaultBranch)',
+            );
         }
 
         let sandbox: SandboxInstance | undefined;
@@ -85,7 +92,9 @@ export class AstGraphBuildJobProcessor implements IJobProcessorService {
                         id: '0',
                         defaultBranch: payload.defaultBranch,
                         fullName: payload.fullName,
-                        name: payload.fullName.split('/').pop() || payload.fullName,
+                        name:
+                            payload.fullName.split('/').pop() ||
+                            payload.fullName,
                     },
                     organizationAndTeamData: payload.organizationAndTeamData,
                 },
@@ -111,7 +120,10 @@ export class AstGraphBuildJobProcessor implements IJobProcessorService {
                 sandboxMetadata: { stage: 'graph-build' },
             });
 
-            sandboxId = (sandbox.sandboxHandle as any)?.sandboxId || (sandbox as any)?.id || 'unknown';
+            sandboxId =
+                (sandbox.sandboxHandle as any)?.sandboxId ||
+                (sandbox as any)?.id ||
+                'unknown';
 
             await this.jobRepository.update(jobId, {
                 metadata: { sandboxId, stage: 'CLONING' },
@@ -124,10 +136,11 @@ export class AstGraphBuildJobProcessor implements IJobProcessorService {
             });
 
             // 3. Get HEAD sha
-            const shaResult = await (sandbox.sandboxHandle as Sandbox).commands.run(
-                'git -C /home/user/repo rev-parse HEAD',
-                { timeoutMs: 10_000 },
-            );
+            const shaResult = await (
+                sandbox.sandboxHandle as Sandbox
+            ).commands.run('git -C /home/user/repo rev-parse HEAD', {
+                timeoutMs: 10_000,
+            });
             const headSha = shaResult.stdout?.trim() || '';
 
             if (!headSha) {
@@ -161,7 +174,13 @@ export class AstGraphBuildJobProcessor implements IJobProcessorService {
             this.logger.log({
                 message: `[AST-GRAPH-JOB] Build COMPLETED for ${repoLabel} in ${totalMs}ms`,
                 context: AstGraphBuildJobProcessor.name,
-                metadata: { jobId, repositoryId: payload.repositoryId, headSha, sandboxId, durationMs: totalMs },
+                metadata: {
+                    jobId,
+                    repositoryId: payload.repositoryId,
+                    headSha,
+                    sandboxId,
+                    durationMs: totalMs,
+                },
             });
         } catch (error) {
             const totalMs = Date.now() - jobStart;

@@ -454,12 +454,17 @@ export class WorkflowJobConsumer implements OnApplicationShutdown {
             this.logger.warn({
                 message: `Shutdown timeout reached with ${this.activeJobs} active jobs. Force-releasing inbox locks.`,
                 context: WorkflowJobConsumer.name,
-                metadata: { activeJobs: this.activeJobs, instanceId: this.instanceId },
+                metadata: {
+                    activeJobs: this.activeJobs,
+                    instanceId: this.instanceId,
+                },
             });
         }
 
         try {
-            const released = await this.inboxRepository.releaseAllByInstance(this.instanceId);
+            const released = await this.inboxRepository.releaseAllByInstance(
+                this.instanceId,
+            );
             if (released > 0) {
                 this.logger.log({
                     message: `Released ${released} inbox locks during shutdown`,

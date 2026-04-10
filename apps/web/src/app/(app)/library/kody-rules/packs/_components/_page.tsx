@@ -13,8 +13,11 @@ import { Input } from "@components/ui/input";
 import { Link } from "@components/ui/link";
 import { Page } from "@components/ui/page";
 import { Separator } from "@components/ui/separator";
-import type { KodyRuleBucket, LibraryRule } from "@services/kodyRules/types";
-import { resolveKodyRuleDisplaySeverity } from "@services/kodyRules/types";
+import {
+    resolveKodyRuleDisplaySeverity,
+    type KodyRuleBucket,
+    type LibraryRule,
+} from "@services/kodyRules/types";
 import { SearchIcon } from "lucide-react";
 
 export const KodyRulesPacksExplorer = ({

@@ -1,5 +1,4 @@
 import { createLogger, createThreadId } from '@kodus/flow';
-import { CodeReviewVersion } from '@libs/core/domain/enums/code-review.enum';
 import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
 import posthog, { FEATURE_FLAGS } from '@libs/common/utils/posthog';
 import { LabelType } from '@libs/common/utils/codeManagement/labels';
@@ -16,16 +15,12 @@ import {
     CROSS_FILE_ANALYSIS_SERVICE_TOKEN,
     CrossFileAnalysisService,
 } from '@libs/code-review/infrastructure/adapters/services/crossFileAnalysis.service';
-import {
-    CodeSuggestion,
-    ReviewModeResponse,
-} from '@libs/core/infrastructure/config/types/general/codeReview.type';
+import { CodeSuggestion } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { ISuggestionByPR } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
 import {
     KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN,
     KodyRulesPrLevelAnalysisService,
 } from '@libs/ee/codeBase/kodyRulesPrLevelAnalysis.service';
-import { KodyRulesScope } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 
 @Injectable()

@@ -70,7 +70,9 @@ describe('ResyncRulesFromIdeUseCase', () => {
             path: 'qantilever/.cursor/rules/logging.mdc',
         });
 
-        expect(kodyRulesSyncServiceMock.syncRepositoryMain).toHaveBeenCalledWith(
+        expect(
+            kodyRulesSyncServiceMock.syncRepositoryMain,
+        ).toHaveBeenCalledWith(
             expect.objectContaining({
                 organizationAndTeamData: {
                     organizationId: 'org-1',

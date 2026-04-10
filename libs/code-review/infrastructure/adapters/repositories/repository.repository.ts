@@ -2,10 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import {
-    RepositoryModel,
-    AstGraphStatus,
-} from './schemas/repository.model';
+import { RepositoryModel, AstGraphStatus } from './schemas/repository.model';
 
 @Injectable()
 export class RepositoryRepository {
@@ -51,7 +48,10 @@ export class RepositoryRepository {
             return await this.repo.save(model);
         } catch (error: any) {
             // Handle race condition: concurrent insert hit unique constraint
-            if (error?.code === '23505' || error?.message?.includes('duplicate key')) {
+            if (
+                error?.code === '23505' ||
+                error?.message?.includes('duplicate key')
+            ) {
                 const retry = await this.repo.findOne({
                     where: {
                         platform: params.platform,

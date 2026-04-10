@@ -198,7 +198,7 @@ export class SafeguardPipelineService {
                         prNumber,
                         filePath: file?.filename,
                         toVerifyCount: toVerify.length,
-                        hasSandboxCloneParams: !!params.sandboxCloneParams,
+                        hasFreshCloneParams: !!params.getFreshCloneParams,
                     },
                 });
 
@@ -405,7 +405,7 @@ export class SafeguardPipelineService {
                         prNumber,
                         filePath: file?.filename,
                         toVerifyCount: toVerify.length,
-                        hasSandboxCloneParams: !!params.sandboxCloneParams,
+                        hasFreshCloneParams: !!params.getFreshCloneParams,
                     },
                 });
 
@@ -942,14 +942,18 @@ Evidence field in ${params.languageResultPrompt}.`;
         // Try direct parse
         try {
             return JSON.parse(text);
-        } catch {}
+        } catch {
+            // intentional fallback
+        }
 
         // Extract from markdown code blocks
         const codeBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/);
         if (codeBlock) {
             try {
                 return JSON.parse(codeBlock[1].trim());
-            } catch {}
+            } catch {
+                // intentional fallback
+            }
         }
 
         // Extract outermost JSON object
@@ -991,7 +995,9 @@ Evidence field in ${params.languageResultPrompt}.`;
 
         try {
             return JSON.parse(json);
-        } catch {}
+        } catch {
+            // intentional fallback
+        }
 
         // Clean trailing commas and try again
         const cleaned = json
@@ -1000,7 +1006,9 @@ Evidence field in ${params.languageResultPrompt}.`;
 
         try {
             return JSON.parse(cleaned);
-        } catch {}
+        } catch {
+            // intentional fallback
+        }
 
         return null;
     }

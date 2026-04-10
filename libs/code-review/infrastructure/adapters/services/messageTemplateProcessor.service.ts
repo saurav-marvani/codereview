@@ -233,8 +233,8 @@ ${reviewOptionsMarkdown}
         if (!translation) return '';
 
         const cadenceType = context.codeReviewConfig.reviewCadence.type;
-        let statusText = '';
-        let description = '';
+        let statusText: string;
+        let description: string;
 
         switch (cadenceType) {
             case ReviewCadenceType.AUTOMATIC:

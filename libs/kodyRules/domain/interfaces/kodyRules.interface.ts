@@ -1,4 +1,7 @@
-import { SeverityLevel, severityLevelSchema } from '@libs/common/utils/enums/severityLevel.enum';
+import {
+    SeverityLevel,
+    severityLevelSchema,
+} from '@libs/common/utils/enums/severityLevel.enum';
 import z from 'zod';
 
 export { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';
