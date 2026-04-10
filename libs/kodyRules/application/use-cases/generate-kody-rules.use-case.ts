@@ -1,11 +1,9 @@
 import { createLogger } from '@kodus/flow';
 import { Inject, Injectable } from '@nestjs/common';
-import * as yaml from 'js-yaml';
 
 import { GenerateKodyRulesDTO } from '@libs/core/domain/dtos/generate-kody-rules.dto';
 
 import { CommentAnalysisService } from '@libs/code-review/infrastructure/adapters/services/commentAnalysis.service';
-import { CentralizedConfigPrService } from '@libs/centralized-config/infrastructure/adapters/services/centralized-config-pr.service';
 import { generateDateFilter } from '@libs/common/utils/transforms/date';
 import { IntegrationConfigKey, ParametersKey } from '@libs/core/domain/enums';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
@@ -22,8 +20,6 @@ import {
     INTEGRATION_SERVICE_TOKEN,
 } from '@libs/integrations/domain/integrations/contracts/integration.service.contracts';
 import {
-    IKodyRule,
-    KodyRuleCentralizedStatus,
     KodyRulesStatus,
     KodyRulesType,
 } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
@@ -33,7 +29,6 @@ import {
 } from '@libs/organization/domain/parameters/contracts/parameters.service.contract';
 import { ParametersEntity } from '@libs/organization/domain/parameters/entities/parameters.entity';
 import { KodyLearningStatus } from '@libs/organization/domain/parameters/types/configValue.type';
-import { PullRequestFileChange } from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
 import { Repositories } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { ModuleRef } from '@nestjs/core';
@@ -55,7 +50,6 @@ export class GenerateKodyRulesUseCase {
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
         private readonly codeManagementService: CodeManagementService,
         private readonly commentAnalysisService: CommentAnalysisService,
-        private readonly centralizedConfigPrService: CentralizedConfigPrService,
         private readonly moduleRef: ModuleRef,
         private readonly sendRulesNotificationUseCase: SendRulesNotificationUseCase,
     ) {}
@@ -131,15 +125,6 @@ export class GenerateKodyRulesUseCase {
                 },
                 organizationAndTeamData,
             );
-
-            const centralizedRepository =
-                await this.centralizedConfigPrService.getCentralizedRepositoryIfEnabled(
-                    organizationAndTeamData,
-                );
-            const shouldCreateCentralizedRulesPr =
-                !!centralizedRepository?.id && !!centralizedRepository?.name;
-            const centralizedRuleFiles: PullRequestFileChange[] = [];
-            const usedCentralizedPaths = new Set<string>();
 
             const allRules = [];
             const createdRules = []; // To track created rules for notification
@@ -237,14 +222,6 @@ export class GenerateKodyRulesUseCase {
                         organizationAndTeamData,
                     });
 
-                const repositoryFolderName =
-                    shouldCreateCentralizedRulesPr && repository?.id
-                        ? await this.centralizedConfigPrService.resolveRepositoryFolderName(
-                              organizationAndTeamData,
-                              repository.id,
-                          )
-                        : undefined;
-
                 if (!rules || rules.length === 0) {
                     this.logger.log({
                         message: 'No rules generated',
@@ -288,39 +265,10 @@ export class GenerateKodyRulesUseCase {
                         userInfo,
                     );
 
-                    if (shouldCreateCentralizedRulesPr && createdRule?.uuid) {
-                        const centralizedPath = this.getUniquePath(
-                            this.getCentralizedRuleEntryPath(
-                                repositoryFolderName ||
-                                    repository.name ||
-                                    repository.id,
-                                rule.title,
-                            ),
-                            usedCentralizedPaths,
+                    if (!createdRule) {
+                        throw new Error(
+                            'Failed to persist generated Kody rule',
                         );
-
-                        await createOrUpdateUseCase.execute(
-                            {
-                                ...dto,
-                                uuid: createdRule.uuid,
-                                centralizedConfig: {
-                                    path: centralizedPath,
-                                    status: KodyRuleCentralizedStatus.PENDING_ADD,
-                                },
-                                status: KodyRulesStatus.PENDING,
-                            },
-                            organizationId,
-                            userInfo,
-                        );
-
-                        centralizedRuleFiles.push({
-                            path: centralizedPath,
-                            content: this.formatRuleToYaml({
-                                ...rule,
-                                status: KodyRulesStatus.PENDING,
-                            }),
-                            operation: 'upsert',
-                        });
                     }
 
                     // Add rule to notification data
@@ -364,27 +312,6 @@ export class GenerateKodyRulesUseCase {
                 context: GenerateKodyRulesUseCase.name,
                 metadata: { body, organizationAndTeamData },
             });
-
-            if (shouldCreateCentralizedRulesPr && centralizedRuleFiles.length) {
-                const pr =
-                    await this.centralizedConfigPrService.createMutationPullRequestIfEnabled(
-                        {
-                            organizationAndTeamData,
-                            files: centralizedRuleFiles,
-                            title: 'Add Generated Kody Rules',
-                            description:
-                                'This pull request adds newly generated Kody rules as pending review rules in centralized configuration.',
-                            commitMessage: 'Add generated Kody rules',
-                            sourceBranch: `kodus-generated-rules-${Date.now()}`,
-                        },
-                    );
-
-                if (pr.mode !== 'centralized-pr' || !pr.prUrl) {
-                    throw new Error(
-                        'Failed to create pull request for generated Kody rules in centralized repository',
-                    );
-                }
-            }
 
             // Send email notification if rules were created
             if (createdRules.length > 0) {
@@ -477,54 +404,5 @@ export class GenerateKodyRulesUseCase {
         }
 
         return integrationConfig.configValue as Repositories[];
-    }
-
-    private formatRuleToYaml(rule: Partial<IKodyRule>): string {
-        const ruleForYaml = {
-            title: rule.title,
-            rule: rule.rule,
-            severity: rule.severity,
-            ...(rule.scope ? { scope: rule.scope } : {}),
-            ...(rule.path ? { path: rule.path } : {}),
-            ...(rule.examples ? { examples: rule.examples } : {}),
-            ...(rule.inheritance ? { inheritance: rule.inheritance } : {}),
-        };
-
-        return yaml.dump(ruleForYaml);
-    }
-
-    private getCentralizedRuleEntryPath(
-        repositoryFolderName: string,
-        ruleTitle: string,
-    ): string {
-        const fileName = `${this.centralizedConfigPrService.sanitizeFileName(ruleTitle, 'rule')}.yml`;
-
-        return this.centralizedConfigPrService.buildCentralizedPath({
-            repositoryFolder: repositoryFolderName,
-            relativePath: `.kody-rules/review/${fileName}`,
-        });
-    }
-
-    private getUniquePath(path: string, usedPaths: Set<string>): string {
-        if (!path) return path;
-
-        if (!usedPaths.has(path)) {
-            usedPaths.add(path);
-            return path;
-        }
-
-        const suffix = path.endsWith('.yaml') ? '.yaml' : '.yml';
-        const pathWithoutExt = path.replace(/\.(yml|yaml)$/i, '');
-
-        let index = 2;
-        let candidate = `${pathWithoutExt}-${index}${suffix}`;
-
-        while (usedPaths.has(candidate)) {
-            index++;
-            candidate = `${pathWithoutExt}-${index}${suffix}`;
-        }
-
-        usedPaths.add(candidate);
-        return candidate;
     }
 }

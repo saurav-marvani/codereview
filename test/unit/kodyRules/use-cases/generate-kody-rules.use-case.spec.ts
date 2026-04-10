@@ -20,7 +20,6 @@ import { CommentAnalysisService } from '@libs/code-review/infrastructure/adapter
 import { SendRulesNotificationUseCase } from '@libs/kodyRules/application/use-cases/send-rules-notification.use-case';
 import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/find-rules-in-organization-by-filter.use-case';
 import { CreateOrUpdateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/create-or-update.use-case';
-import { CentralizedConfigPrService } from '@libs/centralized-config/infrastructure/adapters/services/centralized-config-pr.service';
 import { ParametersKey } from '@libs/core/domain/enums';
 import { KodyRulesStatus } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 
@@ -50,7 +49,6 @@ describe('GenerateKodyRulesUseCase', () => {
         getAllCommentsInPullRequest: jest.fn(),
         getPullRequestReviewComment: jest.fn(),
         getFilesByPullRequestId: jest.fn(),
-        createPullRequestWithFiles: jest.fn(),
     };
     const commentAnalysisServiceMock = {
         processComments: jest.fn(),
@@ -58,13 +56,6 @@ describe('GenerateKodyRulesUseCase', () => {
     };
     const sendRulesNotificationUseCaseMock = {
         execute: jest.fn(),
-    };
-    const centralizedConfigPrServiceMock = {
-        getCentralizedRepositoryIfEnabled: jest.fn(),
-        resolveRepositoryFolderName: jest.fn(),
-        sanitizeFileName: jest.fn(),
-        buildCentralizedPath: jest.fn(),
-        createMutationPullRequestIfEnabled: jest.fn(),
     };
 
     const findRulesUseCaseMock = {
@@ -110,32 +101,6 @@ describe('GenerateKodyRulesUseCase', () => {
         sendRulesNotificationUseCaseMock.execute.mockResolvedValue(undefined);
         createOrUpdateParametersUseCaseMock.execute.mockResolvedValue(
             undefined,
-        );
-        centralizedConfigPrServiceMock.resolveRepositoryFolderName.mockResolvedValue(
-            'repo-one',
-        );
-        centralizedConfigPrServiceMock.sanitizeFileName.mockImplementation(
-            (name: string) =>
-                (name || '')
-                    .trim()
-                    .toLowerCase()
-                    .replace(/[^a-z0-9]+/g, '-')
-                    .replace(/^-+|-+$/g, '')
-                    .slice(0, 30) || 'rule',
-        );
-        centralizedConfigPrServiceMock.buildCentralizedPath.mockImplementation(
-            ({ repositoryFolder, relativePath }) =>
-                repositoryFolder === 'global'
-                    ? relativePath
-                    : `${repositoryFolder}/${relativePath}`,
-        );
-        centralizedConfigPrServiceMock.createMutationPullRequestIfEnabled.mockResolvedValue(
-            {
-                mode: 'centralized-pr',
-                prUrl: 'https://example.com/pr/1',
-                message:
-                    'Centralized config is enabled. Change proposed through pull request instead of direct persistence.',
-            },
         );
 
         moduleRefMock.resolve = jest.fn((token: any) => {
@@ -187,17 +152,13 @@ describe('GenerateKodyRulesUseCase', () => {
                     provide: SendRulesNotificationUseCase,
                     useValue: sendRulesNotificationUseCaseMock,
                 },
-                {
-                    provide: CentralizedConfigPrService,
-                    useValue: centralizedConfigPrServiceMock,
-                },
             ],
         }).compile();
 
         useCase = module.get(GenerateKodyRulesUseCase);
     });
 
-    it('creates a centralized rules PR and keeps generated rules pending when centralized config is enabled', async () => {
+    it('persists generated rules through centralized-aware create-or-update flow when centralized config is enabled', async () => {
         parametersServiceMock.findByKey.mockImplementation((key: any) => {
             if (key === ParametersKey.CODE_REVIEW_CONFIG) {
                 return Promise.resolve({
@@ -222,45 +183,15 @@ describe('GenerateKodyRulesUseCase', () => {
                 });
             }
 
-            if (key === ParametersKey.CENTRALIZED_CONFIG) {
-                return Promise.resolve({
-                    configValue: {
-                        enabled: true,
-                        repository: {
-                            id: 'central-repo-id',
-                            name: 'central-repo',
-                        },
-                    },
-                });
-            }
-
             return Promise.resolve(null);
         });
 
-        createOrUpdateRuleUseCaseMock.execute
-            .mockResolvedValueOnce({
-                uuid: 'rule-uuid-1',
-            })
-            .mockResolvedValueOnce({
-                uuid: 'rule-uuid-1',
-                centralizedConfig: {
-                    path: 'repo-one/.kody-rules/review/avoid-console-log.yml',
-                    status: 'pending_add',
-                },
-            });
-
-        centralizedConfigPrServiceMock.getCentralizedRepositoryIfEnabled.mockResolvedValue(
-            {
-                id: 'central-repo-id',
-                name: 'central-repo',
-            },
-        );
-        centralizedConfigPrServiceMock.createMutationPullRequestIfEnabled.mockResolvedValue(
-            {
-                mode: 'centralized-pr',
-                prUrl: 'https://example.com/pr/1',
-            },
-        );
+        createOrUpdateRuleUseCaseMock.execute.mockResolvedValue({
+            mode: 'centralized-pr',
+            prUrl: 'https://example.com/pr/1',
+            message:
+                'Centralized config is enabled. Change proposed through pull request instead of direct persistence.',
+        });
 
         await useCase.execute(
             {
@@ -270,9 +201,8 @@ describe('GenerateKodyRulesUseCase', () => {
             'org-1',
         );
 
-        expect(createOrUpdateRuleUseCaseMock.execute).toHaveBeenCalledTimes(2);
-        expect(createOrUpdateRuleUseCaseMock.execute).toHaveBeenNthCalledWith(
-            1,
+        expect(createOrUpdateRuleUseCaseMock.execute).toHaveBeenCalledTimes(1);
+        expect(createOrUpdateRuleUseCaseMock.execute).toHaveBeenCalledWith(
             expect.objectContaining({
                 status: KodyRulesStatus.PENDING,
                 repositoryId: 'repo-1',
@@ -280,35 +210,9 @@ describe('GenerateKodyRulesUseCase', () => {
             'org-1',
             expect.objectContaining({ userId: 'kody-system-rules-generator' }),
         );
-        expect(createOrUpdateRuleUseCaseMock.execute).toHaveBeenNthCalledWith(
-            2,
-            expect.objectContaining({
-                uuid: 'rule-uuid-1',
-                status: KodyRulesStatus.PENDING,
-                centralizedConfig: {
-                    path: 'repo-one/.kody-rules/review/avoid-console-log.yml',
-                    status: 'pending_add',
-                },
-            }),
-            'org-1',
-            expect.objectContaining({ userId: 'kody-system-rules-generator' }),
-        );
-
-        expect(
-            centralizedConfigPrServiceMock.createMutationPullRequestIfEnabled,
-        ).toHaveBeenCalledWith(
-            expect.objectContaining({
-                files: [
-                    expect.objectContaining({
-                        path: 'repo-one/.kody-rules/review/avoid-console-log.yml',
-                    }),
-                ],
-                title: 'Add Generated Kody Rules',
-            }),
-        );
     });
 
-    it('does not create centralized rules PR when centralized config is disabled', async () => {
+    it('works in direct mode when centralized config is disabled', async () => {
         parametersServiceMock.findByKey.mockImplementation((key: any) => {
             if (key === ParametersKey.CODE_REVIEW_CONFIG) {
                 return Promise.resolve({
@@ -333,20 +237,8 @@ describe('GenerateKodyRulesUseCase', () => {
                 });
             }
 
-            if (key === ParametersKey.CENTRALIZED_CONFIG) {
-                return Promise.resolve({
-                    configValue: {
-                        enabled: false,
-                    },
-                });
-            }
-
             return Promise.resolve(null);
         });
-
-        centralizedConfigPrServiceMock.getCentralizedRepositoryIfEnabled.mockResolvedValue(
-            null,
-        );
 
         createOrUpdateRuleUseCaseMock.execute.mockResolvedValue({
             uuid: 'rule-uuid-1',
@@ -361,8 +253,5 @@ describe('GenerateKodyRulesUseCase', () => {
         );
 
         expect(createOrUpdateRuleUseCaseMock.execute).toHaveBeenCalledTimes(1);
-        expect(
-            centralizedConfigPrServiceMock.createMutationPullRequestIfEnabled,
-        ).not.toHaveBeenCalled();
     });
 });
