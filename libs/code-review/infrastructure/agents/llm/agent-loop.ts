@@ -429,6 +429,40 @@ ${input.callGraph}
 }
 
 /**
+ * Insert a <FocusTargets> section into the user prompt, before the <Task> tag.
+ * If suspects is empty, returns the prompt unchanged.
+ */
+function injectFocusTargets(
+    userPrompt: string,
+    suspects: TriageSuspect[],
+): string {
+    if (suspects.length === 0) return userPrompt;
+
+    const lines = suspects.map((s, i) => {
+        const tag = (s.confidence || 'medium').toUpperCase();
+        return `  ${i + 1}. [${tag}] ${s.function} [${s.file}]
+     Hypothesis: ${s.hypothesis}
+     Verify: ${s.check}`;
+    });
+
+    const focusSection = `
+  <FocusTargets>
+    The following functions were flagged during triage as high-risk.
+    Prioritize investigating these WITH TOOLS before exploring other areas.
+
+${lines.join('\n\n')}
+  </FocusTargets>
+`;
+
+    // Insert before <Task> — if <Task> not found, append before end of prompt
+    const taskIndex = userPrompt.indexOf('<Task>');
+    if (taskIndex !== -1) {
+        return userPrompt.slice(0, taskIndex) + focusSection + '\n  ' + userPrompt.slice(taskIndex);
+    }
+    return userPrompt + focusSection;
+}
+
+/**
  * Run the agent loop with native function calling.
  *
  * `secrets` is kept separate from `input` so that LangSmith tracing
@@ -1640,7 +1674,7 @@ Return ONLY JSON:
         if (!extraFindings && synthesisText.length > 50) {
             const fallbackResult = await structureWithFallbackModel(
                 synthesisText,
-                secrets.byokConfig,
+                byokConfig,
                 input.telemetryMetadata?.organizationId,
             );
             if (fallbackResult) {
