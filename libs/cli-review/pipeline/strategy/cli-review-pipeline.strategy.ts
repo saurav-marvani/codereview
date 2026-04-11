@@ -5,7 +5,6 @@ import { CliReviewPipelineContext } from '../context/cli-review-pipeline.context
 
 // Reused stages from code-review pipeline
 import { CreateSandboxStage } from '@libs/code-review/pipeline/stages/create-sandbox.stage';
-import { CollectCrossFileContextStage } from '@libs/code-review/pipeline/stages/collect-cross-file-context.stage';
 import { AgentReviewStage } from '@libs/code-review/pipeline/stages/agent-review.stage';
 import { AggregateResultsStage } from '@libs/code-review/pipeline/stages/aggregate-result.stage';
 
@@ -32,7 +31,6 @@ export class CliReviewPipelineStrategy
     constructor(
         // Shared stages (from code-review pipeline)
         private readonly createSandboxStage: CreateSandboxStage,
-        private readonly collectCrossFileContextStage: CollectCrossFileContextStage,
         private readonly agentReviewStage: AgentReviewStage,
         private readonly aggregateResultsStage: AggregateResultsStage,
 
@@ -43,18 +41,17 @@ export class CliReviewPipelineStrategy
 
     /**
      * Configure the pipeline stages in execution order:
-     *   1. PrepareCliFiles      — validate FileChange objects
-     *   2. CreateSandbox        — clone repo into sandbox
-     *   3. CollectCrossFileCtx  — gather cross-file deps via sandbox
-     *   4. AgentReview          — run the agent loop (bug/security/perf/generalist)
-     *   5. AggregateResults     — collect and dedupe suggestions
-     *   6. FormatCliOutput      — convert to CLI response format
+     *   1. PrepareCliFiles  — validate FileChange objects
+     *   2. CreateSandbox    — clone repo into sandbox
+     *   3. AgentReview      — run the agent loop (it discovers cross-file
+     *                         context itself via readFile/grep/checkTypes)
+     *   4. AggregateResults — collect and dedupe suggestions
+     *   5. FormatCliOutput  — convert to CLI response format
      */
     configureStages(): BasePipelineStage<CliReviewPipelineContext>[] {
         return [
             this.prepareCliFilesStage,
             this.createSandboxStage as any,
-            this.collectCrossFileContextStage as any,
             this.agentReviewStage as any,
             this.aggregateResultsStage as any,
             this.formatCliOutputStage,

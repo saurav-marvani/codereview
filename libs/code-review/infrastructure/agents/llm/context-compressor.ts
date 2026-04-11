@@ -273,14 +273,22 @@ export function compressMessages(
 
     // Only inject the summary when we actually truncated older content —
     // avoids polluting the prompt with a recap when nothing changed.
+    //
+    // IMPORTANT: the recap MUST be a `user` message, not `system`. Gemini only
+    // accepts `system` at position 0 of the conversation ("system messages
+    // are only supported at the beginning of the conversation"), and we
+    // already have the agent's own system prompt at head[0]. OpenAI and
+    // Claude tolerate mid-conversation system messages, but Gemini does not,
+    // so we use a `user` role with an explicit prefix to preserve semantics
+    // across providers.
     if (anyTruncated && allToolCalls && allToolCalls.length > 0) {
         const summary = buildInvestigationSummary(allToolCalls);
         if (summary) {
-            const summaryMsg: ModelMessage = {
-                role: 'system',
-                content: summary,
+            const recapMsg: ModelMessage = {
+                role: 'user',
+                content: `[investigation recap]\n${summary}`,
             };
-            return [...head, summaryMsg, ...compressedTail];
+            return [...head, recapMsg, ...compressedTail];
         }
     }
 

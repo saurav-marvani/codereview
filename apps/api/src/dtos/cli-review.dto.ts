@@ -109,7 +109,7 @@ class CliConfigDto {
 
 export class CliReviewRequestDto {
     @IsString()
-    @MaxLength(5000000, { message: 'Diff too large (max 5MB)' })
+    @MaxLength(20000000, { message: 'Diff too large (max 20MB)' })
     @ApiProperty({
         example: 'diff --git a/src/app.ts b/src/app.ts\n+const x = 1;',
     })
