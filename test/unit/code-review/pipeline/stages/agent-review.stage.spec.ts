@@ -294,6 +294,71 @@ describe('AgentReviewStage', () => {
         });
     });
 
+    describe('kody rules severity', () => {
+        it('should use severity from the Kody Rule, not from the LLM or classifier', async () => {
+            // Orchestrator returns a finding with ruleUuid and a LOW severity
+            // (whatever the LLM decided). The stage should override it with
+            // the severity from the matched Kody Rule (HIGH).
+            mockOrchestrator.execute.mockResolvedValue({
+                suggestions: [
+                    {
+                        relevantFile: 'src/auth.ts',
+                        suggestionContent: 'Violates rule: must use strict null checks',
+                        label: 'kody_rules',
+                        severity: 'low', // LLM's opinion — should be ignored
+                        ruleUuid: 'rule-uuid-123',
+                        brokenKodyRulesIds: ['rule-uuid-123'],
+                        relevantLinesStart: 10,
+                        relevantLinesEnd: 15,
+                    },
+                ],
+                agentResults: [
+                    {
+                        agentName: 'kody-rules-agent',
+                        suggestions: [{}],
+                        turnsUsed: 3,
+                        durationMs: 1000,
+                    },
+                ],
+                totalDurationMs: 1000,
+            });
+
+            const context = createBaseContext({
+                changedFiles: [{ filename: 'src/auth.ts' } as any],
+                sandboxHandle: {
+                    remoteCommands: {
+                        grep: jest.fn(),
+                        read: jest.fn(),
+                        listDir: jest.fn(),
+                    },
+                    cleanup: jest.fn(),
+                    type: 'e2b' as const,
+                },
+                codeReviewConfig: {
+                    codeReviewVersion: CodeReviewVersion.V3_AGENT,
+                    reviewOptions: { bug: true, security: true, performance: true },
+                    kodyRules: [
+                        {
+                            uuid: 'rule-uuid-123',
+                            title: 'Strict null checks',
+                            severityLevel: 'high',
+                            severity: 'high',
+                            status: 'active',
+                            type: 'standard',
+                        },
+                    ],
+                } as any,
+            });
+
+            const result = await (stage as any).executeStage(context);
+
+            const suggestion =
+                result.fileAnalysisResults[0].validSuggestionsToAnalyze[0];
+            expect(suggestion.severity).toBe('high');
+            expect(suggestion.brokenKodyRulesIds).toEqual(['rule-uuid-123']);
+        });
+    });
+
     describe('error handling', () => {
         it('should return empty results on orchestrator failure', async () => {
             mockOrchestrator.execute.mockRejectedValue(

@@ -11,7 +11,10 @@ import {
 import { RemoteCommands } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
-import { IKodyRule } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
+import {
+    IKodyRule,
+    resolveKodyRuleSeverityLevel,
+} from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import { convertTiptapJSONToText } from '@libs/common/utils/tiptap-json';
 import { byokToVercelModel, getModelName } from './llm/byok-to-vercel';
 import { resolveContextWindow } from './llm/model-context-window';
@@ -545,23 +548,37 @@ export abstract class BaseCodeReviewAgentProvider {
                         : s.relevantFile && validFiles.has(s.relevantFile)),
             );
 
-            const suggestions = rawSuggestions.map((s) => ({
-                relevantFile: s.relevantFile,
-                language: s.language || '',
-                suggestionContent: s.suggestionContent,
-                existingCode: s.existingCode || '',
-                improvedCode: s.improvedCode || '',
-                oneSentenceSummary: s.oneSentenceSummary || '',
-                relevantLinesStart: s.relevantLinesStart,
-                relevantLinesEnd: s.relevantLinesEnd,
-                label: this.resolveSuggestionLabel(
-                    s as Partial<CodeSuggestion> & { label?: string },
-                    input,
-                ),
-                severity: s.severity || 'medium',
-                llmPrompt: s.suggestionContent,
-                ...(s.ruleUuid && { brokenKodyRulesIds: [s.ruleUuid] }),
-            }));
+            const kodyRulesByUuid = new Map(
+                (input.kodyRules || [])
+                    .filter((r) => r.uuid)
+                    .map((r) => [r.uuid!, r]),
+            );
+
+            const suggestions = rawSuggestions.map((s) => {
+                const matchedRule = s.ruleUuid
+                    ? kodyRulesByUuid.get(s.ruleUuid)
+                    : undefined;
+
+                return {
+                    relevantFile: s.relevantFile,
+                    language: s.language || '',
+                    suggestionContent: s.suggestionContent,
+                    existingCode: s.existingCode || '',
+                    improvedCode: s.improvedCode || '',
+                    oneSentenceSummary: s.oneSentenceSummary || '',
+                    relevantLinesStart: s.relevantLinesStart,
+                    relevantLinesEnd: s.relevantLinesEnd,
+                    label: this.resolveSuggestionLabel(
+                        s as Partial<CodeSuggestion> & { label?: string },
+                        input,
+                    ),
+                    severity: matchedRule
+                        ? resolveKodyRuleSeverityLevel(matchedRule)
+                        : s.severity || 'medium',
+                    llmPrompt: s.suggestionContent,
+                    ...(s.ruleUuid && { brokenKodyRulesIds: [s.ruleUuid] }),
+                };
+            });
 
             // Emit progress: agent completed
             // Only mark as error if the agent hit a hard limit (timeout or MAX_STEPS with tool-calls finish).

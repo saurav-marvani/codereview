@@ -635,7 +635,11 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 );
                 for (let i = 0; i < deduped.length; i++) {
                     const classified = severityMap.get(i);
-                    if (classified) deduped[i].severity = classified;
+                    if (!classified) continue;
+                    const hasKodyRuleSeverity =
+                        deduped[i].brokenKodyRulesIds?.length > 0;
+                    if (hasKodyRuleSeverity) continue;
+                    deduped[i].severity = classified;
                 }
                 this.logger.log({
                     message: `[AGENT] Reclassified severity for ${deduped.length} suggestions`,
