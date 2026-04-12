@@ -397,7 +397,9 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                 config: {
                     ...normalizedConfig,
                     languageResultPrompt:
-                        (normalizedConfig as any).languageResultPrompt || {},
+                        typeof (normalizedConfig as any).languageResultPrompt === 'string'
+                            ? (normalizedConfig as any).languageResultPrompt
+                            : 'en-US',
                     kodyRules: standardRules,
                     kodyMemoryRules: memoryRules,
                 } as any as CodeReviewConfig,
@@ -552,7 +554,7 @@ export class ExecuteCliReviewUseCase implements IUseCase {
             ...defaults,
             automatedReviewActive: true,
             pullRequestApprovalActive: false,
-            languageResultPrompt: {},
+            languageResultPrompt: 'en-US',
         } as any as CodeReviewConfig;
 
         // Force Gemini Flash for trial users (cost optimization)

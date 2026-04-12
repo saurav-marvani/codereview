@@ -8,6 +8,8 @@ const logger = createLogger('SuggestionFormatter');
 
 const FORMAT_TIMEOUT_MS = 30_000; // 30s per batch
 
+const displayNames = new Intl.DisplayNames(['en'], { type: 'language' });
+
 export interface SuggestionToFormat {
     suggestionContent: string;
     existingCode?: string;
@@ -64,8 +66,16 @@ export async function formatSuggestionContent(
         ? `\n\nAdditional writing guidelines from the team:\n${options.customWritingGuidelines}`
         : '';
 
-    const langInstruction = options?.languageResultPrompt
-        ? `\nWrite all output in ${options.languageResultPrompt}.`
+    let langLabel: string | null = null;
+    if (options?.languageResultPrompt) {
+        try {
+            langLabel = displayNames.of(options.languageResultPrompt) || options.languageResultPrompt;
+        } catch {
+            langLabel = options.languageResultPrompt;
+        }
+    }
+    const langInstruction = langLabel
+        ? `\nIMPORTANT: Write all output in ${langLabel}. Do not fall back to English.`
         : '';
 
     const suggestionsText = suggestions

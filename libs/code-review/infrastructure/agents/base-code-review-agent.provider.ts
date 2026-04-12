@@ -811,8 +811,9 @@ export abstract class BaseCodeReviewAgentProvider {
         const overridesSection = this.formatOverrides(input);
         const memoryRulesSection = this.formatMemoryRules(input.memoryRules);
 
-        const langSection = input.languageResultPrompt
-            ? `\n  <Language>Write all review comments in ${input.languageResultPrompt}.</Language>`
+        const langLabel = resolveLanguageLabel(input.languageResultPrompt);
+        const langSection = langLabel
+            ? `\n  <Language>Write ALL review comments, summaries, and reasoning in ${langLabel}. This is mandatory — do not fall back to English.</Language>`
             : '';
 
         return `<CodeReviewAgent>
@@ -1049,8 +1050,9 @@ ${coverageTargets ? `${coverageTargets}\n` : ''}
         const overridesSection = this.formatOverrides(input);
         const memoryRulesSection = this.formatMemoryRules(input.memoryRules);
 
-        const langSection = input.languageResultPrompt
-            ? `\n  <Language>Write all review comments in ${input.languageResultPrompt}.</Language>`
+        const langLabel = resolveLanguageLabel(input.languageResultPrompt);
+        const langSection = langLabel
+            ? `\n  <Language>Write ALL review comments, summaries, and reasoning in ${langLabel}. This is mandatory — do not fall back to English.</Language>`
             : '';
 
         return `<CodeReviewAgent mode="self-contained">
@@ -1337,5 +1339,16 @@ ${fileContentsSection}
         }
 
         return this.getAllowedSuggestionLabels(input)[0] || 'bug';
+    }
+}
+
+const displayNames = new Intl.DisplayNames(['en'], { type: 'language' });
+
+function resolveLanguageLabel(localeOrLabel?: string): string | null {
+    if (!localeOrLabel || typeof localeOrLabel !== 'string') return null;
+    try {
+        return displayNames.of(localeOrLabel) || localeOrLabel;
+    } catch {
+        return localeOrLabel;
     }
 }

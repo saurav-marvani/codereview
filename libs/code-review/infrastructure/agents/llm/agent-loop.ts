@@ -2426,7 +2426,7 @@ Output JSON:
 function pickVerificationTools(
     tools: Record<string, any>,
 ): Record<string, any> {
-    const allowed = ['grep', 'readFile', 'checkTypes'];
+    const allowed = ['grep', 'readFile', 'checkTypes', 'searchDocs'];
     return Object.fromEntries(
         Object.entries(tools).filter(([name]) => allowed.includes(name)),
     );
