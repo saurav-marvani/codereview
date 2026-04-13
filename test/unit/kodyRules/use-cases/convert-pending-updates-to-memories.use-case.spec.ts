@@ -172,14 +172,14 @@ describe('ConvertPendingUpdatesToMemoriesUseCase', () => {
         expect(result).toEqual([{ uuid: 'created-1' }]);
     });
 
-    it('uses pending status and returns centralized PR metadata when centralized config is enabled', async () => {
+    it('uses active status and returns centralized PR metadata when centralized config is enabled', async () => {
         findRulesUseCaseMock.execute.mockResolvedValue([
             {
                 uuid: 'pending-1',
                 title: 'Pending 1',
                 rule: 'Rule 1',
                 repositoryId: 'repo-1',
-                status: KodyRulesStatus.PENDING,
+                status: KodyRulesStatus.ACTIVE,
                 type: 'memory',
                 origin: 'generated',
             },
@@ -203,7 +203,7 @@ describe('ConvertPendingUpdatesToMemoriesUseCase', () => {
         expect(createOrUpdateUseCaseMock.execute).toHaveBeenCalledWith(
             expect.objectContaining({
                 uuid: undefined,
-                status: KodyRulesStatus.PENDING,
+                status: KodyRulesStatus.ACTIVE,
             }),
             'org-1',
             { userId: 'user-1', userEmail: 'dev@kodus.io' },
