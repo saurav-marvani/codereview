@@ -104,6 +104,22 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
             }),
         };
 
+        const centralizedConfigPrServiceMock = {
+            createMutationPullRequestIfEnabled: jest.fn().mockResolvedValue({
+                mode: 'disabled',
+            }),
+            resolveRepositoryFolderName: jest
+                .fn()
+                .mockResolvedValue('repo-1-name'),
+            sanitizeFileName: jest.fn().mockReturnValue('memory-rule'),
+            buildCentralizedPath: jest
+                .fn()
+                .mockImplementation(
+                    ({ repositoryFolder, relativePath }) =>
+                        `${repositoryFolder}/${relativePath}`,
+                ),
+        };
+
         const validationService = new KodyRulesValidationService({} as any);
 
         const service = new KodyRulesService(
@@ -116,6 +132,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
             {} as any,
             observabilityServiceMock as any,
             permissionValidationServiceMock as any,
+            centralizedConfigPrServiceMock as any,
             codeBaseConfigServiceMock as any,
         );
 
@@ -123,6 +140,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
             service,
             repositoryMock,
             observabilityServiceMock,
+            centralizedConfigPrServiceMock,
         };
     };
 
@@ -448,6 +466,120 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
         });
     });
 
+    it('creates centralized PR and persists pending_add snapshot for memory create', async () => {
+        const { service, centralizedConfigPrServiceMock } = setup({
+            llmResult: {
+                action: 'create',
+            },
+            currentMemory: undefined,
+            requireApproval: false,
+        });
+
+        centralizedConfigPrServiceMock.createMutationPullRequestIfEnabled.mockResolvedValue(
+            {
+                mode: 'centralized-pr',
+                prUrl: 'https://example.com/pr/101',
+                message: 'PR opened',
+            },
+        );
+
+        const createOrUpdateSpy = jest
+            .spyOn(service, 'createOrUpdate')
+            .mockResolvedValue({
+                uuid: 'memory-1',
+                repositoryId: 'repo-1',
+                status: KodyRulesStatus.ACTIVE,
+                centralizedConfig: {
+                    path: 'repo-1-name/.kody-rules/memories/memory-rule.yml',
+                    status: 'pending_add',
+                },
+            } as any);
+
+        const result = await service.createOrUpdateMemory(
+            organizationAndTeamData,
+            createGeneratedMemory({
+                title: 'Persist integration preferences',
+                rule: 'Store integration setup details for next runs',
+            }),
+            { userId: 'kody', userEmail: 'kody@kodus.io' },
+        );
+
+        expect(createOrUpdateSpy).toHaveBeenCalledWith(
+            organizationAndTeamData,
+            expect.objectContaining({
+                type: KodyRulesType.MEMORY,
+                centralizedConfig: expect.objectContaining({
+                    status: 'pending_add',
+                }),
+            }),
+            { userId: 'kody', userEmail: 'kody@kodus.io' },
+        );
+
+        expect(result).toEqual(
+            expect.objectContaining({
+                action: 'created',
+                link: 'https://example.com/pr/101',
+            }),
+        );
+    });
+
+    it('creates centralized PR and persists pending_edit snapshot for memory update', async () => {
+        const { service, centralizedConfigPrServiceMock } = setup({
+            llmResult: {
+                action: 'update',
+                targetMemoryUuid: 'existing-memory-1',
+                updatedTitle: 'Refine strict typing guidance',
+                updatedRule: 'Prefer explicit types for exported APIs',
+            },
+            requireApproval: false,
+        });
+
+        centralizedConfigPrServiceMock.createMutationPullRequestIfEnabled.mockResolvedValue(
+            {
+                mode: 'centralized-pr',
+                prUrl: 'https://example.com/pr/102',
+                message: 'PR opened',
+            },
+        );
+
+        const createOrUpdateSpy = jest
+            .spyOn(service, 'createOrUpdate')
+            .mockResolvedValue({
+                uuid: 'existing-memory-1',
+                repositoryId: 'repo-1',
+                status: KodyRulesStatus.ACTIVE,
+                centralizedConfig: {
+                    path: 'repo-1-name/.kody-rules/memories/memory-rule.yml',
+                    status: 'pending_edit',
+                },
+            } as any);
+
+        const result = await service.createOrUpdateMemory(
+            organizationAndTeamData,
+            createGeneratedMemory(),
+            { userId: 'kody', userEmail: 'kody@kodus.io' },
+        );
+
+        expect(createOrUpdateSpy).toHaveBeenCalledWith(
+            organizationAndTeamData,
+            expect.objectContaining({
+                uuid: 'existing-memory-1',
+                type: KodyRulesType.MEMORY,
+                centralizedConfig: expect.objectContaining({
+                    status: 'pending_edit',
+                }),
+            }),
+            { userId: 'kody', userEmail: 'kody@kodus.io' },
+        );
+
+        expect(result).toEqual(
+            expect.objectContaining({
+                action: 'updated',
+                link: 'https://example.com/pr/102',
+            }),
+        );
+    });
+
     it('applies pending memory update request into target memory on approval', async () => {
         const pendingRequestRule: Partial<IKodyRule> = {
             uuid: 'pending-request-1',
@@ -510,6 +642,16 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
             {} as any,
             {} as any,
             {} as any,
+            {
+                createMutationPullRequestIfEnabled: jest
+                    .fn()
+                    .mockResolvedValue({
+                        mode: 'disabled',
+                    }),
+                resolveRepositoryFolderName: jest.fn(),
+                sanitizeFileName: jest.fn(),
+                buildCentralizedPath: jest.fn(),
+            } as any,
             {} as any,
         );
 

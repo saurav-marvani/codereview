@@ -15,16 +15,15 @@ import { generateKodyRules, syncIDERules } from "@services/kodyRules/fetch";
 import { useSuspenseKodyRulesCheckSyncStatus } from "@services/kodyRules/hooks";
 import { PARAMETERS_PATHS } from "@services/parameters";
 import { createOrUpdateCodeReviewParameter } from "@services/parameters/fetch";
-import { useOptionalParameterQuery } from "@services/parameters/hooks";
 import {
+    isCentralizedPrResponse,
     ParametersConfigKey,
-    type CentralizedConfigValue,
 } from "@services/parameters/types";
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
-import { useFeatureFlags } from "src/app/(app)/settings/_components/context";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 
+import { getCentralizedPrToastPayload } from "../../_utils/centralized-pr-feedback";
 import { useCodeReviewConfig } from "../../../_components/context";
 import { useCodeReviewRouteParams } from "../../../_hooks";
 import { GenerateFromPastReviewsFirstTimeModal } from "./generate-from-past-reviews-modal";
@@ -32,7 +31,6 @@ import { SyncFromIDEFilesFirstTimeModal } from "./sync-from-ide-files-modal";
 
 export const GenerateRulesOptions = () => {
     const config = useCodeReviewConfig();
-    const { centralizedConfigParameter } = useFeatureFlags();
     const { teamId } = useSelectedTeamId();
     const { repositoryId } = useCodeReviewRouteParams();
     const { invalidateQueries, generateQueryKey } =
@@ -46,29 +44,6 @@ export const GenerateRulesOptions = () => {
         ResourceType.CodeReviewSettings,
     );
 
-    const centralizedConfig = useOptionalParameterQuery<CentralizedConfigValue>(
-        ParametersConfigKey.CENTRALIZED_CONFIG,
-        teamId,
-        {
-            uuid: "",
-            configKey: ParametersConfigKey.CENTRALIZED_CONFIG,
-            configValue: {
-                enabled: false,
-                repository: {
-                    id: "",
-                    name: "",
-                },
-            },
-        },
-    );
-
-    const canEditWithCentralizedConfig =
-        canEdit &&
-        !(
-            centralizedConfigParameter === true &&
-            centralizedConfig.data?.configValue?.enabled === true
-        );
-
     const [
         handleGenerateFromPastReviewsToggle,
         { loading: isLoadingGenerateFromPastReviewsToggle },
@@ -76,13 +51,23 @@ export const GenerateRulesOptions = () => {
         try {
             const newValue = !config?.kodyRulesGeneratorEnabled?.value;
 
-            await createOrUpdateCodeReviewParameter(
+            const mutationResult = await createOrUpdateCodeReviewParameter(
                 {
                     kodyRulesGeneratorEnabled: newValue,
                 },
                 teamId,
                 repositoryId,
             );
+
+            if (isCentralizedPrResponse(mutationResult)) {
+                toast(
+                    getCentralizedPrToastPayload(
+                        mutationResult,
+                        "Change proposed through centralized pull request.",
+                    ),
+                );
+                return;
+            }
 
             invalidateQueries({
                 queryKey: generateQueryKey(PARAMETERS_PATHS.GET_BY_KEY, {
@@ -148,13 +133,23 @@ export const GenerateRulesOptions = () => {
             try {
                 const newValue = !config?.ideRulesSyncEnabled?.value;
 
-                await createOrUpdateCodeReviewParameter(
+                const mutationResult = await createOrUpdateCodeReviewParameter(
                     {
                         ideRulesSyncEnabled: newValue,
                     },
                     teamId,
                     repositoryId,
                 );
+
+                if (isCentralizedPrResponse(mutationResult)) {
+                    toast(
+                        getCentralizedPrToastPayload(
+                            mutationResult,
+                            "Change proposed through centralized pull request.",
+                        ),
+                    );
+                    return;
+                }
 
                 invalidateQueries({
                     queryKey: generateQueryKey(PARAMETERS_PATHS.GET_BY_KEY, {
@@ -213,7 +208,7 @@ export const GenerateRulesOptions = () => {
                 size="lg"
                 variant="helper"
                 className="w-full justify-between p-0"
-                disabled={!canEditWithCentralizedConfig}
+                disabled={!canEdit}
                 onClick={() => handleIDESyncToggle()}>
                 <Card color="none" className="w-full">
                     <CardHeader>
@@ -262,7 +257,7 @@ export const GenerateRulesOptions = () => {
                 size="lg"
                 variant="helper"
                 className="w-full justify-between p-0"
-                disabled={!canEditWithCentralizedConfig}
+                disabled={!canEdit}
                 onClick={() => handleGenerateFromPastReviewsToggle()}>
                 <Card color="none" className="w-full">
                     <CardHeader>

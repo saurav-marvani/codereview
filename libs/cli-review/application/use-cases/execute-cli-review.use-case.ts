@@ -135,17 +135,20 @@ export class ExecuteCliReviewUseCase implements IUseCase {
             }
 
             // 3. Load or create config and resolve repository
-            const { config: codeReviewConfig, repositoryId: resolvedRepoId, repositoryName: resolvedRepoName } =
-                isTrialMode
-                    ? {
-                          config: this.getDefaultConfig(true),
-                          repositoryId: 'global',
-                          repositoryName: null,
-                      }
-                    : await this.loadUserConfigWithRules(
-                          organizationAndTeamData,
-                          gitContext,
-                      );
+            const {
+                config: codeReviewConfig,
+                repositoryId: resolvedRepoId,
+                repositoryName: resolvedRepoName,
+            } = isTrialMode
+                ? {
+                      config: this.getDefaultConfig(true),
+                      repositoryId: 'global',
+                      repositoryName: null,
+                  }
+                : await this.loadUserConfigWithRules(
+                      organizationAndTeamData,
+                      gitContext,
+                  );
 
             // 4. Create pipeline context
             const context: CliReviewPipelineContext = {
@@ -167,7 +170,9 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                 repository: {
                     id: resolvedRepoId,
                     name: resolvedRepoName ?? 'cli-review',
-                    fullName: resolvedRepoName ? `cli/${resolvedRepoName}` : 'cli/cli-review',
+                    fullName: resolvedRepoName
+                        ? `cli/${resolvedRepoName}`
+                        : 'cli/cli-review',
                     private: false,
                     owner: 'cli',
                     html_url: '',
@@ -302,7 +307,11 @@ export class ExecuteCliReviewUseCase implements IUseCase {
     private async loadUserConfigWithRules(
         organizationAndTeamData: OrganizationAndTeamData,
         gitContext?: GitContext,
-    ): Promise<{ config: CodeReviewConfig; repositoryId: string; repositoryName: string | null }> {
+    ): Promise<{
+        config: CodeReviewConfig;
+        repositoryId: string;
+        repositoryName: string | null;
+    }> {
         try {
             const [params, kodyRulesEntity] = await Promise.all([
                 this.parametersService.findByKey(
@@ -336,15 +345,15 @@ export class ExecuteCliReviewUseCase implements IUseCase {
             );
 
             // Resolve repositoryId and repositoryName from git remote URL
-            const { id: repositoryId, name: repositoryName } = this.resolveRepositoryFromRemote(
-                gitContext?.remote,
-                paramObj.configValue?.repositories,
-            );
+            const { id: repositoryId, name: repositoryName } =
+                this.resolveRepositoryFromRemote(
+                    gitContext?.remote,
+                    paramObj.configValue?.repositories,
+                );
 
-            // Load and filter kody rules (global + repository-scoped)
             const { standardRules, memoryRules } =
                 this.kodyRulesValidationService.filterKodyRules(
-                    kodyRulesEntity?.toObject()?.rules,
+                    kodyRulesEntity?.toObject()?.rules || [],
                     repositoryId,
                 );
 
@@ -353,8 +362,7 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                     message: 'Kody rules loaded for CLI review',
                     context: ExecuteCliReviewUseCase.name,
                     metadata: {
-                        organizationId:
-                            organizationAndTeamData.organizationId,
+                        organizationId: organizationAndTeamData.organizationId,
                         repositoryId,
                         repositoryName,
                         standardRulesCount: standardRules.length,
@@ -427,8 +435,7 @@ export class ExecuteCliReviewUseCase implements IUseCase {
         const repoName = this.extractRepoNameFromRemote(remote);
         if (repoName) {
             const match = repositories.find(
-                (repo) =>
-                    repo.name?.toLowerCase() === repoName.toLowerCase(),
+                (repo) => repo.name?.toLowerCase() === repoName.toLowerCase(),
             );
             if (match) {
                 this.logger.log({
