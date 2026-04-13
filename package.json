@@ -152,7 +152,7 @@
         "@casl/ability": "^6.8.0",
         "@faker-js/faker": "^10.3.0",
         "@gitbeaker/rest": "^43.8.0",
-        "@golevelup/nestjs-rabbitmq": "^7.1.2",
+        "@golevelup/nestjs-rabbitmq": "^9.0.0",
         "@google/generative-ai": "^0.24.1",
         "@kodus/flow": "0.1.46",
         "@kodus/kodus-common": "1.3.15",

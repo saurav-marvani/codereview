@@ -316,7 +316,7 @@ export class OutboxRelayService
                         'workflow-job-consumer.check_implementation':
                             20 * 60 * 1000, // 20 minutes
                         'workflow-job-consumer.code_review':
-                            12 * 60 * 60 * 1000, // 12 hours (very conservative to avoid reprocessing without checkpoints)
+                            2.5 * 60 * 60 * 1000, // 2.5 hours (1.25x the 2h job timeout — 12h was too conservative and caused stuck messages after worker crashes)
                     };
 
                     const reclaimResults = await Promise.allSettled(
