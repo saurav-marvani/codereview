@@ -40,6 +40,7 @@ export interface ICommentManagerService {
         codeReviewConfig?: CodeReviewConfig,
         language?: string,
         platformType?: PlatformType,
+        lineComments?: CommentResult[],
     ): Promise<string>;
 
     generateSummaryPR(
@@ -141,13 +142,5 @@ export interface ICommentManagerService {
         pullRequestMessagesConfig?: IPullRequestMessages,
         dryRun?: CodeReviewPipelineContext['dryRun'],
         prLevelCommentResults?: Array<CommentResult>,
-    ): Promise<void>;
-
-    createConsolidatedLLMPromptComment(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        repository: { name: string; id: string },
-        lineComments: CommentResult[],
-        dryRun?: CodeReviewPipelineContext['dryRun'],
     ): Promise<void>;
 }

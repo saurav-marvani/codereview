@@ -148,21 +148,6 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 undefined,
                 context.dryRun,
             );
-            try {
-                await this.commentManagerService.createConsolidatedLLMPromptComment(
-                    organizationAndTeamData,
-                    pullRequest.number,
-                    repository,
-                    lineComments,
-                    context.dryRun,
-                );
-            } catch (error) {
-                this.logger.error({
-                    message: `Failed to create consolidated LLM prompt comment for PR#${pullRequest.number}`,
-                    context: this.stageName,
-                    error,
-                });
-            }
             return context;
         }
 
@@ -170,21 +155,6 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
             endReviewMessage.status === PullRequestMessageStatus.OFF ||
             endReviewMessage.status === PullRequestMessageStatus.INACTIVE
         ) {
-            try {
-                await this.commentManagerService.createConsolidatedLLMPromptComment(
-                    organizationAndTeamData,
-                    pullRequest.number,
-                    repository,
-                    lineComments,
-                    context.dryRun,
-                );
-            } catch (error) {
-                this.logger.error({
-                    message: `Failed to create consolidated LLM prompt comment for PR#${pullRequest.number}`,
-                    context: this.stageName,
-                    error,
-                });
-            }
             return context;
         }
 
@@ -193,21 +163,6 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 PullRequestMessageStatus.ONLY_WHEN_OPENED &&
             context.lastExecution
         ) {
-            try {
-                await this.commentManagerService.createConsolidatedLLMPromptComment(
-                    organizationAndTeamData,
-                    pullRequest.number,
-                    repository,
-                    lineComments,
-                    context.dryRun,
-                );
-            } catch (error) {
-                this.logger.error({
-                    message: `Failed to create consolidated LLM prompt comment for PR#${pullRequest.number}`,
-                    context: this.stageName,
-                    error,
-                });
-            }
             return context;
         }
 
@@ -225,7 +180,7 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 (startReviewMessage.status ===
                     PullRequestMessageStatus.ONLY_WHEN_OPENED &&
                     !context.lastExecution))
-        ) {
+        ) { 
             const finalCommentBody =
                 await this.commentManagerService.processEndReviewMessageTemplate(
                     endReviewMessage.content,
@@ -235,6 +190,7 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                     codeReviewConfig,
                     codeReviewConfig?.languageResultPrompt ?? 'en-US',
                     platformType,
+                    lineComments,
                 );
 
             await this.commentManagerService.updateOverallComment(
@@ -284,21 +240,6 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 context.dryRun,
                 context.prLevelCommentResults ?? [],
             );
-        }
-        try {
-            await this.commentManagerService.createConsolidatedLLMPromptComment(
-                organizationAndTeamData,
-                pullRequest.number,
-                repository,
-                lineComments,
-                context.dryRun,
-            );
-        } catch (error) {
-            this.logger.error({
-                message: `Failed to create consolidated LLM prompt comment for PR#${pullRequest.number}`,
-                context: this.stageName,
-                error,
-            });
         }
 
         return context;

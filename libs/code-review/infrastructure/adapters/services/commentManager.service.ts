@@ -777,6 +777,7 @@ You must always respond in ${languageResultPrompt}.`;
         codeReviewConfig?: CodeReviewConfig,
         language?: string,
         platformType?: PlatformType,
+        lineComments?: CommentResult[],
     ): Promise<string> {
         const placeholderContext = await this.getTemplateContext(
             changedFiles,
@@ -785,6 +786,7 @@ You must always respond in ${languageResultPrompt}.`;
             codeReviewConfig,
             language,
             platformType,
+            lineComments,
         );
 
         const processedBody = await this.messageProcessor.processTemplate(
@@ -2287,6 +2289,7 @@ ${reviewOptions}
         codeReviewConfig?: CodeReviewConfig,
         language?: string,
         platformType?: PlatformType,
+        lineComments?: CommentResult[],
     ): Promise<PlaceholderContext> {
         return {
             changedFiles,
@@ -2295,6 +2298,7 @@ ${reviewOptions}
             codeReviewConfig,
             language,
             platformType,
+            lineComments,
         };
     }
 
@@ -2385,129 +2389,5 @@ ${reviewOptions}
         return chunks;
     }
 
-    async createConsolidatedLLMPromptComment(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        repository: { name: string; id: string },
-        lineComments: CommentResult[],
-        dryRun?: CodeReviewPipelineContext['dryRun'],
-    ): Promise<void> {
-        const prompts = this.extractPromptsFromComments(lineComments);
 
-        if (prompts.length === 0) return;
-
-        const body = this.buildConsolidatedCommentBody(prompts);
-
-        await this.codeManagementService.createIssueComment(
-            {
-                organizationAndTeamData,
-                repository,
-                prNumber,
-                body,
-            },
-            dryRun?.enabled ? PlatformType.INTERNAL : undefined,
-        );
-    }
-
-    private extractPromptsFromComments(
-        lineComments: CommentResult[],
-    ): Array<{
-        file: string;
-        line?: number;
-        prompt: string;
-        improvedCode?: string;
-    }> {
-        if (!lineComments?.length) return [];
-
-        return lineComments.reduce(
-            (acc, { comment }) => {
-                if (comment?.suggestion?.llmPrompt) {
-                    acc.push({
-                        file: comment.path,
-                        line: comment.line,
-                        prompt: comment.suggestion.llmPrompt,
-                        improvedCode: comment.suggestion.improvedCode,
-                    });
-                }
-                return acc;
-            },
-            [] as Array<{
-                file: string;
-                line?: number;
-                prompt: string;
-                improvedCode?: string;
-            }>,
-        );
-    }
-
-    private buildConsolidatedCommentBody(
-        prompts: Array<{
-            file: string;
-            line?: number;
-            prompt: string;
-            improvedCode?: string;
-        }>,
-    ): string {
-        const taskList = prompts
-            .map(
-                ({ file, line }) =>
-                    `- ${file}${line != null ? `:${line}` : ''}`,
-            )
-            .join('\n');
-
-        const tasks = prompts
-            .map(({ file, line, prompt, improvedCode }, index) => {
-                const location = `${file}${line != null ? `:${line}` : ''}`;
-
-                const referenceSection = improvedCode
-                    ? [
-                          `Reference implementation (from code review):`,
-                          ``,
-                          `// ${location}`,
-                          improvedCode.trim(),
-                      ].join('\n')
-                    : '';
-
-                return [
-                    `### [${index + 1}/${prompts.length}] ${location}`,
-                    ``,
-                    `Issue identified during code review:`,
-                    prompt.trim(),
-                    ``,
-                    referenceSection,
-                ]
-                    .filter(Boolean)
-                    .join('\n');
-            })
-            .join('\n\n---\n\n');
-
-        const agentBlock = [
-            `A code review identified the following issues in this pull request.`,
-            `Each section describes what was found and includes a reference implementation where available.`,
-            ``,
-            `Files involved:`,
-            taskList,
-            ``,
-            `---`,
-            ``,
-            tasks,
-            ``,
-            `---`,
-            ``,
-            `Review each issue in context, use the reference implementations as guidance, and apply fixes that are consistent with the surrounding codebase.`,
-        ].join('\n');
-
-        return [
-            `**Kody Code Review** — ${prompts.length} suggested fix${prompts.length > 1 ? 'es' : ''}.`,
-            `Paste the prompt below to your agent and all review fixed at once!\n`,
-            `<details>`,
-            `<summary>🛠️ Open Agent Prompt</summary>`,
-            ``,
-            `\`\`\``,
-            agentBlock,
-            `\`\`\``,
-            ``,
-            `</details>`,
-        ].join('\n');
-    }
 }
