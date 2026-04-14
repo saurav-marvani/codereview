@@ -20,13 +20,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates python3 make g++ procps git ripgrep curl unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Install bun (pinned, required runtime for @kodus/kodus-graph CLI)
+# Install bun (pinned) + kodus-graph CLI into /usr/local/bin
 ARG BUN_VERSION=1.2.12
 RUN export BUN_INSTALL=/usr/local \
-    && curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}"
-
-RUN npm i -g yalc chokidar-cli nodemon @ast-grep/cli \
+    && curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" \
     && bun install -g @kodus/kodus-graph
+
+RUN npm i -g yalc chokidar-cli nodemon @ast-grep/cli
 
 COPY package.json yarn.lock ./
 COPY nest-cli.json tsconfig*.json ./
