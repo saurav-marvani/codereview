@@ -383,12 +383,6 @@ export interface AgentLoopInput {
     callGraph?: string;
     /** Review mode: 'fast' skips heavy passes and caps steps; 'normal' skips verify only for very-high-confidence findings; 'deep' verifies everything. */
     reviewMode?: 'fast' | 'normal' | 'deep';
-    /** Minimum severity level to keep. Findings below this threshold are discarded before verify. */
-    severityLevelFilter?: string;
-    /** When true, the severity filter also applies to Kody Rules findings.
-     *  Default (undefined / false): kody rules are exempt because they are
-     *  explicit team-defined rules that should always surface. */
-    applyFiltersToKodyRules?: boolean;
     /** Model context window in tokens. Used to trigger context compression when the message history grows too large. */
     contextWindowTokens?: number;
     /** When true, skip recovery/rescue/second-chance passes. Used by rule-checking agents that don't benefit from open-ended exploration. */
@@ -1234,57 +1228,19 @@ Respond with ONLY the JSON:
         }
     }
 
-    // Pre-filter by severity to save verify tokens. This uses the LLM's
-    // preliminary severity which may be overridden by the SeverityClassifier
-    // later. The definitive filter runs in agent-review.stage.ts AFTER
-    // reclassification.
-    //
-    // Kody Rules findings are exempt by default because they are explicit
-    // team-defined rules that should always surface. Teams can opt in to
-    // filter them via suggestionControl.applyFiltersToKodyRules=true.
-    // At this point the per-agent `label` has not been assigned yet (the
-    // base provider resolves it after this loop returns), so we use the
-    // presence of `ruleUuid` as the signal: only the KodyRulesAgent emits
-    // ruleUuid in its output schema.
+    // Severity filtering is applied in agent-review.stage.ts AFTER the
+    // Gemini-based severity reclassification. We used to pre-filter here to
+    // save verify tokens, but it ran on unreliable severity: for kody rules
+    // the agent guesses severity without knowing the rule's configured value,
+    // and for generalist findings the agent's rough severity can be flipped
+    // by the reclassifier (e.g. "low" → "critical"). The pre-filter was
+    // discarding findings that should have been kept.
     const isKodyRuleFinding = (
         s: (typeof findings.suggestions)[number],
     ) =>
         typeof (s as any).ruleUuid === 'string' &&
         (s as any).ruleUuid.trim().length > 0;
-
-    let discardedBySeverity: FindingsOutput['suggestions'] = [];
-    const severityLevelFilter = input.severityLevelFilter;
-    const applyFiltersToKodyRules = input.applyFiltersToKodyRules === true;
-    if (
-        severityLevelFilter &&
-        severityLevelFilter !== 'low' &&
-        findings.suggestions.length > 0
-    ) {
-        const acceptedLevels: Record<string, string[]> = {
-            critical: ['critical'],
-            high: ['critical', 'high'],
-            medium: ['critical', 'high', 'medium'],
-            low: ['critical', 'high', 'medium', 'low'],
-        };
-        const accepted =
-            acceptedLevels[severityLevelFilter] || acceptedLevels.low;
-        const before = findings.suggestions.length;
-        const keeps = (s: (typeof findings.suggestions)[number]) => {
-            if (isKodyRuleFinding(s) && !applyFiltersToKodyRules) return true;
-            return accepted.includes((s.severity || 'medium').toLowerCase());
-        };
-        discardedBySeverity = findings.suggestions.filter((s) => !keeps(s));
-        findings = {
-            ...findings,
-            suggestions: findings.suggestions.filter(keeps),
-        };
-        if (discardedBySeverity.length > 0) {
-            logger.log({
-                message: `[AGENT-SEVERITY-FILTER] Pre-filtered ${discardedBySeverity.length}/${before} findings below ${severityLevelFilter} threshold (applyFiltersToKodyRules=${applyFiltersToKodyRules}; definitive filter runs after reclassification)`,
-                context: 'AgentLoop',
-            });
-        }
-    }
+    const discardedBySeverity: FindingsOutput['suggestions'] = [];
 
     let verificationUsage = {
         inputTokens: 0,

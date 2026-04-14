@@ -408,12 +408,6 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     context.repository?.defaultBranch,
                 callGraph,
                 reviewMode: context.codeReviewConfig?.reviewMode || 'normal',
-                severityLevelFilter:
-                    context.codeReviewConfig?.suggestionControl
-                        ?.severityLevelFilter,
-                applyFiltersToKodyRules:
-                    context.codeReviewConfig?.suggestionControl
-                        ?.applyFiltersToKodyRules,
             });
 
             const durationMs = Date.now() - startTime;
@@ -676,14 +670,22 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 const accepted =
                     acceptedLevels[severityFilter] || acceptedLevels.low;
                 const before = deduped.length;
-                deduped = deduped.filter((s) => {
+                const keeps = (s: Partial<CodeSuggestion>) => {
                     if (s.label === 'kody_rules' && !applyFiltersToKodyRules) {
                         return true; // kody rules bypass by default
                     }
                     return accepted.includes(
                         (s.severity || 'medium').toLowerCase(),
                     );
-                });
+                };
+                const droppedBySeverity = deduped.filter((s) => !keeps(s));
+                deduped = deduped.filter(keeps);
+                for (const s of droppedBySeverity) {
+                    allDiscarded.push({
+                        ...s,
+                        priorityStatus: PriorityStatus.DISCARDED_BY_SEVERITY,
+                    });
+                }
                 if (deduped.length < before) {
                     this.logger.log({
                         message: `[AGENT] Post-classification severity filter: ${before - deduped.length} suggestions below ${severityFilter} threshold removed (applyFiltersToKodyRules=${applyFiltersToKodyRules})`,

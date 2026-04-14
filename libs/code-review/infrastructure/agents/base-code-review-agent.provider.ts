@@ -211,11 +211,6 @@ export interface ReviewAgentInput {
     batchTotal?: number;
     /** Review mode: 'fast' skips heavy passes (verify, coverage recovery, synthesis rescue) and caps agent steps; 'normal' skips verify only for very-high-confidence findings; 'deep' verifies everything. */
     reviewMode?: 'fast' | 'normal' | 'deep';
-    /** Minimum severity level to keep. Findings below this threshold are discarded before verify. */
-    severityLevelFilter?: string;
-    /** When true, the severity filter also applies to Kody Rules findings.
-     *  Default (undefined / false): kody rules are exempt. */
-    applyFiltersToKodyRules?: boolean;
     /** Optional per-agent step budget for the main investigation loop. */
     maxSteps?: number;
     /** Categories allowed for this run when using a mixed/generalist reviewer. */
@@ -436,8 +431,6 @@ export abstract class BaseCodeReviewAgentProvider {
                 baseBranch: input.baseBranch,
                 callGraph: input.callGraph,
                 reviewMode: input.reviewMode,
-                severityLevelFilter: input.severityLevelFilter,
-                applyFiltersToKodyRules: input.applyFiltersToKodyRules,
                 maxSteps: input.maxSteps,
                 contextWindowTokens: contextWindow,
                 reasoningEffort: byokConfig?.main?.reasoningEffort,
