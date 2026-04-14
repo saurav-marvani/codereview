@@ -1,5 +1,24 @@
 import z from 'zod';
 
+export interface FindMemoriesFilters {
+    repositoryId?: string;
+    directoryId?: string;
+    path?: string;
+    keywords?: string[];
+    limit?: number;
+}
+
+export interface FindMemoriesResult {
+    uuid?: string;
+    title: string;
+    rule: string;
+    repositoryId: string;
+    directoryId?: string;
+    path?: string;
+    createdAt?: string;
+    link: string;
+}
+
 export enum KodyRuleProcessingStatus {
     PENDING = 'pending',
     PROCESSING = 'processing',
@@ -34,11 +53,12 @@ export interface IKodyRule {
     rule: string;
     path?: string;
     sourcePath?: string;
+    centralizedConfig?: IKodyRuleCentralizedConfig;
     sourceAnchor?: string;
     status: KodyRulesStatus;
     severity: string;
     label?: string;
-    type?: string;
+    type?: KodyRulesType;
     extendedContext?: IKodyRulesExtendedContext;
     examples?: IKodyRulesExample[];
     repositoryId: string;
@@ -50,6 +70,29 @@ export interface IKodyRule {
     directoryId?: string;
     inheritance?: IKodyRulesInheritance;
     contextReferenceId?: string;
+    requestType?: KodyRuleRequestType;
+    targetRuleUuid?: string;
+    resolvedAt?: Date;
+    resolvedBy?: string;
+}
+
+export interface IKodyRuleCentralizedConfig {
+    path: string;
+    status: KodyRuleCentralizedStatus;
+}
+
+export interface IKodyRuleMemory extends Omit<
+    IKodyRule,
+    | 'type'
+    | 'severity'
+    | 'scope'
+    | 'examples'
+    | 'inheritance'
+    | 'contextReferenceId'
+    | 'extendedContext'
+    | 'sourceAnchor'
+> {
+    type: KodyRulesType.MEMORY;
 }
 
 export interface IKodyRulesExtendedContext {
@@ -96,13 +139,36 @@ export enum KodyRulesStatus {
     ACTIVE = 'active',
     REJECTED = 'rejected',
     PENDING = 'pending',
+    APPLIED = 'applied',
     DELETED = 'deleted',
+}
+
+export enum KodyRuleCentralizedStatus {
+    SYNCED = 'synced',
+    PENDING_ADD = 'pending_add',
+    PENDING_EDIT = 'pending_edit',
+    PENDING_DELETE = 'pending_delete',
 }
 
 export enum KodyRulesScope {
     PULL_REQUEST = 'pull-request',
     FILE = 'file',
 }
+
+export enum KodyRulesType {
+    STANDARD = 'standard',
+    MEMORY = 'memory',
+}
+
+export enum KodyRuleRequestType {
+    MEMORY_CREATE = 'memory_create',
+    MEMORY_UPDATE = 'memory_update',
+}
+
+export const kodyRulesTypeSchema = z.enum([...Object.values(KodyRulesType)] as [
+    KodyRulesType,
+    ...KodyRulesType[],
+]);
 
 export const kodyRulesExtendedContextSchema = z.object({
     todo: z.string(),
@@ -166,10 +232,18 @@ const kodyRulesStatusSchema = z.enum([...Object.values(KodyRulesStatus)] as [
     ...KodyRulesStatus[],
 ]);
 
+const kodyRuleCentralizedStatusSchema = z.enum([
+    ...Object.values(KodyRuleCentralizedStatus),
+] as [KodyRuleCentralizedStatus, ...KodyRuleCentralizedStatus[]]);
+
 const kodyRulesScopeSchema = z.enum([...Object.values(KodyRulesScope)] as [
     KodyRulesScope,
     ...KodyRulesScope[],
 ]);
+
+const kodyRuleRequestTypeSchema = z.enum([
+    ...Object.values(KodyRuleRequestType),
+] as [KodyRuleRequestType, ...KodyRuleRequestType[]]);
 
 export const kodyRuleSchema = z.object({
     uuid: z.string().optional(),
@@ -177,11 +251,17 @@ export const kodyRuleSchema = z.object({
     rule: z.string(),
     path: z.string().optional(),
     sourcePath: z.string().optional(),
+    centralizedConfig: z
+        .object({
+            path: z.string(),
+            status: kodyRuleCentralizedStatusSchema,
+        })
+        .optional(),
     sourceAnchor: z.string().optional(),
     status: kodyRulesStatusSchema,
     severity: z.string(),
     label: z.string().optional(),
-    type: z.string().optional(),
+    type: kodyRulesTypeSchema.optional(),
     extendedContext: kodyRulesExtendedContextSchema.optional(),
     examples: z.array(kodyRulesExampleSchema).optional(),
     repositoryId: z.string(),
@@ -193,4 +273,8 @@ export const kodyRuleSchema = z.object({
     inheritance: kodyRulesInheritanceSchema.optional(),
     directoryId: z.string().optional(),
     contextReferenceId: z.string().optional(),
+    requestType: kodyRuleRequestTypeSchema.optional(),
+    targetRuleUuid: z.string().optional(),
+    resolvedAt: z.date().optional(),
+    resolvedBy: z.string().optional(),
 });

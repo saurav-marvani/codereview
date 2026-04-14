@@ -12,9 +12,11 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from "@components/ui/tooltip";
-import type { CodeReviewTimelineItem } from "@services/pull-requests";
-import { buildPullRequestUrl } from "@services/pull-requests";
 import { useGetTimezone } from "@services/organizationParameters/hooks";
+import {
+    buildPullRequestUrl,
+    type CodeReviewTimelineItem,
+} from "@services/pull-requests";
 import { ChevronDownIcon, ExternalLinkIcon, GitBranchIcon } from "lucide-react";
 import { cn } from "src/core/utils/components";
 
@@ -28,11 +30,27 @@ const formatDateTime = (dateString: string, timezone: string | null) => {
     const tz = timezone || "UTC";
     try {
         const date = new Date(dateString);
-        const year = date.toLocaleString("en-CA", { timeZone: tz, year: "numeric" });
-        const month = date.toLocaleString("en-CA", { timeZone: tz, month: "2-digit" });
-        const day = date.toLocaleString("en-CA", { timeZone: tz, day: "2-digit" });
-        const hour = date.toLocaleString("en-GB", { timeZone: tz, hour: "2-digit", hour12: false });
-        const minute = date.toLocaleString("en-GB", { timeZone: tz, minute: "2-digit" });
+        const year = date.toLocaleString("en-CA", {
+            timeZone: tz,
+            year: "numeric",
+        });
+        const month = date.toLocaleString("en-CA", {
+            timeZone: tz,
+            month: "2-digit",
+        });
+        const day = date.toLocaleString("en-CA", {
+            timeZone: tz,
+            day: "2-digit",
+        });
+        const hour = date.toLocaleString("en-GB", {
+            timeZone: tz,
+            hour: "2-digit",
+            hour12: false,
+        });
+        const minute = date.toLocaleString("en-GB", {
+            timeZone: tz,
+            minute: "2-digit",
+        });
         return `${year}-${month}-${day} ${hour}:${minute.padStart(2, "0")}`;
     } catch {
         return dateString;
@@ -61,14 +79,29 @@ const formatTimeAgo = (dateString: string) => {
     return `${diffInMonths} month${diffInMonths > 1 ? "s" : ""} ago`;
 };
 
-const TimeAgoDisplay = ({ dateString, timezone }: { dateString: string; timezone: string | null }) => {
+const TimeAgoDisplay = ({
+    dateString,
+    timezone,
+}: {
+    dateString: string;
+    timezone: string | null;
+}) => {
     const [displayedTime, setDisplayedTime] = useState(dateString);
 
     useEffect(() => {
         setDisplayedTime(formatTimeAgo(dateString));
     }, [dateString]);
 
-    return <>{displayedTime} · {formatDateTime(dateString, timezone)}</>;
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <span className="cursor-default">{displayedTime}</span>
+            </TooltipTrigger>
+            <TooltipContent className="text-xs">
+                {formatDateTime(dateString, timezone)}
+            </TooltipContent>
+        </Tooltip>
+    );
 };
 
 const formatDuration = (start: string, end?: string | null) => {
@@ -240,9 +273,10 @@ const getPartialErrors = (
                     entry.name ||
                     "";
                 const message = entry.message || entry.error || "";
+                const timeoutTag = entry.isTimeout ? " \u23F1" : "";
 
                 if (file && message) {
-                    return `${file} — ${message}`;
+                    return `${file} — ${message}${timeoutTag}`;
                 }
 
                 return file || message || JSON.stringify(entry);
@@ -251,6 +285,23 @@ const getPartialErrors = (
         })
         .filter((value): value is string => Boolean(value && value.trim()))
         .map((value) => value.trim());
+};
+
+const formatFileTime = (ms: number): string => {
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+    const mins = Math.floor(ms / 60000);
+    const secs = Math.round((ms % 60000) / 1000);
+    return `${mins}m ${secs.toString().padStart(2, "0")}s`;
+};
+
+const getFileTimings = (
+    metadata?: CodeReviewTimelineItem["metadata"] | null,
+): Array<{ file: string; durationMs: number; status: string }> | null => {
+    if (!metadata || typeof metadata !== "object") return null;
+    const raw = (metadata as Record<string, any>).fileTimings;
+    if (!Array.isArray(raw) || raw.length === 0) return null;
+    return raw;
 };
 
 const getStageDisplay = (item: CodeReviewTimelineItem) => {
@@ -270,12 +321,14 @@ const getStageDisplay = (item: CodeReviewTimelineItem) => {
         (item.stageName ? formatStageName(item.stageName) : item.message);
     const cta = getMetadataCta(item.metadata);
     const partialErrors = getPartialErrors(item.metadata);
+    const fileTimings = getFileTimings(item.metadata);
 
     return {
         label,
         message: item.message,
         cta,
         partialErrors,
+        fileTimings,
         visibility:
             item.metadata && typeof item.metadata === "object"
                 ? (item.metadata as Record<string, any>).visibility
@@ -403,11 +456,17 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                 </TableCell>
                 <TableCell className="w-32">
                     <span className="text-text-tertiary text-sm tabular-nums">
-                        <TimeAgoDisplay dateString={latest.createdAt} timezone={timezone} />
+                        <TimeAgoDisplay
+                            dateString={latest.createdAt}
+                            timezone={timezone}
+                        />
                     </span>
                 </TableCell>
                 <TableCell className="w-20 text-center">
-                    <div className="flex justify-center gap-1.5">
+                    <NextLink
+                        href={`/pull-requests/${latest.repositoryId}/${latest.prNumber}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="hover:bg-card-lv3/50 flex justify-center gap-1.5 rounded-md px-1 py-0.5 transition-colors">
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <span className="bg-success/10 text-success inline-flex min-w-7 items-center justify-center rounded-md px-2 py-0.5 text-xs font-medium tabular-nums">
@@ -415,7 +474,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                 </span>
                             </TooltipTrigger>
                             <TooltipContent className="text-xs">
-                                Suggestions sent for this PR
+                                View review details
                             </TooltipContent>
                         </Tooltip>
                         <Tooltip>
@@ -428,7 +487,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                 Suggestions filtered out by your configuration
                             </TooltipContent>
                         </Tooltip>
-                    </div>
+                    </NextLink>
                 </TableCell>
                 <TableCell className="w-32 text-center">
                     {getStatusBadge(
@@ -474,10 +533,12 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                 item.metadata &&
                                                 typeof item.metadata ===
                                                     "object" &&
-                                                (item.metadata as Record<
-                                                    string,
-                                                    any
-                                                >).visibility === "secondary",
+                                                (
+                                                    item.metadata as Record<
+                                                        string,
+                                                        any
+                                                    >
+                                                ).visibility === "secondary",
                                         );
                                     const isDebugVisible =
                                         debugVisibleByExecution[executionKey] ??
@@ -490,10 +551,12 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                       item.metadata &&
                                                       typeof item.metadata ===
                                                           "object" &&
-                                                      (item.metadata as Record<
-                                                          string,
-                                                          any
-                                                      >).visibility ===
+                                                      (
+                                                          item.metadata as Record<
+                                                              string,
+                                                              any
+                                                          >
+                                                      ).visibility ===
                                                           "secondary"
                                                   ),
                                           );
@@ -531,7 +594,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                         className={cn(
                                                             "text-text-tertiary size-4 shrink-0 transition-transform duration-200",
                                                             !isReviewCollapsed &&
-                                                                "rotate-180 text-text-secondary",
+                                                                "text-text-secondary rotate-180",
                                                         )}
                                                     />
                                                     <span className="text-text-primary text-sm font-semibold tabular-nums">
@@ -603,7 +666,9 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                                         size: "xs",
                                                                     },
                                                                 )}
-                                                                onClick={(event) => {
+                                                                onClick={(
+                                                                    event,
+                                                                ) => {
                                                                     event.stopPropagation();
                                                                     toggleDebugVisibility(
                                                                         executionKey,
@@ -710,35 +775,44 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                                                 </p>
                                                                                 {stageInfo.duration &&
                                                                                     !isAutomationStart && (
-                                                                                    <p className="text-text-tertiary text-xs tabular-nums">
-                                                                                        {item.status ===
-                                                                                        "in_progress"
-                                                                                            ? "Elapsed: "
-                                                                                            : "Duration: "}
-                                                                                        {
-                                                                                            stageInfo.duration
-                                                                                        }
-                                                                                    </p>
-                                                                                )}
+                                                                                        <p className="text-text-tertiary text-xs tabular-nums">
+                                                                                            {item.status ===
+                                                                                            "in_progress"
+                                                                                                ? "Elapsed: "
+                                                                                                : "Duration: "}
+                                                                                            {
+                                                                                                stageInfo.duration
+                                                                                            }
+                                                                                        </p>
+                                                                                    )}
                                                                                 {item.createdAt &&
                                                                                     !isAutomationStart && (
-                                                                                    <p className="text-text-tertiary text-xs tabular-nums">
-                                                                                        Started: {formatDateTime(item.createdAt, timezone)}
-                                                                                    </p>
-                                                                                )}
+                                                                                        <p className="text-text-tertiary text-xs tabular-nums">
+                                                                                            Started:{" "}
+                                                                                            {formatDateTime(
+                                                                                                item.createdAt,
+                                                                                                timezone,
+                                                                                            )}
+                                                                                        </p>
+                                                                                    )}
                                                                                 {item.status ===
                                                                                     "partial_error" &&
-                                                                                    stageInfo.partialErrors
+                                                                                    stageInfo
+                                                                                        .partialErrors
                                                                                         .length >
                                                                                         0 && (
                                                                                         <details className="text-warning/90 mt-2 text-xs">
                                                                                             <summary className="cursor-pointer">
-                                                                                                View failed files (
+                                                                                                View
+                                                                                                failed
+                                                                                                files
+                                                                                                (
                                                                                                 {
                                                                                                     stageInfo
                                                                                                         .partialErrors
                                                                                                         .length
                                                                                                 }
+
                                                                                                 )
                                                                                             </summary>
                                                                                             <ul className="mt-2 space-y-1 pl-4">
@@ -754,6 +828,54 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                                                                             {
                                                                                                                 entry
                                                                                                             }
+                                                                                                        </li>
+                                                                                                    ),
+                                                                                                )}
+                                                                                            </ul>
+                                                                                        </details>
+                                                                                    )}
+                                                                                {stageInfo.fileTimings &&
+                                                                                    stageInfo
+                                                                                        .fileTimings
+                                                                                        .length >
+                                                                                        0 && (
+                                                                                        <details className="text-text-tertiary mt-2 text-xs">
+                                                                                            <summary className="cursor-pointer">
+                                                                                                File
+                                                                                                timings
+                                                                                                (
+                                                                                                {
+                                                                                                    stageInfo
+                                                                                                        .fileTimings
+                                                                                                        .length
+                                                                                                }
+
+                                                                                                )
+                                                                                            </summary>
+                                                                                            <ul className="mt-2 space-y-1 pl-4">
+                                                                                                {stageInfo.fileTimings.map(
+                                                                                                    (
+                                                                                                        ft,
+                                                                                                    ) => (
+                                                                                                        <li
+                                                                                                            key={
+                                                                                                                ft.file
+                                                                                                            }
+                                                                                                            className="font-mono text-xs">
+                                                                                                            {
+                                                                                                                ft.file
+                                                                                                            }{" "}
+                                                                                                            &mdash;{" "}
+                                                                                                            {formatFileTime(
+                                                                                                                ft.durationMs,
+                                                                                                            )}{" "}
+                                                                                                            {ft.status ===
+                                                                                                            "timeout"
+                                                                                                                ? "\u23F1 timeout"
+                                                                                                                : ft.status ===
+                                                                                                                    "error"
+                                                                                                                  ? "\u2717"
+                                                                                                                  : "\u2713"}
                                                                                                         </li>
                                                                                                     ),
                                                                                                 )}

@@ -5,25 +5,23 @@ import { Button } from "@components/ui/button";
 import { Heading } from "@components/ui/heading";
 import { Page } from "@components/ui/page";
 import { toast } from "@components/ui/toaster/use-toast";
-import { useReactQueryInvalidateQueries } from "@hooks/use-invalidate-queries";
-import { PARAMETERS_PATHS } from "@services/parameters";
-import { createOrUpdateCodeReviewParameter } from "@services/parameters/fetch";
-import {
-    KodyLearningStatus,
-    ParametersConfigKey,
-} from "@services/parameters/types";
-import { Save } from "lucide-react";
+import { KodyLearningStatus } from "@services/parameters/types";
+import { RotateCcwIcon, Save } from "lucide-react";
 import { useFormContext } from "react-hook-form";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { unformatConfig } from "src/core/utils/helpers";
 
 import { CodeReviewPagesBreadcrumb } from "../../_components/breadcrumb";
+import { CentralizedConfigReadOnlyAlert } from "../../_components/centralized-config-readonly-alert";
 import GeneratingConfig from "../../_components/generating-config";
+import { CodeReviewSaveButton } from "../../_components/save-button";
+import { useCodeReviewSettingsMutation } from "../../_hooks/use-code-review-settings-mutation";
 import {
     LimitationType,
     type AutomationCodeReviewConfigPageProps,
     type CodeReviewFormType,
 } from "../../_types";
+import { getCentralizedPrToastPayload } from "../../_utils/centralized-pr-feedback";
 import { usePlatformConfig } from "../../../_components/context";
 import { useCodeReviewRouteParams } from "../../../_hooks";
 import { ApplyFiltersToKodyRules } from "./_components/apply-filters-to-kody-rules";
@@ -41,40 +39,35 @@ export default function SuggestionControl(
     const platformConfig = usePlatformConfig();
     const { repositoryId, directoryId } = useCodeReviewRouteParams();
     const limitationType = form.watch("suggestionControl.limitationType.value");
+    const { saveSettings } = useCodeReviewSettingsMutation({
+        teamId,
+        repositoryId,
+        directoryId,
+        form,
+    });
 
-    const { resetQueries, generateQueryKey } = useReactQueryInvalidateQueries();
-
-    const handleSubmit = form.handleSubmit(async (config) => {
+    const handleSubmit = form.handleSubmit(async (formData) => {
         try {
-            const unformattedConfig = unformatConfig(config);
+            const saveResult = await saveSettings(formData, {
+                prepare: (data) => {
+                    const { language: _language, ...config } = data;
+                    const unformatted = unformatConfig(config);
+                    return {
+                        savedFormData: data,
+                        codeReviewConfig: unformatted,
+                    };
+                },
+            });
 
-            await createOrUpdateCodeReviewParameter(
-                unformattedConfig,
-                teamId,
-                repositoryId,
-                directoryId,
-            );
-
-            await Promise.all([
-                resetQueries({
-                    queryKey: generateQueryKey(PARAMETERS_PATHS.GET_BY_KEY, {
-                        params: {
-                            key: ParametersConfigKey.CODE_REVIEW_CONFIG,
-                            teamId,
-                        },
-                    }),
-                }),
-                resetQueries({
-                    queryKey: generateQueryKey(
-                        PARAMETERS_PATHS.GET_CODE_REVIEW_PARAMETER,
-                        {
-                            params: {
-                                teamId,
-                            },
-                        },
+            if (saveResult.centralizedPr) {
+                toast(
+                    getCentralizedPrToastPayload(
+                        saveResult.centralizedPr,
+                        "Change proposed through centralized pull request.",
                     ),
-                }),
-            ]);
+                );
+                return;
+            }
 
             toast({
                 description: "Settings saved",
@@ -116,7 +109,18 @@ export default function SuggestionControl(
                 <hr />
 
                 <Page.HeaderActions>
-                    <Button
+                    {formIsDirty && (
+                        <Button
+                            size="md"
+                            variant="cancel"
+                            leftIcon={<RotateCcwIcon />}
+                            onClick={() => form.reset()}
+                            disabled={formIsSubmitting}>
+                            Reset
+                        </Button>
+                    )}
+
+                    <CodeReviewSaveButton
                         size="md"
                         variant="primary"
                         leftIcon={<Save />}
@@ -124,12 +128,15 @@ export default function SuggestionControl(
                         disabled={!formIsDirty || !formIsValid}
                         loading={formIsSubmitting}>
                         Save settings
-                    </Button>
+                    </CodeReviewSaveButton>
                 </Page.HeaderActions>
             </Page.Header>
 
             <Page.Content className="mt-10 flex-none">
-                <SuggestionGroupingMode />
+                <CentralizedConfigReadOnlyAlert />
+                <div data-field-name="suggestionControl.suggestionGroupingMode">
+                    <SuggestionGroupingMode />
+                </div>
 
                 <div className="mt-10 flex flex-col gap-8">
                     <div>
@@ -140,8 +147,12 @@ export default function SuggestionControl(
                         </span>
                     </div>
 
-                    <ApplyFiltersToKodyRules />
-                    <LimitationTypeField />
+                    <div data-field-name="suggestionControl.applyFiltersToKodyRules">
+                        <ApplyFiltersToKodyRules />
+                    </div>
+                    <div data-field-name="suggestionControl.limitationType">
+                        <LimitationTypeField />
+                    </div>
 
                     {limitationType === LimitationType.SEVERITY ? (
                         <React.Fragment key="severity-limitation">

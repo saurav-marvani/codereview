@@ -2,6 +2,8 @@ import { createLogger } from '@kodus/flow';
 import { Inject, Injectable } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 
+import { deepMerge } from '@libs/common/utils/deep';
+import { getDefaultKodusConfigFile } from '@libs/common/utils/validateCodeReviewConfigFile';
 import { IntegrationCategory } from '@libs/core/domain/enums/integration-category.enum';
 import { ParametersKey } from '@libs/core/domain/enums/parameters-key.enum';
 import { STATUS } from '@libs/core/infrastructure/config/types/database/status.type';
@@ -173,16 +175,23 @@ export class KodyLearningCronProvider {
                 return;
             }
 
-            const kodyRulesGeneratorEnabled =
-                (codeReviewConfig.configValue.configs as any)
-                    ?.kodyRulesGeneratorEnabled ?? false;
-
-            const filteredRepos = repos.filter(
-                (repo) =>
-                    repo.isSelected &&
-                    (repo.configs?.kodyRulesGeneratorEnabled ??
-                        kodyRulesGeneratorEnabled),
+            const defaultConfig = getDefaultKodusConfigFile();
+            const resolvedGlobalConfig = deepMerge(
+                defaultConfig,
+                codeReviewConfig.configValue.configs ?? {},
             );
+
+            const filteredRepos = repos.filter((repo) => {
+                if (!repo.isSelected) return false;
+
+                const resolvedRepoConfig = deepMerge(
+                    resolvedGlobalConfig,
+                    repo.configs ?? {},
+                );
+
+                return (resolvedRepoConfig as any)
+                    ?.kodyRulesGeneratorEnabled === true;
+            });
 
             if (!filteredRepos || filteredRepos.length === 0) {
                 this.logger.log({

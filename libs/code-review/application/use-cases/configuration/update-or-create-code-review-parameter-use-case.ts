@@ -1,5 +1,5 @@
 import { CreateOrUpdateParametersUseCase } from '@libs/organization/application/use-cases/parameters/create-or-update-use-case';
-import { Inject, Injectable } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 
 import { produce } from 'immer';
@@ -7,56 +7,59 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { createLogger } from '@kodus/flow';
 import {
-    IParametersService,
-    PARAMETERS_SERVICE_TOKEN,
-} from '@libs/organization/domain/parameters/contracts/parameters.service.contract';
-import {
-    IIntegrationConfigService,
-    INTEGRATION_CONFIG_SERVICE_TOKEN,
-} from '@libs/integrations/domain/integrationConfigs/contracts/integration-config.service.contracts';
-import {
-    CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
-    ICodeReviewSettingsLogService,
-} from '@libs/ee/codeReviewSettingsLog/domain/contracts/codeReviewSettingsLog.service.contract';
-import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';
-import { AuthorizationService } from '@libs/identity/infrastructure/adapters/services/permissions/authorization.service';
-import {
-    ContextDetectionField,
-    ContextReferenceDetectionService,
-} from '@libs/ai-engine/infrastructure/adapters/services/context/context-reference-detection.service';
+    CentralizedConfigPrService,
+    CentralizedPrMetadata,
+} from '@libs/centralized-config/infrastructure/adapters/services/centralized-config-pr.service';
 import {
     IPromptExternalReferenceManagerService,
     PROMPT_EXTERNAL_REFERENCE_MANAGER_SERVICE_TOKEN,
 } from '@libs/ai-engine/domain/prompt/contracts/promptExternalReferenceManager.contract';
-import { ParametersEntity } from '@libs/organization/domain/parameters/entities/parameters.entity';
-import { IntegrationConfigKey, ParametersKey } from '@libs/core/domain/enums';
-import {
-    Action,
-    ResourceType,
-} from '@libs/identity/domain/permissions/enums/permissions.enum';
-import {
-    CodeReviewParameter,
-    DirectoryCodeReviewConfig,
-    ICodeRepository,
-    RepositoryCodeReviewConfig,
-} from '@libs/core/infrastructure/config/types/general/codeReviewConfig.type';
-import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
-import { getDefaultKodusConfigFile } from '@libs/common/utils/validateCodeReviewConfigFile';
-import { deepDifference, deepMerge } from '@libs/common/utils/deep';
-import {
-    ActionType,
-    ConfigLevel,
-} from '@libs/core/infrastructure/config/types/general/codeReviewSettingsLog.type';
 import { PromptSourceType } from '@libs/ai-engine/domain/prompt/interfaces/promptExternalReference.interface';
-import { convertTiptapJSONToText } from '@libs/common/utils/tiptap-json';
 import {
     CODE_REVIEW_CONTEXT_PATTERNS,
     extractDependenciesFromValue,
     pathToKey,
     resolveSourceTypeFromPath,
 } from '@libs/ai-engine/infrastructure/adapters/services/context/code-review-context.utils';
+import {
+    ContextDetectionField,
+    ContextReferenceDetectionService,
+} from '@libs/ai-engine/infrastructure/adapters/services/context/context-reference-detection.service';
+import { deepDifference, deepMerge } from '@libs/common/utils/deep';
+import { convertTiptapJSONToText } from '@libs/common/utils/tiptap-json';
+import { getDefaultKodusConfigFile } from '@libs/common/utils/validateCodeReviewConfigFile';
+import { IntegrationConfigKey, ParametersKey } from '@libs/core/domain/enums';
 import { CodeReviewVersion } from '@libs/core/infrastructure/config/types/general/codeReview.type';
+import {
+    CodeReviewParameter,
+    DirectoryCodeReviewConfig,
+    ICodeRepository,
+    RepositoryCodeReviewConfig,
+} from '@libs/core/infrastructure/config/types/general/codeReviewConfig.type';
+import {
+    ActionType,
+    ConfigLevel,
+} from '@libs/core/infrastructure/config/types/general/codeReviewSettingsLog.type';
+import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
+import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';
+import { AuditLogEvents } from '@libs/ee/codeReviewSettingsLog/events/audit-log.events';
+import {
+    Action,
+    ResourceType,
+} from '@libs/identity/domain/permissions/enums/permissions.enum';
+import { AuthorizationService } from '@libs/identity/infrastructure/adapters/services/permissions/authorization.service';
+import {
+    IIntegrationConfigService,
+    INTEGRATION_CONFIG_SERVICE_TOKEN,
+} from '@libs/integrations/domain/integrationConfigs/contracts/integration-config.service.contracts';
+import {
+    IParametersService,
+    PARAMETERS_SERVICE_TOKEN,
+} from '@libs/organization/domain/parameters/contracts/parameters.service.contract';
+import { ParametersEntity } from '@libs/organization/domain/parameters/entities/parameters.entity';
 import { CreateOrUpdateCodeReviewParameterDto } from '@libs/organization/dtos/create-or-update-code-review-parameter.dto';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { buildKodusConfigCentralizedMutationRequest } from '@libs/centralized-config/utils/kodus-config-centralized-pr.builder';
 
 @Injectable()
 export class UpdateOrCreateCodeReviewParameterUseCase {
@@ -73,8 +76,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
 
-        @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
-        private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
+        private readonly eventEmitter: EventEmitter2,
 
         @Inject(REQUEST)
         private readonly request: UserRequest,
@@ -85,11 +87,25 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 
         @Inject(PROMPT_EXTERNAL_REFERENCE_MANAGER_SERVICE_TOKEN)
         private readonly promptReferenceManager: IPromptExternalReferenceManagerService,
+
+        private readonly centralizedConfigPrService: CentralizedConfigPrService,
     ) {}
 
     async execute(
-        body: CreateOrUpdateCodeReviewParameterDto,
-    ): Promise<ParametersEntity<ParametersKey.CODE_REVIEW_CONFIG> | boolean> {
+        body: CreateOrUpdateCodeReviewParameterDto & {
+            actor?: {
+                source?: 'cli' | 'web' | 'sync';
+                organizationId?: string;
+                userId?: string;
+                userEmail?: string;
+            };
+            skipAuthorization?: boolean;
+        },
+    ): Promise<
+        | ParametersEntity<ParametersKey.CODE_REVIEW_CONFIG>
+        | boolean
+        | CentralizedPrMetadata
+    > {
         try {
             const { organizationAndTeamData, configValue, repositoryId } = body;
             let directoryPath = body.directoryPath;
@@ -101,15 +117,18 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 
             if (!organizationAndTeamData.organizationId) {
                 organizationAndTeamData.organizationId =
-                    this.request.user.organization.uuid;
+                    body.actor?.organizationId ??
+                    this.request?.user?.organization?.uuid;
             }
 
-            await this.authorizationService.ensure({
-                user: this.request.user,
-                action: Action.Create,
-                resource: ResourceType.CodeReviewSettings,
-                repoIds: [repositoryId],
-            });
+            if (!body.skipAuthorization) {
+                await this.authorizationService.ensure({
+                    user: this.request?.user,
+                    action: Action.Create,
+                    resource: ResourceType.CodeReviewSettings,
+                    repoIds: [repositoryId],
+                });
+            }
 
             const codeReviewConfigs = await this.getCodeReviewConfigs(
                 organizationAndTeamData,
@@ -126,6 +145,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                     organizationAndTeamData,
                     configValue,
                     filteredRepositoryInfo,
+                    body.actor,
                 );
             }
 
@@ -184,14 +204,21 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                 organizationAndTeamData,
                 codeReviewConfigs,
                 configValue,
+                body.actor,
                 repositoryId,
                 directoryId,
             );
 
             return result;
         } catch (error) {
+            if (error instanceof ForbiddenException) {
+                throw error;
+            }
+
             this.handleError(error, body);
-            throw new Error('Error creating or updating parameters');
+            throw new Error('Error creating or updating parameters', {
+                cause: error,
+            });
         }
     }
 
@@ -228,19 +255,42 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         organizationAndTeamData: OrganizationAndTeamData,
         configValue: CreateOrUpdateCodeReviewParameterDto['configValue'],
         filteredRepositoryInfo: RepositoryCodeReviewConfig[],
+        actor?: {
+            source?: 'cli' | 'web' | 'sync';
+            organizationId?: string;
+            userId?: string;
+            userEmail?: string;
+        },
     ) {
-        // Process references inline (mantém lógica original complexa)
+        const defaultConfig = getDefaultKodusConfigFile();
+
+        const sanitizedConfigValue =
+            this.stripCustomMessagesFromConfig(configValue);
+
+        const updatedConfigValue = this.stripCustomMessagesFromConfig(
+            deepDifference(defaultConfig, sanitizedConfigValue),
+        );
+
+        const centralizedPr = await this.createCentralizedMutationIfEnabled({
+            organizationAndTeamData,
+            actor,
+            level: ConfigLevel.GLOBAL,
+            oldDelta: {},
+            newDelta: updatedConfigValue,
+        });
+
+        if (centralizedPr) {
+            return centralizedPr;
+        }
+
+        // Process references only for direct-persistence flows.
         await this.processExternalReferencesInline(
-            configValue,
+            updatedConfigValue,
             organizationAndTeamData,
             'global',
             undefined,
             'global',
         );
-
-        const defaultConfig = getDefaultKodusConfigFile();
-
-        const updatedConfigValue = deepDifference(defaultConfig, configValue);
 
         const updatedConfig = {
             id: 'global',
@@ -279,50 +329,87 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         organizationAndTeamData: OrganizationAndTeamData,
         codeReviewConfigs: CodeReviewParameter,
         newConfigValue: CreateOrUpdateCodeReviewParameterDto['configValue'],
+        actor?: {
+            source?: 'cli' | 'web' | 'sync';
+            organizationId?: string;
+            userId?: string;
+            userEmail?: string;
+        },
         repositoryId?: string,
         directoryId?: string,
     ) {
         const resolver = new ConfigResolver(codeReviewConfigs);
 
-        const parentConfig = await resolver.getResolvedParentConfig(
-            repositoryId,
-            directoryId,
+        const parentConfig = this.stripCustomMessagesFromConfig(
+            await resolver.getResolvedParentConfig(repositoryId, directoryId),
         );
 
-        let oldConfig: CreateOrUpdateCodeReviewParameterDto['configValue'] = {};
+        const sanitizedIncomingConfig =
+            this.stripCustomMessagesFromConfig(newConfigValue);
+
+        let oldConfig: CreateOrUpdateCodeReviewParameterDto['configValue'];
         let level: ConfigLevel;
         let repository: RepositoryCodeReviewConfig | undefined;
         let directory: DirectoryCodeReviewConfig | undefined;
+        let isCreation = false;
 
         if (directoryId && repositoryId) {
             level = ConfigLevel.DIRECTORY;
             repository = resolver.findRepository(repositoryId);
             directory = resolver.findDirectory(repository, directoryId);
-            oldConfig = directory.configs ?? {};
+            oldConfig = this.stripCustomMessagesFromConfig(
+                directory.configs ?? {},
+            );
+            isCreation = !directory.isSelected;
         } else if (repositoryId) {
             level = ConfigLevel.REPOSITORY;
             repository = resolver.findRepository(repositoryId);
-            oldConfig = repository.configs ?? {};
+            oldConfig = this.stripCustomMessagesFromConfig(
+                repository.configs ?? {},
+            );
+            isCreation = !repository.isSelected;
         } else {
             level = ConfigLevel.GLOBAL;
-            oldConfig = codeReviewConfigs.configs ?? {};
+            oldConfig = this.stripCustomMessagesFromConfig(
+                codeReviewConfigs.configs ?? {},
+            );
+        }
+
+        const newResolvedConfig = this.stripCustomMessagesFromConfig(
+            deepMerge(parentConfig, oldConfig, sanitizedIncomingConfig),
+        );
+
+        const newDelta = this.stripCustomMessagesFromConfig(
+            deepDifference(parentConfig, newResolvedConfig),
+        );
+
+        const isSelectionOnlyPayload =
+            this.isSelectionOnlyConfigPayload(sanitizedIncomingConfig) &&
+            level !== ConfigLevel.GLOBAL;
+
+        const centralizedPr = isSelectionOnlyPayload
+            ? null
+            : await this.createCentralizedMutationIfEnabled({
+                  organizationAndTeamData,
+                  actor,
+                  level,
+                  repository,
+                  directory,
+                  oldDelta: oldConfig,
+                  newDelta,
+              });
+
+        if (centralizedPr) {
+            return centralizedPr;
         }
 
         await this.processExternalReferencesInline(
-            newConfigValue,
+            newDelta,
             organizationAndTeamData,
             repositoryId,
             directoryId,
             repository?.name ?? repositoryId ?? 'global',
         );
-
-        const newResolvedConfig = deepMerge(
-            parentConfig,
-            oldConfig,
-            newConfigValue,
-        );
-
-        const newDelta = deepDifference(parentConfig, newResolvedConfig);
 
         const updater = resolver.createUpdater(
             newDelta,
@@ -342,16 +429,141 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         );
 
         await this.logConfigUpdate({
+            actor,
             organizationAndTeamData,
             oldConfig,
-            newConfig: newConfigValue,
+            newConfig: newDelta,
             level,
-            sourceFunctionName: `handleConfigUpdate[${level}]`,
             repository,
             directory,
+            isCreation,
         });
 
         return true;
+    }
+
+    private async createCentralizedMutationIfEnabled(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        actor?: {
+            source?: 'cli' | 'web' | 'sync';
+            organizationId?: string;
+            userId?: string;
+            userEmail?: string;
+        };
+        level: ConfigLevel;
+        oldDelta?: CreateOrUpdateCodeReviewParameterDto['configValue'];
+        newDelta: CreateOrUpdateCodeReviewParameterDto['configValue'];
+        repository?: RepositoryCodeReviewConfig;
+        directory?: DirectoryCodeReviewConfig;
+    }): Promise<CentralizedPrMetadata | null> {
+        if (params.actor?.source === 'sync') {
+            return null;
+        }
+
+        const existingScopedConfigFileContent =
+            await this.centralizedConfigPrService?.getScopedKodusConfigFileContent(
+                {
+                    organizationAndTeamData: params.organizationAndTeamData,
+                    repositoryId:
+                        params.level === ConfigLevel.GLOBAL
+                            ? undefined
+                            : params.repository?.id,
+                    directoryPath:
+                        params.level === ConfigLevel.DIRECTORY
+                            ? params.directory?.path
+                            : undefined,
+                },
+            );
+
+        const existingScopedConfigWithoutCustomMessages =
+            this.stripCustomMessagesFromConfig(
+                (existingScopedConfigFileContent ||
+                    {}) as CreateOrUpdateCodeReviewParameterDto['configValue'],
+            );
+
+        const oldDeltaWithoutCustomMessages =
+            this.stripCustomMessagesFromConfig(params.oldDelta || {});
+
+        const configBaseWithRemovals = this.applyDeltaKeyRemovals({
+            existingScopedConfig:
+                (existingScopedConfigWithoutCustomMessages as Record<
+                    string,
+                    any
+                >) || {},
+            oldDelta:
+                (oldDeltaWithoutCustomMessages as Record<string, any>) || {},
+            nextDelta: (params.newDelta as Record<string, any>) || {},
+        });
+
+        const mergedConfigFileContent = this.stripCustomMessagesFromConfig(
+            deepMerge(configBaseWithRemovals || {}, params.newDelta || {}),
+        );
+
+        const configFileContent: Record<string, any> = {
+            ...((mergedConfigFileContent as Record<string, any>) || {}),
+        };
+
+        const existingCustomMessages =
+            existingScopedConfigFileContent?.customMessages;
+
+        if (
+            existingCustomMessages &&
+            typeof existingCustomMessages === 'object' &&
+            !Array.isArray(existingCustomMessages) &&
+            Object.keys(existingCustomMessages).length > 0
+        ) {
+            configFileContent.customMessages = existingCustomMessages;
+        }
+
+        if (
+            this.hasNoScopedConfigChanges(
+                existingScopedConfigFileContent,
+                configFileContent,
+            )
+        ) {
+            return {
+                mode: 'centralized-pr',
+                pending: true,
+                message:
+                    'No centralized changes detected for this scope. The file already contains this configuration.',
+            };
+        }
+
+        const repositoryLabel = params.repository?.name || 'global';
+        const directoryLabel = params.directory?.path || 'root';
+
+        const pr =
+            await this.centralizedConfigPrService?.createMutationPullRequestIfEnabled(
+                buildKodusConfigCentralizedMutationRequest({
+                    centralizedConfigPrService: this.centralizedConfigPrService,
+                    organizationAndTeamData: params.organizationAndTeamData,
+                    repositoryId:
+                        params.level === ConfigLevel.GLOBAL
+                            ? undefined
+                            : params.repository?.id,
+                    directoryPath:
+                        params.level === ConfigLevel.DIRECTORY
+                            ? params.directory?.path
+                            : undefined,
+                    configFileContent:
+                        Object.keys(configFileContent).length > 0
+                            ? configFileContent
+                            : null,
+                    title: `Update Kodus config for ${repositoryLabel}${params.level === ConfigLevel.DIRECTORY ? ` (${directoryLabel})` : ''}`,
+                    description:
+                        'This pull request proposes a code review configuration change in centralized config mode.',
+                    commitMessage: `update code review config for ${repositoryLabel}`,
+                    sourceBranchPrefix: `kodus-centralized-config-${params.level}`,
+                    centralizedModeMessage:
+                        'Centralized config is enabled. Code review settings change proposed through a pull request.',
+                }),
+            );
+
+        if (!pr || pr.mode !== 'centralized-pr') {
+            return null;
+        }
+
+        return pr;
     }
 
     private async processExternalReferencesInline(
@@ -629,61 +841,66 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
     }
 
     private async logConfigUpdate(options: {
+        actor?: {
+            source?: 'cli' | 'web' | 'sync';
+            organizationId?: string;
+            userId?: string;
+            userEmail?: string;
+        };
         organizationAndTeamData: OrganizationAndTeamData;
         oldConfig: CreateOrUpdateCodeReviewParameterDto['configValue'];
         newConfig: CreateOrUpdateCodeReviewParameterDto['configValue'];
         level: ConfigLevel;
-        sourceFunctionName: string;
         repository?: RepositoryCodeReviewConfig;
         directory?: DirectoryCodeReviewConfig;
+        isCreation?: boolean;
     }) {
         const {
             organizationAndTeamData,
             oldConfig,
             newConfig,
             level,
-            sourceFunctionName,
             repository,
             directory,
+            isCreation,
         } = options;
 
         try {
-            const logPayload: any = {
-                organizationAndTeamData,
+            const actor = options.actor ?? {
+                source: 'web',
+                organizationId: this.request?.user?.organization?.uuid,
+                userId: this.request?.user?.uuid,
+                userEmail: this.request?.user?.email,
+            };
+
+            if (!actor.organizationId || !actor.userId || !actor.userEmail) {
+                return;
+            }
+
+            this.eventEmitter.emit(AuditLogEvents.CODE_REVIEW_CONFIG, {
+                organizationAndTeamData: {
+                    ...organizationAndTeamData,
+                    organizationId: actor.organizationId,
+                },
                 userInfo: {
-                    userId: this.request.user.uuid,
-                    userEmail: this.request.user.email,
+                    userId: actor.userId,
+                    userEmail: actor.userEmail,
                 },
                 oldConfig,
                 newConfig,
                 actionType: ActionType.EDIT,
                 configLevel: level,
-            };
-
-            if (repository) {
-                logPayload.repository = {
-                    id: repository.id,
-                    name: repository.name,
-                };
-            }
-            if (directory) {
-                logPayload.directory = {
-                    id: directory.id,
-                    path: directory.path,
-                };
-            }
-
-            await this.codeReviewSettingsLogService.registerCodeReviewConfigLog(
-                logPayload,
-            );
+                repository,
+                directory,
+                isCreation,
+            });
         } catch (error) {
             this.logger.error({
                 message: `Error saving code review settings log for ${level.toLowerCase()} level`,
-                error: error,
+                error: this.normalizeError(error),
                 context: UpdateOrCreateCodeReviewParameterUseCase.name,
                 metadata: {
                     organizationAndTeamData: organizationAndTeamData,
-                    functionName: sourceFunctionName,
                 },
             });
         }
@@ -706,6 +923,10 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         });
     }
 
+    private normalizeError(error: unknown): Error {
+        return error instanceof Error ? error : new Error(String(error));
+    }
+
     private buildContextReferenceEntityId(
         organizationAndTeamData: OrganizationAndTeamData,
         repositoryId: string,
@@ -716,6 +937,157 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             repositoryId,
             directoryId,
         );
+    }
+
+    private stripCustomMessagesFromConfig(
+        config: CreateOrUpdateCodeReviewParameterDto['configValue'],
+    ): CreateOrUpdateCodeReviewParameterDto['configValue'] {
+        if (!config || typeof config !== 'object' || Array.isArray(config)) {
+            return config;
+        }
+
+        const { customMessages: _ignored, ...rest } = config as Record<
+            string,
+            unknown
+        >;
+
+        return rest as CreateOrUpdateCodeReviewParameterDto['configValue'];
+    }
+
+    private isSelectionOnlyConfigPayload(
+        config: CreateOrUpdateCodeReviewParameterDto['configValue'],
+    ): boolean {
+        if (!config || typeof config !== 'object' || Array.isArray(config)) {
+            return false;
+        }
+
+        return this.hasOnlyUndefinedValues(config as Record<string, unknown>);
+    }
+
+    private hasOnlyUndefinedValues(obj: Record<string, unknown>): boolean {
+        const entries = Object.entries(obj);
+
+        if (entries.length === 0) {
+            return true;
+        }
+
+        for (const [, value] of entries) {
+            if (value === undefined) {
+                continue;
+            }
+
+            if (
+                value &&
+                typeof value === 'object' &&
+                !Array.isArray(value) &&
+                this.hasOnlyUndefinedValues(value as Record<string, unknown>)
+            ) {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private applyDeltaKeyRemovals(params: {
+        existingScopedConfig: Record<string, any>;
+        oldDelta: Record<string, any>;
+        nextDelta: Record<string, any>;
+    }): Record<string, any> {
+        const clonedExisting = deepMerge({}, params.existingScopedConfig || {});
+
+        this.pruneRemovedDeltaKeysRecursively(
+            clonedExisting,
+            params.oldDelta || {},
+            params.nextDelta || {},
+        );
+
+        return clonedExisting;
+    }
+
+    private pruneRemovedDeltaKeysRecursively(
+        target: Record<string, any>,
+        oldDeltaNode: Record<string, any>,
+        nextDeltaNode: Record<string, any>,
+    ): void {
+        if (!this.isPlainObject(target) || !this.isPlainObject(oldDeltaNode)) {
+            return;
+        }
+
+        for (const key of Object.keys(oldDeltaNode)) {
+            const hasNextKey =
+                this.isPlainObject(nextDeltaNode) &&
+                Object.prototype.hasOwnProperty.call(nextDeltaNode, key);
+
+            if (!hasNextKey) {
+                delete target[key];
+                continue;
+            }
+
+            const oldChild = oldDeltaNode[key];
+            const nextChild = nextDeltaNode[key];
+            const targetChild = target[key];
+
+            if (
+                this.isPlainObject(oldChild) &&
+                this.isPlainObject(nextChild) &&
+                this.isPlainObject(targetChild)
+            ) {
+                this.pruneRemovedDeltaKeysRecursively(
+                    targetChild,
+                    oldChild,
+                    nextChild,
+                );
+
+                if (
+                    this.isPlainObject(targetChild) &&
+                    Object.keys(targetChild).length === 0 &&
+                    this.isPlainObject(nextChild) &&
+                    Object.keys(nextChild).length === 0
+                ) {
+                    delete target[key];
+                }
+            }
+        }
+    }
+
+    private isPlainObject(value: unknown): value is Record<string, any> {
+        return (
+            typeof value === 'object' && value !== null && !Array.isArray(value)
+        );
+    }
+
+    private hasNoScopedConfigChanges(
+        existingScopedConfig: Record<string, any> | null | undefined,
+        nextScopedConfig: Record<string, any>,
+    ): boolean {
+        const existing = existingScopedConfig || {};
+        const next = nextScopedConfig || {};
+
+        const forwardDelta = deepDifference(existing, next);
+        const backwardDelta = deepDifference(next, existing);
+
+        return (
+            this.isDeepEmpty(forwardDelta) && this.isDeepEmpty(backwardDelta)
+        );
+    }
+
+    private isDeepEmpty(value: unknown): boolean {
+        if (value === undefined || value === null) {
+            return true;
+        }
+
+        if (Array.isArray(value)) {
+            return value.length === 0;
+        }
+
+        if (typeof value !== 'object') {
+            return false;
+        }
+
+        return Object.values(value).every((child) => this.isDeepEmpty(child));
     }
 }
 

@@ -9,8 +9,57 @@ export enum ParametersConfigKey {
     PLATFORM_CONFIGS = "platform_configs",
     LANGUAGE_CONFIG = "language_config",
     CODE_REVIEW_CONFIG = "code_review_config",
+    CENTRALIZED_CONFIG = "centralized_config",
     ISSUE_CREATION_CONFIG = "issue_creation_config",
 }
+
+export type CentralizedConfigValue = {
+    enabled: boolean;
+    repository: {
+        id: string;
+        name: string;
+    } | null;
+    activePullRequest?: {
+        prUrl: string;
+        prNumber?: number;
+        sourceBranch: string;
+        targetBranch?: string;
+        repository: {
+            id: string;
+            name: string;
+        };
+        createdAt: string;
+        updatedAt: string;
+    } | null;
+};
+
+export type CentralizedPrResponse = {
+    mode: "centralized-pr";
+    prUrl?: string;
+    prNumber?: number;
+    reused?: boolean;
+    pending?: boolean;
+    message?: string;
+};
+
+export const isCentralizedPrResponse = (
+    value: unknown,
+): value is CentralizedPrResponse => {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const obj = value as Record<string, unknown>;
+
+    return (
+        obj.mode === "centralized-pr" &&
+        (!("prUrl" in obj) || typeof obj.prUrl === "string") &&
+        (!("prNumber" in obj) || typeof obj.prNumber === "number") &&
+        (!("reused" in obj) || typeof obj.reused === "boolean") &&
+        (!("pending" in obj) || typeof obj.pending === "boolean") &&
+        (!("message" in obj) || typeof obj.message === "string")
+    );
+};
 
 export enum OrganizationParametersConfigKey {
     TIMEZONE_CONFIG = "timezone_config",

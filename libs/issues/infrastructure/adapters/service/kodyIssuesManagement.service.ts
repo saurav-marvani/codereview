@@ -73,10 +73,12 @@ export class KodyIssuesManagementService implements IKodyIssuesManagementService
     async processClosedPr(params: contextToGenerateIssues): Promise<void> {
         try {
             // Validação centralizada de permissões
+            const userGitId = params.pullRequest?.user?.id?.toString();
+
             const validationResult =
                 await this.permissionValidationService.validateExecutionPermissions(
                     params.organizationAndTeamData,
-                    undefined, // sem validação de usuário específico
+                    userGitId,
                     KodyIssuesManagementService.name,
                 );
 
@@ -568,6 +570,7 @@ export class KodyIssuesManagementService implements IKodyIssuesManagementService
             'category',
             'organizationId',
             'filePath',
+            'status',
         ];
         exactMatchFields.forEach((field) => {
             if (filters[field]) {
@@ -717,6 +720,10 @@ export class KodyIssuesManagementService implements IKodyIssuesManagementService
     ): CodeSuggestion[] {
         if (!issuesConfigValue) {
             return allSuggestions;
+        }
+
+        if (typeof issuesConfigValue === 'boolean') {
+            return issuesConfigValue ? allSuggestions : [];
         }
 
         const { severityFilters, sourceFilters } = issuesConfigValue;

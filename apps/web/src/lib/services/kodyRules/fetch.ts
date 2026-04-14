@@ -1,4 +1,5 @@
 import { authorizedFetch } from "@services/fetch";
+import type { CentralizedPrResponse } from "@services/parameters/types";
 import { ProgrammingLanguage } from "src/core/enums/programming-language";
 import { axiosAuthorized } from "src/core/utils/axios";
 
@@ -7,6 +8,7 @@ import type {
     KodyRule,
     KodyRuleBucket,
     KodyRulesStatus,
+    KodyRulesType,
     KodyRuleSuggestion,
     LibraryRule,
     PaginatedResponse,
@@ -38,43 +40,62 @@ export type ReviewFastIDERulesResponse = {
     errors?: unknown[];
 };
 
+export type KodyRuleMutationResponse = KodyRule | CentralizedPrResponse;
+
 export const createOrUpdateKodyRule = async (
     rule: KodyRule,
     repositoryId?: string,
     directoryId?: string,
-) => {
+    teamId?: string,
+): Promise<KodyRuleMutationResponse> => {
     const response = await axiosAuthorized.post<any>(
         KODY_RULES_PATHS.CREATE_OR_UPDATE,
-        { ...rule, repositoryId, directoryId },
+        { ...rule, repositoryId, directoryId, teamId },
     );
 
-    return response.data as KodyRule;
+    if (response && typeof response === "object" && "data" in response) {
+        return (response as { data?: KodyRuleMutationResponse })
+            .data as KodyRuleMutationResponse;
+    }
+
+    return response as KodyRuleMutationResponse;
 };
 
 export const addKodyRuleToRepositories = async (props: {
     repositoriesIds: string[];
     directoriesIds: Array<{ directoryId: string; repositoryId: string }>;
     rule: KodyRule;
-}) => {
+    teamId?: string;
+}): Promise<KodyRule[] | CentralizedPrResponse> => {
     const response = await axiosAuthorized.post<any>(
         KODY_RULES_PATHS.ADD_LIBRARY_KODY_RULES,
         {
             ...props.rule,
             repositoriesIds: props.repositoriesIds,
             directoriesInfo: props.directoriesIds,
+            teamId: props.teamId,
         },
     );
 
-    return response.data as KodyRule[];
+    return response.data as KodyRule[] | CentralizedPrResponse;
 };
 
-export const deleteKodyRule = async (ruleId: string) => {
+export const deleteKodyRule = async (
+    ruleId: string,
+    teamId?: string,
+): Promise<boolean | CentralizedPrResponse> => {
     const response = await axiosAuthorized.deleted<any>(
         KODY_RULES_PATHS.DELETE_BY_ORGANIZATION_ID_AND_ROLE_UUID,
-        { params: { ruleId } },
+        { params: { ruleId, teamId } },
     );
 
-    return response.data;
+    if (response && typeof response === "object" && "data" in response) {
+        return (response as { data?: boolean | CentralizedPrResponse }).data as
+            | boolean
+            | CentralizedPrResponse;
+    }
+
+    return response as boolean | CentralizedPrResponse;
 };
 
 export const getLibraryKodyRulesWithFeedback = async (params?: {
@@ -184,12 +205,13 @@ export const fastSyncIDERules = async (
 export const getKodyRulesByRepositoryId = async (
     repositoryId: string,
     directoryId?: string,
+    type?: KodyRulesType,
     tags?: string[],
 ) => {
     const rules = await authorizedFetch<Array<KodyRule>>(
         KODY_RULES_PATHS.FIND_BY_ORGANIZATION_ID_AND_FILTER,
         {
-            params: { repositoryId, directoryId },
+            params: { repositoryId, directoryId, type },
             next: { tags },
         },
     );
@@ -197,9 +219,10 @@ export const getKodyRulesByRepositoryId = async (
     return rules;
 };
 
-export const getAllOrganizationKodyRules = async () => {
+export const getAllOrganizationKodyRules = async (type?: KodyRulesType) => {
     const rules = await authorizedFetch<Array<KodyRule>>(
         KODY_RULES_PATHS.FIND_BY_ORGANIZATION_ID_AND_FILTER,
+        { params: { type } },
     );
     return rules;
 };
@@ -238,7 +261,43 @@ export const changeStatusKodyRules = async (
         { ruleIds, status },
     );
 
+    return response.data as KodyRule[] | CentralizedPrResponse;
+};
+
+export const applyPendingKodyRules = async (
+    teamId: string,
+    ruleIds: string[],
+) => {
+    const response = await axiosAuthorized.post<any>(
+        KODY_RULES_PATHS.APPLY_PENDING_KODY_RULES,
+        { teamId, ruleIds },
+    );
+
+    return response.data as KodyRule[] | CentralizedPrResponse;
+};
+
+export const discardPendingKodyRules = async (
+    teamId: string,
+    ruleIds: string[],
+) => {
+    const response = await axiosAuthorized.post<any>(
+        KODY_RULES_PATHS.DISCARD_PENDING_KODY_RULES,
+        { teamId, ruleIds },
+    );
+
     return response.data as KodyRule[];
+};
+
+export const convertPendingUpdatesToMemories = async (
+    teamId: string,
+    ruleIds: string[],
+) => {
+    const response = await axiosAuthorized.post<any>(
+        KODY_RULES_PATHS.CONVERT_PENDING_UPDATES_TO_MEMORIES,
+        { teamId, ruleIds },
+    );
+
+    return response.data as KodyRule[] | CentralizedPrResponse;
 };
 
 export const generateKodyRules = (
@@ -279,9 +338,7 @@ export const getKodyRuleSuggestions = async (ruleId: string) => {
     return suggestions || [];
 };
 
-export const getRecommendedKodyRules = async (params?: {
-    limit?: number;
-}) => {
+export const getRecommendedKodyRules = async (params?: { limit?: number }) => {
     const queryParams = new URLSearchParams();
     if (params?.limit) {
         queryParams.append("limit", params.limit.toString());
@@ -290,7 +347,7 @@ export const getRecommendedKodyRules = async (params?: {
     const url = queryParams.toString()
         ? `${KODY_RULES_PATHS.FIND_RECOMMENDED_KODY_RULES}?${queryParams.toString()}`
         : KODY_RULES_PATHS.FIND_RECOMMENDED_KODY_RULES;
-    
+
     const rules = await authorizedFetch<LibraryRule[]>(url);
     return rules || [];
 };

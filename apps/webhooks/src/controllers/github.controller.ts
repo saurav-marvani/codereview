@@ -1,10 +1,10 @@
 import { createLogger } from '@kodus/flow';
 import { Controller, HttpStatus, Post, Req, Res } from '@nestjs/common';
-import { Response, Request } from 'express';
+import { Request, Response } from 'express';
 
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
-import { EnqueueWebhookUseCase } from '@libs/platform/application/use-cases/webhook/enqueue-webhook.use-case';
 import { Public } from '@libs/identity/infrastructure/adapters/services/auth/public.decorator';
+import { EnqueueWebhookUseCase } from '@libs/platform/application/use-cases/webhook/enqueue-webhook.use-case';
 
 @Public()
 @Controller('github')
@@ -64,6 +64,9 @@ export class GithubController {
                         context: GithubController.name,
                         metadata: {
                             event,
+                            action: payload?.action,
+                            commentId: payload?.comment?.id,
+                            deliveryId: req.headers['x-github-delivery'],
                             installationId: payload?.installation?.id,
                             repository: payload?.repository?.name,
                         },

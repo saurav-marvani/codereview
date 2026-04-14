@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
-import { getLibraryKodyRulesWithFeedback, getLibraryKodyRulesBuckets } from "@services/kodyRules/fetch";
+import {
+    getLibraryKodyRulesBuckets,
+    getLibraryKodyRulesWithFeedback,
+} from "@services/kodyRules/fetch";
 import { getOrganizationLanguage } from "@services/organizations/fetch";
 import { getGlobalSelectedTeamId } from "src/core/utils/get-global-selected-team-id";
 
@@ -23,12 +26,14 @@ export default async function Route({
     const initialPlugAndPlay = params.type === "plug-and-play";
     const initialNeedMCPS = params.type === "mcp";
 
-    const teamId = await getGlobalSelectedTeamId();
+    const [teamId, buckets] = await Promise.all([
+        getGlobalSelectedTeamId().catch(() => null),
+        getLibraryKodyRulesBuckets().catch(() => []),
+    ]);
 
-    const [buckets, orgLanguage] = (await Promise.all([
-        getLibraryKodyRulesBuckets(),
-        getOrganizationLanguage(teamId),
-    ])) || [[], undefined];
+    const orgLanguage = await getOrganizationLanguage(teamId).catch(
+        () => undefined,
+    );
     const previewBuckets = [...buckets]
         .sort((a, b) => b.rulesCount - a.rulesCount)
         .slice(0, BUCKETS_PREVIEW_COUNT);
@@ -36,17 +41,17 @@ export default async function Route({
     const [bucketRulesResponse, bucketPreviews] = await Promise.all([
         params.bucket
             ? getLibraryKodyRulesWithFeedback({
-                page: 1,
-                limit: 48,
-                buckets: [params.bucket],
-                plug_and_play: initialPlugAndPlay || undefined,
-                needMCPS: initialNeedMCPS || undefined,
-                debugLabel: initialNeedMCPS
-                    ? "server:browse:bucket:needMCPS"
-                    : initialPlugAndPlay
+                  page: 1,
+                  limit: 48,
+                  buckets: [params.bucket],
+                  plug_and_play: initialPlugAndPlay || undefined,
+                  needMCPS: initialNeedMCPS || undefined,
+                  debugLabel: initialNeedMCPS
+                      ? "server:browse:bucket:needMCPS"
+                      : initialPlugAndPlay
                         ? "server:browse:bucket:plug_and_play"
                         : undefined,
-            })
+              })
             : Promise.resolve(null),
         Promise.all(
             previewBuckets.map(async (bucket) => {

@@ -1,6 +1,14 @@
 import { createLogger } from '@kodus/flow';
 import { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';
+import {
+    CentralizedConfigPrService,
+    CentralizedPrMetadata,
+} from '@libs/centralized-config/infrastructure/adapters/services/centralized-config-pr.service';
 import { getDefaultKodusConfigFile } from '@libs/common/utils/validateCodeReviewConfigFile';
+import {
+    IPullRequestMessagesService,
+    PULL_REQUEST_MESSAGES_SERVICE_TOKEN,
+} from '@libs/code-review/domain/pullRequestMessages/contracts/pullRequestMessages.service.contract';
 import {
     OrganizationParametersKey,
     ParametersKey,
@@ -26,6 +34,7 @@ import {
 import { CreateOrUpdateParametersUseCase } from '@libs/organization/application/use-cases/parameters/create-or-update-use-case';
 import { Inject, Injectable } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
+import { buildKodusConfigCentralizedMutationRequest } from '@libs/centralized-config/utils/kodus-config-centralized-pr.builder';
 
 @Injectable()
 export class ApplyCodeReviewPresetUseCase implements IUseCase {
@@ -37,8 +46,13 @@ export class ApplyCodeReviewPresetUseCase implements IUseCase {
 
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
 
+        @Inject(PULL_REQUEST_MESSAGES_SERVICE_TOKEN)
+        private readonly pullRequestMessagesService: IPullRequestMessagesService,
+
         @Inject(ORGANIZATION_PARAMETERS_SERVICE_TOKEN)
         private readonly organizationParametersService: IOrganizationParametersService,
+
+        private readonly centralizedConfigPrService: CentralizedConfigPrService,
 
         @Inject(REQUEST)
         private readonly request: UserRequest,
@@ -49,7 +63,7 @@ export class ApplyCodeReviewPresetUseCase implements IUseCase {
         preset: ReviewPreset;
         organizationId?: string;
         organizationAndTeamData?: OrganizationAndTeamData;
-    }) {
+    }): Promise<CodeReviewParameter | CentralizedPrMetadata> {
         const organizationId =
             this.request?.user?.organization?.uuid ||
             params?.['organizationId'] ||
@@ -65,6 +79,11 @@ export class ApplyCodeReviewPresetUseCase implements IUseCase {
         };
 
         try {
+            const centralizedConfig = await this.parametersService.findByKey(
+                ParametersKey.CENTRALIZED_CONFIG,
+                organizationAndTeamData,
+            );
+
             const existing = await this.parametersService.findByKey(
                 ParametersKey.CODE_REVIEW_CONFIG,
                 organizationAndTeamData,
@@ -81,6 +100,53 @@ export class ApplyCodeReviewPresetUseCase implements IUseCase {
                 } as CodeReviewParameter);
 
             const updatedConfig = this.applyPreset(baseConfig, params.preset);
+
+            if (centralizedConfig?.configValue?.enabled === true) {
+                const globalCustomMessages =
+                    await this.pullRequestMessagesService.findOne({
+                        organizationId,
+                        configLevel: 'global' as any,
+                    });
+
+                const configFileContent: Record<string, any> = {
+                    ...(updatedConfig.configs || {}),
+                };
+
+                if (
+                    globalCustomMessages?.startReviewMessage ||
+                    globalCustomMessages?.endReviewMessage ||
+                    globalCustomMessages?.globalSettings
+                ) {
+                    configFileContent.customMessages = {
+                        startReviewMessage:
+                            globalCustomMessages.startReviewMessage,
+                        endReviewMessage: globalCustomMessages.endReviewMessage,
+                        globalSettings: globalCustomMessages.globalSettings,
+                    };
+                }
+
+                const pr =
+                    await this.centralizedConfigPrService.createMutationPullRequestIfEnabled(
+                        buildKodusConfigCentralizedMutationRequest({
+                            centralizedConfigPrService:
+                                this.centralizedConfigPrService,
+                            organizationAndTeamData,
+                            configFileContent,
+                            title: `Apply ${params.preset} review preset to global Kodus config`,
+                            description:
+                                'This pull request proposes applying a code review preset in centralized config mode.',
+                            commitMessage: `apply ${params.preset} code review preset`,
+                            sourceBranchPrefix:
+                                'kodus-centralized-config-preset',
+                            centralizedModeMessage:
+                                'Centralized config is enabled. Preset change proposed through a pull request.',
+                        }),
+                    );
+
+                if (pr.mode === 'centralized-pr') {
+                    return pr;
+                }
+            }
 
             await this.createOrUpdateParametersUseCase.execute(
                 ParametersKey.CODE_REVIEW_CONFIG,
@@ -103,7 +169,7 @@ export class ApplyCodeReviewPresetUseCase implements IUseCase {
             this.logger.error({
                 message: 'Failed to apply code review preset',
                 context: ApplyCodeReviewPresetUseCase.name,
-                error,
+                error: this.normalizeError(error),
                 metadata: {
                     params,
                     organizationAndTeamData,
@@ -111,6 +177,10 @@ export class ApplyCodeReviewPresetUseCase implements IUseCase {
             });
             throw error;
         }
+    }
+
+    private normalizeError(error: unknown): Error {
+        return error instanceof Error ? error : new Error(String(error));
     }
 
     private applyPreset(

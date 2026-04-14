@@ -19,7 +19,10 @@ import {
     IIntegrationService,
     INTEGRATION_SERVICE_TOKEN,
 } from '@libs/integrations/domain/integrations/contracts/integration.service.contracts';
-import { KodyRulesStatus } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
+import {
+    KodyRulesStatus,
+    KodyRulesType,
+} from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
@@ -234,6 +237,7 @@ export class GenerateKodyRulesUseCase {
 
                 for (const rule of rules) {
                     const dto: CreateKodyRuleDto = {
+                        type: KodyRulesType.STANDARD,
                         examples: rule.examples,
                         origin: rule.origin,
                         rule: rule.rule,
@@ -255,11 +259,17 @@ export class GenerateKodyRulesUseCase {
                         { strict: false },
                     );
 
-                    await createOrUpdateUseCase.execute(
+                    const createdRule = await createOrUpdateUseCase.execute(
                         dto,
                         organizationId,
                         userInfo,
                     );
+
+                    if (!createdRule) {
+                        throw new Error(
+                            'Failed to persist generated Kody rule',
+                        );
+                    }
 
                     // Add rule to notification data
                     createdRules.push({
@@ -278,25 +288,6 @@ export class GenerateKodyRulesUseCase {
                 allRules.push(rules);
             }
 
-            if (allRules.length === 0) {
-                this.logger.log({
-                    message: 'No rules generated',
-                    context: GenerateKodyRulesUseCase.name,
-                    metadata: { body, organizationAndTeamData },
-                });
-
-                await this.createOrUpdateParametersUseCase.execute(
-                    ParametersKey.PLATFORM_CONFIGS,
-                    {
-                        ...platformConfig.configValue,
-                        kodyLearningStatus: KodyLearningStatus.DISABLED,
-                    },
-                    organizationAndTeamData,
-                );
-
-                return [];
-            }
-
             await this.createOrUpdateParametersUseCase.execute(
                 ParametersKey.PLATFORM_CONFIGS,
                 {
@@ -305,6 +296,16 @@ export class GenerateKodyRulesUseCase {
                 },
                 organizationAndTeamData,
             );
+
+            if (allRules.length === 0) {
+                this.logger.log({
+                    message: 'No rules generated',
+                    context: GenerateKodyRulesUseCase.name,
+                    metadata: { body, organizationAndTeamData },
+                });
+
+                return [];
+            }
 
             this.logger.log({
                 message: 'Kody rules generated successfully',
@@ -354,7 +355,7 @@ export class GenerateKodyRulesUseCase {
                     ParametersKey.PLATFORM_CONFIGS,
                     {
                         ...platformConfig.configValue,
-                        kodyLearningStatus: KodyLearningStatus.DISABLED,
+                        kodyLearningStatus: KodyLearningStatus.ENABLED,
                     },
                     organizationAndTeamData ?? { teamId: body.teamId },
                 );

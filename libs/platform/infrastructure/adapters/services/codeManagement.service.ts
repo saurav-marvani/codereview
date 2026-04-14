@@ -1,7 +1,9 @@
+import { createLogger } from '@kodus/flow';
 import { Inject, Injectable, forwardRef } from '@nestjs/common';
 
 import { Reaction } from '@libs/code-review/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
-import { ISuggestionByPR } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
+import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
+import { extractOrganizationAndTeamData } from '@libs/common/utils/helpers';
 import { IntegrationCategory } from '@libs/core/domain/enums/integration-category.enum';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { PullRequestState } from '@libs/core/domain/enums/pullRequestState.enum';
@@ -16,13 +18,12 @@ import {
     IIntegrationService,
     INTEGRATION_SERVICE_TOKEN,
 } from '@libs/integrations/domain/integrations/contracts/integration.service.contracts';
-import { extractOrganizationAndTeamData } from '@libs/common/utils/helpers';
 import {
     CodeManagementConnectionStatus,
     ICodeManagementService,
+    PullRequestFileChange,
 } from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
-import { PlatformIntegrationFactory } from './platformIntegration.factory';
-import { Repositories } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositories.type';
+import { GitCloneParams } from '@libs/platform/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 import {
     PullRequest,
     PullRequestAuthor,
@@ -30,12 +31,15 @@ import {
     PullRequestReviewState,
     PullRequestsWithChangesRequested,
 } from '@libs/platform/domain/platformIntegrations/types/codeManagement/pullRequests.type';
-import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
-import { GitCloneParams } from '@libs/platform/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
+import { Repositories } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { RepositoryFile } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
+import { ISuggestionByPR } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
+import { PlatformIntegrationFactory } from './platformIntegration.factory';
 
 @Injectable()
 export class CodeManagementService implements ICodeManagementService {
+    private readonly logger = createLogger(CodeManagementService.name);
+
     constructor(
         @Inject(forwardRef(() => INTEGRATION_SERVICE_TOKEN))
         private readonly integrationService: IIntegrationService,
@@ -59,8 +63,91 @@ export class CodeManagementService implements ICodeManagementService {
 
             return integration.platform;
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Failed to resolve integration type',
+                context: CodeManagementService.name,
+                error,
+                metadata: {
+                    organizationId: organizationAndTeamData.organizationId,
+                    teamId: organizationAndTeamData.teamId,
+                },
+            });
+            return null;
         }
+    }
+
+    async findRepositoryByName(
+        params: {
+            organizationAndTeamData: OrganizationAndTeamData;
+            name: string;
+        },
+        type?: PlatformType,
+    ): Promise<Partial<Repository> | null> {
+        if (!type) {
+            type = await this.getTypeIntegration(
+                extractOrganizationAndTeamData(params),
+            );
+        }
+
+        if (!type) {
+            return null;
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.findRepositoryByName(params);
+    }
+
+    async createPullRequestWithFiles(
+        params: {
+            organizationAndTeamData: OrganizationAndTeamData;
+            repository: { id: string; name: string };
+            sourceBranch?: string;
+            targetBranch?: string;
+            baseBranch?: string;
+            title?: string;
+            description?: string;
+            commitMessage?: string;
+            author?: { name: string; email?: string };
+            files: PullRequestFileChange[];
+        },
+        type?: PlatformType,
+    ): Promise<Partial<PullRequest> | null> {
+        if (!type) {
+            type = await this.getTypeIntegration(
+                extractOrganizationAndTeamData(params),
+            );
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.createPullRequestWithFiles(params);
+    }
+
+    async uploadFiles(
+        params: {
+            organizationAndTeamData: OrganizationAndTeamData;
+            repository: { id: string; name: string };
+            branchName?: string;
+            baseBranch?: string;
+            files: PullRequestFileChange[];
+            message?: string;
+            author?: { name: string; email?: string };
+        },
+        type?: PlatformType,
+    ): Promise<boolean> {
+        if (!type) {
+            type = await this.getTypeIntegration(
+                extractOrganizationAndTeamData(params),
+            );
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.uploadFiles(params);
     }
 
     async getCommits(
@@ -564,6 +651,10 @@ export class CodeManagementService implements ICodeManagementService {
             );
         }
 
+        if (!type) {
+            return [];
+        }
+
         const codeManagementService =
             this.platformIntegrationFactory.getCodeManagementService(type);
 
@@ -655,6 +746,10 @@ export class CodeManagementService implements ICodeManagementService {
             type = await this.getTypeIntegration(
                 extractOrganizationAndTeamData(params),
             );
+        }
+
+        if (!type) {
+            return [];
         }
 
         const codeManagementService =
@@ -1134,7 +1229,7 @@ export class CodeManagementService implements ICodeManagementService {
             repositoryId: string;
         },
         type?: PlatformType,
-    ): Promise<any> {
+    ): Promise<TreeItem[]> {
         if (!type) {
             type = await this.getTypeIntegration(
                 params.organizationAndTeamData,

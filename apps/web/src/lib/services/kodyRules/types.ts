@@ -9,6 +9,7 @@ export enum KodyRuleInheritanceOrigin {
 export type KodyRule = {
     uuid?: string;
     status: KodyRulesStatus;
+    type?: KodyRulesType;
     title: string;
     rule: string;
     path: string;
@@ -17,7 +18,15 @@ export type KodyRule = {
     repositoryId?: string;
     directoryId?: string;
     sourcePath?: string;
+    centralizedConfig?: {
+        path: string;
+        status: KodyRuleCentralizedStatus;
+    };
     origin: KodyRulesOrigin;
+    requestType?: KodyRuleRequestType;
+    targetRuleUuid?: string;
+    resolvedAt?: string;
+    resolvedBy?: string;
     examples: KodyRulesExample[];
     inheritance?: {
         inheritable?: boolean;
@@ -128,8 +137,39 @@ export enum KodyRulesStatus {
     ACTIVE = "active",
     REJECTED = "rejected",
     PENDING = "pending",
+    APPLIED = "applied",
     DELETED = "deleted",
 }
+
+export enum KodyRuleCentralizedStatus {
+    SYNCED = "synced",
+    PENDING_ADD = "pending_add",
+    PENDING_EDIT = "pending_edit",
+    PENDING_DELETE = "pending_delete",
+}
+
+export enum KodyRulesType {
+    STANDARD = "standard",
+    MEMORY = "memory",
+}
+
+export enum KodyRuleRequestType {
+    MEMORY_CREATE = "memory_create",
+    MEMORY_UPDATE = "memory_update",
+}
+
+export type KodyRulesCentralizedPrMetadata = {
+    mode: "direct" | "centralized-pr";
+    prUrl?: string;
+    prNumber?: number;
+    reused?: boolean;
+    pending?: boolean;
+    message?: string;
+};
+
+export type KodyRulesMutationResponse =
+    | KodyRule[]
+    | KodyRulesCentralizedPrMetadata;
 
 export type KodyRuleSuggestion = {
     id: string;

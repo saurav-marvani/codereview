@@ -2,25 +2,25 @@ import { createLogger } from '@kodus/flow';
 import { Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
-import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
-import { GenerateIssuesFromPrClosedUseCase } from '@libs/issues/application/use-cases/generate-issues-from-pr-closed.use-case';
-import { ChatWithKodyFromGitUseCase } from '@libs/platform/application/use-cases/codeManagement/chatWithKodyFromGit.use-case';
-import {
-    IWebhookEventHandler,
-    IWebhookEventParams,
-} from '@libs/platform/domain/platformIntegrations/interfaces/webhook-event-handler.interface';
-import { CodeManagementService } from '../../adapters/services/codeManagement.service';
-import { getMappedPlatform } from '@libs/common/utils/webhooks';
+import { EnqueueImplementationCheckUseCase } from '@libs/code-review/application/use-cases/enqueue-implementation-check.use-case';
 import {
     hasReviewMarker,
     isKodyMentionNonReview,
     isReviewCommand,
 } from '@libs/common/utils/codeManagement/codeCommentMarkers';
-import { SavePullRequestUseCase } from '@libs/platformData/application/use-cases/pullRequests/save.use-case';
+import { getMappedPlatform } from '@libs/common/utils/webhooks';
+import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { PullRequestClosedEvent } from '@libs/core/domain/events/pull-request-closed.event';
 import { EnqueueCodeReviewJobUseCase } from '@libs/core/workflow/application/use-cases/enqueue-code-review-job.use-case';
-import { EnqueueImplementationCheckUseCase } from '@libs/code-review/application/use-cases/enqueue-implementation-check.use-case';
+import { GenerateIssuesFromPrClosedUseCase } from '@libs/issues/application/use-cases/generate-issues-from-pr-closed.use-case';
 import { WebhookContextService } from '@libs/platform/application/services/webhook-context.service';
+import { ChatWithKodyFromGitUseCase } from '@libs/platform/application/use-cases/codeManagement/chatWithKodyFromGit.use-case';
+import {
+    IWebhookEventHandler,
+    IWebhookEventParams,
+} from '@libs/platform/domain/platformIntegrations/interfaces/webhook-event-handler.interface';
+import { SavePullRequestUseCase } from '@libs/platformData/application/use-cases/pullRequests/save.use-case';
+import { CodeManagementService } from '../../adapters/services/codeManagement.service';
 
 /**
  * Handler for GitLab webhook events.
@@ -113,11 +113,12 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
 
         // If no active automation found, complete the webhook processing immediately
         if (!context?.organizationAndTeamData) {
-            this.logger.log({
-                message: `No active automation found for repository, completing webhook processing`,
+            this.logger.warn({
+                message: `No active automation found for repository, completing webhook processing. Issue generation and all downstream processing will be skipped.`,
                 context: GitLabMergeRequestHandler.name,
                 metadata: {
                     mrNumber,
+                    mrAction: payload?.object_attributes?.action,
                     repositoryId: repository.id,
                     repositoryName: repository.name,
                 },
@@ -216,7 +217,29 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
                 }
 
                 if (payload?.object_attributes?.action === 'merge') {
-                    this.generateIssuesFromPrClosedUseCase.execute(params);
+                    try {
+                        await this.generateIssuesFromPrClosedUseCase.execute(
+                            params,
+                        );
+                    } catch (error) {
+                        this.logger.error({
+                            message: 'Failed to generate issues from merged MR',
+                            context: GitLabMergeRequestHandler.name,
+                            error,
+                            metadata: {
+                                mrNumber,
+                                repositoryId: repository.id,
+                            },
+                        });
+                    }
+
+                    let changedFiles:
+                        | Array<{
+                              filename: string;
+                              previous_filename?: string;
+                              status: string;
+                          }>
+                        | undefined;
 
                     try {
                         if (context.organizationAndTeamData) {
@@ -232,30 +255,22 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
                                     },
                                 });
                             if (baseRef !== defaultBranch) {
-                                return;
-                            }
-                            const changedFiles =
-                                await this.codeManagement.getFilesByPullRequestId(
-                                    {
-                                        organizationAndTeamData:
-                                            context.organizationAndTeamData,
-                                        repository: {
-                                            id: repository.id,
-                                            name: repository.name,
+                                changedFiles = undefined;
+                            } else {
+                                changedFiles =
+                                    await this.codeManagement.getFilesByPullRequestId(
+                                        {
+                                            organizationAndTeamData:
+                                                context.organizationAndTeamData,
+                                            repository: {
+                                                id: repository.id,
+                                                name: repository.name,
+                                            },
+                                            prNumber:
+                                                payload?.object_attributes?.iid,
                                         },
-                                        prNumber:
-                                            payload?.object_attributes?.iid,
-                                    },
-                                );
-                            this.eventEmitter.emit(
-                                'pull-request.closed',
-                                new PullRequestClosedEvent(
-                                    context.organizationAndTeamData,
-                                    repository,
-                                    payload?.object_attributes?.iid,
-                                    changedFiles || [],
-                                ),
-                            );
+                                    );
+                            }
                         }
                     } catch (e) {
                         this.logger.error({
@@ -263,6 +278,34 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
                             context: GitLabMergeRequestHandler.name,
                             error: e,
                         });
+                    }
+
+                    if (context.organizationAndTeamData) {
+                        this.eventEmitter.emit(
+                            'pull-request.closed',
+                            new PullRequestClosedEvent(
+                                context.organizationAndTeamData,
+                                repository,
+                                payload?.object_attributes?.iid,
+                                changedFiles || [],
+                                true,
+                            ),
+                        );
+                    }
+                }
+
+                if (payload?.object_attributes?.action === 'close') {
+                    if (context.organizationAndTeamData) {
+                        this.eventEmitter.emit(
+                            'pull-request.closed',
+                            new PullRequestClosedEvent(
+                                context.organizationAndTeamData,
+                                repository,
+                                payload?.object_attributes?.iid,
+                                [],
+                                false,
+                            ),
+                        );
                     }
                 }
 

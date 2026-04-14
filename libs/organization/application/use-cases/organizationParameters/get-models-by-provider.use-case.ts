@@ -46,23 +46,6 @@ interface GeminiResponse {
     models: GeminiModel[];
 }
 
-interface VertexModel {
-    name: string;
-    displayName?: string;
-    description?: string;
-    versionId?: string;
-    versionCreateTime?: string;
-    versionUpdateTime?: string;
-    versionDescription?: string;
-    supportedDeploymentResourcesTypes?: string[];
-    supportedInputStorageFormats?: string[];
-    supportedOutputStorageFormats?: string[];
-}
-
-interface VertexResponse {
-    models: VertexModel[];
-    nextPageToken?: string;
-}
 
 export interface ModelResponse {
     provider: BYOKProvider;

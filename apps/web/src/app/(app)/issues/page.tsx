@@ -9,12 +9,12 @@ import { parseAsJson, useQueryState } from "nuqs";
 import { useAuth } from "src/core/providers/auth.provider";
 import { usePermissions } from "src/core/providers/permissions.provider";
 import { filterArray, type FilterValueGroup } from "src/core/utils/filtering";
-import { hasPermission } from "src/core/utils/permissions";
+import { hasPermission } from "src/core/utils/permission-map";
 import { safeArray } from "src/core/utils/safe-array";
 
 import { IssuesDataTable } from "./_components/data-table";
-import { IssueCreationToggle } from "./_components/issue-creation-toggle";
 import { IssuesFilters } from "./_components/filters";
+import { IssueCreationToggle } from "./_components/issue-creation-toggle";
 import { IssueDetailsRightSheet } from "./_components/issue-details-right-sheet";
 import { DEFAULT_FILTERS, getFiltersInLocalStorage } from "./_constants";
 import { FiltersContext } from "./_contexts/filters";
@@ -84,6 +84,11 @@ export default function IssuesPage() {
         [filters, canAccessIssues],
     );
 
+    const unresolvedIssues = useMemo(
+        () => canAccessIssues.filter((issue) => issue.status !== "resolved"),
+        [canAccessIssues],
+    );
+
     useEffectOnce(() => {
         if (_filtersQuery) return;
         setFilters(savedFiltersOrDefault, { history: "replace" });
@@ -113,13 +118,10 @@ export default function IssuesPage() {
                         {canAccessIssues.length > 0 && (
                             <span className="flex gap-0.5 text-sm">
                                 <span>Showing </span>
-                                {filteredData.length !== issues.length ? (
+                                {unresolvedIssues.length !== issues.length ? (
                                     <>
-                                        <span className="text-primary-light">
-                                            {filteredData.length}
-                                        </span>
                                         <span className="text-text-secondary">
-                                            of {canAccessIssues.length} issues
+                                            of {unresolvedIssues.length} issues
                                         </span>
                                     </>
                                 ) : (

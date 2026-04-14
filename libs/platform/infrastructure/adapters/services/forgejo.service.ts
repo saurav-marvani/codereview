@@ -3,6 +3,21 @@ import { ConfigService } from '@nestjs/config';
 import { v4 as uuidv4 } from 'uuid';
 
 import { createLogger } from '@kodus/flow';
+import { hasKodyMarker } from '@libs/common/utils/codeManagement/codeCommentMarkers';
+import { getCodeReviewBadge } from '@libs/common/utils/codeManagement/codeReviewBadge';
+import { getLabelShield } from '@libs/common/utils/codeManagement/labels';
+import { getSeverityLevelShield } from '@libs/common/utils/codeManagement/severityLevel';
+import { decrypt, encrypt } from '@libs/common/utils/crypto';
+import { IntegrationServiceDecorator } from '@libs/common/utils/decorators/integration-service.decorator';
+import {
+    isFileMatchingGlob,
+    isFileMatchingGlobCaseInsensitive,
+} from '@libs/common/utils/glob-utils';
+import { extractOwnerAndRepo } from '@libs/common/utils/helpers';
+import {
+    getTranslationsForLanguageByCategory,
+    TranslationsCategory,
+} from '@libs/common/utils/translations/translations';
 import {
     CreateAuthIntegrationStatus,
     IntegrationCategory,
@@ -12,107 +27,100 @@ import {
     PullRequestState,
 } from '@libs/core/domain/enums';
 import {
+    CommentResult,
     Repository,
     ReviewComment,
-    CommentResult,
 } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { Commit } from '@libs/core/infrastructure/config/types/general/commit.type';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { TreeItem } from '@libs/core/infrastructure/config/types/general/tree.type';
-import { decrypt, encrypt } from '@libs/common/utils/crypto';
-import { IntegrationServiceDecorator } from '@libs/common/utils/decorators/integration-service.decorator';
-import { extractOwnerAndRepo } from '@libs/common/utils/helpers';
-import { getCodeReviewBadge } from '@libs/common/utils/codeManagement/codeReviewBadge';
-import { getSeverityLevelShield } from '@libs/common/utils/codeManagement/severityLevel';
-import { getLabelShield } from '@libs/common/utils/codeManagement/labels';
-import { hasKodyMarker } from '@libs/common/utils/codeManagement/codeCommentMarkers';
-import {
-    isFileMatchingGlob,
-    isFileMatchingGlobCaseInsensitive,
-} from '@libs/common/utils/glob-utils';
-import {
-    getTranslationsForLanguageByCategory,
-    TranslationsCategory,
-} from '@libs/common/utils/translations/translations';
 
-import {
-    IIntegrationService,
-    INTEGRATION_SERVICE_TOKEN,
-} from '@libs/integrations/domain/integrations/contracts/integration.service.contracts';
-import {
-    IIntegrationConfigService,
-    INTEGRATION_CONFIG_SERVICE_TOKEN,
-} from '@libs/integrations/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import {
     AUTH_INTEGRATION_SERVICE_TOKEN,
     IAuthIntegrationService,
 } from '@libs/integrations/domain/authIntegrations/contracts/auth-integration.service.contracts';
-import { IntegrationConfigEntity } from '@libs/integrations/domain/integrationConfigs/entities/integration-config.entity';
 import { ForgejoAuthDetail } from '@libs/integrations/domain/authIntegrations/types/forgejo-auth-detail.type';
-
 import {
-    ICodeManagementService,
-    CodeManagementConnectionStatus,
-} from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
+    IIntegrationConfigService,
+    INTEGRATION_CONFIG_SERVICE_TOKEN,
+} from '@libs/integrations/domain/integrationConfigs/contracts/integration-config.service.contracts';
+import { IntegrationConfigEntity } from '@libs/integrations/domain/integrationConfigs/entities/integration-config.entity';
+import {
+    IIntegrationService,
+    INTEGRATION_SERVICE_TOKEN,
+} from '@libs/integrations/domain/integrations/contracts/integration.service.contracts';
+
 import { AuthMode } from '@libs/platform/domain/platformIntegrations/enums/codeManagement/authMode.enum';
+import {
+    CodeManagementConnectionStatus,
+    ICodeManagementService,
+    PullRequestFileChange,
+} from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
 import { GitCloneParams } from '@libs/platform/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
+import { Organization } from '@libs/platform/domain/platformIntegrations/types/codeManagement/organization.type';
 import {
     PullRequest,
     PullRequestAuthor,
     PullRequestCodeReviewTime,
     PullRequestReviewComment,
     PullRequestReviewState,
-    PullRequestWithFiles,
     PullRequestsWithChangesRequested,
+    PullRequestWithFiles,
 } from '@libs/platform/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { RepositoryFile } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
-import { Organization } from '@libs/platform/domain/platformIntegrations/types/codeManagement/organization.type';
-
-import { createClient, Client } from '@llamaduck/forgejo-ts/client';
 import {
-    type PullRequest as ForgejoPullRequest,
-    type Repository as ForgejoRepository,
-    type Commit as ForgejoCommit,
-    type PullReview as ForgejoPullReview,
-    type Organization as ForgejoOrganization,
+    buildDefaultSourceBranchName,
+    DEFAULT_COMMIT_MESSAGE,
+    DEFAULT_PR_TITLE,
+} from './code-management-defaults.constants';
+
+import { Reaction } from '@libs/code-review/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
+import {
     type ChangedFile as ForgejoChangedFile,
+    type Commit as ForgejoCommit,
+    type Organization as ForgejoOrganization,
+    type PullRequest as ForgejoPullRequest,
+    type PullReview as ForgejoPullReview,
+    type Repository as ForgejoRepository,
     type User as ForgejoUser,
-    userGetCurrent,
-    userCurrentListRepos,
-    userSearch,
-    userGet,
-    orgListCurrentUserOrgs,
-    orgListRepos,
-    orgListMembers,
-    repoGet,
-    repoGetLanguages,
-    repoListHooks,
-    repoCreateHook,
-    repoDeleteHook,
-    repoGetContents,
-    repoGetAllCommits,
     getTree,
-    repoGetPullRequest,
-    repoListPullRequests,
-    repoGetPullRequestFiles,
-    repoGetPullRequestCommits,
-    repoDownloadPullDiffOrPatch,
-    repoCreatePullReview,
-    repoListPullReviews,
-    repoGetPullReviewComments,
-    repoEditPullRequest,
-    repoMergePullRequest,
     issueCreateComment,
+    issueDeleteCommentReaction,
+    issueDeleteIssueReaction,
     issueEditComment,
     issueGetComments,
-    issuePostIssueReaction,
-    issuePostCommentReaction,
-    issueDeleteIssueReaction,
-    issueDeleteCommentReaction,
     issueGetIssueReactions,
+    issuePostCommentReaction,
+    issuePostIssueReaction,
+    orgListCurrentUserOrgs,
+    orgListMembers,
+    orgListRepos,
+    repoCreateHook,
+    repoCreatePullReview,
+    repoDeleteHook,
+    repoDownloadPullDiffOrPatch,
+    repoEditPullRequest,
+    repoGet,
+    repoGetAllCommits,
+    repoGetContents,
+    repoGetLanguages,
+    repoGetPullRequest,
+    repoGetPullRequestCommits,
+    repoGetPullRequestFiles,
+    repoGetPullReviewComments,
+    repoListHooks,
+    repoListPullRequests,
+    repoListPullReviews,
+    repoMergePullRequest,
+    userCurrentListRepos,
+    userGet,
+    userGetCurrent,
+    userSearch,
+    repoChangeFiles,
+    repoCreatePullRequest,
 } from '@llamaduck/forgejo-ts';
-import { Reaction } from '@libs/code-review/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
+import { Client, createClient } from '@llamaduck/forgejo-ts/client';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.FORGEJO, 'codeManagement')
@@ -197,6 +205,388 @@ export class ForgejoService implements Omit<
             });
             return null;
         }
+    }
+
+    async findRepositoryByName(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        name: string;
+    }): Promise<Partial<Repository> | null> {
+        try {
+            const repositories = await this.getRepositories({
+                organizationAndTeamData: params.organizationAndTeamData,
+            });
+            const wanted = params.name.trim().toLowerCase();
+            const repo = repositories.find((r) => {
+                const fullName = (
+                    r.full_name || `${r.organizationName}/${r.name}`
+                ).toLowerCase();
+
+                return r.name.toLowerCase() === wanted || fullName === wanted;
+            });
+            if (!repo) {
+                this.logger.warn({
+                    message: 'Repository not found by name',
+                    context: ForgejoService.name,
+                    metadata: { repositoryName: params.name },
+                });
+                return null;
+            }
+
+            return {
+                id: repo.id,
+                name: repo.name,
+                fullName:
+                    repo.full_name || `${repo.organizationName}/${repo.name}`,
+                defaultBranch: repo.default_branch,
+            };
+        } catch (error) {
+            this.logger.error({
+                message: 'Error finding repository by name',
+                context: ForgejoService.name,
+                error,
+                metadata: { repositoryName: params.name },
+            });
+            return null;
+        }
+    }
+
+    async createPullRequestWithFiles(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        sourceBranch?: string;
+        targetBranch?: string;
+        baseBranch?: string;
+        title?: string;
+        description?: string;
+        commitMessage?: string;
+        author?: { name: string; email?: string };
+        files: PullRequestFileChange[];
+    }): Promise<Partial<PullRequest> | null> {
+        const {
+            organizationAndTeamData,
+            repository,
+            sourceBranch,
+            targetBranch,
+            baseBranch,
+            title,
+            description = '',
+            commitMessage,
+            author,
+            files,
+        } = params;
+
+        const resolvedSourceBranch =
+            sourceBranch || buildDefaultSourceBranchName();
+        const resolvedTitle = title?.trim() || DEFAULT_PR_TITLE;
+        const resolvedCommitMessage =
+            commitMessage?.trim() || DEFAULT_COMMIT_MESSAGE;
+
+        try {
+            const resolvedTargetBranch =
+                targetBranch ||
+                (await this.getDefaultBranch({
+                    organizationAndTeamData,
+                    repository,
+                }));
+            const resolvedBaseBranch = baseBranch || resolvedTargetBranch;
+
+            const authDetail = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!authDetail) {
+                throw new Error('Authentication details not found');
+            }
+
+            const repoInfo = this.extractRepoInfo(
+                repository.name,
+                'createPullRequestWithFiles',
+            );
+
+            if (!repoInfo) {
+                throw new Error('Invalid repository name format');
+            }
+
+            const client = this.createForgejoClient(authDetail);
+
+            const uploadResult = await this.uploadFiles({
+                organizationAndTeamData,
+                repository,
+                branchName: resolvedSourceBranch,
+                baseBranch: resolvedBaseBranch,
+                files,
+                message: resolvedCommitMessage,
+                author,
+            });
+
+            if (!uploadResult) {
+                throw new BadRequestException(
+                    'Failed to upload files to Forgejo',
+                );
+            }
+
+            const pr = await repoCreatePullRequest({
+                client,
+                path: repoInfo,
+                body: {
+                    base: resolvedTargetBranch,
+                    head: resolvedSourceBranch,
+                    title: resolvedTitle,
+                    body: description,
+                },
+            });
+
+            if (!pr || pr.status >= 300) {
+                throw new Error(`Failed to create pull request: ${pr.status}`);
+            }
+
+            return {
+                id: pr.data?.id?.toString() ?? '',
+                number: pr.data?.number ?? -1,
+                title: pr.data?.title ?? '',
+                prURL: pr.data?.html_url ?? '',
+            };
+        } catch (error) {
+            this.logger.error({
+                message: 'Error creating pull request with files',
+                context: ForgejoService.name,
+                error,
+                metadata: { params },
+            });
+            return null;
+        }
+    }
+
+    async uploadFiles(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        branchName?: string;
+        baseBranch?: string;
+        files: PullRequestFileChange[];
+        message?: string;
+        author?: { name: string; email?: string };
+    }): Promise<boolean> {
+        const {
+            organizationAndTeamData,
+            repository,
+            branchName,
+            baseBranch,
+            files,
+            message,
+            author,
+        } = params;
+
+        try {
+            const defaultBranch = await this.getDefaultBranch({
+                organizationAndTeamData,
+                repository,
+            });
+            const resolvedBaseBranch = baseBranch || defaultBranch;
+            const resolvedBranchName = branchName || resolvedBaseBranch;
+            const resolvedMessage = message?.trim() || DEFAULT_COMMIT_MESSAGE;
+
+            const authDetail = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+            if (!authDetail) {
+                throw new Error('Authentication details not found');
+            }
+
+            const repoInfo = this.extractRepoInfo(
+                repository.name,
+                'uploadFiles',
+            );
+
+            if (!repoInfo) {
+                throw new Error('Invalid repository name format');
+            }
+
+            const client = this.createForgejoClient(authDetail);
+
+            const tokenAuthorIdentity =
+                authDetail.authMode === AuthMode.TOKEN && author?.name
+                    ? {
+                          name: author.name,
+                          email: author.email || 'kody@kodus.io',
+                      }
+                    : undefined;
+
+            const branchAlreadyExists =
+                resolvedBranchName === resolvedBaseBranch
+                    ? true
+                    : await this.checkForgejoBranchExists(
+                          client,
+                          repoInfo,
+                          resolvedBranchName,
+                      );
+
+            const fileExistsReferenceBranch = branchAlreadyExists
+                ? resolvedBranchName
+                : resolvedBaseBranch;
+
+            const fileExistsEntries = await Promise.all(
+                files.map(async (file) => {
+                    const exists = await this.checkForgejoFileExists(
+                        client,
+                        repoInfo,
+                        fileExistsReferenceBranch,
+                        file.path,
+                    );
+
+                    return [file.path, exists] as const;
+                }),
+            );
+
+            const fileExistsByPath = new Map(fileExistsEntries);
+
+            const changes = files
+                .map((file) => {
+                    const operation = file.operation || 'upsert';
+                    const fileExists = fileExistsByPath.get(file.path) === true;
+
+                    if (operation === 'delete') {
+                        if (!fileExists) {
+                            return null;
+                        }
+
+                        return {
+                            operation: 'delete' as const,
+                            path: file.path,
+                        } as any;
+                    }
+
+                    if (typeof file.content !== 'string') {
+                        throw new Error(
+                            `File content is required for upsert operation: ${file.path}`,
+                        );
+                    }
+
+                    return {
+                        operation: fileExists
+                            ? ('update' as const)
+                            : ('create' as const),
+                        path: file.path,
+                        content: file.content,
+                    } as any;
+                })
+                .filter((change): change is NonNullable<typeof change> =>
+                    Boolean(change),
+                );
+
+            if (changes.length === 0) {
+                return true;
+            }
+
+            const res = await repoChangeFiles({
+                client,
+                path: repoInfo,
+                body: {
+                    files: changes,
+                    message: resolvedMessage,
+                    branch: branchAlreadyExists
+                        ? resolvedBranchName
+                        : resolvedBaseBranch,
+                    ...(tokenAuthorIdentity
+                        ? {
+                              author: tokenAuthorIdentity,
+                              committer: tokenAuthorIdentity,
+                          }
+                        : {}),
+                    ...(!branchAlreadyExists &&
+                    resolvedBranchName !== resolvedBaseBranch
+                        ? {
+                              new_branch: resolvedBranchName,
+                          }
+                        : {}),
+                },
+            });
+
+            if (!res || res.status >= 300) {
+                throw new Error(`Failed to upload files: ${res.status}`);
+            }
+
+            return true;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error uploading files to Forgejo',
+                context: ForgejoService.name,
+                error,
+                metadata: { params },
+            });
+            return false;
+        }
+    }
+
+    private async checkForgejoBranchExists(
+        client: Client,
+        repoInfo: { owner: string; repo: string },
+        branchName: string,
+    ): Promise<boolean> {
+        try {
+            await getTree({
+                client,
+                path: {
+                    owner: repoInfo.owner,
+                    repo: repoInfo.repo,
+                    sha: branchName,
+                },
+                query: {
+                    recursive: false,
+                },
+            });
+
+            return true;
+        } catch (error) {
+            if (this.isForgejoNotFoundError(error)) {
+                return false;
+            }
+
+            throw error;
+        }
+    }
+
+    private async checkForgejoFileExists(
+        client: Client,
+        repoInfo: { owner: string; repo: string },
+        branchName: string,
+        filePath: string,
+    ): Promise<boolean> {
+        try {
+            await repoGetContents({
+                client,
+                path: {
+                    owner: repoInfo.owner,
+                    repo: repoInfo.repo,
+                    filepath: filePath.replace(/^\/+/, ''),
+                },
+                query: {
+                    ref: branchName,
+                },
+            });
+
+            return true;
+        } catch (error) {
+            if (this.isForgejoNotFoundError(error)) {
+                return false;
+            }
+
+            throw error;
+        }
+    }
+
+    private isForgejoNotFoundError(error: unknown): boolean {
+        const candidate = error as
+            | {
+                  status?: number;
+                  code?: number;
+                  response?: { status?: number };
+              }
+            | undefined;
+
+        const status =
+            candidate?.status || candidate?.code || candidate?.response?.status;
+
+        return status === 404;
     }
 
     private extractRepoInfo(

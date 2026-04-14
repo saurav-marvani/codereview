@@ -3,12 +3,16 @@ import { BYOKConfig, LLMModelProvider } from '@kodus/kodus-common/llm';
 import { Inject, Injectable } from '@nestjs/common';
 
 import { IAIAnalysisService } from '@libs/code-review/domain/contracts/AIAnalysisService.contract';
-import { CrossFileContextSnippet } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import {
     COMMENT_MANAGER_SERVICE_TOKEN,
     ICommentManagerService,
 } from '@libs/code-review/domain/contracts/CommentManagerService.contract';
+import { CreateSandboxParams } from '@libs/code-review/domain/contracts/sandbox.provider';
 import { ISuggestionService } from '@libs/code-review/domain/contracts/SuggestionService.contract';
+import {
+    CrossFileContextSnippet,
+    RemoteCommands,
+} from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import {
     ClusteringType,
     CodeReviewConfig,
@@ -39,7 +43,11 @@ import { LLM_ANALYSIS_SERVICE_TOKEN } from './llmAnalysis.service';
 
 import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
-import { Repository } from '@libs/core/infrastructure/config/types/general/codeReview.type';
+import {
+    DocumentationContextItem,
+    Repository,
+} from '@libs/core/infrastructure/config/types/general/codeReview.type';
+import { IKodyRule } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import { PullRequestReviewComment } from '@libs/platform/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { PullRequestsEntity } from '@libs/platformData/domain/pullRequests/entities/pullRequests.entity';
@@ -234,6 +242,12 @@ export class SuggestionService implements ISuggestionService {
         reviewMode: ReviewModeResponse,
         byokConfig: BYOKConfig,
         crossFileSnippets?: CrossFileContextSnippet[],
+        remoteCommands?: RemoteCommands,
+        memories?: Array<Partial<IKodyRule>>,
+        externalReferences?: unknown[],
+        externalReferenceErrors?: unknown[] | string,
+        sandboxCloneParams?: CreateSandboxParams,
+        documentationContext?: DocumentationContextItem[],
     ) {
         if (!suggestions?.length) {
             return suggestions;
@@ -250,6 +264,12 @@ export class SuggestionService implements ISuggestionService {
             reviewMode,
             byokConfig,
             crossFileSnippets,
+            remoteCommands,
+            memories,
+            externalReferences,
+            externalReferenceErrors,
+            sandboxCloneParams,
+            documentationContext,
         );
     }
 
@@ -492,12 +512,12 @@ export class SuggestionService implements ISuggestionService {
                 metadata: { severityLimits, organizationAndTeamData, prNumber },
             });
 
-            // Fallback: retorna todas as sugestões (mutação in-place)
-            for (const s of suggestions) {
-                s.priorityStatus = PriorityStatus.PRIORITIZED;
-                s.deliveryStatus = DeliveryStatus.NOT_SENT;
-            }
-            return suggestions;
+            // Fallback: retorna todas as sugestões como novas cópias (sem mutação)
+            return suggestions.map((s) => ({
+                ...s,
+                priorityStatus: PriorityStatus.PRIORITIZED,
+                deliveryStatus: DeliveryStatus.NOT_SENT,
+            }));
         }
     }
 
@@ -520,13 +540,12 @@ export class SuggestionService implements ISuggestionService {
                 ),
         );
 
-        // PERF: Mutar in-place ao invés de criar novos objetos
-        for (const suggestion of relatedToPrioritized) {
-            suggestion.priorityStatus =
-                PriorityStatus.PRIORITIZED_BY_CLUSTERING;
-        }
+        const relatedWithStatus = relatedToPrioritized.map((suggestion) => ({
+            ...suggestion,
+            priorityStatus: PriorityStatus.PRIORITIZED_BY_CLUSTERING,
+        }));
 
-        return [...prioritizedByQuantity, ...relatedToPrioritized];
+        return [...prioritizedByQuantity, ...relatedWithStatus];
     }
 
     /**
@@ -998,16 +1017,15 @@ export class SuggestionService implements ISuggestionService {
             const acceptedSeverities =
                 severityLevels[severityLevelFilter] || [];
 
-            // PERF: Mutar in-place ao invés de criar novos objetos com spread
-            for (const suggestion of suggestions) {
-                suggestion.priorityStatus = acceptedSeverities.includes(
+            return suggestions.map((suggestion) => ({
+                ...suggestion,
+                priorityStatus: acceptedSeverities.includes(
                     suggestion?.severity?.toLowerCase(),
                 )
                     ? PriorityStatus.PRIORITIZED
-                    : PriorityStatus.DISCARDED_BY_SEVERITY;
-                suggestion.deliveryStatus = DeliveryStatus.NOT_SENT;
-            }
-            return suggestions;
+                    : PriorityStatus.DISCARDED_BY_SEVERITY,
+                deliveryStatus: DeliveryStatus.NOT_SENT,
+            }));
         } catch (error) {
             this.logger.log({
                 message: `Failed to prioritize suggestions by severity level for PR#${prNumber}`,
@@ -1727,6 +1745,28 @@ export class SuggestionService implements ISuggestionService {
                         commentResult?.codeReviewFeedbackData &&
                         commentResult?.deliveryStatus !== DeliveryStatus.FAILED
                     ) {
+                        const commentId =
+                            commentResult?.codeReviewFeedbackData?.commentId;
+                        const pullRequestReviewId =
+                            commentResult?.codeReviewFeedbackData
+                                ?.pullRequestReviewId;
+
+                        if (!commentId || !pullRequestReviewId) {
+                            this.logger.error({
+                                message: `Suggestion enrichment missing comment IDs for PR#${pullRequest.number}`,
+                                context: SuggestionService.name,
+                                metadata: {
+                                    prNumber: pullRequest.number,
+                                    suggestionId: suggestion?.id,
+                                    commentId,
+                                    pullRequestReviewId,
+                                    deliveryStatus:
+                                        commentResult?.deliveryStatus,
+                                    organizationAndTeamData,
+                                },
+                            });
+                        }
+
                         return {
                             ...suggestion,
                             deliveryStatus: commentResult?.deliveryStatus,
@@ -1734,11 +1774,8 @@ export class SuggestionService implements ISuggestionService {
                                 ImplementationStatus.NOT_IMPLEMENTED,
                             comment: {
                                 ...(suggestion?.comment || {}),
-                                id: commentResult?.codeReviewFeedbackData
-                                    ?.commentId,
-                                pullRequestReviewId:
-                                    commentResult?.codeReviewFeedbackData
-                                        ?.pullRequestReviewId,
+                                id: commentId,
+                                pullRequestReviewId,
                             },
                         };
                     }
@@ -1796,6 +1833,28 @@ export class SuggestionService implements ISuggestionService {
                 suggestion?.priorityStatus === PriorityStatus.REPRIORIZED &&
                 result?.deliveryStatus === DeliveryStatus.SENT
             ) {
+                const repriorizedCommentId =
+                    result?.codeReviewFeedbackData?.commentId;
+                const repriorizedPullRequestReviewId =
+                    result?.codeReviewFeedbackData?.pullRequestReviewId;
+
+                if (
+                    result?.codeReviewFeedbackData &&
+                    (!repriorizedCommentId || !repriorizedPullRequestReviewId)
+                ) {
+                    this.logger.error({
+                        message: `Repriorized suggestion enrichment missing comment IDs`,
+                        context: SuggestionService.name,
+                        metadata: {
+                            suggestionId: suggestion?.id,
+                            commentId: repriorizedCommentId,
+                            pullRequestReviewId:
+                                repriorizedPullRequestReviewId,
+                            deliveryStatus: result?.deliveryStatus,
+                        },
+                    });
+                }
+
                 repriorizedSuggestions.push({
                     ...suggestion,
                     deliveryStatus: DeliveryStatus.SENT,
@@ -1803,10 +1862,9 @@ export class SuggestionService implements ISuggestionService {
                     comment: result?.codeReviewFeedbackData
                         ? {
                               ...(suggestion?.comment || {}),
-                              id: result.codeReviewFeedbackData.commentId,
+                              id: repriorizedCommentId,
                               pullRequestReviewId:
-                                  result.codeReviewFeedbackData
-                                      .pullRequestReviewId,
+                                  repriorizedPullRequestReviewId,
                           }
                         : suggestion?.comment,
                 });
@@ -1855,12 +1913,36 @@ export class SuggestionService implements ISuggestionService {
                         priorityStatus: PriorityStatus.PRIORITIZED, // Default para PR level
                         deliveryStatus: result.deliveryStatus as DeliveryStatus,
                         comment: result.codeReviewFeedbackData
-                            ? {
-                                  id: result.codeReviewFeedbackData.commentId,
-                                  pullRequestReviewId:
+                            ? (() => {
+                                  const prLevelCommentId =
+                                      result.codeReviewFeedbackData.commentId;
+                                  const prLevelReviewId =
                                       result.codeReviewFeedbackData
-                                          .pullRequestReviewId,
-                              }
+                                          .pullRequestReviewId;
+
+                                  if (
+                                      !prLevelCommentId ||
+                                      !prLevelReviewId
+                                  ) {
+                                      this.logger.error({
+                                          message: `PR-level suggestion missing comment IDs`,
+                                          context: SuggestionService.name,
+                                          metadata: {
+                                              suggestionId: suggestion.id,
+                                              commentId: prLevelCommentId,
+                                              pullRequestReviewId:
+                                                  prLevelReviewId,
+                                              deliveryStatus:
+                                                  result.deliveryStatus,
+                                          },
+                                      });
+                                  }
+
+                                  return {
+                                      id: prLevelCommentId,
+                                      pullRequestReviewId: prLevelReviewId,
+                                  };
+                              })()
                             : undefined,
                         files: {
                             violatedFileSha:
@@ -1881,6 +1963,101 @@ export class SuggestionService implements ISuggestionService {
                 metadata: { commentResultsCount: commentResults?.length },
             });
             return [];
+        }
+    }
+
+    public async filterActiveReviewSuggestions<
+        T extends { comment?: { id?: number | string } },
+    >(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+        platformType: PlatformType;
+        suggestions: T[];
+    }): Promise<T[]> {
+        const {
+            organizationAndTeamData,
+            repository,
+            prNumber,
+            platformType,
+            suggestions,
+        } = params;
+
+        if (!suggestions?.length) {
+            return suggestions;
+        }
+
+        const suggestionsWithCommentId = suggestions.filter(
+            (suggestion) => suggestion?.comment?.id != null,
+        );
+
+        if (!suggestionsWithCommentId.length) {
+            return suggestions;
+        }
+
+        try {
+            const reviewComments =
+                platformType === PlatformType.GITHUB
+                    ? await this.codeManagementService.getPullRequestReviewThreads(
+                          {
+                              organizationAndTeamData,
+                              repository,
+                              prNumber,
+                          },
+                          platformType,
+                      )
+                    : await this.codeManagementService.getPullRequestReviewComments(
+                          {
+                              organizationAndTeamData,
+                              repository,
+                              prNumber,
+                          },
+                          platformType,
+                      );
+
+            if (!reviewComments?.length) {
+                return suggestions;
+            }
+
+            const activeCommentIds = new Set(
+                reviewComments
+                    .filter((comment) =>
+                        this.isActiveReviewComment(comment, platformType),
+                    )
+                    .map((comment) =>
+                        this.getReviewCommentMatchId(comment, platformType),
+                    )
+                    .filter(Boolean),
+            );
+
+            if (!activeCommentIds.size) {
+                return [];
+            }
+
+            return suggestions.filter((suggestion) => {
+                const suggestionCommentId = suggestion?.comment?.id;
+
+                if (suggestionCommentId == null) {
+                    return true;
+                }
+
+                return activeCommentIds.has(String(suggestionCommentId));
+            });
+        } catch (error) {
+            this.logger.warn({
+                message: `Failed to filter active review suggestions for PR#${prNumber}`,
+                context: SuggestionService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
+                    repositoryName: repository?.name,
+                    platformType,
+                    suggestionsCount: suggestions.length,
+                },
+                error,
+            });
+
+            return suggestions;
         }
     }
 
@@ -1991,8 +2168,12 @@ export class SuggestionService implements ISuggestionService {
                         implementedSuggestionsCommentIds.includes(comment.id),
                     );
 
-            if (foundComments?.length > 0) {
-                const promises = foundComments.map(
+            const unresolvedComments = foundComments?.filter(
+                (comment: PullRequestReviewComment) => !comment.isResolved,
+            );
+
+            if (unresolvedComments?.length > 0) {
+                const promises = unresolvedComments.map(
                     async (foundComment: PullRequestReviewComment) => {
                         const commentId =
                             platformType === PlatformType.BITBUCKET
@@ -2060,5 +2241,35 @@ export class SuggestionService implements ISuggestionService {
         });
 
         return implementedSuggestionsCommentIds;
+    }
+
+    private isActiveReviewComment(
+        comment: PullRequestReviewComment,
+        platformType: PlatformType,
+    ): boolean {
+        if (platformType === PlatformType.GITHUB) {
+            return !comment?.isResolved && !comment?.isOutdated;
+        }
+
+        return !comment?.isResolved;
+    }
+
+    private getReviewCommentMatchId(
+        comment: PullRequestReviewComment,
+        platformType: PlatformType,
+    ): string | null {
+        if (platformType === PlatformType.GITHUB) {
+            return comment?.fullDatabaseId != null
+                ? String(comment.fullDatabaseId)
+                : comment?.id != null
+                  ? String(comment.id)
+                  : null;
+        }
+
+        if (platformType === PlatformType.AZURE_REPOS) {
+            return comment?.threadId != null ? String(comment.threadId) : null;
+        }
+
+        return comment?.id != null ? String(comment.id) : null;
     }
 }

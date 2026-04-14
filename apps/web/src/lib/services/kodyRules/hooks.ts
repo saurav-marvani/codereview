@@ -1,11 +1,14 @@
-import { useSuspenseFetch } from "src/core/utils/reactQuery";
+import { useMemo } from "react";
+import { useFetch, useSuspenseFetch } from "src/core/utils/reactQuery";
 import { useSubscriptionStatus } from "src/features/ee/subscription/_hooks/use-subscription-status";
 
 import { KODY_RULES_PATHS } from ".";
-import type {
-    KodyRule,
-    KodyRuleWithInheritanceDetails,
-    LibraryRule,
+import {
+    KodyRulesStatus,
+    type KodyRule,
+    type KodyRulesType,
+    type KodyRuleWithInheritanceDetails,
+    type LibraryRule,
 } from "./types";
 
 export const useSuspenseFindLibraryKodyRules = () => {
@@ -36,22 +39,31 @@ export const useKodyRulesLimits = () => {
     if (subscription.status === "free" || subscription.status === "self-hosted")
         return { canAddMoreRules: total < 10, total, limit: 10 };
 
+    if (subscription.status === "licensed-self-hosted")
+        return {
+            canAddMoreRules: true,
+            total,
+            limit: Number.POSITIVE_INFINITY,
+        };
+
     return { canAddMoreRules: true, total, limit: Number.POSITIVE_INFINITY };
 };
 
 export const useSuspenseKodyRulesByRepositoryId = (
     repositoryId: string,
     directoryId?: string,
+    type?: KodyRulesType,
 ) => {
     return useSuspenseFetch<Array<KodyRule>>(
         KODY_RULES_PATHS.FIND_BY_ORGANIZATION_ID_AND_FILTER,
-        { params: { repositoryId, directoryId } },
+        { params: { repositoryId, directoryId, type } },
     );
 };
 
-export const useSuspenseAllOrganizationKodyRules = () => {
+export const useSuspenseAllOrganizationKodyRules = (type?: KodyRulesType) => {
     return useSuspenseFetch<Array<KodyRule>>(
         KODY_RULES_PATHS.FIND_BY_ORGANIZATION_ID_AND_FILTER,
+        type !== undefined ? { params: { type } } : undefined,
     );
 };
 
@@ -86,4 +98,25 @@ export const useSuspenseGetInheritedKodyRules = (params: {
         repoRules: KodyRuleWithInheritanceDetails[];
         directoryRules: KodyRuleWithInheritanceDetails[];
     }>(KODY_RULES_PATHS.GET_INHERITED_RULES, { params });
+};
+
+export const useKodyRulesCount = (
+    repositoryId: string,
+    directoryId?: string,
+    enabled = true,
+) => {
+    const { data } = useFetch<Array<KodyRule>>(
+        KODY_RULES_PATHS.FIND_BY_ORGANIZATION_ID_AND_FILTER,
+        { params: { repositoryId, directoryId } },
+        enabled,
+        { staleTime: 60_000 },
+    );
+
+    return useMemo(() => {
+        if (!data) return 0;
+
+        return data.filter(
+            (rule) => rule.status === KodyRulesStatus.ACTIVE,
+        ).length;
+    }, [data]);
 };

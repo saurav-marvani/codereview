@@ -10,19 +10,23 @@ import {
     CollapsibleIndicator,
     CollapsibleTrigger,
 } from "@components/ui/collapsible";
-import { Link } from "@components/ui/link";
 import { SidebarMenuSub, SidebarMenuSubItem } from "@components/ui/sidebar";
 import {
     Tooltip,
     TooltipContent,
     TooltipTrigger,
 } from "@components/ui/tooltip";
+import { useKodyRulesCount } from "@services/kodyRules/hooks";
 import { cn } from "src/core/utils/components";
 
 import { useCodeReviewRouteParams } from "../../_hooks";
-import type { CodeReviewRepositoryConfig, FormattedCodeReviewConfig } from "../../code-review/_types";
-import { FormattedConfigLevel } from "../../code-review/_types";
-import { countConfigOverrides } from "../../_utils/count-overrides";
+import { countConfigOverridesForRoutes } from "../../_utils/count-overrides";
+import {
+    FormattedConfigLevel,
+    type CodeReviewRepositoryConfig,
+    type FormattedCodeReviewConfig,
+} from "../../code-review/_types";
+import { RouteButtonWithOverrideCount } from "../route-button-with-override-count";
 import { SidebarRepositoryOrDirectoryDropdown } from "./options-dropdown";
 
 export const PerDirectory = ({
@@ -30,6 +34,7 @@ export const PerDirectory = ({
     directory,
     repository,
     configs,
+    customMessagesOverrideCount,
 }: {
     repository: Pick<CodeReviewRepositoryConfig, "id" | "name" | "isSelected">;
     directory: Pick<
@@ -38,12 +43,24 @@ export const PerDirectory = ({
     >;
     routes: Array<{ label: string; href: string }>;
     configs?: FormattedCodeReviewConfig;
+    customMessagesOverrideCount?: number;
 }) => {
     const searchParams = useSearchParams();
     const { repositoryId, pageName, directoryId } = useCodeReviewRouteParams();
     const [open, setOpen] = useState(directoryId === directory.id);
-    
-    const overrideCount = configs ? countConfigOverrides(configs, FormattedConfigLevel.DIRECTORY) : 0;
+    const configOverrideCount = countConfigOverridesForRoutes(
+        configs,
+        routes.map((route) => route.href),
+        FormattedConfigLevel.DIRECTORY,
+    );
+    const directoryKodyRulesCount = useKodyRulesCount(
+        repository.id,
+        directory.id,
+    );
+    const resolvedOverrideCount =
+        configOverrideCount +
+        (customMessagesOverrideCount ?? 0) +
+        directoryKodyRulesCount;
 
     return (
         <Collapsible
@@ -67,11 +84,11 @@ export const PerDirectory = ({
                                     />
                                 }
                                 rightIcon={
-                                    overrideCount > 0 && (
+                                    resolvedOverrideCount > 0 && (
                                         <Badge
                                             variant="primary-dark"
-                                            className="min-w-5 h-5 rounded-full px-1.5 text-[10px] font-medium">
-                                            {overrideCount}
+                                            className="h-5 min-w-5 rounded-full px-1.5 text-[10px] font-medium">
+                                            {resolvedOverrideCount}
                                         </Badge>
                                     )
                                 }>
@@ -84,9 +101,11 @@ export const PerDirectory = ({
 
                     <TooltipContent side="right" className="text-sm">
                         {directory.path}
-                        {overrideCount > 0 && (
+                        {resolvedOverrideCount > 0 && (
                             <div className="text-text-tertiary mt-1 text-xs">
-                                {overrideCount} config{overrideCount !== 1 ? "s" : ""} overridden
+                                {resolvedOverrideCount} config
+                                {resolvedOverrideCount !== 1 ? "s" : ""}{" "}
+                                overridden
                             </div>
                         )}
                     </TooltipContent>
@@ -108,18 +127,20 @@ export const PerDirectory = ({
 
                         return (
                             <SidebarMenuSubItem key={href}>
-                                <Link
-                                    className="w-full"
-                                    href={`/settings/code-review/${repository.id}/${href}?directoryId=${directory.id}`}>
-                                    <Button
-                                        size="sm"
-                                        decorative
-                                        variant="cancel"
-                                        active={active}
-                                        className="min-h-auto w-full justify-start px-0 py-2">
-                                        {label}
-                                    </Button>
-                                </Link>
+                                <RouteButtonWithOverrideCount
+                                    label={label}
+                                    href={href}
+                                    to={`/settings/code-review/${repository.id}/${href}?directoryId=${directory.id}`}
+                                    active={active}
+                                    level={FormattedConfigLevel.DIRECTORY}
+                                    config={configs}
+                                    customMessagesOverrideCount={
+                                        customMessagesOverrideCount ?? 0
+                                    }
+                                    kodyRulesOverrideCount={
+                                        directoryKodyRulesCount
+                                    }
+                                />
                             </SidebarMenuSubItem>
                         );
                     })}

@@ -19,12 +19,16 @@ import {
     deleteRepositoryCodeReviewParameter,
     updateCodeReviewParameterRepositories,
 } from "@services/parameters/fetch";
-import { ParametersConfigKey } from "@services/parameters/types";
+import {
+    isCentralizedPrResponse,
+    ParametersConfigKey,
+} from "@services/parameters/types";
 import { TrashIcon } from "lucide-react";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { generateQueryKey } from "src/core/utils/reactQuery";
 
 import type { CodeReviewRepositoryConfig } from "../../code-review/_types";
+import { getCentralizedPrToastPayload } from "../../code-review/_utils/centralized-pr-feedback";
 
 export const DeleteRepoConfigModal = ({
     repository,
@@ -48,20 +52,48 @@ export const DeleteRepoConfigModal = ({
         try {
             magicModal.lock();
 
-            await deleteRepositoryCodeReviewParameter({
+            const deleteResult = await deleteRepositoryCodeReviewParameter({
                 teamId: teamId,
                 repositoryId: repository.id,
                 directoryId: directory?.id,
             });
+
+            if (isCentralizedPrResponse(deleteResult)) {
+                toast(
+                    getCentralizedPrToastPayload(
+                        deleteResult,
+                        "Configuration removal proposed through centralized pull request.",
+                    ),
+                );
+                return;
+            }
+
             await updateCodeReviewParameterRepositories(teamId);
 
-            await resetQueries({
-                queryKey: generateQueryKey(PARAMETERS_PATHS.GET_BY_KEY, {
-                    params: {
-                        key: ParametersConfigKey.CODE_REVIEW_CONFIG,
-                        teamId,
-                    },
+            await Promise.all([
+                resetQueries({
+                    queryKey: generateQueryKey(PARAMETERS_PATHS.GET_BY_KEY, {
+                        params: {
+                            key: ParametersConfigKey.CODE_REVIEW_CONFIG,
+                            teamId,
+                        },
+                    }),
                 }),
+                resetQueries({
+                    queryKey: generateQueryKey(
+                        PARAMETERS_PATHS.GET_CODE_REVIEW_PARAMETER,
+                        {
+                            params: {
+                                teamId,
+                            },
+                        },
+                    ),
+                }),
+            ]);
+
+            toast({
+                title: "Configuration removed",
+                variant: "success",
             });
         } catch (error: any) {
             console.error("Erro completo:", error);

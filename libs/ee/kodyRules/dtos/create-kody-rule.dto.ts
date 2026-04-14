@@ -1,17 +1,22 @@
 import {
+    IKodyRuleCentralizedConfig,
     IKodyRuleExternalReference,
     IKodyRuleReferenceSyncError,
+    KodyRuleCentralizedStatus,
     IKodyRulesExample,
     KodyRuleProcessingStatus,
+    KodyRuleRequestType,
     KodyRulesOrigin,
     KodyRulesScope,
     KodyRulesStatus,
+    KodyRulesType,
 } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
-import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
     IsArray,
     IsBoolean,
+    IsDate,
     IsEnum,
     IsNotEmpty,
     IsOptional,
@@ -76,6 +81,20 @@ export class KodyRuleExternalReferenceDto implements IKodyRuleExternalReference 
     repositoryName?: string;
 }
 
+export class KodyRuleCentralizedConfigDto implements IKodyRuleCentralizedConfig {
+    @IsString()
+    @ApiProperty({ example: 'repo-a/.kody-rules/review/no-debug.yml' })
+    path: string;
+
+    @IsEnum(KodyRuleCentralizedStatus)
+    @ApiProperty({
+        enum: KodyRuleCentralizedStatus,
+        enumName: 'KodyRuleCentralizedStatus',
+        example: KodyRuleCentralizedStatus.PENDING_EDIT,
+    })
+    status: KodyRuleCentralizedStatus;
+}
+
 export class CreateKodyRuleDto {
     @IsOptional()
     @IsString()
@@ -84,6 +103,15 @@ export class CreateKodyRuleDto {
         example: '1e6f6a92-5b4b-4b7d-9c31-4f55f4e9cbd1',
     })
     uuid?: string;
+
+    @IsNotEmpty()
+    @IsEnum(KodyRulesType)
+    @ApiProperty({
+        enum: KodyRulesType,
+        enumName: 'KodyRulesType',
+        example: KodyRulesType.STANDARD,
+    })
+    type: KodyRulesType;
 
     @IsNotEmpty()
     @IsString()
@@ -118,6 +146,12 @@ export class CreateKodyRuleDto {
     sourcePath?: string;
 
     @IsOptional()
+    @ValidateNested()
+    @Type(() => KodyRuleCentralizedConfigDto)
+    @ApiPropertyOptional({ type: KodyRuleCentralizedConfigDto })
+    centralizedConfig?: KodyRuleCentralizedConfigDto;
+
+    @IsOptional()
     @IsString()
     @ApiPropertyOptional({ example: 'L10-L24' })
     sourceAnchor?: string;
@@ -126,6 +160,15 @@ export class CreateKodyRuleDto {
     @IsEnum(KodyRuleSeverity)
     @ApiProperty({ enum: KodyRuleSeverity, enumName: 'KodyRuleSeverity' })
     severity: KodyRuleSeverity;
+
+    @IsOptional()
+    @IsString()
+    @ApiPropertyOptional({
+        description:
+            'Team identifier used to resolve team-scoped centralized configuration for global Kody Rules.',
+        example: '2e4f7a61-3c8c-4af5-bf25-2d0cbb19c4d1',
+    })
+    teamId?: string;
 
     @IsOptional()
     @IsString()
@@ -188,4 +231,38 @@ export class CreateKodyRuleDto {
     @IsOptional()
     @IsString()
     ruleHash?: string;
+
+    @IsOptional()
+    @IsEnum(KodyRuleRequestType)
+    @ApiPropertyOptional({
+        enum: KodyRuleRequestType,
+        enumName: 'KodyRuleRequestType',
+    })
+    requestType?: KodyRuleRequestType;
+
+    @IsOptional()
+    @IsString()
+    @ApiPropertyOptional({
+        format: 'uuid',
+        description:
+            'When this rule is a pending request, target rule to update',
+    })
+    targetRuleUuid?: string;
+
+    @IsOptional()
+    @ApiPropertyOptional({
+        type: String,
+        format: 'date-time',
+    })
+    @Type(() => Date)
+    @IsDate()
+    resolvedAt?: Date;
+
+    @IsOptional()
+    @IsString()
+    @ApiPropertyOptional({
+        description:
+            'User id/email/system identifier that resolved the request',
+    })
+    resolvedBy?: string;
 }

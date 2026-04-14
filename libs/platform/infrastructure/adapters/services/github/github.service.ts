@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createAppAuth } from '@octokit/auth-app';
 import { graphql } from '@octokit/graphql';
+import { enterpriseServer313 } from '@octokit/plugin-enterprise-server';
 import { retry } from '@octokit/plugin-retry';
 import { throttling } from '@octokit/plugin-throttling';
 import { Octokit, RestEndpointMethodTypes } from '@octokit/rest';
@@ -74,6 +75,7 @@ import { AuthMode } from '@libs/platform/domain/platformIntegrations/enums/codeM
 import {
     CodeManagementConnectionStatus,
     ICodeManagementService,
+    PullRequestFileChange,
 } from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
 import { GitCloneParams } from '@libs/platform/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 import {
@@ -99,6 +101,11 @@ import {
     ETagCacheEntry,
     ETagStore,
 } from './octokit-etag-allowlist';
+import {
+    buildDefaultSourceBranchName,
+    DEFAULT_COMMIT_MESSAGE,
+    DEFAULT_PR_TITLE,
+} from '../code-management-defaults.constants';
 
 interface GitHubAuthResponse {
     token: string;
@@ -124,18 +131,27 @@ interface GitHubInstallationData {
 @IntegrationServiceDecorator(PlatformType.GITHUB, 'codeManagement')
 export class GithubService
     implements
-    IGithubService,
-    Omit<
-        ICodeManagementService,
-        | 'getOrganizations'
-        | 'getUserById'
-        | 'getLanguageRepository'
-        | 'createSingleIssueComment'
-    > {
+        IGithubService,
+        Omit<
+            ICodeManagementService,
+            | 'getOrganizations'
+            | 'getUserById'
+            | 'getLanguageRepository'
+            | 'createSingleIssueComment'
+        >
+{
     private readonly MAX_RETRY_ATTEMPTS = 2;
     private readonly TTL = 50 * 60 * 1000; // 50 minutes
 
     private readonly logger = createLogger(GithubService.name);
+
+    private readonly enterpriseOctokit = Octokit.plugin(
+        enterpriseServer313,
+        retry,
+        throttling,
+    );
+
+    private readonly standardUserOctokit = Octokit.plugin(retry, throttling);
 
     constructor(
         @Inject(INTEGRATION_SERVICE_TOKEN)
@@ -149,7 +165,7 @@ export class GithubService
         private readonly cacheService: CacheService,
         private readonly configService: ConfigService,
         private readonly mcpManagerService?: MCPManagerService,
-    ) { }
+    ) {}
 
     private async handleIntegration(
         integration: any,
@@ -166,6 +182,108 @@ export class GithubService
                 authDetails,
             });
         }
+    }
+
+    private normalizeGithubHost(host?: string): string | undefined {
+        if (!host?.trim()) {
+            return undefined;
+        }
+
+        const normalized = host.trim().replace(/\/+$/, '');
+        const withProtocol = /^https?:\/\//i.test(normalized)
+            ? normalized
+            : `https://${normalized}`;
+
+        return withProtocol.replace(/\/+$/, '');
+    }
+
+    private getGithubApiBaseUrl(host?: string): string | undefined {
+        const normalizedHost = this.normalizeGithubHost(host);
+
+        if (!normalizedHost) {
+            return undefined;
+        }
+
+        return `${normalizedHost}/api/v3`;
+    }
+
+    private getGithubGraphqlBaseUrl(host?: string): string | undefined {
+        const normalizedHost = this.normalizeGithubHost(host);
+
+        if (!normalizedHost) {
+            return undefined;
+        }
+
+        return `${normalizedHost}/api/graphql`;
+    }
+
+    private getGithubWebBaseUrl(host?: string): string {
+        const normalizedHost = this.normalizeGithubHost(host);
+
+        if (!normalizedHost) {
+            return 'https://github.com';
+        }
+
+        return normalizedHost;
+    }
+
+    private createUserOctokitClient(params: {
+        auth: string;
+        host?: string;
+        retries?: number;
+        retry?: {
+            doNotRetry: number[];
+        };
+        throttle?: {
+            onRateLimit: (
+                retryAfter: number,
+                options: { method: string; url: string },
+                octokit: Octokit,
+            ) => boolean;
+            onSecondaryRateLimit: (
+                retryAfter: number,
+                options: { method: string; url: string },
+                octokit: Octokit,
+            ) => boolean;
+        };
+    }): Octokit {
+        const baseUrl = this.getGithubApiBaseUrl(params.host);
+        const throttleConfig =
+            params.throttle ??
+            ({
+                onRateLimit: () => false,
+                onSecondaryRateLimit: () => false,
+            } as {
+                onRateLimit: (
+                    retryAfter: number,
+                    options: { method: string; url: string },
+                    octokit: Octokit,
+                ) => boolean;
+                onSecondaryRateLimit: (
+                    retryAfter: number,
+                    options: { method: string; url: string },
+                    octokit: Octokit,
+                ) => boolean;
+            });
+
+        // Use the enterprise plugin only for GHES hosts to avoid changing
+        // endpoint behavior for github.com PAT integrations.
+        if (!baseUrl) {
+            return new this.standardUserOctokit({
+                auth: params.auth,
+                request: { retries: params.retries ?? 0 },
+                ...(params.retry && { retry: params.retry }),
+                throttle: throttleConfig,
+            }) as unknown as Octokit;
+        }
+
+        return new this.enterpriseOctokit({
+            auth: params.auth,
+            ...(baseUrl && { baseUrl }),
+            request: { retries: params.retries ?? 0 },
+            ...(params.retry && { retry: params.retry }),
+            throttle: throttleConfig,
+        }) as unknown as Octokit;
     }
 
     // Helper functions
@@ -245,19 +363,51 @@ export class GithubService
                 return;
             }
 
-            await this.integrationConfigService.createOrUpdateConfig(
-                params.configKey,
-                params.configValue,
-                integration?.uuid,
-                params.organizationAndTeamData,
-                params.type,
-            );
-
             const githubAuthDetail = await this.getGithubAuthDetails(
                 params.organizationAndTeamData,
             );
 
-            if (githubAuthDetail?.authMode === AuthMode.TOKEN) {
+            const shouldRefreshTokenWebhooks =
+                githubAuthDetail?.authMode === AuthMode.TOKEN &&
+                params.configKey === IntegrationConfigKey.REPOSITORIES;
+
+            const previousRepositories = shouldRefreshTokenWebhooks
+                ? ((await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                      params.organizationAndTeamData,
+                      IntegrationConfigKey.REPOSITORIES,
+                  )) ?? [])
+                : [];
+
+            const updatedConfig =
+                await this.integrationConfigService.createOrUpdateConfig(
+                    params.configKey,
+                    params.configValue,
+                    integration?.uuid,
+                    params.organizationAndTeamData,
+                    params.type,
+                );
+
+            if (shouldRefreshTokenWebhooks) {
+                const nextRepositories = <Repositories[]>(
+                    (updatedConfig?.configValue ?? params.configValue ?? [])
+                );
+                const removedRepositories = previousRepositories.filter(
+                    (previousRepository) =>
+                        !nextRepositories.some(
+                            (nextRepository) =>
+                                nextRepository.id?.toString() ===
+                                    previousRepository.id?.toString() ||
+                                nextRepository.name === previousRepository.name,
+                        ),
+                );
+
+                if (removedRepositories.length > 0) {
+                    await this.deleteWebhook({
+                        organizationAndTeamData: params.organizationAndTeamData,
+                        repositories: removedRepositories,
+                    });
+                }
+
                 await this.createPullRequestWebhook({
                     organizationAndTeamData: params.organizationAndTeamData,
                 });
@@ -388,7 +538,11 @@ export class GithubService
     ): Promise<{ success: boolean; status?: CreateAuthIntegrationStatus }> {
         try {
             const { token } = params;
-            const userOctokit = new Octokit({ auth: token });
+            const normalizedHost = this.normalizeGithubHost(params.host);
+            const userOctokit = this.createUserOctokitClient({
+                auth: token,
+                host: normalizedHost,
+            });
 
             const user = await userOctokit.rest.users.getAuthenticated();
 
@@ -405,6 +559,7 @@ export class GithubService
                 authToken: encryptedPAT,
                 org: accountLogin,
                 authMode: params.authMode || AuthMode.TOKEN,
+                host: normalizedHost,
                 accountType: accountType as 'organization' | 'user',
             };
 
@@ -497,6 +652,334 @@ export class GithubService
         });
 
         return githubAuthDetail.org;
+    }
+
+    async findRepositoryByName(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        name: string;
+    }): Promise<Partial<Repository> | null> {
+        const repositories = await this.getRepositories({
+            organizationAndTeamData: params.organizationAndTeamData,
+        });
+
+        const wanted = params.name.trim().toLowerCase();
+        const foundRepo = repositories.find((repo) => {
+            const fullName = (
+                repo.full_name || `${repo.organizationName}/${repo.name}`
+            ).toLowerCase();
+
+            return repo.name.toLowerCase() === wanted || fullName === wanted;
+        });
+
+        if (!foundRepo) {
+            return null;
+        }
+
+        return {
+            id: foundRepo.id,
+            name: foundRepo.name,
+            fullName:
+                foundRepo.full_name ||
+                `${foundRepo.organizationName}/${foundRepo.name}`,
+            defaultBranch: foundRepo.default_branch,
+        };
+    }
+
+    async createPullRequestWithFiles(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        sourceBranch?: string;
+        targetBranch?: string;
+        baseBranch?: string;
+        title?: string;
+        description?: string;
+        commitMessage?: string;
+        author?: { name: string; email?: string };
+        files: PullRequestFileChange[];
+    }): Promise<Partial<PullRequest> | null> {
+        const {
+            organizationAndTeamData,
+            repository,
+            sourceBranch,
+            targetBranch,
+            baseBranch,
+            title,
+            description = '',
+            commitMessage,
+            author,
+            files,
+        } = params;
+
+        const pullRequestTitle = title?.trim() || DEFAULT_PR_TITLE;
+        const resolvedBaseBranch =
+            baseBranch ||
+            targetBranch ||
+            (await this.getDefaultBranch({
+                organizationAndTeamData,
+                repository,
+            }));
+        const resolvedSourceBranch =
+            sourceBranch || buildDefaultSourceBranchName();
+        const resolvedTargetBranch = targetBranch || resolvedBaseBranch;
+        const resolvedCommitMessage =
+            commitMessage?.trim() || DEFAULT_COMMIT_MESSAGE;
+
+        try {
+            const uploadResult = await this.uploadFiles({
+                organizationAndTeamData,
+                repository,
+                branchName: resolvedSourceBranch,
+                baseBranch: resolvedBaseBranch,
+                files,
+                message: resolvedCommitMessage,
+                author,
+            });
+
+            if (!uploadResult) {
+                this.logger.error({
+                    message: 'Failed to upload files for pull request creation',
+                    context: GithubService.name,
+                    metadata: {
+                        repository: repository.name,
+                        sourceBranch: resolvedSourceBranch,
+                        targetBranch: resolvedTargetBranch,
+                        baseBranch: resolvedBaseBranch,
+                        title: pullRequestTitle,
+                        files: files.map((f) => f.path),
+                    },
+                });
+                return null;
+            }
+
+            const githubAuthDetail = await this.getGithubAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const octokit = await this.instanceOctokit(
+                organizationAndTeamData,
+                githubAuthDetail,
+            );
+
+            const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
+
+            const prResponse = await octokit.rest.pulls.create({
+                owner,
+                repo: repository.name,
+                title: pullRequestTitle,
+                head: resolvedSourceBranch,
+                base: resolvedTargetBranch,
+                body: description,
+            });
+
+            if (prResponse.status === 201) {
+                const prData = prResponse.data;
+
+                return {
+                    id: prData.id.toString(),
+                    number: prData.number,
+                    title: prData.title,
+                    prURL: prData.html_url,
+                };
+            } else {
+                this.logger.error({
+                    message: 'Failed to create pull request',
+                    context: GithubService.name,
+                    metadata: {
+                        repository: repository.name,
+                        sourceBranch: resolvedSourceBranch,
+                        targetBranch: resolvedTargetBranch,
+                        baseBranch: resolvedBaseBranch,
+                        title: pullRequestTitle,
+                        files: files.map((f) => f.path),
+                        status: prResponse.status,
+                    },
+                });
+
+                return null;
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error creating pull request with files',
+                context: GithubService.name,
+                error,
+                metadata: {
+                    repository: repository.name,
+                    sourceBranch: resolvedSourceBranch,
+                    targetBranch: resolvedTargetBranch,
+                    baseBranch: resolvedBaseBranch,
+                    title: pullRequestTitle,
+                    files: files.map((f) => f.path),
+                },
+            });
+
+            return null;
+        }
+    }
+
+    async uploadFiles(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        branchName?: string;
+        baseBranch?: string;
+        files: PullRequestFileChange[];
+        message?: string;
+        author?: { name: string; email?: string };
+    }): Promise<boolean> {
+        const {
+            organizationAndTeamData,
+            repository,
+            branchName,
+            baseBranch,
+            files,
+            message,
+            author,
+        } = params;
+
+        const resolvedBaseBranch =
+            baseBranch ||
+            (await this.getDefaultBranch({
+                organizationAndTeamData,
+                repository,
+            }));
+        const resolvedBranchName = branchName || resolvedBaseBranch;
+        const resolvedMessage = message?.trim() || DEFAULT_COMMIT_MESSAGE;
+
+        try {
+            const githubAuthDetail = await this.getGithubAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const tokenAuthorIdentity =
+                githubAuthDetail?.authMode === AuthMode.TOKEN && author?.name
+                    ? {
+                          name: author.name,
+                          email: author.email || 'kody@kodus.io',
+                      }
+                    : undefined;
+
+            const octokit = await this.instanceOctokit(
+                organizationAndTeamData,
+                githubAuthDetail,
+            );
+
+            const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
+
+            const { data: baseRef } = await octokit.rest.git.getRef({
+                owner,
+                repo: repository.name,
+                ref: `heads/${resolvedBaseBranch}`,
+            });
+            const baseSha = baseRef.object.sha;
+
+            let parentSha = baseSha;
+            let branchAlreadyExists = resolvedBranchName === resolvedBaseBranch;
+
+            if (resolvedBranchName !== resolvedBaseBranch) {
+                try {
+                    const { data: sourceBranchRef } =
+                        await octokit.rest.git.getRef({
+                            owner,
+                            repo: repository.name,
+                            ref: `heads/${resolvedBranchName}`,
+                        });
+
+                    parentSha = sourceBranchRef.object.sha;
+                    branchAlreadyExists = true;
+                } catch (error) {
+                    if ((error as { status?: number })?.status !== 404) {
+                        throw error;
+                    }
+                }
+            }
+
+            const treeItems = await Promise.all(
+                files.map(async (file) => {
+                    const operation = file.operation || 'upsert';
+
+                    if (operation === 'delete') {
+                        return {
+                            path: file.path,
+                            mode: '100644' as const,
+                            type: 'blob' as const,
+                            sha: null,
+                        };
+                    }
+
+                    if (typeof file.content !== 'string') {
+                        throw new Error(
+                            `File content is required for upsert operation: ${file.path}`,
+                        );
+                    }
+
+                    const { data: blob } = await octokit.rest.git.createBlob({
+                        owner,
+                        repo: repository.name,
+                        content: Buffer.from(file.content).toString('base64'),
+                        encoding: 'base64',
+                    });
+
+                    return {
+                        path: file.path,
+                        mode: '100644' as const,
+                        type: 'blob' as const,
+                        sha: blob.sha,
+                    };
+                }),
+            );
+
+            const { data: tree } = await octokit.rest.git.createTree({
+                owner,
+                repo: repository.name,
+                tree: treeItems,
+                base_tree: parentSha,
+            });
+
+            const { data: commit } = await octokit.rest.git.createCommit({
+                owner,
+                repo: repository.name,
+                message: resolvedMessage,
+                tree: tree.sha,
+                parents: [parentSha],
+                ...(tokenAuthorIdentity
+                    ? {
+                          author: tokenAuthorIdentity,
+                          committer: tokenAuthorIdentity,
+                      }
+                    : {}),
+            });
+
+            if (branchAlreadyExists) {
+                await octokit.rest.git.updateRef({
+                    owner,
+                    repo: repository.name,
+                    ref: `heads/${resolvedBranchName}`,
+                    sha: commit.sha,
+                });
+            } else {
+                await octokit.rest.git.createRef({
+                    owner,
+                    repo: repository.name,
+                    ref: `refs/heads/${resolvedBranchName}`,
+                    sha: commit.sha,
+                });
+            }
+
+            return true;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error uploading files to GitHub',
+                context: GithubService.name,
+                error,
+                metadata: {
+                    repository: repository.name,
+                    branchName: resolvedBranchName,
+                    baseBranch: resolvedBaseBranch,
+                    files: files.map((f) => f.path),
+                },
+            });
+
+            return false;
+        }
     }
 
     private async checkRepositoryPermissions(params: {
@@ -1261,7 +1744,6 @@ export class GithubService
 
             if (
                 pathParts.length >= 4 &&
-                urlObj.hostname === 'github.com' &&
                 (pathParts[2] === 'pull' || pathParts[2] === 'pulls')
             ) {
                 const owner = pathParts[0];
@@ -1961,11 +2443,10 @@ export class GithubService
                 // Decrypt the PAT before using it
                 const decryptedPAT = decrypt(githubAuthDetail?.authToken);
 
-                const MyOctokit = Octokit.plugin(retry, throttling);
-
-                const octokit = new MyOctokit({
+                const octokit = this.createUserOctokitClient({
                     auth: decryptedPAT,
-                    request: { retries: 2 },
+                    host: githubAuthDetail.host,
+                    retries: 2,
                     retry: {
                         doNotRetry: [400, 401, 403, 404, 422, 451],
                     },
@@ -1979,7 +2460,6 @@ export class GithubService
                                 `Request quota exhausted for request ${options.method} ${options.url}`,
                             );
 
-                            // If you decide to retry when the rate limit is reached, return true.
                             return true;
                         },
                         onSecondaryRateLimit: (
@@ -1991,7 +2471,6 @@ export class GithubService
                                 `Secondary rate limit hit for request ${options.method} ${options.url}`,
                             );
 
-                            // Similar logic can be added here for the secondary rate limit
                             return true;
                         },
                     },
@@ -2061,8 +2540,12 @@ export class GithubService
             ) {
                 // Decrypt the PAT before using it
                 const decryptedPAT = decrypt(githubAuthDetail?.authToken);
+                const graphQlBaseUrl = this.getGithubGraphqlBaseUrl(
+                    githubAuthDetail.host,
+                );
 
                 const graphqlClient = graphql.defaults({
+                    ...(graphQlBaseUrl && { baseUrl: graphQlBaseUrl }),
                     headers: {
                         authorization: `token ${decryptedPAT}`,
                     },
@@ -2517,11 +3000,11 @@ export class GithubService
                         const files = filters?.skipFiles
                             ? []
                             : await this.getPullRequestFiles(
-                                octokit,
-                                githubAuthDetail.org,
-                                repo,
-                                pullRequest?.number,
-                            );
+                                  octokit,
+                                  githubAuthDetail.org,
+                                  repo,
+                                  pullRequest?.number,
+                              );
                         return {
                             id: pullRequest.id,
                             pull_number: pullRequest?.number,
@@ -2823,7 +3306,7 @@ ${copyPrompt}
         const language = isCommittableSuggestion
             ? 'suggestion'
             : lineComment?.suggestion?.language?.toLowerCase() ||
-            repository?.language?.toLowerCase();
+              repository?.language?.toLowerCase();
 
         const severityShield = lineComment?.suggestion
             ? getSeverityLevelShield(lineComment.suggestion.severity)
@@ -2869,7 +3352,7 @@ This is an experimental feature that generates committable changes. Review the d
             copyPrompt,
             this.formatSub(translations.talkToKody),
             this.formatSub(translations.feedback) +
-            '<!-- kody-codereview -->&#8203;\n&#8203;',
+                '<!-- kody-codereview -->&#8203;\n&#8203;',
         ]
             .join('\n')
             .trim();
@@ -3099,13 +3582,13 @@ This is an experimental feature that generates committable changes. Review the d
                         // So we need one of them to actually mark the thread as resolved and the other to match the id we saved in the database.
                         return firstComment
                             ? {
-                                id: firstComment.id, // Used to actually resolve the thread
-                                threadId: reviewThread.id,
-                                isResolved: reviewThread.isResolved,
-                                isOutdated: reviewThread.isOutdated,
-                                fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
-                                body: firstComment.body,
-                            }
+                                  id: firstComment.id, // Used to actually resolve the thread
+                                  threadId: reviewThread.id,
+                                  isResolved: reviewThread.isResolved,
+                                  isOutdated: reviewThread.isOutdated,
+                                  fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
+                                  body: firstComment.body,
+                              }
                             : null;
                     })
                     .filter((comment) => comment !== null);
@@ -3711,12 +4194,12 @@ This is an experimental feature that generates committable changes. Review the d
         organizationAndTeamData: OrganizationAndTeamData;
         commentId: string;
         reason?:
-        | 'ABUSE'
-        | 'OFF_TOPIC'
-        | 'OUTDATED'
-        | 'RESOLVED'
-        | 'DUPLICATE'
-        | 'SPAM';
+            | 'ABUSE'
+            | 'OFF_TOPIC'
+            | 'OUTDATED'
+            | 'RESOLVED'
+            | 'DUPLICATE'
+            | 'SPAM';
     }): Promise<any | null> {
         try {
             const {
@@ -4008,9 +4491,11 @@ This is an experimental feature that generates committable changes. Review the d
             )
         );
 
-        const webhookUrl = this.configService.get<string>(
-            'API_GITHUB_CODE_MANAGEMENT_WEBHOOK',
-        );
+        const webhookUrl = this.getGithubWebhookUrl();
+
+        if (!webhookUrl || !repositories?.length) {
+            return;
+        }
 
         // Usar método centralizado para determinar o owner correto
         const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
@@ -4022,7 +4507,6 @@ This is an experimental feature that generates committable changes. Review the d
                     repo: repo.name,
                 });
 
-                // Verificação segura do config para evitar erro "Parameter config does not exist"
                 const webhookToDelete = webhooks.find(
                     (webhook) =>
                         webhook.config && webhook.config.url === webhookUrl,
@@ -4080,6 +4564,12 @@ This is an experimental feature that generates committable changes. Review the d
         }
     }
 
+    private getGithubWebhookUrl(): string | undefined {
+        return this.configService.get<string>(
+            'API_GITHUB_CODE_MANAGEMENT_WEBHOOK',
+        );
+    }
+
     async countReactions(params: any) {
         const { comments, pr } = params;
         const githubAuthDetail = await this.getGithubAuthDetails(
@@ -4101,15 +4591,15 @@ This is an experimental feature that generates committable changes. Review the d
                 reactions: {
                     thumbsUp: isOAuth
                         ? Math.max(
-                            0,
-                            comment.reactions[GitHubReaction.THUMBS_UP] - 1,
-                        )
+                              0,
+                              comment.reactions[GitHubReaction.THUMBS_UP] - 1,
+                          )
                         : comment.reactions[GitHubReaction.THUMBS_UP],
                     thumbsDown: isOAuth
                         ? Math.max(
-                            0,
-                            comment.reactions[GitHubReaction.THUMBS_DOWN] - 1,
-                        )
+                              0,
+                              comment.reactions[GitHubReaction.THUMBS_DOWN] - 1,
+                          )
                         : comment.reactions[GitHubReaction.THUMBS_DOWN],
                 },
                 comment: {
@@ -4678,7 +5168,7 @@ This is an experimental feature that generates committable changes. Review the d
                     );
             }
 
-            const fullGithubUrl = `https://github.com/${params?.repository?.fullName}`;
+            const fullGithubUrl = `${this.getGithubWebBaseUrl(githubAuthDetail.host)}/${params?.repository?.fullName}`;
 
             return {
                 organizationId: params?.organizationAndTeamData?.organizationId,
@@ -4731,6 +5221,7 @@ This is an experimental feature that generates committable changes. Review the d
                 orgName: githubAuthDetail.org,
                 repository,
                 prNumber,
+                githubHost: githubAuthDetail.host,
             });
 
             const requestChangeBodyTitle =
@@ -4770,8 +5261,10 @@ This is an experimental feature that generates committable changes. Review the d
         orgName: string;
         repository: Partial<IRepository>;
         prNumber: number;
+        githubHost?: string;
     }): string {
-        const { criticalComments, orgName, prNumber, repository } = params;
+        const { criticalComments, orgName, prNumber, repository, githubHost } =
+            params;
 
         const criticalIssuesSummaryArray =
             this.getCriticalIssuesSummaryArray(criticalComments);
@@ -4784,7 +5277,7 @@ This is an experimental feature that generates committable changes. Review the d
                 const link =
                     !orgName || !repository?.name || !prNumber || !commentId
                         ? ''
-                        : `https://github.com/${orgName}/${repository.name}/pull/${prNumber}#discussion_r${commentId}`;
+                        : `${this.getGithubWebBaseUrl(githubHost)}/${orgName}/${repository.name}/pull/${prNumber}#discussion_r${commentId}`;
 
                 const formattedItem = commentId
                     ? `- [${summary}](${link})`
@@ -4905,7 +5398,10 @@ This is an experimental feature that generates committable changes. Review the d
             }
 
             const token = decrypt(githubAuthDetail.authToken);
-            const userOctokit = new Octokit({ auth: token });
+            const userOctokit = this.createUserOctokitClient({
+                auth: token,
+                host: githubAuthDetail.host,
+            });
             const { data } = await userOctokit.rest.users.getAuthenticated();
 
             return data || null;
@@ -5054,13 +5550,13 @@ This is an experimental feature that generates committable changes. Review the d
                         // So we need one of them to actually mark the thread as resolved and the other to match the id we saved in the database.
                         return firstComment
                             ? {
-                                id: firstComment.id, // Used to actually resolve the thread
-                                threadId: reviewThread.id,
-                                isResolved: reviewThread.isResolved,
-                                isOutdated: reviewThread.isOutdated,
-                                fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
-                                body: firstComment.body,
-                            }
+                                  id: firstComment.id, // Used to actually resolve the thread
+                                  threadId: reviewThread.id,
+                                  isResolved: reviewThread.isResolved,
+                                  isOutdated: reviewThread.isOutdated,
+                                  fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
+                                  body: firstComment.body,
+                              }
                             : null;
                     })
                     .filter((comment) => comment !== null);
@@ -5087,11 +5583,11 @@ This is an experimental feature that generates committable changes. Review the d
                     // So we need one of them to actually mark the thread as resolved and the other to match the id we saved in the database.
                     return firstComment
                         ? {
-                            id: firstComment.id, // Used to actually resolve the thread
-                            reviewId: review.id,
-                            fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
-                            body: firstComment.body,
-                        }
+                              id: firstComment.id, // Used to actually resolve the thread
+                              reviewId: review.id,
+                              fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
+                              body: firstComment.body,
+                          }
                         : null;
                 })
                 .filter((comment) => comment !== null);
@@ -5172,10 +5668,9 @@ This is an experimental feature that generates committable changes. Review the d
                 repo: repository.name,
             });
 
-            const webhookUrl =
-                this.configService.get<string>(
-                    'API_GITHUB_CODE_MANAGEMENT_WEBHOOK',
-                ) ?? process.env.API_GITHUB_CODE_MANAGEMENT_WEBHOOK;
+            const webhookUrl = this.configService.get<string>(
+                'API_GITHUB_CODE_MANAGEMENT_WEBHOOK',
+            );
 
             if (!webhookUrl) {
                 return false;
@@ -5202,15 +5697,8 @@ This is an experimental feature that generates committable changes. Review the d
 
     async deleteWebhook(params: {
         organizationAndTeamData: OrganizationAndTeamData;
+        repositories?: Repositories[];
     }): Promise<void> {
-        const authDetails = await this.getGithubAuthDetails(
-            params.organizationAndTeamData,
-        );
-
-        const octokit = await this.instanceOctokit(
-            params.organizationAndTeamData,
-        );
-
         const integration = await this.integrationService.findOne({
             organization: {
                 uuid: params.organizationAndTeamData.organizationId,
@@ -5247,55 +5735,79 @@ This is an experimental feature that generates committable changes. Review the d
                 }
             }
         } else if (authMode === AuthMode.TOKEN) {
-            const repositories =
-                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+            try {
+                const authDetails = await this.getGithubAuthDetails(
                     params.organizationAndTeamData,
-                    IntegrationConfigKey.REPOSITORIES,
                 );
 
-            if (repositories) {
-                // Usar método centralizado para determinar o owner correto
-                const owner = await this.getCorrectOwner(authDetails, octokit);
+                const octokit = await this.instanceOctokit(
+                    params.organizationAndTeamData,
+                );
 
-                for (const repo of repositories) {
-                    try {
-                        const { data: webhooks } =
-                            await octokit.repos.listWebhooks({
-                                owner: owner,
-                                repo: repo.name,
-                            });
+                const repositories =
+                    params.repositories ??
+                    (await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                        params.organizationAndTeamData,
+                        IntegrationConfigKey.REPOSITORIES,
+                    ));
 
-                        const webhookUrl = this.configService.get<string>(
-                            'API_GITHUB_CODE_MANAGEMENT_WEBHOOK',
-                        );
+                if (repositories) {
+                    // Usar método centralizado para determinar o owner correto
+                    const owner = await this.getCorrectOwner(
+                        authDetails,
+                        octokit,
+                    );
 
-                        const webhookToDelete = webhooks.find(
-                            (webhook) =>
-                                webhook.config &&
-                                webhook.config.url === webhookUrl,
-                        );
+                    for (const repo of repositories) {
+                        try {
+                            const { data: webhooks } =
+                                await octokit.repos.listWebhooks({
+                                    owner: owner,
+                                    repo: repo.name,
+                                });
 
-                        if (webhookToDelete) {
-                            await octokit.repos.deleteWebhook({
-                                owner: owner,
-                                repo: repo.name,
-                                hook_id: webhookToDelete.id,
+                            const webhookUrl = this.configService.get<string>(
+                                'API_GITHUB_CODE_MANAGEMENT_WEBHOOK',
+                            );
+
+                            const webhookToDelete = webhooks.find(
+                                (webhook) =>
+                                    webhook.config &&
+                                    webhook.config.url === webhookUrl,
+                            );
+
+                            if (webhookToDelete) {
+                                await octokit.repos.deleteWebhook({
+                                    owner: owner,
+                                    repo: repo.name,
+                                    hook_id: webhookToDelete.id,
+                                });
+                            }
+                        } catch (error) {
+                            this.logger.error({
+                                message: `Error deleting webhook for repository ${repo.name}`,
+                                context: this.deleteWebhook.name,
+                                error: error,
+                                metadata: {
+                                    organizationAndTeamData:
+                                        params.organizationAndTeamData,
+                                    repoId: repo.id,
+                                    owner,
+                                },
                             });
                         }
-                    } catch (error) {
-                        this.logger.error({
-                            message: `Error deleting webhook for repository ${repo.name}`,
-                            context: this.deleteWebhook.name,
-                            error: error,
-                            metadata: {
-                                organizationAndTeamData:
-                                    params.organizationAndTeamData,
-                                repoId: repo.id,
-                                owner,
-                            },
-                        });
                     }
                 }
+            } catch (error) {
+                this.logger.error({
+                    message:
+                        'Error authenticating for webhook deletion in TOKEN mode',
+                    context: this.deleteWebhook.name,
+                    error: error,
+                    metadata: {
+                        organizationAndTeamData: params.organizationAndTeamData,
+                    },
+                });
             }
         }
     }
@@ -5304,7 +5816,7 @@ This is an experimental feature that generates committable changes. Review the d
     async getRepositoryTree(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryId: string;
-    }): Promise<any[]> {
+    }): Promise<TreeItem[]> {
         try {
             const githubAuthDetail = await this.getGithubAuthDetails(
                 params.organizationAndTeamData,
@@ -5402,15 +5914,7 @@ This is an experimental feature that generates committable changes. Review the d
         repo: string;
         octokit: any;
         rootTreeSha: string;
-    }): Promise<
-        {
-            path: string;
-            type: 'file' | 'directory';
-            sha: string;
-            size?: number;
-            url: string;
-        }[]
-    > {
+    }): Promise<TreeItem[]> {
         const { owner, repo, octokit, rootTreeSha } = params;
         const allItems = [];
         const limit = pLimit(3);

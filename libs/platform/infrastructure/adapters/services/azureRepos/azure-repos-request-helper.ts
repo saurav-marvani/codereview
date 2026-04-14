@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
 
+import { decrypt } from '@libs/common/utils/crypto';
 import { FileChange } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import {
     AzureRepoChange,
@@ -19,7 +20,6 @@ import {
 } from '@libs/platform/domain/azure/entities/azureRepoPullRequest.type';
 import { AzureReposProject } from '@libs/platform/domain/azure/entities/azureReposProject.type';
 import { AzureReposRepository } from '@libs/platform/domain/azure/entities/azureReposRepository.type';
-import { decrypt } from '@libs/common/utils/crypto';
 
 @Injectable()
 export class AzureReposRequestHelper {
@@ -1190,5 +1190,170 @@ export class AzureReposRequestHelper {
                 objectId: v?.objectId,
                 size: v?.size,
             }));
+    }
+
+    async uploadFilesToNewBranch(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        branchName: string;
+        baseBranch?: string;
+        commitMessage: string;
+        author?: { name: string; email?: string };
+        changes: Array<{
+            changeType: 'add' | 'edit' | 'delete';
+            filePath: string;
+            content?: string;
+        }>;
+    }): Promise<any> {
+        const instance = await this.azureRequest(params);
+        const normalizedBranch = params.branchName.replace(
+            /^refs\/heads\//,
+            '',
+        );
+
+        const sourceObjectId = await this.getBranchObjectId({
+            orgName: params.orgName,
+            token: params.token,
+            projectId: params.projectId,
+            repositoryId: params.repositoryId,
+            branchName: normalizedBranch,
+        });
+
+        const baseObjectId =
+            !sourceObjectId && params.baseBranch
+                ? await this.getBranchObjectId({
+                      orgName: params.orgName,
+                      token: params.token,
+                      projectId: params.projectId,
+                      repositoryId: params.repositoryId,
+                      branchName: params.baseBranch,
+                  })
+                : null;
+
+        const oldObjectId =
+            sourceObjectId ||
+            baseObjectId ||
+            '0000000000000000000000000000000000000000';
+
+        const url = `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pushes?api-version=7.1`;
+
+        const payload = {
+            refUpdates: [
+                {
+                    name: `refs/heads/${normalizedBranch}`,
+                    oldObjectId,
+                },
+            ],
+            commits: [
+                {
+                    comment: params.commitMessage,
+                    ...(params.author
+                        ? {
+                              author: {
+                                  name: params.author.name,
+                                  email: params.author.email,
+                              },
+                              committer: {
+                                  name: params.author.name,
+                                  email: params.author.email,
+                              },
+                          }
+                        : {}),
+                    changes: params.changes.map((change) => ({
+                        changeType: change.changeType,
+                        item: {
+                            path: change.filePath,
+                        },
+                        newContent: change.content
+                            ? {
+                                  content: change.content,
+                                  contentType: 'rawtext',
+                              }
+                            : undefined,
+                    })),
+                },
+            ],
+        };
+
+        const { data } = await instance.post(url, payload);
+        return data;
+    }
+
+    async branchExists(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        branchName: string;
+    }): Promise<boolean> {
+        const branchObjectId = await this.getBranchObjectId(params);
+        return Boolean(branchObjectId);
+    }
+
+    async getBranchObjectId(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        branchName: string;
+    }): Promise<string | null> {
+        const instance = await this.azureRequest(params);
+        const normalizedBranch = params.branchName.replace(
+            /^refs\/heads\//,
+            '',
+        );
+
+        const refsResponse = await instance.get(
+            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/refs`,
+            {
+                params: {
+                    'filter': `heads/${normalizedBranch}`,
+                    'api-version': '7.1',
+                },
+            },
+        );
+
+        const branchRef = refsResponse.data?.value?.find(
+            (ref: { name?: string; objectId?: string }) =>
+                ref?.name === `refs/heads/${normalizedBranch}`,
+        );
+
+        return branchRef?.objectId || null;
+    }
+
+    async createPullRequest(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        sourceBranch: string;
+        targetBranch: string;
+        title: string;
+        description?: string;
+    }): Promise<AzureRepoPullRequest> {
+        const instance = await this.azureRequest(params);
+
+        const normalizedSourceBranch = params.sourceBranch.replace(
+            /^refs\/heads\//,
+            '',
+        );
+        const normalizedTargetBranch = params.targetBranch.replace(
+            /^refs\/heads\//,
+            '',
+        );
+
+        const url = `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullrequests?api-version=7.1`;
+
+        const payload = {
+            sourceRefName: `refs/heads/${normalizedSourceBranch}`,
+            targetRefName: `refs/heads/${normalizedTargetBranch}`,
+            title: params.title,
+            description: params.description || '',
+        };
+
+        const { data } = await instance.post(url, payload);
+        return data;
     }
 }

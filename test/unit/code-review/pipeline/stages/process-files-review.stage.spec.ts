@@ -489,8 +489,10 @@ describe('ProcessFilesReview', () => {
                             ...ctx,
                             fileChangeContext: {
                                 file: f,
-                                relevantContent: f.astFormattedContent || f.fileContent,
-                                patchWithLinesStr: '@@ -1,3 +1,3 @@\n-old\n+new',
+                                relevantContent:
+                                    f.astFormattedContent || f.fileContent,
+                                patchWithLinesStr:
+                                    '@@ -1,3 +1,3 @@\n-old\n+new',
                                 hasRelevantContent: !!f.astFormattedContent,
                             },
                             tasks: {
@@ -532,12 +534,7 @@ describe('ProcessFilesReview', () => {
             const context = createBatchContext();
             const tasks = { astAnalysis: { taskId: 'task-1' } };
 
-            await (stage as any).processSingleBatch(
-                [file],
-                context,
-                0,
-                tasks,
-            );
+            await (stage as any).processSingleBatch([file], context, 0, tasks);
 
             // prepareFileContext should have received the file WITH astFormattedContent
             expect(capturedFile).not.toBeNull();
@@ -562,7 +559,8 @@ describe('ProcessFilesReview', () => {
                             fileChangeContext: {
                                 file: f,
                                 relevantContent: f.fileContent,
-                                patchWithLinesStr: '@@ -1,3 +1,3 @@\n-old\n+new',
+                                patchWithLinesStr:
+                                    '@@ -1,3 +1,3 @@\n-old\n+new',
                                 hasRelevantContent: false,
                             },
                             tasks: {
@@ -604,12 +602,7 @@ describe('ProcessFilesReview', () => {
             const context = createBatchContext();
             const tasks = { astAnalysis: { taskId: 'task-1' } };
 
-            await (stage as any).processSingleBatch(
-                [file],
-                context,
-                0,
-                tasks,
-            );
+            await (stage as any).processSingleBatch([file], context, 0, tasks);
 
             // File should NOT have astFormattedContent
             expect(capturedFile).not.toBeNull();
@@ -641,8 +634,10 @@ describe('ProcessFilesReview', () => {
                             ...ctx,
                             fileChangeContext: {
                                 file: f,
-                                relevantContent: f.astFormattedContent || f.fileContent,
-                                patchWithLinesStr: '@@ -1,3 +1,3 @@\n-old\n+new',
+                                relevantContent:
+                                    f.astFormattedContent || f.fileContent,
+                                patchWithLinesStr:
+                                    '@@ -1,3 +1,3 @@\n-old\n+new',
                                 hasRelevantContent: !!f.astFormattedContent,
                             },
                             tasks: {
@@ -685,12 +680,7 @@ describe('ProcessFilesReview', () => {
             const context = createBatchContext();
             const tasks = { astAnalysis: { taskId: 'task-1' } };
 
-            await (stage as any).processSingleBatch(
-                batch,
-                context,
-                0,
-                tasks,
-            );
+            await (stage as any).processSingleBatch(batch, context, 0, tasks);
 
             // After processSingleBatch, astFormattedContent must be deleted from all files
             expect(file1.astFormattedContent).toBeUndefined();
@@ -699,6 +689,84 @@ describe('ProcessFilesReview', () => {
             // But original fileContent must still be intact
             expect(file1.fileContent).toBe('original content of src/a.ts');
             expect(file2.fileContent).toBe('original content of src/b.ts');
+        });
+    });
+
+    // ─── Frozen object safety (Zod v4 regression guard) ──────────────────
+
+    describe('frozen object safety — applyKodyFineTuningFilter', () => {
+        it('should not throw when discarded suggestions are frozen (Object.freeze)', async () => {
+            const frozenDiscarded = Object.freeze({
+                id: 'd1',
+                severity: 'low',
+                label: 'code_style',
+            });
+
+            mockKodyFineTuningContextPreparation.prepareKodyFineTuningContext.mockResolvedValue(
+                {
+                    keepedSuggestions: [{ id: 'k1', severity: 'high' }],
+                    discardedSuggestions: [frozenDiscarded],
+                },
+            );
+
+            const context = {
+                organizationAndTeamData: mockOrganizationAndTeamData,
+                pullRequest: {
+                    number: 42,
+                    repository: { id: 'repo-1', fullName: 'org/repo' },
+                },
+                codeReviewConfig: {
+                    kodyFineTuningConfig: { enabled: true },
+                },
+                clusterizedSuggestions: [],
+            };
+
+            const result = await (stage as any).applyKodyFineTuningFilter(
+                [{ id: 'k1' }, frozenDiscarded],
+                context,
+            );
+
+            expect(result.keepedSuggestions).toHaveLength(1);
+            expect(result.discardedSuggestionsByKodyFineTuning).toHaveLength(1);
+            expect(
+                result.discardedSuggestionsByKodyFineTuning[0].priorityStatus,
+            ).toBe(PriorityStatus.DISCARDED_BY_KODY_FINE_TUNING);
+        });
+
+        it('should not mutate the original frozen discarded suggestion', async () => {
+            const frozenDiscarded = Object.freeze({
+                id: 'd1',
+                severity: 'low',
+            });
+
+            mockKodyFineTuningContextPreparation.prepareKodyFineTuningContext.mockResolvedValue(
+                {
+                    keepedSuggestions: [],
+                    discardedSuggestions: [frozenDiscarded],
+                },
+            );
+
+            const context = {
+                organizationAndTeamData: mockOrganizationAndTeamData,
+                pullRequest: {
+                    number: 1,
+                    repository: { id: 'r1', fullName: 'o/r' },
+                },
+                codeReviewConfig: {},
+                clusterizedSuggestions: [],
+            };
+
+            const result = await (stage as any).applyKodyFineTuningFilter(
+                [frozenDiscarded],
+                context,
+            );
+
+            // Must be a new object, not the same frozen reference
+            expect(result.discardedSuggestionsByKodyFineTuning[0]).not.toBe(
+                frozenDiscarded,
+            );
+            // Original must remain unchanged
+            expect((frozenDiscarded as any).priorityStatus).toBeUndefined();
         });
     });
 });

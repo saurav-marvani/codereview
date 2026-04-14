@@ -1,31 +1,49 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@components/ui/button";
 import { Page } from "@components/ui/page";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@components/ui/tabs";
 import { toast } from "@components/ui/toaster/use-toast";
 import { useAsyncAction } from "@hooks/use-async-action";
+import { isCentralizedPrResponse } from "@services/parameters/types";
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
 import { savePullRequestMessages } from "@services/pull-request-messages/fetch";
 import { useSuspensePullRequestMessages } from "@services/pull-request-messages/hooks";
 import { useQueryClient } from "@tanstack/react-query";
-import { SaveIcon } from "lucide-react";
+import { RotateCcwIcon, SaveIcon } from "lucide-react";
 import { PageBoundary } from "src/core/components/page-boundary";
+import { useUnsavedChangesGuard } from "src/core/hooks/use-unsaved-changes-guard";
+import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { pathToApiUrl, unformatConfig } from "src/core/utils/helpers";
 
 import { CodeReviewPagesBreadcrumb } from "../../_components/breadcrumb";
+import { CentralizedConfigReadOnlyAlert } from "../../_components/centralized-config-readonly-alert";
+import { CodeReviewSaveButton } from "../../_components/save-button";
+import { getCentralizedPrToastPayload } from "../../_utils/centralized-pr-feedback";
+import {
+    buildCustomMessagesEditorState,
+    getCustomMessagesDirtySection,
+    hasCustomMessagesPendingChanges,
+} from "../../_utils/custom-messages-state";
+import { buildCodeReviewSettingsScopeKey } from "../../_utils/settings-shell";
 import { useCodeReviewRouteParams } from "../../../_hooks";
 import { HiddenComments } from "./_components/hidden-comments";
 import { LLMPromptToggle } from "./_components/llm-prompt";
 import { TabContent } from "./_components/tab-content";
 
 function CustomMessagesContent() {
+    const { teamId } = useSelectedTeamId();
     const { repositoryId, directoryId } = useCodeReviewRouteParams();
     const pullRequestMessages = useSuspensePullRequestMessages();
     const queryClient = useQueryClient();
-    const initialState = { ...pullRequestMessages };
+    const initialState = pullRequestMessages;
+    const scopeKey = buildCodeReviewSettingsScopeKey(
+        teamId,
+        repositoryId,
+        directoryId,
+    );
 
     const canEdit = usePermission(
         Action.Update,
@@ -33,63 +51,46 @@ function CustomMessagesContent() {
         repositoryId,
     );
 
-    const [messages, setMessages] = useState<
-        Pick<
-            typeof pullRequestMessages,
-            "endReviewMessage" | "startReviewMessage"
-        >
-    >({
-        startReviewMessage: pullRequestMessages.startReviewMessage,
-        endReviewMessage: pullRequestMessages.endReviewMessage,
-    });
-
-    console.log(pullRequestMessages);
-
-    const [globalSettings, setGlobalSettings] = useState({
-        hideComments: pullRequestMessages.globalSettings?.hideComments,
-        suggestionCopyPrompt:
-            pullRequestMessages.globalSettings?.suggestionCopyPrompt,
-    });
+    const [editorState, setEditorState] = useState(() =>
+        buildCustomMessagesEditorState(pullRequestMessages),
+    );
+    const hydratedStateKeyRef = useRef("");
 
     useEffect(() => {
-        setMessages({
-            startReviewMessage: pullRequestMessages.startReviewMessage,
-            endReviewMessage: pullRequestMessages.endReviewMessage,
-        });
-        setGlobalSettings({
-            hideComments: pullRequestMessages.globalSettings?.hideComments,
-            suggestionCopyPrompt:
-                pullRequestMessages.globalSettings?.suggestionCopyPrompt,
-        });
+        const nextHydrationKey = `${scopeKey}::${pullRequestMessages.uuid ?? "initial"}`;
+
+        if (hydratedStateKeyRef.current === nextHydrationKey) return;
+
+        setEditorState(buildCustomMessagesEditorState(pullRequestMessages));
+        hydratedStateKeyRef.current = nextHydrationKey;
+    }, [pullRequestMessages, scopeKey]);
+
+    const hasPendingChanges = hasCustomMessagesPendingChanges({
+        pullRequestMessages,
+        messages: editorState.messages,
+        globalSettings: editorState.globalSettings,
+    });
+    const dirtySection = getCustomMessagesDirtySection({
+        pullRequestMessages,
+        editorState,
+    });
+    const wasStartReviewMessageChanged = dirtySection === "startReviewMessage";
+    const wasEndReviewMessageChanged = dirtySection === "endReviewMessage";
+    const wasGlobalSettingsChanged = dirtySection === "globalSettings";
+    const handleReset = useCallback(() => {
+        setEditorState(buildCustomMessagesEditorState(pullRequestMessages));
     }, [pullRequestMessages]);
-
-    const wasStartReviewMessageChanged =
-        messages.startReviewMessage.status?.value !==
-            pullRequestMessages.startReviewMessage.status?.value ||
-        messages.startReviewMessage.content?.value !==
-            pullRequestMessages.startReviewMessage.content?.value;
-
-    const wasEndReviewMessageChanged =
-        messages.endReviewMessage.status?.value !==
-            pullRequestMessages.endReviewMessage.status?.value ||
-        messages.endReviewMessage.content?.value !==
-            pullRequestMessages.endReviewMessage.content?.value;
-
-    const wasGlobalSettingsChanged =
-        globalSettings.hideComments?.value !==
-            (pullRequestMessages.globalSettings?.hideComments?.value ??
-                false) ||
-        globalSettings.suggestionCopyPrompt?.value !==
-            (pullRequestMessages.globalSettings?.suggestionCopyPrompt?.value ??
-                true);
 
     const [action, { loading: isSaving }] = useAsyncAction(async () => {
         try {
-            const unformattedMessages = unformatConfig(messages);
-            const unformattedGlobalSettings = unformatConfig(globalSettings);
+            const unformattedMessages = unformatConfig(editorState.messages);
+            const unformattedGlobalSettings = unformatConfig(
+                editorState.globalSettings,
+            );
 
-            await savePullRequestMessages({
+            const mutationResult = await savePullRequestMessages({
                 uuid: pullRequestMessages.uuid,
+                teamId,
                 repositoryId,
                 directoryId,
                 startReviewMessage: unformattedMessages.startReviewMessage,
@@ -103,6 +104,16 @@ function CustomMessagesContent() {
                         pathToApiUrl("/pull-request-messages"),
                     ),
             });
+
+            if (isCentralizedPrResponse(mutationResult)) {
+                toast(
+                    getCentralizedPrToastPayload(
+                        mutationResult,
+                        "Custom messages change proposed through centralized pull request.",
+                    ),
+                );
+                return;
+            }
 
             toast({
                 title: "Custom messages saved",
@@ -119,6 +130,51 @@ function CustomMessagesContent() {
         }
     });
 
+    const scrollToDirtyField = useCallback(() => {
+        const fieldName = wasStartReviewMessageChanged
+            ? "startReviewMessage"
+            : wasEndReviewMessageChanged
+              ? "endReviewMessage"
+              : "globalSettings";
+
+        const fieldElement = document.querySelector(
+            `[data-field-name="${fieldName}"]`,
+        );
+        if (fieldElement) {
+            fieldElement.scrollIntoView({
+                behavior: "smooth",
+                block: "center",
+            });
+            fieldElement.classList.add("field-highlight");
+            window.setTimeout(() => {
+                fieldElement.classList.remove("field-highlight");
+            }, 1800);
+            return;
+        }
+
+        const headerElement = document.querySelector("[data-header-actions]");
+        if (headerElement) {
+            headerElement.scrollIntoView({
+                behavior: "smooth",
+                block: "center",
+            });
+            headerElement.classList.add("field-highlight");
+            window.setTimeout(() => {
+                headerElement.classList.remove("field-highlight");
+            }, 1800);
+        }
+    }, [
+        wasEndReviewMessageChanged,
+        wasGlobalSettingsChanged,
+        wasStartReviewMessageChanged,
+    ]);
+
+    useUnsavedChangesGuard({
+        id: "custom-messages",
+        isDirty: hasPendingChanges || isSaving,
+        onBlock: scrollToDirtyField,
+    });
+
     return (
         <Page.Root>
             <Page.Header>
@@ -129,24 +185,31 @@ function CustomMessagesContent() {
                 <Page.Title>Custom Messages</Page.Title>
 
                 <Page.HeaderActions>
-                    <Button
+                    {hasPendingChanges && (
+                        <Button
+                            size="md"
+                            variant="cancel"
+                            leftIcon={<RotateCcwIcon />}
+                            onClick={handleReset}
+                            disabled={isSaving}>
+                            Reset
+                        </Button>
+                    )}
+
+                    <CodeReviewSaveButton
                         size="md"
                         variant="primary"
                         loading={isSaving}
                         leftIcon={<SaveIcon />}
                         onClick={() => action()}
-                        disabled={
-                            !canEdit ||
-                            (!wasStartReviewMessageChanged &&
-                                !wasEndReviewMessageChanged &&
-                                !wasGlobalSettingsChanged)
-                        }>
+                        disabled={!canEdit || !hasPendingChanges}>
                         Save changes
-                    </Button>
+                    </CodeReviewSaveButton>
                 </Page.HeaderActions>
             </Page.Header>
 
             <Page.Content>
+                <CentralizedConfigReadOnlyAlert />
                 <Tabs defaultValue="start-review-message" className="flex-1">
                     <TabsList>
                         <TabsTrigger value="start-review-message">
@@ -172,22 +235,28 @@ function CustomMessagesContent() {
                     <TabsContent
                         forceMount
                         className="flex-1"
-                        value="start-review-message">
+                        value="start-review-message"
+                        data-field-name="startReviewMessage">
                         <TabContent
                             type="startReviewMessage"
-                            value={messages.startReviewMessage}
+                            value={editorState.messages.startReviewMessage}
                             initialState={initialState.startReviewMessage}
                             onChangeAction={(startReviewMessage) => {
-                                setMessages((prev) => ({
+                                setEditorState((prev) => ({
                                     ...prev,
-                                    startReviewMessage: {
-                                        content: {
-                                            ...prev.startReviewMessage.content,
-                                            value: startReviewMessage.content,
-                                        },
-                                        status: {
-                                            ...prev.startReviewMessage.status,
-                                            value: startReviewMessage.status,
+                                    messages: {
+                                        ...prev.messages,
+                                        startReviewMessage: {
+                                            content: {
+                                                ...prev.messages
+                                                    .startReviewMessage.content,
+                                                value: startReviewMessage.content,
+                                            },
+                                            status: {
+                                                ...prev.messages
+                                                    .startReviewMessage.status,
+                                                value: startReviewMessage.status,
+                                            },
                                         },
                                     },
                                 }));
@@ -199,22 +268,28 @@ function CustomMessagesContent() {
                     <TabsContent
                         forceMount
                         className="flex-1"
-                        value="end-review-message">
+                        value="end-review-message"
+                        data-field-name="endReviewMessage">
                         <TabContent
                             type="endReviewMessage"
-                            value={messages.endReviewMessage}
+                            value={editorState.messages.endReviewMessage}
                             initialState={initialState.endReviewMessage}
                             onChangeAction={(endReviewMessage) => {
-                                setMessages((prev) => ({
+                                setEditorState((prev) => ({
                                     ...prev,
-                                    endReviewMessage: {
-                                        content: {
-                                            ...prev.endReviewMessage.content,
-                                            value: endReviewMessage.content,
-                                        },
-                                        status: {
-                                            ...prev.endReviewMessage.status,
-                                            value: endReviewMessage.status,
+                                    messages: {
+                                        ...prev.messages,
+                                        endReviewMessage: {
+                                            content: {
+                                                ...prev.messages
+                                                    .endReviewMessage.content,
+                                                value: endReviewMessage.content,
+                                            },
+                                            status: {
+                                                ...prev.messages
+                                                    .endReviewMessage.status,
+                                                value: endReviewMessage.status,
+                                            },
                                         },
                                     },
                                 }));
@@ -226,28 +301,39 @@ function CustomMessagesContent() {
                     <TabsContent
                         forceMount
                         className="flex-1 gap-y-4"
-                        value="global-settings">
+                        value="global-settings"
+                        data-field-name="globalSettings">
                         <HiddenComments
-                            hideComments={globalSettings.hideComments}
+                            hideComments={
+                                editorState.globalSettings.hideComments
+                            }
                             initialState={
                                 initialState.globalSettings?.hideComments
                             }
                             onHideCommentsChangeAction={(value) => {
-                                setGlobalSettings((prev) => ({
+                                setEditorState((prev) => ({
                                     ...prev,
-                                    hideComments: {
-                                        ...prev.hideComments,
-                                        value,
+                                    globalSettings: {
+                                        ...prev.globalSettings,
+                                        hideComments: {
+                                            ...(prev.globalSettings
+                                                .hideComments ?? {}),
+                                            value,
+                                        },
                                     },
                                 }));
                             }}
                             handleRevert={() => {
-                                setGlobalSettings((prev) => ({
+                                setEditorState((prev) => ({
                                     ...prev,
-                                    hideComments: {
-                                        ...prev.hideComments,
-                                        value: initialState.globalSettings
-                                            ?.hideComments?.value,
+                                    globalSettings: {
+                                        ...prev.globalSettings,
+                                        hideComments: {
+                                            ...(prev.globalSettings
+                                                .hideComments ?? {}),
+                                            value: initialState.globalSettings
+                                                ?.hideComments?.value,
+                                        },
                                     },
                                 }));
                             }}
@@ -255,28 +341,36 @@ function CustomMessagesContent() {
                         />
                         <LLMPromptToggle
                             suggestionCopyPrompt={
-                                globalSettings.suggestionCopyPrompt
+                                editorState.globalSettings.suggestionCopyPrompt
                             }
                             initialState={
                                 initialState.globalSettings
                                     ?.suggestionCopyPrompt
                             }
                             onsuggestionCopyPromptChangeAction={(value) => {
-                                setGlobalSettings((prev) => ({
+                                setEditorState((prev) => ({
                                     ...prev,
-                                    suggestionCopyPrompt: {
-                                        ...prev.suggestionCopyPrompt,
-                                        value,
+                                    globalSettings: {
+                                        ...prev.globalSettings,
+                                        suggestionCopyPrompt: {
+                                            ...(prev.globalSettings
+                                                .suggestionCopyPrompt ?? {}),
+                                            value,
+                                        },
                                     },
                                 }));
                             }}
                             handleRevert={() => {
-                                setGlobalSettings((prev) => ({
+                                setEditorState((prev) => ({
                                     ...prev,
-                                    suggestionCopyPrompt: {
-                                        ...prev.suggestionCopyPrompt,
-                                        value: initialState.globalSettings
-                                            ?.suggestionCopyPrompt?.value,
+                                    globalSettings: {
+                                        ...prev.globalSettings,
+                                        suggestionCopyPrompt: {
+                                            ...(prev.globalSettings
+                                                .suggestionCopyPrompt ?? {}),
+                                            value: initialState.globalSettings
+                                                ?.suggestionCopyPrompt?.value,
+                                        },
                                     },
                                 }));
                             }}

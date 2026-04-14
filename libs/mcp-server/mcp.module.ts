@@ -1,15 +1,17 @@
+import { PullRequestsModule } from '@libs/code-review/modules/pull-requests.module';
+import { IssuesModule } from '@libs/issues/issues.module';
+import { KodyRulesModule } from '@libs/kodyRules/modules/kodyRules.module';
+import { PlatformModule } from '@libs/platform/modules/platform.module';
 import { DynamicModule, Module, Provider, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { McpController } from './controllers/mcp.controller';
 import { McpEnabledGuard } from './guards/mcp-enabled.guard';
+import { McpCoreModule } from './mcp-core.module';
+import { McpServerFactory } from './services/mcp-server.factory';
 import { McpServerService } from './services/mcp-server.service';
 import { CodeManagementTools, KodyRulesTools } from './tools';
 import { KodyIssuesTools } from './tools/kodyIssues.tools';
-import { KodyRulesModule } from '@libs/kodyRules/modules/kodyRules.module';
-import { PlatformModule } from '@libs/platform/modules/platform.module';
-import { IssuesModule } from '@libs/issues/issues.module';
-import { PullRequestsModule } from '@libs/code-review/modules/pull-requests.module';
-import { McpCoreModule } from './mcp-core.module';
+import { CentralizedConfigModule } from '@libs/centralized-config/modules/centralized-config.module';
 
 @Module({})
 export class McpModule {
@@ -40,11 +42,13 @@ export class McpModule {
                 forwardRef(() => KodyRulesModule),
                 forwardRef(() => IssuesModule),
                 forwardRef(() => PullRequestsModule),
+                forwardRef(() => CentralizedConfigModule),
             );
 
             controllers.push(McpController);
 
             providers.push(
+                McpServerFactory,
                 McpServerService,
                 McpEnabledGuard,
                 CodeManagementTools,

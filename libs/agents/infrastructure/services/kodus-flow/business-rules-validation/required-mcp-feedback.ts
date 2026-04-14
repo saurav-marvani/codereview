@@ -21,25 +21,21 @@ export function buildRequiredMcpFeedback(params: {
               .join('\n')
         : '- **Task Management** (Jira, Linear, Notion)';
 
-    const providersLine =
-        params.availableProviders && params.availableProviders.length > 0
-            ? params.availableProviders.join(', ')
-            : 'none';
-
     return `## 🔌 MCP Integration Required
 
-To run business rules validation, I need at least one external MCP integration connected to fetch task/ticket context.
+Business validation compares the PR implementation with task/ticket requirements.
+I could not fetch task context because no compatible MCP integration is currently connected.
 
 ### Required integrations
 ${requiredList}
 
 ### Detected MCP providers
-- ${providersLine}
+- ${formatAvailableProviders(params.availableProviders)}
 
-### How to fix
-- Connect an MCP integration matching the categories above in your organization/repository settings.
-- Verify the connection is active.
-- Run again: \`@kody -v business-logic\``;
+### Next steps
+- Connect at least one MCP provider from the required categories in organization/repository settings.
+- Ensure the provider is healthy and authenticated (OAuth/token/scopes).
+- Re-run business validation after the connection is active.`;
 }
 
 export function buildMcpConnectionFailureFeedback(params: {
@@ -48,21 +44,20 @@ export function buildMcpConnectionFailureFeedback(params: {
 }): string {
     void params.userLanguage;
 
-    const providersLine =
-        params.availableProviders && params.availableProviders.length > 0
-            ? params.availableProviders.join(', ')
-            : 'none';
-
     return `## ⚠️ MCP Connection Failed
 
-MCP integrations are configured, but I couldn't connect to any MCP server right now.
+MCP integrations are configured, but I couldn't connect to any provider right now.
 
 ### Detected MCP providers
-- ${providersLine}
+- ${formatAvailableProviders(params.availableProviders)}
 
-### How to fix
-- Check whether the MCP server is online and healthy.
+### Next steps
+- Check whether the MCP provider/server is online and healthy.
 - Review OAuth/credentials (token, client, scopes, expiration).
 - Confirm integration base URL and protocol.
-- Run again: \`@kody -v business-logic\``;
+- Re-run business validation.`;
+}
+
+function formatAvailableProviders(providers: string[] | undefined): string {
+    return providers && providers.length > 0 ? providers.join(', ') : 'none';
 }

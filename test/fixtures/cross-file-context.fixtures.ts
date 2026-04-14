@@ -1,8 +1,5 @@
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
-import {
-    CrossFileContextSnippet,
-    CollectCrossFileContextsResult,
-} from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
+import { CrossFileContextSnippet } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import { FileChange } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
 import { CliReviewPipelineContext } from '@libs/cli-review/pipeline/context/cli-review-pipeline.context';
@@ -13,7 +10,8 @@ export function createSampleFileChange(
     overrides: Partial<FileChange> = {},
 ): FileChange {
     return {
-        content: 'export function greet(name: string) { return `Hello ${name}`; }',
+        content:
+            'export function greet(name: string) { return `Hello ${name}`; }',
         sha: 'abc123',
         filename: 'src/utils/greet.ts',
         status: 'modified',
@@ -53,17 +51,17 @@ export function createSamplePlannerQuery(
     };
 }
 
-// ─── WarpGrep Result ───────────────────────────────────────────────────────────
+// ─── Codebase Search Result ───────────────────────────────────────────────────
 
-export function createSampleWarpGrepResult(
+export function createSampleCodebaseSearchResult(
     overrides: Partial<{
         success: boolean;
         contexts: Array<{
             file: string;
             content: string;
-            startLine?: number;
-            endLine?: number;
+            lines: [number, number][];
         }>;
+        error?: string;
     }> = {},
 ) {
     return {
@@ -73,8 +71,7 @@ export function createSampleWarpGrepResult(
                 file: 'src/controllers/hello.controller.ts',
                 content:
                     'import { greet } from "../utils/greet";\n\napp.get("/hello", (req, res) => {\n  res.send(greet(req.query.name));\n});',
-                startLine: 1,
-                endLine: 5,
+                lines: [[1, 5]] as [number, number][],
             },
         ],
         ...overrides,
@@ -194,12 +191,44 @@ export const mockOrganizationAndTeamData = {
     teamId: 'team-456',
 };
 
+// ─── Sufficiency Result ─────────────────────────────────────────────────────────
+
+export function createSampleSufficiencyResult(
+    overrides: Partial<{
+        sufficient: boolean;
+        gaps: string[];
+        additionalQueries: Array<{
+            pattern: string;
+            rationale: string;
+            riskLevel: 'low' | 'medium' | 'high';
+            symbolName: string;
+            fileGlob?: string;
+            sourceFile: string;
+        }>;
+    }> = {},
+) {
+    return {
+        sufficient: false,
+        gaps: ['Missing consumer of validateInput'],
+        additionalQueries: [
+            {
+                pattern: 'validateInput\\(',
+                rationale: 'Need to find callers of validateInput',
+                riskLevel: 'high' as const,
+                symbolName: 'validateInput',
+                sourceFile: 'src/utils/validate.ts',
+            },
+        ],
+        ...overrides,
+    };
+}
+
 // ─── Remote Commands Mock ──────────────────────────────────────────────────────
 
 export function createMockRemoteCommands() {
     return {
         grep: jest.fn().mockResolvedValue(''),
         read: jest.fn().mockResolvedValue(''),
-        listDir: jest.fn().mockResolvedValue(''),
+        listDir: jest.fn().mockResolvedValue('src/index.ts\nsrc/app.ts\n'),
     };
 }

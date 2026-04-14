@@ -1,14 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import {
-    NotFoundException,
-    UnauthorizedException,
-} from '@nestjs/common';
+import { NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 
 import { PullRequestController } from '@/core/infrastructure/http/controllers/pullRequest.controller';
 import { GetEnrichedPullRequestsUseCase } from '@libs/code-review/application/use-cases/dashboard/get-enriched-pull-requests.use-case';
+import { GetPullRequestSuggestionsUseCase } from '@libs/code-review/application/use-cases/pullRequests/get-pull-request-suggestions.use-case';
 import { CodeManagementService } from '@libs/platform/infrastructure/services/codeManagement.service';
 import { BackfillHistoricalPRsUseCase } from '@libs/platformData/application/use-cases/pullRequests/backfill-historical-prs.use-case';
 import { PULL_REQUESTS_SERVICE_TOKEN } from '@libs/platformData/domain/pullRequests/contracts/pullRequests.service.contracts';
@@ -16,6 +14,7 @@ import { TEAM_CLI_KEY_SERVICE_TOKEN } from '@libs/organization/domain/team-cli-k
 import { AUTOMATION_EXECUTION_SERVICE_TOKEN } from '@libs/automation/domain/automationExecution/contracts/automation-execution.service';
 import { AUTH_SERVICE_TOKEN } from '@libs/identity/domain/auth/contracts/auth.service.contracts';
 import { CLI_DEVICE_SERVICE_TOKEN } from '@libs/organization/domain/cli-device/contracts/cli-device.service.contract';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PolicyGuard } from '@libs/identity/infrastructure/adapters/services/permissions/policy.guard';
 import { STATUS } from '@libs/core/infrastructure/config/types/database/status.type';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
@@ -115,7 +114,12 @@ const mockAutomationExecutionService = {
     create: jest.fn().mockResolvedValue({}),
 };
 const mockGetEnrichedPRs = { execute: jest.fn() };
-const mockCodeManagement = { getRepositories: jest.fn() };
+const mockGetPullRequestSuggestionsUseCase = { execute: jest.fn() };
+const mockCodeManagement = {
+    getRepositories: jest.fn(),
+    getPullRequestReviewThreads: jest.fn(),
+    getPullRequestReviewComments: jest.fn(),
+};
 const mockBackfillPRs = { execute: jest.fn() };
 const mockRequest = { user: { organization: { uuid: ORG_ID } } };
 
@@ -137,6 +141,10 @@ describe('PullRequestController', () => {
                 {
                     provide: CodeManagementService,
                     useValue: mockCodeManagement,
+                },
+                {
+                    provide: GetPullRequestSuggestionsUseCase,
+                    useValue: mockGetPullRequestSuggestionsUseCase,
                 },
                 {
                     provide: BackfillHistoricalPRsUseCase,
@@ -165,6 +173,10 @@ describe('PullRequestController', () => {
                 },
                 { provide: JwtService, useValue: mockJwtService },
                 { provide: ConfigService, useValue: mockConfigService },
+                {
+                    provide: EventEmitter2,
+                    useValue: { emit: jest.fn() },
+                },
             ],
         })
             .overrideGuard(PolicyGuard)
@@ -185,6 +197,29 @@ describe('PullRequestController', () => {
         mockPullRequestsService.findOne.mockResolvedValue(makePrEntity());
         mockCliDeviceService.validateOrRegisterDevice.mockResolvedValue({});
         mockAutomationExecutionService.create.mockResolvedValue({});
+        mockGetPullRequestSuggestionsUseCase.execute.mockResolvedValue({
+            response: {
+                prNumber: 42,
+                repositoryId: 'repo-123',
+                repositoryFullName: 'org/repo',
+                suggestions: {
+                    files: [
+                        {
+                            filePath: 'src/index.ts',
+                            severity: 'critical',
+                            label: 'bug',
+                        },
+                    ],
+                    prLevel: [
+                        {
+                            severity: 'medium',
+                            label: 'architecture',
+                        },
+                    ],
+                },
+            },
+            suggestionsCount: 2,
+        });
     });
 
     // =========================================================================
@@ -409,7 +444,10 @@ describe('PullRequestController', () => {
             );
 
             expect(mockPullRequestsService.findOne).toHaveBeenCalledWith(
-                expect.objectContaining({ url: PR_URL, organizationId: ORG_ID }),
+                expect.objectContaining({
+                    url: PR_URL,
+                    organizationId: ORG_ID,
+                }),
             );
             expect(result.prNumber).toBe(42);
         });
@@ -434,8 +472,9 @@ describe('PullRequestController', () => {
         });
 
         it('finds PR by repositoryId + prNumber', async () => {
-            mockPullRequestsService.findOne
-                .mockResolvedValueOnce(makePrEntity());
+            mockPullRequestsService.findOne.mockResolvedValueOnce(
+                makePrEntity(),
+            );
 
             const result = await controller.getSuggestionsByPullRequest(
                 undefined,
@@ -547,6 +586,13 @@ describe('PullRequestController', () => {
         });
 
         it('returns markdown when format=markdown', async () => {
+            mockGetPullRequestSuggestionsUseCase.execute.mockResolvedValueOnce({
+                response: {
+                    markdown: '# Suggestions for PR #42 (org/repo)',
+                },
+                suggestionsCount: 1,
+            });
+
             const result = await controller.getSuggestionsByPullRequest(
                 PR_URL,
                 undefined,
@@ -562,8 +608,8 @@ describe('PullRequestController', () => {
             expect(result.markdown).toContain('org/repo');
         });
 
-        it('filters suggestions by severity', async () => {
-            const result = await controller.getSuggestionsByPullRequest(
+        it('forwards severity filter to the suggestions use case', async () => {
+            await controller.getSuggestionsByPullRequest(
                 PR_URL,
                 undefined,
                 undefined,
@@ -573,12 +619,17 @@ describe('PullRequestController', () => {
                 TEAM_KEY,
             );
 
-            expect(result.suggestions.files).toHaveLength(1);
-            expect(result.suggestions.prLevel).toHaveLength(0);
+            expect(
+                mockGetPullRequestSuggestionsUseCase.execute,
+            ).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    severity: 'critical',
+                }),
+            );
         });
 
-        it('filters suggestions by category', async () => {
-            const result = await controller.getSuggestionsByPullRequest(
+        it('forwards category filter to the suggestions use case', async () => {
+            await controller.getSuggestionsByPullRequest(
                 PR_URL,
                 undefined,
                 undefined,
@@ -588,11 +639,16 @@ describe('PullRequestController', () => {
                 TEAM_KEY,
             );
 
-            expect(result.suggestions.files).toHaveLength(0);
-            expect(result.suggestions.prLevel).toHaveLength(1);
+            expect(
+                mockGetPullRequestSuggestionsUseCase.execute,
+            ).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    category: 'architecture',
+                }),
+            );
         });
 
-        it('only returns SENT suggestions (filters out non-sent)', async () => {
+        it('delegates suggestion shaping to the use case', async () => {
             mockPullRequestsService.findOne.mockResolvedValue(
                 makePrEntity({
                     files: [
@@ -631,8 +687,19 @@ describe('PullRequestController', () => {
                 TEAM_KEY,
             );
 
-            expect(result.suggestions.files).toHaveLength(1);
-            expect(result.suggestions.files[0].severity).toBe('high');
+            expect(
+                mockGetPullRequestSuggestionsUseCase.execute,
+            ).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    pr: expect.objectContaining({
+                        files: [
+                            expect.objectContaining({
+                                path: 'a.ts',
+                            }),
+                        ],
+                    }),
+                }),
+            );
         });
     });
 
@@ -762,33 +829,31 @@ describe('PullRequestController', () => {
         it('returns suggestions with team key', async () => {
             mockTeamCliKeyService.validateKey.mockResolvedValue(TEAM_KEY_DATA);
 
-            const result =
-                await controller.getSuggestionsByPullRequestWithKey(
-                    PR_URL,
-                    undefined,
-                    undefined,
-                    'json',
-                    undefined,
-                    undefined,
-                    TEAM_KEY,
-                );
+            const result = await controller.getSuggestionsByPullRequestWithKey(
+                PR_URL,
+                undefined,
+                undefined,
+                'json',
+                undefined,
+                undefined,
+                TEAM_KEY,
+            );
 
             expect(result).toHaveProperty('suggestions');
             expect(result.prNumber).toBe(42);
         });
 
         it('returns suggestions with JWT', async () => {
-            const result =
-                await controller.getSuggestionsByPullRequestWithKey(
-                    PR_URL,
-                    undefined,
-                    undefined,
-                    'json',
-                    undefined,
-                    undefined,
-                    undefined,
-                    BEARER_JWT,
-                );
+            const result = await controller.getSuggestionsByPullRequestWithKey(
+                PR_URL,
+                undefined,
+                undefined,
+                'json',
+                undefined,
+                undefined,
+                undefined,
+                BEARER_JWT,
+            );
 
             expect(result).toHaveProperty('suggestions');
         });

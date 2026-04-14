@@ -11,6 +11,8 @@ import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 
 import { Reaction } from '@libs/code-review/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
+import { decrypt, encrypt } from '@libs/common/utils/crypto';
+import { IntegrationServiceDecorator } from '@libs/common/utils/decorators/integration-service.decorator';
 import { CacheService } from '@libs/core/cache/cache.service';
 import {
     CreateAuthIntegrationStatus,
@@ -28,23 +30,42 @@ import {
 import { Commit } from '@libs/core/infrastructure/config/types/general/commit.type';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { TreeItem } from '@libs/core/infrastructure/config/types/general/tree.type';
-import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service';
-import { decrypt, encrypt } from '@libs/common/utils/crypto';
-import { IntegrationServiceDecorator } from '@libs/common/utils/decorators/integration-service.decorator';
-import { ICodeManagementService } from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
 import {
-    IIntegrationService,
-    INTEGRATION_SERVICE_TOKEN,
-} from '@libs/integrations/domain/integrations/contracts/integration.service.contracts';
+    AUTH_INTEGRATION_SERVICE_TOKEN,
+    IAuthIntegrationService,
+} from '@libs/integrations/domain/authIntegrations/contracts/auth-integration.service.contracts';
 import {
     IIntegrationConfigService,
     INTEGRATION_CONFIG_SERVICE_TOKEN,
 } from '@libs/integrations/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import {
-    AUTH_INTEGRATION_SERVICE_TOKEN,
-    IAuthIntegrationService,
-} from '@libs/integrations/domain/authIntegrations/contracts/auth-integration.service.contracts';
+    IIntegrationService,
+    INTEGRATION_SERVICE_TOKEN,
+} from '@libs/integrations/domain/integrations/contracts/integration.service.contracts';
+import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service';
+import { ICodeManagementService } from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
 
+import { createLogger } from '@kodus/flow';
+import { hasKodyMarker } from '@libs/common/utils/codeManagement/codeCommentMarkers';
+import { getCodeReviewBadge } from '@libs/common/utils/codeManagement/codeReviewBadge';
+import { getLabelShield } from '@libs/common/utils/codeManagement/labels';
+import { getSeverityLevelShield } from '@libs/common/utils/codeManagement/severityLevel';
+import {
+    isFileMatchingGlob,
+    isFileMatchingGlobCaseInsensitive,
+} from '@libs/common/utils/glob-utils';
+import {
+    getTranslationsForLanguageByCategory,
+    TranslationsCategory,
+} from '@libs/common/utils/translations/translations';
+import { GitlabAuthDetail } from '@libs/integrations/domain/authIntegrations/types/gitlab-auth-detail.type';
+import { IntegrationConfigEntity } from '@libs/integrations/domain/integrationConfigs/entities/integration-config.entity';
+import { IntegrationEntity } from '@libs/integrations/domain/integrations/entities/integration.entity';
+import { AuthMode } from '@libs/platform/domain/platformIntegrations/enums/codeManagement/authMode.enum';
+import {
+    CodeManagementConnectionStatus,
+    PullRequestFileChange,
+} from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
 import { GitCloneParams } from '@libs/platform/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 import {
     PullRequest,
@@ -54,26 +75,13 @@ import {
     PullRequestReviewState,
     PullRequestWithFiles,
 } from '@libs/platform/domain/platformIntegrations/types/codeManagement/pullRequests.type';
-import { GitlabAuthDetail } from '@libs/integrations/domain/authIntegrations/types/gitlab-auth-detail.type';
-import { AuthMode } from '@libs/platform/domain/platformIntegrations/enums/codeManagement/authMode.enum';
 import { Repositories } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositories.type';
-import { CodeManagementConnectionStatus } from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
-import { IntegrationEntity } from '@libs/integrations/domain/integrations/entities/integration.entity';
-import { getSeverityLevelShield } from '@libs/common/utils/codeManagement/severityLevel';
-import { getCodeReviewBadge } from '@libs/common/utils/codeManagement/codeReviewBadge';
-import { getLabelShield } from '@libs/common/utils/codeManagement/labels';
-import {
-    getTranslationsForLanguageByCategory,
-    TranslationsCategory,
-} from '@libs/common/utils/translations/translations';
-import { IntegrationConfigEntity } from '@libs/integrations/domain/integrationConfigs/entities/integration-config.entity';
 import { RepositoryFile } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
-import { createLogger } from '@kodus/flow';
-import { hasKodyMarker } from '@libs/common/utils/codeManagement/codeCommentMarkers';
 import {
-    isFileMatchingGlob,
-    isFileMatchingGlobCaseInsensitive,
-} from '@libs/common/utils/glob-utils';
+    buildDefaultSourceBranchName,
+    DEFAULT_COMMIT_MESSAGE,
+    DEFAULT_PR_TITLE,
+} from './code-management-defaults.constants';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.GITLAB, 'codeManagement')
@@ -289,6 +297,365 @@ export class GitlabService implements Omit<
         });
     }
 
+    async findRepositoryByName(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        name: string;
+    }): Promise<Partial<Repository> | null> {
+        try {
+            const repositories = await this.getRepositories({
+                organizationAndTeamData: params.organizationAndTeamData,
+            });
+
+            const wanted = params.name.trim().toLowerCase();
+            const foundRepo = repositories.find((repo) => {
+                const fullName = (
+                    repo.full_name || `${repo.organizationName}/${repo.name}`
+                ).toLowerCase();
+
+                return (
+                    repo.name.toLowerCase() === wanted || fullName === wanted
+                );
+            });
+
+            if (!foundRepo) {
+                this.logger.warn({
+                    message: `Repository with name ${params.name} not found.`,
+                    context: GitlabService.name,
+                    metadata: params,
+                });
+                return null;
+            }
+
+            return {
+                id: foundRepo.id,
+                name: foundRepo.name,
+                fullName:
+                    foundRepo.full_name ||
+                    `${foundRepo.organizationName}/${foundRepo.name}`,
+                defaultBranch: foundRepo.default_branch,
+            };
+        } catch (error) {
+            this.logger.error({
+                message: 'Error finding repository by name',
+                context: GitlabService.name,
+                error,
+                metadata: params,
+            });
+            return null;
+        }
+    }
+
+    async createPullRequestWithFiles(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        sourceBranch?: string;
+        targetBranch?: string;
+        baseBranch?: string;
+        title?: string;
+        description?: string;
+        commitMessage?: string;
+        author?: { name: string; email?: string };
+        files: PullRequestFileChange[];
+    }): Promise<Partial<PullRequest> | null> {
+        const {
+            organizationAndTeamData,
+            repository,
+            sourceBranch,
+            targetBranch,
+            baseBranch,
+            title,
+            description = '',
+            commitMessage,
+            author,
+            files,
+        } = params;
+
+        const resolvedSourceBranch =
+            sourceBranch || buildDefaultSourceBranchName();
+        const resolvedTitle = title?.trim() || DEFAULT_PR_TITLE;
+        const resolvedCommitMessage =
+            commitMessage?.trim() || DEFAULT_COMMIT_MESSAGE;
+
+        try {
+            const resolvedTargetBranch =
+                targetBranch ||
+                (await this.getDefaultBranch({
+                    organizationAndTeamData,
+                    repository,
+                }));
+            const resolvedBaseBranch = baseBranch || resolvedTargetBranch;
+
+            const gitlabAuthDetail = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!gitlabAuthDetail) {
+                throw new Error('GitLab authentication details not found');
+            }
+
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            const uploadResult = await this.uploadFiles({
+                organizationAndTeamData,
+                repository,
+                branchName: resolvedSourceBranch,
+                baseBranch: resolvedBaseBranch,
+                files,
+                message: resolvedCommitMessage,
+                author,
+            });
+
+            if (!uploadResult) {
+                throw new BadRequestException(
+                    'Failed to upload files to GitLab',
+                );
+            }
+
+            const newMergeRequest = await gitlabAPI.MergeRequests.create(
+                repository.id,
+                resolvedSourceBranch,
+                resolvedTargetBranch,
+                resolvedTitle,
+                {
+                    description,
+                },
+            );
+
+            return {
+                id: newMergeRequest.iid.toString(),
+                number: newMergeRequest.iid,
+                title: newMergeRequest.title,
+                prURL: newMergeRequest.web_url,
+            };
+        } catch (error) {
+            this.logger.error({
+                message: 'Error creating pull request with files in GitLab',
+                context: GitlabService.name,
+                error,
+                metadata: params,
+            });
+            return null;
+        }
+    }
+
+    async uploadFiles(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        branchName?: string;
+        baseBranch?: string;
+        files: PullRequestFileChange[];
+        message?: string;
+        author?: { name: string; email?: string };
+    }): Promise<boolean> {
+        const {
+            organizationAndTeamData,
+            repository,
+            branchName,
+            baseBranch,
+            files,
+            message,
+            author,
+        } = params;
+
+        try {
+            const defaultBranch = await this.getDefaultBranch({
+                organizationAndTeamData,
+                repository,
+            });
+            const resolvedBaseBranch = baseBranch || defaultBranch;
+            const resolvedBranchName = branchName || resolvedBaseBranch;
+            const resolvedMessage = message?.trim() || DEFAULT_COMMIT_MESSAGE;
+
+            const gitlabAuthDetail = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!gitlabAuthDetail) {
+                throw new Error('GitLab authentication details not found');
+            }
+
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            const branchAlreadyExists =
+                resolvedBranchName === resolvedBaseBranch
+                    ? true
+                    : await this.checkGitlabBranchExists(
+                          gitlabAPI,
+                          repository.id,
+                          resolvedBranchName,
+                      );
+
+            const commitOptions =
+                resolvedBranchName === resolvedBaseBranch || branchAlreadyExists
+                    ? undefined
+                    : {
+                          startBranch: resolvedBaseBranch,
+                      };
+
+            const fileExistsReferenceBranch = branchAlreadyExists
+                ? resolvedBranchName
+                : resolvedBaseBranch;
+
+            const tokenAuthorIdentity =
+                gitlabAuthDetail.authMode === AuthMode.TOKEN && author?.name
+                    ? {
+                          authorName: author.name,
+                          authorEmail: author.email || 'kody@kodus.io',
+                      }
+                    : undefined;
+
+            const fileExistsEntries = await Promise.all(
+                files.map(async (file) => {
+                    const operation = file.operation || 'upsert';
+
+                    if (operation === 'upsert' || operation === 'delete') {
+                        const exists = await this.checkGitlabFileExists(
+                            gitlabAPI,
+                            repository.id,
+                            fileExistsReferenceBranch,
+                            file.path,
+                        );
+
+                        return [file.path, exists] as const;
+                    }
+
+                    return [file.path, false] as const;
+                }),
+            );
+
+            const fileExistsByPath = new Map(fileExistsEntries);
+
+            const actions = files
+                .map((file) => {
+                    const operation = file.operation || 'upsert';
+                    const fileExists = fileExistsByPath.get(file.path) === true;
+
+                    if (operation === 'delete') {
+                        if (!fileExists) {
+                            return null;
+                        }
+
+                        return {
+                            action: 'delete' as const,
+                            filePath: file.path,
+                        };
+                    }
+
+                    if (typeof file.content !== 'string') {
+                        throw new Error(
+                            `File content is required for upsert operation: ${file.path}`,
+                        );
+                    }
+
+                    return {
+                        action: fileExists
+                            ? ('update' as const)
+                            : ('create' as const),
+                        filePath: file.path,
+                        content: file.content,
+                        encoding: 'text' as const,
+                    };
+                })
+                .filter(
+                    (
+                        action,
+                    ): action is {
+                        action: 'create' | 'update' | 'delete';
+                        filePath: string;
+                        content?: string;
+                        encoding?: 'text';
+                    } => Boolean(action),
+                );
+
+            if (actions.length === 0) {
+                return true;
+            }
+
+            const res = await gitlabAPI.Commits.create(
+                repository.id,
+                resolvedBranchName,
+                resolvedMessage,
+                actions,
+                {
+                    ...(commitOptions || {}),
+                    ...(tokenAuthorIdentity || {}),
+                },
+            );
+
+            if (!res || !res.id) {
+                throw new Error('Failed to create commit with files');
+            }
+
+            return true;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error uploading files to GitLab',
+                context: GitlabService.name,
+                error,
+                metadata: params,
+            });
+            return false;
+        }
+    }
+
+    private async checkGitlabBranchExists(
+        gitlabAPI: any,
+        repositoryId: string,
+        branchName: string,
+    ): Promise<boolean> {
+        try {
+            await gitlabAPI.Branches.show(repositoryId, branchName);
+            return true;
+        } catch (error) {
+            if (this.isGitlabNotFoundError(error)) {
+                return false;
+            }
+
+            throw error;
+        }
+    }
+
+    private async checkGitlabFileExists(
+        gitlabAPI: any,
+        repositoryId: string,
+        branchName: string,
+        filePath: string,
+    ): Promise<boolean> {
+        try {
+            await gitlabAPI.RepositoryFiles.show(
+                repositoryId,
+                filePath,
+                branchName,
+            );
+            return true;
+        } catch (error) {
+            if (this.isGitlabNotFoundError(error)) {
+                return false;
+            }
+
+            throw error;
+        }
+    }
+
+    private isGitlabNotFoundError(error: unknown): boolean {
+        const candidate = error as
+            | {
+                  status?: number;
+                  statusCode?: number;
+                  response?: { status?: number };
+                  cause?: { response?: { status?: number } };
+              }
+            | undefined;
+
+        const status =
+            candidate?.status ||
+            candidate?.statusCode ||
+            candidate?.response?.status ||
+            candidate?.cause?.response?.status;
+
+        return status === 404;
+    }
+
     private async handleIntegration(
         integration: any,
         authDetails: any,
@@ -380,12 +747,20 @@ export class GitlabService implements Omit<
                 throw new Error('Gitlab failed to generate auth token');
             }
 
+            const gitlabHost = process.env.API_GITLAB_TOKEN_URL
+                ? new URL(process.env.API_GITLAB_TOKEN_URL).origin
+                : '';
+
             const authDetails = {
                 accessToken: tokenResponse?.data?.access_token,
                 refreshToken: tokenResponse?.data?.refresh_token,
                 tokenType: tokenResponse?.data?.token_type,
                 scope: tokenResponse?.data?.scope,
                 authMode: params?.authMode || AuthMode.OAUTH,
+                ...(gitlabHost &&
+                    gitlabHost !== 'https://gitlab.com' && {
+                        host: gitlabHost,
+                    }),
             };
 
             const checkRepos = await this.checkRepositoryPermissions({
@@ -1018,9 +1393,28 @@ export class GitlabService implements Omit<
 
         const repositories = integrationConfig.configValue;
         const users = [];
+        const batchSize = 10;
 
-        for (const repository of repositories) {
-            users.push(...(await gitlabAPI.Projects.allUsers(repository.id)));
+        for (let i = 0; i < repositories.length; i += batchSize) {
+            const batch = repositories.slice(i, i + batchSize);
+            const results = await Promise.allSettled(
+                batch.map((repository) =>
+                    gitlabAPI.Projects.allUsers(repository.id),
+                ),
+            );
+
+            results.forEach((result, index) => {
+                if (result.status === 'fulfilled') {
+                    users.push(...result.value);
+                } else {
+                    this.logger.error({
+                        message: 'Failed to fetch users for repository',
+                        context: GitlabService.name,
+                        error: result.reason,
+                        metadata: { repositoryId: batch[index].id },
+                    });
+                }
+            });
         }
 
         // Removing duplicates based on a unique identifier, such as 'id'
@@ -2161,7 +2555,6 @@ export class GitlabService implements Omit<
                         enableSslVerification: true,
                         noteEvents: true,
                         issuesEvents: true,
-                        pushEvents: false,
                     });
                     console.log(`Webhook added to project ${repo.id}`);
                 } else {
@@ -3392,61 +3785,74 @@ export class GitlabService implements Omit<
     async deleteWebhook(params: {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<void> {
-        const authDetails = await this.getAuthDetails(
-            params.organizationAndTeamData,
-        );
-
-        const gitlabAPI = this.instanceGitlabApi(authDetails);
-
-        const integration = await this.integrationService.findOne({
-            organization: {
-                uuid: params.organizationAndTeamData.organizationId,
-            },
-            team: { uuid: params.organizationAndTeamData.teamId },
-            platform: PlatformType.GITLAB,
-        });
-
-        if (!integration?.authIntegration?.authDetails) {
-            return;
-        }
-
-        const repositories =
-            await this.findOneByOrganizationAndTeamDataAndConfigKey(
+        try {
+            const authDetails = await this.getAuthDetails(
                 params.organizationAndTeamData,
-                IntegrationConfigKey.REPOSITORIES,
             );
 
-        if (repositories) {
-            for (const repo of repositories) {
-                try {
-                    const webhooks = await gitlabAPI.ProjectHooks.all(repo.id);
-                    const webhookUrl = this.configService.get<string>(
-                        'API_GITLAB_CODE_MANAGEMENT_WEBHOOK',
-                    );
+            const gitlabAPI = this.instanceGitlabApi(authDetails);
 
-                    const webhookToDelete = webhooks.find(
-                        (webhook) => webhook.url === webhookUrl,
-                    );
+            const integration = await this.integrationService.findOne({
+                organization: {
+                    uuid: params.organizationAndTeamData.organizationId,
+                },
+                team: { uuid: params.organizationAndTeamData.teamId },
+                platform: PlatformType.GITLAB,
+            });
 
-                    if (webhookToDelete) {
-                        await gitlabAPI.ProjectHooks.remove(
+            if (!integration?.authIntegration?.authDetails) {
+                return;
+            }
+
+            const repositories =
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    params.organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                );
+
+            if (repositories) {
+                for (const repo of repositories) {
+                    try {
+                        const webhooks = await gitlabAPI.ProjectHooks.all(
                             repo.id,
-                            webhookToDelete.id,
                         );
+                        const webhookUrl = this.configService.get<string>(
+                            'API_GITLAB_CODE_MANAGEMENT_WEBHOOK',
+                        );
+
+                        const webhookToDelete = webhooks.find(
+                            (webhook) => webhook.url === webhookUrl,
+                        );
+
+                        if (webhookToDelete) {
+                            await gitlabAPI.ProjectHooks.remove(
+                                repo.id,
+                                webhookToDelete.id,
+                            );
+                        }
+                    } catch (error) {
+                        this.logger.error({
+                            message: `Error deleting webhook for repository ${repo.name}`,
+                            context: GitlabService.name,
+                            error: error,
+                            metadata: {
+                                organizationAndTeamData:
+                                    params.organizationAndTeamData,
+                                repoId: repo.id,
+                            },
+                        });
                     }
-                } catch (error) {
-                    this.logger.error({
-                        message: `Error deleting webhook for repository ${repo.name}`,
-                        context: GitlabService.name,
-                        error: error,
-                        metadata: {
-                            organizationAndTeamData:
-                                params.organizationAndTeamData,
-                            repoId: repo.id,
-                        },
-                    });
                 }
             }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error authenticating for webhook deletion',
+                context: GitlabService.name,
+                error: error,
+                metadata: {
+                    organizationAndTeamData: params.organizationAndTeamData,
+                },
+            });
         }
     }
 

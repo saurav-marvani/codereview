@@ -1,15 +1,21 @@
 import { BYOKConfig, LLMModelProvider } from '@kodus/kodus-common/llm';
 
-import { CrossFileContextSnippet } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
+import { CreateSandboxParams } from '@libs/code-review/domain/contracts/sandbox.provider';
+import {
+    CrossFileContextSnippet,
+    RemoteCommands,
+} from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import {
     AIAnalysisResult,
     AnalysisContext,
     CodeSuggestion,
+    DocumentationContextItem,
     FileChange,
     FileChangeContext,
     ReviewModeResponse,
 } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
+import { IKodyRule } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 
 export interface IAIAnalysisService {
     analyzeCodeWithAI(
@@ -45,6 +51,12 @@ export interface IAIAnalysisService {
         reviewMode: ReviewModeResponse,
         byokConfig: BYOKConfig,
         crossFileSnippets?: CrossFileContextSnippet[],
+        remoteCommands?: RemoteCommands,
+        memories?: Array<Partial<IKodyRule>>,
+        externalReferences?: unknown[],
+        externalReferenceErrors?: unknown[] | string,
+        sandboxCloneParams?: CreateSandboxParams,
+        documentationContext?: DocumentationContextItem[],
     ): Promise<any>;
     validateImplementedSuggestions(
         organizationAndTeamData: OrganizationAndTeamData,
