@@ -1,12 +1,20 @@
 #!/bin/bash
 #
-# Bumps the HEAD of every benchmark branch with an empty commit (same tree).
+# Bumps the HEAD of benchmark branches with an empty commit (same tree).
 # This changes head_sha so GitHub allows creating a new PR (100-PR-per-head_sha cap).
 #
-# Usage: ./bump-benchmark-heads.sh
+# Usage:
+#   ./bump-benchmark-heads.sh              # bump every branch in prs.json
+#   TOTAL_PRS=5 ./bump-benchmark-heads.sh  # bump only the branches that will be
+#                                          # selected for this run (same logic as
+#                                          # create-test-prs.mjs: evenly per repo)
 #
-# Reads scripts/pr-creator/prs.json for repo+branch pairs.
 # Requires `gh` authenticated with push access on ai-code-review-benchmark/*.
+#
+# Important: bumping branches that have open orphan PRs (e.g. leftovers from
+# previous runs whose head branch was not cleaned up) fires a `synchronize`
+# webhook and triggers a spurious review. Passing TOTAL_PRS here mirrors the
+# create-test-prs selection so we only touch the branches we actually need.
 
 set -euo pipefail
 
@@ -21,20 +29,44 @@ fi
 AUTHOR_NAME="${BENCHMARK_BUMP_AUTHOR_NAME:-Kodus Benchmark Bot}"
 AUTHOR_EMAIL="${BENCHMARK_BUMP_AUTHOR_EMAIL:-benchmark-bot@kodus.io}"
 
-echo "▸ Bumping HEAD of benchmark branches (empty commit)..."
+if [ -n "${TOTAL_PRS:-}" ]; then
+  echo "▸ Bumping HEAD of benchmark branches (TOTAL_PRS=$TOTAL_PRS, same selection as create-test-prs)..."
+else
+  echo "▸ Bumping HEAD of all benchmark branches (no TOTAL_PRS limit)..."
+fi
 
-# Emit "repo|branch" pairs, unique, preserving order.
-PAIRS=$(node -e "
+# Emit "repo|branch" pairs for the selected subset, mirroring create-test-prs.mjs:
+# group by repo, take ceil(limit/repos) per repo, then slice first `limit`.
+PAIRS=$(TOTAL_PRS="${TOTAL_PRS:-}" node -e "
 const fs = require('fs');
 const d = JSON.parse(fs.readFileSync('$PRS_JSON','utf8'));
 const prs = Array.isArray(d) ? d : d.prs;
+
+// Deduplicate (repo, head) pairs while preserving order.
+const uniq = [];
 const seen = new Set();
 for (const p of prs) {
   const k = p.repo + '|' + p.head;
   if (seen.has(k)) continue;
   seen.add(k);
-  process.stdout.write(k + '\n');
+  uniq.push(p);
 }
+
+const limit = parseInt(process.env.TOTAL_PRS || '0', 10);
+let selected = uniq;
+if (limit > 0 && limit < uniq.length) {
+  const byRepo = {};
+  for (const p of uniq) {
+    (byRepo[p.repo] = byRepo[p.repo] || []).push(p);
+  }
+  const repos = Object.keys(byRepo);
+  const perRepo = Math.ceil(limit / repos.length);
+  const picked = [];
+  for (const r of repos) picked.push(...byRepo[r].slice(0, perRepo));
+  selected = picked.slice(0, limit);
+}
+
+for (const p of selected) process.stdout.write(p.repo + '|' + p.head + '\n');
 ")
 
 TOTAL=$(printf '%s\n' "$PAIRS" | grep -c '|' || true)

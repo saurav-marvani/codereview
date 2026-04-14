@@ -121,8 +121,11 @@ echo "  ✓ All PRs closed"
 
 # Bump HEAD of benchmark branches so GitHub allows new PRs
 # (GitHub caps at 100 PRs per identical head_sha).
+# Pass TOTAL_PRS so we only bump the branches that will actually be used —
+# bumping every branch in prs.json fires synchronize webhooks on orphan PRs
+# from previous runs and triggers spurious reviews.
 if [ "${SKIP_BUMP_HEADS:-0}" != "1" ]; then
-  "$(cd "$(dirname "$0")" && pwd)/bump-benchmark-heads.sh"
+  TOTAL_PRS="$TOTAL_PRS" "$(cd "$(dirname "$0")" && pwd)/bump-benchmark-heads.sh"
 else
   echo "▸ Skipping HEAD bump (SKIP_BUMP_HEADS=1)"
 fi
