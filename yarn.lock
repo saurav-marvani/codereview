@@ -687,22 +687,22 @@
     "@gitbeaker/core" "^43.8.0"
     "@gitbeaker/requester-utils" "^43.8.0"
 
-"@golevelup/nestjs-discovery@^6.1.2":
-  version "6.1.2"
-  resolved "https://registry.npmjs.org/@golevelup/nestjs-discovery/-/nestjs-discovery-6.1.2.tgz#10ee27d7bbb58ad319bd7b99ce41638fd4ff42c2"
-  integrity sha512-jP2jFpWycx2vtJQOXGAPHJLVfltYMvV6in7AY/jQA5DAXQRLEzi1HQUi0QVyyF/PwkL/k5ch+svHA1QA+KbLJA==
+"@golevelup/nestjs-discovery@^7.0.0":
+  version "7.0.0"
+  resolved "https://registry.npmjs.org/@golevelup/nestjs-discovery/-/nestjs-discovery-7.0.0.tgz#4ef8fbb0695b0f093bd9ae9251a9b16735d344f1"
+  integrity sha512-l2O4qokytyBwTqNKNOv3OITdJtYfV0f6eLqR5c0brS1Hy4MV4h9YXy+o534yczOcxWnDfeATArDpLxz88wonSQ==
   dependencies:
-    lodash "^4.17.21"
+    lodash "^4.17.23"
 
-"@golevelup/nestjs-rabbitmq@^7.1.2":
-  version "7.1.2"
-  resolved "https://registry.npmjs.org/@golevelup/nestjs-rabbitmq/-/nestjs-rabbitmq-7.1.2.tgz#6a14a322cf5fd697decc562214e91ad59ce6ba81"
-  integrity sha512-q2Xn9V+/Y4lq7Ik+LmLYC2PFwHiZrrez8EjaNodC2QG6CP7GROybclWf//PVzyTIKqq44B0dEh2+amrXFyN4zA==
+"@golevelup/nestjs-rabbitmq@^9.0.0":
+  version "9.0.0"
+  resolved "https://registry.npmjs.org/@golevelup/nestjs-rabbitmq/-/nestjs-rabbitmq-9.0.0.tgz#6e8a20ace44b134506d4d508e7c24a5b043fb1b4"
+  integrity sha512-sPQuLk73ZqHSO9fs9+WvYRYh56cQZWNsnIhGcthVgADCb2gzzflVYFqMgOyP+ZbUDvdrahw6RXeC0Vn9nTLtNw==
   dependencies:
-    "@golevelup/nestjs-discovery" "^6.1.2"
+    "@golevelup/nestjs-discovery" "^7.0.0"
     amqp-connection-manager "^5.0.0"
     amqplib "^0.10.9"
-    lodash "^4.17.21"
+    lodash "^4.17.23"
 
 "@google/generative-ai@^0.24.1":
   version "0.24.1"
@@ -1322,10 +1322,10 @@
     zod "^4.2.1"
     zod-from-json-schema "^0.5.2"
 
-"@kodus/kodus-common@1.3.14":
-  version "1.3.14"
-  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/kodus-common/-/@kodus/kodus-common-1.3.14.tgz#da2f053116fc4f8658bbe42a0e40204e33df35ea"
-  integrity sha512-OGq70atVQEVKIlTEbWV2ks4qzOMSlvlZc5zsitEBNBqDDK22jtrXKTxZosrNkoFIDzc9/GnJ86qGsi8XwtwGaQ==
+"@kodus/kodus-common@1.3.15":
+  version "1.3.15"
+  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/kodus-common/-/@kodus/kodus-common-1.3.15.tgz#421855179e380a31fc2600cb1ab967fe99bde781"
+  integrity sha512-k3ktTx6/FZ4/v4cSbj5Ri2pyGB6Dc8HDONaM+5v2+7MPLK36f61o5ytiHcHXiKmEnT1zYv7yjfEbci92sLmnXA==
 
 "@langchain/anthropic@^1.3.23":
   version "1.3.25"
@@ -8669,6 +8669,11 @@ lodash@4.17.23, lodash@^4.17.15, lodash@^4.17.21, lodash@~4.17.21, lodash@~4.17.
   resolved "https://registry.npmjs.org/lodash/-/lodash-4.17.23.tgz#f113b0378386103be4f6893388c73d0bde7f2c5a"
   integrity sha512-LgVTMpQtIopCi79SJeDiP0TfWi5CNEc/L/aRdTh3yIvmZXTnheWpKjSZhnvMl8iXbC1tFg9gdHHDMLoV7CnG+w==
 
+lodash@^4.17.23:
+  version "4.18.1"
+  resolved "https://registry.npmjs.org/lodash/-/lodash-4.18.1.tgz#ff2b66c1f6326d59513de2407bf881439812771c"
+  integrity sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==
+
 log-symbols@^4.1.0:
   version "4.1.0"
   resolved "https://registry.npmjs.org/log-symbols/-/log-symbols-4.1.0.tgz#3fbdbb95b4683ac9fc785111e792e558d4abd503"
@@ -9708,6 +9713,11 @@ picomatch@^4.0.3:
   resolved "https://registry.npmjs.org/picomatch/-/picomatch-4.0.3.tgz#796c76136d1eead715db1e7bad785dedd695a042"
   integrity sha512-5gTmgEY/sqK6gFXLIsQNH19lWb4ebPDLA4SdLP7dsWkIXHWlG66oPuVvXSGFPppYZz8ZDZq0dYYrbHfBCVUb1Q==
 
+picomatch@^4.0.4:
+  version "4.0.4"
+  resolved "https://registry.npmjs.org/picomatch/-/picomatch-4.0.4.tgz#fd6f5e00a143086e074dffe4c924b8fb293b0589"
+  integrity sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==
+
 pify@^4.0.1:
   version "4.0.1"
   resolved "https://registry.npmjs.org/pify/-/pify-4.0.1.tgz#4b2cd25c50d598735c50292224fd8c6df41e3231"
@@ -10582,10 +10592,10 @@ smob@^1.4.0, smob@^1.5.0:
   resolved "https://registry.npmjs.org/smob/-/smob-1.6.1.tgz#930607366738545aee542a93e03e47b54e0303e0"
   integrity sha512-KAkBqZl3c2GvNgNhcoyJae1aKldDW0LO279wF9bk1PnluRTETKBq0WyzRXxEhoQLk56yHaOY4JCBEKDuJIET5g==
 
-smol-toml@^1.6.0:
-  version "1.6.0"
-  resolved "https://registry.npmjs.org/smol-toml/-/smol-toml-1.6.0.tgz#7911830b47bb3e87be536f939453e10c9e1dfd36"
-  integrity sha512-4zemZi0HvTnYwLfrpk/CF9LOd9Lt87kAt50GnqhMpyF9U3poDAP2+iukq2bZsO/ufegbYehBkqINbsWxj4l4cw==
+smol-toml@^1.6.1:
+  version "1.6.1"
+  resolved "https://registry.npmjs.org/smol-toml/-/smol-toml-1.6.1.tgz#4fceb5f7c4b86c2544024ef686e12ff0983465be"
+  integrity sha512-dWUG8F5sIIARXih1DTaQAX4SsiTXhInKf1buxdY9DIg4ZYPZK5nGM1VRIYmEbDbsHt7USo99xSLFu5Q1IqTmsg==
 
 sonic-boom@^4.0.1:
   version "4.2.1"

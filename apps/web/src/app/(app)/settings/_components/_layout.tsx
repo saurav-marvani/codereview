@@ -142,6 +142,11 @@ export const SettingsLayout = ({
         },
     );
 
+    console.log(
+        "configValue in layout",
+        liveShellQuery?.configValue ?? initialConfigValue,
+    );
+
     return (
         <SettingsLayoutShell
             teamId={effectiveTeamId}

@@ -25,6 +25,7 @@ import {
     KodyRulesOrigin,
     KodyRulesScope,
     KodyRulesStatus,
+    KodyRulesType,
 } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import {
     IParametersService,
@@ -46,6 +47,8 @@ import { BYOKPromptRunnerService } from '@libs/core/infrastructure/services/toke
 import { PromptSourceType } from '@libs/ai-engine/domain/prompt/interfaces/promptExternalReference.interface';
 import { createLogger } from '@kodus/flow';
 import { UpdateOrCreateCodeReviewParameterUseCase } from '@libs/code-review/application/use-cases/configuration/update-or-create-code-review-parameter-use-case';
+import { CreateOrUpdateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/create-or-update.use-case';
+import { DeleteRuleInOrganizationByIdKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/delete-rule-in-organization-by-id.use-case';
 import {
     CONTEXT_RESOLUTION_SERVICE_TOKEN,
     IContextResolutionService,
@@ -124,6 +127,8 @@ export class KodyRulesSyncService {
         private readonly contextResolutionService: IContextResolutionService,
         private readonly codeManagementService: CodeManagementService,
         private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
+        private readonly createOrUpdateKodyRulesUseCase: CreateOrUpdateKodyRulesUseCase,
+        private readonly deleteRuleInOrganizationByIdKodyRulesUseCase: DeleteRuleInOrganizationByIdKodyRulesUseCase,
         private readonly promptRunnerService: PromptRunnerService,
         private readonly permissionValidationService: PermissionValidationService,
         private readonly observabilityService: ObservabilityService,
@@ -257,9 +262,15 @@ export class KodyRulesSyncService {
             );
             if (!toDelete?.uuid) return;
 
-            await this.kodyRulesService.deleteRuleLogically(
-                entity.uuid,
+            await this.deleteRuleInOrganizationByIdKodyRulesUseCase.execute(
                 toDelete.uuid,
+                {
+                    source: 'web',
+                    organizationId: organizationAndTeamData.organizationId,
+                    teamId: organizationAndTeamData.teamId,
+                    userId: this.systemUserInfo.userId,
+                    userEmail: this.systemUserInfo.userEmail,
+                },
             );
         } catch (error) {
             this.logger.error({
@@ -603,14 +614,31 @@ export class KodyRulesSyncService {
                         : [],
                 } as CreateKodyRuleDto;
 
-                const result = await this.kodyRulesService.createOrUpdate(
-                    organizationAndTeamData,
-                    dto,
-                    this.systemUserInfo,
-                );
+                const result =
+                    await this.createOrUpdateKodyRulesUseCase.execute(
+                        dto,
+                        organizationAndTeamData.organizationId,
+                        this.systemUserInfo,
+                        true,
+                        organizationAndTeamData.teamId,
+                    );
+
+                // In centralized PR mode the mutation returns PR metadata, not the entity.
+                // Fallback to the known UUID from sourcePath lookup for reference processing.
+                let resolvedRuleId =
+                    this.getRuleId(result) || dto.uuid || existing?.uuid;
+
+                if (!resolvedRuleId) {
+                    const persistedRule = await this.findRuleBySourcePath({
+                        organizationAndTeamData,
+                        repositoryId: repository.id,
+                        sourcePath: f.filename,
+                    });
+                    resolvedRuleId = persistedRule?.uuid;
+                }
 
                 await this.processContextReferences({
-                    ruleId: this.getRuleId(result),
+                    ruleId: resolvedRuleId,
                     ruleText: dto.rule,
                     repositoryId: dto.repositoryId,
                     organizationAndTeamData,
@@ -620,9 +648,7 @@ export class KodyRulesSyncService {
                     await this.updateOrCreateCodeReviewParameterUseCase.execute(
                         {
                             organizationAndTeamData,
-                            configValue: {
-                                kodyRules: [],
-                            } as any,
+                            configValue: {},
                             repositoryId: repository.id,
                         },
                     );
@@ -650,8 +676,11 @@ export class KodyRulesSyncService {
     }
 
     async syncRepositoryMain(params: SyncTarget): Promise<void> {
-        const { organizationAndTeamData, repository, path: requestedPath } =
-            params;
+        const {
+            organizationAndTeamData,
+            repository,
+            path: requestedPath,
+        } = params;
         try {
             const syncEnabled = await this.isIdeRulesSyncEnabled(
                 organizationAndTeamData,
@@ -883,9 +912,7 @@ export class KodyRulesSyncService {
                     await this.updateOrCreateCodeReviewParameterUseCase.execute(
                         {
                             organizationAndTeamData,
-                            configValue: {
-                                kodyRules: [],
-                            } as any,
+                            configValue: {},
                             repositoryId: repository.id,
                         },
                     );
@@ -1039,8 +1066,10 @@ export class KodyRulesSyncService {
             path: (oneRule.path as string) ?? filePath,
             sourcePath: filePath,
             severity:
-                (((oneRule.severity as any)?.toLowerCase?.() as
-                    KodyRuleSeverity) || KodyRuleSeverity.MEDIUM),
+                ((
+                    oneRule.severity as any
+                )?.toLowerCase?.() as KodyRuleSeverity) ||
+                KodyRuleSeverity.MEDIUM,
             repositoryId: repository.id,
             directoryId: (
                 await this.resolveDirectoryForFile({
@@ -1051,8 +1080,7 @@ export class KodyRulesSyncService {
             )?.id,
             origin: KodyRulesOrigin.USER,
             status: oneRule.status as any,
-            scope:
-                (oneRule.scope as KodyRulesScope) || KodyRulesScope.FILE,
+            scope: (oneRule.scope as KodyRulesScope) || KodyRulesScope.FILE,
             examples: Array.isArray(oneRule.examples)
                 ? (oneRule.examples as any)
                 : [],
@@ -1074,9 +1102,7 @@ export class KodyRulesSyncService {
         try {
             await this.updateOrCreateCodeReviewParameterUseCase.execute({
                 organizationAndTeamData,
-                configValue: {
-                    kodyRules: [],
-                } as any,
+                configValue: {},
                 repositoryId: repository.id,
             });
         } catch (paramError) {
@@ -1382,6 +1408,7 @@ export class KodyRulesSyncService {
                         examples: Array.isArray(rule.examples)
                             ? (rule.examples as any)
                             : [],
+                        type: KodyRulesType.STANDARD,
                     };
 
                     try {
@@ -2050,24 +2077,24 @@ export class KodyRulesSyncService {
         }
     }
 
-    private getRuleId(
-        result: Partial<{ uuid?: string; id?: string }> | null | undefined,
-    ): string | undefined {
+    private getRuleId(result: unknown): string | undefined {
         if (!result) {
             return undefined;
         }
 
-        if (typeof result.uuid === 'string' && result.uuid) {
-            return result.uuid;
+        const candidate = result as Record<string, unknown>;
+
+        if (typeof candidate.uuid === 'string' && candidate.uuid) {
+            return candidate.uuid;
         }
 
-        if (typeof result.id === 'string' && result.id) {
-            return result.id;
+        if (typeof candidate.id === 'string' && candidate.id) {
+            return candidate.id;
         }
 
         const fallback =
-            typeof (result as Record<string, unknown>)._id === 'string'
-                ? ((result as Record<string, unknown>)._id as string)
+            typeof candidate._id === 'string'
+                ? (candidate._id as string)
                 : undefined;
         return fallback;
     }

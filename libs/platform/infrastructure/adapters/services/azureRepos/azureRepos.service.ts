@@ -77,7 +77,10 @@ import {
     AzureRepoPullRequest,
 } from '@libs/platform/domain/azure/entities/azureRepoPullRequest.type';
 import { AuthMode } from '@libs/platform/domain/platformIntegrations/enums/codeManagement/authMode.enum';
-import { CodeManagementConnectionStatus } from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
+import {
+    CodeManagementConnectionStatus,
+    PullRequestFileChange,
+} from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
 import { Repositories } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { RepositoryFile } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
 import axios, { AxiosInstance } from 'axios';
@@ -166,7 +169,7 @@ export class AzureReposService implements Omit<
         description?: string;
         commitMessage?: string;
         author?: { name: string; email?: string };
-        files: { path: string; content: string }[];
+        files: PullRequestFileChange[];
     }): Promise<Partial<PullRequest> | null> {
         const {
             organizationAndTeamData,
@@ -250,7 +253,7 @@ export class AzureReposService implements Omit<
         repository: { id: string; name: string };
         branchName?: string;
         baseBranch?: string;
-        files: { path: string; content: string }[];
+        files: PullRequestFileChange[];
         message?: string;
         author?: { name: string; email?: string };
     }): Promise<boolean> {
@@ -292,15 +295,87 @@ export class AzureReposService implements Omit<
                 repository.id,
             );
 
+            const branchAlreadyExists =
+                resolvedBranchName === resolvedBaseBranch
+                    ? true
+                    : await this.azureReposRequestHelper.branchExists({
+                          orgName,
+                          token,
+                          projectId,
+                          repositoryId: repository.id,
+                          branchName: resolvedBranchName,
+                      });
+
+            const fileExistsReferenceBranch = branchAlreadyExists
+                ? resolvedBranchName
+                : resolvedBaseBranch;
+
+            const fileExistsEntries = await Promise.all(
+                files.map(async (file) => {
+                    const operation = file.operation || 'upsert';
+
+                    if (operation === 'upsert' || operation === 'delete') {
+                        const exists = await this.checkAzureFileExists({
+                            orgName,
+                            token,
+                            projectId,
+                            repositoryId: repository.id,
+                            branchName: fileExistsReferenceBranch,
+                            filePath: file.path,
+                        });
+
+                        return [file.path, exists] as const;
+                    }
+
+                    return [file.path, false] as const;
+                }),
+            );
+
+            const fileExistsByPath = new Map(fileExistsEntries);
+
+            const changes = files
+                .map((file) => {
+                    const operation = file.operation || 'upsert';
+                    const fileExists = fileExistsByPath.get(file.path) === true;
+
+                    if (operation === 'delete') {
+                        if (!fileExists) {
+                            return null;
+                        }
+
+                        return {
+                            changeType: 'delete' as const,
+                            filePath: file.path,
+                        };
+                    }
+
+                    if (typeof file.content !== 'string') {
+                        throw new Error(
+                            `File content is required for upsert operation: ${file.path}`,
+                        );
+                    }
+
+                    return {
+                        changeType: fileExists
+                            ? ('edit' as const)
+                            : ('add' as const),
+                        filePath: file.path,
+                        content: file.content,
+                    };
+                })
+                .filter((change): change is NonNullable<typeof change> =>
+                    Boolean(change),
+                );
+
+            if (changes.length === 0) {
+                return true;
+            }
+
             await this.azureReposRequestHelper.uploadFilesToNewBranch({
                 orgName,
                 branchName: resolvedBranchName,
                 baseBranch: resolvedBaseBranch,
-                changes: files.map((file) => ({
-                    changeType: 'add',
-                    filePath: file.path,
-                    content: file.content,
-                })),
+                changes,
                 commitMessage: resolvedMessage,
                 author: tokenAuthorIdentity,
                 projectId,
@@ -313,12 +388,56 @@ export class AzureReposService implements Omit<
             this.logger.error({
                 message: 'Error uploading files to Azure Repos',
                 context: AzureReposService.name,
-                error,
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
                 metadata: { params },
             });
 
             return false;
         }
+    }
+
+    private async checkAzureFileExists(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        branchName: string;
+        filePath: string;
+    }): Promise<boolean> {
+        try {
+            await this.azureReposRequestHelper.getRepositoryContentFile({
+                orgName: params.orgName,
+                token: params.token,
+                projectId: params.projectId,
+                repositoryId: params.repositoryId,
+                filePath: params.filePath,
+                branch: params.branchName,
+            });
+
+            return true;
+        } catch (error) {
+            if (this.isAzureNotFoundError(error)) {
+                return false;
+            }
+
+            throw error;
+        }
+    }
+
+    private isAzureNotFoundError(error: unknown): boolean {
+        const candidate = error as
+            | {
+                  status?: number;
+                  code?: number;
+                  response?: { status?: number };
+              }
+            | undefined;
+
+        const status =
+            candidate?.status || candidate?.code || candidate?.response?.status;
+
+        return status === 404;
     }
 
     async getPullRequestAuthors(params: {

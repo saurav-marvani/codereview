@@ -21,6 +21,7 @@ import {
 import {
     CodeManagementConnectionStatus,
     ICodeManagementService,
+    PullRequestFileChange,
 } from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
 import { GitCloneParams } from '@libs/platform/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 import {
@@ -109,7 +110,7 @@ export class CodeManagementService implements ICodeManagementService {
             description?: string;
             commitMessage?: string;
             author?: { name: string; email?: string };
-            files: { path: string; content: string }[];
+            files: PullRequestFileChange[];
         },
         type?: PlatformType,
     ): Promise<Partial<PullRequest> | null> {
@@ -131,7 +132,7 @@ export class CodeManagementService implements ICodeManagementService {
             repository: { id: string; name: string };
             branchName?: string;
             baseBranch?: string;
-            files: { path: string; content: string }[];
+            files: PullRequestFileChange[];
             message?: string;
             author?: { name: string; email?: string };
         },

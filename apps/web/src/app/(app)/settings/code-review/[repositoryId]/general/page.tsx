@@ -33,6 +33,7 @@ import GeneratingConfig from "../../_components/generating-config";
 import { CodeReviewSaveButton } from "../../_components/save-button";
 import { useCodeReviewSettingsMutation } from "../../_hooks/use-code-review-settings-mutation";
 import { FormattedConfigLevel, type CodeReviewFormType } from "../../_types";
+import { getCentralizedPrToastPayload } from "../../_utils/centralized-pr-feedback";
 import {
     useFeatureFlags,
     usePlatformConfig,
@@ -92,13 +93,9 @@ export default function General() {
         },
     );
 
-    const isCentralizedConfigEnabled =
-        centralizedConfigParameter === true &&
-        centralizedConfig.data?.configValue?.enabled === true;
     const isGlobalGeneralView =
         repositoryId === "global" &&
         currentLevel === FormattedConfigLevel.GLOBAL;
-    const isCentralizedReadOnly = isCentralizedConfigEnabled;
 
     const downloadFileText =
         currentLevel === FormattedConfigLevel.GLOBAL
@@ -153,7 +150,7 @@ export default function General() {
         const unformattedConfig = unformatConfig(config);
 
         try {
-            await saveSettings(formData, {
+            const saveResult = await saveSettings(formData, {
                 prepare: async () => {
                     const languageResult = await createOrUpdateParameter(
                         ParametersConfigKey.LANGUAGE_CONFIG,
@@ -173,6 +170,16 @@ export default function General() {
                     };
                 },
             });
+
+            if (saveResult.centralizedPr) {
+                toast(
+                    getCentralizedPrToastPayload(
+                        saveResult.centralizedPr,
+                        "Change proposed through centralized pull request.",
+                    ),
+                );
+                return;
+            }
 
             toast({
                 description: "Settings saved",
@@ -234,7 +241,7 @@ export default function General() {
                         </Button>
                     )}
 
-                    {formIsDirty && !isCentralizedReadOnly && (
+                    {formIsDirty && (
                         <Button
                             size="md"
                             variant="cancel"
@@ -250,12 +257,7 @@ export default function General() {
                         variant="primary"
                         leftIcon={<SaveIcon />}
                         onClick={handleSubmit}
-                        disabled={
-                            !canEdit ||
-                            !formIsDirty ||
-                            !formIsValid ||
-                            isCentralizedReadOnly
-                        }
+                        disabled={!canEdit || !formIsDirty || !formIsValid}
                         loading={formIsSubmitting}>
                         Save settings
                     </CodeReviewSaveButton>
@@ -265,55 +267,53 @@ export default function General() {
             <Page.Content>
                 <CentralizedConfigReadOnlyAlert />
 
-                <fieldset disabled={isCentralizedReadOnly} className="contents">
-                    <div data-field-name="automatedReviewActive">
-                        <AutomatedReviewActive />
+                <div data-field-name="automatedReviewActive">
+                    <AutomatedReviewActive />
+                </div>
+                <div data-field-name="kodusConfigFileOverridesWebPreferences">
+                    <KodusConfigFileOverridesWebPreferences />
+                </div>
+                <div data-field-name="pullRequestApprovalActive">
+                    <PullRequestApprovalActive />
+                </div>
+                <AsyncBoundary errorVariant="minimal">
+                    <div data-field-name="isRequestChangesActive">
+                        <IsRequestChangesActive />
                     </div>
-                    <div data-field-name="kodusConfigFileOverridesWebPreferences">
-                        <KodusConfigFileOverridesWebPreferences />
+                </AsyncBoundary>
+                <div data-field-name="runOnDraft">
+                    <RunOnDraft />
+                </div>
+                <div data-field-name="showStatusFeedback">
+                    <ShowStatusFeedback />
+                </div>
+                <AsyncBoundary errorVariant="minimal">
+                    <div data-field-name="enableCommittableSuggestions">
+                        <EnableCommittableSuggestions />
                     </div>
-                    <div data-field-name="pullRequestApprovalActive">
-                        <PullRequestApprovalActive />
+                </AsyncBoundary>
+                <AsyncBoundary errorVariant="minimal">
+                    <div data-field-name="crossFileDependenciesAnalysis">
+                        <CrossfileDependenciesAnalysis />
                     </div>
-                    <AsyncBoundary errorVariant="minimal">
-                        <div data-field-name="isRequestChangesActive">
-                            <IsRequestChangesActive />
-                        </div>
-                    </AsyncBoundary>
-                    <div data-field-name="runOnDraft">
-                        <RunOnDraft />
-                    </div>
-                    <div data-field-name="showStatusFeedback">
-                        <ShowStatusFeedback />
-                    </div>
-                    <AsyncBoundary errorVariant="minimal">
-                        <div data-field-name="enableCommittableSuggestions">
-                            <EnableCommittableSuggestions />
-                        </div>
-                    </AsyncBoundary>
-                    <AsyncBoundary errorVariant="minimal">
-                        <div data-field-name="crossFileDependenciesAnalysis">
-                            <CrossfileDependenciesAnalysis />
-                        </div>
-                    </AsyncBoundary>
-                    <div data-field-name="ignorePaths">
-                        <IgnorePaths />
-                    </div>
-                    <div data-field-name="ignoredTitleKeywords">
-                        <IgnoredTitleKeywords />
-                    </div>
-                    <div data-field-name="baseBranches">
-                        <BaseBranches />
-                    </div>
+                </AsyncBoundary>
+                <div data-field-name="ignorePaths">
+                    <IgnorePaths />
+                </div>
+                <div data-field-name="ignoredTitleKeywords">
+                    <IgnoredTitleKeywords />
+                </div>
+                <div data-field-name="baseBranches">
+                    <BaseBranches />
+                </div>
 
-                    {repositoryId === "global" && (
-                        <div data-field-name="language">
-                            <FormProvider {...form}>
-                                <LanguageSelector />
-                            </FormProvider>
-                        </div>
-                    )}
-                </fieldset>
+                {repositoryId === "global" && (
+                    <div data-field-name="language">
+                        <FormProvider {...form}>
+                            <LanguageSelector />
+                        </FormProvider>
+                    </div>
+                )}
 
                 {centralizedConfigParameter && isGlobalGeneralView && (
                     <CentralizedConfigModal

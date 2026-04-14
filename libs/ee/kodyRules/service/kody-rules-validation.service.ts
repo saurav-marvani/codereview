@@ -9,6 +9,7 @@ import { environment } from '@libs/ee/configs/environment';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import {
     IKodyRule,
+    KodyRuleCentralizedStatus,
     KodyRulesStatus,
     KodyRulesType,
 } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
@@ -112,6 +113,13 @@ export class KodyRulesValidationService {
 
         for (const rule of rules) {
             if (rule.status !== KodyRulesStatus.ACTIVE) {
+                continue;
+            }
+
+            if (
+                rule.centralizedConfig?.status ===
+                KodyRuleCentralizedStatus.PENDING_ADD
+            ) {
                 continue;
             }
 

@@ -21,6 +21,7 @@ import {
     type AutomationCodeReviewConfigPageProps,
     type CodeReviewFormType,
 } from "../../_types";
+import { getCentralizedPrToastPayload } from "../../_utils/centralized-pr-feedback";
 import { usePlatformConfig } from "../../../_components/context";
 import { useCodeReviewRouteParams } from "../../../_hooks";
 import { ApplyFiltersToKodyRules } from "./_components/apply-filters-to-kody-rules";
@@ -47,7 +48,7 @@ export default function SuggestionControl(
 
     const handleSubmit = form.handleSubmit(async (formData) => {
         try {
-            await saveSettings(formData, {
+            const saveResult = await saveSettings(formData, {
                 prepare: (data) => {
                     const { language: _language, ...config } = data;
                     const unformatted = unformatConfig(config);
@@ -57,6 +58,16 @@ export default function SuggestionControl(
                     };
                 },
             });
+
+            if (saveResult.centralizedPr) {
+                toast(
+                    getCentralizedPrToastPayload(
+                        saveResult.centralizedPr,
+                        "Change proposed through centralized pull request.",
+                    ),
+                );
+                return;
+            }
 
             toast({
                 description: "Settings saved",

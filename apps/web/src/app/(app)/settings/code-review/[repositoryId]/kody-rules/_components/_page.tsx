@@ -18,6 +18,7 @@ import {
     useSuspenseKodyRulesByRepositoryId,
 } from "@services/kodyRules/hooks";
 import {
+    KodyRuleCentralizedStatus,
     KodyRuleRequestType,
     KodyRulesStatus,
     KodyRulesType,
@@ -51,12 +52,24 @@ import { KodyRulesList } from "./list";
 import { KodyRulesToolbar, type VisibleScopes } from "./toolbar";
 
 type KodyRulesTab = "review-rules" | "memories" | "configuration";
+type RulesStatusFilter = "all" | "pending-centralized";
 
 const TAB_QUERY_PARAM = "tab";
 const DEFAULT_TAB: KodyRulesTab = "review-rules";
 
 const getRuleType = (rule: Pick<KodyRule, "type">) =>
     rule.type ?? KodyRulesType.STANDARD;
+
+const isRulePendingCentralizedChange = (rule: KodyRule) => {
+    return (
+        rule.centralizedConfig?.status ===
+            KodyRuleCentralizedStatus.PENDING_ADD ||
+        rule.centralizedConfig?.status ===
+            KodyRuleCentralizedStatus.PENDING_EDIT ||
+        rule.centralizedConfig?.status ===
+            KodyRuleCentralizedStatus.PENDING_DELETE
+    );
+};
 
 const KodyRulesPageContent = () => {
     const platformConfig = usePlatformConfig();
@@ -127,6 +140,7 @@ const KodyRulesPageContent = () => {
         global: true,
         disabled: true,
     });
+    const [statusFilter, setStatusFilter] = useState<RulesStatusFilter>("all");
 
     const getRulesViewState = (ruleType: KodyRulesType) => {
         const activeRulesByType = kodyRules.filter(
@@ -194,10 +208,21 @@ const KodyRulesPageContent = () => {
         }
         const uniqueRules = Array.from(uniqueRulesMap.values());
 
+        const pendingCentralizedCount = activeRulesByType.filter((rule) =>
+            isRulePendingCentralizedChange(rule),
+        ).length;
+
+        const statusFilteredRules =
+            statusFilter === "pending-centralized"
+                ? uniqueRules.filter((rule) =>
+                      isRulePendingCentralizedChange(rule as KodyRule),
+                  )
+                : uniqueRules;
+
         const filterQueryLowercase = filterQuery.toLowerCase();
         const rulesToDisplay = !filterQuery
-            ? uniqueRules
-            : uniqueRules.filter((rule) => {
+            ? statusFilteredRules
+            : statusFilteredRules.filter((rule) => {
                   return (
                       rule.title.toLowerCase().includes(filterQueryLowercase) ||
                       rule.path?.toLowerCase().includes(filterQueryLowercase) ||
@@ -211,7 +236,7 @@ const KodyRulesPageContent = () => {
             inheritedRepoRulesByType.length > 0 ||
             inheritedDirectoryRulesByType.length > 0;
 
-        return { rulesToDisplay, hasAnyRulesInSystem };
+        return { rulesToDisplay, hasAnyRulesInSystem, pendingCentralizedCount };
     };
 
     const reviewRulesState = useMemo(
@@ -227,6 +252,7 @@ const KodyRulesPageContent = () => {
             inheritedDirectoryRules,
             directoryId,
             repositoryId,
+            statusFilter,
         ],
     );
 
@@ -243,8 +269,36 @@ const KodyRulesPageContent = () => {
             inheritedDirectoryRules,
             directoryId,
             repositoryId,
+            statusFilter,
         ],
     );
+
+    const renderPendingMergeFilter = (pendingCentralizedCount: number) => {
+        if (pendingCentralizedCount === 0 && statusFilter === "all") {
+            return null;
+        }
+
+        return (
+            <div className="flex items-center gap-2">
+                <Button
+                    size="xs"
+                    variant={statusFilter === "all" ? "primary" : "secondary"}
+                    onClick={() => setStatusFilter("all")}>
+                    All
+                </Button>
+                <Button
+                    size="xs"
+                    variant={
+                        statusFilter === "pending-centralized"
+                            ? "primary"
+                            : "secondary"
+                    }
+                    onClick={() => setStatusFilter("pending-centralized")}>
+                    Pending centralized ({pendingCentralizedCount})
+                </Button>
+            </div>
+        );
+    };
 
     const pendingReviewRules = useMemo(
         () =>
@@ -351,6 +405,7 @@ const KodyRulesPageContent = () => {
                 pendingNewMemories={pendingMemoryCreations}
                 pendingUpdates={pendingMemoryUpdates}
                 activeMemories={activeMemories}
+                refreshRulesList={refreshRulesList}
             />
         ));
 
@@ -394,6 +449,7 @@ const KodyRulesPageContent = () => {
                     <Page.Title>Kody Rules</Page.Title>
                     <Page.Description>{headerDescription}</Page.Description>
                 </Page.TitleContainer>
+
                 {showHeaderActions && (
                     <div className="flex flex-col gap-2">
                         <Page.HeaderActions className="justify-end">
@@ -469,7 +525,9 @@ const KodyRulesPageContent = () => {
                     </div>
                 )}
             </Page.Header>
+
             <Page.Content>
+                <CentralizedConfigReadOnlyAlert />
                 <Tabs value={activeTab} onValueChange={handleTabChange}>
                     <TabsList>
                         <TabsTrigger value="review-rules">
@@ -500,6 +558,9 @@ const KodyRulesPageContent = () => {
                                 isRepoView={isRepoView}
                                 isGlobalView={isGlobalView}
                             />
+                            {renderPendingMergeFilter(
+                                reviewRulesState.pendingCentralizedCount,
+                            )}
                             {!reviewRulesState.rulesToDisplay.length ? (
                                 <KodyRulesEmptyState
                                     canEdit={canEdit}
@@ -535,6 +596,9 @@ const KodyRulesPageContent = () => {
                                 isRepoView={isRepoView}
                                 isGlobalView={isGlobalView}
                             />
+                            {renderPendingMergeFilter(
+                                memoriesState.pendingCentralizedCount,
+                            )}
                             {!memoriesState.rulesToDisplay.length ? (
                                 <KodyRulesEmptyState
                                     canEdit={canEdit}
@@ -556,8 +620,6 @@ const KodyRulesPageContent = () => {
 
                     <TabsContent value="configuration" className="mt-4">
                         <div className="flex flex-col gap-4">
-                            <CentralizedConfigReadOnlyAlert />
-
                             <GeneratedMemoriesApprovalSetting />
 
                             {isRepoView && (

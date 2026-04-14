@@ -40,9 +40,9 @@ import {
     PARAMETERS_SERVICE_TOKEN,
 } from '@libs/organization/domain/parameters/contracts/parameters.service.contract';
 import { CreateOrUpdateParametersUseCase } from '@libs/organization/application/use-cases/parameters/create-or-update-use-case';
-import { CentralizedConfigInitUseCase } from '@libs/code-review/application/use-cases/configuration/centralized-config-init.use-case';
-import { CentralizedConfigSyncUseCase } from '@libs/code-review/application/use-cases/configuration/centralized-config-sync.use-case';
-import { CentralizedConfigDownloadUseCase } from '@libs/code-review/application/use-cases/configuration/centralized-config-download.use-case';
+import { CentralizedConfigInitUseCase } from '@libs/centralized-config/application/use-cases/centralized-config-init.use-case';
+import { CentralizedConfigSyncUseCase } from '@libs/centralized-config/application/use-cases/centralized-config-sync.use-case';
+import { CentralizedConfigDownloadUseCase } from '@libs/centralized-config/application/use-cases/centralized-config-download.use-case';
 import { IUser } from '@libs/identity/domain/user/interfaces/user.interface';
 
 import { ApiStandardResponses } from '../../docs/api-standard-responses.decorator';
@@ -292,6 +292,7 @@ export class CliCentralizedConfigController {
             {
                 enabled: false,
                 repository: null,
+                activePullRequest: null,
             },
             context,
         );

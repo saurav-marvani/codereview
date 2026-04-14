@@ -121,6 +121,8 @@ KEYS=(
     "/prod/kodus-orchestrator/API_SEGMENT_KEY"
 
     "/prod/kodus-orchestrator/API_VERTEX_AI_API_KEY"
+    "/prod/kodus-orchestrator/API_VERTEX_AI_LOCATION"
+    "/prod/kodus-orchestrator/API_GOOGLE_AI_PROVIDER"
     "/prod/kodus-orchestrator/TOGETHER_AI_API_KEY"
     "/prod/kodus-orchestrator/API_NOVITA_AI_API_KEY"
 

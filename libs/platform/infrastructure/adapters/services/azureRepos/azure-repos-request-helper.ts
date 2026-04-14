@@ -1213,22 +1213,28 @@ export class AzureReposRequestHelper {
             '',
         );
 
-        const refsResponse = await instance.get(
-            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/refs`,
-            {
-                params: {
-                    'filter': `heads/${normalizedBranch}`,
-                    'api-version': '7.1',
-                },
-            },
-        );
+        const sourceObjectId = await this.getBranchObjectId({
+            orgName: params.orgName,
+            token: params.token,
+            projectId: params.projectId,
+            repositoryId: params.repositoryId,
+            branchName: normalizedBranch,
+        });
 
-        const existingBranchRef = refsResponse.data?.value?.find(
-            (ref: { name?: string }) =>
-                ref?.name === `refs/heads/${normalizedBranch}`,
-        );
+        const baseObjectId =
+            !sourceObjectId && params.baseBranch
+                ? await this.getBranchObjectId({
+                      orgName: params.orgName,
+                      token: params.token,
+                      projectId: params.projectId,
+                      repositoryId: params.repositoryId,
+                      branchName: params.baseBranch,
+                  })
+                : null;
+
         const oldObjectId =
-            existingBranchRef?.objectId ||
+            sourceObjectId ||
+            baseObjectId ||
             '0000000000000000000000000000000000000000';
 
         const url = `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pushes?api-version=7.1`;
@@ -1273,6 +1279,48 @@ export class AzureReposRequestHelper {
 
         const { data } = await instance.post(url, payload);
         return data;
+    }
+
+    async branchExists(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        branchName: string;
+    }): Promise<boolean> {
+        const branchObjectId = await this.getBranchObjectId(params);
+        return Boolean(branchObjectId);
+    }
+
+    async getBranchObjectId(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        branchName: string;
+    }): Promise<string | null> {
+        const instance = await this.azureRequest(params);
+        const normalizedBranch = params.branchName.replace(
+            /^refs\/heads\//,
+            '',
+        );
+
+        const refsResponse = await instance.get(
+            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/refs`,
+            {
+                params: {
+                    'filter': `heads/${normalizedBranch}`,
+                    'api-version': '7.1',
+                },
+            },
+        );
+
+        const branchRef = refsResponse.data?.value?.find(
+            (ref: { name?: string; objectId?: string }) =>
+                ref?.name === `refs/heads/${normalizedBranch}`,
+        );
+
+        return branchRef?.objectId || null;
     }
 
     async createPullRequest(params: {

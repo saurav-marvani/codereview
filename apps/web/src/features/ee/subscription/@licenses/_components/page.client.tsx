@@ -2,6 +2,7 @@
 
 import { use, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@components/ui/button";
 import { DataTable } from "@components/ui/data-table";
 import { toast } from "@components/ui/toaster/use-toast";
 import { useAsyncAction } from "@hooks/use-async-action";
@@ -12,9 +13,12 @@ import {
 } from "@services/parameters/types";
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
+import { RefreshCwIcon } from "lucide-react";
+import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { Switch } from "src/core/components/ui/switch";
 import { useSubscriptionStatus } from "src/features/ee/subscription/_hooks/use-subscription-status";
 
+import { refreshOrganizationMembers } from "../../_services/billing/fetch";
 import { TableFilterContext } from "../../_providers/table-filter-context";
 import { columns, type LicenseTableRow } from "./columns";
 
@@ -27,9 +31,24 @@ export const LicensesPageClient = ({
 }) => {
     const { query, setQuery } = use(TableFilterContext);
     const router = useRouter();
+    const { teamId } = useSelectedTeamId();
 
     const subscription = useSubscriptionStatus();
     const canEdit = usePermission(Action.Update, ResourceType.UserSettings);
+
+    const [handleRefreshMembers, { loading: isRefreshing }] = useAsyncAction(
+        async () => {
+            try {
+                await refreshOrganizationMembers({ teamId });
+                router.refresh();
+            } catch {
+                toast({
+                    variant: "danger",
+                    title: "Failed to refresh members",
+                });
+            }
+        },
+    );
 
     const [open, setOpen] = useState(false);
     const [pendingIgnoredUsers, setPendingIgnoredUsers] = useState<string[]>(
@@ -127,6 +146,20 @@ export const LicensesPageClient = ({
                         </div>
                     </div>
                 )}
+            <div className="flex justify-end">
+                <Button
+                    size="sm"
+                    variant="helper"
+                    leftIcon={
+                        <RefreshCwIcon
+                            className={isRefreshing ? "animate-spin" : ""}
+                        />
+                    }
+                    disabled={isRefreshing}
+                    onClick={handleRefreshMembers}>
+                    Refresh members
+                </Button>
+            </div>
             <DataTable
                 data={data}
                 columns={columns}

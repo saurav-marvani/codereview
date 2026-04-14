@@ -62,7 +62,10 @@ import { GitlabAuthDetail } from '@libs/integrations/domain/authIntegrations/typ
 import { IntegrationConfigEntity } from '@libs/integrations/domain/integrationConfigs/entities/integration-config.entity';
 import { IntegrationEntity } from '@libs/integrations/domain/integrations/entities/integration.entity';
 import { AuthMode } from '@libs/platform/domain/platformIntegrations/enums/codeManagement/authMode.enum';
-import { CodeManagementConnectionStatus } from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
+import {
+    CodeManagementConnectionStatus,
+    PullRequestFileChange,
+} from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
 import { GitCloneParams } from '@libs/platform/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 import {
     PullRequest,
@@ -352,7 +355,7 @@ export class GitlabService implements Omit<
         description?: string;
         commitMessage?: string;
         author?: { name: string; email?: string };
-        files: { path: string; content: string }[];
+        files: PullRequestFileChange[];
     }): Promise<Partial<PullRequest> | null> {
         const {
             organizationAndTeamData,
@@ -440,7 +443,7 @@ export class GitlabService implements Omit<
         repository: { id: string; name: string };
         branchName?: string;
         baseBranch?: string;
-        files: { path: string; content: string }[];
+        files: PullRequestFileChange[];
         message?: string;
         author?: { name: string; email?: string };
     }): Promise<boolean> {
@@ -473,12 +476,25 @@ export class GitlabService implements Omit<
 
             const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
 
-            const commitOptions =
+            const branchAlreadyExists =
                 resolvedBranchName === resolvedBaseBranch
+                    ? true
+                    : await this.checkGitlabBranchExists(
+                          gitlabAPI,
+                          repository.id,
+                          resolvedBranchName,
+                      );
+
+            const commitOptions =
+                resolvedBranchName === resolvedBaseBranch || branchAlreadyExists
                     ? undefined
                     : {
                           startBranch: resolvedBaseBranch,
                       };
+
+            const fileExistsReferenceBranch = branchAlreadyExists
+                ? resolvedBranchName
+                : resolvedBaseBranch;
 
             const tokenAuthorIdentity =
                 gitlabAuthDetail.authMode === AuthMode.TOKEN && author?.name
@@ -488,16 +504,78 @@ export class GitlabService implements Omit<
                       }
                     : undefined;
 
+            const fileExistsEntries = await Promise.all(
+                files.map(async (file) => {
+                    const operation = file.operation || 'upsert';
+
+                    if (operation === 'upsert' || operation === 'delete') {
+                        const exists = await this.checkGitlabFileExists(
+                            gitlabAPI,
+                            repository.id,
+                            fileExistsReferenceBranch,
+                            file.path,
+                        );
+
+                        return [file.path, exists] as const;
+                    }
+
+                    return [file.path, false] as const;
+                }),
+            );
+
+            const fileExistsByPath = new Map(fileExistsEntries);
+
+            const actions = files
+                .map((file) => {
+                    const operation = file.operation || 'upsert';
+                    const fileExists = fileExistsByPath.get(file.path) === true;
+
+                    if (operation === 'delete') {
+                        if (!fileExists) {
+                            return null;
+                        }
+
+                        return {
+                            action: 'delete' as const,
+                            filePath: file.path,
+                        };
+                    }
+
+                    if (typeof file.content !== 'string') {
+                        throw new Error(
+                            `File content is required for upsert operation: ${file.path}`,
+                        );
+                    }
+
+                    return {
+                        action: fileExists
+                            ? ('update' as const)
+                            : ('create' as const),
+                        filePath: file.path,
+                        content: file.content,
+                        encoding: 'text' as const,
+                    };
+                })
+                .filter(
+                    (
+                        action,
+                    ): action is {
+                        action: 'create' | 'update' | 'delete';
+                        filePath: string;
+                        content?: string;
+                        encoding?: 'text';
+                    } => Boolean(action),
+                );
+
+            if (actions.length === 0) {
+                return true;
+            }
+
             const res = await gitlabAPI.Commits.create(
                 repository.id,
                 resolvedBranchName,
                 resolvedMessage,
-                files.map((f) => ({
-                    action: 'create',
-                    filePath: f.path,
-                    content: f.content,
-                    encoding: 'text',
-                })),
+                actions,
                 {
                     ...(commitOptions || {}),
                     ...(tokenAuthorIdentity || {}),
@@ -518,6 +596,64 @@ export class GitlabService implements Omit<
             });
             return false;
         }
+    }
+
+    private async checkGitlabBranchExists(
+        gitlabAPI: any,
+        repositoryId: string,
+        branchName: string,
+    ): Promise<boolean> {
+        try {
+            await gitlabAPI.Branches.show(repositoryId, branchName);
+            return true;
+        } catch (error) {
+            if (this.isGitlabNotFoundError(error)) {
+                return false;
+            }
+
+            throw error;
+        }
+    }
+
+    private async checkGitlabFileExists(
+        gitlabAPI: any,
+        repositoryId: string,
+        branchName: string,
+        filePath: string,
+    ): Promise<boolean> {
+        try {
+            await gitlabAPI.RepositoryFiles.show(
+                repositoryId,
+                filePath,
+                branchName,
+            );
+            return true;
+        } catch (error) {
+            if (this.isGitlabNotFoundError(error)) {
+                return false;
+            }
+
+            throw error;
+        }
+    }
+
+    private isGitlabNotFoundError(error: unknown): boolean {
+        const candidate = error as
+            | {
+                  status?: number;
+                  statusCode?: number;
+                  response?: { status?: number };
+                  cause?: { response?: { status?: number } };
+              }
+            | undefined;
+
+        const status =
+            candidate?.status ||
+            candidate?.statusCode ||
+            candidate?.response?.status ||
+            candidate?.cause?.response?.status;
+
+        return status === 404;
     }
 
     private async handleIntegration(
@@ -1257,9 +1393,28 @@ export class GitlabService implements Omit<
 
         const repositories = integrationConfig.configValue;
         const users = [];
+        const batchSize = 10;
 
-        for (const repository of repositories) {
-            users.push(...(await gitlabAPI.Projects.allUsers(repository.id)));
+        for (let i = 0; i < repositories.length; i += batchSize) {
+            const batch = repositories.slice(i, i + batchSize);
+            const results = await Promise.allSettled(
+                batch.map((repository) =>
+                    gitlabAPI.Projects.allUsers(repository.id),
+                ),
+            );
+
+            results.forEach((result, index) => {
+                if (result.status === 'fulfilled') {
+                    users.push(...result.value);
+                } else {
+                    this.logger.error({
+                        message: 'Failed to fetch users for repository',
+                        context: GitlabService.name,
+                        error: result.reason,
+                        metadata: { repositoryId: batch[index].id },
+                    });
+                }
+            });
         }
 
         // Removing duplicates based on a unique identifier, such as 'id'

@@ -10,6 +10,11 @@ import bucketsData from './data/buckets.json';
 import libraryKodyRules from './data/library-kody-rules.json';
 
 import { createLogger } from '@kodus/flow';
+import { CentralizedConfigPrService } from '@libs/centralized-config/infrastructure/adapters/services/centralized-config-pr.service';
+import {
+    buildKodyRuleCentralizedFilePath,
+    buildKodyRuleCentralizedMutationRequest,
+} from '@libs/centralized-config/utils/kody-rules-centralized-pr.builder';
 import {
     LLMModelProvider,
     ParserType,
@@ -65,6 +70,7 @@ import {
     IKodyRule,
     IKodyRuleMemory,
     IKodyRules,
+    KodyRuleCentralizedStatus,
     KodyRuleRequestType,
     KodyRulesOrigin,
     KodyRulesScope,
@@ -103,6 +109,8 @@ export class KodyRulesService implements IKodyRulesService {
         private readonly observabilityService: ObservabilityService,
 
         private readonly permissionValidationService: PermissionValidationService,
+
+        private readonly centralizedConfigPrService: CentralizedConfigPrService,
 
         @Inject(forwardRef(() => CODE_BASE_CONFIG_SERVICE_TOKEN))
         private readonly codeBaseConfigService: ICodeBaseConfigService,
@@ -259,6 +267,7 @@ export class KodyRulesService implements IKodyRulesService {
                 severity: kodyRule?.severity?.toLowerCase(),
                 status: kodyRule?.status ?? KodyRulesStatus.ACTIVE,
                 sourcePath: kodyRule?.sourcePath,
+                centralizedConfig: kodyRule?.centralizedConfig,
                 sourceAnchor: kodyRule?.sourceAnchor,
                 repositoryId: kodyRule?.repositoryId,
                 directoryId: kodyRule?.directoryId,
@@ -322,6 +331,7 @@ export class KodyRulesService implements IKodyRulesService {
                 rule: kodyRule.rule,
                 path: kodyRule.path,
                 sourcePath: kodyRule.sourcePath,
+                centralizedConfig: kodyRule.centralizedConfig,
                 sourceAnchor: kodyRule.sourceAnchor,
                 severity: kodyRule.severity?.toLowerCase(),
                 status: kodyRule.status ?? KodyRulesStatus.ACTIVE,
@@ -1233,29 +1243,37 @@ Analyze the suggestions and recommend the most relevant rules.`;
                 );
             }
 
-            const rule = await this.createOrUpdate(
-                organizationAndTeamData,
-                {
-                    ...this.getBaseMemoryPayload(memoryToPersist),
-                    status: requiresApproval
-                        ? KodyRulesStatus.PENDING
-                        : memoryToPersist.status || KodyRulesStatus.ACTIVE,
-                },
-                userInfo,
-            );
+            const operation =
+                resolution?.action === 'update' ? 'update' : 'create';
+
+            const { rule, linkOverride } =
+                await this.createOrUpdateMemoryWithCentralizedRouting(
+                    organizationAndTeamData,
+                    memoryToPersist,
+                    userInfo,
+                    operation,
+                    requiresApproval,
+                );
 
             if (!rule) return null;
 
+            const action =
+                operation === 'update'
+                    ? ('updated' as const)
+                    : ('created' as const);
+
             return {
                 rule,
-                action: resolution?.action === 'update' ? 'updated' : 'created',
+                action,
                 requiresApproval,
-                link: this.buildMemoryLink(
-                    rule.repositoryId,
-                    rule.uuid,
-                    organizationAndTeamData.teamId,
-                    rule.status,
-                ),
+                link:
+                    linkOverride ||
+                    this.buildMemoryLink(
+                        rule.repositoryId,
+                        rule.uuid,
+                        organizationAndTeamData.teamId,
+                        rule.status,
+                    ),
             };
         } catch (error) {
             this.logger.error({
@@ -1270,6 +1288,103 @@ Analyze the suggestions and recommend the most relevant rules.`;
             });
             throw error;
         }
+    }
+
+    private async createOrUpdateMemoryWithCentralizedRouting(
+        organizationAndTeamData: OrganizationAndTeamData,
+        memory: IKodyRuleMemory,
+        userInfo: UserInfo | undefined,
+        operation: 'create' | 'update',
+        requiresApproval: boolean,
+    ): Promise<{
+        rule: Partial<IKodyRule> | IKodyRule | null;
+        linkOverride?: string;
+    }> {
+        const payload = {
+            ...this.getBaseMemoryPayload(memory),
+            status: requiresApproval
+                ? KodyRulesStatus.PENDING
+                : memory.status || KodyRulesStatus.ACTIVE,
+        };
+
+        const centralizedPr =
+            await this.centralizedConfigPrService.createMutationPullRequestIfEnabled(
+                buildKodyRuleCentralizedMutationRequest({
+                    centralizedConfigPrService: this.centralizedConfigPrService,
+                    organizationAndTeamData,
+                    repositoryId: payload.repositoryId,
+                    ruleContent: payload,
+                    ruleType: KodyRulesType.MEMORY,
+                    operation,
+                }),
+            );
+
+        if (centralizedPr.mode !== 'centralized-pr') {
+            const rule = await this.createOrUpdate(
+                organizationAndTeamData,
+                payload,
+                userInfo,
+            );
+
+            return { rule };
+        }
+
+        const persistedPending =
+            await this.persistMemoryCentralizedPendingStatus(
+                organizationAndTeamData,
+                payload,
+                operation,
+                userInfo,
+            );
+
+        return {
+            rule: persistedPending || payload,
+            linkOverride: centralizedPr.prUrl || '',
+        };
+    }
+
+    private async persistMemoryCentralizedPendingStatus(
+        organizationAndTeamData: OrganizationAndTeamData,
+        memoryPayload: Partial<IKodyRule>,
+        operation: 'create' | 'update',
+        userInfo?: UserInfo,
+    ): Promise<Partial<IKodyRule> | IKodyRule | null> {
+        if (!memoryPayload.title || !memoryPayload.repositoryId) {
+            return null;
+        }
+
+        const repositoryFolder =
+            await this.centralizedConfigPrService.resolveRepositoryFolderName(
+                organizationAndTeamData,
+                memoryPayload.repositoryId,
+            );
+
+        const centralizedPath = buildKodyRuleCentralizedFilePath({
+            centralizedConfigPrService: this.centralizedConfigPrService,
+            repositoryFolder,
+            rulesDirectory: 'memories',
+            ruleContent: memoryPayload,
+        });
+
+        if (operation === 'update' && !memoryPayload.uuid) {
+            return null;
+        }
+
+        return this.createOrUpdate(
+            organizationAndTeamData,
+            {
+                ...(memoryPayload as CreateKodyRuleDto),
+                type: KodyRulesType.MEMORY,
+                centralizedConfig: {
+                    path: centralizedPath,
+                    status:
+                        operation === 'create'
+                            ? KodyRuleCentralizedStatus.PENDING_ADD
+                            : KodyRuleCentralizedStatus.PENDING_EDIT,
+                },
+            },
+            userInfo,
+        );
     }
 
     private async shouldRequireApprovalForGeneratedMemory(

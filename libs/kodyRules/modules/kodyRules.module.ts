@@ -56,6 +56,8 @@ import { RuleLikeModule } from './ruleLike.module';
 import { PermissionsModule } from '@libs/identity/modules/permissions.module';
 import { McpCoreModule } from '@libs/mcp-server/mcp-core.module';
 import { KodyRulesSyncListener } from '../infrastructure/adapters/listeners/kody-rules-sync.listener';
+import { CodeReviewConfigurationModule } from '@libs/code-review/modules/code-review-configuration.module';
+import { CentralizedConfigModule } from '@libs/centralized-config/modules/centralized-config.module';
 
 @Module({
     imports: [
@@ -81,6 +83,8 @@ import { KodyRulesSyncListener } from '../infrastructure/adapters/listeners/kody
         forwardRef(() => PermissionValidationModule),
         PermissionsModule,
         forwardRef(() => McpCoreModule),
+        forwardRef(() => CodeReviewConfigurationModule),
+        forwardRef(() => CentralizedConfigModule),
     ],
     providers: [
         {
