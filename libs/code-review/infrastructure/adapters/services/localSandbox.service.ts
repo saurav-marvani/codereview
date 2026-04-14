@@ -136,12 +136,12 @@ export class LocalSandboxService implements ISandboxProvider {
             };
 
             const sandboxReadFile = async (path: string): Promise<string> => {
-                const fullPath = path.startsWith('/') ? join(capturedRepoDir, path) : join(capturedRepoDir, path);
+                const fullPath = path.startsWith('/') ? path : join(capturedRepoDir, path);
                 return readFile(fullPath, 'utf-8');
             };
 
             const sandboxWriteFile = async (path: string, content: string): Promise<void> => {
-                const fullPath = path.startsWith('/') ? join(capturedRepoDir, path) : join(capturedRepoDir, path);
+                const fullPath = path.startsWith('/') ? path : join(capturedRepoDir, path);
                 const dir = join(fullPath, '..');
                 await mkdir(dir, { recursive: true });
                 await writeFile(fullPath, content, 'utf-8');
