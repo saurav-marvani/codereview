@@ -120,6 +120,10 @@ export class CodeManagementService implements ICodeManagementService {
             );
         }
 
+        if (!type) {
+            return null;
+        }
+
         const codeManagementService =
             this.platformIntegrationFactory.getCodeManagementService(type);
 
@@ -142,6 +146,10 @@ export class CodeManagementService implements ICodeManagementService {
             type = await this.getTypeIntegration(
                 extractOrganizationAndTeamData(params),
             );
+        }
+
+        if (!type) {
+            return false;
         }
 
         const codeManagementService =
@@ -201,6 +209,10 @@ export class CodeManagementService implements ICodeManagementService {
             type = await this.getTypeIntegration(
                 extractOrganizationAndTeamData(params),
             );
+        }
+
+        if (!type) {
+            return [];
         }
 
         const codeManagementService =

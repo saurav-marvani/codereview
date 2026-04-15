@@ -93,6 +93,8 @@ export type CodeReviewGlobalConfig = {
     llmGeneratedMemoriesRequireApproval?: boolean;
     runOnDraft: boolean;
     codeReviewVersion?: "legacy" | "v2" | "v3-agent";
+    crossFileDependenciesAnalysis?: boolean;
+    bugReplicas?: number;
     ideRulesSyncEnabled: boolean;
     v2PromptOverrides?: {
         categories?: {

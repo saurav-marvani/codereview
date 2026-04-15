@@ -71,7 +71,11 @@ export default function ReviewCategories() {
                     const unformatted = unformatConfig(config);
                     const rawVersion = unformatted.codeReviewVersion;
                     const codeReviewVersion =
-                        rawVersion === "legacy" ? "legacy" : "v2";
+                        rawVersion === "legacy"
+                            ? "legacy"
+                            : rawVersion === "v3-agent"
+                              ? "v3-agent"
+                              : "v2";
                     return {
                         savedFormData: data,
                         codeReviewConfig: {

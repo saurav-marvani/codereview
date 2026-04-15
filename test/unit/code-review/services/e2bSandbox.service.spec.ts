@@ -241,12 +241,14 @@ describe('E2BSandboxService', () => {
             const gitCall = mockRun.mock.calls[1];
             const gitCommand = gitCall[0];
 
-            // Should init, fetch with refspec, checkout, add remote, block push
+            // Should init, fetch with refspec, checkout, add remote, block push.
+            // Refspec, localRef and cloneUrl are single-quoted to neutralize
+            // shell metacharacters in fork-controlled branch names.
             expect(gitCommand).toContain('git init /home/user/repo');
-            expect(gitCommand).toContain('refs/pull/42/head:pr-head');
-            expect(gitCommand).toContain('git checkout pr-head');
+            expect(gitCommand).toContain("'refs/pull/42/head':'pr-head'");
+            expect(gitCommand).toContain("git checkout 'pr-head'");
             expect(gitCommand).toContain(
-                `git remote add origin ${defaultParams.cloneUrl}`,
+                `git remote add origin '${defaultParams.cloneUrl}'`,
             );
             expect(gitCommand).toContain('no-push-allowed');
 
@@ -367,8 +369,10 @@ describe('E2BSandboxService', () => {
             const gitCall = mockRun.mock.calls[1];
             const gitCommand = gitCall[0];
 
-            expect(gitCommand).toContain('refs/heads/feat/my-feature:cli-head');
-            expect(gitCommand).toContain('git checkout cli-head');
+            expect(gitCommand).toContain(
+                "'refs/heads/feat/my-feature':'cli-head'",
+            );
+            expect(gitCommand).toContain("git checkout 'cli-head'");
             expect(gitCommand).not.toContain('pr-head');
         });
     });

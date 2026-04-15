@@ -65,8 +65,6 @@ class PostHogClient {
                 organization: user.organization?.uuid,
             },
         });
-
-        this.posthog.shutdown();
     }
 
     organizationIdentify(organization: IOrganization): void {
@@ -83,7 +81,6 @@ class PostHogClient {
                 id: organization.uuid,
             },
         });
-        this.posthog.shutdown();
     }
 
     teamIdentify(team: ITeam): void {
@@ -106,8 +103,6 @@ class PostHogClient {
             groupKey: team.uuid,
             properties,
         });
-
-        this.posthog.shutdown();
     }
 
     repositoryIdentify(repository: {
@@ -132,8 +127,6 @@ class PostHogClient {
                 repositoryId: repository.repositoryId,
             },
         });
-
-        this.posthog.shutdown();
     }
 
     async isFeatureEnabled(

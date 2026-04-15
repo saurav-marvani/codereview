@@ -836,9 +836,12 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                                                                                             }
 
                                                                                                                             (
-                                                                                                                            {
-                                                                                                                                tc.args
-                                                                                                                            }
+                                                                                                                            {typeof tc.args ===
+                                                                                                                            "string"
+                                                                                                                                ? tc.args
+                                                                                                                                : JSON.stringify(
+                                                                                                                                      tc.args,
+                                                                                                                                  )}
 
                                                                                                                             )
                                                                                                                         </li>

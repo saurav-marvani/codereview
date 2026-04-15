@@ -66,7 +66,9 @@ async function main() {
                 try {
                      const parsedOut = JSON.parse(outStr);
                      if (parsedOut.output?.value) {
-                         outStr = parsedOut.output.value;
+                         outStr = typeof parsedOut.output.value === 'string'
+                             ? parsedOut.output.value
+                             : JSON.stringify(parsedOut.output.value);
                      } else if (parsedOut.output) {
                          outStr = JSON.stringify(parsedOut.output);
                      }
