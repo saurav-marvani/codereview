@@ -3457,6 +3457,7 @@ async function structureWithFallbackModel(
                         isEnabled: true,
                         functionId: 'review-structure-fallback',
                     },
+                    providerOptions: buildLangSmithProviderOptions('review-structure-fallback'),
                     output: Output.object({
                         schema: jsonSchema({
                             type: 'object',
