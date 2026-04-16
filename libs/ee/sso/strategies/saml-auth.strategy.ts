@@ -39,7 +39,7 @@ export class SamlStrategy extends PassportStrategy(MultiSamlStrategy, 'saml') {
 
                     return done(null, {
                         entryPoint: ssoConfig.providerConfig.entryPoint,
-                        cert: ssoConfig.providerConfig.cert,
+                        idpCert: ssoConfig.providerConfig.cert,
                         idpIssuer: ssoConfig.providerConfig.idpIssuer,
                         issuer:
                             ssoConfig.providerConfig.issuer ||
