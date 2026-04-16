@@ -460,6 +460,16 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             return null;
         }
 
+        // Check if centralized config is actually enabled before proceeding.
+        const centralizedRepository =
+            await this.centralizedConfigPrService?.getCentralizedRepositoryIfEnabled(
+                params.organizationAndTeamData,
+            );
+
+        if (!centralizedRepository) {
+            return null;
+        }
+
         const existingScopedConfigFileContent =
             await this.centralizedConfigPrService?.getScopedKodusConfigFileContent(
                 {
@@ -474,11 +484,6 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                             : undefined,
                 },
             );
-
-        // Centralized config is not enabled — fall through to direct persistence.
-        if (existingScopedConfigFileContent === null || existingScopedConfigFileContent === undefined) {
-            return null;
-        }
 
         const existingScopedConfigWithoutCustomMessages =
             this.stripCustomMessagesFromConfig(
