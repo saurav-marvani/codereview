@@ -398,10 +398,11 @@ function createDoneTool<T extends z.ZodType>(
 ) {
     return defineTool({
         description,
-        parameters: schema,
+        // AI SDK v6 uses `inputSchema`, not `parameters` (which is silently
+        // ignored — that's why Gemini was calling the tool with empty args).
+        inputSchema: schema as any,
         // strict: true forces Gemini to use VALIDATED mode instead of ANY,
-        // which guarantees the model fills in the schema fields instead of
-        // returning empty args {}.
+        // which guarantees the model fills in the schema fields.
         strict: true,
         // no execute → stops the loop
     });
