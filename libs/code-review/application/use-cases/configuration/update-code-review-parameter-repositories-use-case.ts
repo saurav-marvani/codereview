@@ -73,11 +73,6 @@ export class UpdateCodeReviewParameterRepositoriesUseCase {
         try {
             const { organizationAndTeamData } = body;
 
-            await this.ensureManualChangesAllowed(
-                organizationAndTeamData,
-                body.actor?.source,
-            );
-
             const codeReviewConfigs = await this.parametersService.findByKey(
                 ParametersKey.CODE_REVIEW_CONFIG,
                 organizationAndTeamData,

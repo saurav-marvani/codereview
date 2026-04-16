@@ -217,6 +217,14 @@ export class ForgejoPullRequestHandler implements IWebhookEventHandler {
                 const merged = payload?.pull_request?.merged === true;
                 const baseRef = payload?.pull_request?.base?.ref;
 
+                let changedFiles:
+                    | Array<{
+                          filename: string;
+                          previous_filename?: string;
+                          status: string;
+                      }>
+                    | undefined;
+
                 if (merged && baseRef) {
                     try {
                         const defaultBranch =
@@ -229,28 +237,22 @@ export class ForgejoPullRequestHandler implements IWebhookEventHandler {
                                 },
                             });
                         if (baseRef !== defaultBranch) {
-                            return;
+                            changedFiles = undefined;
+                        } else {
+                            // fetch changed files
+                            changedFiles =
+                                await this.codeManagement.getFilesByPullRequestId(
+                                    {
+                                        organizationAndTeamData:
+                                            context.organizationAndTeamData,
+                                        repository: {
+                                            id: repository.id,
+                                            name: repository.name,
+                                        },
+                                        prNumber: payload?.pull_request?.number,
+                                    },
+                                );
                         }
-                        // fetch changed files
-                        const changedFiles =
-                            await this.codeManagement.getFilesByPullRequestId({
-                                organizationAndTeamData:
-                                    context.organizationAndTeamData,
-                                repository: {
-                                    id: repository.id,
-                                    name: repository.name,
-                                },
-                                prNumber: payload?.pull_request?.number,
-                            });
-                        this.eventEmitter.emit(
-                            'pull-request.closed',
-                            new PullRequestClosedEvent(
-                                context.organizationAndTeamData,
-                                repository,
-                                payload?.pull_request?.number,
-                                changedFiles || [],
-                            ),
-                        );
                     } catch (e) {
                         this.logger.error({
                             message: 'Failed to sync Kody Rules after PR merge',
@@ -265,6 +267,19 @@ export class ForgejoPullRequestHandler implements IWebhookEventHandler {
                             },
                         });
                     }
+                }
+
+                if (context.organizationAndTeamData) {
+                    this.eventEmitter.emit(
+                        'pull-request.closed',
+                        new PullRequestClosedEvent(
+                            context.organizationAndTeamData,
+                            repository,
+                            payload?.pull_request?.number,
+                            changedFiles || [],
+                            merged,
+                        ),
+                    );
                 }
             }
 

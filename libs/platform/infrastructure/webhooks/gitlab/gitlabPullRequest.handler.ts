@@ -233,6 +233,14 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
                         });
                     }
 
+                    let changedFiles:
+                        | Array<{
+                              filename: string;
+                              previous_filename?: string;
+                              status: string;
+                          }>
+                        | undefined;
+
                     try {
                         if (context.organizationAndTeamData) {
                             const baseRef =
@@ -247,30 +255,22 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
                                     },
                                 });
                             if (baseRef !== defaultBranch) {
-                                return;
-                            }
-                            const changedFiles =
-                                await this.codeManagement.getFilesByPullRequestId(
-                                    {
-                                        organizationAndTeamData:
-                                            context.organizationAndTeamData,
-                                        repository: {
-                                            id: repository.id,
-                                            name: repository.name,
+                                changedFiles = undefined;
+                            } else {
+                                changedFiles =
+                                    await this.codeManagement.getFilesByPullRequestId(
+                                        {
+                                            organizationAndTeamData:
+                                                context.organizationAndTeamData,
+                                            repository: {
+                                                id: repository.id,
+                                                name: repository.name,
+                                            },
+                                            prNumber:
+                                                payload?.object_attributes?.iid,
                                         },
-                                        prNumber:
-                                            payload?.object_attributes?.iid,
-                                    },
-                                );
-                            this.eventEmitter.emit(
-                                'pull-request.closed',
-                                new PullRequestClosedEvent(
-                                    context.organizationAndTeamData,
-                                    repository,
-                                    payload?.object_attributes?.iid,
-                                    changedFiles || [],
-                                ),
-                            );
+                                    );
+                            }
                         }
                     } catch (e) {
                         this.logger.error({
@@ -278,6 +278,34 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
                             context: GitLabMergeRequestHandler.name,
                             error: e,
                         });
+                    }
+
+                    if (context.organizationAndTeamData) {
+                        this.eventEmitter.emit(
+                            'pull-request.closed',
+                            new PullRequestClosedEvent(
+                                context.organizationAndTeamData,
+                                repository,
+                                payload?.object_attributes?.iid,
+                                changedFiles || [],
+                                true,
+                            ),
+                        );
+                    }
+                }
+
+                if (payload?.object_attributes?.action === 'close') {
+                    if (context.organizationAndTeamData) {
+                        this.eventEmitter.emit(
+                            'pull-request.closed',
+                            new PullRequestClosedEvent(
+                                context.organizationAndTeamData,
+                                repository,
+                                payload?.object_attributes?.iid,
+                                [],
+                                false,
+                            ),
+                        );
                     }
                 }
 
@@ -331,7 +359,6 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
     private async handleComment(params: IWebhookEventParams): Promise<void> {
         const { payload } = params;
         const mrNumber = payload?.object_attributes?.iid;
-        const repositoryName = payload?.project?.name;
 
         const mappedPlatform = getMappedPlatform(PlatformType.GITLAB);
         if (!mappedPlatform) {

@@ -54,12 +54,26 @@ export enum KodyLearningStatus {
     GENERATING_CONFIG = 'generating_config',
 }
 
+export type CentralizedConfigActivePullRequest = {
+    prUrl: string;
+    prNumber?: number;
+    sourceBranch: string;
+    targetBranch?: string;
+    repository: {
+        id: string;
+        name: string;
+    };
+    createdAt: string;
+    updatedAt: string;
+};
+
 export type CentralizedConfigParameter = {
     enabled: boolean;
     repository: {
         name: string;
         id: string;
-    };
+    } | null;
+    activePullRequest?: CentralizedConfigActivePullRequest | null;
 };
 
 interface KnownConfigs {

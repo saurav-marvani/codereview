@@ -27,6 +27,12 @@ type GitActor = {
     email?: string;
 };
 
+export type PullRequestFileChange = {
+    path: string;
+    content?: string;
+    operation?: 'upsert' | 'delete';
+};
+
 export type CodeManagementConnectionStatus = {
     hasConnection: boolean; // Whether there is a connection with the tool (e.g., GitHub)
     isSetupComplete: boolean; // Whether the tool is configured (e.g., repositories)
@@ -50,14 +56,14 @@ export interface ICodeManagementService extends ICommonPlatformIntegrationServic
         description?: string;
         commitMessage?: string;
         author?: GitActor;
-        files: { path: string; content: string }[];
+        files: PullRequestFileChange[];
     }): Promise<Partial<PullRequest> | null>;
     uploadFiles(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { id: string; name: string };
         branchName?: string;
         baseBranch?: string;
-        files: { path: string; content: string }[];
+        files: PullRequestFileChange[];
         message?: string;
         author?: GitActor;
     }): Promise<boolean>;

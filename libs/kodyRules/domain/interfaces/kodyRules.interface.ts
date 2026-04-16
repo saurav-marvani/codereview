@@ -53,6 +53,7 @@ export interface IKodyRule {
     rule: string;
     path?: string;
     sourcePath?: string;
+    centralizedConfig?: IKodyRuleCentralizedConfig;
     sourceAnchor?: string;
     status: KodyRulesStatus;
     severity: string;
@@ -75,6 +76,11 @@ export interface IKodyRule {
     resolvedBy?: string;
 }
 
+export interface IKodyRuleCentralizedConfig {
+    path: string;
+    status: KodyRuleCentralizedStatus;
+}
+
 export interface IKodyRuleMemory extends Omit<
     IKodyRule,
     | 'type'
@@ -84,7 +90,6 @@ export interface IKodyRuleMemory extends Omit<
     | 'inheritance'
     | 'contextReferenceId'
     | 'extendedContext'
-    | 'sourcePath'
     | 'sourceAnchor'
 > {
     type: KodyRulesType.MEMORY;
@@ -136,6 +141,13 @@ export enum KodyRulesStatus {
     PENDING = 'pending',
     APPLIED = 'applied',
     DELETED = 'deleted',
+}
+
+export enum KodyRuleCentralizedStatus {
+    SYNCED = 'synced',
+    PENDING_ADD = 'pending_add',
+    PENDING_EDIT = 'pending_edit',
+    PENDING_DELETE = 'pending_delete',
 }
 
 export enum KodyRulesScope {
@@ -220,6 +232,10 @@ const kodyRulesStatusSchema = z.enum([...Object.values(KodyRulesStatus)] as [
     ...KodyRulesStatus[],
 ]);
 
+const kodyRuleCentralizedStatusSchema = z.enum([
+    ...Object.values(KodyRuleCentralizedStatus),
+] as [KodyRuleCentralizedStatus, ...KodyRuleCentralizedStatus[]]);
+
 const kodyRulesScopeSchema = z.enum([...Object.values(KodyRulesScope)] as [
     KodyRulesScope,
     ...KodyRulesScope[],
@@ -235,6 +251,12 @@ export const kodyRuleSchema = z.object({
     rule: z.string(),
     path: z.string().optional(),
     sourcePath: z.string().optional(),
+    centralizedConfig: z
+        .object({
+            path: z.string(),
+            status: kodyRuleCentralizedStatusSchema,
+        })
+        .optional(),
     sourceAnchor: z.string().optional(),
     status: kodyRulesStatusSchema,
     severity: z.string(),

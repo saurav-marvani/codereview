@@ -253,6 +253,14 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
 
                     const merged = payload?.pullrequest?.state === 'MERGED';
 
+                    let changedFiles:
+                        | Array<{
+                              filename: string;
+                              previous_filename?: string;
+                              status: string;
+                          }>
+                        | undefined;
+
                     if (merged) {
                         try {
                             if (context.organizationAndTeamData) {
@@ -269,29 +277,22 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
                                         },
                                     });
                                 if (baseRef !== defaultBranch) {
-                                    return;
-                                }
-                                const changedFiles =
-                                    await this.codeManagement.getFilesByPullRequestId(
-                                        {
-                                            organizationAndTeamData:
-                                                context.organizationAndTeamData,
-                                            repository: {
-                                                id: repository.id,
-                                                name: repository.name,
+                                    changedFiles = undefined;
+                                } else {
+                                    changedFiles =
+                                        await this.codeManagement.getFilesByPullRequestId(
+                                            {
+                                                organizationAndTeamData:
+                                                    context.organizationAndTeamData,
+                                                repository: {
+                                                    id: repository.id,
+                                                    name: repository.name,
+                                                },
+                                                prNumber:
+                                                    payload?.pullrequest?.id,
                                             },
-                                            prNumber: payload?.pullrequest?.id,
-                                        },
-                                    );
-                                this.eventEmitter.emit(
-                                    'pull-request.closed',
-                                    new PullRequestClosedEvent(
-                                        context.organizationAndTeamData,
-                                        repository,
-                                        payload?.pullrequest?.id,
-                                        changedFiles || [],
-                                    ),
-                                );
+                                        );
+                                }
                             }
                         } catch (e) {
                             this.logger.error({
@@ -307,6 +308,19 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
                                 },
                             });
                         }
+                    }
+
+                    if (context.organizationAndTeamData) {
+                        this.eventEmitter.emit(
+                            'pull-request.closed',
+                            new PullRequestClosedEvent(
+                                context.organizationAndTeamData,
+                                repository,
+                                payload?.pullrequest?.id,
+                                changedFiles || [],
+                                merged,
+                            ),
+                        );
                     }
                 }
             }

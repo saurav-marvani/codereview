@@ -6,10 +6,10 @@ import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
 } from '@libs/organization/domain/parameters/contracts/parameters.service.contract';
-import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { Inject, Injectable } from '@nestjs/common';
 import { CentralizedConfigDownloadUseCase } from './centralized-config-download.use-case';
 import { IUser } from '@libs/identity/domain/user/interfaces/user.interface';
+import { CentralizedConfigPrService } from '../../infrastructure/adapters/services/centralized-config-pr.service';
 
 @Injectable()
 export class CentralizedConfigInitUseCase {
@@ -20,7 +20,7 @@ export class CentralizedConfigInitUseCase {
         private readonly parametersService: IParametersService,
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
         private readonly centralizedConfigDownloadUseCase: CentralizedConfigDownloadUseCase,
-        private readonly codeManagementService: CodeManagementService,
+        private readonly centralizedConfigPrService: CentralizedConfigPrService,
     ) {}
 
     async execute(params: {
@@ -41,13 +41,13 @@ export class CentralizedConfigInitUseCase {
             params;
         const { organizationId, teamId } = organizationAndTeamData;
 
-        let wasInitiallyEnabled = false;
         let shouldRollbackEnable = false;
 
         try {
-            wasInitiallyEnabled = await this.checkIfCentralizedConfigEnabled(
-                organizationAndTeamData,
-            );
+            const wasInitiallyEnabled =
+                await this.checkIfCentralizedConfigEnabled(
+                    organizationAndTeamData,
+                );
 
             if (wasInitiallyEnabled) {
                 const message =
@@ -109,6 +109,7 @@ export class CentralizedConfigInitUseCase {
                     skipAuthorization:
                         params.skipAuthorizationForDownload ?? false,
                     organizationId: organizationAndTeamData.organizationId,
+                    markRulesAsPendingWithSourcePath: true,
                 },
             );
 
@@ -157,15 +158,14 @@ export class CentralizedConfigInitUseCase {
                     teamId,
                     repositoryId: repository ? repository.id : 'unknown',
                     repositoryName: repository ? repository.name : 'unknown',
-                    pullRequestNumber: pr.number,
-                    prUrl: pr.prURL,
+                    prUrl: pr.prUrl,
                 },
             });
 
             return {
                 success: true,
                 message,
-                prUrl: pr.prURL,
+                prUrl: pr.prUrl,
             };
         } catch (error) {
             const message = 'Failed to initialize centralized config';
@@ -173,7 +173,8 @@ export class CentralizedConfigInitUseCase {
             this.logger.error({
                 message,
                 context: CentralizedConfigInitUseCase.name,
-                error,
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
                 metadata: {
                     organizationId,
                     teamId,
@@ -218,6 +219,7 @@ export class CentralizedConfigInitUseCase {
                     id: repository.id,
                     name: repository.name,
                 },
+                activePullRequest: null,
             },
             organizationAndTeamData,
         );
@@ -231,6 +233,7 @@ export class CentralizedConfigInitUseCase {
             {
                 enabled: false,
                 repository: null,
+                activePullRequest: null,
             },
             organizationAndTeamData,
         );
@@ -240,7 +243,7 @@ export class CentralizedConfigInitUseCase {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { id: string; name: string };
         configs: Array<{ path: string; content: string }>;
-    }) {
+    }): Promise<{ prUrl: string }> {
         const { organizationAndTeamData, repository, configs } = params;
 
         const title = `Initialize Centralized Config for Kodus Code Review`;
@@ -248,18 +251,20 @@ export class CentralizedConfigInitUseCase {
         const commitMessage = `Initialize Centralized Config for Kodus Code Review`;
         const sourceBranch = `kodus-centralized-config-init-${Date.now()}`;
 
-        return await this.codeManagementService.createPullRequestWithFiles({
-            organizationAndTeamData,
-            repository,
-            files: configs,
-            title,
-            description,
-            commitMessage,
-            sourceBranch,
-            author: {
-                name: 'kody',
-                email: 'kody@kodus.io',
+        return await this.centralizedConfigPrService.createPullRequestInCentralizedRepo(
+            {
+                organizationAndTeamData,
+                repository,
+                files: configs,
+                title,
+                description,
+                commitMessage,
+                sourceBranch,
+                author: {
+                    name: 'kody',
+                    email: 'kody@kodus.io',
+                },
             },
-        });
+        );
     }
 }

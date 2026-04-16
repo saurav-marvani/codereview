@@ -84,7 +84,7 @@ export class RabbitMQWrapperModule {
                         timeout: 5000,
                     },
                     connectionManagerOptions: {
-                        heartbeatIntervalInSeconds: 60,
+                        heartbeatIntervalInSeconds: 120,
                     },
                     reconnectTimeInSeconds: 10,
                     enableControllerDiscovery: options.enableConsumers,

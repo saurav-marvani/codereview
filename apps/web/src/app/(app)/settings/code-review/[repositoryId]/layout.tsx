@@ -3,11 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useParams } from "next/navigation";
 import { useOptionalParameterQuery } from "@services/parameters/hooks";
-import {
-    LanguageValue,
-    ParametersConfigKey,
-    type CentralizedConfigValue,
-} from "@services/parameters/types";
+import { LanguageValue, ParametersConfigKey } from "@services/parameters/types";
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
 import { FormProvider, useForm } from "react-hook-form";
@@ -23,7 +19,6 @@ import {
 import {
     useCodeReviewConfig,
     useDefaultCodeReviewConfig,
-    useFeatureFlags,
 } from "../../_components/context";
 import { useCodeReviewRouteParams } from "../../_hooks";
 import { normalizePromptFormValues } from "./custom-prompts/_utils/custom-prompts-state";
@@ -32,7 +27,7 @@ export default function Layout(props: React.PropsWithChildren) {
     const { teamId } = useSelectedTeamId();
     const config = useCodeReviewConfig();
     const defaultCodeReviewConfig = useDefaultCodeReviewConfig();
-    const { directoryId, pageName } = useCodeReviewRouteParams();
+    const { directoryId } = useCodeReviewRouteParams();
     const parameters = useOptionalParameterQuery<LanguageValue>(
         ParametersConfigKey.LANGUAGE_CONFIG,
         teamId,
@@ -42,23 +37,6 @@ export default function Layout(props: React.PropsWithChildren) {
             configValue: LanguageValue.ENGLISH,
         },
     );
-
-    const { data: centralizedConfig, isLoading: isCentralizedConfigLoading } =
-        useOptionalParameterQuery<CentralizedConfigValue>(
-            ParametersConfigKey.CENTRALIZED_CONFIG,
-            teamId,
-            {
-                uuid: "",
-                configKey: ParametersConfigKey.CENTRALIZED_CONFIG,
-                configValue: {
-                    enabled: false,
-                    repository: {
-                        id: "",
-                        name: "",
-                    },
-                },
-            },
-        );
 
     const params = useParams();
     const repositoryId = params.repositoryId as string;
@@ -90,30 +68,13 @@ export default function Layout(props: React.PropsWithChildren) {
         ResourceType.CodeReviewSettings,
         repositoryId,
     );
-    const { centralizedConfigParameter } = useFeatureFlags();
-
-    const isCodeReviewParameterPage = new Set([
-        "general",
-        "review-categories",
-        "custom-prompts",
-        "suggestion-control",
-        "pr-summary",
-    ]).has(pageName);
-
-    const isCentralizedConfigEnabled =
-        centralizedConfigParameter === true &&
-        (isCentralizedConfigLoading ||
-            centralizedConfig?.configValue?.enabled === true);
-
-    const canEditWithCentralizedConfig =
-        canEdit && (!isCentralizedConfigEnabled || !isCodeReviewParameterPage);
 
     const form = useForm<CodeReviewFormType>({
         mode: "all",
         criteriaMode: "firstError",
         reValidateMode: "onChange",
         defaultValues: initialFormValues,
-        disabled: !canEditWithCentralizedConfig,
+        disabled: !canEdit,
     });
     const {
         isDirty: formIsDirty,

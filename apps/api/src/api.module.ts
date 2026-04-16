@@ -76,6 +76,7 @@ import { TeamMembersController } from './controllers/teamMembers.controller';
 import { TokenUsageController } from './controllers/tokenUsage.controller';
 import { UsersController } from './controllers/user.controller';
 import { CronModule } from './cron/cron.module';
+import { CentralizedConfigModule } from '@libs/centralized-config/modules/centralized-config.module';
 
 @Module({
     imports: [
@@ -126,6 +127,7 @@ import { CronModule } from './cron/cron.module';
         CronModule,
         SSOModule,
         GlobalCacheModule,
+        CentralizedConfigModule,
     ],
     controllers: [
         CodeManagementController,

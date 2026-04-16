@@ -19,7 +19,10 @@ import {
     IIntegrationService,
     INTEGRATION_SERVICE_TOKEN,
 } from '@libs/integrations/domain/integrations/contracts/integration.service.contracts';
-import { KodyRulesStatus } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
+import {
+    KodyRulesStatus,
+    KodyRulesType,
+} from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
@@ -234,6 +237,7 @@ export class GenerateKodyRulesUseCase {
 
                 for (const rule of rules) {
                     const dto: CreateKodyRuleDto = {
+                        type: KodyRulesType.STANDARD,
                         examples: rule.examples,
                         origin: rule.origin,
                         rule: rule.rule,
@@ -255,11 +259,17 @@ export class GenerateKodyRulesUseCase {
                         { strict: false },
                     );
 
-                    await createOrUpdateUseCase.execute(
+                    const createdRule = await createOrUpdateUseCase.execute(
                         dto,
                         organizationId,
                         userInfo,
                     );
+
+                    if (!createdRule) {
+                        throw new Error(
+                            'Failed to persist generated Kody rule',
+                        );
+                    }
 
                     // Add rule to notification data
                     createdRules.push({

@@ -15,6 +15,7 @@ import {
     TooltipTrigger,
 } from "@components/ui/tooltip";
 import {
+    KodyRuleCentralizedStatus,
     KodyRulesType,
     type KodyRuleWithInheritanceDetails,
 } from "@services/kodyRules/types";
@@ -57,6 +58,16 @@ export const KodyRuleItem = ({
     const isExcluded = isInherited && !!rule.excluded;
     const isMemory =
         (rule.type ?? KodyRulesType.STANDARD) === KodyRulesType.MEMORY;
+    const centralizedPendingLabel =
+        rule.centralizedConfig?.status === KodyRuleCentralizedStatus.PENDING_ADD
+            ? "Pending add"
+            : rule.centralizedConfig?.status ===
+                KodyRuleCentralizedStatus.PENDING_DELETE
+              ? "Pending delete"
+              : rule.centralizedConfig?.status ===
+                  KodyRuleCentralizedStatus.PENDING_EDIT
+                ? "Pending edit"
+                : null;
     const entityLabel = isMemory ? "memory" : "rule";
 
     return (
@@ -75,6 +86,26 @@ export const KodyRuleItem = ({
                                 className="min-h-auto px-2.5 py-1">
                                 auto-sync
                             </Badge>
+                        )}
+
+                        {centralizedPendingLabel && (
+                            <Tooltip delayDuration={500}>
+                                <TooltipTrigger>
+                                    <Badge
+                                        active
+                                        size="xs"
+                                        className="bg-warning/10 text-warning ring-warning/40 pointer-events-none h-6 min-h-auto rounded-lg px-2 text-[10px] leading-px uppercase ring-1">
+                                        {centralizedPendingLabel}
+                                    </Badge>
+                                </TooltipTrigger>
+
+                                <TooltipContent>
+                                    <p>
+                                        This {entityLabel} has a pending
+                                        centralized configuration change.
+                                    </p>
+                                </TooltipContent>
+                            </Tooltip>
                         )}
 
                         {isInherited && (

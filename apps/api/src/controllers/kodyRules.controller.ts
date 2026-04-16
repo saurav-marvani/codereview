@@ -136,9 +136,13 @@ export class KodyRulesController {
         if (!this.request.user.organization.uuid) {
             throw new Error('Organization ID not found');
         }
+
         return this.createOrUpdateKodyRulesUseCase.execute(
             body,
             this.request.user.organization.uuid,
+            undefined,
+            undefined,
+            body.teamId,
         );
     }
 
@@ -252,13 +256,20 @@ export class KodyRulesController {
         description: 'Delete a rule in the organization by rule id.',
     })
     @ApiQuery({ name: 'ruleId', type: String, required: true })
+    @ApiQuery({ name: 'teamId', type: String, required: false })
     @ApiOkResponse({ type: ApiBooleanResponseDto })
     public async deleteRuleInOrganizationById(
         @Query('ruleId')
         ruleId: string,
+        @Query('teamId')
+        teamId?: string,
     ) {
         return this.deleteRuleInOrganizationByIdKodyRulesUseCase.execute(
             ruleId,
+            {
+                source: 'web',
+                teamId,
+            },
         );
     }
 

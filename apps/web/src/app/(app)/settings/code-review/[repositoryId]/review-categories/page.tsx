@@ -17,6 +17,7 @@ import GeneratingConfig from "../../_components/generating-config";
 import { CodeReviewSaveButton } from "../../_components/save-button";
 import { useCodeReviewSettingsMutation } from "../../_hooks/use-code-review-settings-mutation";
 import { type CodeReviewFormType } from "../../_types";
+import { getCentralizedPrToastPayload } from "../../_utils/centralized-pr-feedback";
 import {
     useFeatureFlags,
     usePlatformConfig,
@@ -64,7 +65,7 @@ export default function ReviewCategories() {
                     visibleLabelTypes,
                 ),
             };
-            await saveSettings(mergedFormData, {
+            const saveResult = await saveSettings(mergedFormData, {
                 prepare: (data) => {
                     const { language: _language, ...config } = data;
                     const unformatted = unformatConfig(config);
@@ -81,6 +82,16 @@ export default function ReviewCategories() {
                     };
                 },
             });
+
+            if (saveResult.centralizedPr) {
+                toast(
+                    getCentralizedPrToastPayload(
+                        saveResult.centralizedPr,
+                        "Change proposed through centralized pull request.",
+                    ),
+                );
+                return;
+            }
 
             toast({
                 description: "Settings saved",
