@@ -17,30 +17,31 @@ import { CodeReviewPipelineContext } from '../context/code-review-pipeline.conte
 import { CliReviewPipelineContext } from '@libs/cli-review/pipeline/context/cli-review-pipeline.context';
 
 /**
- * Parse a git remote URL (HTTPS or SSH) into owner/repo parts.
- * Supports:
- *  - https://github.com/owner/repo.git
- *  - git@github.com:owner/repo.git
+ * Parse a git remote URL (HTTPS or SSH) into fullName/name parts. Accepts any
+ * number of path segments (GitLab subgroups, Bitbucket workspaces). The final
+ * segment is the repo name; everything between the host and the repo name is
+ * the path-prefixed fullName.
  */
 export function parseGitRemoteUrl(
     url: string,
 ): { fullName: string; name: string } | null {
-    // HTTPS format: https://github.com/owner/repo.git
-    const httpsMatch = url.match(
-        /https?:\/\/[^/]+\/([^/]+\/[^/]+?)(?:\.git)?$/,
-    );
-    if (httpsMatch) {
-        const fullName = httpsMatch[1];
-        const name = fullName.split('/')[1];
+    const extract = (path: string) => {
+        const fullName = path.replace(/\.git$/, '').replace(/\/+$/, '');
+        const name = fullName.split('/').pop() || '';
+        if (!fullName || !name) return null;
         return { fullName, name };
+    };
+
+    const httpsMatch = url.match(/^https?:\/\/[^/]+\/(.+?)\/?$/);
+    if (httpsMatch) {
+        const parsed = extract(httpsMatch[1]);
+        if (parsed) return parsed;
     }
 
-    // SSH format: git@github.com:owner/repo.git
-    const sshMatch = url.match(/[^@]+@[^:]+:([^/]+\/[^/]+?)(?:\.git)?$/);
+    const sshMatch = url.match(/^[^@\s]+@[^:]+:(.+?)\/?$/);
     if (sshMatch) {
-        const fullName = sshMatch[1];
-        const name = fullName.split('/')[1];
-        return { fullName, name };
+        const parsed = extract(sshMatch[1]);
+        if (parsed) return parsed;
     }
 
     return null;

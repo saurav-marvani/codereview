@@ -1,6 +1,7 @@
 import { createLogger } from '@kodus/flow';
 import { Injectable } from '@nestjs/common';
 import { SandboxInstance } from '@libs/code-review/domain/contracts/sandbox.provider';
+import { shSingleQuote } from '../shell-quote';
 
 export const KODUS_GRAPH_VERSION = 'latest';
 
@@ -84,17 +85,17 @@ export class KodusGraphCli {
         } = options;
         const outDir = dirname(outPath);
         const excludeFlags = excludePatterns
-            .map((p) => `--exclude "${p}"`)
+            .map((p) => `--exclude ${shSingleQuote(p)}`)
             .join(' ');
 
         const cmd =
-            `kodus-graph parse --all --repo-dir . --out ${outPath} ${excludeFlags}`.trim();
+            `kodus-graph parse --all --repo-dir . --out ${shSingleQuote(outPath)} ${excludeFlags}`.trim();
 
         const result = await sandbox.run(
             [
                 BUN_PATH_PREFIX,
                 `cd ${sandbox.repoDir}`,
-                `mkdir -p ${outDir}`,
+                `mkdir -p ${shSingleQuote(outDir)}`,
                 cmd,
             ].join(' && '),
             { timeoutMs },
@@ -130,8 +131,8 @@ export class KodusGraphCli {
             [
                 BUN_PATH_PREFIX,
                 `cd ${sandbox.repoDir}`,
-                `mkdir -p ${outDir}`,
-                `kodus-graph parse --files ${filesArg} --repo-dir ${repoDir} --out ${outPath}`,
+                `mkdir -p ${shSingleQuote(outDir)}`,
+                `kodus-graph parse --files ${filesArg} --repo-dir ${shSingleQuote(repoDir)} --out ${shSingleQuote(outPath)}`,
             ].join(' && '),
             { timeoutMs },
         );
@@ -161,15 +162,15 @@ export class KodusGraphCli {
         } = options;
         const outDir = dirname(outPath);
         const filesArg = quoteFiles(files);
-        const graphArg = graphPath ? ` --graph ${graphPath}` : '';
-        const diffArg = diffPath ? ` --diff ${diffPath}` : '';
-        const cmd = `kodus-graph context --files ${filesArg}${graphArg}${diffArg} --repo-dir . --format prompt --out ${outPath}`;
+        const graphArg = graphPath ? ` --graph ${shSingleQuote(graphPath)}` : '';
+        const diffArg = diffPath ? ` --diff ${shSingleQuote(diffPath)}` : '';
+        const cmd = `kodus-graph context --files ${filesArg}${graphArg}${diffArg} --repo-dir . --format prompt --out ${shSingleQuote(outPath)}`;
 
         const result = await sandbox.run(
             [
                 BUN_PATH_PREFIX,
                 `cd ${sandbox.repoDir}`,
-                `mkdir -p ${outDir}`,
+                `mkdir -p ${shSingleQuote(outDir)}`,
                 cmd,
             ].join(' && '),
             { timeoutMs },
@@ -184,7 +185,7 @@ export class KodusGraphCli {
 }
 
 function quoteFiles(files: string[]): string {
-    return files.map((f) => `'${f.replace(/'/g, "'\\''")}'`).join(' ');
+    return files.map(shSingleQuote).join(' ');
 }
 
 function dirname(path: string): string {

@@ -37,7 +37,8 @@ module.exports = (output, context) => {
     const forbidden = expectedForbiddenTools.filter((tool) => usedTools.has(tool));
     const stepOverflow =
         typeof expectedMaxSteps === 'number' &&
-        parsed.trace?.steps > expectedMaxSteps;
+        (typeof parsed.trace?.steps !== 'number' ||
+            parsed.trace.steps > expectedMaxSteps);
 
     const score =
         missing.length === 0 && forbidden.length === 0 && !stepOverflow ? 1 : 0;

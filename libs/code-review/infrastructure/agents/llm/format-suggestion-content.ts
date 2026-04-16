@@ -85,10 +85,10 @@ export async function formatSuggestionContent(
         )
         .join('\n\n---\n\n');
 
-    try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), FORMAT_TIMEOUT_MS);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FORMAT_TIMEOUT_MS);
 
+    try {
         const result: any = await generateText({
             model: model as any,
             abortSignal: controller.signal,
@@ -120,8 +120,6 @@ Suggestions to clean:
 
 ${suggestionsText}`,
         });
-
-        clearTimeout(timeout);
 
         const text = result.text || '';
         const jsonMatch = text.match(/\[[\s\S]*\]/);
@@ -160,5 +158,7 @@ ${suggestionsText}`,
             context: 'SuggestionFormatter',
         });
         return new Map();
+    } finally {
+        clearTimeout(timeout);
     }
 }

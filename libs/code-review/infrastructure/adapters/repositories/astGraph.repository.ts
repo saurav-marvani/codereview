@@ -65,27 +65,31 @@ export class AstGraphRepository {
     // -----------------------------------------------------------------------
 
     async deleteAll(repoId: string): Promise<void> {
-        await this.dataSource.query(
-            `DELETE FROM ast_edges WHERE repo_id = $1`,
-            [repoId],
-        );
-        await this.dataSource.query(
-            `DELETE FROM ast_nodes WHERE repo_id = $1`,
-            [repoId],
-        );
+        await this.dataSource.transaction(async (manager) => {
+            await manager.query(
+                `DELETE FROM ast_edges WHERE repo_id = $1`,
+                [repoId],
+            );
+            await manager.query(
+                `DELETE FROM ast_nodes WHERE repo_id = $1`,
+                [repoId],
+            );
+        });
     }
 
     async deleteByFiles(repoId: string, filePaths: string[]): Promise<void> {
         if (filePaths.length === 0) return;
 
-        await this.dataSource.query(
-            `DELETE FROM ast_edges WHERE repo_id = $1 AND file_path = ANY($2::text[])`,
-            [repoId, filePaths],
-        );
-        await this.dataSource.query(
-            `DELETE FROM ast_nodes WHERE repo_id = $1 AND file_path = ANY($2::text[])`,
-            [repoId, filePaths],
-        );
+        await this.dataSource.transaction(async (manager) => {
+            await manager.query(
+                `DELETE FROM ast_edges WHERE repo_id = $1 AND file_path = ANY($2::text[])`,
+                [repoId, filePaths],
+            );
+            await manager.query(
+                `DELETE FROM ast_nodes WHERE repo_id = $1 AND file_path = ANY($2::text[])`,
+                [repoId, filePaths],
+            );
+        });
     }
 
     // -----------------------------------------------------------------------

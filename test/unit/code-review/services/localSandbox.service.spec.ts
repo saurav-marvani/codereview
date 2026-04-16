@@ -46,10 +46,14 @@ function validateExecCommand(command: string): {
         return { allowed: false, reason: 'empty command' };
     }
 
+    if (/`|\$\(/.test(command)) {
+        return { allowed: false, reason: 'command substitution is not allowed' };
+    }
+
     const outsideQuotes = command
         .replace(/"[^"]*"|'[^']*'/g, '')
         .replace(/\b2>&1\b/g, '');
-    if (/(?:>>|<<|>|<|;|&&|\|\||`|\$\()/.test(outsideQuotes)) {
+    if (/(?:>>|<<|>|<|;|&&|\|\|)/.test(outsideQuotes)) {
         return { allowed: false, reason: 'unsupported shell syntax' };
     }
 
@@ -324,7 +328,25 @@ describe('LocalSandboxService exec validation', () => {
         it('rejects command substitution', () => {
             const result = validateExecCommand('cat $(echo /etc/passwd)');
             expect(result.allowed).toBe(false);
-            expect(result.reason).toContain('shell syntax');
+            expect(result.reason).toContain('command substitution');
+        });
+
+        it('rejects command substitution hidden inside double quotes', () => {
+            const result = validateExecCommand('cat "file-$(reboot)"');
+            expect(result.allowed).toBe(false);
+            expect(result.reason).toContain('command substitution');
+        });
+
+        it('rejects command substitution hidden inside single quotes', () => {
+            const result = validateExecCommand("cat 'file-$(reboot)'");
+            expect(result.allowed).toBe(false);
+            expect(result.reason).toContain('command substitution');
+        });
+
+        it('rejects backtick command substitution hidden inside quotes', () => {
+            const result = validateExecCommand('cat "file-`reboot`"');
+            expect(result.allowed).toBe(false);
+            expect(result.reason).toContain('command substitution');
         });
     });
 });

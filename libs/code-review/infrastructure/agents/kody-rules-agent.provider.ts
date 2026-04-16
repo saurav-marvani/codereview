@@ -3,6 +3,7 @@ import { PromptRunnerService } from '@kodus/kodus-common/llm';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
+import { isFileMatchingGlob } from '@libs/common/utils/glob-utils';
 import {
     BaseCodeReviewAgentProvider,
     ReviewAgentIdentity,
@@ -297,30 +298,16 @@ If no violations found, respond with \`{"reasoning": "Checked all rules, no viol
     }
 
     /**
-     * Simple path pattern matching.
-     * Supports: exact match, glob-like patterns (* and **), directory prefix.
+     * Path pattern matching. Supports exact match, directory prefix, and
+     * globs (`*`, `**`) via the shared minimatch-backed util.
+     *
+     * The hand-rolled regex we had before compiled `**\/*.ts` to
+     * `.*\/[^/]*\.ts`, which required a `/` somewhere and silently missed
+     * root-level files like `foo.ts` or `src/foo.ts`.
      */
     private matchesPathPattern(filePath: string, pattern: string): boolean {
-        // Exact match
         if (filePath === pattern) return true;
-
-        // Directory prefix (e.g., "src/controllers/")
         if (pattern.endsWith('/') && filePath.startsWith(pattern)) return true;
-
-        // Simple glob: convert * to regex.
-        // Escape literal dots BEFORE expanding stars — otherwise the `.*` from `**`
-        // gets escaped into `\.*` (zero-or-more literal dots) and stops matching.
-        const regexStr = pattern
-            .replace(/\./g, '\\.')
-            .replace(/\*\*/g, '<<<DOUBLESTAR>>>')
-            .replace(/\*/g, '[^/]*')
-            .replace(/<<<DOUBLESTAR>>>/g, '.*');
-
-        try {
-            return new RegExp(`^${regexStr}$`).test(filePath);
-        } catch {
-            // Invalid pattern — treat as prefix match
-            return filePath.includes(pattern);
-        }
+        return isFileMatchingGlob(filePath, [pattern]);
     }
 }

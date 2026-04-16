@@ -292,10 +292,23 @@ export class LocalSandboxService implements ISandboxProvider {
                 // don't provide, so we bail out instead of running it through
                 // execFile where the operator would be passed as a literal arg
                 // and confuse the underlying tool.
+                // Command substitution (`...` / $(...)) is never legitimate
+                // input for our tool commands. Check on the raw command first,
+                // before any quote stripping, so a payload hidden inside a
+                // quoted string (e.g. `cat "file-$(reboot)"`) can't slip past
+                // the later "outside quotes" scan and — if this layer ever
+                // gets wired to a real shell — execute.
+                if (/`|\$\(/.test(command)) {
+                    return {
+                        stdout: `Command substitution is not allowed in local sandbox: ${command}`,
+                        exitCode: 1,
+                    };
+                }
+
                 const outsideQuotes = command
                     .replace(/"[^"]*"|'[^']*'/g, '')
                     .replace(/\b2>&1\b/g, '');
-                if (/(?:>>|<<|>|<|;|&&|\|\||`|\$\()/.test(outsideQuotes)) {
+                if (/(?:>>|<<|>|<|;|&&|\|\|)/.test(outsideQuotes)) {
                     return {
                         stdout: `Unsupported shell syntax in local sandbox: ${command}`,
                         exitCode: 1,

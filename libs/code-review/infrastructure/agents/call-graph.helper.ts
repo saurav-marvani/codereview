@@ -1,5 +1,6 @@
 import { createLogger } from '@kodus/flow';
 import { RemoteCommands } from '../adapters/services/collectCrossFileContexts.service';
+import { shSingleQuote } from '../adapters/services/shell-quote';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -450,7 +451,7 @@ async function generateCallGraphGrep(
 
         try {
             const { stdout } = await remoteCommands.exec(
-                `grep -nE "(^|[[:space:]])(def |func |fn |function |class |public |private |protected |async |export (function|class|const |default function))" "${file.filename}" 2>/dev/null | head -${MAX_FUNCTIONS_PER_FILE}`,
+                `grep -nE "(^|[[:space:]])(def |func |fn |function |class |public |private |protected |async |export (function|class|const |default function))" ${shSingleQuote(file.filename)} 2>/dev/null | head -${MAX_FUNCTIONS_PER_FILE}`,
             );
             if (!stdout?.trim()) continue;
 
@@ -510,7 +511,7 @@ async function generateCallGraphGrep(
         const callers: string[] = [];
         try {
             const { stdout } = await remoteCommands.exec(
-                `rg -n "${func.name}\\(" ${globExt} --glob '!*test*' --glob '!*Test*' --glob '!*spec*' --glob '!*Spec*' --glob '!*_test*' --glob '!*__tests__*' --glob '!*mock*' --glob '!*Mock*' --glob '!*.min.*' --glob '!vendor/*' . 2>/dev/null | grep -v "${func.file}" | grep -v "^Binary" | head -8`,
+                `rg -n ${shSingleQuote(`${func.name}\\(`)} ${globExt} --glob '!*test*' --glob '!*Test*' --glob '!*spec*' --glob '!*Spec*' --glob '!*_test*' --glob '!*__tests__*' --glob '!*mock*' --glob '!*Mock*' --glob '!*.min.*' --glob '!vendor/*' . 2>/dev/null | grep -v ${shSingleQuote(func.file)} | grep -v "^Binary" | head -8`,
             );
 
             if (stdout?.trim()) {

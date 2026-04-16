@@ -4,6 +4,7 @@ import { createLogger } from '@kodus/flow';
 import { Sandbox } from 'e2b';
 import pLimit from 'p-limit';
 import { ValidationCandidate } from '@libs/code-review/domain/types/astValidate.type';
+import { shSingleQuote } from './shell-quote';
 
 const PARSE_TIMEOUT_MS = 30_000;
 const CONCURRENCY_LIMIT = 10;
@@ -146,11 +147,13 @@ export class SandboxSyntaxValidator {
             const code = Buffer.from(candidate.encodedData, 'base64').toString('utf-8');
 
             const dir = fullPath.substring(0, fullPath.lastIndexOf('/'));
-            await sandbox.commands.run(`mkdir -p "${dir}"`, { timeoutMs: 5_000 });
+            await sandbox.commands.run(`mkdir -p ${shSingleQuote(dir)}`, {
+                timeoutMs: 5_000,
+            });
             await sandbox.files.write(fullPath, code);
 
             const result = await sandbox.commands.run(
-                `export PATH="$HOME/.bun/bin:$PATH" && kodus-graph parse --files "${filePath}" --repo-dir "${workDir}" --out "${resultPath}"`,
+                `export PATH="$HOME/.bun/bin:$PATH" && kodus-graph parse --files ${shSingleQuote(filePath)} --repo-dir ${shSingleQuote(workDir)} --out ${shSingleQuote(resultPath)}`,
                 { timeoutMs: PARSE_TIMEOUT_MS },
             );
 
@@ -188,7 +191,7 @@ export class SandboxSyntaxValidator {
             return null;
         } finally {
             try {
-                await sandbox.commands.run(`rm -rf "${workDir}"`, { timeoutMs: 5_000 });
+                await sandbox.commands.run(`rm -rf ${shSingleQuote(workDir)}`, { timeoutMs: 5_000 });
             } catch { /* ignore cleanup errors */ }
         }
     }

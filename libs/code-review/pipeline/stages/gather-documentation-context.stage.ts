@@ -20,20 +20,23 @@ import { CodeReviewPipelineContext } from '../context/code-review-pipeline.conte
 function parseGitRemoteUrl(
     url: string,
 ): { fullName: string; name: string } | null {
-    const httpsMatch = url.match(
-        /https?:\/\/[^/]+\/([^/]+\/[^/]+?)(?:\.git)?$/,
-    );
-    if (httpsMatch) {
-        const fullName = httpsMatch[1];
-        const name = fullName.split('/')[1];
+    const extract = (path: string) => {
+        const fullName = path.replace(/\.git$/, '').replace(/\/+$/, '');
+        const name = fullName.split('/').pop() || '';
+        if (!fullName || !name) return null;
         return { fullName, name };
+    };
+
+    const httpsMatch = url.match(/^https?:\/\/[^/]+\/(.+?)\/?$/);
+    if (httpsMatch) {
+        const parsed = extract(httpsMatch[1]);
+        if (parsed) return parsed;
     }
 
-    const sshMatch = url.match(/[^@]+@[^:]+:([^/]+\/[^/]+?)(?:\.git)?$/);
+    const sshMatch = url.match(/^[^@\s]+@[^:]+:(.+?)\/?$/);
     if (sshMatch) {
-        const fullName = sshMatch[1];
-        const name = fullName.split('/')[1];
-        return { fullName, name };
+        const parsed = extract(sshMatch[1]);
+        if (parsed) return parsed;
     }
 
     return null;

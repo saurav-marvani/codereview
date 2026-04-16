@@ -424,13 +424,19 @@ export function buildAgentTools(
                         } catch {
                             // fd not available, try find
                         }
-                        // Fallback to find
+                        // Fallback to find — keep wildcards the user passed in;
+                        // `-iname` understands `*` and `?` natively, so stripping
+                        // them would break any glob search (e.g. `*.ts` would
+                        // match foo.tsx and foo.ts.bak). Only wrap with `*…*`
+                        // when the pattern has no wildcards at all, mirroring
+                        // the fd path above.
                         try {
-                            const cleanPattern = safePattern.replace(
-                                /[*?[\]]/g,
-                                '',
-                            );
-                            const findCmd = `find '${safePath}' -type f -iname '*${cleanPattern}*'`;
+                            const globPattern =
+                                safePattern.includes('*') ||
+                                safePattern.includes('?')
+                                    ? safePattern
+                                    : `*${safePattern}*`;
+                            const findCmd = `find '${safePath}' -type f -iname '${globPattern}'`;
                             const { stdout } =
                                 await remoteCommands.exec(findCmd);
                             if (stdout && stdout.trim()) {

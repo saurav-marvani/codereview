@@ -5,6 +5,7 @@ import { SandboxInstance } from '@libs/code-review/domain/contracts/sandbox.prov
 import { AstGraphRepository } from '../../repositories/astGraph.repository';
 import { RepositoryRepository } from '../../repositories/repository.repository';
 import { KodusGraphCli, KODUS_GRAPH_TIMEOUTS } from './kodus-graph-cli';
+import { shSingleQuote } from '../shell-quote';
 
 const GRAPH_DIR = '.kodus-graph';
 const GRAPH_PATH = `${GRAPH_DIR}/graph.json`;
@@ -268,11 +269,28 @@ export class GraphContextService {
     ): Promise<string | undefined> {
         const BASE_FILES_DIR = `${GRAPH_DIR}/base-files`;
 
+        // Reject branch names that contain characters git wouldn't accept or
+        // that would break our shell interpolation. Keeping this as a hard
+        // rejection (not an escape) because any legitimate base branch we
+        // review fits easily in [A-Za-z0-9._/@+-].
+        if (!/^[A-Za-z0-9._\-/@+]+$/.test(baseBranch)) {
+            this.logger.warn({
+                message: `[KODUS-GRAPH] buildBaseGraphFromGit: baseBranch contains unsupported characters, skipping`,
+                context: GraphContextService.name,
+                metadata: { baseBranch },
+            });
+            return undefined;
+        }
+
         try {
             const escapedFiles = filePaths.map(
                 (f) => `'${f.replace(/'/g, "'\\''")}'`,
             );
             const fileList = escapedFiles.join(' ');
+            // Shell-escape the ref prefix so even if validation above is ever
+            // relaxed, the `git show` arg can't be abused. `$f` intentionally
+            // stays unquoted so the shell loop variable expands.
+            const safeBaseRef = shSingleQuote(`origin/${baseBranch}`);
 
             const extractResult = await sandbox.run(
                 [
@@ -281,7 +299,7 @@ export class GraphContextService {
                     `for f in ${fileList}; do ` +
                         `d="${BASE_FILES_DIR}/$(dirname "$f")" && ` +
                         `mkdir -p "$d" 2>/dev/null; ` +
-                        `git show "origin/${baseBranch}:$f" > "${BASE_FILES_DIR}/$f" 2>/dev/null || rm -f "${BASE_FILES_DIR}/$f"; ` +
+                        `git show ${safeBaseRef}":$f" > "${BASE_FILES_DIR}/$f" 2>/dev/null || rm -f "${BASE_FILES_DIR}/$f"; ` +
                         `done`,
                     `find ${BASE_FILES_DIR} -type f -size +0c | sed 's|^${BASE_FILES_DIR}/||' | sort`,
                 ].join(' && '),
