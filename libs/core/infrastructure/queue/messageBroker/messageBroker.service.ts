@@ -71,7 +71,7 @@ export class MessageBrokerService implements IMessageBrokerService {
         } catch (error) {
             this.logger.error({
                 message: 'Error publishing message to RabbitMQ',
-                error: error.message,
+                error: error instanceof Error ? error : new Error(String(error)),
                 context: MessageBrokerService.name,
                 metadata: {
                     exchange: config.exchange,

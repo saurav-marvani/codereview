@@ -22,6 +22,10 @@ import {
 import { ITeamAutomation } from '@libs/automation/domain/teamAutomation/interfaces/team-automation.interface';
 import { CodeReviewHandlerService } from '@libs/code-review/infrastructure/adapters/services/codeReviewHandlerService.service';
 import {
+    DistributedLock,
+    DistributedLockService,
+} from '@libs/core/workflow/infrastructure/distributed-lock.service';
+import {
     IOrganizationService,
     ORGANIZATION_SERVICE_TOKEN,
 } from '@libs/organization/domain/organization/contracts/organization.service.contract';
@@ -44,6 +48,7 @@ export class AutomationCodeReviewService implements Omit<
         @Inject(ORGANIZATION_SERVICE_TOKEN)
         private readonly organizationService: IOrganizationService,
         private readonly codeReviewHandlerService: CodeReviewHandlerService,
+        private readonly distributedLockService: DistributedLockService,
     ) {}
 
     async setup(payload?: any): Promise<any> {
@@ -69,7 +74,7 @@ export class AutomationCodeReviewService implements Omit<
             this.logger.error({
                 message: 'Error creating automation for the team',
                 context: AutomationCodeReviewService.name,
-                error: error,
+                error: error instanceof Error ? error : undefined,
                 metadata: payload,
             });
         }
@@ -92,6 +97,56 @@ export class AutomationCodeReviewService implements Omit<
             userGitId,
         } = payload;
 
+        // Acquire distributed lock to prevent concurrent reviews of the same PR
+        const orgId = organizationAndTeamData?.organizationId;
+        const repoId = repository?.id;
+        const prNumber = pullRequest?.number;
+
+        if (!orgId || !repoId || !prNumber) {
+            this.logger.error({
+                message:
+                    'Cannot generate lock key due to missing identifiers in payload',
+                context: AutomationCodeReviewService.name,
+                metadata: { orgId, repoId, prNumber },
+            });
+            return 'Error: Missing required identifiers for code review';
+        }
+
+        const lockKey = `CODE_REVIEW:${orgId}:${repoId}:${prNumber}`;
+        let lock: DistributedLock | null = null;
+
+        try {
+            lock = await this.distributedLockService.acquire(lockKey, {
+                ttl: 1000 * 60, // 1 minute TTL
+            });
+
+            if (!lock) {
+                this.logger.warn({
+                    message: `Code review already being processed for PR#${pullRequest?.number}, skipping`,
+                    context: AutomationCodeReviewService.name,
+                    metadata: {
+                        lockKey,
+                        organizationAndTeamData,
+                        repository: {
+                            id: repository?.id,
+                            name: repository?.name,
+                        },
+                        pullRequestNumber: pullRequest?.number,
+                    },
+                });
+                return 'Code review already in progress for this PR';
+            }
+        } catch (error) {
+            // Fail-open: if lock service is unavailable, proceed with the review
+            // (better to risk a duplicate than to block all reviews)
+            this.logger.error({
+                message: `Error acquiring distributed lock for PR#${pullRequest?.number}, proceeding without lock`,
+                context: AutomationCodeReviewService.name,
+                error: error instanceof Error ? error : undefined,
+                metadata: { lockKey },
+            });
+        }
+
         let execution: IAutomationExecution | null = null;
 
         try {
@@ -103,6 +158,7 @@ export class AutomationCodeReviewService implements Omit<
                 },
             });
 
+            // Check for existing active execution (defense in depth)
             const existingExecution = await this.getActiveExecution(
                 teamAutomationId,
                 pullRequest?.number,
@@ -217,6 +273,19 @@ export class AutomationCodeReviewService implements Omit<
         } catch (error) {
             await this._handleExecutionError(execution, error, payload);
             return 'Error executing automation';
+        } finally {
+            if (lock) {
+                try {
+                    await lock.release();
+                } catch (error) {
+                    this.logger.error({
+                        message: `Error releasing distributed lock for PR#${pullRequest?.number}`,
+                        context: AutomationCodeReviewService.name,
+                        error: error instanceof Error ? error : undefined,
+                        metadata: { lockKey },
+                    });
+                }
+            }
         }
     }
 
@@ -244,7 +313,7 @@ export class AutomationCodeReviewService implements Omit<
             this.logger.error({
                 message: 'Error checking for active execution',
                 context: AutomationCodeReviewService.name,
-                error,
+                error: error instanceof Error ? error : undefined,
                 metadata: { teamAutomationId, pullRequestNumber, repositoryId },
             });
             return null;
@@ -295,7 +364,7 @@ export class AutomationCodeReviewService implements Omit<
             }
 
             return result?.execution;
-        } catch (error) {
+        } catch (error: any) {
             // Check for unique constraint violation (PostgreSQL error code 23505)
             const isDuplicateError =
                 error?.code === '23505' ||
@@ -319,7 +388,7 @@ export class AutomationCodeReviewService implements Omit<
             this.logger.error({
                 message: 'Error creating automation execution',
                 context: AutomationCodeReviewService.name,
-                error,
+                error: error instanceof Error ? error : undefined,
                 metadata: { teamAutomationId, status },
             });
             return null;
@@ -355,7 +424,7 @@ export class AutomationCodeReviewService implements Omit<
             this.logger.error({
                 message: 'Error updating automation execution',
                 context: AutomationCodeReviewService.name,
-                error,
+                error: error instanceof Error ? error : undefined,
                 metadata: { executionUuid: entity.uuid, status },
             });
         }
@@ -412,7 +481,7 @@ export class AutomationCodeReviewService implements Omit<
         this.logger.error({
             message: errorMessage,
             context: AutomationCodeReviewService.name,
-            error,
+            error: error instanceof Error ? error : undefined,
             metadata: payload,
         });
 

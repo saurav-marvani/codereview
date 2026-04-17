@@ -21,6 +21,7 @@ import { WorkflowModule } from '@libs/core/workflow/modules/workflow.module';
 import { OutboxRelayService } from '@libs/core/workflow/infrastructure/outbox-relay.service';
 import { ScheduleModule } from '@nestjs/schedule';
 import { WorkerDrainService } from './worker-drain.service';
+import { WorkerHealthGuardService } from './worker-health-guard.service';
 
 @Module({
     imports: [
@@ -47,6 +48,7 @@ import { WorkerDrainService } from './worker-drain.service';
     providers: [
         OutboxRelayService,
         WorkerDrainService,
+        WorkerHealthGuardService,
         ErrorRateMonitorService,
         ReviewResponseMonitorService,
         WebhookFailureMonitorService,

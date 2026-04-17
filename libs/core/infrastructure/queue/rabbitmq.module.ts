@@ -90,7 +90,7 @@ export class RabbitMQWrapperModule {
                     // to amqp-connection-manager's 5s default instead of the
                     // 10s we intended.
                     connectionManagerOptions: {
-                        heartbeatIntervalInSeconds: 120,
+                        heartbeatIntervalInSeconds: 60,
                         reconnectTimeInSeconds: 10,
                     },
                     enableControllerDiscovery: options.enableConsumers,

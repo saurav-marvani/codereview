@@ -279,7 +279,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             newDelta: updatedConfigValue,
         });
 
-        if (centralizedPr) {
+        if (centralizedPr?.mode === 'centralized-pr') {
             return centralizedPr;
         }
 
@@ -399,7 +399,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                   newDelta,
               });
 
-        if (centralizedPr) {
+        if (centralizedPr?.mode === 'centralized-pr') {
             return centralizedPr;
         }
 
@@ -457,6 +457,16 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         directory?: DirectoryCodeReviewConfig;
     }): Promise<CentralizedPrMetadata | null> {
         if (params.actor?.source === 'sync') {
+            return null;
+        }
+
+        // Check if centralized config is actually enabled before proceeding.
+        const centralizedRepository =
+            await this.centralizedConfigPrService?.getCentralizedRepositoryIfEnabled(
+                params.organizationAndTeamData,
+            );
+
+        if (!centralizedRepository) {
             return null;
         }
 

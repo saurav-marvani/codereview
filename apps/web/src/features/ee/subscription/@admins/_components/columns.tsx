@@ -1,6 +1,6 @@
 "use client";
 
-import { useContext, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { Badge } from "@components/ui/badge";
 import { Button } from "@components/ui/button";
 import { DataTableColumnHeader } from "@components/ui/data-table";
@@ -21,6 +21,8 @@ import {
 } from "@components/ui/select";
 import { toast } from "@components/ui/toaster/use-toast";
 import { UserRole, UserStatus } from "@enums";
+import { useGetSelectedRepositories } from "@services/codeManagement/hooks";
+import { getAssignedRepos } from "@services/permissions/fetch";
 import { usePermission } from "@services/permissions/hooks";
 import {
     Action,
@@ -36,14 +38,123 @@ import {
     CopyIcon,
     EllipsisVertical,
     Pencil,
+    Plus,
     TrashIcon,
 } from "lucide-react";
 import { useAuth } from "src/core/providers/auth.provider";
+import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { ClipboardHelpers } from "src/core/utils/clipboard";
+import { safeArray } from "src/core/utils/safe-array";
 import { revalidateServerSidePath } from "src/core/utils/revalidate-server-side";
+
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@components/ui/tooltip";
 
 import AssignReposModal from "./assign-repos.modal";
 import { DeleteModal } from "./delete-modal";
+
+function AssignedReposLink({
+    userId,
+    canEdit,
+}: {
+    userId: string;
+    canEdit: boolean;
+}) {
+    const { teamId } = useSelectedTeamId();
+    const { data: allRepositories = [] } = useGetSelectedRepositories(teamId);
+    const [repoNames, setRepoNames] = useState<string[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    const fetchRepoNames = async () => {
+        setIsLoading(true);
+        try {
+            const assignedIds = await getAssignedRepos(userId);
+            const assignedSet = new Set(assignedIds);
+            const names = safeArray(allRepositories)
+                .filter((repo) => assignedSet.has(repo.id))
+                .map((repo) => repo.name);
+            setRepoNames(names);
+        } catch {
+            setRepoNames([]);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (allRepositories.length > 0) {
+            fetchRepoNames();
+        } else {
+            setRepoNames([]);
+            setIsLoading(false);
+        }
+    }, [userId, allRepositories]);
+
+    const openModal = () => {
+        magicModal.show(() => (
+            <AssignReposModal userId={userId} onSave={fetchRepoNames} />
+        ));
+    };
+
+    if (isLoading) {
+        return (
+            <span className="text-text-secondary text-xs">Loading...</span>
+        );
+    }
+
+    return (
+        <div className="flex w-full items-center gap-1.5">
+            {repoNames.length > 0 ? (
+                <TooltipProvider>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <div className="text-text-secondary flex flex-col text-xs">
+                                <span className="truncate">
+                                    {repoNames[0]}
+                                </span>
+                                {repoNames.length === 2 && (
+                                    <span className="truncate">
+                                        {repoNames[1]}
+                                    </span>
+                                )}
+                                {repoNames.length >= 3 && (
+                                    <span className="text-text-secondary/70 cursor-default">
+                                        +{repoNames.length - 1} more...
+                                    </span>
+                                )}
+                            </div>
+                        </TooltipTrigger>
+                        {repoNames.length >= 3 && (
+                            <TooltipContent side="bottom">
+                                <div className="flex flex-col gap-0.5">
+                                    {repoNames.map((name) => (
+                                        <span key={name}>{name}</span>
+                                    ))}
+                                </div>
+                            </TooltipContent>
+                        )}
+                    </Tooltip>
+                </TooltipProvider>
+            ) : (
+                <span className="text-text-secondary text-xs">
+                    No repositories
+                </span>
+            )}
+            {canEdit && (
+                <button
+                    type="button"
+                    onClick={openModal}
+                    className="bg-primary-light/10 text-primary-light hover:bg-primary-light/20 flex shrink-0 cursor-pointer items-center rounded-full p-0.5">
+                    <Plus className="size-3.5" />
+                </button>
+            )}
+        </div>
+    );
+}
 
 export const columns: ColumnDef<MembersSetup>[] = [
     {
@@ -181,21 +292,10 @@ export const columns: ColumnDef<MembersSetup>[] = [
                     </div>
                     {shouldShowButton && (
                         <div className="w-full">
-                            <Button
-                                variant="helper"
-                                size="sm"
-                                className="w-full gap-2 py-4"
-                                disabled={!canEdit}
-                                onClick={() =>
-                                    magicModal.show(() => (
-                                        <AssignReposModal
-                                            userId={row.original.userId!}
-                                        />
-                                    ))
-                                }>
-                                <Pencil />
-                                Repository access
-                            </Button>
+                            <AssignedReposLink
+                                userId={row.original.userId!}
+                                canEdit={canEdit}
+                            />
                         </div>
                     )}
                 </div>

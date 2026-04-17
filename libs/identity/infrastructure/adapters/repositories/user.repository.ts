@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
+    DataSource,
     FindManyOptions,
     FindOneOptions,
     FindOptionsWhere,
@@ -22,6 +23,7 @@ export class UserDatabaseRepository implements IUserRepository {
     constructor(
         @InjectRepository(UserModel)
         private readonly userRepository: Repository<UserModel>,
+        private readonly dataSource: DataSource,
     ) {}
     async find(
         filter: Partial<IUser>,
@@ -298,12 +300,32 @@ export class UserDatabaseRepository implements IUserRepository {
     }
 
     async delete(uuid: string): Promise<void> {
-        await this.userRepository
-            .createQueryBuilder()
-            .update(UserModel)
-            .set({ status: STATUS.REMOVED })
-            .where('uuid = :uuid', { uuid: uuid })
-            .execute();
+        await this.dataSource.transaction(async (manager) => {
+            // Delete related records before removing the user
+            await manager.query(
+                `DELETE FROM profile_configs WHERE profile_id IN (SELECT uuid FROM profiles WHERE user_id = $1)`,
+                [uuid],
+            );
+            await manager.query(
+                `DELETE FROM permissions WHERE user_id = $1`,
+                [uuid],
+            );
+            await manager.query(
+                `DELETE FROM profiles WHERE user_id = $1`,
+                [uuid],
+            );
+            await manager.query(
+                `DELETE FROM auth WHERE "userUuid" = $1`,
+                [uuid],
+            );
+            await manager.query(
+                `DELETE FROM team_member WHERE user_id = $1`,
+                [uuid],
+            );
+            await manager.query(`DELETE FROM users WHERE uuid = $1`, [
+                uuid,
+            ]);
+        });
     }
 
     async findProfileIdsByOrganizationAndRole(

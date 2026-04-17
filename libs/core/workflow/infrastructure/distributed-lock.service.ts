@@ -1,34 +1,29 @@
 import { createLogger } from '@kodus/flow';
-import { createHash } from 'crypto';
 import { Injectable } from '@nestjs/common';
-import { DataSource, QueryRunner } from 'typeorm';
+import { DataSource } from 'typeorm';
 
 export interface DistributedLockOptions {
-    ttl?: number;
-}
-
-interface AdvisoryLockId {
-    classId: number;
-    objectId: number;
+    ttl?: number; // Time to live in ms (optional, for auto-release)
 }
 
 export class DistributedLock {
     private released = false;
 
     constructor(
-        private readonly queryRunner: QueryRunner,
-        private readonly lockId: AdvisoryLockId,
+        private readonly dataSource: DataSource,
+        private readonly lockId: [number, number],
         private readonly ttl?: number,
         private readonly logger = createLogger(DistributedLock.name),
     ) {
         if (ttl) {
+            // Auto-release after TTL
             setTimeout(() => {
                 if (!this.released) {
                     this.release().catch((error) => {
                         this.logger.error({
                             message: 'Error auto-releasing lock',
                             context: DistributedLock.name,
-                            error,
+                            error: error instanceof Error ? error : undefined,
                             metadata: { lockId },
                         });
                     });
@@ -39,13 +34,13 @@ export class DistributedLock {
 
     async release(): Promise<void> {
         if (this.released) {
-            return;
+            return; // Already released
         }
 
         try {
-            await this.queryRunner.query(
-                `SELECT pg_advisory_unlock($1, $2) as released`,
-                [this.lockId.classId, this.lockId.objectId],
+            await this.dataSource.query(
+                `SELECT pg_advisory_unlock($1, $2)`,
+                this.lockId,
             );
             this.released = true;
             this.logger.debug({
@@ -61,23 +56,6 @@ export class DistributedLock {
                 metadata: { lockId: this.lockId },
             });
             throw error;
-        } finally {
-            try {
-                if (!this.queryRunner.isReleased) {
-                    await this.queryRunner.release();
-                }
-            } catch (releaseError) {
-                this.logger.error({
-                    message:
-                        'Error releasing query runner after distributed lock release',
-                    context: DistributedLock.name,
-                    error:
-                        releaseError instanceof Error
-                            ? releaseError
-                            : undefined,
-                    metadata: { lockId: this.lockId },
-                });
-            }
         }
     }
 
@@ -92,30 +70,32 @@ export class DistributedLockService {
 
     constructor(private readonly dataSource: DataSource) {}
 
+    /**
+     * Acquire distributed lock using PostgreSQL Advisory Lock
+     * @param key - Unique lock key (e.g. `job:${jobId}`)
+     * @param options - Lock options (TTL for auto-release)
+     * @returns Lock object or null if could not acquire
+     */
     async acquire(
         key: string,
         options: DistributedLockOptions = {},
     ): Promise<DistributedLock | null> {
         const lockId = this.hashKey(key);
-        const queryRunner = this.dataSource.createQueryRunner();
 
         try {
-            await queryRunner.connect();
-
-            const result = await queryRunner.query(
+            const result = await this.dataSource.query(
                 `SELECT pg_try_advisory_lock($1, $2) as acquired`,
-                [lockId.classId, lockId.objectId],
+                lockId,
             );
 
             if (!result[0]?.acquired) {
-                await queryRunner.release();
                 this.logger.debug({
                     message:
                         'Could not acquire distributed lock (already in use)',
                     context: DistributedLockService.name,
                     metadata: { key, lockId },
                 });
-                return null;
+                return null; // Lock is already in use
             }
 
             this.logger.debug({
@@ -125,19 +105,12 @@ export class DistributedLockService {
             });
 
             return new DistributedLock(
-                queryRunner,
+                this.dataSource,
                 lockId,
                 options.ttl,
                 this.logger,
             );
         } catch (error) {
-            try {
-                if (!queryRunner.isReleased) {
-                    await queryRunner.release();
-                }
-            } catch {
-                // Ignore release failures on acquisition error path
-            }
             this.logger.error({
                 message: 'Error acquiring distributed lock',
                 context: DistributedLockService.name,
@@ -149,40 +122,50 @@ export class DistributedLockService {
     }
 
     /**
-     * Hash string key to a two-part advisory lock ID (classId, objectId).
-     * Uses SHA-256 to avoid the collisions present in djb2 32-bit hashing.
-     * The 256-bit digest is split into two signed int4 values matching
-     * PostgreSQL's pg_try_advisory_lock(int4, int4) signature.
+     * Hash string key to two 32-bit integers for PostgreSQL advisory lock.
+     * Uses pg_try_advisory_lock(int, int) for 64-bit key space,
+     * reducing collision probability from ~1/65k to ~1/4B concurrent locks.
      */
-    private hashKey(key: string): AdvisoryLockId {
-        const digest = createHash('sha256').update(key).digest();
+    private hashKey(key: string): [number, number] {
+        // djb2 hash — first 32 bits
+        let hash1 = 5381;
+        for (let i = 0; i < key.length; i++) {
+            hash1 = (hash1 << 5) + hash1 + key.charCodeAt(i);
+            hash1 = hash1 & hash1;
+        }
 
-        const classId = digest.readInt32BE(0);
-        const objectId = digest.readInt32BE(4);
+        // FNV-1a hash — second 32 bits (independent algorithm to minimize correlation)
+        let hash2 = 0x811c9dc5;
+        for (let i = 0; i < key.length; i++) {
+            hash2 ^= key.charCodeAt(i);
+            hash2 = Math.imul(hash2, 0x01000193);
+            hash2 = hash2 & hash2;
+        }
 
-        return { classId, objectId };
+        return [Math.abs(hash1), Math.abs(hash2)];
     }
 
+    /**
+     * Verify if lock is in use (without acquiring)
+     */
     async isLocked(key: string): Promise<boolean> {
         const lockId = this.hashKey(key);
-        const queryRunner = this.dataSource.createQueryRunner();
         try {
-            await queryRunner.connect();
-
-            const result = await queryRunner.query(
+            const result = await this.dataSource.query(
                 `SELECT pg_try_advisory_lock($1, $2) as acquired`,
-                [lockId.classId, lockId.objectId],
+                lockId,
             );
 
             if (result[0]?.acquired) {
-                await queryRunner.query(`SELECT pg_advisory_unlock($1, $2)`, [
-                    lockId.classId,
-                    lockId.objectId,
-                ]);
-                return false;
+                // Release immediately (was just checking)
+                await this.dataSource.query(
+                    `SELECT pg_advisory_unlock($1, $2)`,
+                    lockId,
+                );
+                return false; // Was not in use
             }
 
-            return true;
+            return true; // Is in use
         } catch (error) {
             this.logger.error({
                 message: 'Error checking lock status',
@@ -190,15 +173,8 @@ export class DistributedLockService {
                 error: error instanceof Error ? error : undefined,
                 metadata: { key, lockId },
             });
+            // On error, assume it is locked (fail-safe)
             return true;
-        } finally {
-            try {
-                if (!queryRunner.isReleased) {
-                    await queryRunner.release();
-                }
-            } catch {
-                // Ignore release failures on lock probe path
-            }
         }
     }
 }
