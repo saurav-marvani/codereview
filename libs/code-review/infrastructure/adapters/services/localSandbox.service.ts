@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { exec, execFile, ExecFileOptions, spawn } from 'child_process';
 import { lstat, mkdtemp, readFile, realpath, rm, writeFile, mkdir } from 'fs/promises';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, resolve as pathResolve, sep as pathSep } from 'path';
 import { promisify } from 'util';
 
 import {
@@ -116,7 +116,39 @@ export class LocalSandboxService implements ISandboxProvider {
 
             const capturedRepoDir = tempDir;
 
+            // Privileged shell exec for infrastructure callers (graph build,
+            // AST extraction, sandbox bootstrap). Unlike `remoteCommands.exec`
+            // this does NOT whitelist programs — it runs the command through
+            // /bin/sh so mkdir, pipes, redirections, etc. work. That power
+            // comes with a safety contract: **callers MUST shell-quote any
+            // value that could come (directly or transitively) from user
+            // input** (PR filenames, branch names, commit messages, etc.).
+            //
+            // As a runtime tripwire we reject command substitution (`$(...)`
+            // and backticks) on the raw string. Internal infrastructure
+            // commands have no legitimate need to spawn subshells, and a
+            // leaked `$()` is the most common path from "string concatenation
+            // bug" to RCE. The block is conservative by design — if a real
+            // use case ever needs command substitution, it should opt in
+            // explicitly instead of piggybacking on this entry point.
             const run = async (command: string, opts?: { timeoutMs?: number }): Promise<SandboxRunResult> => {
+                if (/`|\$\(/.test(command)) {
+                    this.logger.warn({
+                        message:
+                            'Rejected sandbox.run command containing shell substitution',
+                        context: LocalSandboxService.name,
+                        metadata: {
+                            preview: command.slice(0, 200),
+                        },
+                    });
+                    return {
+                        stdout: '',
+                        stderr:
+                            'Command substitution ($(...) / backticks) is not allowed in sandbox.run',
+                        exitCode: 1,
+                    };
+                }
+
                 const execAsync = promisify(exec);
                 try {
                     const { stdout, stderr } = await execAsync(command, {
@@ -135,13 +167,41 @@ export class LocalSandboxService implements ISandboxProvider {
                 }
             };
 
+            // Path safety: reads go through `resolveSafePath` so absolute
+            // paths, `..` traversals, and symlink escapes are all rejected
+            // at the boundary. Writes can target files that don't exist
+            // yet (so `lstat`/`realpath` don't apply), but we still
+            // normalize and compare against the repo root so the final
+            // target can't escape — `validatePath` plus the prefix check
+            // covers `../..`, `/etc/...`, and embedded traversals.
             const sandboxReadFile = async (path: string): Promise<string> => {
-                const fullPath = path.startsWith('/') ? path : join(capturedRepoDir, path);
-                return readFile(fullPath, 'utf-8');
+                const safe = await this.resolveSafePath(
+                    capturedRepoDir,
+                    path,
+                );
+                return readFile(safe, 'utf-8');
             };
 
-            const sandboxWriteFile = async (path: string, content: string): Promise<void> => {
-                const fullPath = path.startsWith('/') ? path : join(capturedRepoDir, path);
+            const assertWriteTargetInside = (path: string): string => {
+                this.validatePath(path);
+                const repoRoot = pathResolve(capturedRepoDir);
+                const target = pathResolve(capturedRepoDir, path);
+                if (
+                    target !== repoRoot &&
+                    !target.startsWith(repoRoot + pathSep)
+                ) {
+                    throw new Error(
+                        `Path escapes repo boundary: ${path}`,
+                    );
+                }
+                return target;
+            };
+
+            const sandboxWriteFile = async (
+                path: string,
+                content: string,
+            ): Promise<void> => {
+                const fullPath = assertWriteTargetInside(path);
                 const dir = join(fullPath, '..');
                 await mkdir(dir, { recursive: true });
                 await writeFile(fullPath, content, 'utf-8');
@@ -256,19 +316,20 @@ export class LocalSandboxService implements ISandboxProvider {
             exec: async (
                 command: string,
             ): Promise<{ stdout: string; exitCode: number }> => {
-                // Strict whitelist — only allow known read-only programs.
-                // This runs on the host machine (no container isolation),
-                // so we must prevent arbitrary command execution.
+                // Strict whitelist — only allow programs that READ files. This
+                // runs on the host machine with no container isolation, so any
+                // program that evaluates code in the cloned repo is an RCE
+                // vector: `cargo check` runs `build.rs`, `npx` resolves local
+                // `node_modules/.bin/*` binaries that a PR can ship, `go
+                // generate` runs `//go:generate` directives, `eslint` loads
+                // custom plugins via `.eslintrc`, `tsc` can trigger module
+                // resolution side effects, and `python`/`python3` are direct
+                // code execution. Running those here means a malicious PR is
+                // host RCE on the worker. They only stay safe inside the E2B
+                // provider, which has real container isolation.
                 const ALLOWED_PROGRAMS = new Set([
                     'sg', // ast-grep (macOS/homebrew)
                     'ast-grep', // ast-grep (npm global)
-                    'tsc', // TypeScript compiler
-                    'npx', // npx (further validated by tool-level whitelist)
-                    'eslint',
-                    'python',
-                    'python3',
-                    'go',
-                    'cargo',
                     'cat',
                     'wc',
                     'head',

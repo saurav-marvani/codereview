@@ -3,6 +3,12 @@ import 'source-map-support/register';
 
 import { initPyroscope } from '@libs/core/infrastructure/config/profiling/pyroscope';
 import { reportExceptionToSentry } from '@libs/core/infrastructure/config/log/sentry';
+import { configureLongFetchTimeouts } from '@libs/core/infrastructure/http/fetch-timeouts';
+
+// Bump undici HTTP timeouts for any outgoing fetch() — webhooks itself
+// doesn't make long LLM calls today, but keeping the dispatcher aligned
+// across entry points avoids surprises if that ever changes.
+configureLongFetchTimeouts();
 
 // Initialize profiling early (before NestJS bootstrap)
 initPyroscope({ appName: 'kodus-webhooks' });

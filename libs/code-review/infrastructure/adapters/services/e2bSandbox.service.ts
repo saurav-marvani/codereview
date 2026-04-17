@@ -13,7 +13,13 @@ import {
 import { RemoteCommands } from './collectCrossFileContexts.service';
 import { shSingleQuote } from './shell-quote';
 
-const SANDBOX_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes — cross-file context + file analysis
+// 45 minutes — upper bound for the longest possible review:
+// 3 agents in parallel (bug + security + performance) × ~25 min each,
+// plus coverage-recovery + synthesis-rescue + verify passes.
+// E2B bills by live-minute, not by the TTL ceiling — the pipeline's
+// onPipelineFinish observer calls sandbox.cleanup() on every exit path,
+// so this is a safety ceiling, not a cost floor.
+const SANDBOX_TIMEOUT_MS = 45 * 60 * 1000;
 const REPO_DIR = '/home/user/repo';
 
 const TIMEOUTS = {

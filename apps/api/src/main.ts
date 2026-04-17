@@ -3,6 +3,12 @@ import 'source-map-support/register';
 import { environment } from '@libs/ee/configs/environment';
 import { initPyroscope } from '@libs/core/infrastructure/config/profiling/pyroscope';
 import { reportExceptionToSentry } from '@libs/core/infrastructure/config/log/sentry';
+import { configureLongFetchTimeouts } from '@libs/core/infrastructure/http/fetch-timeouts';
+
+// Bump undici HTTP timeouts before any fetch() happens so long-running
+// LLM calls don't get aborted by the HTTP layer's default 5-minute
+// headersTimeout. Aligns with LLM_CALL_TIMEOUT_MS in agent-loop.ts.
+configureLongFetchTimeouts();
 
 // Initialize profiling early (before NestJS bootstrap)
 initPyroscope({ appName: 'kodus-api' });

@@ -383,7 +383,14 @@ export abstract class BaseCodeReviewAgentProvider {
     ) {}
 
     protected abstract getIdentity(): ReviewAgentIdentity;
-    protected abstract getCategoryPrompt(): string;
+    /**
+     * Return the category-specific chunk that gets embedded in the system
+     * prompt. Receives `input` so subclasses can include per-request data
+     * (e.g. the kody-rules agent renders the current team rules) without
+     * stashing it on instance state — keeping the provider safe to share
+     * across concurrent reviews.
+     */
+    protected abstract getCategoryPrompt(input: ReviewAgentInput): string;
     protected abstract getCategoryLabel(): string;
 
     protected supportsMixedLabels(): boolean {
@@ -1232,7 +1239,7 @@ export abstract class BaseCodeReviewAgentProvider {
         }
 
         const identity = this.getIdentity();
-        const categoryPrompt = this.getCategoryPrompt();
+        const categoryPrompt = this.getCategoryPrompt(input);
         const overridesSection = this.formatOverrides(input);
         const memoryRulesSection = this.formatMemoryRules(input.memoryRules);
 
@@ -1405,8 +1412,8 @@ ${mixedLabelTaskGuidance}
   <CoverageContract>
     ${
         input.fileTiers
-            ? 'You must inspect every CRITICAL file below with readFile before finalizing. Warm files contribute to the 70% total coverage requirement — inspect them if budget allows. Optional files appear with hunk headers only; do not spend steps on them unless a concrete hypothesis points to one.'
-            : 'You must inspect every changed file below with readFile before finalizing.'
+            ? 'You must readFile EVERY hunk of every CRITICAL file below before finalizing — a file with multiple hunks is only fully covered when each listed line range has been read. Warm files contribute to the 70% total coverage requirement — readFile their hunks if budget allows. Optional files appear with hunk headers only; do not spend steps on them unless a concrete hypothesis points to one.'
+            : 'You must readFile EVERY hunk of every changed file below before finalizing. A file with multiple hunks is only fully covered when each listed line range has been read; reading the first hunk of a multi-hunk file does NOT cover the rest.'
     }
     grep, findFile, and listDir help navigation, but they do not count as coverage.
 ${coverageTargets ? `${coverageTargets}\n` : ''}
@@ -1480,7 +1487,7 @@ ${coverageTargets ? `${coverageTargets}\n` : ''}
      */
     private buildSelfContainedSystemPrompt(input: ReviewAgentInput): string {
         const identity = this.getIdentity();
-        const categoryPrompt = this.getCategoryPrompt();
+        const categoryPrompt = this.getCategoryPrompt(input);
         const overridesSection = this.formatOverrides(input);
         const memoryRulesSection = this.formatMemoryRules(input.memoryRules);
 

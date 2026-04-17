@@ -3,6 +3,12 @@ import 'source-map-support/register';
 
 import { initPyroscope } from '@libs/core/infrastructure/config/profiling/pyroscope';
 import { reportExceptionToSentry } from '@libs/core/infrastructure/config/log/sentry';
+import { configureLongFetchTimeouts } from '@libs/core/infrastructure/http/fetch-timeouts';
+
+// Bump undici HTTP timeouts before any fetch() happens — Gemini calls with
+// high reasoning can take 4-7 minutes before the first byte. Must run
+// before NestFactory so the global dispatcher is set for every module.
+configureLongFetchTimeouts();
 
 // Initialize profiling early (before NestJS bootstrap)
 initPyroscope({ appName: 'kodus-worker' });

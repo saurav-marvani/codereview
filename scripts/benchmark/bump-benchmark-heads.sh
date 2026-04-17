@@ -91,9 +91,13 @@ while IFS='|' read -r REPO BRANCH; do
     continue
   fi
 
-  # 1. Get current ref SHA
+  # 1. Get current ref SHA. When the branch doesn't exist gh prints a 404
+  # JSON body on stdout AND exits non-zero; --jq on an error body returns
+  # empty and falls through to the `|| echo ""` guard. Validate the shape
+  # of REF_SHA so a missing branch produces an accurate "ref not found"
+  # instead of tripping the tree lookup with a garbage SHA.
   REF_SHA=$(gh api "repos/$REPO/git/ref/heads/$BRANCH" --jq '.object.sha' 2>/dev/null || echo "")
-  if [ -z "$REF_SHA" ]; then
+  if [ -z "$REF_SHA" ] || ! [[ "$REF_SHA" =~ ^[0-9a-f]{40}$ ]]; then
     echo "  [$IDX/$TOTAL] ✗ $REPO#$BRANCH — ref not found"
     FAIL=$((FAIL + 1))
     continue
@@ -101,8 +105,8 @@ while IFS='|' read -r REPO BRANCH; do
 
   # 2. Get the commit's tree SHA
   TREE_SHA=$(gh api "repos/$REPO/git/commits/$REF_SHA" --jq '.tree.sha' 2>/dev/null || echo "")
-  if [ -z "$TREE_SHA" ]; then
-    echo "  [$IDX/$TOTAL] ✗ $REPO#$BRANCH — tree not found"
+  if [ -z "$TREE_SHA" ] || ! [[ "$TREE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "  [$IDX/$TOTAL] ✗ $REPO#$BRANCH — tree not found (commit $REF_SHA)"
     FAIL=$((FAIL + 1))
     continue
   fi

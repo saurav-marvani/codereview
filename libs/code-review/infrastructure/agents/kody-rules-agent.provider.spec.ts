@@ -247,17 +247,19 @@ describe('KodyRulesAgentProvider — rule formatting and applicability', () => {
         );
     });
 
-    describe('getCategoryPrompt — composition with current rules', () => {
-        it('includes the base rules-checking instructions when no rules are loaded', () => {
-            const out = (provider as any).getCategoryPrompt();
+    describe('getCategoryPrompt — composition with per-request rules', () => {
+        it('includes the base rules-checking instructions when no rules are passed', () => {
+            const out = (provider as any).getCategoryPrompt({
+                kodyRules: [],
+                changedFiles: [],
+            });
             expect(out).toContain('Focus: Team Rules & Conventions');
             expect(out).not.toContain('Team Rules to Validate');
         });
 
-        it('appends the formatted rules block when execute() has loaded rules', () => {
-            // Simulate execute() side effect of populating currentRules
-            (provider as any).currentRules = formatRules(
-                [
+        it('appends the formatted rules block when rules are passed via input', () => {
+            const out = (provider as any).getCategoryPrompt({
+                kodyRules: [
                     {
                         uuid: 'r1',
                         title: 'Test',
@@ -266,13 +268,34 @@ describe('KodyRulesAgentProvider — rule formatting and applicability', () => {
                         status: 'active',
                     },
                 ],
-                [{ filename: 'a.ts' }],
-            );
-
-            const out = (provider as any).getCategoryPrompt();
+                changedFiles: [{ filename: 'a.ts' }],
+            });
             expect(out).toContain('Focus: Team Rules & Conventions');
             expect(out).toContain('Team Rules to Validate (1 rules)');
             expect(out).toContain('### Rule 1: Test');
+        });
+
+        it('does not leak rules across calls (no shared state)', () => {
+            // First call: rules present.
+            (provider as any).getCategoryPrompt({
+                kodyRules: [
+                    {
+                        uuid: 'r1',
+                        title: 'LeakCheck',
+                        rule: 'x',
+                        type: KodyRulesType.STANDARD,
+                        status: 'active',
+                    },
+                ],
+                changedFiles: [{ filename: 'a.ts' }],
+            });
+            // Second call with no rules: must NOT mention the previous rule.
+            const out = (provider as any).getCategoryPrompt({
+                kodyRules: [],
+                changedFiles: [{ filename: 'b.ts' }],
+            });
+            expect(out).not.toContain('LeakCheck');
+            expect(out).not.toContain('Team Rules to Validate');
         });
     });
 

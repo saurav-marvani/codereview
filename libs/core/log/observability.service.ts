@@ -9,15 +9,55 @@ import { createLogger } from '@kodus/flow';
 import { TokenTrackingHandler, BYOKConfig } from '@kodus/kodus-common/llm';
 
 /**
+ * Narrow projection of BYOKConfig that carries only the fields the
+ * observability layer actually needs (provider + model). Everything else —
+ * including `apiKey` — is intentionally excluded so that even if a future
+ * code change logs the value (span attributes, debug logs, error dumps),
+ * customer API keys cannot leak.
+ */
+type BYOKConfigSafeView = {
+    main?: { provider: string; model: string };
+    fallback?: { provider: string; model: string };
+};
+
+/**
+ * Strip everything from a BYOKConfig except provider + model on main/fallback.
+ * Returns `undefined` when the input is nullish so downstream code can short-
+ * circuit exactly as before.
+ */
+function toSafeByokView(
+    byokConfig?: BYOKConfig,
+): BYOKConfigSafeView | undefined {
+    if (!byokConfig) return undefined;
+    const view: BYOKConfigSafeView = {};
+    if (byokConfig.main?.model && byokConfig.main?.provider) {
+        view.main = {
+            provider: byokConfig.main.provider,
+            model: byokConfig.main.model,
+        };
+    }
+    if (byokConfig.fallback?.model && byokConfig.fallback?.provider) {
+        view.fallback = {
+            provider: byokConfig.fallback.provider,
+            model: byokConfig.fallback.model,
+        };
+    }
+    return view.main || view.fallback ? view : undefined;
+}
+
+/**
  * Resolves a raw model name (from LangChain) to include the BYOK provider prefix.
  * Matches against main and fallback configs to pick the correct provider.
  */
-function resolveModelName(rawModel: string, byokConfig?: BYOKConfig): string {
-    if (!byokConfig) return rawModel;
-    if (byokConfig.main?.model === rawModel)
-        return `${byokConfig.main.provider}:${rawModel}`;
-    if (byokConfig.fallback?.model === rawModel)
-        return `${byokConfig.fallback.provider}:${rawModel}`;
+function resolveModelName(
+    rawModel: string,
+    byokView?: BYOKConfigSafeView,
+): string {
+    if (!byokView) return rawModel;
+    if (byokView.main?.model === rawModel)
+        return `${byokView.main.provider}:${rawModel}`;
+    if (byokView.fallback?.model === rawModel)
+        return `${byokView.fallback.provider}:${rawModel}`;
     return rawModel;
 }
 
@@ -296,7 +336,11 @@ export class ObservabilityService implements OnModuleInit {
             metadata?: Record<string, any>;
             runName?: string;
             reset?: boolean;
-            byokConfig?: BYOKConfig;
+            // Accepts the narrowed safe view (provider + model only). Callers
+            // that pass a full BYOKConfig must project through
+            // `toSafeByokView` first — see `runLLMInSpan`. Keeping the type
+            // narrow here prevents API keys from entering this scope at all.
+            byokConfig?: BYOKConfigSafeView;
         } = {}) => {
             const obs = this.getObsInstance();
             const span = obs.getCurrentSpan();
@@ -309,7 +353,7 @@ export class ObservabilityService implements OnModuleInit {
 
             const s = this.summarize(usages);
 
-            // Resolve model names with BYOK provider prefix when available
+            // Resolve model names with BYOK provider prefix when available.
             const resolvedModels = s.modelsArr.map((m) =>
                 resolveModelName(m, finalizeByokConfig),
             );
@@ -375,6 +419,11 @@ export class ObservabilityService implements OnModuleInit {
             byokConfig: spanByokConfig,
             exec,
         } = params;
+        // Scrub the BYOK config immediately so nothing downstream in this
+        // span scope — including future debug logs or span attributes —
+        // can see the customer's API key. Only provider + model names ride
+        // through to `finalize`, which is all the model-name resolver needs.
+        const safeByokView = toSafeByokView(spanByokConfig);
         const obs = this.getObsInstance();
         const span = obs.startSpan(spanName);
 
@@ -395,7 +444,7 @@ export class ObservabilityService implements OnModuleInit {
                 const usage = await finalize({
                     metadata: attrs,
                     reset: true,
-                    byokConfig: spanByokConfig,
+                    byokConfig: safeByokView,
                 });
                 return { result, usage };
             });

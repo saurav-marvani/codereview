@@ -11,7 +11,19 @@ export type CoverageTier = 'critical' | 'warm' | 'optional';
 export interface CoverageTarget {
     id: string;
     file: string;
+    /**
+     * Hunks from the PR diff. A file is only fully covered once every
+     * changed range is contained inside `touchedRanges`.
+     */
     changedRanges: Array<[number, number]>;
+    /**
+     * Merged union of line ranges the agent has actually read with
+     * readFile on this file. Status derives from how much of
+     * `changedRanges` lives inside this union — coverage is per-hunk, not
+     * per-file, so reading one small slice of a multi-hunk file no longer
+     * flips the whole thing to `touched`.
+     */
+    touchedRanges: Array<[number, number]>;
     status: 'pending' | 'touched';
     touchedBy: CoverageTouch[];
     /** Undefined when tiering is disabled (flat coverage mode). */
@@ -80,6 +92,7 @@ export function buildCoverageLedger(
                 id: normalized,
                 file: normalized,
                 changedRanges: extractChangedLineRanges(file.patch),
+                touchedRanges: [],
                 status: 'pending' as const,
                 touchedBy: [],
                 tier,
@@ -183,12 +196,12 @@ export function formatCoverageTargetsForPrompt(
     appendTier(
         'CRITICAL',
         critical,
-        'MUST be inspected (full diff above, readFile before finalizing)',
+        'every hunk listed must be readFile-covered before finalizing',
     );
     appendTier(
         'WARM',
         warm,
-        'full diff above; inspect if step budget allows, contributes to coverage',
+        'full diff above; readFile the hunks if budget allows — partial reads count per-hunk',
     );
     appendTier(
         'OPTIONAL',
@@ -197,7 +210,8 @@ export function formatCoverageTargetsForPrompt(
     );
     blocks.push(
         '',
-        `Finalization rule: ALL critical files must be inspected, AND total coverage must reach >= ${Math.round(TIERED_TOTAL_COVERAGE_THRESHOLD * 100)}%. Warm/optional contribute to the total.`,
+        `Finalization rule: ALL critical files must be fully hunk-covered, AND total coverage must reach >= ${Math.round(TIERED_TOTAL_COVERAGE_THRESHOLD * 100)}%. Warm/optional contribute to the total.`,
+        'Hunk-covered = every line range listed for the file has been inside a readFile range. Reading the first hunk of a multi-hunk file does NOT cover the rest.',
     );
     return blocks.join('\n');
 }
@@ -214,16 +228,16 @@ export function formatCoverageDebt(
     if (!hasTiers) {
         const lines = pending
             .slice(0, maxItems)
-            .map((t) => `- ${describeCoverageTarget(t)}`);
+            .map((t) => `- ${describeCoverageDebtTarget(t)}`);
         if (pending.length > maxItems) {
             lines.push(
                 `- ... (${pending.length - maxItems} more changed files)`,
             );
         }
         return [
-            'Coverage debt remains for these changed files:',
+            'Coverage debt remains for these hunks:',
             ...lines,
-            'Do not finalize until each remaining changed file has been inspected with readFile.',
+            'Do not finalize until the pending line ranges above have been inspected with readFile.',
             'grep or listDir alone do not count as coverage.',
         ].join('\n');
     }
@@ -244,14 +258,14 @@ export function formatCoverageDebt(
     if (criticalPending.length) {
         const lines = criticalPending
             .slice(0, maxItems)
-            .map((t) => `  - ${describeCoverageTarget(t)}`);
+            .map((t) => `  - ${describeCoverageDebtTarget(t)}`);
         if (criticalPending.length > maxItems) {
             lines.push(
                 `  - ... (${criticalPending.length - maxItems} more)`,
             );
         }
         blocks.push(
-            `CRITICAL pending (${criticalPending.length}/${summary.criticalTotal}) — MUST be inspected before finalizing:`,
+            `CRITICAL pending (${criticalPending.length}/${summary.criticalTotal}) — readFile the pending line ranges below before finalizing:`,
             ...lines,
         );
     } else if (summary.criticalTotal > 0) {
@@ -263,12 +277,12 @@ export function formatCoverageDebt(
     if (warmPending.length) {
         const lines = warmPending
             .slice(0, Math.min(maxItems, 5))
-            .map((t) => `  - ${describeCoverageTarget(t)}`);
+            .map((t) => `  - ${describeCoverageDebtTarget(t)}`);
         if (warmPending.length > 5) {
             lines.push(`  - ... (${warmPending.length - 5} more)`);
         }
         blocks.push(
-            `WARM pending (${warmPending.length}/${summary.warmTotal}) — inspect if step budget allows, contributes to coverage:`,
+            `WARM pending (${warmPending.length}/${summary.warmTotal}) — readFile the pending line ranges below if step budget allows:`,
             ...lines,
         );
     }
@@ -280,7 +294,8 @@ export function formatCoverageDebt(
     }
 
     blocks.push(
-        `Total coverage: ${summary.touchedTargets}/${summary.totalTargets} (${pct}%).`,
+        `Total coverage: ${summary.touchedTargets}/${summary.totalTargets} files fully covered (${pct}%).`,
+        `A file is "covered" only when every hunk in the diff has been readFile'd. Reading one hunk of a multi-hunk file leaves the rest pending.`,
         `You may finalize once ALL critical files are covered AND total coverage >= ${Math.round(TIERED_TOTAL_COVERAGE_THRESHOLD * 100)}%.`,
         'readFile counts as coverage; grep/listDir do not.',
     );
@@ -305,9 +320,7 @@ export function markCoverageFromToolCall(
     const newlyTouched: CoverageTarget[] = [];
 
     for (const target of targets) {
-        if (!targetMatchesObservation(target, observation, normalizedPath)) {
-            continue;
-        }
+        if (!pathsMatch(target.file, normalizedPath)) continue;
 
         if (
             !target.touchedBy.some(
@@ -322,13 +335,91 @@ export function markCoverageFromToolCall(
             });
         }
 
-        if (target.status === 'pending') {
+        // Accumulate the read range into the target's touched-range union.
+        // A readFile without line info is treated as a full-file read — it
+        // covers every hunk regardless of where they fall.
+        if (observation.startLine || observation.endLine) {
+            const readStart = observation.startLine || 1;
+            const readEnd =
+                observation.endLine ||
+                observation.startLine ||
+                readStart;
+            target.touchedRanges = mergeRanges([
+                ...target.touchedRanges,
+                [readStart, readEnd],
+            ]);
+        } else {
+            // No line info → mark as fully read (single range covering
+            // the union of all declared changed ranges, if any).
+            target.touchedRanges = [[1, Number.MAX_SAFE_INTEGER]];
+        }
+
+        const wasPending = target.status === 'pending';
+        if (isTargetFullyCovered(target)) {
             target.status = 'touched';
-            newlyTouched.push(target);
+            if (wasPending) newlyTouched.push(target);
         }
     }
 
     return newlyTouched;
+}
+
+/**
+ * A target is fully covered when every declared hunk is inside the merged
+ * touched-range union. Targets without explicit changed ranges (e.g. binary
+ * files, renames with no patch) flip to touched on any read.
+ */
+function isTargetFullyCovered(target: CoverageTarget): boolean {
+    if (!target.changedRanges.length) {
+        return target.touchedRanges.length > 0;
+    }
+    return target.changedRanges.every((range) =>
+        isRangeCoveredByUnion(range, target.touchedRanges),
+    );
+}
+
+function isRangeCoveredByUnion(
+    range: [number, number],
+    union: Array<[number, number]>,
+): boolean {
+    return union.some(([start, end]) => start <= range[0] && end >= range[1]);
+}
+
+/**
+ * Return the subset of a target's changed ranges that has NOT yet been
+ * fully covered by reads. Used by the coverage-debt prompt so the agent
+ * knows which specific line ranges still need inspection.
+ */
+function pendingHunks(target: CoverageTarget): Array<[number, number]> {
+    if (!target.changedRanges.length) {
+        return target.touchedRanges.length ? [] : [];
+    }
+    return target.changedRanges.filter(
+        (range) => !isRangeCoveredByUnion(range, target.touchedRanges),
+    );
+}
+
+function mergeRanges(
+    ranges: Array<[number, number]>,
+): Array<[number, number]> {
+    if (ranges.length <= 1) return ranges.slice();
+    const sorted = ranges
+        .map<[number, number]>(([s, e]) => [Math.min(s, e), Math.max(s, e)])
+        .sort((a, b) => a[0] - b[0]);
+    const merged: Array<[number, number]> = [sorted[0]];
+    for (let i = 1; i < sorted.length; i++) {
+        const prev = merged[merged.length - 1];
+        const cur = sorted[i];
+        // Contiguous or overlapping ranges are merged. `+1` covers the
+        // case where the agent reads [1,50] then [51,100] — those are
+        // adjacent, not overlapping, but cover a continuous region.
+        if (cur[0] <= prev[1] + 1) {
+            prev[1] = Math.max(prev[1], cur[1]);
+        } else {
+            merged.push(cur);
+        }
+    }
+    return merged;
 }
 
 function extractCoverageObservation(
@@ -350,47 +441,34 @@ function extractCoverageObservation(
     return null;
 }
 
-function targetMatchesObservation(
-    target: CoverageTarget,
-    observation: CoverageObservation,
-    normalizedPath: string,
-): boolean {
-    if (observation.pathMode === 'directory') {
-        return (
-            target.file === normalizedPath ||
-            target.file.startsWith(`${normalizedPath}/`)
-        );
-    }
-
-    if (!pathsMatch(target.file, normalizedPath)) {
-        return false;
-    }
-
-    if (!observation.startLine && !observation.endLine) {
-        return true;
-    }
-
-    if (!target.changedRanges.length) {
-        return true;
-    }
-
-    const readStart = observation.startLine || 1;
-    const readEnd = observation.endLine || observation.startLine || readStart;
-
-    return target.changedRanges.some(([start, end]) =>
-        rangesOverlap(start, end, readStart, readEnd),
-    );
-}
-
 function describeCoverageTarget(target: CoverageTarget): string {
-    const ranges = formatRanges(target.changedRanges);
+    const ranges = formatRanges(target.changedRanges, 'changed lines');
     return ranges ? `${target.file} (${ranges})` : target.file;
 }
 
-function formatRanges(ranges: Array<[number, number]>): string {
+/**
+ * Debt-time description: show only the hunks that are still pending,
+ * so the agent can read those specific line ranges instead of re-opening
+ * sections it already covered.
+ */
+function describeCoverageDebtTarget(target: CoverageTarget): string {
+    const pending = pendingHunks(target);
+    if (!pending.length) {
+        return target.changedRanges.length
+            ? `${target.file} (all hunks covered)`
+            : target.file;
+    }
+    const ranges = formatRanges(pending, 'pending lines');
+    return ranges ? `${target.file} (${ranges})` : target.file;
+}
+
+function formatRanges(
+    ranges: Array<[number, number]>,
+    label: string,
+): string {
     if (!ranges.length) return '';
 
-    return `changed lines ${ranges
+    return `${label} ${ranges
         .slice(0, 3)
         .map(([start, end]) => (start === end ? `${start}` : `${start}-${end}`))
         .join(', ')}${ranges.length > 3 ? ', ...' : ''}`;
@@ -398,13 +476,18 @@ function formatRanges(ranges: Array<[number, number]>): string {
 
 function pathsMatch(targetFile: string, observedPath: string): boolean {
     if (targetFile === observedPath) return true;
+    // Suffix match with a leading '/' is safe: it only fires when the
+    // observed path is a full suffix at a directory boundary, so
+    // `foo/bar.ts` matches `/abs/repo/foo/bar.ts` but not `other/foo/bar.ts`.
     if (observedPath.endsWith(`/${targetFile}`)) return true;
     if (targetFile.endsWith(`/${observedPath}`)) return true;
 
-    const targetBase = targetFile.split('/').pop();
-    const observedBase = observedPath.split('/').pop();
-
-    return !!targetBase && targetBase === observedBase && observedBase !== '';
+    // Intentionally no basename-only fallback. It used to match any two
+    // files sharing the same filename (e.g. every `page.tsx` in a Next.js
+    // app, every `fetch.ts`), which silently marked unrelated changed
+    // files as "touched" and caused the agent to finalize without
+    // inspecting them.
+    return false;
 }
 
 function extractChangedLineRanges(patch?: string): Array<[number, number]> {
@@ -423,15 +506,6 @@ function extractChangedLineRanges(patch?: string): Array<[number, number]> {
     }
 
     return ranges;
-}
-
-function rangesOverlap(
-    aStart: number,
-    aEnd: number,
-    bStart: number,
-    bEnd: number,
-): boolean {
-    return aStart <= bEnd && bStart <= aEnd;
 }
 
 function toPositiveNumber(value: unknown): number | undefined {

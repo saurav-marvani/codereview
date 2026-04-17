@@ -1,25 +1,78 @@
 import { CostEstimateUseCase } from './cost-estimate.use-case';
+import { ModelPricingInfo } from './token-pricing.use-case';
 
 type UsageRow = {
     input: number;
     output: number;
     outputReasoning: number;
+    cacheRead?: number;
+    cacheWrite?: number;
 };
 
-const INPUT_PER_MILLION = 1.25;
-const OUTPUT_PER_MILLION = 10.0;
+/**
+ * Helper: build a ModelPricingInfo in per-token units (catalog shape) from
+ * "$/1M" scalars so the test reads like the pricing pages.
+ */
+const pricingFromMillions = (opts: {
+    inputPerM: number;
+    outputPerM: number;
+    cacheReadPerM?: number;
+    cacheWritePerM?: number;
+    inputPerMAbove200k?: number;
+    outputPerMAbove200k?: number;
+    cacheReadPerMAbove200k?: number;
+    cacheWritePerMAbove200k?: number;
+}): ModelPricingInfo => {
+    const perToken = (x?: number) => (typeof x === 'number' ? x / 1e6 : undefined);
+    return {
+        id: 'gemini-3.1-pro',
+        provider: 'google',
+        pricing: {
+            input: {
+                default: perToken(opts.inputPerM) ?? 0,
+                ...(opts.inputPerMAbove200k !== undefined && {
+                    above200k: perToken(opts.inputPerMAbove200k),
+                }),
+            },
+            output: {
+                default: perToken(opts.outputPerM) ?? 0,
+                ...(opts.outputPerMAbove200k !== undefined && {
+                    above200k: perToken(opts.outputPerMAbove200k),
+                }),
+            },
+            cacheRead: {
+                default: perToken(opts.cacheReadPerM) ?? 0,
+                ...(opts.cacheReadPerMAbove200k !== undefined && {
+                    above200k: perToken(opts.cacheReadPerMAbove200k),
+                }),
+            },
+            cacheWrite: {
+                default: perToken(opts.cacheWritePerM) ?? 0,
+                ...(opts.cacheWritePerMAbove200k !== undefined && {
+                    above200k: perToken(opts.cacheWritePerMAbove200k),
+                }),
+            },
+            prompt: perToken(opts.inputPerM) ?? 0,
+            completion: perToken(opts.outputPerM) ?? 0,
+            internal_reasoning: perToken(opts.outputPerM) ?? 0,
+        },
+    };
+};
 
 describe('CostEstimateUseCase', () => {
     let useCase: CostEstimateUseCase;
     let tokenUsageService: { getUsageByPr: jest.Mock };
     let pullRequestsService: { findOne: jest.Mock };
+    let tokenPricingUseCase: { execute: jest.Mock };
 
     beforeEach(() => {
         tokenUsageService = { getUsageByPr: jest.fn() };
         pullRequestsService = { findOne: jest.fn() };
+        tokenPricingUseCase = { execute: jest.fn() };
         useCase = new CostEstimateUseCase(
             tokenUsageService as any,
             pullRequestsService as any,
+            tokenPricingUseCase as any,
         );
     });
 
@@ -77,10 +130,21 @@ describe('CostEstimateUseCase', () => {
                 },
             },
             {
-                name: 'multiple rows summed correctly',
+                name: 'multiple rows with cache usage',
                 rows: [
-                    { input: 100, output: 50, outputReasoning: 30 },
-                    { input: 200, output: 80, outputReasoning: 40 },
+                    {
+                        input: 100,
+                        output: 50,
+                        outputReasoning: 30,
+                        cacheRead: 40,
+                    },
+                    {
+                        input: 200,
+                        output: 80,
+                        outputReasoning: 40,
+                        cacheRead: 100,
+                        cacheWrite: 10,
+                    },
                     { input: 50, output: 20, outputReasoning: 10 },
                 ],
                 expected: {
@@ -88,26 +152,8 @@ describe('CostEstimateUseCase', () => {
                     outputTokens: 150,
                     reasoningTokens: 80,
                     totalTokens: 500,
-                    cacheReadTokens: 0,
-                    cacheWriteTokens: 0,
-                },
-            },
-            {
-                name: 'large numbers (no overflow, no double-count)',
-                rows: [
-                    {
-                        input: 5_000_000,
-                        output: 2_000_000,
-                        outputReasoning: 1_500_000,
-                    },
-                ],
-                expected: {
-                    inputTokens: 5_000_000,
-                    outputTokens: 2_000_000,
-                    reasoningTokens: 1_500_000,
-                    totalTokens: 7_000_000,
-                    cacheReadTokens: 0,
-                    cacheWriteTokens: 0,
+                    cacheReadTokens: 140,
+                    cacheWriteTokens: 10,
                 },
             },
         ];
@@ -117,13 +163,12 @@ describe('CostEstimateUseCase', () => {
         });
 
         it('does not double-count reasoning tokens in totalTokens', () => {
-            // Regression guard: the bug was totalTokens = input + output + reasoning.
-            // outputTokens already includes reasoning, so total must be input + output only.
+            // Regression guard: totalTokens must be input + output only.
             const result = aggregate([
                 { input: 1000, output: 800, outputReasoning: 500 },
             ]);
             expect(result.totalTokens).toBe(1800);
-            expect(result.totalTokens).not.toBe(2300); // would be the bug
+            expect(result.totalTokens).not.toBe(2300);
         });
     });
 
@@ -157,23 +202,48 @@ describe('CostEstimateUseCase', () => {
             });
             expect(result.estimatedMonthlyCost).toBe(0);
             expect(result.costPerDeveloper).toBe(0);
-            expect(result.developerCount).toBe(1); // floor of 1 even when no devs
+            expect(result.developerCount).toBe(1);
             expect(result.periodDays).toBe(14);
             expect(result.projectionDays).toBe(30);
+            // With no usage, the pricing catalog should never be consulted.
+            expect(tokenPricingUseCase.execute).not.toHaveBeenCalled();
         });
 
-        it('aggregates usage and projects monthly cost without double-counting reasoning', async () => {
-            // 1M input + 500K output across 2 PRs by 2 distinct devs.
-            // Reasoning = 200K (already inside output, must NOT inflate total).
+        it('prices a large workload using the >200K tier and applies cache discount', async () => {
+            // 1M input (big — aggregate >200K so above200k tier kicks in)
+            // 500K output, 200K cache read, 50K cache write.
             tokenUsageService.getUsageByPr.mockResolvedValue(
                 buildUsage([
-                    { input: 600_000, output: 300_000, outputReasoning: 120_000 },
-                    { input: 400_000, output: 200_000, outputReasoning: 80_000 },
+                    {
+                        input: 600_000,
+                        output: 300_000,
+                        outputReasoning: 120_000,
+                        cacheRead: 150_000,
+                        cacheWrite: 30_000,
+                    },
+                    {
+                        input: 400_000,
+                        output: 200_000,
+                        outputReasoning: 80_000,
+                        cacheRead: 50_000,
+                        cacheWrite: 20_000,
+                    },
                 ]),
             );
             pullRequestsService.findOne
                 .mockResolvedValueOnce({ user: { username: 'alice' } })
                 .mockResolvedValueOnce({ user: { username: 'bob' } });
+            tokenPricingUseCase.execute.mockResolvedValue(
+                // Gemini 3.1 Pro-ish rates. Use above200k because aggregate input = 1M.
+                pricingFromMillions({
+                    inputPerM: 2,
+                    outputPerM: 12,
+                    cacheReadPerM: 0.2,
+                    inputPerMAbove200k: 4,
+                    outputPerMAbove200k: 18,
+                    cacheReadPerMAbove200k: 0.4,
+                }),
+            );
 
             const result = await useCase.execute('org-1');
 
@@ -181,16 +251,19 @@ describe('CostEstimateUseCase', () => {
                 inputTokens: 1_000_000,
                 outputTokens: 500_000,
                 reasoningTokens: 200_000,
-                totalTokens: 1_500_000, // input + output ONLY
-                cacheReadTokens: 0,
-                cacheWriteTokens: 0,
+                totalTokens: 1_500_000,
+                cacheReadTokens: 200_000,
+                cacheWriteTokens: 50_000,
             });
 
-            // Cost over 14 days
-            const inputCost = (1_000_000 / 1_000_000) * INPUT_PER_MILLION; // 1.25
-            const outputCost = (500_000 / 1_000_000) * OUTPUT_PER_MILLION; // 5.0
-            const cost14 = inputCost + outputCost; // 6.25
-            const monthly = cost14 * (30 / 14); // ~13.39
+            // Expected 14-day cost with above200k tier + cache:
+            //   uncachedInput = 1M - 200K = 800K → 800K × $4/M = $3.20
+            //   cacheRead     = 200K × $0.40/M = $0.08
+            //   cacheWrite    = 50K × $0 (no above200k rate → fallback default 0) = $0
+            //   output        = 500K × $18/M = $9.00
+            //   total         = $12.28
+            const cost14 = 3.2 + 0.08 + 0 + 9.0;
+            const monthly = cost14 * (30 / 14);
 
             expect(result.estimatedMonthlyCost).toBe(
                 Math.round(monthly * 100) / 100,
@@ -199,6 +272,91 @@ describe('CostEstimateUseCase', () => {
             expect(result.costPerDeveloper).toBe(
                 Math.round((monthly / 2) * 100) / 100,
             );
+            expect(tokenPricingUseCase.execute).toHaveBeenCalledWith(
+                'gemini-3.1-pro',
+            );
+        });
+
+        it('prices a small workload using the default tier', async () => {
+            // 150K input total (< 200K) → default tier, no cache.
+            tokenUsageService.getUsageByPr.mockResolvedValue(
+                buildUsage([
+                    { input: 100_000, output: 40_000, outputReasoning: 0 },
+                    { input: 50_000, output: 10_000, outputReasoning: 0 },
+                ]),
+            );
+            tokenPricingUseCase.execute.mockResolvedValue(
+                pricingFromMillions({
+                    inputPerM: 2,
+                    outputPerM: 12,
+                    inputPerMAbove200k: 4,
+                    outputPerMAbove200k: 18,
+                }),
+            );
+
+            const result = await useCase.execute('org-1');
+
+            // 14-day cost at default tier:
+            //   input 150K × $2/M = $0.30
+            //   output 50K × $12/M = $0.60
+            //   total = $0.90
+            const cost14 = 0.3 + 0.6;
+            const monthly = cost14 * (30 / 14);
+
+            expect(result.estimatedMonthlyCost).toBe(
+                Math.round(monthly * 100) / 100,
+            );
+        });
+
+        it('sums cost across multiple models independently', async () => {
+            tokenUsageService.getUsageByPr.mockResolvedValue([
+                {
+                    input: 500_000,
+                    output: 100_000,
+                    outputReasoning: 0,
+                    total: 600_000,
+                    model: 'gemini-3.1-pro',
+                    prNumber: 1,
+                },
+                {
+                    input: 500_000,
+                    output: 100_000,
+                    outputReasoning: 0,
+                    total: 600_000,
+                    model: 'claude-sonnet-4-5',
+                    prNumber: 2,
+                },
+            ]);
+            tokenPricingUseCase.execute.mockImplementation(
+                async (model: string) => {
+                    if (model === 'gemini-3.1-pro') {
+                        return pricingFromMillions({
+                            inputPerM: 2,
+                            outputPerM: 12,
+                            inputPerMAbove200k: 4,
+                            outputPerMAbove200k: 18,
+                        });
+                    }
+                    // Claude has no tiered rate → default applies always.
+                    return pricingFromMillions({
+                        inputPerM: 3,
+                        outputPerM: 15,
+                    });
+                },
+            );
+
+            const result = await useCase.execute('org-1');
+
+            // Gemini (above200k): 500K × $4 + 100K × $18 = $2.00 + $1.80 = $3.80
+            // Claude (default):   500K × $3 + 100K × $15 = $1.50 + $1.50 = $3.00
+            // Total 14-day = $6.80
+            const cost14 = 3.8 + 3.0;
+            const monthly = cost14 * (30 / 14);
+
+            expect(result.estimatedMonthlyCost).toBe(
+                Math.round(monthly * 100) / 100,
+            );
+            expect(tokenPricingUseCase.execute).toHaveBeenCalledTimes(2);
         });
 
         it('counts unique developers only once per username', async () => {
@@ -213,6 +371,9 @@ describe('CostEstimateUseCase', () => {
                 .mockResolvedValueOnce({ user: { username: 'alice' } })
                 .mockResolvedValueOnce({ user: { username: 'alice' } })
                 .mockResolvedValueOnce({ user: { username: 'bob' } });
+            tokenPricingUseCase.execute.mockResolvedValue(
+                pricingFromMillions({ inputPerM: 0, outputPerM: 0 }),
+            );
 
             const result = await useCase.execute('org-1');
 
@@ -224,6 +385,9 @@ describe('CostEstimateUseCase', () => {
                 buildUsage([{ input: 1000, output: 500, outputReasoning: 0 }]),
             );
             pullRequestsService.findOne.mockResolvedValue(null);
+            tokenPricingUseCase.execute.mockResolvedValue(
+                pricingFromMillions({ inputPerM: 1, outputPerM: 1 }),
+            );
 
             const result = await useCase.execute('org-1');
 
@@ -242,7 +406,6 @@ describe('CostEstimateUseCase', () => {
             expect(call.byok).toBe(false);
             const diffMs = call.end.getTime() - call.start.getTime();
             const diffDays = diffMs / (1000 * 60 * 60 * 24);
-            // 14 days minus a few seconds (end is 23:59:59.999 of today, start is 00:00:00 14 days ago)
             expect(diffDays).toBeGreaterThan(14);
             expect(diffDays).toBeLessThan(15);
         });

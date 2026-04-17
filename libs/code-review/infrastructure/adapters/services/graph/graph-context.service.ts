@@ -300,8 +300,15 @@ export class GraphContextService {
                 [
                     `cd ${sandbox.repoDir}`,
                     `rm -rf ${BASE_FILES_DIR} && mkdir -p ${BASE_FILES_DIR}`,
+                    // `${f%/*}` is POSIX parameter expansion — it strips the
+                    // last `/...` from the path without spawning a subshell.
+                    // The previous `$(dirname "$f")` form invoked a command
+                    // substitution inside the shell loop, which meant a
+                    // filename like `dir/$(reboot).txt` would execute in the
+                    // sandbox. Parameter expansion is a pure text operation
+                    // and can't be abused by filename content.
                     `for f in ${fileList}; do ` +
-                        `d="${BASE_FILES_DIR}/$(dirname "$f")" && ` +
+                        `d="${BASE_FILES_DIR}/\${f%/*}" && ` +
                         `mkdir -p "$d" 2>/dev/null; ` +
                         `git show ${safeBaseRef}":$f" > "${BASE_FILES_DIR}/$f" 2>/dev/null || rm -f "${BASE_FILES_DIR}/$f"; ` +
                         `done`,
