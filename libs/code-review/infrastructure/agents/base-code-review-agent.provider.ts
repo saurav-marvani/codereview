@@ -1062,15 +1062,12 @@ export abstract class BaseCodeReviewAgentProvider {
                             : undefined,
                 },
             });
-            return {
-                suggestions: [],
-                agentName: identity.name,
-                agentCategory,
-                agentReplicaIndex: input.agentReplicaIndex,
-                agentReplicaTotal: input.agentReplicaTotal,
-                turnsUsed: 0,
-                durationMs,
-            };
+            // Re-throw so the orchestrator's Promise.allSettled captures this
+            // as a rejected agent and accounts for it in `failures[]`. Before
+            // this, we returned `{ suggestions: [], turnsUsed: 0 }` which the
+            // orchestrator treated as a fulfilled-with-no-findings result,
+            // silently masking real crashes as legitimate "0 suggestions".
+            throw error;
         }
     }
 

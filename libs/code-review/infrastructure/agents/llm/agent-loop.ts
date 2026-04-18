@@ -510,7 +510,7 @@ const DONE_TOOLS = {
  */
 function extractDoneToolResult<T>(result: any): T | null {
     const extract = (tc: any): T | null => {
-        const args = tc?.args ?? tc?.input ?? null;
+        let args = tc?.args ?? tc?.input ?? null;
         // Safety net: Gemini sometimes calls the tool with empty args {}
         // even in VALIDATED mode when the schema is very complex.
         if (
@@ -523,6 +523,37 @@ function extractDoneToolResult<T>(result: any): T | null {
                 context: 'AgentLoop',
             });
             return null;
+        }
+        // Gemini (customtools mode) occasionally double-encodes the structured
+        // args as `{ result: "<stringified JSON>" }` instead of emitting the
+        // schema fields directly. Detect that single-key wrapper and unwrap
+        // it so downstream code sees the expected shape. Observed crashing
+        // with `TypeError: Cannot read properties of undefined (reading
+        // 'length')` on the [AGENT-DONE-TOOL] log line.
+        if (
+            typeof args === 'object' &&
+            (args as any).result !== undefined &&
+            typeof (args as any).result === 'string' &&
+            Object.keys(args as any).length === 1
+        ) {
+            try {
+                const parsed = JSON.parse((args as any).result);
+                if (parsed && typeof parsed === 'object') {
+                    logger.warn({
+                        message:
+                            '[DONE-TOOL] Unwrapped double-encoded args from Gemini (single-key `result` string wrapper)',
+                        context: 'AgentLoop',
+                    });
+                    args = parsed;
+                }
+            } catch {
+                logger.warn({
+                    message:
+                        '[DONE-TOOL] Model returned `{ result: <string> }` but inner payload is not valid JSON — falling back to text parsing',
+                    context: 'AgentLoop',
+                });
+                return null;
+            }
         }
         return args as T;
     };
@@ -1205,7 +1236,7 @@ export async function runAgentLoop(
 
     if (doneToolFindings) {
         logger.log({
-            message: `[AGENT-DONE-TOOL] Model called submitResult with ${doneToolFindings.suggestions.length} suggestions`,
+            message: `[AGENT-DONE-TOOL] Model called submitResult with ${doneToolFindings.suggestions?.length ?? 0} suggestions`,
             context: 'AgentLoop',
         });
     }
