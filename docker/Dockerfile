@@ -1,3 +1,7 @@
+# Global ARG — must be declared before the first FROM so it can be used in
+# the `oven/bun:${BUN_VERSION}-debian` stage below.
+ARG BUN_VERSION=1.2.12
+
 FROM docker.io/library/node:22.22.0-slim AS base
 WORKDIR /usr/src/app
 
@@ -63,6 +67,15 @@ RUN yarn install --frozen-lockfile && yarn cache clean
 RUN rm -rf node_modules/@kodus/kodus-common && cp -r packages/kodus-common node_modules/@kodus/kodus-common
 RUN rm -rf node_modules/@kodus/flow && cp -r packages/kodus-flow node_modules/@kodus/flow
 
+# Dedicated stage for the bun binary. Using the official oven/bun image
+# instead of `curl bun.sh/install | bash` because:
+#   - Docker Hub CDN is more reliable for tagged images than GitHub releases
+#     (the install script's internal curl hit 504s on GitHub during builds).
+#   - Buildx caches the pulled image; subsequent builds skip the download.
+#   - Eliminates `curl`/`unzip` installed just to delete them later.
+# BUN_VERSION is declared as a global ARG at the top of this file.
+FROM docker.io/oven/bun:${BUN_VERSION}-debian AS bun-source
+
 FROM docker.io/library/node:22.22.0-slim AS runtime-common
 WORKDIR /usr/src/app
 ENV NODE_ENV=production
@@ -81,16 +94,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates procps git ripgrep \
   && rm -rf /var/lib/apt/lists/*
 
-# Install bun (pinned) + kodus-graph CLI, then remove build-only deps (curl/unzip).
-# BUN_INSTALL is set inline (not ENV) so it doesn't persist at runtime —
-# prevents user 1000 from accidentally trying to write to /usr/local.
-ARG BUN_VERSION=1.2.12
-RUN apt-get update && apt-get install -y --no-install-recommends curl unzip \
-    && export BUN_INSTALL=/usr/local \
-    && curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" \
-    && bun install -g @kodus/kodus-graph \
-    && apt-get purge -y --auto-remove curl unzip \
-    && rm -rf /var/lib/apt/lists/*
+# Copy the bun binary from the official image and install kodus-graph with it.
+COPY --from=bun-source /usr/local/bin/bun /usr/local/bin/bun
+RUN bun install -g @kodus/kodus-graph
 
 COPY --chown=1000:1000 --from=prod-deps /usr/src/app/node_modules ./node_modules
 COPY --chown=1000:1000 --from=build /usr/src/app/dist ./dist
