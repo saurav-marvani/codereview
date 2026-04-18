@@ -56,7 +56,24 @@ export const codeReviewPipelineProvider: Provider = {
                 });
 
                 let useAgentPipeline = false;
-                if (posthog.isInitialized) {
+
+                // Self-hosted override: instance admin can force the new
+                // agent engine on without PostHog. When set, bypasses the
+                // feature-flag check entirely (all orgs on this instance
+                // use the agent pipeline).
+                const envOverride =
+                    process.env.API_AGENT_REVIEW_ENABLED?.toLowerCase();
+                if (envOverride === 'true' || envOverride === '1') {
+                    useAgentPipeline = true;
+                    logger.log({
+                        message: `[FEATURE-FLAG] agent-review forced by API_AGENT_REVIEW_ENABLED env var`,
+                        context: 'CodeReviewPipelineProvider',
+                        metadata: {
+                            repositoryId,
+                            featureIdentifier,
+                        },
+                    });
+                } else if (posthog.isInitialized) {
                     const flagResult = await posthog.isFeatureEnabled(
                         FEATURE_FLAGS.agentReview,
                         featureIdentifier,
