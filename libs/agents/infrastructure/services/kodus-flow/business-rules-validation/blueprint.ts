@@ -179,53 +179,6 @@ export function createBusinessRulesBlueprint(
         },
         {
             type: 'deterministic',
-            name: 'fetchPullRequestDiff',
-            contract: {
-                input: taskContextInputSchema,
-                output: hasPrDiffSchema,
-            },
-            fn: async (ctx): Promise<BusinessRulesContext> => {
-                const preloadedPrDiff = readPrepareContextPrDiff(ctx);
-                if (preloadedPrDiff) {
-                    return {
-                        ...ctx,
-                        prDiff: preloadedPrDiff,
-                        analysisEligibility:
-                            ctx.taskQuality !== undefined
-                                ? buildBusinessLogicEligibility({
-                                      taskQuality: ctx.taskQuality,
-                                      taskContext: ctx.taskContext,
-                                      taskContextNormalized:
-                                          ctx.taskContextNormalized,
-                                      prDiff: preloadedPrDiff,
-                                  })
-                                : ctx.analysisEligibility,
-                    };
-                }
-
-                const diff = await tooling.fetchPullRequestDiff(ctx);
-                return {
-                    ...ctx,
-                    prDiff: diff.value,
-                    analysisEligibility:
-                        ctx.taskQuality !== undefined
-                            ? buildBusinessLogicEligibility({
-                                  taskQuality: ctx.taskQuality,
-                                  taskContext: ctx.taskContext,
-                                  taskContextNormalized:
-                                      ctx.taskContextNormalized,
-                                  prDiff: diff.value,
-                              })
-                            : ctx.analysisEligibility,
-                    capabilityExecutionTrace: appendCapabilityTraces(
-                        ctx,
-                        diff.traces,
-                    ),
-                };
-            },
-        },
-        {
-            type: 'deterministic',
             name: 'fetchTaskContextFromMcp',
             contract: {
                 input: taskContextInputSchema,
@@ -284,7 +237,104 @@ export function createBusinessRulesBlueprint(
         },
         {
             type: 'gate',
-            name: 'validateContext',
+            name: 'validateTaskContext',
+            contract: {
+                input: validateContextInputSchema,
+                output: gateOutputSchema,
+            },
+            condition: (ctx) => {
+                const eligibility =
+                    ctx.analysisEligibility ??
+                    buildBusinessLogicEligibility({
+                        taskQuality: ctx.taskQuality,
+                        taskContext: ctx.taskContext,
+                        taskContextNormalized: ctx.taskContextNormalized,
+                        prDiff: ctx.prDiff,
+                    });
+                return (
+                    eligibility.taskContextStatus === 'usable' ||
+                    eligibility.taskContextStatus === 'weak'
+                );
+            },
+            onFail: (ctx): BusinessRulesContext => {
+                const analysisEligibility =
+                    ctx.analysisEligibility ??
+                    buildBusinessLogicEligibility({
+                        taskQuality: ctx.taskQuality,
+                        taskContext: ctx.taskContext,
+                        taskContextNormalized: ctx.taskContextNormalized,
+                        prDiff: ctx.prDiff,
+                    });
+                const missingInfo = getTaskContextMissingInfoMessage(
+                    ctx.taskQuality,
+                );
+                return {
+                    ...ctx,
+                    analysisEligibility,
+                    validationResult: {
+                        needsMoreInfo: true,
+                        mode: 'limitation_response',
+                        reason: analysisEligibility.reason,
+                        taskContextStatus:
+                            analysisEligibility.taskContextStatus,
+                        prDiffStatus: analysisEligibility.prDiffStatus,
+                        confidence: 'low',
+                        missingInfo,
+                        summary: missingInfo,
+                    },
+                };
+            },
+        },
+        {
+            type: 'deterministic',
+            name: 'fetchPullRequestDiff',
+            contract: {
+                input: taskContextInputSchema,
+                output: hasPrDiffSchema,
+            },
+            fn: async (ctx): Promise<BusinessRulesContext> => {
+                const preloadedPrDiff = readPrepareContextPrDiff(ctx);
+                if (preloadedPrDiff) {
+                    return {
+                        ...ctx,
+                        prDiff: preloadedPrDiff,
+                        analysisEligibility:
+                            ctx.taskQuality !== undefined
+                                ? buildBusinessLogicEligibility({
+                                      taskQuality: ctx.taskQuality,
+                                      taskContext: ctx.taskContext,
+                                      taskContextNormalized:
+                                          ctx.taskContextNormalized,
+                                      prDiff: preloadedPrDiff,
+                                  })
+                                : ctx.analysisEligibility,
+                    };
+                }
+
+                const diff = await tooling.fetchPullRequestDiff(ctx);
+                return {
+                    ...ctx,
+                    prDiff: diff.value,
+                    analysisEligibility:
+                        ctx.taskQuality !== undefined
+                            ? buildBusinessLogicEligibility({
+                                  taskQuality: ctx.taskQuality,
+                                  taskContext: ctx.taskContext,
+                                  taskContextNormalized:
+                                      ctx.taskContextNormalized,
+                                  prDiff: diff.value,
+                              })
+                            : ctx.analysisEligibility,
+                    capabilityExecutionTrace: appendCapabilityTraces(
+                        ctx,
+                        diff.traces,
+                    ),
+                };
+            },
+        },
+        {
+            type: 'gate',
+            name: 'validatePullRequestDiff',
             contract: {
                 input: validateContextInputSchema,
                 output: gateOutputSchema,
@@ -308,10 +358,7 @@ export function createBusinessRulesBlueprint(
                         taskContextNormalized: ctx.taskContextNormalized,
                         prDiff: ctx.prDiff,
                     });
-                const missingInfo =
-                    analysisEligibility.reason === 'pr_diff_missing'
-                        ? getPullRequestDiffMissingInfoMessage()
-                        : getTaskContextMissingInfoMessage(ctx.taskQuality);
+                const missingInfo = getPullRequestDiffMissingInfoMessage();
                 return {
                     ...ctx,
                     analysisEligibility,
