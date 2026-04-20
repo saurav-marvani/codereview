@@ -1,8 +1,11 @@
 import { authorizedFetch, TypedFetchError } from "@services/fetch";
 import { axiosAuthorized } from "src/core/utils/axios";
 import {
+    ConfirmSSODomainVerificationResponse,
     GetSSOConnectionTestResultResponse,
+    RequestSSODomainVerificationResponse,
     SSOConfig,
+    SSODomainVerificationStatusItem,
     SSOProtocol,
     SSOProtocolConfigMap,
     StartSSOConnectionTestResponse,
@@ -82,5 +85,43 @@ export const getSSOConnectionTestResult = async (
         );
     return "data" in response
         ? (response.data as GetSSOConnectionTestResultResponse)
+        : response;
+};
+
+export const requestSSODomainVerification = async (params: {
+    domain: string;
+    contactEmail: string;
+}): Promise<RequestSSODomainVerificationResponse> => {
+    const response =
+        await axiosAuthorized.post<RequestSSODomainVerificationResponse>(
+            SSO_CONFIG_PATHS.DOMAIN_VERIFICATION_REQUEST,
+            params,
+        );
+    return "data" in response
+        ? (response.data as RequestSSODomainVerificationResponse)
+        : response;
+};
+
+export const confirmSSODomainVerification = async (token: string) => {
+    const response =
+        await axiosAuthorized.post<ConfirmSSODomainVerificationResponse>(
+            SSO_CONFIG_PATHS.DOMAIN_VERIFICATION_CONFIRM,
+            {
+                token,
+            },
+        );
+    return "data" in response
+        ? (response.data as ConfirmSSODomainVerificationResponse)
+        : response;
+};
+
+export const getSSODomainVerificationStatus = async (domains: string[]) => {
+    const response = await axiosAuthorized.post<
+        SSODomainVerificationStatusItem[]
+    >(SSO_CONFIG_PATHS.DOMAIN_VERIFICATION_STATUS, {
+        domains,
+    });
+    return "data" in response
+        ? (response.data as SSODomainVerificationStatusItem[])
         : response;
 };

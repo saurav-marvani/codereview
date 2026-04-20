@@ -286,8 +286,10 @@ export class AuthController {
                 );
             }
 
+            const reasonMessage = encodeURIComponent(mappedError.message);
+
             return res.redirect(
-                `${frontendUrl}/sign-in?reason=${mappedError.reasonCode}`,
+                `${frontendUrl}/sign-in?reason=${mappedError.reasonCode}&reasonMessage=${reasonMessage}`,
             );
         }
     }

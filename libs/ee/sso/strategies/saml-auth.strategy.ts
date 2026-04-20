@@ -64,6 +64,7 @@ export class SamlStrategy extends PassportStrategy(MultiSamlStrategy, 'saml') {
                                     wantAssertionsSigned: false,
                                     identifierFormat:
                                         samlConfig.identifierFormat || null,
+                                    signatureAlgorithm: 'sha256',
                                 });
                             }
                         }
@@ -91,6 +92,7 @@ export class SamlStrategy extends PassportStrategy(MultiSamlStrategy, 'saml') {
                             identifierFormat:
                                 ssoConfig.providerConfig.identifierFormat ||
                                 null,
+                            signatureAlgorithm: 'sha256',
                         });
                     } catch (error) {
                         return done(error, null);

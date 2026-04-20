@@ -26,15 +26,21 @@ describe('CreateOrUpdateSSOConfigUseCase', () => {
             toConnectionTestMetadata: jest.fn(),
         };
 
+        const ssoDomainVerificationService = {
+            getDomainVerificationStatus: jest.fn(),
+        };
+
         const useCase = new CreateOrUpdateSSOConfigUseCase(
             ssoConfigService as any,
             ssoTestSessionService as any,
+            ssoDomainVerificationService as any,
         );
 
         return {
             useCase,
             ssoConfigService,
             ssoTestSessionService,
+            ssoDomainVerificationService,
         };
     };
 
@@ -87,6 +93,15 @@ describe('CreateOrUpdateSSOConfigUseCase', () => {
             providerConfig: validProviderConfig,
             domains: ['acme.com'],
             active: false,
+            domainVerification: {
+                verifiedDomains: [
+                    {
+                        domain: 'acme.com',
+                        verifiedAt: new Date('2026-04-20T00:00:00.000Z'),
+                        verifiedByEmail: 'admin@acme.com',
+                    },
+                ],
+            },
             connectionTest: {
                 status: SSOConnectionTestStatus.SUCCESS,
                 configFingerprint: JSON.stringify({

@@ -18,8 +18,19 @@ export interface SSOConfig<P extends SSOProtocol> {
     providerConfig: SSOProtocolConfigMap[P];
     domains: string[];
     connectionTest?: SSOConnectionTestMetadata;
+    domainVerification?: SSODomainVerificationMetadata;
     createdAt?: string;
     updatedAt?: string;
+}
+
+export interface SSODomainVerificationRecord {
+    domain: string;
+    verifiedAt: string;
+    verifiedByEmail: string;
+}
+
+export interface SSODomainVerificationMetadata {
+    verifiedDomains: SSODomainVerificationRecord[];
 }
 
 export enum SSOConnectionTestStatus {
@@ -55,6 +66,25 @@ export interface GetSSOConnectionTestResultResponse {
     failureCode?: string;
     failureMessage?: string;
     testedAt?: string;
+}
+
+export interface RequestSSODomainVerificationResponse {
+    domain: string;
+    contactEmail: string;
+    sent: boolean;
+}
+
+export interface ConfirmSSODomainVerificationResponse {
+    domain: string;
+    verifiedAt: string;
+    verifiedByEmail: string;
+}
+
+export interface SSODomainVerificationStatusItem {
+    domain: string;
+    verified: boolean;
+    verifiedAt?: string;
+    verifiedByEmail?: string;
 }
 
 export type SSOProtocolConfigMap = {

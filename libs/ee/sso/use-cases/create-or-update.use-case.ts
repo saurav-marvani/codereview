@@ -8,9 +8,11 @@ import {
 } from '../domain/contracts/ssoConfig.service.contract';
 import {
     SSOConnectionTestStatus,
+    SSODomainVerificationRecord,
     SSOProtocol,
     SSOProtocolConfigMap,
 } from '../domain/interfaces/ssoConfig.interface';
+import { SSODomainVerificationService } from '../services/sso-domain-verification.service';
 import { SSOTestSessionService } from '../services/sso-test-session.service';
 import {
     buildSSOConfigFingerprint,
@@ -25,6 +27,7 @@ export class CreateOrUpdateSSOConfigUseCase {
         @Inject(SSO_CONFIG_SERVICE_TOKEN)
         private readonly ssoConfigService: ISSOConfigService,
         private readonly ssoTestSessionService: SSOTestSessionService,
+        private readonly ssoDomainVerificationService: SSODomainVerificationService,
     ) {}
 
     async execute(params: {
@@ -36,6 +39,7 @@ export class CreateOrUpdateSSOConfigUseCase {
         domains?: string[];
         testSessionId?: string;
         userId?: string;
+        userEmail?: string;
     }) {
         const {
             organizationId,
@@ -46,7 +50,69 @@ export class CreateOrUpdateSSOConfigUseCase {
             domains,
             testSessionId,
             userId,
+            userEmail,
         } = params;
+
+        const currentUserDomain = String(userEmail || '')
+            .split('@')
+            .pop()
+            ?.trim()
+            .toLowerCase();
+
+        const resolveVerifiedDomains = async (params: {
+            organizationId: string;
+            domains: string[];
+            persistedRecords?: SSODomainVerificationRecord[];
+        }): Promise<SSODomainVerificationRecord[]> => {
+            const persistedByDomain = new Map(
+                (params.persistedRecords || []).map((record) => [
+                    record.domain,
+                    record,
+                ]),
+            );
+
+            const resolvedRecords: SSODomainVerificationRecord[] = [];
+
+            for (const domain of params.domains) {
+                const persisted = persistedByDomain.get(domain);
+
+                if (persisted) {
+                    resolvedRecords.push(persisted);
+                    continue;
+                }
+
+                if (currentUserDomain && domain === currentUserDomain) {
+                    resolvedRecords.push({
+                        domain,
+                        verifiedAt: new Date(),
+                        verifiedByEmail: String(userEmail).toLowerCase(),
+                    });
+                    continue;
+                }
+
+                const cached =
+                    await this.ssoDomainVerificationService.getDomainVerificationStatus(
+                        {
+                            organizationId: params.organizationId,
+                            domain,
+                        },
+                    );
+
+                if (!cached) {
+                    throw new BadRequestException({
+                        message: `Domain ${domain} must be verified before enabling SSO.`,
+                        code: 'SSO_DOMAIN_VERIFICATION_REQUIRED',
+                        details: {
+                            domain,
+                        },
+                    });
+                }
+
+                resolvedRecords.push(cached);
+            }
+
+            return resolvedRecords;
+        };
 
         if (uuid) {
             const ssoConfig = await this.ssoConfigService.findOne({
@@ -79,8 +145,20 @@ export class CreateOrUpdateSSOConfigUseCase {
             });
 
             let nextConnectionTest = ssoConfig.connectionTest;
+            const persistedDomainVerificationRecords =
+                ssoConfig.domainVerification?.verifiedDomains || [];
+            let nextDomainVerification = ssoConfig.domainVerification;
 
             if (targetActive) {
+                const verifiedDomains = await resolveVerifiedDomains({
+                    organizationId,
+                    domains: targetDomains,
+                    persistedRecords: persistedDomainVerificationRecords,
+                });
+                nextDomainVerification = {
+                    verifiedDomains,
+                };
+
                 if (testSessionId) {
                     const testSession =
                         await this.ssoTestSessionService.getSession(
@@ -122,6 +200,14 @@ export class CreateOrUpdateSSOConfigUseCase {
                 }
             }
 
+            if (!targetActive) {
+                nextDomainVerification = {
+                    verifiedDomains: persistedDomainVerificationRecords.filter(
+                        (record) => targetDomains.includes(record.domain),
+                    ),
+                };
+            }
+
             if (
                 nextConnectionTest?.configFingerprint &&
                 nextConnectionTest.configFingerprint !== targetFingerprint
@@ -135,6 +221,7 @@ export class CreateOrUpdateSSOConfigUseCase {
                 active: targetActive,
                 domains: targetDomains,
                 connectionTest: nextConnectionTest,
+                domainVerification: nextDomainVerification,
             });
 
             this.logger.log({
@@ -164,8 +251,17 @@ export class CreateOrUpdateSSOConfigUseCase {
         });
 
         let connectionTest;
+        let domainVerification;
 
         if (targetActive) {
+            const verifiedDomains = await resolveVerifiedDomains({
+                organizationId,
+                domains: normalizedDomains,
+            });
+            domainVerification = {
+                verifiedDomains,
+            };
+
             if (!testSessionId) {
                 throw new BadRequestException({
                     message:
@@ -207,6 +303,7 @@ export class CreateOrUpdateSSOConfigUseCase {
             },
             domains: normalizedDomains,
             connectionTest,
+            domainVerification,
         });
 
         this.logger.log({

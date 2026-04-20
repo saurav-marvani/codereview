@@ -4,6 +4,27 @@ export interface SSORedirectErrorInfo {
     message: string;
 }
 
+const extractErrorMessage = (error: unknown): string => {
+    const candidate =
+        (error as { message?: string })?.message ||
+        (error as { response?: { message?: string } })?.response?.message ||
+        (error as { cause?: { message?: string } })?.cause?.message ||
+        (error as { originalError?: { message?: string } })?.originalError
+            ?.message ||
+        '';
+
+    return String(candidate || '').trim();
+};
+
+const withDetail = (prefix: string, detail: string): string => {
+    if (!detail) {
+        return prefix;
+    }
+
+    const truncatedDetail = detail.slice(0, 180);
+    return `${prefix} Details: ${truncatedDetail}`;
+};
+
 const DEFAULT_SSO_ERROR: SSORedirectErrorInfo = {
     reasonCode: 'sso-auth-failed',
     failureCode: 'SSO_AUTH_FAILED',
@@ -12,10 +33,7 @@ const DEFAULT_SSO_ERROR: SSORedirectErrorInfo = {
 };
 
 export const mapSSOError = (error: unknown): SSORedirectErrorInfo => {
-    const rawMessage =
-        (error as { message?: string })?.message ||
-        (error as { response?: { message?: string } })?.response?.message ||
-        '';
+    const rawMessage = extractErrorMessage(error);
 
     const message = String(rawMessage).toLowerCase();
 
@@ -43,7 +61,10 @@ export const mapSSOError = (error: unknown): SSORedirectErrorInfo => {
         return {
             reasonCode: 'sso-invalid-assertion',
             failureCode: 'SSO_INVALID_ASSERTION',
-            message: 'The identity provider response could not be validated.',
+            message: withDetail(
+                'The identity provider response could not be validated.',
+                rawMessage,
+            ),
         };
     }
 
@@ -55,5 +76,8 @@ export const mapSSOError = (error: unknown): SSORedirectErrorInfo => {
         };
     }
 
-    return DEFAULT_SSO_ERROR;
+    return {
+        ...DEFAULT_SSO_ERROR,
+        message: withDetail(DEFAULT_SSO_ERROR.message, rawMessage),
+    };
 };

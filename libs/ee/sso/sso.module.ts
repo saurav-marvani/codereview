@@ -6,6 +6,7 @@ import { SSO_CONFIG_SERVICE_TOKEN } from './domain/contracts/ssoConfig.service.c
 import { SamlAuthGuard } from './guards/saml-auth.guard';
 import { SSOConfigModel } from './repositories/ssoConfig.model';
 import { SSOConfigRepository } from './repositories/ssoConfig.repository';
+import { SSODomainVerificationService } from './services/sso-domain-verification.service';
 import { SSOConfigService } from './services/ssoConfig.service';
 import { SSOTestSessionService } from './services/sso-test-session.service';
 import { SamlStrategy } from './strategies/saml-auth.strategy';
@@ -17,6 +18,7 @@ import { UseCases } from './use-cases';
         SamlStrategy,
         SamlAuthGuard,
         SSOTestSessionService,
+        SSODomainVerificationService,
         ...UseCases,
         {
             provide: SSO_CONFIG_REPOSITORY_TOKEN,
@@ -31,6 +33,7 @@ import { UseCases } from './use-cases';
         ...UseCases,
         SSO_CONFIG_SERVICE_TOKEN,
         SSOTestSessionService,
+        SSODomainVerificationService,
         SamlAuthGuard,
     ],
 })

@@ -18,6 +18,7 @@ const CUSTOMERIO_RULES_TRANSACTIONAL_ID = 14;
 const CUSTOMERIO_FORGOT_PASSWORD_TRANSACTIONAL_ID = 11;
 const CUSTOMERIO_CONFIRMATION_TRANSACTIONAL_ID = 12;
 const CUSTOMERIO_INVITE_TRANSACTIONAL_ID = 13;
+const CUSTOMERIO_DOMAIN_VERIFICATION_TRANSACTIONAL_ID = 12;
 
 const DEFAULT_FROM_EMAIL = 'noreply@kodus.io';
 const DEFAULT_FROM_NAME = 'Kody from Kodus';
@@ -290,6 +291,51 @@ export class EmailService {
             }
         }
     }
+
+    async sendDomainVerificationEmail(
+        token: string,
+        email: string,
+        organizationName: string,
+        domain: string,
+        logger?: SimpleLogger,
+    ) {
+        try {
+            const webUrl = this.getRequiredString('API_USER_INVITE_BASE_URL');
+
+            const payload: CustomerIoEmailPayload = {
+                transactional_message_id:
+                    CUSTOMERIO_DOMAIN_VERIFICATION_TRANSACTIONAL_ID,
+                to: email,
+                subject: `Verify ${domain} for SSO`,
+                identifiers: this.buildIdentifiers(email),
+                message_data: {
+                    organizationName,
+                    domain,
+                    confirmLink: `${webUrl}/organization/sso?domainVerificationToken=${token}`,
+                },
+            };
+
+            return await this.sendCustomerIoEmail(
+                this.applyFromAddress(payload),
+            );
+        } catch (error) {
+            if (logger) {
+                logger.error({
+                    message: `Error in sendDomainVerificationEmail for ${email}`,
+                    error:
+                        error instanceof Error
+                            ? error
+                            : new Error(String(error)),
+                    context: 'sendDomainVerificationEmail',
+                    metadata: {
+                        email,
+                        organizationName,
+                        domain,
+                    },
+                });
+            }
+        }
+    }
 }
 
 let emailServiceInstance: EmailService | null = null;
@@ -345,6 +391,23 @@ export async function sendConfirmationEmail(
         email,
         organizationName,
         organizationAndTeamData,
+        logger,
+    );
+}
+
+export async function sendDomainVerificationEmail(
+    token: string,
+    email: string,
+    organizationName: string,
+    domain: string,
+    logger?,
+) {
+    const emailService = getEmailServiceInstance();
+    return emailService.sendDomainVerificationEmail(
+        token,
+        email,
+        organizationName,
+        domain,
         logger,
     );
 }

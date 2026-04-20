@@ -52,8 +52,9 @@ export class SamlAuthGuard extends AuthGuard('saml') implements CanActivate {
             }
 
             if (frontendUrl) {
+                const reasonMessage = encodeURIComponent(mappedError.message);
                 response.redirect(
-                    `${frontendUrl}/sign-in?reason=${mappedError.reasonCode}`,
+                    `${frontendUrl}/sign-in?reason=${mappedError.reasonCode}&reasonMessage=${reasonMessage}`,
                 );
                 return false;
             }

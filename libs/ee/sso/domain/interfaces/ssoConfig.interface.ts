@@ -13,8 +13,19 @@ export interface SSOConfig<P extends SSOProtocol> {
     domains: string[];
     providerConfig: SSOProtocolConfigMap[P];
     connectionTest?: SSOConnectionTestMetadata;
+    domainVerification?: SSODomainVerificationMetadata;
     createdAt: Date;
     updatedAt: Date;
+}
+
+export interface SSODomainVerificationRecord {
+    domain: string;
+    verifiedAt: Date;
+    verifiedByEmail: string;
+}
+
+export interface SSODomainVerificationMetadata {
+    verifiedDomains: SSODomainVerificationRecord[];
 }
 
 export enum SSOConnectionTestStatus {

@@ -15,8 +15,10 @@ import { toast } from "@components/ui/toaster/use-toast";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useAsyncAction } from "@hooks/use-async-action";
 import {
+    confirmSSODomainVerification,
     createOrUpdateSSOConfig,
     getSSOConnectionTestResult,
+    getSSODomainVerificationStatus,
     startSSOConnectionTest,
 } from "@services/ssoConfig/fetch";
 import { AlertCircle, Save, Upload } from "lucide-react";
@@ -25,15 +27,20 @@ import { useAuth } from "src/core/providers/auth.provider";
 import { publicDomainsSet } from "src/core/utils/email";
 import { pathToApiUrl } from "src/core/utils/helpers";
 import { revalidateServerSidePath } from "src/core/utils/revalidate-server-side";
-import { buildSSOConfigFingerprint } from "src/lib/auth/sso-fingerprint";
+import {
+    buildSSOConfigFingerprint,
+    normalizeDomains,
+} from "src/lib/auth/sso-fingerprint";
 import {
     SSOConfig,
     SSOConnectionTestSessionStatus,
     SSOConnectionTestStatus,
+    SSODomainVerificationStatusItem,
     SSOProtocol,
 } from "src/lib/auth/types";
 import { z } from "zod";
 
+import { DomainListManager } from "./_components/domain-list-manager";
 import {
     fetchAndParseMetadata,
     parseMetadataFromFile,
@@ -121,6 +128,9 @@ const createSsoSchema = (userDomain: string) =>
 
 type SsoFormData = z.input<ReturnType<typeof createSsoSchema>>;
 
+const SAML_EMAIL_IDENTIFIER_FORMAT =
+    "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress";
+
 interface SSOTestDraftStorage {
     active?: boolean;
     providerConfig?: SsoFormData["providerConfig"];
@@ -147,10 +157,15 @@ export const ClientSsoOrganizationSettingsPage = (props: {
     const searchParams = useSearchParams();
     const { organizationId } = useAuth();
     const ssoTestSessionId = searchParams.get("ssoTestSessionId");
+    const domainVerificationToken = searchParams.get("domainVerificationToken");
     const [metadataUrl, setMetadataUrl] = useState<string>("");
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isUploading, setIsUploading] = useState(false);
     const [isTestingConnection, setIsTestingConnection] = useState(false);
+    const [
+        domainVerificationStatusByDomain,
+        setDomainVerificationStatusByDomain,
+    ] = useState<Record<string, SSODomainVerificationStatusItem>>({});
     const [latestSuccessfulTestSessionId, setLatestSuccessfulTestSessionId] =
         useState<string | null>(null);
     const [validatedFingerprint, setValidatedFingerprint] = useState<string>(
@@ -176,7 +191,7 @@ export const ClientSsoOrganizationSettingsPage = (props: {
                 cert: props.ssoConfig.providerConfig?.cert || "",
                 identifierFormat:
                     props.ssoConfig.providerConfig?.identifierFormat ||
-                    "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+                    SAML_EMAIL_IDENTIFIER_FORMAT,
                 issuer:
                     props.ssoConfig.providerConfig.issuer ||
                     "kodus-orchestrator",
@@ -209,6 +224,11 @@ export const ClientSsoOrganizationSettingsPage = (props: {
         });
     }, [watchedProviderConfig, watchedDomains]);
 
+    const candidateDomains = useMemo(
+        () => normalizeDomains(watchedDomains || []),
+        [watchedDomains],
+    );
+
     const persistedFingerprint = useMemo(() => {
         return buildSSOConfigFingerprint({
             protocol: SSOProtocol.SAML,
@@ -229,13 +249,31 @@ export const ClientSsoOrganizationSettingsPage = (props: {
     const needsConnectionRetest =
         Boolean(isEnabled) && currentFingerprint !== validatedFingerprint;
 
-    // Set the identifier format to the required SAML format
-    useEffect(() => {
-        setValue(
-            "providerConfig.identifierFormat",
-            "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+    const unverifiedDomains = useMemo(() => {
+        return candidateDomains.filter(
+            (domain) => !domainVerificationStatusByDomain[domain]?.verified,
         );
-    }, [setValue]);
+    }, [candidateDomains, domainVerificationStatusByDomain]);
+
+    const needsDomainVerification =
+        Boolean(isEnabled) && unverifiedDomains.length > 0;
+
+    useEffect(() => {
+        const entries =
+            props.ssoConfig.domainVerification?.verifiedDomains?.map(
+                (record) => [
+                    record.domain,
+                    {
+                        domain: record.domain,
+                        verified: true,
+                        verifiedAt: record.verifiedAt,
+                        verifiedByEmail: record.verifiedByEmail,
+                    } satisfies SSODomainVerificationStatusItem,
+                ],
+            ) || [];
+
+        setDomainVerificationStatusByDomain(Object.fromEntries(entries));
+    }, [props.ssoConfig.domainVerification]);
 
     useEffect(() => {
         if (!organizationId) {
@@ -264,9 +302,7 @@ export const ClientSsoOrganizationSettingsPage = (props: {
                     idpIssuer: parsedDraft.providerConfig.idpIssuer || "",
                     entryPoint: parsedDraft.providerConfig.entryPoint || "",
                     cert: parsedDraft.providerConfig.cert || "",
-                    identifierFormat:
-                        parsedDraft.providerConfig.identifierFormat ||
-                        "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+                    identifierFormat: SAML_EMAIL_IDENTIFIER_FORMAT,
                 },
                 domains: parsedDraft.domains || [userDomain],
             });
@@ -330,6 +366,110 @@ export const ClientSsoOrganizationSettingsPage = (props: {
             ignore = true;
         };
     }, [router, ssoTestSessionId]);
+
+    useEffect(() => {
+        if (!domainVerificationToken) {
+            return;
+        }
+
+        let ignore = false;
+
+        const confirmToken = async () => {
+            try {
+                const result = await confirmSSODomainVerification(
+                    domainVerificationToken,
+                );
+
+                if (ignore) {
+                    return;
+                }
+
+                setDomainVerificationStatusByDomain((prev) => ({
+                    ...prev,
+                    [result.domain]: {
+                        domain: result.domain,
+                        verified: true,
+                        verifiedAt: result.verifiedAt,
+                        verifiedByEmail: result.verifiedByEmail,
+                    },
+                }));
+
+                toast({
+                    title: "Domain verified",
+                    description: `${result.domain} was verified successfully.`,
+                    variant: "success",
+                });
+            } catch (error: any) {
+                toast({
+                    title: "Domain verification failed",
+                    description:
+                        error?.response?.data?.message ||
+                        "The verification link is invalid or expired.",
+                    variant: "danger",
+                });
+            } finally {
+                router.replace("/organization/sso");
+            }
+        };
+
+        confirmToken();
+
+        return () => {
+            ignore = true;
+        };
+    }, [domainVerificationToken, router]);
+
+    useEffect(() => {
+        if (!candidateDomains.length) {
+            return;
+        }
+
+        let ignore = false;
+
+        const loadDomainVerificationStatus = async () => {
+            try {
+                const result =
+                    await getSSODomainVerificationStatus(candidateDomains);
+
+                if (ignore) {
+                    return;
+                }
+
+                const map = Object.fromEntries(
+                    result.map((item) => [item.domain, item]),
+                );
+
+                setDomainVerificationStatusByDomain((prev) => {
+                    const next = { ...prev };
+
+                    for (const [domain, status] of Object.entries(map)) {
+                        const previousStatus = prev[domain];
+
+                        if (previousStatus?.verified && !status.verified) {
+                            // Keep persisted verified status when cache has no record.
+                            continue;
+                        }
+
+                        next[domain] =
+                            status as SSODomainVerificationStatusItem;
+                    }
+
+                    return next;
+                });
+            } catch (error) {
+                console.error(
+                    "Failed to load domain verification status",
+                    error,
+                );
+            }
+        };
+
+        loadDomainVerificationStatus();
+
+        return () => {
+            ignore = true;
+        };
+    }, [candidateDomains]);
 
     const [saveSettings, { loading: isLoadingSubmitButton }] = useAsyncAction(
         async (data: SsoFormData) => {
@@ -520,11 +660,12 @@ export const ClientSsoOrganizationSettingsPage = (props: {
     };
 
     const hasDomainMismatch =
-        isEnabled &&
+        Boolean(isEnabled) &&
         !!userDomain &&
-        watchedDomains
+        (watchedDomains
             ?.filter((d) => d)
-            .some((d) => d.toLowerCase() !== userDomain.toLowerCase());
+            .some((d) => d.toLowerCase() !== userDomain.toLowerCase()) ??
+            false);
 
     return (
         <Page.Root>
@@ -553,7 +694,8 @@ export const ClientSsoOrganizationSettingsPage = (props: {
                                     !hasUnsavedChangesComparedToPersistedConfig) ||
                                 !isValid ||
                                 isLoadingSubmitButton ||
-                                (isEnabled && needsConnectionRetest)
+                                (isEnabled && needsConnectionRetest) ||
+                                needsDomainVerification
                             }
                             loading={isLoadingSubmitButton}>
                             Save settings
@@ -604,6 +746,20 @@ export const ClientSsoOrganizationSettingsPage = (props: {
                                                     complete a successful IdP
                                                     login before saving enabled
                                                     SSO settings.
+                                                </AlertDescription>
+                                            </Alert>
+                                        )}
+
+                                        {needsDomainVerification && (
+                                            <Alert variant="warning">
+                                                <AlertCircle />
+                                                <AlertDescription>
+                                                    Verify each domain before
+                                                    enabling SSO. Pending
+                                                    domains:{" "}
+                                                    {unverifiedDomains.join(
+                                                        ", ",
+                                                    )}
                                                 </AlertDescription>
                                             </Alert>
                                         )}
@@ -862,7 +1018,9 @@ export const ClientSsoOrganizationSettingsPage = (props: {
                                                     )}
                                                 />
                                                 <div className="bg-muted text-muted-foreground flex h-10 items-center rounded-md border px-3 py-2 text-sm">
-                                                    urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
+                                                    {
+                                                        SAML_EMAIL_IDENTIFIER_FORMAT
+                                                    }
                                                 </div>
                                                 <FormControl.Helper>
                                                     The identifier format is
@@ -887,81 +1045,28 @@ export const ClientSsoOrganizationSettingsPage = (props: {
                                                     fieldState,
                                                 }) => (
                                                     <>
-                                                        <Input
-                                                            placeholder="e.g., yourcompany.com"
-                                                            error={
+                                                        <DomainListManager
+                                                            domains={
+                                                                field.value ||
+                                                                []
+                                                            }
+                                                            onDomainsChange={
+                                                                field.onChange
+                                                            }
+                                                            statusByDomain={
+                                                                domainVerificationStatusByDomain
+                                                            }
+                                                            errorMessage={
                                                                 fieldState.error
-                                                            }
-                                                            value={
-                                                                field.value?.join(
-                                                                    ",",
-                                                                ) ?? ""
-                                                            }
-                                                            onChange={(e) => {
-                                                                const inputValue =
-                                                                    e.target
-                                                                        .value;
-
-                                                                if (
-                                                                    inputValue ===
-                                                                    ""
-                                                                ) {
-                                                                    field.onChange(
-                                                                        [],
-                                                                    );
-                                                                    return;
-                                                                }
-
-                                                                const domains =
-                                                                    e.target.value
-                                                                        .split(
-                                                                            /\s*,\s*/,
-                                                                        )
-                                                                        .map(
-                                                                            (
-                                                                                d,
-                                                                            ) =>
-                                                                                d.trim(),
-                                                                        );
-                                                                field.onChange(
-                                                                    domains,
-                                                                );
-                                                            }}
-                                                            className="mt-3"
-                                                        />
-                                                        <FormControl.Error>
-                                                            {
-                                                                errors.domains
                                                                     ?.message
                                                             }
-                                                        </FormControl.Error>
-                                                        {hasDomainMismatch && (
-                                                            <Alert variant="warning">
-                                                                <AlertCircle />
-                                                                <AlertDescription>
-                                                                    Some domains
-                                                                    differ from
-                                                                    your login
-                                                                    domain (
-                                                                    {userDomain}
-                                                                    ). Make sure
-                                                                    these
-                                                                    domains
-                                                                    belong to
-                                                                    your
-                                                                    organization.
-                                                                </AlertDescription>
-                                                            </Alert>
-                                                        )}
-                                                        <FormControl.Helper>
-                                                            Enter domains
-                                                            separated by commas.
-                                                            Only users with
-                                                            email addresses from
-                                                            these domains will
-                                                            be able to sign in
-                                                            via SSO.
-                                                        </FormControl.Helper>
+                                                            hasDomainMismatch={
+                                                                hasDomainMismatch
+                                                            }
+                                                            userDomain={
+                                                                userDomain
+                                                            }
+                                                        />
                                                     </>
                                                 )}
                                             />
