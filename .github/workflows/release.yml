@@ -19,7 +19,8 @@ jobs:
                   node-version: 22
                   cache: yarn
             - run: corepack enable
-            - run: corepack prepare npm@11.5.1 --activate
+            - run: corepack prepare npm@latest --activate
+            - run: npm --version
             - run: yarn install --frozen-lockfile
             - run: yarn skills:validate
             - run: yarn skills:prompt > /dev/null
