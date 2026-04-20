@@ -21,7 +21,7 @@ import { AstGraphIncrementalJobProcessor } from '@libs/code-review/workflow/ast-
 const WEBHOOK_PROCESS_TIMEOUT_MS = 10 * 60 * 1000;
 const CODE_REVIEW_PROCESS_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const CHECK_IMPLEMENTATION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
-const AST_GRAPH_BUILD_TIMEOUT_MS = 30 * 60 * 1000; // 30 min
+const AST_GRAPH_BUILD_TIMEOUT_MS = 20 * 60 * 1000; // 20 min
 const AST_GRAPH_INCREMENTAL_TIMEOUT_MS = 10 * 60 * 1000; // 10 min
 
 @Injectable()

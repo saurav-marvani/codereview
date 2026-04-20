@@ -153,7 +153,7 @@ export class RabbitMQWrapperModule {
                             default: false,
                         },
                         'channel-ast-graph-build': {
-                            prefetchCount: 2,
+                            prefetchCount: 5,
                             default: false,
                         },
                         'channel-ast-graph-incremental': {

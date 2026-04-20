@@ -40,8 +40,13 @@ function getPinoLogger(): pino.Logger {
                 level: (label) => ({ level: label }),
             },
             serializers: {
-                error: pino.stdSerializers.err,
-                err: pino.stdSerializers.err,
+                // Custom err serializer: run pino's stdSerializer to flatten the
+                // Error, then deepSanitize so nested HTTPError shapes (got/axios
+                // throw with err.request.headers.authorization, err.options.headers,
+                // err.response.headers.set-cookie, etc.) are redacted by key name
+                // at any depth — no need to enumerate every possible path below.
+                error: (err: any) => deepSanitize(pino.stdSerializers.err(err)),
+                err: (err: any) => deepSanitize(pino.stdSerializers.err(err)),
                 req: pino.stdSerializers.req,
                 res: pino.stdSerializers.res,
             },
@@ -55,6 +60,7 @@ function getPinoLogger(): pino.Logger {
                     'apikey',
                     'api_key',
                     'authorization',
+                    'cookie',
                     'accessToken',
                     'refreshToken',
                     'clientSecret',
@@ -71,6 +77,7 @@ function getPinoLogger(): pino.Logger {
                     '*.apikey',
                     '*.api_key',
                     '*.authorization',
+                    '*.cookie',
                     '*.accessToken',
                     '*.refreshToken',
                     '*.clientSecret',
@@ -85,6 +92,7 @@ function getPinoLogger(): pino.Logger {
                     '*.*.secret',
                     '*.*.apiKey',
                     '*.*.authorization',
+                    '*.*.cookie',
                     '*.*.accessToken',
                     '*.*.refreshToken',
                     '*.*.clientSecret',
@@ -92,10 +100,23 @@ function getPinoLogger(): pino.Logger {
                     '*.*.jwt',
                     '*.*.credential',
                     '*.*.connectionString',
-                    // HTTP
+                    // HTTP req/res
                     'req.headers.authorization',
-                    'req.headers[\"x-api-key\"]',
+                    'req.headers["x-api-key"]',
                     'req.headers.cookie',
+                    'res.headers["set-cookie"]',
+                    // got/axios HTTPError nested shapes — belt-and-suspenders
+                    // for paths that bypass the err serializer (e.g. when a
+                    // caller logs response/request directly in metadata).
+                    '*.headers.authorization',
+                    '*.headers.cookie',
+                    '*.headers["set-cookie"]',
+                    '*.*.headers.authorization',
+                    '*.*.headers.cookie',
+                    '*.*.headers["set-cookie"]',
+                    '*.*.*.headers.authorization',
+                    '*.*.*.headers.cookie',
+                    '*.*.*.headers["set-cookie"]',
                 ],
                 censor: '[REDACTED]',
             },
@@ -168,6 +189,11 @@ const SENSITIVE_KEYS = new Set([
     'apikey',
     'api_key',
     'authorization',
+    'proxyauthorization',
+    'cookie',
+    'setcookie',
+    'xapikey',
+    'xauthtoken',
     'accesstoken',
     'refreshtoken',
     'clientsecret',
