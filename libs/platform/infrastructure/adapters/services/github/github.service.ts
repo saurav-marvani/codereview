@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createAppAuth } from '@octokit/auth-app';
+import { INTEGRATION_REQUEST_TIMEOUT_MS } from '@libs/core/infrastructure/http/integration-timeouts';
 import { graphql } from '@octokit/graphql';
 import { enterpriseServer313 } from '@octokit/plugin-enterprise-server';
 import { retry } from '@octokit/plugin-retry';
@@ -2278,6 +2279,7 @@ export class GithubService
         try {
             const octokit = new Octokit({
                 auth: auth.token,
+                request: { timeout: INTEGRATION_REQUEST_TIMEOUT_MS },
             });
 
             await octokit.rest.rateLimit.get();
@@ -2588,6 +2590,7 @@ export class GithubService
                         'API_GITHUB_CLIENT_SECRET',
                     ),
                 },
+                request: { timeout: INTEGRATION_REQUEST_TIMEOUT_MS },
             });
 
             const installationAuthentication = await appOctokit.auth({
@@ -3261,7 +3264,9 @@ export class GithubService
         const minIndent = Math.min(...indents);
         if (minIndent === 0) return code;
         return lines
-            .map((line) => (line.length >= minIndent ? line.slice(minIndent) : line))
+            .map((line) =>
+                line.length >= minIndent ? line.slice(minIndent) : line,
+            )
             .join('\n');
     }
 
@@ -4069,11 +4074,24 @@ This is an experimental feature that generates committable changes. Review the d
 
                 return lines;
             } catch (error) {
-                this.logger.error({
-                    message: 'Error getting file content from pull request',
+                const status =
+                    (error as any)?.status ?? (error as any)?.response?.status;
+                const refDeleted =
+                    status === 404 &&
+                    /No commit found for the ref/i.test(
+                        (error as any)?.message ?? '',
+                    );
+                this.logger.warn({
+                    message: refDeleted
+                        ? 'PR head ref missing — falling back to base ref'
+                        : 'Error getting file content from pull request',
                     context: GithubService.name,
                     error,
-                    metadata: { ...params },
+                    metadata: {
+                        ...params,
+                        prHeadMissing: refDeleted,
+                        httpStatus: status,
+                    },
                 });
 
                 // If it fails, try to fetch from the base branch

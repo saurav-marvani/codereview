@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
 
 import { decrypt } from '@libs/common/utils/crypto';
+import { INTEGRATION_REQUEST_TIMEOUT_MS } from '@libs/core/infrastructure/http/integration-timeouts';
 import { FileChange } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import {
     AzureRepoChange,
@@ -387,6 +388,7 @@ export class AzureReposRequestHelper {
 
         const instance = axios.create({
             baseURL,
+            timeout: INTEGRATION_REQUEST_TIMEOUT_MS,
             headers: {
                 'Authorization': `Basic ${Buffer.from(`:${decrypt(token)}`).toString('base64')}`,
                 'Content-Type': 'application/json',

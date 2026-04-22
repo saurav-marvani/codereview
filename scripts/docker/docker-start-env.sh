@@ -15,7 +15,11 @@ case "$ENVIRONMENT" in
   local)
     export ENV_FILE=${ENV_FILE:-.env}
     export API_DATABASE_ENV=${API_DATABASE_ENV:-development}
+    # profiling=on por padrao em dev; desative com ENABLE_PROFILING=false
     PROFILE_ARGS=(--profile local-db)
+    if [ "${ENABLE_PROFILING:-true}" != "false" ]; then
+      PROFILE_ARGS+=(--profile profiling)
+    fi
     ENV_LABEL="local"
     ;;
   qa|homolog)

@@ -30,6 +30,8 @@ export class RabbitMQConnectionLoggerService
     private connectHandler?: (args: { connection?: unknown }) => void;
     private disconnectHandler?: (args: { err?: Error }) => void;
     private connectFailedHandler?: (args: { err?: Error }) => void;
+    private blockedHandler?: (args: { reason?: string }) => void;
+    private unblockedHandler?: () => void;
 
     constructor(
         private readonly configService: ConfigService,
@@ -120,9 +122,38 @@ export class RabbitMQConnectionLoggerService
             });
         };
 
+        // connection.blocked / unblocked: broker-level resource alarms
+        // (memory/disk pressure). When blocked, publishes are paused and
+        // consumers can stall — worth surfacing so we can correlate with
+        // prod incidents instead of guessing.
+        this.blockedHandler = ({ reason }) => {
+            this.logger.warn({
+                message: 'RabbitMQ broker blocked publishers',
+                context: RabbitMQConnectionLoggerService.name,
+                metadata: {
+                    component: this.componentType,
+                    instanceId: this.instanceId,
+                    reason,
+                },
+            });
+        };
+
+        this.unblockedHandler = () => {
+            this.logger.log({
+                message: 'RabbitMQ broker unblocked publishers',
+                context: RabbitMQConnectionLoggerService.name,
+                metadata: {
+                    component: this.componentType,
+                    instanceId: this.instanceId,
+                },
+            });
+        };
+
         managedConnection.on('connect', this.connectHandler);
         managedConnection.on('disconnect', this.disconnectHandler);
         managedConnection.on('connectFailed', this.connectFailedHandler);
+        managedConnection.on('blocked', this.blockedHandler);
+        managedConnection.on('unblocked', this.unblockedHandler);
     }
 
     // ───────────────── Channel-level listeners ─────────────────
@@ -226,6 +257,9 @@ export class RabbitMQConnectionLoggerService
                     off('disconnect', this.disconnectHandler);
                 if (this.connectFailedHandler)
                     off('connectFailed', this.connectFailedHandler);
+                if (this.blockedHandler) off('blocked', this.blockedHandler);
+                if (this.unblockedHandler)
+                    off('unblocked', this.unblockedHandler);
             }
         }
 

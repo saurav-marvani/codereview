@@ -1,5 +1,6 @@
 import { createLogger } from '@kodus/flow';
 
+import { INTEGRATION_REQUEST_TIMEOUT_MS } from '@libs/core/infrastructure/http/integration-timeouts';
 import { Reaction } from '@libs/code-review/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
 import { hasKodyMarker } from '@libs/common/utils/codeManagement/codeCommentMarkers';
 import { decrypt, encrypt } from '@libs/common/utils/crypto';
@@ -3351,19 +3352,31 @@ export class BitbucketService implements Omit<
      * the Bitbucket edge proxy returns a response with no Content-Type.
      */
     private safeFetch(url: string, options: any): Promise<any> {
-        return fetch(url, options).then((response) => {
-            if (!response.headers.get('content-type')) {
-                const patchedHeaders = new Headers(response.headers);
-                patchedHeaders.set('content-type', 'text/plain');
+        // Bounded timeout via AbortController — the Bitbucket SDK itself
+        // does not expose a timeout option, so without this a single
+        // unresponsive Bitbucket API call can hang the worker for the
+        // entire drain window. 30s covers the 99p of real calls.
+        const controller = new AbortController();
+        const timer = setTimeout(
+            () => controller.abort(),
+            INTEGRATION_REQUEST_TIMEOUT_MS,
+        );
 
-                return new Response(response.body, {
-                    status: response.status,
-                    statusText: response.statusText,
-                    headers: patchedHeaders,
-                });
-            }
-            return response;
-        });
+        return fetch(url, { ...options, signal: controller.signal })
+            .then((response) => {
+                if (!response.headers.get('content-type')) {
+                    const patchedHeaders = new Headers(response.headers);
+                    patchedHeaders.set('content-type', 'text/plain');
+
+                    return new Response(response.body, {
+                        status: response.status,
+                        statusText: response.statusText,
+                        headers: patchedHeaders,
+                    });
+                }
+                return response;
+            })
+            .finally(() => clearTimeout(timer));
     }
 
     /**

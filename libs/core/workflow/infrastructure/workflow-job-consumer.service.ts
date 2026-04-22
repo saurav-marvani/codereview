@@ -259,7 +259,8 @@ export class WorkflowJobConsumer implements OnApplicationShutdown {
      */
     private resolveClaimTimeoutMinutes(queueName: string): number {
         if (queueName === 'workflow.jobs.ast_graph_build.queue') return 30;
-        if (queueName === 'workflow.jobs.ast_graph_incremental.queue') return 15;
+        if (queueName === 'workflow.jobs.ast_graph_incremental.queue')
+            return 15;
         if (queueName === 'workflow.jobs.webhook.queue') return 20;
         return 150;
     }
@@ -467,17 +468,26 @@ export class WorkflowJobConsumer implements OnApplicationShutdown {
     }
 
     async onApplicationShutdown(signal?: string): Promise<void> {
+        const rawDrain = process.env.API_WORKER_DRAIN_TIMEOUT_MS;
+        const parsedDrain = rawDrain ? parseInt(rawDrain, 10) : NaN;
+        const maxWaitMs =
+            Number.isFinite(parsedDrain) && parsedDrain > 0
+                ? parsedDrain
+                : 25_000; // safe fallback: dev/self-hosted default (30s ECS grace - 5s headroom)
+
         this.logger.log({
             message: `Shutdown signal ${signal} received. Waiting for active jobs...`,
             context: WorkflowJobConsumer.name,
-            metadata: { activeJobs: this.activeJobs },
+            metadata: {
+                activeJobs: this.activeJobs,
+                maxWaitMs,
+                drainTimeoutSource:
+                    Number.isFinite(parsedDrain) && parsedDrain > 0
+                        ? 'API_WORKER_DRAIN_TIMEOUT_MS'
+                        : 'default_25s',
+            },
         });
 
-        // Cap the wait so we always get a chance to release locks before
-        // ECS sends SIGKILL (default grace period is 30s). 25s of waiting
-        // leaves ~5s headroom for the release-locks query and other
-        // shutdown hooks downstream of this one.
-        const maxWaitMs = 25_000;
         const checkIntervalMs = 1_000;
         const waitStart = Date.now();
 
@@ -491,6 +501,7 @@ export class WorkflowJobConsumer implements OnApplicationShutdown {
             );
         }
 
+        const drainDurationMs = Date.now() - waitStart;
         if (this.activeJobs > 0) {
             this.logger.warn({
                 message: `Shutdown timeout reached with ${this.activeJobs} active jobs still running — releasing inbox locks anyway so other workers can reclaim the messages.`,
@@ -498,6 +509,20 @@ export class WorkflowJobConsumer implements OnApplicationShutdown {
                 metadata: {
                     activeJobs: this.activeJobs,
                     instanceId: this.instanceId,
+                    drainDurationMs,
+                    drainBudgetMs: maxWaitMs,
+                    drainBudgetExhausted: true,
+                },
+            });
+        } else {
+            this.logger.log({
+                message: 'All active jobs drained before shutdown timeout',
+                context: WorkflowJobConsumer.name,
+                metadata: {
+                    instanceId: this.instanceId,
+                    drainDurationMs,
+                    drainBudgetMs: maxWaitMs,
+                    drainBudgetExhausted: false,
                 },
             });
         }

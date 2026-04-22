@@ -114,6 +114,8 @@
         "docker:logs:api": "docker compose -f docker-compose.dev.yml logs -f kodus-api",
         "docker:logs:worker": "docker compose -f docker-compose.dev.yml logs -f worker",
         "docker:logs:webhooks": "docker compose -f docker-compose.dev.yml logs -f webhooks",
+        "docker:logs:rabbitmq": "docker compose -f docker-compose.dev.yml logs -f rabbitmq",
+        "docker:logs:pyroscope": "docker compose -f docker-compose.dev.yml logs -f pyroscope",
         "docker:clean": "docker compose -f docker-compose.dev.yml down && docker volume rm kodus-ai_yalc_store kodus-ai_node_modules_cache || true",
         "docker:cache:clean": "docker compose -f docker-compose.dev.yml down && docker volume rm kodus-ai_yalc_store kodus-ai_node_modules_cache || true",
         "docker:start:webhooks": "docker compose -f docker-compose.dev.yml --profile local-db up webhooks db_postgres db_mongodb",
