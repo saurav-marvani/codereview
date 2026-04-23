@@ -531,12 +531,7 @@ export class PullRequestsService implements IPullRequestsService {
             merged: this.extractMergedStatus(pullRequest),
             updatedAt: new Date().toISOString(),
             closedAt: this.extractClosedAt(pullRequest),
-            user: await this.extractUser(
-                pullRequest.user,
-                organizationAndTeamData,
-                platformType,
-                pullRequest?.number,
-            ),
+            user: existingPR.user,
             reviewers: await this.extractUsers(
                 (pullRequest.reviewers || pullRequest?.requested_reviewers) ??
                     enrichedPullRequest.reviewers,
