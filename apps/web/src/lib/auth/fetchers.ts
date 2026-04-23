@@ -18,7 +18,7 @@ import { AuthProviders } from "./types";
  * hostname never ends up in the browser bundle.
  */
 const authUrl = (route: string): string =>
-    isServerSide ? authUrl(route) : apiProxyPath(route);
+    isServerSide ? pathToApiUrl(route) : apiProxyPath(route);
 
 export const checkForEmailExistence = (email: string): Promise<TODO> => {
     return axiosApi.get(authUrl(API_ROUTES.checkForEmailExistence), {
