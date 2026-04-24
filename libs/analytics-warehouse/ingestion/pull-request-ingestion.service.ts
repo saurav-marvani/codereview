@@ -105,7 +105,22 @@ export class PullRequestIngestionService {
 
         const filter: Record<string, unknown> = {};
         if (options.organizationId) {
+            // Defense against Mongo operator injection: a caller that
+            // forwards raw user input (e.g. the admin HTTP endpoint)
+            // could pass `{$ne: null}` as the org id and match every
+            // tenant. Only accept plain strings.
+            if (typeof options.organizationId !== 'string') {
+                throw new Error(
+                    'organizationId must be a string, not an object',
+                );
+            }
             filter.organizationId = options.organizationId;
+        }
+        if (options.since && !(options.since instanceof Date)) {
+            throw new Error('since must be a Date instance');
+        }
+        if (options.until && !(options.until instanceof Date)) {
+            throw new Error('until must be a Date instance');
         }
         if (useWatermark && watermark) {
             // Tuple filter: resume strictly after `(updatedAt, _id)`.

@@ -1,7 +1,7 @@
 import 'dotenv/config';
 
 import { MongoClient, ObjectId } from 'mongodb';
-import { randomUUID } from 'crypto';
+import { randomInt, randomUUID } from 'crypto';
 
 /**
  * Self-contained seed for analytics ingestion testing.
@@ -124,12 +124,22 @@ const STATUSES = ['open', 'closed', 'merged'];
 const DELIVERY = ['sent', 'pending', 'failed'];
 const IMPL = ['implemented', 'partially_implemented', 'not_implemented'];
 
+// Uses `crypto.randomInt` instead of `Math.random` not because this
+// is security-sensitive (it's test-data generation) but because CodeQL
+// flags any `Math.random()` dataflow into identifiers — and an
+// analytics seed script isn't worth the audit noise.
 function pick<T>(arr: readonly T[]): T {
-    return arr[Math.floor(Math.random() * arr.length)];
+    return arr[randomInt(arr.length)];
 }
 
 function rand(min: number, max: number): number {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
+    return randomInt(min, max + 1);
+}
+
+function randFloat(): number {
+    // One float in [0, 1). Preserves the old Math.random() semantic
+    // for callers that want a unit rank/score.
+    return randomInt(0, 1_000_000) / 1_000_000;
 }
 
 function makeFiles(n: number, prCreatedAt: Date) {
@@ -150,7 +160,7 @@ function makeFiles(n: number, prCreatedAt: Date) {
                 relevantLinesEnd: rand(200, 400),
                 label: pick(LABELS),
                 severity: pick(SEVERITIES),
-                rankScore: Math.random(),
+                rankScore: randFloat(),
                 priorityStatus: 'prioritized',
                 deliveryStatus: pick(DELIVERY),
                 implementationStatus: pick(IMPL),
@@ -298,7 +308,7 @@ async function main() {
     for (const org of orgIds) {
         const docs = [];
         for (let i = 0; i < args.prsPerOrg; i += 1) {
-            const createdAt = new Date(now - Math.random() * span);
+            const createdAt = new Date(now - randFloat() * span);
             docs.push(
                 makePR({
                     organizationId: org,

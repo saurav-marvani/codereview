@@ -12,6 +12,38 @@ import {
     PullRequestIngestionService,
 } from './pull-request-ingestion.service';
 
+function clampPositiveInt(
+    value: number | undefined,
+    fallback: number,
+    max: number,
+): number {
+    if (
+        typeof value !== 'number' ||
+        !Number.isFinite(value) ||
+        !Number.isInteger(value) ||
+        value <= 0
+    ) {
+        return fallback;
+    }
+    return Math.min(value, max);
+}
+
+function clampNonNegativeInt(
+    value: number | undefined,
+    fallback: number,
+    max: number,
+): number {
+    if (
+        typeof value !== 'number' ||
+        !Number.isFinite(value) ||
+        !Number.isInteger(value) ||
+        value < 0
+    ) {
+        return fallback;
+    }
+    return Math.min(value, max);
+}
+
 export interface BackfillOptions {
     /** ISO date string, exclusive upper bound. Default = now. */
     until?: string;
@@ -70,9 +102,18 @@ export class BackfillOrchestratorService {
     ) {}
 
     async run(options: BackfillOptions = {}): Promise<BackfillResult> {
-        const stepDays = options.stepDays ?? 1;
-        const pauseMs = options.pauseMs ?? 5_000;
-        const batchSize = options.batchSize ?? 200;
+        // Defense-in-depth. The admin HTTP endpoint already rejects
+        // non-positive values, but other callers (CLI, cron, internal
+        // hand-off) land here with whatever they want — and CodeQL
+        // tracks the flow of the query param all the way into the
+        // setTimeout below. Cap everything to sane bounds so a bad
+        // input can't park a worker for 24 days or loop forever.
+        const MAX_PAUSE_MS = 60_000; // 1 min — no legitimate use case for longer
+        const MAX_STEP_DAYS = 365; // keep windows bounded
+        const MAX_BATCH = 1_000;
+        const stepDays = clampPositiveInt(options.stepDays, 1, MAX_STEP_DAYS);
+        const pauseMs = clampNonNegativeInt(options.pauseMs, 5_000, MAX_PAUSE_MS);
+        const batchSize = clampPositiveInt(options.batchSize, 200, MAX_BATCH);
         const until = options.until ? new Date(options.until) : new Date();
 
         const checkpoint = options.fresh
