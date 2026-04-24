@@ -30,6 +30,10 @@ variable "WEB_TAGS" {
   default = "kodus-ai-web:local"
 }
 
+variable "RABBITMQ_TAGS" {
+  default = "kodus-rabbitmq:local"
+}
+
 target "base" {
   context = "."
   dockerfile = "${DOCKERFILE}"
@@ -71,6 +75,20 @@ target "web" {
   tags = split(",", WEB_TAGS)
   cache-from = ["type=gha,scope=${CACHE_SCOPE}"]
   cache-to = ["type=gha,scope=${CACHE_SCOPE},mode=max"]
+}
+
+target "rabbitmq" {
+  # Custom RabbitMQ image bundling the rabbitmq_delayed_message_exchange
+  # plugin that Kodus needs for workflow delayed retries. Published by
+  # .github/workflows/rabbitmq-build-push.yml on its own cadence
+  # (changes to docker/rabbitMQ/** or manual dispatch) — this image
+  # tracks the RabbitMQ + plugin version, not the Kodus release
+  # version, so it's intentionally NOT in the default group below.
+  context = "./docker/rabbitMQ"
+  dockerfile = "Dockerfile"
+  tags = split(",", RABBITMQ_TAGS)
+  cache-from = ["type=gha,scope=${CACHE_SCOPE}-rabbitmq"]
+  cache-to = ["type=gha,scope=${CACHE_SCOPE}-rabbitmq,mode=max"]
 }
 
 group "default" {
