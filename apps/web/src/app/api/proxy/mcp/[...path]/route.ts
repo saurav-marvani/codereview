@@ -50,9 +50,17 @@ async function forward(
 
     const upstream = await fetch(url, init);
 
+    // See /api/proxy/api for the reason: undici auto-decompresses, so
+    // we must drop the upstream Content-Encoding / Content-Length /
+    // Transfer-Encoding headers or the browser rejects the response.
+    const outHeaders = new Headers(upstream.headers);
+    outHeaders.delete("content-encoding");
+    outHeaders.delete("content-length");
+    outHeaders.delete("transfer-encoding");
+
     return new NextResponse(upstream.body, {
         status: upstream.status,
-        headers: upstream.headers,
+        headers: outHeaders,
     });
 }
 

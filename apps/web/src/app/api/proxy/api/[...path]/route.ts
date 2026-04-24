@@ -44,9 +44,20 @@ async function forward(
 
     const upstream = await fetch(url, init);
 
+    // undici transparently decompresses gzip/brotli responses, so
+    // upstream.body is already plaintext by the time we stream it back.
+    // We must strip the original encoding-related headers or the browser
+    // will try to decode the plaintext as gzip and fail with
+    // ERR_CONTENT_DECODING_FAILED. Same applies to Transfer-Encoding
+    // and Content-Length (which reflects the compressed size).
+    const outHeaders = new Headers(upstream.headers);
+    outHeaders.delete("content-encoding");
+    outHeaders.delete("content-length");
+    outHeaders.delete("transfer-encoding");
+
     return new NextResponse(upstream.body, {
         status: upstream.status,
-        headers: upstream.headers,
+        headers: outHeaders,
     });
 }
 

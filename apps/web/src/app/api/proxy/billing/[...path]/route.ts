@@ -40,9 +40,18 @@ async function forward(
 
     const upstream = await fetch(url, init);
 
+    // undici auto-decompresses gzip/brotli — strip encoding headers
+    // before streaming the plaintext body back or the browser will
+    // try to decode it a second time and fail with
+    // ERR_CONTENT_DECODING_FAILED.
+    const outHeaders = new Headers(upstream.headers);
+    outHeaders.delete("content-encoding");
+    outHeaders.delete("content-length");
+    outHeaders.delete("transfer-encoding");
+
     return new NextResponse(upstream.body, {
         status: upstream.status,
-        headers: upstream.headers,
+        headers: outHeaders,
     });
 }
 
