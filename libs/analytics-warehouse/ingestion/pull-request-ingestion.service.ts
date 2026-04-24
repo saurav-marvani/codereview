@@ -462,6 +462,17 @@ export class PullRequestIngestionService {
         let suggestions = 0;
         for (const file of pr.files ?? []) {
             for (const s of file.suggestions ?? []) {
+                // `id` is only populated once a suggestion is actually
+                // delivered (posted as a PR comment). Drafts that never
+                // leave Kody (`deliveryStatus !== 'sent'`) are id-less
+                // and every cockpit query filters by `sent` anyway, so
+                // dropping them at ingestion is lossless. Skipping here
+                // instead of letting the NOT NULL constraint fire saves
+                // the surrounding PR from SAVEPOINT rollback that would
+                // quarantine its `sent` siblings too.
+                if (!s.id) {
+                    continue;
+                }
                 const implStatus =
                     typeof s.implementationStatus === 'string'
                         ? s.implementationStatus
@@ -509,11 +520,33 @@ export class PullRequestIngestionService {
                 commit_hash?: string;
                 commit_timestamp?: unknown;
                 createdAt?: unknown;
-                author?: { username?: string; name?: string };
+                // GitHub/GitLab webhook payloads use snake_case and
+                // frequently only populate `author.date` — the field we
+                // relied on (`commit_timestamp` / `createdAt`) is rarely
+                // present for real PRs.
+                created_at?: unknown;
+                author?: {
+                    username?: string;
+                    name?: string;
+                    date?: unknown;
+                };
             };
             const hash = raw.sha ?? raw.hash ?? raw.commit_hash;
             if (!hash) continue;
-            const ts = parseTimestamp(raw.commit_timestamp ?? raw.createdAt);
+            const ts = parseTimestamp(
+                raw.commit_timestamp ??
+                    raw.createdAt ??
+                    raw.created_at ??
+                    raw.author?.date,
+            );
+            const tsRaw =
+                typeof raw.commit_timestamp === 'string'
+                    ? raw.commit_timestamp
+                    : typeof raw.created_at === 'string'
+                      ? raw.created_at
+                      : typeof raw.author?.date === 'string'
+                        ? raw.author.date
+                        : null;
             await manager.query(
                 `INSERT INTO "analytics"."commits_view" (
                     "pull_request_id", "commit_hash", "organizationId",
@@ -532,9 +565,7 @@ export class PullRequestIngestionService {
                     hash,
                     pr.organizationId,
                     ts,
-                    typeof raw.commit_timestamp === 'string'
-                        ? raw.commit_timestamp
-                        : null,
+                    tsRaw,
                     raw.author?.username ?? raw.author?.name ?? null,
                     JSON.stringify(c),
                 ],

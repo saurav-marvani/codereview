@@ -364,4 +364,75 @@ describe('PullRequestIngestionService.run()', () => {
 
         expect(model.read).toHaveBeenCalledWith('secondaryPreferred');
     });
+
+    it('skips suggestions without an id instead of quarantining the PR', async () => {
+        // Mongo has a mix: one sent+id (real delivered), one not_sent
+        // with no id (draft that never posted). The old behavior was a
+        // NOT NULL violation → SAVEPOINT rollback → whole PR lost. The
+        // fix is to skip id-less ones silently.
+        const pr = makePR({
+            id: 'pr-mixed',
+            files: [
+                {
+                    path: 'src/foo.ts',
+                    suggestions: [
+                        { id: 'sug-sent', deliveryStatus: 'sent' },
+                        { deliveryStatus: 'not_sent' }, // no `id`
+                    ],
+                },
+            ],
+        });
+        const { ds, managers } = makeDataSource({ watermarkRow: null });
+        const model = makeModel([pr]);
+        const svc = makeService(ds, model);
+
+        const res = await svc.run();
+
+        // PR succeeds (no quarantine) and the sibling got written.
+        expect(res.quarantined).toBe(0);
+        expect(res.upsertedPRs).toBe(1);
+
+        const inserts =
+            managers[0]?.calls.filter((c) =>
+                c.sql.includes(
+                    'INSERT INTO "analytics"."suggestions_mv"',
+                ),
+            ) ?? [];
+        expect(inserts).toHaveLength(1);
+        expect(inserts[0].params?.[0]).toBe('sug-sent');
+    });
+
+    it('reads commit_timestamp from created_at or author.date when commit_timestamp is absent', async () => {
+        // Real webhook payloads arrive with `created_at` (snake_case)
+        // or `author.date`, not `commit_timestamp` — the writer has to
+        // fall through, otherwise 99%+ of commits land with a NULL
+        // timestamp and every lead-time query breaks.
+        const pr = makePR({
+            id: 'pr-commits',
+            commits: [
+                { sha: 'sha-a', created_at: '2026-03-10T12:00:00Z' },
+                { sha: 'sha-b', author: { date: '2026-03-11T08:00:00Z', username: 'alice' } },
+                { sha: 'sha-c', commit_timestamp: '2026-03-12T09:00:00Z' },
+            ],
+        });
+        const { ds, managers } = makeDataSource({ watermarkRow: null });
+        const model = makeModel([pr]);
+        const svc = makeService(ds, model);
+
+        await svc.run();
+
+        const inserts =
+            managers[0]?.calls.filter((c) =>
+                c.sql.includes('INSERT INTO "analytics"."commits_view"'),
+            ) ?? [];
+        expect(inserts).toHaveLength(3);
+        // Position 4 in the param list is the parsed `commit_timestamp`.
+        const tsValues = inserts.map(
+            (c) => (c.params as unknown[])[3] as Date,
+        );
+        expect(tsValues[0]).toBeInstanceOf(Date);
+        expect(tsValues[0].toISOString()).toBe('2026-03-10T12:00:00.000Z');
+        expect(tsValues[1].toISOString()).toBe('2026-03-11T08:00:00.000Z');
+        expect(tsValues[2].toISOString()).toBe('2026-03-12T09:00:00.000Z');
+    });
 });
