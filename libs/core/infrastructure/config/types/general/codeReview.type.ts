@@ -328,6 +328,7 @@ export type CodeReviewConfig = {
     configLevel?: ConfigLevel;
     directoryId?: string;
     directoryPath?: string;
+    directoryFolders?: Array<{ id: string; name: string; path: string }>;
     runOnDraft?: boolean;
     codeReviewVersion?: CodeReviewVersion;
     byokConfig?: BYOKConfig;

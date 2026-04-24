@@ -242,7 +242,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
             if (directoryDelta) {
                 configLevel = ConfigLevel.DIRECTORY;
                 directoryId = directoryConfig?.id;
-                directoryPath = directoryConfig?.path;
+                directoryPath = this.getDirectoryPrimaryPath(directoryConfig);
             } else if (repoDelta) {
                 configLevel = ConfigLevel.REPOSITORY;
             }
@@ -252,6 +252,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 configLevel,
                 directoryId,
                 directoryPath,
+                directoryFolders: this.getDirectoryFolders(directoryConfig),
                 v2PromptOverrides: this.sanitizeV2PromptOverrides(
                     merged.v2PromptOverrides,
                 ),
@@ -366,7 +367,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         const directoryFileDelta = await this.getKodusConfigFile({
             organizationAndTeamData,
             repository,
-            directoryPath: directoryConfig?.path,
+            directoryPath: this.getDirectoryPrimaryPath(directoryConfig),
             defaultBranch,
             overrideConfig: this.getFileOverridePreference(
                 repoConfig,
@@ -389,7 +390,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         if (directoryDelta || directoryFileDelta) {
             configLevel = ConfigLevel.DIRECTORY;
             directoryId = directoryConfig?.id;
-            directoryPath = directoryConfig?.path;
+            directoryPath = this.getDirectoryPrimaryPath(directoryConfig);
         } else if (repoDelta || repositoryFileDelta) {
             configLevel = ConfigLevel.REPOSITORY;
         }
@@ -399,6 +400,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
             configLevel,
             directoryId,
             directoryPath,
+            directoryFolders: this.getDirectoryFolders(directoryConfig),
         } as CodeReviewConfigWithoutLLMProvider;
     }
 
@@ -897,6 +899,43 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         }
     }
 
+    /**
+     * Extracts the primary path from a directory config, supporting both
+     * the new `folders[]` format and the legacy `path` field.
+     */
+    private getDirectoryPrimaryPath(
+        directoryConfig: DirectoryCodeReviewConfig | undefined,
+    ): string | undefined {
+        if (!directoryConfig) return undefined;
+        return (
+            directoryConfig.folders?.[0]?.path ??
+            (directoryConfig as any).path ??
+            undefined
+        );
+    }
+
+    /**
+     * Extracts folders from a directory config, supporting both
+     * the new `folders[]` format and the legacy `path` field.
+     */
+    private getDirectoryFolders(
+        directoryConfig: DirectoryCodeReviewConfig | undefined,
+    ): Array<{ id: string; name: string; path: string }> | undefined {
+        if (!directoryConfig) return undefined;
+        if (directoryConfig.folders?.length > 0) return directoryConfig.folders;
+        const legacyPath = (directoryConfig as any).path;
+        if (legacyPath) {
+            return [
+                {
+                    id: directoryConfig.id,
+                    name: directoryConfig.name,
+                    path: legacyPath,
+                },
+            ];
+        }
+        return undefined;
+    }
+
     private resolveConfigByDirectories(
         organizationAndTeamData: OrganizationAndTeamData,
         repoConfig: RepositoryCodeReviewConfig,
@@ -925,13 +964,20 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 );
             };
 
-            // Build matchers from each group's folders
+            // Build matchers from each group's folders (with legacy `path` fallback)
             const groupMatchers = repoConfig.directories.flatMap(
-                (group: any) =>
-                    (group.folders || []).map((folder: any) => ({
+                (group: any) => {
+                    const folders =
+                        group.folders?.length > 0
+                            ? group.folders
+                            : group.path
+                              ? [{ path: group.path }]
+                              : [];
+                    return folders.map((folder: any) => ({
                         group,
                         normalizedPath: normalizePath(folder.path),
-                    })),
+                    }));
+                },
             );
 
             const matchingEntries = groupMatchers.filter(
@@ -999,13 +1045,20 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
 
             const normalizedAffectedPath = normalizePath(affectedPath);
 
-            // Build a flat list of { groupId, folderPath } from all groups
+            // Build a flat list of { groupId, folderPath } from all groups (with legacy `path` fallback)
             const allFolderEntries = repoConfig.directories.flatMap(
-                (group) =>
-                    (group.folders || []).map((folder) => ({
+                (group) => {
+                    const folders =
+                        group.folders?.length > 0
+                            ? group.folders
+                            : (group as any).path
+                              ? [{ path: (group as any).path }]
+                              : [];
+                    return folders.map((folder) => ({
                         groupId: group.id,
                         folderPath: folder.path,
-                    })),
+                    }));
+                },
             );
 
             const matchingFolders = allFolderEntries.filter(

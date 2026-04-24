@@ -31,13 +31,6 @@ import {
 import { RouteButtonWithOverrideCount } from "../route-button-with-override-count";
 import { SidebarRepositoryOrDirectoryDropdown } from "./options-dropdown";
 
-/** Middle-truncates a path: /first/.../last-segment */
-function middleTruncate(path: string): string {
-    const parts = path.split("/").filter(Boolean);
-    if (parts.length <= 3) return path;
-    return `/${parts[0]}/.../` + parts.slice(-1)[0];
-}
-
 export const PerDirectoryGroup = ({
     routes,
     group,
@@ -112,8 +105,10 @@ export const PerDirectoryGroup = ({
                                     )
                                 }>
                                 <div className="flex min-w-0 flex-col items-start">
-                                    <span className="w-full truncate font-mono text-[11px]">
-                                        {middleTruncate(primary.path)}
+                                    <span
+                                        dir="rtl"
+                                        className="w-full truncate text-left font-mono text-[11px]">
+                                        {primary.path}
                                     </span>
                                     {remaining > 0 && (
                                         <span className="text-text-tertiary text-[10px] font-normal">
@@ -151,24 +146,28 @@ export const PerDirectoryGroup = ({
 
             <CollapsibleContent>
                 <SidebarMenuSub>
-                    {/* Folder list with remove buttons */}
-                    <div className="border-card-lv3 mb-2 border-b pb-2">
-                        {folders.map((f) => (
-                            <Tooltip key={f.id} disableHoverableContent>
-                                <TooltipTrigger asChild>
-                                    <div className="hover:bg-card-lv2 flex items-center gap-1.5 rounded px-2 py-1 transition-colors">
-                                        <FolderIcon className="text-text-tertiary size-3 shrink-0" />
-                                        <span className="text-text-secondary min-w-0 truncate font-mono text-[11px]">
-                                            {middleTruncate(f.path)}
-                                        </span>
-                                    </div>
-                                </TooltipTrigger>
-                                <TooltipContent side="right">
-                                    {f.path}
-                                </TooltipContent>
-                            </Tooltip>
-                        ))}
-                    </div>
+                    {/* Folder list (only shown for multi-folder groups) */}
+                    {folders.length > 1 && (
+                        <div className="border-card-lv3 mb-2 border-b pb-2">
+                            {folders.map((f) => (
+                                <Tooltip key={f.id} disableHoverableContent>
+                                    <TooltipTrigger asChild>
+                                        <div className="hover:bg-card-lv2 flex items-center gap-1.5 rounded px-2 py-1 transition-colors">
+                                            <FolderIcon className="text-text-tertiary size-3 shrink-0" />
+                                            <span
+                                                dir="rtl"
+                                                className="text-text-secondary min-w-0 truncate text-left font-mono text-[11px]">
+                                                {f.path}
+                                            </span>
+                                        </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="right">
+                                        {f.path}
+                                    </TooltipContent>
+                                </Tooltip>
+                            ))}
+                        </div>
+                    )}
 
                     {/* Route menu items */}
                     {routes.map(({ label, href }) => {
