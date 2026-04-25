@@ -51,7 +51,10 @@ export class PullRequestsModel extends CoreDocument {
         updatedAt: string;
     };
 
-    @Prop({ type: Array, required: true })
+    // files is optional with a default of [] so partial updates
+    // (e.g. bumping status/merged without re-sending the full payload)
+    // do not crash with "Path 'files' is required" validation errors.
+    @Prop({ type: Array, required: false, default: [] })
     public files: Array<{
         id: string;
         sha?: string;

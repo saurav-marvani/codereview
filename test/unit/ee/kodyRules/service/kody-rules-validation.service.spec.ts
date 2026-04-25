@@ -128,6 +128,159 @@ describe('KodyRulesValidationService', () => {
         });
     });
 
+    describe('Inheritance behavior — proving the "INHERITED: DIRECTORY" leak', () => {
+        // Reproduces the exact shape the client reported for b207a89c
+        // (Logging Best Practices): rule attached to directoryId
+        // cf5284b4-... with the default inheritance shape.
+        const b207a89c = (): Partial<IKodyRule> =>
+            createRule({
+                uuid: 'b207a89c-924b-4a0a-8070-2e860293b537',
+                title: 'Logging Best Practices',
+                repositoryId: '769144833',
+                directoryId: 'cf5284b4-2510-464a-9eca-98efbf121d04',
+                path: '**/*',
+                inheritance: {
+                    inheritable: true,
+                    include: [], // <-- the client's default shape
+                    exclude: [],
+                },
+            });
+
+        it('passes the inheritance check when viewing from OWN directory (cf5284b4)', () => {
+            const result = service.getKodyRulesForFile(
+                'qantilever/src/foo.kt',
+                [b207a89c()],
+                {
+                    repositoryId: '769144833',
+                    directoryId: 'cf5284b4-2510-464a-9eca-98efbf121d04',
+                },
+            );
+            expect(result.map((r) => r.uuid)).toContain(
+                'b207a89c-924b-4a0a-8070-2e860293b537',
+            );
+        });
+
+        it('PROVES THE LEAK: same rule also passes when viewing from a DIFFERENT directory (314f34ff)', () => {
+            // This is the exact "INHERITED: DIRECTORY" behavior the client
+            // complained about — rule from cf5284b4 leaks into 314f34ff
+            // context because inheritance.include is empty which reads as
+            // "inherit everywhere" (NOT "inherit nowhere").
+            const result = service.getKodyRulesForFile(
+                'applications/backoffice-bff/src/foo.java',
+                [b207a89c()],
+                {
+                    repositoryId: '769144833',
+                    directoryId: '314f34ff-2d1e-47e0-8765-2bb3f1a8564d',
+                },
+            );
+            expect(result.map((r) => r.uuid)).toContain(
+                'b207a89c-924b-4a0a-8070-2e860293b537',
+            );
+        });
+
+        it('STOPS the leak when include is set to ONLY the own directoryId', () => {
+            // If we had defaulted `include: [directoryId]` instead of
+            // `include: []`, the rule would stay pinned to its own
+            // directory. This is the design change we would need to make.
+            const pinned: Partial<IKodyRule> = {
+                ...b207a89c(),
+                inheritance: {
+                    inheritable: true,
+                    include: ['cf5284b4-2510-464a-9eca-98efbf121d04'],
+                    exclude: [],
+                },
+            };
+
+            const resultInOwnDir = service.getKodyRulesForFile(
+                'qantilever/src/foo.kt',
+                [pinned],
+                {
+                    repositoryId: '769144833',
+                    directoryId: 'cf5284b4-2510-464a-9eca-98efbf121d04',
+                },
+            );
+            const resultInOtherDir = service.getKodyRulesForFile(
+                'applications/backoffice-bff/src/foo.java',
+                [pinned],
+                {
+                    repositoryId: '769144833',
+                    directoryId: '314f34ff-2d1e-47e0-8765-2bb3f1a8564d',
+                },
+            );
+
+            expect(resultInOwnDir).toHaveLength(1);
+            expect(resultInOtherDir).toHaveLength(0);
+        });
+    });
+
+    describe('Bug 1 regression — rule from .cursorrules in subdirectory does not leak to unrelated paths', () => {
+        // Reproduces quintoandar PR #24870 (backend-services repo 769144833):
+        // rule 32dfa554-6238-4b19-84f8-17330f6abe94 was imported from
+        // applications/backoffice-bff/.cursorrules and incorrectly applied to
+        // applications/sales-flow/api/src/main/java/.../TaskRepository.java.
+
+        const javaSpringArchRule = (pathValue: string): Partial<IKodyRule> =>
+            createRule({
+                uuid: '32dfa554-6238-4b19-84f8-17330f6abe94',
+                title: 'Java/Spring Architectural, Naming, and Dependency Conventions',
+                rule: 'Enforce hexagonal architecture conventions from .cursorrules',
+                repositoryId: '769144833',
+                path: pathValue,
+                // sourcePath tracks where the rule came from; today it is informational-only
+                // see libs/kodyRules/infrastructure/adapters/services/kodyRulesSync.service.ts
+                // where sourcePath is set on the DTO but never consulted in matching.
+            });
+
+        const salesFlowFile =
+            'applications/sales-flow/api/src/main/java/br/com/quintoandar/salesflow/api/task/facade/TaskFacade.java';
+        const backofficeBffFile =
+            'applications/backoffice-bff/src/main/java/com/example/service/UserServiceImpl.java';
+
+        it('DEMONSTRATES THE BUG: rule with raw "**/*" path still matches files outside the source subdirectory', () => {
+            // Pre-fix shape — the path the sync used to persist: unscoped "**/*".
+            // Asserting the current (buggy) behavior so if we ever re-introduce it the test catches it.
+            const rules = [javaSpringArchRule('**/*')];
+
+            const result = service.getKodyRulesForFile(salesFlowFile, rules, {
+                repositoryId: '769144833',
+            });
+
+            expect(result.map((r) => r.uuid)).toContain(
+                '32dfa554-6238-4b19-84f8-17330f6abe94',
+            );
+        });
+
+        it('PROVES THE FIX: rule scoped to the source subdirectory does NOT match sales-flow files', () => {
+            // Post-fix shape — scopePathToSourceDirectory in kodyRulesSync.service.ts
+            // now persists "applications/backoffice-bff/**/*" for a .cursorrules that lives there.
+            const rules = [
+                javaSpringArchRule('applications/backoffice-bff/**/*'),
+            ];
+
+            const result = service.getKodyRulesForFile(salesFlowFile, rules, {
+                repositoryId: '769144833',
+            });
+
+            expect(result.map((r) => r.uuid)).not.toContain(
+                '32dfa554-6238-4b19-84f8-17330f6abe94',
+            );
+        });
+
+        it('PROVES THE FIX: scoped rule still matches files inside its own subdirectory', () => {
+            const rules = [
+                javaSpringArchRule('applications/backoffice-bff/**/*'),
+            ];
+
+            const result = service.getKodyRulesForFile(backofficeBffFile, rules, {
+                repositoryId: '769144833',
+            });
+
+            expect(result.map((r) => r.uuid)).toContain(
+                '32dfa554-6238-4b19-84f8-17330f6abe94',
+            );
+        });
+    });
+
     describe('getMemoryRulesForContext', () => {
         it('returns only active memory rules matching repository and path context', () => {
             const rules = [

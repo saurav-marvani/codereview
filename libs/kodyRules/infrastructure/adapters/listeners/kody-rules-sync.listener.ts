@@ -8,6 +8,10 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { PullRequestClosedEvent } from '@libs/core/domain/events/pull-request-closed.event';
 import { KodyRulesSyncService } from '../services/kodyRulesSync.service';
 import { createLogger } from '@kodus/flow';
+import {
+    IDE_RULES_SYNC_DISABLED_EVENT,
+    IdeRulesSyncDisabledEvent,
+} from '@libs/kodyRules/domain/events/ide-rules-sync.events';
 
 @Injectable()
 export class KodyRulesSyncListener {
@@ -77,6 +81,36 @@ export class KodyRulesSyncListener {
             repository: event.repository,
             pullRequestNumber: event.pullRequestNumber,
             files: event.files,
+        });
+    }
+
+    @OnEvent(IDE_RULES_SYNC_DISABLED_EVENT)
+    async handleIdeRulesSyncDisabled(
+        event: IdeRulesSyncDisabledEvent,
+    ): Promise<void> {
+        if (!event?.repositoryId) {
+            this.logger.warn({
+                message:
+                    'Received ide-rules-sync.disabled event without repositoryId, skipping purge',
+                context: KodyRulesSyncListener.name,
+                metadata: { event },
+            });
+            return;
+        }
+
+        this.logger.log({
+            message:
+                'Handling ide-rules-sync.disabled event: purging IDE-synced rules',
+            context: KodyRulesSyncListener.name,
+            metadata: {
+                repositoryId: event.repositoryId,
+                organizationAndTeamData: event.organizationAndTeamData,
+            },
+        });
+
+        await this.kodyRulesSyncService.purgeAllIdeSyncRulesForRepository({
+            organizationAndTeamData: event.organizationAndTeamData,
+            repositoryId: event.repositoryId,
         });
     }
 

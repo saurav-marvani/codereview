@@ -233,6 +233,12 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                     'automation_execution',
                 );
 
+            // EXISTS filter instead of INNER JOIN on codeReviewExecutions.
+            // The join was 1:N and forced TypeORM to wrap the query in a
+            // DISTINCT ON (uuid, createdAt) for pagination — cartesian product
+            // of executions × reviews. Callers only use the filter semantics
+            // ("execution has at least one review"); they load reviews
+            // separately via codeReviewMap (see GetEnrichedPullRequestsUseCase).
             queryBuilder
                 .select([
                     'automation_execution.uuid',
@@ -246,7 +252,6 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                     'automation_execution.dataExecution',
                     'teamAutomation.uuid',
                     'team.name',
-                    'codeReviewExecutions.uuid',
                 ])
                 .innerJoin(
                     'automation_execution.teamAutomation',
@@ -254,16 +259,15 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                 )
                 .innerJoin('teamAutomation.team', 'team')
                 .innerJoin('team.organization', 'organization')
-                .innerJoin(
-                    'automation_execution.codeReviewExecutions',
-                    'codeReviewExecutions',
-                )
                 .where('automation_execution.pullRequestNumber IS NOT NULL')
                 .andWhere('automation_execution.repositoryId IS NOT NULL')
                 .andWhere('organization.uuid = :organizationId', {
                     organizationId,
                 })
-                .andWhere('team.uuid = :teamId', { teamId });
+                .andWhere('team.uuid = :teamId', { teamId })
+                .andWhere(
+                    'EXISTS (SELECT 1 FROM "code_review_execution" "cre" WHERE "cre"."automation_execution_id" = "automation_execution"."uuid")',
+                );
 
             if (repositoryIds?.length) {
                 if (repositoryIds.length === 1) {

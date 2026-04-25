@@ -60,6 +60,10 @@ import { ParametersEntity } from '@libs/organization/domain/parameters/entities/
 import { CreateOrUpdateCodeReviewParameterDto } from '@libs/organization/dtos/create-or-update-code-review-parameter.dto';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { buildKodusConfigCentralizedMutationRequest } from '@libs/centralized-config/utils/kodus-config-centralized-pr.builder';
+import {
+    IDE_RULES_SYNC_DISABLED_EVENT,
+    IdeRulesSyncDisabledEvent,
+} from '@libs/kodyRules/domain/events/ide-rules-sync.events';
 
 @Injectable()
 export class UpdateOrCreateCodeReviewParameterUseCase {
@@ -200,6 +204,12 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                 }
             }
 
+            const previousIdeSyncEnabled =
+                !!repositoryId &&
+                codeReviewConfigs?.repositories?.find(
+                    (r) => r.id === repositoryId,
+                )?.configs?.ideRulesSyncEnabled === true;
+
             const result = await this.handleConfigUpdate(
                 organizationAndTeamData,
                 codeReviewConfigs,
@@ -208,6 +218,20 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                 repositoryId,
                 directoryId,
             );
+
+            if (
+                previousIdeSyncEnabled &&
+                (configValue as any)?.ideRulesSyncEnabled === false
+            ) {
+                const purgeEvent: IdeRulesSyncDisabledEvent = {
+                    organizationAndTeamData,
+                    repositoryId: repositoryId!,
+                };
+                this.eventEmitter.emit(
+                    IDE_RULES_SYNC_DISABLED_EVENT,
+                    purgeEvent,
+                );
+            }
 
             return result;
         } catch (error) {

@@ -92,12 +92,16 @@ export class RabbitMQErrorHandler implements OnModuleInit {
                     options?.dlqRoutingKey,
                 );
             }
+
+            channel.ack(msg);
         } catch (publishError) {
-            // CRITICAL: If we can't republish, the message would be lost (already ACKed by errorBehavior)
+            // CRITICAL: If we can't republish or ACK, leave the original
+            // delivery unacked so RabbitMQ can redeliver it when the channel
+            // closes instead of losing the message.
             // Log as FATAL and throw to make this visible in monitoring
             this.logger.error({
                 message:
-                    'CRITICAL: Failed to republish message after error - MESSAGE MAY BE LOST',
+                    'CRITICAL: Failed to republish or acknowledge message after error',
                 context: RabbitMQErrorHandler.name,
                 error: publishError,
                 metadata: {
@@ -220,3 +224,19 @@ export class RabbitMQErrorHandler implements OnModuleInit {
         return exchange;
     }
 }
+
+export const createRabbitMQErrorHandlerWithFallback = (
+    dlqRoutingKey: string,
+) => {
+    return (channel: any, msg: ConsumeMessage, err: any) => {
+        if (RabbitMQErrorHandler.instance) {
+            return RabbitMQErrorHandler.instance.handle(channel, msg, err, {
+                dlqRoutingKey,
+            });
+        }
+
+        if (msg) {
+            channel.nack(msg, false, false);
+        }
+    };
+};

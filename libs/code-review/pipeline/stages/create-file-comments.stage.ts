@@ -300,6 +300,7 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
                     ?.suggestionCopyPrompt,
                 fallbackSuggestionsBySeverity,
                 allDiscardedSuggestions,
+                changedFiles,
             );
 
         // Save pull request suggestions — comments already posted at this point
@@ -374,6 +375,7 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
         suggestionCopyPrompt?: boolean,
         fallbackSuggestionsBySeverity?: FallbackSuggestionsBySeverity,
         allDiscardedSuggestions?: Partial<CodeSuggestion>[],
+        changedFiles: FileChange[] = [],
     ) {
         try {
             // Children in a cluster are merged into their parent's
@@ -403,11 +405,21 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
                 });
             }
 
+            // Skip suggestions pointing at files deleted in this PR — posting
+            // a comment on a removed file fails on every git provider (no line
+            // to attach to) and creates misleading reviews.
+            const removedFiles = new Set(
+                changedFiles
+                    .filter((f) => f?.status === 'removed')
+                    .map((f) => f.filename),
+            );
+
             const lineComments = sortedPrioritizedSuggestions
                 .filter(
                     (suggestion) =>
                         suggestion.clusteringInformation?.type !==
-                        ClusteringType.RELATED,
+                            ClusteringType.RELATED &&
+                        !removedFiles.has(suggestion.relevantFile),
                 )
                 .map((suggestion) => {
                     return {

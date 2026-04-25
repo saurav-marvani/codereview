@@ -2283,7 +2283,18 @@ export class BitbucketService implements Omit<
                 },
             });
 
-            return comment;
+            // Bitbucket has no "pull request review" grouping; GitHub/GitLab
+            // do. Downstream (commentManager.service.ts) treats a missing
+            // pullRequestReviewId as a critical error. Emit a stable
+            // synthetic id (the PR number) so Bitbucket responses pass the
+            // same validation shape as the other providers.
+            if (!comment) return null;
+            const syntheticReviewId = String(prNumber);
+            return {
+                ...comment,
+                pullRequestReviewId: syntheticReviewId,
+                pull_request_review_id: syntheticReviewId,
+            };
         } catch (error) {
             this.logger.error({
                 message: 'Error to create review comment',

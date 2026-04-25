@@ -27,6 +27,8 @@ import { SuggestionsModal } from "src/app/(app)/library/kody-rules/_components/s
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { addSearchParamsToUrl } from "src/core/utils/url";
 
+import { OriginBadge } from "./origin-badge";
+
 import { DeleteKodyRuleConfirmationModal } from "../../../_components/delete-confirmation-modal";
 import { useCodeReviewRouteParams } from "../../../../_hooks";
 import { ExternalReferencesDisplay } from "../../pr-summary/_components/external-references-display";
@@ -82,14 +84,7 @@ export const KodyRuleItem = ({
                             />
                         )}
 
-                        {rule.sourcePath && (
-                            <Badge
-                                active
-                                size="xs"
-                                className="min-h-auto px-2.5 py-1">
-                                auto-sync
-                            </Badge>
-                        )}
+                        <OriginBadge rule={rule} />
 
                         {centralizedPendingLabel && (
                             <Tooltip delayDuration={500}>
@@ -183,11 +178,16 @@ export const KodyRuleItem = ({
                             decorative
                             size="icon-md"
                             variant="secondary"
+                            aria-label={
+                                !canEdit || isInherited
+                                    ? "View " + entityLabel + " details"
+                                    : "Edit " + entityLabel
+                            }
                             className="size-9">
                             {!canEdit || isInherited ? (
-                                <EyeIcon />
+                                <EyeIcon aria-hidden />
                             ) : (
-                                <EditIcon />
+                                <EditIcon aria-hidden />
                             )}
                         </Button>
                     </Link>
@@ -195,6 +195,7 @@ export const KodyRuleItem = ({
                     <Button
                         size="icon-md"
                         variant="secondary"
+                        aria-label={"Delete " + entityLabel}
                         className="size-9 [--button-foreground:var(--color-danger)]"
                         disabled={!canDelete || isInherited}
                         onClick={() => {
@@ -205,7 +206,7 @@ export const KodyRuleItem = ({
                                 />
                             ));
                         }}>
-                        <TrashIcon />
+                        <TrashIcon aria-hidden />
                     </Button>
                 </div>
             </CardHeader>

@@ -57,6 +57,16 @@ const OUTBOX_BACKOFF: BackoffOptions = {
 const DEFAULT_OUTBOX_MAX_ATTEMPTS = 10;
 const DEFAULT_OUTBOX_PUBLISH_TIMEOUT_MS = 15000;
 
+export const INBOX_REAPER_CONSUMER_TIMEOUTS = {
+    'workflow-job-consumer.webhook': 20 * 60 * 1000,
+    'workflow-job-consumer.check_implementation': 20 * 60 * 1000,
+    'workflow-job-consumer.code_review': 2.5 * 60 * 60 * 1000,
+    'workflow-job-consumer.ast_graph_build': 30 * 60 * 1000,
+    'workflow-job-consumer.ast_graph_incremental': 15 * 60 * 1000,
+    'workflow-events-stage-completed': 20 * 60 * 1000,
+    'workflow-events-ast': 20 * 60 * 1000,
+} as const;
+
 function parsePositiveIntEnv(envKey: string, fallback: number): number {
     const raw = process.env[envKey];
     if (!raw) return fallback;
@@ -280,7 +290,9 @@ export class OutboxRelayService
      * Uses consumer-specific timeouts based on the type of work:
      * - Webhooks: 20 minutes (job timeout is 10min + margin)
      * - Check implementation: 20 minutes (job timeout is 10min + margin)
-     * - Code reviews: 12 hours (very conservative to avoid reprocessing without checkpoints)
+     * - Code reviews: 2.5 hours (2h job timeout + margin)
+     * - AST build/incremental: 30/15 minutes (job timeout + margin)
+     * - Workflow events: 20 minutes
      *
      * PERFORMANCE NOTE: Uses separate queries per consumer for better index utilization.
      * Requires partial indexes:
@@ -293,6 +305,7 @@ export class OutboxRelayService
      *   CREATE INDEX CONCURRENTLY idx_inbox_codereview_stale
      *     ON kodus_workflow.inbox_messages (lockedAt)
      *     WHERE consumerId = 'workflow-job-consumer.code_review' AND status = 'PROCESSING';
+     *   Add equivalent partial indexes for AST/event consumers if reclaim volume grows.
      */
     @Cron(CronExpression.EVERY_5_MINUTES)
     async reclaimStaleInbox(): Promise<void> {
@@ -311,18 +324,8 @@ export class OutboxRelayService
                     let totalReclaimed = 0;
                     const startTime = Date.now();
 
-                    // Define timeouts per consumer type
-                    // Each timeout is ~1.5-2x the actual job timeout to account for overhead
-                    const consumerTimeouts = {
-                        'workflow-job-consumer.webhook': 20 * 60 * 1000, // 20 minutes
-                        'workflow-job-consumer.check_implementation':
-                            20 * 60 * 1000, // 20 minutes
-                        'workflow-job-consumer.code_review':
-                            2.5 * 60 * 60 * 1000, // 2.5 hours (1.25x the 2h job timeout — 12h was too conservative and caused stuck messages after worker crashes)
-                    };
-
                     const reclaimResults = await Promise.allSettled(
-                        Object.entries(consumerTimeouts).map(
+                        Object.entries(INBOX_REAPER_CONSUMER_TIMEOUTS).map(
                             async ([consumerId, timeoutMs]) => {
                                 const threshold = new Date(
                                     Date.now() - timeoutMs,

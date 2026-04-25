@@ -48,7 +48,6 @@ import { PromptSourceType } from '@libs/ai-engine/domain/prompt/interfaces/promp
 import { createLogger } from '@kodus/flow';
 import { UpdateOrCreateCodeReviewParameterUseCase } from '@libs/code-review/application/use-cases/configuration/update-or-create-code-review-parameter-use-case';
 import { CreateOrUpdateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/create-or-update.use-case';
-import { DeleteRuleInOrganizationByIdKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/delete-rule-in-organization-by-id.use-case';
 import {
     CONTEXT_RESOLUTION_SERVICE_TOKEN,
     IContextResolutionService,
@@ -128,7 +127,6 @@ export class KodyRulesSyncService {
         private readonly codeManagementService: CodeManagementService,
         private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
         private readonly createOrUpdateKodyRulesUseCase: CreateOrUpdateKodyRulesUseCase,
-        private readonly deleteRuleInOrganizationByIdKodyRulesUseCase: DeleteRuleInOrganizationByIdKodyRulesUseCase,
         private readonly promptRunnerService: PromptRunnerService,
         private readonly permissionValidationService: PermissionValidationService,
         private readonly observabilityService: ObservabilityService,
@@ -262,19 +260,16 @@ export class KodyRulesSyncService {
             );
             if (!toDelete?.uuid) return;
 
-            await this.deleteRuleInOrganizationByIdKodyRulesUseCase.execute(
-                toDelete.uuid,
-                {
-                    source: 'web',
-                    organizationId: organizationAndTeamData.organizationId,
-                    teamId: organizationAndTeamData.teamId,
-                    userId: this.systemUserInfo.userId,
-                    userEmail: this.systemUserInfo.userEmail,
-                },
+            // Soft-delete so the record can be restored if the source file
+            // reappears (or the @kody-ignore marker is removed).
+            await this.kodyRulesService.createOrUpdate(
+                organizationAndTeamData,
+                { ...toDelete, status: KodyRulesStatus.DELETED } as any,
+                this.systemUserInfo,
             );
         } catch (error) {
             this.logger.error({
-                message: 'Failed to delete rule by sourcePath',
+                message: 'Failed to soft-delete rule by sourcePath',
                 context: KodyRulesSyncService.name,
                 error,
                 metadata: params,
@@ -588,7 +583,10 @@ export class KodyRulesSyncService {
                     uuid: existing?.uuid,
                     title: oneRule.title as string,
                     rule: oneRule.rule as string,
-                    path: (oneRule.path as string) ?? f.filename,
+                    path: this.scopePathToSourceDirectory(
+                        (oneRule.path as string) ?? f.filename,
+                        f.filename,
+                    ),
                     sourcePath: f.filename,
                     severity:
                         ((
@@ -870,7 +868,10 @@ export class KodyRulesSyncService {
                     uuid: existing?.uuid,
                     title: oneRule.title as string,
                     rule: oneRule.rule as string,
-                    path: (oneRule.path as string) ?? file.path,
+                    path: this.scopePathToSourceDirectory(
+                        (oneRule.path as string) ?? file.path,
+                        file.path,
+                    ),
                     sourcePath: file.path,
                     severity:
                         ((
@@ -1063,7 +1064,10 @@ export class KodyRulesSyncService {
             uuid: existing?.uuid,
             title: oneRule.title as string,
             rule: oneRule.rule as string,
-            path: (oneRule.path as string) ?? filePath,
+            path: this.scopePathToSourceDirectory(
+                (oneRule.path as string) ?? filePath,
+                filePath,
+            ),
             sourcePath: filePath,
             severity:
                 ((
@@ -1379,10 +1383,19 @@ export class KodyRulesSyncService {
                 for (const rule of rules) {
                     if (!rule?.title || !rule?.rule) continue;
 
+                    // sourcePath must point at a concrete repository file the
+                    // LLM analysed. Previously we fell back to `rule.path`,
+                    // which is a glob — that stored rules with
+                    // `sourcePath: "src/**/*.ts"` and confused downstream
+                    // consumers (UI badges, audit, purge). Accept only a real
+                    // string, otherwise persist `null` and let the rule be
+                    // classified as "sourceless".
+                    const rawSourcePath = rule.sourcePath as string | undefined;
                     const sourcePath =
-                        (rule.sourcePath as string) ||
-                        (rule.path as string) ||
-                        '';
+                        typeof rawSourcePath === 'string' &&
+                        rawSourcePath.length > 0
+                            ? rawSourcePath
+                            : null;
                     const directoryId =
                         sourcePath && directoryByPath[sourcePath]
                             ? directoryByPath[sourcePath]
@@ -1391,7 +1404,7 @@ export class KodyRulesSyncService {
                     const dto: CreateKodyRuleDto = {
                         title: rule.title as string,
                         rule: rule.rule as string,
-                        path: (rule.path as string) || sourcePath,
+                        path: (rule.path as string) || sourcePath || '**/*',
                         sourcePath: sourcePath,
                         repositoryId: targetRepositoryId,
                         directoryId,
@@ -2443,6 +2456,59 @@ export class KodyRulesSyncService {
             );
         } catch {
             return [];
+        }
+    }
+
+    /**
+     * When the LLM returns the generic "**\/*" glob for a rule file that lives in a
+     * subdirectory, scope it to that subdirectory so the rule is not applied repo-wide.
+     * Explicit globs declared in the source file are left untouched.
+     */
+    private scopePathToSourceDirectory(
+        llmPath: string,
+        sourceFilePath: string,
+    ): string {
+        if (llmPath !== '**/*') return llmPath;
+        const dir = path.posix.dirname(sourceFilePath);
+        if (!dir || dir === '.') return llmPath;
+        return `${dir}/**/*`;
+    }
+
+    async purgeAllIdeSyncRulesForRepository(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+    }): Promise<void> {
+        const { organizationAndTeamData, repositoryId } = params;
+        try {
+            const entity = await this.kodyRulesService.findByOrganizationId(
+                organizationAndTeamData.organizationId,
+            );
+            if (!entity?.rules) return;
+
+            const ideSyncRules = entity.rules.filter(
+                (r: any) =>
+                    r?.repositoryId === repositoryId && r?.sourcePath != null,
+            );
+
+            for (const rule of ideSyncRules) {
+                if (!rule.uuid) continue;
+                // Soft-delete: flip status to DELETED. Keeps the record for
+                // audit/undo and removes it from the active rule set because
+                // KodyRulesValidationService.filterKodyRules drops any rule
+                // whose status !== ACTIVE.
+                await this.kodyRulesService.createOrUpdate(
+                    organizationAndTeamData,
+                    { ...rule, status: KodyRulesStatus.DELETED } as any,
+                    this.systemUserInfo,
+                );
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to purge IDE sync rules for repository',
+                context: KodyRulesSyncService.name,
+                error,
+                metadata: params,
+            });
         }
     }
 }

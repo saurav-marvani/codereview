@@ -354,6 +354,68 @@ describe('CreateFileCommentsStage', () => {
             ).not.toHaveBeenCalled();
         });
 
+        // Bug A1 regression: a suggestion pointing at a file that was
+        // DELETED in the PR should never produce a line comment. Posting a
+        // comment on a removed file breaks the git provider APIs (the file
+        // no longer has a line to attach to) and has been observed
+        // producing confusing false-positive reviews.
+        it('filters out suggestions targeting removed files', async () => {
+            const suggestions = [
+                {
+                    id: 's-kept',
+                    relevantFile: 'kept.ts',
+                    clusteringInformation: { type: ClusteringType.PARENT },
+                },
+                {
+                    id: 's-removed',
+                    relevantFile: 'deleted.ts',
+                    clusteringInformation: { type: ClusteringType.PARENT },
+                },
+            ];
+
+            mockSuggestionService.sortAndPrioritizeSuggestions.mockResolvedValue(
+                {
+                    sortedPrioritizedSuggestions: suggestions,
+                    allDiscardedSuggestions: [],
+                },
+            );
+            mockCommentManagerService.createLineComments.mockResolvedValue({
+                lastAnalyzedCommit: 'abc123',
+                commentResults: [],
+            });
+            mockSuggestionService.verifyIfSuggestionsWereSent.mockResolvedValue(
+                [],
+            );
+            mockSuggestionService.extractRepriorizedSuggestions.mockReturnValue(
+                {
+                    repriorizedSuggestions: [],
+                    filteredDiscardedSuggestions: [],
+                },
+            );
+            mockCodeManagementService.getCommitsForPullRequestForCodeReview.mockResolvedValue(
+                [{ sha: 'abc123' }],
+            );
+            mockPullRequestService.findByNumberAndRepositoryName.mockResolvedValue(
+                { number: 123, files: [] },
+            );
+
+            const context = createBaseContext({
+                validSuggestions: suggestions,
+                changedFiles: [
+                    { filename: 'kept.ts', status: 'modified' } as any,
+                    { filename: 'deleted.ts', status: 'removed' } as any,
+                ],
+            });
+
+            await (stage as any).executeStage(context);
+
+            const callArgs =
+                mockCommentManagerService.createLineComments.mock.calls[0];
+            const lineComments = callArgs[3];
+            expect(lineComments).toHaveLength(1);
+            expect(lineComments[0].suggestion.id).toBe('s-kept');
+        });
+
         it('should filter out RELATED suggestions from line comments', async () => {
             const suggestions = [
                 {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { KodyRulesLimitPopover } from "@components/system/kody-rules-limit-popover";
 import { Button } from "@components/ui/button";
@@ -47,8 +47,28 @@ import {
 } from "../../../../_components/context";
 import { useCodeReviewRouteParams } from "../../../../_hooks";
 import { KodyRulesEmptyState } from "./empty";
+import {
+    compareRules,
+    EMPTY_LIST_FILTERS,
+    matchesOriginFilter,
+    matchesSeverityFilter,
+    matchesSyncErrorsFilter,
+    matchesTextQuery,
+    type ListFilters,
+    type SortOption,
+} from "src/core/utils/kody-rules/apply-filters";
+import { inferRuleOrigin } from "src/core/utils/kody-rules/infer-origin";
+import {
+    applyFiltersToParams,
+    parseFiltersFromParams,
+} from "src/core/utils/kody-rules/serialize-filters";
+
+import { ActiveFiltersChips } from "./active-filters-chips";
 import { GeneratedMemoriesApprovalSetting } from "./generated-memories-approval";
+import { KodyRulesNoMatches } from "./no-matches";
+import { SeverityHeatmap } from "./severity-heatmap";
 import { KodyRulesList } from "./list";
+import { OrphanRulesBanner } from "./orphan-rules-banner";
 import { KodyRulesToolbar, type VisibleScopes } from "./toolbar";
 
 type KodyRulesTab = "review-rules" | "memories" | "configuration";
@@ -132,6 +152,10 @@ const KodyRulesPageContent = () => {
             ? activeTabSearchParam
             : DEFAULT_TAB;
 
+    // SSR-safe init: useState always returns the same empty value during
+    // server rendering AND first client paint, so React hydration sees a
+    // consistent tree. The actual URL parsing happens in a useEffect below
+    // (post-mount) where window/URLSearchParams are guaranteed to exist.
     const [filterQuery, setFilterQuery] = useState("");
     const [visibleScopes, setVisibleScopes] = useState<VisibleScopes>({
         self: true,
@@ -141,6 +165,78 @@ const KodyRulesPageContent = () => {
         disabled: true,
     });
     const [statusFilter, setStatusFilter] = useState<RulesStatusFilter>("all");
+    const [onlyIdeSynced, setOnlyIdeSynced] = useState(false);
+    const [listFilters, setListFilters] =
+        useState<ListFilters>(EMPTY_LIST_FILTERS);
+    const [sortOption, setSortOption] = useState<SortOption>("recent");
+    const [hasReadUrl, setHasReadUrl] = useState(false);
+
+    // Hydrate filter state from the URL after mount. Done in an effect so
+    // the SSR HTML and the first client render match — otherwise React
+    // reports a hydration mismatch when deep-link params seed CSR state
+    // but were missing on the server pass.
+    useEffect(() => {
+        const params = new URLSearchParams(searchParams?.toString() ?? "");
+        const parsed = parseFiltersFromParams(params);
+        setFilterQuery(parsed.query);
+        setListFilters(parsed.listFilters);
+        setOnlyIdeSynced(parsed.onlyOrphans);
+        setHasReadUrl(true);
+        // Run only on mount; subsequent URL syncs flow the OTHER way
+        // (state → URL) via the effect below.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Push filter state into the URL whenever it changes so refresh / share
+    // restores it. Skips the very first run (before initial URL was parsed)
+    // to avoid clobbering deep-link params during mount.
+    useEffect(() => {
+        if (!hasReadUrl) return;
+        const next = new URLSearchParams(searchParams?.toString() ?? "");
+        applyFiltersToParams(next, {
+            query: filterQuery,
+            listFilters,
+            onlyOrphans: onlyIdeSynced,
+        });
+        const nextStr = next.toString();
+        const currentStr = searchParams?.toString() ?? "";
+        if (nextStr === currentStr) return;
+        router.replace(nextStr ? pathname + "?" + nextStr : pathname);
+    }, [
+        hasReadUrl,
+        filterQuery,
+        listFilters,
+        onlyIdeSynced,
+        pathname,
+        router,
+        searchParams,
+    ]);
+
+    const ideRulesSyncEnabledForRepo =
+        !isGlobalView &&
+        Boolean(
+            config.repositories?.find((r) => r.id === repositoryId)?.configs
+                ?.ideRulesSyncEnabled,
+        );
+
+    // The orphan banner targets rules imported from IDE rule files
+    // (.cursorrules, .cursor/rules/**, CLAUDE.md, ...). Onboarding /
+    // AI-generated rules share the "sourcePath is set" shape but come
+    // from unrelated flows — they should not be counted here.
+    const autoSyncedActiveCount = useMemo(
+        () =>
+            kodyRules.filter(
+                (rule) =>
+                    rule.status === KodyRulesStatus.ACTIVE &&
+                    inferRuleOrigin(rule) === "Auto-sync",
+            ).length,
+        [kodyRules],
+    );
+
+    const shouldShowOrphanBanner =
+        !isGlobalView &&
+        !ideRulesSyncEnabledForRepo &&
+        autoSyncedActiveCount > 0;
 
     const getRulesViewState = (ruleType: KodyRulesType) => {
         const activeRulesByType = kodyRules.filter(
@@ -219,16 +315,44 @@ const KodyRulesPageContent = () => {
                   )
                 : uniqueRules;
 
+        // Banner CTA quick-filter (forces "Auto-sync only") wins over the
+        // popover filters so the orphan review experience stays focused.
+        const bannerFilteredRules =
+            onlyIdeSynced && ruleType === KodyRulesType.STANDARD
+                ? statusFilteredRules.filter(
+                      (rule) =>
+                          inferRuleOrigin(rule as KodyRule) === "Auto-sync",
+                  )
+                : statusFilteredRules;
+
+        // Popover filters: origin (Auto-sync / Onboard / Kody-generated /
+        // manual) and severity. Origin only applies to standard rules
+        // (memories don't have these origins).
+        const listFilteredRules = bannerFilteredRules.filter((rule) => {
+            const passesOrigin =
+                ruleType !== KodyRulesType.STANDARD ||
+                matchesOriginFilter(rule as KodyRule, listFilters);
+            const passesSeverity = matchesSeverityFilter(
+                rule as KodyRule,
+                listFilters,
+            );
+            const passesSyncErrors = matchesSyncErrorsFilter(
+                rule as KodyRule,
+                listFilters,
+            );
+            return passesOrigin && passesSeverity && passesSyncErrors;
+        });
+
         const filterQueryLowercase = filterQuery.toLowerCase();
-        const rulesToDisplay = !filterQuery
-            ? statusFilteredRules
-            : statusFilteredRules.filter((rule) => {
-                  return (
-                      rule.title.toLowerCase().includes(filterQueryLowercase) ||
-                      rule.path?.toLowerCase().includes(filterQueryLowercase) ||
-                      rule.rule.toLowerCase().includes(filterQueryLowercase)
-                  );
-              });
+        const queryFilteredRules = !filterQuery
+            ? listFilteredRules
+            : listFilteredRules.filter((rule) =>
+                  matchesTextQuery(rule as KodyRule, filterQueryLowercase),
+              );
+
+        const rulesToDisplay = [...queryFilteredRules].sort((x, y) =>
+            compareRules(x as KodyRule, y as KodyRule, sortOption),
+        );
 
         const hasAnyRulesInSystem =
             activeRulesByType.length > 0 ||
@@ -236,7 +360,28 @@ const KodyRulesPageContent = () => {
             inheritedRepoRulesByType.length > 0 ||
             inheritedDirectoryRulesByType.length > 0;
 
-        return { rulesToDisplay, hasAnyRulesInSystem, pendingCentralizedCount };
+        // Severity distribution computed BEFORE severity filtering so the
+        // heatmap counters always reflect the full pool (otherwise clicking
+        // "Critical" would zero out the High/Medium/Low counters).
+        const severityCounts: Record<string, number> = {
+            critical: 0,
+            high: 0,
+            medium: 0,
+            low: 0,
+        };
+        for (const rule of bannerFilteredRules) {
+            const sev = (rule as KodyRule).severity?.toLowerCase();
+            if (sev && severityCounts[sev] !== undefined) {
+                severityCounts[sev] += 1;
+            }
+        }
+
+        return {
+            rulesToDisplay,
+            hasAnyRulesInSystem,
+            pendingCentralizedCount,
+            severityCounts,
+        };
     };
 
     const reviewRulesState = useMemo(
@@ -253,6 +398,9 @@ const KodyRulesPageContent = () => {
             directoryId,
             repositoryId,
             statusFilter,
+            onlyIdeSynced,
+            listFilters,
+            sortOption,
         ],
     );
 
@@ -270,6 +418,8 @@ const KodyRulesPageContent = () => {
             directoryId,
             repositoryId,
             statusFilter,
+            listFilters,
+            sortOption,
         ],
     );
 
@@ -382,6 +532,11 @@ const KodyRulesPageContent = () => {
         if (response) await refreshRulesList();
     };
 
+    // Rule eligibility for bulk select: must be a real (non-inherited)
+    // rule that the user can actually delete in this scope. Computed
+    // every render directly — `reviewRulesState.rulesToDisplay` already
+    // gets a fresh array each render (from the .sort step), so memoizing
+    // would not help and would fight the actual derivation.
     const showPendingRules = async (
         rules: KodyRule[],
         entityLabel: "rules" | "memories",
@@ -546,36 +701,84 @@ const KodyRulesPageContent = () => {
                                 generate review feedback based on changed files
                                 or PR-level context.
                             </p>
+                            {shouldShowOrphanBanner && (
+                                <OrphanRulesBanner
+                                    count={autoSyncedActiveCount}
+                                    isFilteringOrphans={onlyIdeSynced}
+                                    onReviewClick={() => setOnlyIdeSynced(true)}
+                                    onDismissClick={() =>
+                                        setOnlyIdeSynced(false)
+                                    }
+                                />
+                            )}
                             <KodyRulesToolbar
                                 filterQuery={filterQuery}
                                 onFilterQueryChange={setFilterQuery}
                                 entityLabel="rules"
                                 visibleScopes={visibleScopes}
                                 onVisibleScopesChange={setVisibleScopes}
+                                listFilters={listFilters}
+                                onListFiltersChange={setListFilters}
+                                sortOption={sortOption}
+                                onSortOptionChange={setSortOption}
                                 isDisabled={
                                     !reviewRulesState.hasAnyRulesInSystem
                                 }
                                 isRepoView={isRepoView}
                                 isGlobalView={isGlobalView}
                             />
+                            <ActiveFiltersChips
+                                filters={listFilters}
+                                onChange={setListFilters}
+                            />
+                            <SeverityHeatmap
+                                counts={reviewRulesState.severityCounts}
+                                filters={listFilters}
+                                onFiltersChange={setListFilters}
+                            />
                             {renderPendingMergeFilter(
                                 reviewRulesState.pendingCentralizedCount,
                             )}
-                            {!reviewRulesState.rulesToDisplay.length ? (
-                                <KodyRulesEmptyState
-                                    canEdit={canEdit}
-                                    entityLabel="rule"
-                                    onAddNewRule={() =>
-                                        addNewEmptyRule(KodyRulesType.STANDARD)
-                                    }
-                                />
-                            ) : (
-                                <KodyRulesList
-                                    rules={reviewRulesState.rulesToDisplay}
-                                    tab="review-rules"
-                                    onAnyChange={refreshRulesList}
-                                />
-                            )}
+                            {(() => {
+                                const empty =
+                                    !reviewRulesState.rulesToDisplay.length;
+                                if (!empty) {
+                                    return (
+                                        <KodyRulesList
+                                            rules={
+                                                reviewRulesState.rulesToDisplay
+                                            }
+                                            tab="review-rules"
+                                            onAnyChange={refreshRulesList}
+                                        />
+                                    );
+                                }
+                                if (reviewRulesState.hasAnyRulesInSystem) {
+                                    return (
+                                        <KodyRulesNoMatches
+                                            entityLabel="rule"
+                                            onClearFilters={() => {
+                                                setFilterQuery("");
+                                                setListFilters(
+                                                    EMPTY_LIST_FILTERS,
+                                                );
+                                                setOnlyIdeSynced(false);
+                                            }}
+                                        />
+                                    );
+                                }
+                                return (
+                                    <KodyRulesEmptyState
+                                        canEdit={canEdit}
+                                        entityLabel="rule"
+                                        onAddNewRule={() =>
+                                            addNewEmptyRule(
+                                                KodyRulesType.STANDARD,
+                                            )
+                                        }
+                                    />
+                                );
+                            })()}
                         </div>
                     </TabsContent>
 
@@ -592,9 +795,17 @@ const KodyRulesPageContent = () => {
                                 entityLabel="memories"
                                 visibleScopes={visibleScopes}
                                 onVisibleScopesChange={setVisibleScopes}
+                                listFilters={listFilters}
+                                onListFiltersChange={setListFilters}
+                                sortOption={sortOption}
+                                onSortOptionChange={setSortOption}
                                 isDisabled={!memoriesState.hasAnyRulesInSystem}
                                 isRepoView={isRepoView}
                                 isGlobalView={isGlobalView}
+                            />
+                            <ActiveFiltersChips
+                                filters={listFilters}
+                                onChange={setListFilters}
                             />
                             {renderPendingMergeFilter(
                                 memoriesState.pendingCentralizedCount,
