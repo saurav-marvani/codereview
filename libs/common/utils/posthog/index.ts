@@ -14,6 +14,7 @@ export const FEATURE_FLAGS = {
     cliKeys: 'cli-keys',
     committableSuggestions: 'committable-suggestions',
     agentReview: 'agent-review',
+    cockpitInternalSource: 'cockpit-internal-source',
 } as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];

@@ -45,11 +45,11 @@ KEYS=(
     "/qa/kodus-orchestrator/API_GITLAB_CODE_MANAGEMENT_WEBHOOK"
     "/qa/kodus-orchestrator/API_GITHUB_CODE_MANAGEMENT_WEBHOOK"
 
-    "/qa/kodus-orchestrator/LANGCHAIN_TRACING_V2"
-    "/qa/kodus-orchestrator/LANGCHAIN_ENDPOINT"
-    "/qa/kodus-orchestrator/LANGCHAIN_API_KEY"
-    "/qa/kodus-orchestrator/LANGCHAIN_PROJECT"
-    "/qa/kodus-orchestrator/LANGCHAIN_CALLBACKS_BACKGROUND"
+    "/qa/kodus-orchestrator/LANGFUSE_TRACING"
+    "/qa/kodus-orchestrator/LANGFUSE_PUBLIC_KEY"
+    "/qa/kodus-orchestrator/LANGFUSE_SECRET_KEY"
+    "/qa/kodus-orchestrator/LANGFUSE_BASE_URL"
+    "/qa/kodus-orchestrator/LANGFUSE_ENVIRONMENT"
 
     "/qa/kodus-orchestrator/API_BETTERSTACK_DSN"
 

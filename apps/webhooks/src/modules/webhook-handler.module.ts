@@ -7,6 +7,7 @@ import { SharedPostgresModule } from '@libs/shared/database/shared-postgres.modu
 import { SharedConfigModule } from '@libs/shared/infrastructure/shared-config.module';
 import { SharedLogModule } from '@libs/shared/infrastructure/shared-log.module';
 import { SharedObservabilityModule } from '@libs/shared/infrastructure/shared-observability.module';
+import { LangfuseShutdownProvider } from '@libs/core/log/langfuse-shutdown.provider';
 import { WebhookEnqueueModule } from './webhook-enqueue.module';
 
 import { AzureReposController } from '../controllers/azureRepos.controller';
@@ -36,5 +37,6 @@ import { WebhookHealthController } from '../controllers/webhook-health.controlle
         ForgejoController,
         WebhookHealthController,
     ],
+    providers: [LangfuseShutdownProvider],
 })
 export class WebhookHandlerModule {}

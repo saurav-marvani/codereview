@@ -9,6 +9,16 @@ else
 fi
 
 COMPOSE_FILE="docker-compose.dev.yml"
+COMPOSE_FILES=(-f "$COMPOSE_FILE")
+# `docker compose` only auto-loads `docker-compose.override.yml` when the
+# main file is the default `docker-compose.yml`. Since we pass `-f` here,
+# we have to opt in explicitly. Useful in worktrees that need to coexist
+# with the main checkout (renamed containers, remapped ports, isolated
+# volumes/networks).
+if [ -f "docker-compose.override.yml" ]; then
+  COMPOSE_FILES+=(-f "docker-compose.override.yml")
+  echo "▶ Detected docker-compose.override.yml — including it."
+fi
 PROFILE_ARGS=()
 
 case "$ENVIRONMENT" in
@@ -51,7 +61,7 @@ fi
 echo "Iniciando docker compose ($ENV_LABEL) com arquivo $ENV_FILE ..."
 
 if [ ${#PROFILE_ARGS[@]} -gt 0 ]; then
-  docker compose -f "$COMPOSE_FILE" "${PROFILE_ARGS[@]}" "$@"
+  docker compose "${COMPOSE_FILES[@]}" "${PROFILE_ARGS[@]}" "$@"
 else
-  docker compose -f "$COMPOSE_FILE" "$@"
+  docker compose "${COMPOSE_FILES[@]}" "$@"
 fi

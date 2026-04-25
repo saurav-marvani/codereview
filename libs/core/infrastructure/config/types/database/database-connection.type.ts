@@ -6,3 +6,7 @@ export type DatabaseConnection = {
     password?: string;
     database?: string;
 };
+
+export type AnalyticsDatabaseConnection = DatabaseConnection & {
+    schema: string;
+};

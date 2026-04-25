@@ -64,12 +64,11 @@ KEYS=(
     "/prod/kodus-orchestrator/API_SLACK_URL_HEALTH"
     "/prod/kodus-orchestrator/API_SLACK_BOT_DIAGNOSIS_URL"
 
-    "/prod/kodus-orchestrator/LANGCHAIN_TRACING_V2"
-    "/prod/kodus-orchestrator/LANGCHAIN_ENDPOINT"
-    "/prod/kodus-orchestrator/LANGCHAIN_HUB_API_URL"
-    "/prod/kodus-orchestrator/LANGCHAIN_API_KEY"
-    "/prod/kodus-orchestrator/LANGCHAIN_PROJECT"
-    "/prod/kodus-orchestrator/LANGCHAIN_CALLBACKS_BACKGROUND"
+    "/prod/kodus-orchestrator/LANGFUSE_TRACING"
+    "/prod/kodus-orchestrator/LANGFUSE_PUBLIC_KEY"
+    "/prod/kodus-orchestrator/LANGFUSE_SECRET_KEY"
+    "/prod/kodus-orchestrator/LANGFUSE_BASE_URL"
+    "/prod/kodus-orchestrator/LANGFUSE_ENVIRONMENT"
 
     "/prod/kodus-orchestrator/API_BETTERSTACK_DSN"
 

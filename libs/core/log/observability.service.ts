@@ -7,6 +7,8 @@ import { DatabaseConnection } from '@libs/core/infrastructure/config/types';
 
 import { createLogger } from '@kodus/flow';
 import { TokenTrackingHandler, BYOKConfig } from '@kodus/kodus-common/llm';
+import { CallbackHandler as LangfuseCallbackHandler } from '@langfuse/langchain';
+import { shouldTrace } from './langfuse';
 
 /**
  * Narrow projection of BYOKConfig that carries only the fields the
@@ -327,6 +329,14 @@ export class ObservabilityService implements OnModuleInit {
 
     createLLMTracking(runName?: string) {
         const tracker = new TokenTrackingHandler();
+        const callbacks: any[] = [tracker];
+        if (shouldTrace()) {
+            callbacks.push(
+                new LangfuseCallbackHandler({
+                    tags: runName ? [runName] : undefined,
+                }),
+            );
+        }
 
         const finalize = async ({
             metadata,
@@ -403,7 +413,7 @@ export class ObservabilityService implements OnModuleInit {
             };
         };
 
-        return { callbacks: [tracker], tracker, finalize };
+        return { callbacks, tracker, finalize };
     }
 
     async runLLMInSpan<T>(params: {

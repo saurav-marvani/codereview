@@ -235,21 +235,12 @@ describe('buildReasoningProviderOptions', () => {
 });
 
 describe('buildProviderOptions', () => {
-    it('always includes langsmith metadata', () => {
+    it('returns {} when no reasoning config is provided', () => {
         const result = buildProviderOptions('my-run', {
             organizationId: 'org-1',
             teamId: 'team-1',
         });
-        expect(result.langsmith).toEqual({
-            name: 'my-run',
-            metadata: {
-                organizationId: 'org-1',
-                teamId: 'team-1',
-                pullRequestId: undefined,
-                repositoryId: undefined,
-                provider: undefined,
-            },
-        });
+        expect(result).toEqual({});
     });
 
     it('includes reasoning when effort + provider + model are provided', () => {
@@ -258,7 +249,6 @@ describe('buildProviderOptions', () => {
             reasoningEffort: 'high',
             modelName: 'gemini-3.1-pro-preview',
         });
-        expect(result.langsmith).toBeDefined();
         expect(result.google).toEqual({
             thinkingConfig: { thinkingLevel: 'high' },
         });
@@ -302,9 +292,48 @@ describe('buildProviderOptions', () => {
             thinkingConfig: { thinkingLevel: 'high' },
         });
     });
+});
 
-    it('passes the run name through to langsmith', () => {
-        const result = buildProviderOptions('agent-loop-coverage-recovery');
-        expect(result.langsmith.name).toBe('agent-loop-coverage-recovery');
+describe('buildLangfuseTelemetry', () => {
+    const originalEnv = { ...process.env };
+    afterEach(() => {
+        process.env = { ...originalEnv };
+    });
+
+    it('returns isEnabled=false when LANGFUSE_TRACING is not true', () => {
+        delete process.env.LANGFUSE_TRACING;
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { buildLangfuseTelemetry } = require('@libs/core/log/langfuse');
+        const result = buildLangfuseTelemetry('my-run');
+        expect(result.isEnabled).toBe(false);
+        expect(result.functionId).toBe('my-run');
+    });
+
+    it('returns isEnabled=true when tracing env is fully configured', () => {
+        process.env.LANGFUSE_TRACING = 'true';
+        process.env.LANGFUSE_PUBLIC_KEY = 'pk-test';
+        process.env.LANGFUSE_SECRET_KEY = 'sk-test';
+        jest.resetModules();
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { buildLangfuseTelemetry } = require('@libs/core/log/langfuse');
+        const result = buildLangfuseTelemetry('my-run', {
+            organizationId: 'org-1',
+            teamId: 'team-1',
+            pullRequestId: 42,
+        });
+        expect(result.isEnabled).toBe(true);
+        expect(result.functionId).toBe('my-run');
+        expect(result.metadata).toMatchObject({
+            organizationId: 'org-1',
+            teamId: 'team-1',
+            pullRequestId: 42,
+        });
+    });
+
+    it('omits metadata key when no metadata object is passed', () => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { buildLangfuseTelemetry } = require('@libs/core/log/langfuse');
+        const result = buildLangfuseTelemetry('my-run');
+        expect(result.metadata).toBeUndefined();
     });
 });

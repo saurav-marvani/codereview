@@ -19,6 +19,7 @@ import { NestFactory } from '@nestjs/core';
 import { LoggerWrapperService } from '@libs/core/log/loggerWrapper.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 
+import { resolveWorkerRole } from './worker-role';
 import { WorkerModule } from './worker.module';
 import { startHealthProbe } from './health-probe';
 
@@ -33,19 +34,23 @@ function handleNestJSWebpackHmr(app: INestApplicationContext, module: any) {
 
 async function bootstrap() {
     process.env.COMPONENT_TYPE = 'worker';
+    // Resolve early so an invalid WORKER_ROLE fails the container start
+    // instead of booting into an unexpected shape.
+    const role = resolveWorkerRole();
     let appContext: INestApplicationContext | undefined;
     let logger: LoggerWrapperService | undefined;
 
     try {
-        appContext = await NestFactory.createApplicationContext(WorkerModule, {
-            snapshot: true,
-        });
+        appContext = await NestFactory.createApplicationContext(
+            WorkerModule.forRoot(),
+            { snapshot: true },
+        );
 
         logger = appContext.get(LoggerWrapperService);
         appContext.useLogger(logger);
 
         logger.log('Entering bootstrap try block...', 'Bootstrap');
-        logger.log('Initializing Worker...', 'Bootstrap');
+        logger.log(`Initializing Worker (role=${role})...`, 'Bootstrap');
 
         process.on('uncaughtException', (error) => {
             void reportExceptionToSentry(error, {
@@ -100,10 +105,15 @@ async function bootstrap() {
             process.env.WORKER_HEALTH_PORT ?? '3334',
             10,
         );
+        // Only the code-review role subscribes to AMQP; the analytics
+        // role has no RabbitMQ consumers, so checking AMQP health there
+        // would flap the task unhealthy permanently.
         const healthServer = startHealthProbe({
             port: healthPort,
             appContext,
-            requireAmqp: process.env.API_RABBITMQ_ENABLED !== 'false',
+            requireAmqp:
+                role === 'code-review' &&
+                process.env.API_RABBITMQ_ENABLED !== 'false',
         });
         // Close the probe when Node receives SIGTERM so we don't keep the
         // port reserved during the grace period. Nest's own shutdown hooks
@@ -112,7 +122,7 @@ async function bootstrap() {
         process.once('SIGTERM', stopProbe);
         process.once('SIGINT', stopProbe);
 
-        console.log('[Worker] - Initialized and running.');
+        console.log(`[Worker] - Initialized and running (role=${role}).`);
 
         handleNestJSWebpackHmr(appContext, module);
     } catch (e) {

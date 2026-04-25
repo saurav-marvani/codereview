@@ -174,3 +174,6 @@ apps/web/*.sublime-workspace
 apps/web/.vscode
 worktrees
 scripts/benchmark/runs/*
+
+# Analytics parity harness output (regenerated per run)
+parity-report.json

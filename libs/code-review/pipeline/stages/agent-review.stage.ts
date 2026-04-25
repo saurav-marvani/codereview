@@ -3,11 +3,11 @@ import * as crypto from 'crypto';
 import { createLogger } from '@kodus/flow';
 import { Output, jsonSchema } from 'ai';
 import { Inject, Injectable } from '@nestjs/common';
+import { tracedGenerateText } from '@libs/code-review/infrastructure/agents/llm/agent-loop';
 import {
-    tracedGenerateText,
-    buildLangSmithProviderOptions,
-} from '@libs/code-review/infrastructure/agents/llm/agent-loop';
-import type { LangSmithTelemetryMetadata } from '@libs/code-review/infrastructure/agents/llm/agent-loop';
+    buildLangfuseTelemetry,
+    type LangfuseTelemetryMetadata,
+} from '@libs/core/log/langfuse';
 
 import { BasePipelineStage } from '@libs/core/infrastructure/pipeline/abstracts/base-stage.abstract';
 import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-visibility.enum';
@@ -284,8 +284,8 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 context.correlationId;
             const repositoryId = context.repository?.id;
 
-            // Shared telemetry metadata for all LangSmith-traced calls in this pipeline run
-            const telemetryMeta: LangSmithTelemetryMetadata = {
+            // Shared telemetry metadata for all Langfuse-traced calls in this pipeline run
+            const telemetryMeta: LangfuseTelemetryMetadata = {
                 organizationId: context.organizationAndTeamData?.organizationId,
                 teamId: context.organizationAndTeamData?.teamId,
                 pullRequestId: prNumber,
@@ -1095,7 +1095,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
         suggestions: Partial<CodeSuggestion>[],
         prNumber: number,
         byokConfig?: any,
-        telemetryMeta?: LangSmithTelemetryMetadata,
+        telemetryMeta?: LangfuseTelemetryMetadata,
     ): Promise<{
         suggestions: Partial<CodeSuggestion>[];
         trace: DedupTraceSummary;
@@ -1170,11 +1170,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             const dedupResult: any = await tracedGenerateText({
                 model: model as any,
-                experimental_telemetry: {
-                    isEnabled: true,
-                    functionId: 'dedup-suggestions',
-                },
-                providerOptions: buildLangSmithProviderOptions(
+                experimental_telemetry: buildLangfuseTelemetry(
                     'dedup-suggestions',
                     telemetryMeta,
                 ),

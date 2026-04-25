@@ -28,6 +28,11 @@ import {
     type AgentAnomalySummary,
 } from './llm/agent-loop';
 import {
+    propagateAttributes,
+    startActiveObservation,
+} from '@langfuse/tracing';
+import { shouldTrace } from '@libs/core/log/langfuse';
+import {
     CoverageSummary,
     CoverageTier,
     formatCoverageTargetsForPrompt,
@@ -621,8 +626,8 @@ export abstract class BaseCodeReviewAgentProvider {
             let stepCount = 0;
             const PROGRESS_BATCH_SIZE = 5;
 
-            // Secrets are passed via closure (not as traceable arg) so that
-            // LangSmith tracing never serialises API keys, tokens, or
+            // Secrets are passed via closure (not as tracing arg) so that
+            // Langfuse span I/O never serialises API keys, tokens, or
             // NestJS service instances (which carry ConfigService with all env vars).
             const loopSecrets: AgentLoopSecrets = {
                 remoteCommands: input.remoteCommands,
@@ -709,41 +714,59 @@ export abstract class BaseCodeReviewAgentProvider {
             };
 
             let agentResult;
-            if (process.env.LANGCHAIN_TRACING_V2 === 'true') {
-                const { traceable } = require('langsmith/traceable');
-                const tracedRun = traceable(
-                    // loopSecrets captured via closure — never serialised by LangSmith
-                    (params: typeof loopParams) =>
-                        runAgentLoop(params, loopSecrets),
+            if (shouldTrace()) {
+                const traceMetadata: Record<string, string> = {};
+                const orgId = input.organizationAndTeamData?.organizationId;
+                const teamId = input.organizationAndTeamData?.teamId;
+                if (orgId) traceMetadata.organizationId = orgId;
+                if (teamId) traceMetadata.teamId = teamId;
+                if (input.prNumber !== undefined) {
+                    traceMetadata.prNumber = String(input.prNumber);
+                    traceMetadata.pullRequestId = String(input.prNumber);
+                }
+                if (input.repositoryId)
+                    traceMetadata.repositoryId = input.repositoryId;
+                agentResult = await propagateAttributes(
                     {
-                        name: identity.name,
-                        metadata: {
-                            organizationId:
-                                input.organizationAndTeamData?.organizationId,
-                            teamId: input.organizationAndTeamData?.teamId,
-                            prNumber: input.prNumber,
-                            pullRequestId: input.prNumber,
-                        },
-                        processInputs: (inputs: Record<string, any>) => {
-                            // Strip redundant `patch` from changedFiles — patchWithLinesStr
-                            // already carries the same content with line numbers added.
-                            const params = inputs?.args?.[0] ?? inputs;
-                            if (params?.changedFiles) {
-                                return {
-                                    ...params,
-                                    changedFiles: params.changedFiles.map(
-                                        ({
-                                            patch: _patch,
-                                            ...rest
-                                        }: Record<string, any>) => rest,
-                                    ),
-                                };
-                            }
-                            return params;
-                        },
+                        traceName: identity.name,
+                        sessionId: input.prNumber
+                            ? String(input.prNumber)
+                            : undefined,
+                        userId: orgId,
+                        metadata: traceMetadata,
                     },
+                    () =>
+                        startActiveObservation(
+                            identity.name,
+                            async (span: any) => {
+                                // Strip redundant `patch` from changedFiles —
+                                // `patchWithLinesStr` already carries the same content
+                                // with line numbers added.
+                                const {
+                                    changedFiles,
+                                    ...restParams
+                                } = loopParams as any;
+                                const safeInput = {
+                                    ...restParams,
+                                    ...(changedFiles && {
+                                        changedFiles: changedFiles.map(
+                                            ({
+                                                patch: _patch,
+                                                ...rest
+                                            }: Record<string, any>) => rest,
+                                        ),
+                                    }),
+                                };
+                                span.update({ input: safeInput });
+                                const result = await runAgentLoop(
+                                    loopParams,
+                                    loopSecrets,
+                                );
+                                span.update({ output: result });
+                                return result;
+                            },
+                        ),
                 );
-                agentResult = await tracedRun(loopParams);
             } else {
                 agentResult = await runAgentLoop(loopParams, loopSecrets);
             }

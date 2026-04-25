@@ -2,6 +2,8 @@ import { LLMModule } from '@kodus/kodus-common/llm';
 import { AgentsModule } from '@libs/agents/modules/agents.module';
 import { AIEngineModule } from '@libs/ai-engine/modules/ai-engine.module';
 import { AnalyticsModule } from '@libs/analytics/modules/analytics.module';
+import { AnalyticsWarehouseModule } from '@libs/analytics-warehouse';
+import { CockpitModule } from '@libs/cockpit/modules/cockpit.module';
 import { AutomationModule } from '@libs/automation/modules/automation.module';
 import { CliReviewModule } from '@libs/cli-review/cli-review.module';
 import { CodeReviewConfigurationModule } from '@libs/code-review/modules/code-review-configuration.module';
@@ -64,6 +66,11 @@ import { OrganizationController } from './controllers/organization.controller';
 import { OrganizationParametersController } from './controllers/organizationParameters.controller';
 import { ParametersController } from './controllers/parameters.controller';
 import { PermissionsController } from './controllers/permissions.controller';
+import {
+    CockpitCodeHealthController,
+    CockpitController,
+    CockpitProductivityController,
+} from './controllers/cockpit.controller';
 import { PullRequestController } from './controllers/pullRequest.controller';
 import { PullRequestMessagesController } from './controllers/pullRequestMessages.controller';
 import { RuleLikeController } from './controllers/ruleLike.controller';
@@ -77,6 +84,7 @@ import { TokenUsageController } from './controllers/tokenUsage.controller';
 import { UsersController } from './controllers/user.controller';
 import { CronModule } from './cron/cron.module';
 import { CentralizedConfigModule } from '@libs/centralized-config/modules/centralized-config.module';
+import { LangfuseShutdownProvider } from '@libs/core/log/langfuse-shutdown.provider';
 
 @Module({
     imports: [
@@ -113,6 +121,8 @@ import { CentralizedConfigModule } from '@libs/centralized-config/modules/centra
         IntegrationConfigModule,
         DryRunModule,
         AnalyticsModule,
+        AnalyticsWarehouseModule.forRoot(),
+        CockpitModule,
         CodeReviewSettingsLogModule,
         AutomationModule,
         CodeReviewConfigurationModule,
@@ -161,6 +171,10 @@ import { CentralizedConfigModule } from '@libs/centralized-config/modules/centra
         SSOConfigController,
         LicenseController,
         MetricsController,
+        CockpitController,
+        CockpitCodeHealthController,
+        CockpitProductivityController,
     ],
+    providers: [LangfuseShutdownProvider],
 })
 export class ApiModule {}
