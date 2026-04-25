@@ -20,18 +20,34 @@ import { ANALYTICS_SCHEMA } from '../schema.constant';
  * Nest `AnalyticsWarehouseModule` at app startup.
  */
 
-const env = process.env.API_DATABASE_ENV ?? process.env.API_NODE_ENV;
-const isProduction = !['development', 'test'].includes(env);
+// SSL is derived from the resolved host (matches AnalyticsTypeORMFactory).
+// NODE_ENV-based detection is unreliable across bootstrap paths; deciding
+// from the host removes that fragility.
+const _resolvedHostForSSL =
+    process.env.ANALYTICS_PG_DB_HOST ??
+    process.env.API_PG_ANALYTICS_HOST ??
+    process.env.API_PG_DB_HOST ??
+    'localhost';
+const _isLoopback = ['localhost', '127.0.0.1', '::1', ''].includes(
+    _resolvedHostForSSL,
+);
 const disableSSL = process.env.API_DATABASE_DISABLE_SSL === 'true';
-const useSSL = isProduction && !disableSSL;
+const useSSL = !_isLoopback && !disableSSL;
 
+// Var lookup chain: ANALYTICS_PG_DB_* (legacy) → API_PG_ANALYTICS_* (current
+// prod convention, matches the API_PG_* / API_MG_* prefix style) → API_PG_DB_*
+// (self-hosted reuse of OLTP). First defined value wins.
 const host =
     process.env.ANALYTICS_PG_DB_HOST ??
+    process.env.API_PG_ANALYTICS_HOST ??
     process.env.API_PG_DB_HOST ??
     'localhost';
 
 const port = parseInt(
-    process.env.ANALYTICS_PG_DB_PORT ?? process.env.API_PG_DB_PORT ?? '5432',
+    process.env.ANALYTICS_PG_DB_PORT ??
+        process.env.API_PG_ANALYTICS_PORT ??
+        process.env.API_PG_DB_PORT ??
+        '5432',
     10,
 );
 
@@ -41,12 +57,21 @@ export const analyticsDataSourceOptions: DataSourceOptions = {
     host,
     port,
     username:
-        process.env.ANALYTICS_PG_DB_USERNAME ?? process.env.API_PG_DB_USERNAME,
+        process.env.ANALYTICS_PG_DB_USERNAME ??
+        process.env.API_PG_ANALYTICS_USERNAME ??
+        process.env.API_PG_DB_USERNAME,
     password:
-        process.env.ANALYTICS_PG_DB_PASSWORD ?? process.env.API_PG_DB_PASSWORD,
+        process.env.ANALYTICS_PG_DB_PASSWORD ??
+        process.env.API_PG_ANALYTICS_PASSWORD ??
+        process.env.API_PG_DB_PASSWORD,
     database:
-        process.env.ANALYTICS_PG_DB_DATABASE ?? process.env.API_PG_DB_DATABASE,
-    schema: process.env.ANALYTICS_PG_DB_SCHEMA ?? ANALYTICS_SCHEMA,
+        process.env.ANALYTICS_PG_DB_DATABASE ??
+        process.env.API_PG_ANALYTICS_DATABASE ??
+        process.env.API_PG_DB_DATABASE,
+    schema:
+        process.env.ANALYTICS_PG_DB_SCHEMA ??
+        process.env.API_PG_ANALYTICS_SCHEMA ??
+        ANALYTICS_SCHEMA,
     logging: false,
     synchronize: false,
     cache: false,

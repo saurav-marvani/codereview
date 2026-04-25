@@ -19,14 +19,19 @@ export const analyticsPostgresConfigLoader = registerAs(
         const env = process.env.API_DATABASE_ENV ?? process.env.API_NODE_ENV;
         const isHosted = ['homolog', 'production'].includes(env ?? '');
 
+        // Var lookup chain: ANALYTICS_PG_DB_* (legacy) → API_PG_ANALYTICS_*
+        // (current prod convention, matches API_PG_* / API_MG_* style) →
+        // API_PG_DB_* (self-hosted reuse of OLTP). First defined value wins.
         const host =
             process.env.ANALYTICS_PG_DB_HOST ??
+            process.env.API_PG_ANALYTICS_HOST ??
             (isHosted
                 ? process.env.API_PG_DB_HOST
                 : (process.env.API_PG_DB_HOST ?? 'localhost'));
 
         const port = parseInt(
             process.env.ANALYTICS_PG_DB_PORT ??
+                process.env.API_PG_ANALYTICS_PORT ??
                 process.env.API_PG_DB_PORT ??
                 '5432',
             10,
@@ -37,14 +42,20 @@ export const analyticsPostgresConfigLoader = registerAs(
             port,
             username:
                 process.env.ANALYTICS_PG_DB_USERNAME ??
+                process.env.API_PG_ANALYTICS_USERNAME ??
                 process.env.API_PG_DB_USERNAME,
             password:
                 process.env.ANALYTICS_PG_DB_PASSWORD ??
+                process.env.API_PG_ANALYTICS_PASSWORD ??
                 process.env.API_PG_DB_PASSWORD,
             database:
                 process.env.ANALYTICS_PG_DB_DATABASE ??
+                process.env.API_PG_ANALYTICS_DATABASE ??
                 process.env.API_PG_DB_DATABASE,
-            schema: process.env.ANALYTICS_PG_DB_SCHEMA ?? 'analytics',
+            schema:
+                process.env.ANALYTICS_PG_DB_SCHEMA ??
+                process.env.API_PG_ANALYTICS_SCHEMA ??
+                'analytics',
         };
     },
 );

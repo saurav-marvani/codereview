@@ -26,12 +26,23 @@ async function main() {
         return;
     }
 
+    // Mirror the SSL semantics of `analyticsDataSourceOptions` in
+    // `libs/analytics-warehouse/infrastructure/ormconfig.ts`: SSL on for
+    // hosted environments unless explicitly disabled. RDS requires SSL via
+    // pg_hba.conf and its cert chain is Amazon-specific, so verification
+    // is relaxed (matches TypeORM's `extra.ssl`).
+    const env = process.env.API_DATABASE_ENV ?? process.env.API_NODE_ENV;
+    const useSSL =
+        !['development', 'test'].includes(env ?? '') &&
+        process.env.API_DATABASE_DISABLE_SSL !== 'true';
+
     const client = new Client({
         host: config.host,
         port: config.port,
         user: config.username,
         password: config.password,
         database: config.database,
+        ssl: useSSL ? { rejectUnauthorized: false } : false,
     });
 
     try {

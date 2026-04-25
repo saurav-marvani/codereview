@@ -24,22 +24,24 @@ export class AnalyticsTypeORMFactory implements TypeOrmOptionsFactory {
             );
         }
 
-        // Prefer ConfigService over direct process.env access to match
-        // the project-wide convention (see kody-rules/4368bf47-...):
-        // env reads go through the config layer so they can be tested
-        // and overridden uniformly. `configService.get` transparently
-        // falls back to `process.env` when no loader is registered for
-        // the key, so no extra config loader is required here.
-        const env =
-            this.configService.get<string>('API_DATABASE_ENV') ??
-            this.configService.get<string>('API_NODE_ENV');
-        const isProduction = !['development', 'test'].includes(env ?? '');
-        const disableSSL =
-            this.configService.get<string>('API_DATABASE_DISABLE_SSL') ===
-            'true';
-        const useSSL = isProduction && !disableSSL;
+        // SSL is derived from the resolved host, not from NODE_ENV. Reason:
+        // NODE_ENV detection is flaky in some bootstrap paths (NestJS
+        // ConfigModule overrides, dev shells exporting API_NODE_ENV=development
+        // globally, etc.), and getting it wrong against a remote RDS produces
+        // an opaque "no pg_hba.conf entry ... no encryption" failure.
+        //
+        // Rule: if a dedicated analytics host is configured (i.e. anything
+        // other than a loopback address), require SSL with relaxed cert
+        // verification (RDS uses Amazon's own CA chain). Local Docker /
+        // self-hosted sharing OLTP keep SSL off.
+        // `API_DATABASE_DISABLE_SSL=true` remains an explicit override.
+        const isLoopback = ['localhost', '127.0.0.1', '::1', ''].includes(
+            config.host ?? '',
+        );
+        const disableSSL = process.env.API_DATABASE_DISABLE_SSL === 'true';
+        const useSSL = !isLoopback && !disableSSL;
         const poolMax = parseInt(
-            this.configService.get<string>('ANALYTICS_PG_POOL_MAX') ?? '5',
+            process.env.ANALYTICS_PG_POOL_MAX ?? '5',
             10,
         );
 
@@ -59,7 +61,7 @@ export class AnalyticsTypeORMFactory implements TypeOrmOptionsFactory {
             migrationsRun: false,
             migrations: [join(__dirname, '../migrations/*{.ts,.js}')],
             migrationsTableName: 'migrations',
-            logging: !isProduction,
+            logging: isLoopback,
             ssl: useSSL,
             extra: {
                 max: poolMax,
