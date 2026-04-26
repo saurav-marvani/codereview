@@ -120,7 +120,14 @@ async function bootstrap() {
             });
         });
 
-        app.use(bodyParser.json({ limit: '25mb' }));
+        app.use(
+            bodyParser.json({
+                limit: '25mb',
+                verify: (req: any, _res, buf) => {
+                    req.rawBody = buf;
+                },
+            }),
+        );
         app.use(bodyParser.urlencoded({ limit: '25mb', extended: true }));
         app.set('trust proxy', 1);
 

@@ -6,8 +6,8 @@ import {
     InternalServerErrorException,
 } from '@nestjs/common';
 
+import { EmailService } from '@libs/common/email/services/email.service';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
-import { sendConfirmationEmail } from '@libs/common/utils/email/sendMail';
 import {
     AUTH_SERVICE_TOKEN,
     IAuthService,
@@ -25,6 +25,7 @@ export class ResendEmailUseCase implements IUseCase {
         private readonly authService: IAuthService,
         @Inject(USER_SERVICE_TOKEN)
         private readonly usersService: IUsersService,
+        private readonly emailService: EmailService,
     ) {}
 
     async execute(email: string): Promise<{ message: string }> {
@@ -42,7 +43,7 @@ export class ResendEmailUseCase implements IUseCase {
                 user.email,
             );
 
-            await sendConfirmationEmail(
+            await this.emailService.sendConfirmationEmail(
                 token,
                 user.email,
                 user.organization.name,

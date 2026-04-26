@@ -1,3 +1,4 @@
+import { EmailModule } from '@libs/common/email/email.module';
 import { AuthModule } from '@libs/identity/modules/auth.module';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -19,6 +20,7 @@ import { UseCases } from './use-cases';
     imports: [
         TypeOrmModule.forFeature([SSOConfigModel, SSOTestSessionModel]),
         AuthModule,
+        EmailModule,
     ],
     providers: [
         SamlStrategy,

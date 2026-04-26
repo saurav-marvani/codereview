@@ -4,6 +4,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { EmailModule } from '@libs/common/email/email.module';
 import { jwtConfigLoader } from '@libs/core/infrastructure/config/loaders/jwt.config.loader';
 import { JWT } from '@libs/core/infrastructure/config/types/jwt/jwt';
 import { UseCases as AuthUseCases } from '@libs/identity/application/use-cases/auth';
@@ -42,6 +43,7 @@ import { UserModule } from './user.module';
         forwardRef(() => ParametersModule),
         PassportModule,
         TeamMembersModule,
+        EmailModule,
     ],
     providers: [
         ...AuthUseCases,

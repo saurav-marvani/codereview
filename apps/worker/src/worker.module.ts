@@ -5,6 +5,7 @@ import { LLMModule } from '@kodus/kodus-common/llm';
 
 import { AnalyticsWarehouseModule } from '@libs/analytics-warehouse';
 import { AutomationModule } from '@libs/automation/modules/automation.module';
+import { CockpitModule } from '@libs/cockpit/modules/cockpit.module';
 import { CodebaseModule } from '@libs/code-review/modules/codebase.module';
 import { CodeReviewFeedbackModule } from '@libs/code-review/modules/codeReviewFeedback.module';
 import { IncidentModule } from '@libs/core/infrastructure/incident/incident.module';
@@ -26,6 +27,7 @@ import { SharedObservabilityModule } from '@libs/shared/infrastructure/shared-ob
 
 import { AnalyticsClassifierCron } from './cron/analytics-classifier.cron';
 import { AnalyticsIngestionCron } from './cron/analytics-ingestion.cron';
+import { WeeklyRecapCron } from './cron/weekly-recap.cron';
 import { resolveWorkerRole, type WorkerRole } from './worker-role';
 import { WorkerDrainService } from './worker-drain.service';
 import { WorkerHealthGuardService } from './worker-health-guard.service';
@@ -87,12 +89,19 @@ export class WorkerModule {
                 // hot path itself doesn't call any model.
                 LLMModule.forRoot({ logger: LoggerWrapperService }),
                 AnalyticsWarehouseModule.forRoot(),
+                // Postgres for cockpit warehouse queries used by the
+                // weekly-recap cron.
+                SharedPostgresModule.forRoot({ poolSize: 4 }),
+                // Cockpit pulls in EmailModule + UserModule + OrganizationModule
+                // (used by SendWeeklyRecapUseCase to render and dispatch emails).
+                CockpitModule,
             ],
             providers: [
                 WorkerDrainService,
                 WorkerHealthGuardService,
                 AnalyticsIngestionCron,
                 AnalyticsClassifierCron,
+                WeeklyRecapCron,
                 LangfuseShutdownProvider,
             ] satisfies Provider[],
         };

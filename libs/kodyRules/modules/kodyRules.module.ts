@@ -1,6 +1,7 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 
+import { EmailModule } from '@libs/common/email/email.module';
 import { CodebaseModule } from '@libs/code-review/modules/codebase.module';
 import { ContextReferenceModule } from '@libs/code-review/modules/contextReference.module';
 import { PromptsModule } from '@libs/code-review/modules/prompts.module';
@@ -85,6 +86,7 @@ import { CentralizedConfigModule } from '@libs/centralized-config/modules/centra
         forwardRef(() => McpCoreModule),
         forwardRef(() => CodeReviewConfigurationModule),
         forwardRef(() => CentralizedConfigModule),
+        EmailModule,
     ],
     providers: [
         {

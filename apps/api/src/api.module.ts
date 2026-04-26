@@ -70,6 +70,7 @@ import {
     CockpitCodeHealthController,
     CockpitController,
     CockpitProductivityController,
+    CockpitWeeklyRecapController,
 } from './controllers/cockpit.controller';
 import { PullRequestController } from './controllers/pullRequest.controller';
 import { PullRequestMessagesController } from './controllers/pullRequestMessages.controller';
@@ -174,6 +175,7 @@ import { LangfuseShutdownProvider } from '@libs/core/log/langfuse-shutdown.provi
         CockpitController,
         CockpitCodeHealthController,
         CockpitProductivityController,
+        CockpitWeeklyRecapController,
     ],
     providers: [LangfuseShutdownProvider],
 })

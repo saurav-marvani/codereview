@@ -99,9 +99,8 @@ KEYS=(
     "/prod/kodus-orchestrator/KODUS_SERVICE_AZURE_REPOS"
     "/prod/kodus-orchestrator/API_CRON_AUTOMATION_DAILY_CHECKIN"
 
-    "/prod/kodus-orchestrator/API_CUSTOMERIO_APP_API_TOKEN"
-    "/prod/kodus-orchestrator/API_CUSTOMERIO_TRANSACTIONAL_FORGOT_PASSWORD_ID"
-    "/prod/kodus-orchestrator/API_CUSTOMERIO_TRANSACTIONAL_CONFIRM_EMAIL_ID"
+    "/prod/kodus-orchestrator/RESEND_API_KEY"
+    "/prod/kodus-orchestrator/RESEND_WEBHOOK_SECRET"
     "/prod/kodus-orchestrator/API_USER_INVITE_BASE_URL"
 
     "/prod/kodus-orchestrator/API_AWS_REGION"

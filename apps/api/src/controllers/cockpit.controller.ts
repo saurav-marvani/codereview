@@ -1,8 +1,10 @@
 import {
     BadRequestException,
+    Body,
     Controller,
     Get,
     Param,
+    Post,
     Query,
     UseGuards,
 } from '@nestjs/common';
@@ -16,6 +18,7 @@ import {
     CockpitSourceResolver,
     CockpitValidationService,
 } from '@libs/cockpit';
+import { SendWeeklyRecapUseCase } from '@libs/cockpit/application/use-cases/send-weekly-recap.use-case';
 import { CockpitTierGuard } from '@libs/cockpit/infrastructure/guards/cockpit-tier.guard';
 import { Public } from '@libs/identity/infrastructure/adapters/services/auth/public.decorator';
 
@@ -248,5 +251,43 @@ export class CockpitProductivityController {
         return complete === 'true'
             ? this.productivity.getCompanyDashboardInsights(q)
             : this.productivity.getCompanyDashboard(q);
+    }
+}
+
+// -------------------------------------------------------------------------
+// /cockpit/weekly-recap  — admin-triggered weekly summary email
+// Replaces the legacy n8n flow that called Customer.io. Sends one email
+// per ACTIVE user in the org with metrics from the cockpit warehouse.
+// -------------------------------------------------------------------------
+
+type SendWeeklyRecapBody = {
+    organizationId: string;
+    startDate: string;
+    endDate: string;
+};
+
+@ApiTags('Cockpit')
+@ApiBearerAuth('jwt')
+@UseGuards(CockpitTierGuard)
+@Controller('cockpit/weekly-recap')
+export class CockpitWeeklyRecapController {
+    constructor(private readonly useCase: SendWeeklyRecapUseCase) {}
+
+    @Post('/')
+    @ApiOperation({
+        summary:
+            'Send the weekly recap email to all ACTIVE users of an organization. Skips orgs with zero PRs in the window.',
+    })
+    send(@Body() body: SendWeeklyRecapBody) {
+        if (!body?.organizationId || !body?.startDate || !body?.endDate) {
+            throw new BadRequestException(
+                'Missing required fields: organizationId, startDate, endDate',
+            );
+        }
+        return this.useCase.execute({
+            organizationId: body.organizationId,
+            startDate: body.startDate,
+            endDate: body.endDate,
+        });
     }
 }

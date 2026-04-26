@@ -62,9 +62,8 @@ KEYS=(
 
     "/qa/kodus-orchestrator/KODUS_SERVICE_AZURE_REPOS"
 
-    "/qa/kodus-orchestrator/API_CUSTOMERIO_APP_API_TOKEN"
-    "/qa/kodus-orchestrator/API_CUSTOMERIO_TRANSACTIONAL_FORGOT_PASSWORD_ID"
-    "/qa/kodus-orchestrator/API_CUSTOMERIO_TRANSACTIONAL_CONFIRM_EMAIL_ID"
+    "/qa/kodus-orchestrator/RESEND_API_KEY"
+    "/qa/kodus-orchestrator/RESEND_WEBHOOK_SECRET"
     "/qa/kodus-orchestrator/API_USER_INVITE_BASE_URL"
 
     "/qa/kodus-orchestrator/API_AWS_REGION"

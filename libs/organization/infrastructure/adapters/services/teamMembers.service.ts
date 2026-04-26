@@ -24,7 +24,7 @@ import {
 } from '@libs/identity/domain/user/contracts/user.service.contract';
 import { IUser } from '@libs/identity/domain/user/interfaces/user.interface';
 import { createLogger } from '@kodus/flow';
-import { sendInvite } from '@libs/common/utils/email/sendMail';
+import { EmailService } from '@libs/common/email/services/email.service';
 
 @Injectable()
 export class TeamMemberService implements ITeamMemberService {
@@ -36,6 +36,8 @@ export class TeamMemberService implements ITeamMemberService {
 
         @Inject(USER_SERVICE_TOKEN)
         private readonly usersService: IUsersService,
+
+        private readonly emailService: EmailService,
     ) {}
 
     findManyById(ids: string[]): Promise<TeamMemberEntity[]> {
@@ -489,7 +491,12 @@ export class TeamMemberService implements ITeamMemberService {
                 return;
             }
 
-            await sendInvite(user, senderEmail, inviteLink, this.logger);
+            await this.emailService.sendInvite(
+                user,
+                senderEmail,
+                inviteLink,
+                this.logger,
+            );
         }
     }
 
