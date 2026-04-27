@@ -2470,18 +2470,85 @@ export class KodyRulesSyncService {
     }
 
     /**
-     * When the LLM returns the generic "**\/*" glob for a rule file that lives in a
-     * subdirectory, scope it to that subdirectory so the rule is not applied repo-wide.
-     * Explicit globs declared in the source file are left untouched.
+     * Path segments that mark an "IDE rule directory" — i.e. a folder used
+     * by an IDE/agent to host rule files, not regular repo content. When
+     * scoping an LLM-returned `**\/*` glob to a subdirectory we MUST strip
+     * any of these segments off the right side of the source dirname,
+     * otherwise the resulting path tells the reviewer to lint the rule
+     * files themselves (e.g. ".cursor/rules/**\/*"), which is the opposite
+     * of what the user wrote the rule for.
+     *
+     * Order matters: longer / more-specific markers (".cursor/rules") must
+     * come before shorter prefixes (".cursor") so the strip removes the
+     * full IDE-rule path.
+     */
+    private static readonly IDE_RULE_DIR_MARKERS: ReadonlyArray<string> = [
+        '.cursor/rules',
+        '.kody/rules',
+        '.github/instructions',
+        '.claude',
+        '.cursor',
+        '.kody',
+        '.sourcegraph',
+        '.rules',
+        'docs/coding-standards',
+    ];
+
+    /**
+     * Extract the repo subdirectory a rule was scoped to, given the path
+     * of the IDE rule file that produced it. Returns null when the rule
+     * lives at the repo root (so the caller knows to keep the rule
+     * repo-wide).
+     *
+     * Examples:
+     *   ".cursor/rules/foo.mdc"                       → null
+     *   "applications/foo/.cursor/rules/x.mdc"        → "applications/foo"
+     *   ".cursorrules"                                → null
+     *   "applications/bar/.cursorrules"               → "applications/bar"
+     *   "CLAUDE.md"                                   → null
+     *   "applications/baz/CLAUDE.md"                  → "applications/baz"
+     */
+    private extractRepoSubdirFromIdeSource(
+        sourceFilePath: string,
+    ): string | null {
+        const dir = path.posix.dirname(sourceFilePath);
+        if (!dir || dir === '.') return null; // file at repo root
+
+        // Strip any trailing IDE-rule directory marker.
+        for (const marker of KodyRulesSyncService.IDE_RULE_DIR_MARKERS) {
+            if (dir === marker) return null; // dir IS the IDE root → repo-wide
+            if (dir.endsWith('/' + marker)) {
+                const stripped = dir.slice(0, dir.length - marker.length - 1);
+                return stripped || null;
+            }
+        }
+
+        // No IDE marker — the source already sits in a regular repo subdir
+        // (e.g. an "agents.md" or "CLAUDE.md" placed under apps/web/).
+        return dir;
+    }
+
+    /**
+     * When the LLM returns the generic "**\/*" glob for a rule file that
+     * lives in a subdirectory, scope the rule to that subdirectory so it
+     * is not applied repo-wide. Explicit globs declared in the source
+     * file are left untouched.
+     *
+     * BUG FIX (2026-04-27): the previous implementation used `dirname`
+     * directly, which produced paths like ".cursor/rules/**\/*" for rules
+     * coming from `.cursor/rules/foo.mdc`. Those rules ended up only
+     * matching the IDE rule files themselves — exactly the opposite of
+     * what the user authored. The fix strips IDE-rule directory markers
+     * from the source dirname before scoping.
      */
     private scopePathToSourceDirectory(
         llmPath: string,
         sourceFilePath: string,
     ): string {
         if (llmPath !== '**/*') return llmPath;
-        const dir = path.posix.dirname(sourceFilePath);
-        if (!dir || dir === '.') return llmPath;
-        return `${dir}/**/*`;
+        const subdir = this.extractRepoSubdirFromIdeSource(sourceFilePath);
+        if (!subdir) return llmPath; // root config → keep repo-wide
+        return `${subdir}/**/*`;
     }
 
     /**

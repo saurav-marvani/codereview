@@ -89,6 +89,7 @@ describe('KodyRulesSyncService.syncRepositoryMain', () => {
             contextResolutionService as any,
             codeManagementService as any,
             updateOrCreateCodeReviewParameterUseCase as any,
+            {} as any, // createOrUpdateKodyRulesUseCase
             promptRunnerService as any,
             permissionValidationService as any,
             observabilityService as any,
@@ -465,6 +466,102 @@ describe('KodyRulesSyncService — Bug: orphaned rules after IDE sync toggle-off
         );
         expect(purgedUuids.sort()).toEqual(['rule-cursor-root', 'rule-cursor-subdir']);
     });
+});
+
+describe('KodyRulesSyncService.scopePathToSourceDirectory', () => {
+    function buildBareService() {
+        return new KodyRulesSyncService(
+            {} as any, {} as any, {} as any, {} as any, {} as any,
+            {} as any, {} as any, {} as any, {} as any, {} as any,
+        );
+    }
+
+    const cases: Array<{
+        name: string;
+        llmPath: string;
+        sourceFilePath: string;
+        expected: string;
+    }> = [
+        // BUG REGRESSION: rule at .cursor/rules/foo.mdc must NOT scope to
+        // ".cursor/rules/**/*" (would lint the rule files themselves).
+        {
+            name: 'root .cursor/rules/foo.mdc → repo-wide **/*',
+            llmPath: '**/*',
+            sourceFilePath: '.cursor/rules/foo.mdc',
+            expected: '**/*',
+        },
+        {
+            name: 'subdir .cursor/rules/x.mdc strips the IDE marker',
+            llmPath: '**/*',
+            sourceFilePath: 'applications/foo/.cursor/rules/x.mdc',
+            expected: 'applications/foo/**/*',
+        },
+        {
+            name: 'root .cursorrules → repo-wide **/*',
+            llmPath: '**/*',
+            sourceFilePath: '.cursorrules',
+            expected: '**/*',
+        },
+        {
+            name: 'subdir .cursorrules scopes to that subdir',
+            llmPath: '**/*',
+            sourceFilePath: 'applications/bar/.cursorrules',
+            expected: 'applications/bar/**/*',
+        },
+        {
+            name: 'root CLAUDE.md → repo-wide **/*',
+            llmPath: '**/*',
+            sourceFilePath: 'CLAUDE.md',
+            expected: '**/*',
+        },
+        {
+            name: 'subdir CLAUDE.md scopes to that subdir',
+            llmPath: '**/*',
+            sourceFilePath: 'applications/baz/CLAUDE.md',
+            expected: 'applications/baz/**/*',
+        },
+        {
+            name: 'subdir .kody/rules/* strips the IDE marker',
+            llmPath: '**/*',
+            sourceFilePath: 'apps/api/.kody/rules/security.md',
+            expected: 'apps/api/**/*',
+        },
+        {
+            name: 'root .kody/rules/* → repo-wide **/*',
+            llmPath: '**/*',
+            sourceFilePath: '.kody/rules/security.md',
+            expected: '**/*',
+        },
+        {
+            name: 'explicit non-** glob is preserved',
+            llmPath: 'src/**/*.ts',
+            sourceFilePath: '.cursor/rules/foo.mdc',
+            expected: 'src/**/*.ts',
+        },
+        {
+            name: 'explicit comma-separated globs are preserved',
+            llmPath: 'src/**/*.ts,src/**/*.tsx',
+            sourceFilePath: '.kody/rules/x.md',
+            expected: 'src/**/*.ts,src/**/*.tsx',
+        },
+        {
+            name: '.github/instructions root → repo-wide',
+            llmPath: '**/*',
+            sourceFilePath: '.github/instructions/api.instructions.md',
+            expected: '**/*',
+        },
+    ];
+
+    for (const c of cases) {
+        it(c.name, () => {
+            const service = buildBareService();
+            const result = (service as any).scopePathToSourceDirectory(
+                c.llmPath,
+                c.sourceFilePath,
+            );
+            expect(result).toBe(c.expected);
+        });
+    }
 });
 
 describe('KodyRulesSyncService.getConfiguredDirectories', () => {
