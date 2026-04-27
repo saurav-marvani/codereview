@@ -119,11 +119,17 @@ export function ByokManualPageClient({
             openrouterAllowFallbacks:
                 existingConfig?.openrouterAllowFallbacks ?? null,
             vertexLocation: existingConfig?.vertexLocation ?? null,
-            awsBearerToken: existingConfig?.awsBearerToken ?? null,
-            awsAccessKeyId: existingConfig?.awsAccessKeyId ?? null,
-            awsSecretAccessKey: existingConfig?.awsSecretAccessKey ?? null,
+            // Sensitive Bedrock creds are stored encrypted server-side and
+            // returned masked, so we can't populate the inputs from
+            // existingConfig — that would re-submit the masked value and
+            // corrupt the stored secret. Leaving the fields empty mirrors
+            // the apiKey pattern (line 106): empty in the form means
+            // "keep existing", and the user only types when changing.
+            awsBearerToken: null,
+            awsAccessKeyId: null,
+            awsSecretAccessKey: null,
             awsRegion: existingConfig?.awsRegion ?? null,
-            awsSessionToken: existingConfig?.awsSessionToken ?? null,
+            awsSessionToken: null,
         },
     });
 
@@ -131,6 +137,21 @@ export function ByokManualPageClient({
     const provider = form.watch("provider");
     const model = form.watch("model");
     const apiKey = form.watch("apiKey");
+    const awsBearerToken = form.watch("awsBearerToken");
+    const awsAccessKeyId = form.watch("awsAccessKeyId");
+    const awsSecretAccessKey = form.watch("awsSecretAccessKey");
+
+    // Bedrock has no apiKey field; "creds entered" means either a bearer
+    // token or the IAM access key + secret pair. Used to gate the "Test"
+    // button — without this, the button stays disabled forever on Bedrock
+    // because apiKey is always empty for that provider.
+    const hasCredsForTest =
+        provider === "amazon_bedrock"
+            ? !!(
+                  awsBearerToken?.trim() ||
+                  (awsAccessKeyId?.trim() && awsSecretAccessKey?.trim())
+              )
+            : !!apiKey?.trim();
 
     const resetTestOnChange = () => {
         if (testState.status !== "idle") setTestState({ status: "idle" });
@@ -500,7 +521,7 @@ export function ByokManualPageClient({
                             loading={testing}
                             disabled={
                                 !isValid ||
-                                !apiKey?.trim() ||
+                                !hasCredsForTest ||
                                 isSaving ||
                                 !model?.trim()
                             }

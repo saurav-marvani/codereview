@@ -1,4 +1,4 @@
-import { BYOKConfig } from '@kodus/kodus-common/llm';
+import { BYOKConfig, BYOKProvider } from '@kodus/kodus-common/llm';
 import { encrypt } from '@libs/common/utils/crypto';
 import { OrganizationParametersKey } from '@libs/core/domain/enums';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
@@ -166,38 +166,94 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
             throw new Error('At least main or fallback config is required');
         }
 
-        let encryptedMain = null;
-        if (byokConfig.main) {
-            if (!byokConfig.main.apiKey && !existingConfig?.main?.apiKey) {
-                throw new Error('apiKey is required for main BYOK config');
-            }
-            encryptedMain = {
-                ...byokConfig.main,
-                apiKey: byokConfig.main.apiKey
-                    ? encrypt(byokConfig.main.apiKey)
-                    : existingConfig!.main.apiKey,
-            };
-        }
+        const encryptedMain = byokConfig.main
+            ? this.encryptSlot('main', byokConfig.main, existingConfig?.main)
+            : null;
 
-        let encryptedFallback = null;
-        if (byokConfig.fallback) {
-            if (
-                !byokConfig.fallback.apiKey &&
-                !existingConfig?.fallback?.apiKey
-            ) {
-                throw new Error('apiKey is required for fallback BYOK config');
-            }
-            encryptedFallback = {
-                ...byokConfig.fallback,
-                apiKey: byokConfig.fallback.apiKey
-                    ? encrypt(byokConfig.fallback.apiKey)
-                    : existingConfig!.fallback!.apiKey,
-            };
-        }
+        const encryptedFallback = byokConfig.fallback
+            ? this.encryptSlot(
+                  'fallback',
+                  byokConfig.fallback,
+                  existingConfig?.fallback,
+              )
+            : null;
 
         return {
             ...(encryptedMain && { main: encryptedMain }),
             ...(encryptedFallback && { fallback: encryptedFallback }),
         };
+    }
+
+    /**
+     * Encrypt the sensitive credential fields for a single BYOK slot
+     * (main or fallback). Bedrock uses AWS auth fields instead of a
+     * single apiKey; everything else uses apiKey. In both cases, an
+     * empty incoming field falls back to whatever is already persisted
+     * — so partial edits (e.g. changing only the model) don't require
+     * the user to re-enter their credentials.
+     */
+    private encryptSlot(
+        slot: 'main' | 'fallback',
+        next: BYOKConfig['main'],
+        existing?: BYOKConfig['main'],
+    ): BYOKConfig['main'] {
+        if (next.provider === BYOKProvider.AMAZON_BEDROCK) {
+            // Bedrock has two auth paths and the user only needs to
+            // satisfy one: bearer token (recommended) OR static IAM
+            // credentials (awsAccessKeyId + awsSecretAccessKey, with
+            // optional awsSessionToken). On edit we accept either path
+            // being satisfied by previously-persisted values.
+            const hasBearer =
+                !!next.awsBearerToken?.trim() || !!existing?.awsBearerToken;
+            const hasIam =
+                (!!next.awsAccessKeyId?.trim() ||
+                    !!existing?.awsAccessKeyId) &&
+                (!!next.awsSecretAccessKey?.trim() ||
+                    !!existing?.awsSecretAccessKey);
+
+            if (!hasBearer && !hasIam) {
+                throw new Error(
+                    `Bedrock ${slot} BYOK config requires either awsBearerToken or awsAccessKeyId + awsSecretAccessKey`,
+                );
+            }
+
+            return {
+                ...next,
+                awsBearerToken: this.encryptOrKeep(
+                    next.awsBearerToken,
+                    existing?.awsBearerToken,
+                ),
+                awsAccessKeyId: this.encryptOrKeep(
+                    next.awsAccessKeyId,
+                    existing?.awsAccessKeyId,
+                ),
+                awsSecretAccessKey: this.encryptOrKeep(
+                    next.awsSecretAccessKey,
+                    existing?.awsSecretAccessKey,
+                ),
+                awsSessionToken: this.encryptOrKeep(
+                    next.awsSessionToken,
+                    existing?.awsSessionToken,
+                ),
+            };
+        }
+
+        if (!next.apiKey && !existing?.apiKey) {
+            throw new Error(`apiKey is required for ${slot} BYOK config`);
+        }
+
+        return {
+            ...next,
+            apiKey: next.apiKey ? encrypt(next.apiKey) : existing!.apiKey,
+        };
+    }
+
+    private encryptOrKeep(
+        incoming: string | undefined,
+        existing: string | undefined,
+    ): string | undefined {
+        const trimmed = incoming?.trim();
+        if (trimmed) return encrypt(trimmed);
+        return existing;
     }
 }
