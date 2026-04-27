@@ -212,6 +212,29 @@ export const GenerateRulesOptions = () => {
                     ),
                 });
 
+                // Toggle off → backend may have flipped imported rules to
+                // DELETED or PAUSED. The Kody Rules tab caches its rule
+                // list separately, so without these invalidations the
+                // user sees stale rows until they manually refresh.
+                invalidateQueries({
+                    queryKey: generateQueryKey(
+                        KODY_RULES_PATHS.FIND_BY_ORGANIZATION_ID_AND_FILTER,
+                        { params: { repositoryId } },
+                    ),
+                });
+                invalidateQueries({
+                    queryKey: generateQueryKey(
+                        KODY_RULES_PATHS.GET_INHERITED_RULES,
+                        { params: { teamId, repositoryId } },
+                    ),
+                });
+                invalidateQueries({
+                    queryKey: generateQueryKey(
+                        KODY_RULES_PATHS.COUNT_IMPORTED_KODY_RULES,
+                        { params: { repositoryId } },
+                    ),
+                });
+
                 toast({ description: "Settings saved", variant: "success" });
 
                 if (syncStatus.ideRulesSyncEnabledFirstTime && newValue) {
