@@ -8,6 +8,7 @@
         "allowSyntheticDefaultImports": true,
         "lib": ["ES2022"],
         "module": "commonjs",
+        "jsx": "react-jsx",
         "target": "ES2022",
         "sourceMap": true,
         "outDir": "./dist",

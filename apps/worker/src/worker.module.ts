@@ -5,6 +5,7 @@ import { LLMModule } from '@kodus/kodus-common/llm';
 
 import { AnalyticsWarehouseModule } from '@libs/analytics-warehouse';
 import { AutomationModule } from '@libs/automation/modules/automation.module';
+import { CockpitModule } from '@libs/cockpit/modules/cockpit.module';
 import { CodebaseModule } from '@libs/code-review/modules/codebase.module';
 import { CodeReviewFeedbackModule } from '@libs/code-review/modules/codeReviewFeedback.module';
 import { IncidentModule } from '@libs/core/infrastructure/incident/incident.module';
@@ -17,6 +18,7 @@ import { LangfuseShutdownProvider } from '@libs/core/log/langfuse-shutdown.provi
 import { LoggerWrapperService } from '@libs/core/log/loggerWrapper.service';
 import { OutboxRelayService } from '@libs/core/workflow/infrastructure/outbox-relay.service';
 import { WorkflowModule } from '@libs/core/workflow/modules/workflow.module';
+import { OrganizationModule } from '@libs/organization/modules/organization.module';
 import { PlatformModule } from '@libs/platform/modules/platform.module';
 import { SharedMongoModule } from '@libs/shared/database/shared-mongo.module';
 import { SharedPostgresModule } from '@libs/shared/database/shared-postgres.module';
@@ -26,6 +28,7 @@ import { SharedObservabilityModule } from '@libs/shared/infrastructure/shared-ob
 
 import { AnalyticsClassifierCron } from './cron/analytics-classifier.cron';
 import { AnalyticsIngestionCron } from './cron/analytics-ingestion.cron';
+import { WeeklyRecapCron } from './cron/weekly-recap.cron';
 import { resolveWorkerRole, type WorkerRole } from './worker-role';
 import { WorkerDrainService } from './worker-drain.service';
 import { WorkerHealthGuardService } from './worker-health-guard.service';
@@ -87,12 +90,23 @@ export class WorkerModule {
                 // hot path itself doesn't call any model.
                 LLMModule.forRoot({ logger: LoggerWrapperService }),
                 AnalyticsWarehouseModule.forRoot(),
+                // Postgres for cockpit warehouse queries used by the
+                // weekly-recap cron.
+                SharedPostgresModule.forRoot({ poolSize: 4 }),
+                // Cockpit pulls in EmailModule + UserModule for the
+                // SendWeeklyRecapUseCase email rendering. OrganizationModule
+                // is imported separately because the WeeklyRecapCron itself
+                // injects ORGANIZATION_SERVICE_TOKEN to fan out across orgs,
+                // and CockpitModule doesn't re-export that token.
+                CockpitModule,
+                OrganizationModule,
             ],
             providers: [
                 WorkerDrainService,
                 WorkerHealthGuardService,
                 AnalyticsIngestionCron,
                 AnalyticsClassifierCron,
+                WeeklyRecapCron,
                 LangfuseShutdownProvider,
             ] satisfies Provider[],
         };

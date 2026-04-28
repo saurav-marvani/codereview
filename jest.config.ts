@@ -5,20 +5,24 @@ export default {
     preset: 'ts-jest',
     testEnvironment: 'node',
     setupFiles: ['<rootDir>/test/jest.setup.ts'],
-    moduleFileExtensions: ['ts', 'js', 'json'],
+    moduleFileExtensions: ['ts', 'tsx', 'js', 'json'],
     testMatch: ['**/*.spec.ts', '**/*.integration.spec.ts', '**/*.e2e-spec.ts'],
     transform: {
-        '^.+\\.(t|j)s$': [
+        '^.+\\.(t|j)sx?$': [
             '@swc/jest',
             {
                 jsc: {
                     parser: {
                         syntax: 'typescript',
+                        tsx: true,
                         decorators: true,
                     },
                     transform: {
                         legacyDecorator: true,
                         decoratorMetadata: true,
+                        react: {
+                            runtime: 'automatic',
+                        },
                     },
                 },
             },

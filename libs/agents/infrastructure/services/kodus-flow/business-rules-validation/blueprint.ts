@@ -9,6 +9,8 @@ import {
 import { asRecord } from '@libs/agents/skills/runtime/value-utils';
 import { BlueprintStep } from '@libs/shared/blueprint/blueprint.types';
 
+
+
 import { BusinessRulesContext } from './types';
 import {
     buildBusinessLogicEligibility,
@@ -227,15 +229,17 @@ export function createBusinessRulesBlueprint(
                     taskContext: ctx.taskContext,
                     taskContextNormalized: ctx.taskContextNormalized,
                 });
+                const eligibility = buildBusinessLogicEligibility({
+                    taskQuality,
+                    taskContext: ctx.taskContext,
+                    taskContextNormalized: ctx.taskContextNormalized,
+                    prDiff: ctx.prDiff,
+                });
+
                 return {
                     ...ctx,
                     taskQuality,
-                    analysisEligibility: buildBusinessLogicEligibility({
-                        taskQuality,
-                        taskContext: ctx.taskContext,
-                        taskContextNormalized: ctx.taskContextNormalized,
-                        prDiff: ctx.prDiff,
-                    }),
+                    analysisEligibility: eligibility,
                 };
             },
         },

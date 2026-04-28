@@ -29,8 +29,8 @@ import {
 } from '@libs/identity/domain/user/contracts/user.service.contract';
 import { IUser } from '@libs/identity/domain/user/interfaces/user.interface';
 import { createLogger } from '@kodus/flow';
+import { EmailService } from '@libs/common/email/services/email.service';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
-import { sendConfirmationEmail } from '@libs/common/utils/email/sendMail';
 import { JoinOrganizationDto } from '@libs/identity/dtos/join-organization.dto';
 import { environment } from '@libs/ee/configs/environment';
 import {
@@ -63,6 +63,8 @@ export class JoinOrganizationUseCase implements IUseCase {
 
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
+
+        private readonly emailService: EmailService,
     ) {}
 
     public async execute(data: JoinOrganizationDto): Promise<IUser> {
@@ -155,7 +157,7 @@ export class JoinOrganizationUseCase implements IUseCase {
                     user.email,
                 );
 
-                await sendConfirmationEmail(
+                await this.emailService.sendConfirmationEmail(
                     token,
                     user.email,
                     organization.name,

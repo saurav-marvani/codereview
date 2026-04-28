@@ -140,8 +140,21 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
                     },
                 });
 
+                // Still surface the agent's response as a PR-level suggestion
+                // so the user knows why business logic validation could not run
+                // and what information is needed.
+                const limitationSuggestion: ISuggestionByPR = {
+                    id: uuidv4(),
+                    suggestionContent: result,
+                    oneSentenceSummary:
+                        'Business logic gap detected based on PR requirements.',
+                    label: LabelType.BUSINESS_LOGIC,
+                    severity: SeverityLevel.MEDIUM,
+                    deliveryStatus: DeliveryStatus.NOT_SENT,
+                };
+
                 return this.updateContext(context, (draft) => {
-                    draft.businessLogicResults = [];
+                    draft.businessLogicResults = [limitationSuggestion];
                     // Do NOT bump businessLogicPrBodyHash: the agent never
                     // actually validated this description, so the next run
                     // should still try.

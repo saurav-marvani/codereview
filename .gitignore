@@ -33,6 +33,7 @@ packages/**/*.js
 e2b-sandbox/config.json
 _*
 !apps/web/src/**/_*
+!libs/common/email/templates/_*
 !test/__mocks__/
 !**/__tests__/
 

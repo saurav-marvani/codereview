@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 
 import { createLogger } from '@kodus/flow';
-import { sendDomainVerificationEmail } from '@libs/common/utils/email/sendMail';
+import { EmailService } from '@libs/common/email/services/email.service';
 import { CacheService } from '@libs/core/cache/cache.service';
 import {
     BadRequestException,
@@ -31,7 +31,10 @@ interface PendingDomainVerificationToken {
 export class SSODomainVerificationService {
     private readonly logger = createLogger(SSODomainVerificationService.name);
 
-    constructor(private readonly cacheService: CacheService) {}
+    constructor(
+        private readonly cacheService: CacheService,
+        private readonly emailService: EmailService,
+    ) {}
 
     private tokenKey(token: string): string {
         return `${TOKEN_KEY_PREFIX}:${token}`;
@@ -103,7 +106,7 @@ export class SSODomainVerificationService {
             DOMAIN_VERIFICATION_TOKEN_TTL_MS,
         );
 
-        await sendDomainVerificationEmail(
+        await this.emailService.sendDomainVerificationEmail(
             token,
             normalizedEmail,
             params.organizationName,

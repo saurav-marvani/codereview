@@ -6,8 +6,8 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 
+import { EmailService } from '@libs/common/email/services/email.service';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
-import { sendForgotPasswordEmail } from '@libs/common/utils/email/sendMail';
 import {
     AUTH_SERVICE_TOKEN,
     IAuthService,
@@ -19,6 +19,7 @@ export class ForgotPasswordUseCase implements IUseCase {
     constructor(
         @Inject(AUTH_SERVICE_TOKEN)
         private readonly authService: IAuthService,
+        private readonly emailService: EmailService,
     ) {}
 
     async execute(email: string) {
@@ -31,7 +32,7 @@ export class ForgotPasswordUseCase implements IUseCase {
                 user.uuid,
                 email,
             );
-            await sendForgotPasswordEmail(
+            await this.emailService.sendForgotPasswordEmail(
                 user.email,
                 user.organization.name,
                 token,

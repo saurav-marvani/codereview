@@ -86,7 +86,6 @@ describe('CockpitTierGuard', () => {
             licenseService.validateOrganizationLicense,
         ).toHaveBeenCalledWith({
             organizationId: 'org-A',
-            teamId: '',
         });
     });
 

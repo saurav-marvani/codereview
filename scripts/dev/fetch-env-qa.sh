@@ -57,14 +57,14 @@ KEYS=(
     "/qa/kodus-orchestrator/API_CRON_KODY_LEARNING"
     "/qa/kodus-orchestrator/API_CRON_CHECK_IF_PR_SHOULD_BE_APPROVED"
     "/qa/kodus-orchestrator/API_CRON_SSO_TEST_SESSION_CLEANUP"
+    "/qa/kodus-orchestrator/API_CRON_WEEKLY_RECAP"
 
     "/qa/kodus-orchestrator/KODUS_SERVICE_TEAMS"
 
     "/qa/kodus-orchestrator/KODUS_SERVICE_AZURE_REPOS"
 
-    "/qa/kodus-orchestrator/API_CUSTOMERIO_APP_API_TOKEN"
-    "/qa/kodus-orchestrator/API_CUSTOMERIO_TRANSACTIONAL_FORGOT_PASSWORD_ID"
-    "/qa/kodus-orchestrator/API_CUSTOMERIO_TRANSACTIONAL_CONFIRM_EMAIL_ID"
+    "/qa/kodus-orchestrator/RESEND_API_KEY"
+    "/qa/kodus-orchestrator/RESEND_WEBHOOK_SECRET"
     "/qa/kodus-orchestrator/API_USER_INVITE_BASE_URL"
 
     "/qa/kodus-orchestrator/API_AWS_REGION"

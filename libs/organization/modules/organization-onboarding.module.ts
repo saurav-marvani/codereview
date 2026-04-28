@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { EmailModule } from '@libs/common/email/email.module';
 import { UserModule } from '@libs/identity/modules/user.module';
 import { OrganizationModule } from './organization.module';
 import { TeamModule } from './team.module';
@@ -17,6 +18,7 @@ import { JoinOrganizationUseCase } from '../application/use-cases/onboarding/joi
         forwardRef(() => ProfilesModule),
         forwardRef(() => AuthModule),
         forwardRef(() => ParametersModule),
+        EmailModule,
     ],
     providers: [JoinOrganizationUseCase],
     exports: [JoinOrganizationUseCase],

@@ -1,11 +1,7 @@
 import { STATUS } from '@libs/core/infrastructure/config/types/database/status.type';
-import { sendConfirmationEmail } from '@libs/common/utils/email/sendMail';
 import { JoinOrganizationUseCase } from '@libs/organization/application/use-cases/onboarding/join-organization.use-case';
 import { environment } from '@libs/ee/configs/environment';
 
-jest.mock('@libs/common/utils/email/sendMail', () => ({
-    sendConfirmationEmail: jest.fn(),
-}));
 jest.mock('@libs/ee/configs/environment', () => ({
     environment: {
         API_CLOUD_MODE: false,
@@ -14,11 +10,6 @@ jest.mock('@libs/ee/configs/environment', () => ({
 }));
 
 describe('JoinOrganizationUseCase', () => {
-    const mockedSendConfirmationEmail =
-        sendConfirmationEmail as jest.MockedFunction<
-            typeof sendConfirmationEmail
-        >;
-
     let originalCloudMode: boolean;
 
     const createDeps = () => {
@@ -51,6 +42,9 @@ describe('JoinOrganizationUseCase', () => {
         const parametersService = {
             deleteByTeamId: jest.fn(),
         };
+        const emailService = {
+            sendConfirmationEmail: jest.fn(),
+        };
 
         return {
             userService,
@@ -60,6 +54,7 @@ describe('JoinOrganizationUseCase', () => {
             profileService,
             authService,
             parametersService,
+            emailService,
         };
     };
 
@@ -114,6 +109,7 @@ describe('JoinOrganizationUseCase', () => {
             deps.profileService as any,
             deps.authService as any,
             deps.parametersService as any,
+            deps.emailService as any,
         );
         jest.spyOn(useCase, 'cleanUp').mockResolvedValue(undefined);
 
@@ -131,7 +127,7 @@ describe('JoinOrganizationUseCase', () => {
             },
         );
         expect(deps.authService.createEmailToken).not.toHaveBeenCalled();
-        expect(mockedSendConfirmationEmail).not.toHaveBeenCalled();
+        expect(deps.emailService.sendConfirmationEmail).not.toHaveBeenCalled();
         expect(result).toEqual({ status: STATUS.ACTIVE });
     });
 
@@ -154,6 +150,7 @@ describe('JoinOrganizationUseCase', () => {
             deps.profileService as any,
             deps.authService as any,
             deps.parametersService as any,
+            deps.emailService as any,
         );
         jest.spyOn(useCase, 'cleanUp').mockResolvedValue(undefined);
 
@@ -174,7 +171,7 @@ describe('JoinOrganizationUseCase', () => {
             'user-1',
             'dev@kodus.io',
         );
-        expect(mockedSendConfirmationEmail).toHaveBeenCalledWith(
+        expect(deps.emailService.sendConfirmationEmail).toHaveBeenCalledWith(
             'email-token',
             'dev@kodus.io',
             'Kodus Org',

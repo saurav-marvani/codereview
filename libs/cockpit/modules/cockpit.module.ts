@@ -1,8 +1,12 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 
 import { AnalyticsWarehouseModule } from '@libs/analytics-warehouse';
+import { EmailModule } from '@libs/common/email/email.module';
 import { LicenseModule } from '@libs/ee/license/license.module';
+import { UserModule } from '@libs/identity/modules/user.module';
+import { OrganizationModule } from '@libs/organization/modules/organization.module';
 
+import { SendWeeklyRecapUseCase } from '../application/use-cases/send-weekly-recap.use-case';
 import { CockpitTierGuard } from '../infrastructure/guards/cockpit-tier.guard';
 import { CockpitCodeHealthService } from '../infrastructure/services/cockpit-code-health.service';
 import { CockpitDeveloperProductivityService } from '../infrastructure/services/cockpit-developer-productivity.service';
@@ -17,7 +21,13 @@ import { CockpitValidationService } from '../infrastructure/services/cockpit-val
  * pipeline keeps in sync with Mongo.
  */
 @Module({
-    imports: [AnalyticsWarehouseModule.forRoot(), LicenseModule],
+    imports: [
+        AnalyticsWarehouseModule.forRoot(),
+        LicenseModule,
+        EmailModule,
+        forwardRef(() => UserModule),
+        forwardRef(() => OrganizationModule),
+    ],
     providers: [
         CockpitSourceResolver,
         CockpitHealthService,
@@ -25,6 +35,7 @@ import { CockpitValidationService } from '../infrastructure/services/cockpit-val
         CockpitCodeHealthService,
         CockpitDeveloperProductivityService,
         CockpitTierGuard,
+        SendWeeklyRecapUseCase,
     ],
     exports: [
         CockpitSourceResolver,
@@ -33,6 +44,7 @@ import { CockpitValidationService } from '../infrastructure/services/cockpit-val
         CockpitCodeHealthService,
         CockpitDeveloperProductivityService,
         CockpitTierGuard,
+        SendWeeklyRecapUseCase,
     ],
 })
 export class CockpitModule {}

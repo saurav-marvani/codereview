@@ -21,6 +21,7 @@ import {
     ShieldCheckIcon,
     TrashIcon,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { ConfirmModal } from "src/core/components/ui/confirm-modal";
 import { revalidateServerSidePath } from "src/core/utils/revalidate-server-side";
 
@@ -29,6 +30,23 @@ import { CuratedCatalog } from "./catalog/catalog";
 import { ConfiguredSummary } from "./configured-summary";
 
 type SlotState = "idle" | "editing";
+
+/**
+ * Providers represented in the curated catalog at
+ * `_data/curated-models.json`. Configs created against any other provider
+ * (Bedrock, Vertex, Novita) can't be re-rendered through the catalog UI,
+ * so editing them has to skip straight to the manual wizard.
+ */
+const CURATED_PROVIDERS = new Set([
+    "anthropic",
+    "openai",
+    "openai_compatible",
+    "google_gemini",
+    "openrouter",
+]);
+
+const isEditableInCatalog = (config: BYOKConfig | undefined): boolean =>
+    !!config && CURATED_PROVIDERS.has(config.provider);
 
 const providerLabel = (providerId?: string) => {
     switch (providerId) {
@@ -143,12 +161,32 @@ export const ByokPageClient = ({
     config: { main: BYOKConfig; fallback: BYOKConfig } | null | undefined;
     llmConfigStatus: LLMConfigStatus | null;
 }) => {
+    const router = useRouter();
     const [mainState, setMainState] = useState<SlotState>(
         config?.main ? "idle" : "editing",
     );
     const [fallbackState, setFallbackState] = useState<SlotState>("idle");
     const [isDeletingMain, setIsDeletingMain] = useState(false);
     const [isDeletingFallback, setIsDeletingFallback] = useState(false);
+
+    /**
+     * The catalog UI only knows how to render configs whose provider is in
+     * CURATED_PROVIDERS. For Bedrock/Vertex/Novita configs, going through
+     * the catalog would force the user to hunt for the "Configure manually"
+     * link at the bottom every single edit — bypass it.
+     */
+    const handleEdit = (slot: "main" | "fallback") => {
+        const slotConfig = slot === "main" ? config?.main : config?.fallback;
+        if (slotConfig && !isEditableInCatalog(slotConfig)) {
+            router.push(`/organization/byok/manual?slot=${slot}`);
+            return;
+        }
+        if (slot === "main") {
+            setMainState("editing");
+        } else {
+            setFallbackState("editing");
+        }
+    };
 
     const envIsActiveSource = llmConfigStatus?.source === "env";
     const showEnvNotice =
@@ -311,7 +349,7 @@ export const ByokPageClient = ({
                         <ConfiguredSummary
                             config={config.main}
                             isDeleting={isDeletingMain}
-                            onChange={() => setMainState("editing")}
+                            onChange={() => handleEdit("main")}
                             onDelete={onDeleteMain}
                         />
                     ) : (
@@ -340,7 +378,7 @@ export const ByokPageClient = ({
                             <ConfiguredSummary
                                 config={config.fallback}
                                 isDeleting={isDeletingFallback}
-                                onChange={() => setFallbackState("editing")}
+                                onChange={() => handleEdit("fallback")}
                                 onDelete={onDeleteFallback}
                             />
                         ) : fallbackState === "idle" ? (

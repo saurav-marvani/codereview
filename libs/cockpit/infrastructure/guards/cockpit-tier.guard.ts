@@ -98,9 +98,16 @@ export class CockpitTierGuard implements CanActivate {
         }
 
         try {
+            // Tier (Teams / Enterprise / Free) is an org-level property —
+            // it applies to the whole org regardless of which team the
+            // request is scoped to. teamId only matters for per-seat
+            // license assignment, not here. Passing an empty teamId used
+            // to break the cloud billing service, which keys subscriptions
+            // on (orgId, teamId) and returned `valid: false` for the empty
+            // tuple — making prod always fall through to legacy-bq while
+            // self-hosted (which ignores teamId in its license JWT) worked.
             const license = await this.licenseService.validateOrganizationLicense({
                 organizationId,
-                teamId: '',
             });
             if (!isCockpitTierAllowed(license)) {
                 throw new ForbiddenException(

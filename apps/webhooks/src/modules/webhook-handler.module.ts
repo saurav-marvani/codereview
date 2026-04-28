@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 
+import { EmailModule } from '@libs/common/email/email.module';
 import { SharedCoreModule } from '@libs/shared/infrastructure/shared-core.module';
 import { RabbitMQWrapperModule } from '@libs/core/infrastructure/queue/rabbitmq.module';
 import { SharedPostgresModule } from '@libs/shared/database/shared-postgres.module';
@@ -15,6 +16,7 @@ import { BitbucketController } from '../controllers/bitbucket.controller';
 import { ForgejoController } from '../controllers/forgejo.controller';
 import { GithubController } from '../controllers/github.controller';
 import { GitlabController } from '../controllers/gitlab.controller';
+import { ResendWebhookController } from '../controllers/resend.controller';
 import { WebhookHealthController } from '../controllers/webhook-health.controller';
 
 @Module({
@@ -28,6 +30,7 @@ import { WebhookHealthController } from '../controllers/webhook-health.controlle
         EventEmitterModule.forRoot(),
         RabbitMQWrapperModule.register({ enableConsumers: false }),
         WebhookEnqueueModule,
+        EmailModule,
     ],
     controllers: [
         GithubController,
@@ -35,6 +38,7 @@ import { WebhookHealthController } from '../controllers/webhook-health.controlle
         BitbucketController,
         AzureReposController,
         ForgejoController,
+        ResendWebhookController,
         WebhookHealthController,
     ],
     providers: [LangfuseShutdownProvider],
