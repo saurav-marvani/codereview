@@ -161,9 +161,12 @@ jobs:
             # per-deployment env var. Doing the build locally with
             # `vercel build` was hitting `spawn sh ENOENT` from the
             # CLI's installCommand spawn in our monorepo layout.
+            #
+            # Run from the repo root (no working-directory) — the Vercel
+            # project already has Root Directory configured as apps/web,
+            # so cd-ing into it would make the CLI resolve apps/web/apps/web.
             - name: Deploy preview
               id: deploy
-              working-directory: apps/web
               run: |
                   URL=$(vercel deploy \
                     --token=${{ secrets.VERCEL_TOKEN }} \
