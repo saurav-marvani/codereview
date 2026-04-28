@@ -41,9 +41,21 @@ export function pathToApiUrl(
     }
     const port = process.env.WEB_PORT_API;
 
-    // Web server talks to the API container over the internal Docker
-    // network — http + port, never https.
-    return createUrl(hostName, port, path, { internal: true });
+    // Two deployment shapes share this code path:
+    //   1. Docker compose / dev: WEB_HOSTNAME_API is an internal service
+    //      name (`kodus_api`) reached via http on WEB_PORT_API. Use the
+    //      explicit internal hop — no TLS, port required.
+    //   2. AWS QA/prod: WEB_HOSTNAME_API is a public domain (`qa.api.kodus.io`,
+    //      `app.api.kodus.io`) fronted by an ALB that only listens on 443
+    //      with TLS termination. WEB_PORT_API is not set in those envs.
+    //      Falling through to the heuristic path correctly produces an
+    //      `https://<host><path>` URL with no port.
+    //
+    // The presence/absence of WEB_PORT_API is the cleanest signal: a
+    // public ALB never has a port in the env, an internal compose service
+    // always does.
+    const isInternal = !!port;
+    return createUrl(hostName, port, path, { internal: isInternal });
 }
 
 /**
