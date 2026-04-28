@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
-import { PullRequestIngestionService } from '@libs/analytics-warehouse';
+import { PullRequestIngestionService } from '@libs/ee/analytics-warehouse';
 
 /**
  * Cron wrapper that drives `PullRequestIngestionService` on a schedule.

@@ -1,4 +1,4 @@
-import { PullRequestClassifierService } from '@libs/analytics-warehouse/classification/pull-request-classifier.service';
+import { PullRequestClassifierService } from '@libs/ee/analytics-warehouse/classification/pull-request-classifier.service';
 
 /**
  * Unit specs for the PR-type classifier cron. Mocks the analytics

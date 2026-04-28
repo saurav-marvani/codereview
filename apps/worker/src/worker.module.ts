@@ -3,7 +3,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 
 import { LLMModule } from '@kodus/kodus-common/llm';
 
-import { AnalyticsWarehouseModule } from '@libs/analytics-warehouse';
+import { AnalyticsWarehouseModule } from '@libs/ee/analytics-warehouse';
 import { AutomationModule } from '@libs/automation/modules/automation.module';
 import { CockpitModule } from '@libs/cockpit/modules/cockpit.module';
 import { CodebaseModule } from '@libs/code-review/modules/codebase.module';

@@ -69,10 +69,10 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
   fi
 
   echo "▶ Running analytics warehouse migrations (PROD)..."
-  if [ -f "dist/libs/analytics-warehouse/infrastructure/ormconfig.js" ]; then
+  if [ -f "dist/libs/ee/analytics-warehouse/infrastructure/ormconfig.js" ]; then
       yarn analytics:migration:run:prod
   else
-      echo "⚠️ Analytics ormconfig not found at dist/libs/analytics-warehouse/infrastructure/ormconfig.js. Skipping."
+      echo "⚠️ Analytics ormconfig not found at dist/libs/ee/analytics-warehouse/infrastructure/ormconfig.js. Skipping."
   fi
 else
   echo "▶ Skipping migrations (RUN_MIGRATIONS=$RUN_MIGRATIONS)"

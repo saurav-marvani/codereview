@@ -10,7 +10,7 @@ import {
     AnalyticsWarehouseModule,
     BackfillOrchestratorService,
     PullRequestIngestionService,
-} from '@libs/analytics-warehouse';
+} from '@libs/ee/analytics-warehouse';
 import { LoggerWrapperService } from '@libs/core/log/loggerWrapper.service';
 import { SharedConfigModule } from '@libs/shared/infrastructure/shared-config.module';
 import { SharedLogModule } from '@libs/shared/infrastructure/shared-log.module';

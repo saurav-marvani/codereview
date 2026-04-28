@@ -2,7 +2,7 @@ import { LLMModule } from '@kodus/kodus-common/llm';
 import { AgentsModule } from '@libs/agents/modules/agents.module';
 import { AIEngineModule } from '@libs/ai-engine/modules/ai-engine.module';
 import { AnalyticsModule } from '@libs/analytics/modules/analytics.module';
-import { AnalyticsWarehouseModule } from '@libs/analytics-warehouse';
+import { AnalyticsWarehouseModule } from '@libs/ee/analytics-warehouse';
 import { CockpitModule } from '@libs/cockpit/modules/cockpit.module';
 import { AutomationModule } from '@libs/automation/modules/automation.module';
 import { CliReviewModule } from '@libs/cli-review/cli-review.module';

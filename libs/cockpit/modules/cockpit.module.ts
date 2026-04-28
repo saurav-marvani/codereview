@@ -1,6 +1,6 @@
 import { forwardRef, Module } from '@nestjs/common';
 
-import { AnalyticsWarehouseModule } from '@libs/analytics-warehouse';
+import { AnalyticsWarehouseModule } from '@libs/ee/analytics-warehouse';
 import { EmailModule } from '@libs/common/email/email.module';
 import { LicenseModule } from '@libs/ee/license/license.module';
 import { UserModule } from '@libs/identity/modules/user.module';

@@ -27,7 +27,7 @@ async function main() {
     }
 
     // Mirror the SSL semantics of `analyticsDataSourceOptions` in
-    // `libs/analytics-warehouse/infrastructure/ormconfig.ts`: SSL on for
+    // `libs/ee/analytics-warehouse/infrastructure/ormconfig.ts`: SSL on for
     // hosted environments unless explicitly disabled. RDS requires SSL via
     // pg_hba.conf and its cert chain is Amazon-specific, so verification
     // is relaxed (matches TypeORM's `extra.ssl`).

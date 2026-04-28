@@ -1,7 +1,7 @@
 import {
     PR_INGESTION_WATERMARK,
     PullRequestIngestionService,
-} from '@libs/analytics-warehouse/ingestion/pull-request-ingestion.service';
+} from '@libs/ee/analytics-warehouse/ingestion/pull-request-ingestion.service';
 
 /**
  * Unit specs for the daily ingestion logic. Mocks both the analytics
