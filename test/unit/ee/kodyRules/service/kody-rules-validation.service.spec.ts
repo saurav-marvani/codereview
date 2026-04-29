@@ -160,11 +160,15 @@ describe('KodyRulesValidationService', () => {
             );
         });
 
-        it('PROVES THE LEAK: same rule also passes when viewing from a DIFFERENT directory (314f34ff)', () => {
-            // This is the exact "INHERITED: DIRECTORY" behavior the client
-            // complained about — rule from cf5284b4 leaks into 314f34ff
-            // context because inheritance.include is empty which reads as
-            // "inherit everywhere" (NOT "inherit nowhere").
+        it('FIX: rule scoped to one directoryId no longer leaks to a sibling directoryId', () => {
+            // Reproduces the "INHERITED: DIRECTORY" complaint from
+            // quintoandar's David B. Before the fix, a rule attached to
+            // cf5284b4 with the default `inheritance.include: []` was
+            // matched by ANY other directoryId in the same repo because
+            // the matcher reads "include is empty" as
+            // "inherit everywhere". After the fix, a rule that has its
+            // own `directoryId` set must NOT leak into a different
+            // directory unless that directory is in `include`.
             const result = service.getKodyRulesForFile(
                 'applications/backoffice-bff/src/foo.java',
                 [b207a89c()],
@@ -173,9 +177,49 @@ describe('KodyRulesValidationService', () => {
                     directoryId: '314f34ff-2d1e-47e0-8765-2bb3f1a8564d',
                 },
             );
+            expect(result.map((r) => r.uuid)).not.toContain(
+                'b207a89c-924b-4a0a-8070-2e860293b537',
+            );
+        });
+
+        it('FIX: rule scoped to one directoryId still applies in its OWN directory', () => {
+            // Defensive — make sure the new guard only blocks
+            // cross-directory leaks, not the rule's own directory.
+            const result = service.getKodyRulesForFile(
+                'qantilever/src/foo.kt',
+                [b207a89c()],
+                {
+                    repositoryId: '769144833',
+                    directoryId: 'cf5284b4-2510-464a-9eca-98efbf121d04',
+                },
+            );
             expect(result.map((r) => r.uuid)).toContain(
                 'b207a89c-924b-4a0a-8070-2e860293b537',
             );
+        });
+
+        it('FIX: rule WITHOUT directoryId (repo-level / global) still applies everywhere', () => {
+            // The guard must only fire when `rule.directoryId` is set.
+            // Repo-level and global rules are not directory-scoped and
+            // must keep matching across all directory contexts.
+            const repoLevel = createRule({
+                uuid: 'repo-level-rule',
+                title: 'Repo-level Lint',
+                repositoryId: '769144833',
+                directoryId: undefined, // repo-level
+                path: '**/*.ts',
+                inheritance: { inheritable: true, include: [], exclude: [] },
+            });
+
+            const result = service.getKodyRulesForFile(
+                'applications/backoffice-bff/src/foo.ts',
+                [repoLevel],
+                {
+                    repositoryId: '769144833',
+                    directoryId: '314f34ff-2d1e-47e0-8765-2bb3f1a8564d',
+                },
+            );
+            expect(result.map((r) => r.uuid)).toContain('repo-level-rule');
         });
 
         it('STOPS the leak when include is set to ONLY the own directoryId', () => {
@@ -210,6 +254,192 @@ describe('KodyRulesValidationService', () => {
 
             expect(resultInOwnDir).toHaveLength(1);
             expect(resultInOtherDir).toHaveLength(0);
+        });
+    });
+
+    // Exhaustive matrix that covers every canonical scope × inheritance
+    // combination so a future change to the matcher can't silently break
+    // any of them. Each test asserts ONE behavior and is self-contained.
+    describe('inheritance matrix — global / repo / dir × inheritable / include / exclude', () => {
+        const REPO = '769144833';
+        const DIR_A = 'cf5284b4-2510-464a-9eca-98efbf121d04';
+        const DIR_B = '314f34ff-2d1e-47e0-8765-2bb3f1a8564d';
+
+        const ruleAt = (
+            scope: { repositoryId: string; directoryId?: string },
+            inheritance: Partial<IKodyRule['inheritance']> = {},
+        ): Partial<IKodyRule> =>
+            createRule({
+                uuid: `rule-${scope.repositoryId}-${scope.directoryId ?? 'norepoOnly'}`,
+                title: 'matrix rule',
+                repositoryId: scope.repositoryId,
+                directoryId: scope.directoryId,
+                path: '**/*',
+                inheritance: {
+                    inheritable: true,
+                    include: [],
+                    exclude: [],
+                    ...inheritance,
+                },
+            });
+
+        const fileInDirA = 'qantilever/src/foo.kt';
+        const fileInDirB = 'applications/backoffice-bff/src/foo.java';
+
+        // ---- GLOBAL rules ---------------------------------------------------
+        it('global rule applies in repo view', () => {
+            const r = ruleAt({ repositoryId: 'global' });
+            const out = service.getKodyRulesForFile(fileInDirA, [r], {
+                repositoryId: REPO,
+            });
+            expect(out).toHaveLength(1);
+        });
+
+        it('global rule applies in dir view (inherited)', () => {
+            const r = ruleAt({ repositoryId: 'global' });
+            const out = service.getKodyRulesForFile(fileInDirA, [r], {
+                repositoryId: REPO,
+                directoryId: DIR_A,
+            });
+            expect(out).toHaveLength(1);
+        });
+
+        it('global rule with inheritable:false does NOT apply in repo view', () => {
+            const r = ruleAt(
+                { repositoryId: 'global' },
+                { inheritable: false },
+            );
+            const out = service.getKodyRulesForFile(fileInDirA, [r], {
+                repositoryId: REPO,
+            });
+            expect(out).toHaveLength(0);
+        });
+
+        it('global rule with exclude:[repoId] does NOT apply in repo view', () => {
+            const r = ruleAt(
+                { repositoryId: 'global' },
+                { exclude: [REPO] },
+            );
+            const out = service.getKodyRulesForFile(fileInDirA, [r], {
+                repositoryId: REPO,
+            });
+            expect(out).toHaveLength(0);
+        });
+
+        it('global rule with exclude:[dirId] does NOT apply in that dir view', () => {
+            const r = ruleAt(
+                { repositoryId: 'global' },
+                { exclude: [DIR_A] },
+            );
+            const out = service.getKodyRulesForFile(fileInDirA, [r], {
+                repositoryId: REPO,
+                directoryId: DIR_A,
+            });
+            expect(out).toHaveLength(0);
+        });
+
+        // ---- REPO-LEVEL rules ----------------------------------------------
+        it('repo-level rule applies in own repo view', () => {
+            const r = ruleAt({ repositoryId: REPO });
+            const out = service.getKodyRulesForFile(fileInDirA, [r], {
+                repositoryId: REPO,
+            });
+            expect(out).toHaveLength(1);
+        });
+
+        it('repo-level rule applies in any dir view of that repo (inherited)', () => {
+            const r = ruleAt({ repositoryId: REPO });
+            const out = service.getKodyRulesForFile(fileInDirB, [r], {
+                repositoryId: REPO,
+                directoryId: DIR_B,
+            });
+            expect(out).toHaveLength(1);
+        });
+
+        it('repo-level rule with exclude:[dirId] does NOT apply in that dir view', () => {
+            const r = ruleAt(
+                { repositoryId: REPO },
+                { exclude: [DIR_A] },
+            );
+            const out = service.getKodyRulesForFile(fileInDirA, [r], {
+                repositoryId: REPO,
+                directoryId: DIR_A,
+            });
+            expect(out).toHaveLength(0);
+        });
+
+        it('repo-level rule with inheritable:false does NOT apply in dir view', () => {
+            const r = ruleAt(
+                { repositoryId: REPO },
+                { inheritable: false },
+            );
+            const out = service.getKodyRulesForFile(fileInDirA, [r], {
+                repositoryId: REPO,
+                directoryId: DIR_A,
+            });
+            expect(out).toHaveLength(0);
+        });
+
+        it('repo-level rule from a DIFFERENT repo does NOT apply', () => {
+            const r = ruleAt({ repositoryId: 'other-repo-999' });
+            const out = service.getKodyRulesForFile(fileInDirA, [r], {
+                repositoryId: REPO,
+            });
+            expect(out).toHaveLength(0);
+        });
+
+        // ---- DIRECTORY-LEVEL rules -----------------------------------------
+        it('dir-level rule applies in OWN dir view', () => {
+            const r = ruleAt({ repositoryId: REPO, directoryId: DIR_A });
+            const out = service.getKodyRulesForFile(fileInDirA, [r], {
+                repositoryId: REPO,
+                directoryId: DIR_A,
+            });
+            expect(out).toHaveLength(1);
+        });
+
+        it('dir-level rule does NOT apply in a SIBLING dir view (the bug fix)', () => {
+            const r = ruleAt({ repositoryId: REPO, directoryId: DIR_A });
+            const out = service.getKodyRulesForFile(fileInDirB, [r], {
+                repositoryId: REPO,
+                directoryId: DIR_B,
+            });
+            expect(out).toHaveLength(0);
+        });
+
+        it('dir-level rule with include:[siblingDirId] DOES apply there', () => {
+            const r = ruleAt(
+                { repositoryId: REPO, directoryId: DIR_A },
+                { include: [DIR_B] },
+            );
+            const out = service.getKodyRulesForFile(fileInDirB, [r], {
+                repositoryId: REPO,
+                directoryId: DIR_B,
+            });
+            expect(out).toHaveLength(1);
+        });
+
+        it('dir-level rule does NOT apply in REPO view (rule is dir-scoped)', () => {
+            // When viewing at the repo level (no directoryId), the
+            // matcher already excludes any rule with a `directoryId`.
+            // Confirms that's still true after the fix.
+            const r = ruleAt({ repositoryId: REPO, directoryId: DIR_A });
+            const out = service.getKodyRulesForFile(fileInDirA, [r], {
+                repositoryId: REPO,
+            });
+            expect(out).toHaveLength(0);
+        });
+
+        it('dir-level rule with inheritable:false does NOT apply even in own dir', () => {
+            const r = ruleAt(
+                { repositoryId: REPO, directoryId: DIR_A },
+                { inheritable: false },
+            );
+            const out = service.getKodyRulesForFile(fileInDirA, [r], {
+                repositoryId: REPO,
+                directoryId: DIR_A,
+            });
+            expect(out).toHaveLength(0);
         });
     });
 
