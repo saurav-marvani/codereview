@@ -624,6 +624,9 @@ export class SkillLoaderService {
             __dirname,
             // Built runtime fallback
             path.join(__dirname, '..', '..', 'skills'),
+            // Production build: webpack bundles to dist/apps/<app>/main.js
+            // but skill files land in dist/libs/agents/skills/
+            path.join(process.cwd(), 'dist', 'libs', 'agents', 'skills'),
         ];
 
         return [...new Set(candidates)];
