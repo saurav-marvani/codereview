@@ -15,8 +15,10 @@ import { EnqueueCliReviewUseCase } from './application/use-cases/enqueue-cli-rev
 import { ExecuteCliReviewUseCase } from './application/use-cases/execute-cli-review.use-case';
 import { GetCliReviewByIdUseCase } from './application/use-cases/dashboard/get-cli-review-by-id.use-case';
 import { GetCliReviewsUseCase } from './application/use-cases/dashboard/get-cli-reviews.use-case';
+import { GetCliReviewJobStatusUseCase } from './application/use-cases/get-cli-review-job-status.use-case';
 import { IngestSessionEventUseCase } from './application/use-cases/ingest-session-event.use-case';
 import { SubmitCliSessionCaptureUseCase } from './application/use-cases/submit-cli-session-capture.use-case';
+import { WaitForCliReviewJobUseCase } from './application/use-cases/wait-for-cli-review-job.use-case';
 
 // Workflow
 import { CliReviewJobProcessorService } from './workflow/cli-review-job-processor.service';
@@ -96,6 +98,8 @@ import { OutboxMessageModel } from '@libs/core/workflow/infrastructure/repositor
         ExecuteCliReviewUseCase,
         GetCliReviewByIdUseCase,
         GetCliReviewsUseCase,
+        GetCliReviewJobStatusUseCase,
+        WaitForCliReviewJobUseCase,
         SubmitCliSessionCaptureUseCase,
         ClassifyCliSessionCaptureUseCase,
         IngestSessionEventUseCase,
@@ -133,6 +137,8 @@ import { OutboxMessageModel } from '@libs/core/workflow/infrastructure/repositor
         ExecuteCliReviewUseCase,
         GetCliReviewByIdUseCase,
         GetCliReviewsUseCase,
+        GetCliReviewJobStatusUseCase,
+        WaitForCliReviewJobUseCase,
         SubmitCliSessionCaptureUseCase,
         IngestSessionEventUseCase,
         ClassifySessionUseCase,

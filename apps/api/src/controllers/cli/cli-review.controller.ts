@@ -1,15 +1,12 @@
 import { EnqueueCliReviewUseCase } from '@libs/cli-review/application/use-cases/enqueue-cli-review.use-case';
 import { ExecuteCliReviewUseCase } from '@libs/cli-review/application/use-cases/execute-cli-review.use-case';
+import { GetCliReviewJobStatusUseCase } from '@libs/cli-review/application/use-cases/get-cli-review-job-status.use-case';
 import { IngestSessionEventUseCase } from '@libs/cli-review/application/use-cases/ingest-session-event.use-case';
 import { SubmitCliSessionCaptureUseCase } from '@libs/cli-review/application/use-cases/submit-cli-session-capture.use-case';
+import { WaitForCliReviewJobUseCase } from '@libs/cli-review/application/use-cases/wait-for-cli-review-job.use-case';
 import { AuthenticatedRateLimiterService } from '@libs/cli-review/infrastructure/services/authenticated-rate-limiter.service';
 import { TrialRateLimiterService } from '@libs/cli-review/infrastructure/services/trial-rate-limiter.service';
-import {
-    IJobQueueService,
-    JOB_QUEUE_SERVICE_TOKEN,
-} from '@libs/core/workflow/domain/contracts/job-queue.service.contract';
 import { JobStatus } from '@libs/core/workflow/domain/enums/job-status.enum';
-import { WorkflowType } from '@libs/core/workflow/domain/enums/workflow-type.enum';
 import { CliReviewResponse } from '@libs/cli-review/domain/types/cli-review.types';
 import {
     ITeamCliKeyService,
@@ -94,8 +91,8 @@ export class CliReviewController {
     constructor(
         private readonly executeCliReviewUseCase: ExecuteCliReviewUseCase,
         private readonly enqueueCliReviewUseCase: EnqueueCliReviewUseCase,
-        @Inject(JOB_QUEUE_SERVICE_TOKEN)
-        private readonly jobQueueService: IJobQueueService,
+        private readonly getCliReviewJobStatusUseCase: GetCliReviewJobStatusUseCase,
+        private readonly waitForCliReviewJobUseCase: WaitForCliReviewJobUseCase,
         private readonly ingestSessionEventUseCase: IngestSessionEventUseCase,
         private readonly submitCliSessionCaptureUseCase: SubmitCliSessionCaptureUseCase,
         private readonly trialRateLimiter: TrialRateLimiterService,
@@ -569,37 +566,10 @@ export class CliReviewController {
                 queryTeamId,
             );
 
-        const job = await this.jobQueueService.getStatus(jobId);
-        if (!job) {
-            throw new NotFoundException(`CLI review job ${jobId} not found`);
-        }
-
-        if (job.workflowType !== WorkflowType.CLI_CODE_REVIEW) {
-            throw new NotFoundException(`CLI review job ${jobId} not found`);
-        }
-
-        const jobOrgId = (job as any).organizationAndTeamData?.organizationId
-            ?? (job as any).organizationId;
-        if (jobOrgId && jobOrgId !== organizationAndTeamData.organizationId) {
-            throw new NotFoundException(`CLI review job ${jobId} not found`);
-        }
-
-        const result =
-            job.status === JobStatus.COMPLETED
-                ? ((job.metadata as any)?.result as CliReviewResponse | undefined)
-                : undefined;
-
-        return {
+        return this.getCliReviewJobStatusUseCase.execute({
             jobId,
-            status: job.status,
-            ...(result ? { result } : {}),
-            ...(job.status === JobStatus.FAILED && job.lastError
-                ? { error: job.lastError }
-                : {}),
-            createdAt: job.createdAt,
-            startedAt: job.startedAt,
-            completedAt: job.completedAt,
-        };
+            organizationId: organizationAndTeamData.organizationId,
+        });
     }
 
     /**
@@ -953,7 +923,9 @@ export class CliReviewController {
         // 7b. Sync (legacy CLI): wait for the worker to finish and return
         //     the same shape the old endpoint returned. The worker still
         //     does the heavy lifting; we just block the request here.
-        const reviewResult = await this.waitForCliReviewJob(jobId);
+        const reviewResult = await this.waitForCliReviewJobUseCase.execute({
+            jobId,
+        });
 
         return {
             ...reviewResult,
@@ -967,58 +939,6 @@ export class CliReviewController {
         if (!value) return false;
         const normalized = value.trim().toLowerCase();
         return normalized === '1' || normalized === 'true' || normalized === 'yes';
-    }
-
-    /**
-     * Polls the WorkflowJob until it reaches a terminal state.
-     * Backoff: starts at 500ms, doubles up to 5s. Total budget matches the
-     * worker timeout (30 min) so we don't hold the HTTP request after the
-     * worker has already given up.
-     */
-    private async waitForCliReviewJob(jobId: string): Promise<CliReviewResponse> {
-        const startedAt = Date.now();
-        const maxWaitMs = 30 * 60 * 1000;
-        const minDelayMs = 500;
-        const maxDelayMs = 5_000;
-        let delayMs = minDelayMs;
-
-        while (Date.now() - startedAt < maxWaitMs) {
-            const job = await this.jobQueueService.getStatus(jobId);
-            if (!job) {
-                throw new HttpException(
-                    `CLI review job ${jobId} not found`,
-                    HttpStatus.NOT_FOUND,
-                );
-            }
-
-            if (job.status === JobStatus.COMPLETED) {
-                const result = (job.metadata as any)?.result as
-                    | CliReviewResponse
-                    | undefined;
-                if (!result) {
-                    throw new HttpException(
-                        'CLI review completed but result is missing',
-                        HttpStatus.INTERNAL_SERVER_ERROR,
-                    );
-                }
-                return result;
-            }
-
-            if (job.status === JobStatus.FAILED) {
-                throw new HttpException(
-                    job.lastError || 'CLI review job failed',
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                );
-            }
-
-            await new Promise((resolve) => setTimeout(resolve, delayMs));
-            delayMs = Math.min(delayMs * 2, maxDelayMs);
-        }
-
-        throw new HttpException(
-            `CLI review job ${jobId} did not finish within ${maxWaitMs}ms`,
-            HttpStatus.GATEWAY_TIMEOUT,
-        );
     }
 
     /**

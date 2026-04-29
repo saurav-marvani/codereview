@@ -10,9 +10,9 @@ import {
 import { CliReviewController } from '@/core/infrastructure/http/controllers/cli/cli-review.controller';
 import { ExecuteCliReviewUseCase } from '@libs/cli-review/application/use-cases/execute-cli-review.use-case';
 import { EnqueueCliReviewUseCase } from '@libs/cli-review/application/use-cases/enqueue-cli-review.use-case';
-import { JOB_QUEUE_SERVICE_TOKEN } from '@libs/core/workflow/domain/contracts/job-queue.service.contract';
+import { GetCliReviewJobStatusUseCase } from '@libs/cli-review/application/use-cases/get-cli-review-job-status.use-case';
+import { WaitForCliReviewJobUseCase } from '@libs/cli-review/application/use-cases/wait-for-cli-review-job.use-case';
 import { JobStatus } from '@libs/core/workflow/domain/enums/job-status.enum';
-import { WorkflowType } from '@libs/core/workflow/domain/enums/workflow-type.enum';
 import { SubmitCliSessionCaptureUseCase } from '@libs/cli-review/application/use-cases/submit-cli-session-capture.use-case';
 import { AuthenticatedRateLimiterService } from '@libs/cli-review/infrastructure/services/authenticated-rate-limiter.service';
 import { TrialRateLimiterService } from '@libs/cli-review/infrastructure/services/trial-rate-limiter.service';
@@ -143,16 +143,19 @@ const mockEnqueueCliReview = {
         .fn()
         .mockResolvedValue({ jobId: 'job-1', correlationId: 'corr-1' }),
 };
-const mockJobQueueService = {
-    enqueue: jest.fn(),
-    listJobs: jest.fn(),
-    getStatus: jest.fn().mockResolvedValue({
+// Job-status / wait-for-job logic was extracted out of the controller and
+// into dedicated use cases; tests mock those directly instead of poking
+// the underlying queue service.
+const mockGetCliReviewJobStatus = {
+    execute: jest.fn().mockResolvedValue({
+        jobId: 'job-1',
         status: JobStatus.COMPLETED,
-        workflowType: WorkflowType.CLI_CODE_REVIEW,
-        metadata: { result: { suggestions: [] } },
-        organizationId: 'org-uuid-1111',
+        result: { suggestions: [] },
         createdAt: new Date(),
     }),
+};
+const mockWaitForCliReviewJob = {
+    execute: jest.fn().mockResolvedValue({ suggestions: [] }),
 };
 const mockSubmitCliSessionCapture = {
     execute: jest.fn().mockResolvedValue({ id: 'cap_abc123', accepted: true }),
@@ -187,8 +190,12 @@ describe('CliReviewController', () => {
                     useValue: mockEnqueueCliReview,
                 },
                 {
-                    provide: JOB_QUEUE_SERVICE_TOKEN,
-                    useValue: mockJobQueueService,
+                    provide: GetCliReviewJobStatusUseCase,
+                    useValue: mockGetCliReviewJobStatus,
+                },
+                {
+                    provide: WaitForCliReviewJobUseCase,
+                    useValue: mockWaitForCliReviewJob,
                 },
                 {
                     provide: SubmitCliSessionCaptureUseCase,
@@ -1456,13 +1463,6 @@ describe('CliReviewController', () => {
                 allowed: true,
                 remaining: 1,
                 resetAt: new Date('2026-01-01T00:00:00Z'),
-            });
-            mockJobQueueService.getStatus.mockResolvedValueOnce({
-                status: JobStatus.COMPLETED,
-                workflowType: WorkflowType.CLI_CODE_REVIEW,
-                metadata: { result: { suggestions: [{ id: 's1' }] } },
-                organizationId: ORG_ID,
-                createdAt: new Date(),
             });
             mockExecuteCliReview.execute.mockResolvedValue({
                 suggestions: [{ id: 1 }],
