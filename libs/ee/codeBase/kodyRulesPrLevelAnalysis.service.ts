@@ -14,6 +14,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { FileContextAugmentationService } from '@libs/ai-engine/infrastructure/adapters/services/context/file-context-augmentation.service';
 import { ContextAugmentationsMap } from '@libs/ai-engine/infrastructure/adapters/services/context/interfaces/code-review-context-pack.interface';
 import { IKodyRulesAnalysisService } from '@libs/code-review/domain/contracts/KodyRulesAnalysisService.contract';
+import { buildKodyRuleLink } from '@libs/code-review/utils/build-kody-rule-link';
 import { LabelType } from '@libs/common/utils/codeManagement/labels';
 import { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';
 import {
@@ -550,13 +551,12 @@ export class KodyRulesPrLevelAnalysisService implements IKodyRulesAnalysisServic
                 }
 
                 const baseUrl = process.env.API_USER_INVITE_BASE_URL || '';
-                let ruleLink: string;
-
-                if (rule.repositoryId === 'global') {
-                    ruleLink = `${baseUrl}/settings/code-review/global/kody-rules/${ruleId}`;
-                } else {
-                    ruleLink = `${baseUrl}/settings/code-review/${rule.repositoryId}/kody-rules/${ruleId}`;
-                }
+                const ruleLink = buildKodyRuleLink(
+                    baseUrl,
+                    ruleId,
+                    rule,
+                    organizationAndTeamData,
+                );
 
                 const escapeMarkdownSyntax = (text: string): string =>
                     text.replace(/([\[\]\\`*_{}()#+\-.!])/g, '\\$1');

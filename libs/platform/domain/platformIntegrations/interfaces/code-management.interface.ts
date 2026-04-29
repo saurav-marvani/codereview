@@ -189,6 +189,16 @@ export interface ICodeManagementService extends ICommonPlatformIntegrationServic
         userId: string;
     }): Promise<any | null>;
 
+    /**
+     * Resolves the real PR/MR author from a webhook payload when the payload
+     * itself does not carry an enriched author object. Currently only GitLab
+     * needs this — other providers expose the author directly in `mapUsers`.
+     */
+    resolveMrAuthorFromWebhookPayload?(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        payload: any;
+    }): Promise<any | null>;
+
     getCurrentUser(params: {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<any | null>;

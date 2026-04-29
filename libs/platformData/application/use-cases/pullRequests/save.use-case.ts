@@ -109,9 +109,42 @@ export class SavePullRequestUseCase {
                     payload: sanitizedPayload,
                 });
 
+                let resolvedUsers = relevantUsers;
+
+                // GitLab webhook's top-level `user` is the actor (pusher /
+                // commenter), not the MR author. Replace it with the real
+                // author so the persisted PR record reflects who opened it.
+                if (platformType === PlatformType.GITLAB) {
+                    const author =
+                        await this.codeManagement.resolveMrAuthorFromWebhookPayload(
+                            {
+                                payload: sanitizedPayload,
+                                organizationAndTeamData,
+                            },
+                            PlatformType.GITLAB,
+                        );
+                    if (author) {
+                        this.logger.log({
+                            message:
+                                'GitLab webhook actor replaced by resolved MR author',
+                            context: SavePullRequestUseCase.name,
+                            metadata: {
+                                organizationAndTeamData,
+                                mrIid: pullRequest?.number,
+                                webhookActorId: sanitizedPayload?.user?.id,
+                                resolvedAuthorId: author?.id,
+                            },
+                        });
+                        resolvedUsers = {
+                            ...(relevantUsers ?? {}),
+                            user: author,
+                        } as any;
+                    }
+                }
+
                 const pullRequestWithUserData: any = {
                     ...pullRequest,
-                    ...relevantUsers,
+                    ...resolvedUsers,
                 };
 
                 // Optimization: Only fetch files/commits from Git API when needed

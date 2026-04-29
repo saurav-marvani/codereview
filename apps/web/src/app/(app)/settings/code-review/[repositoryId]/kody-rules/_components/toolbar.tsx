@@ -159,13 +159,6 @@ const ORIGIN_OPTIONS: InferredRuleOrigin[] = [
     "manual",
 ];
 
-const SEVERITY_OPTIONS: { value: string; label: string }[] = [
-    { value: "critical", label: "Critical" },
-    { value: "high", label: "High" },
-    { value: "medium", label: "Medium" },
-    { value: "low", label: "Low" },
-];
-
 type FilterPopoverContentProps = {
     visibleScopes: VisibleScopes;
     onVisibleScopesChange: (scopes: VisibleScopes) => void;
@@ -201,13 +194,6 @@ export const FilterPopoverContent = ({
         if (checked) next.add(origin);
         else next.delete(origin);
         onListFiltersChange({ ...listFilters, origins: next });
-    };
-
-    const toggleSeverity = (severity: string, checked: boolean) => {
-        const next = new Set(listFilters.severities);
-        if (checked) next.add(severity);
-        else next.delete(severity);
-        onListFiltersChange({ ...listFilters, severities: next });
     };
 
     const clearAll = () => {
@@ -365,29 +351,6 @@ export const FilterPopoverContent = ({
                     </div>
                 </section>
             )}
-
-            <section className="grid gap-2">
-                <h4 className="text-sm leading-none font-medium">Severity</h4>
-                <div className="grid gap-2">
-                    {SEVERITY_OPTIONS.map(({ value, label }) => {
-                        const fieldId = "severity-" + value;
-                        return (
-                            <div
-                                key={value}
-                                className="flex items-center space-x-2">
-                                <Checkbox
-                                    id={fieldId}
-                                    checked={listFilters.severities.has(value)}
-                                    onCheckedChange={(checked) =>
-                                        toggleSeverity(value, Boolean(checked))
-                                    }
-                                />
-                                <Label htmlFor={fieldId}>{label}</Label>
-                            </div>
-                        );
-                    })}
-                </div>
-            </section>
 
             <section className="grid gap-2">
                 <h4 className="text-sm leading-none font-medium">Status</h4>

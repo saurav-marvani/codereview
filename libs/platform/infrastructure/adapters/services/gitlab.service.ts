@@ -3565,6 +3565,65 @@ export class GitlabService implements Omit<
         }
     }
 
+    /**
+     * GitLab webhooks expose `payload.user` as the actor that fired the hook
+     * (the pusher on a sync, the commenter on a Note Hook), not the MR author.
+     * Other providers' webhooks expose the PR author directly, so license
+     * validation works there. This resolves the real author by `author_id`
+     * (only field GitLab gives us in the payload) and caches the result.
+     */
+    async resolveMrAuthorFromWebhookPayload(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        payload: any;
+    }): Promise<any | null> {
+        const { payload, organizationAndTeamData } = params;
+
+        const authorId =
+            payload?.object_attributes?.author_id ??
+            payload?.merge_request?.author_id;
+
+        if (!authorId || !organizationAndTeamData?.organizationId) {
+            return null;
+        }
+
+        const cacheKey = `gitlab-mr-author-${organizationAndTeamData.organizationId}-${authorId}`;
+
+        try {
+            const cached = await this.cacheService.getFromCache<any>(cacheKey);
+            if (cached) {
+                return cached;
+            }
+        } catch (cacheError) {
+            this.logger.warn({
+                message: 'Error reading MR author from cache',
+                context: GitlabService.name,
+                serviceName: 'GitlabService resolveMrAuthorFromWebhookPayload',
+                error: cacheError,
+            });
+        }
+
+        const author = await this.getUserById({
+            organizationAndTeamData,
+            userId: String(authorId),
+        });
+
+        if (author) {
+            try {
+                await this.cacheService.addToCache(cacheKey, author, 1800000);
+            } catch (cacheError) {
+                this.logger.warn({
+                    message: 'Error caching MR author',
+                    context: GitlabService.name,
+                    serviceName:
+                        'GitlabService resolveMrAuthorFromWebhookPayload',
+                    error: cacheError,
+                });
+            }
+        }
+
+        return author ?? null;
+    }
+
     async getCurrentUser(params: {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<any | null> {

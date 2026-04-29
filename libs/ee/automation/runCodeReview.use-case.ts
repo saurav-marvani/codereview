@@ -67,9 +67,44 @@ export class RunCodeReviewAutomationUseCase implements IUseCase {
                 return;
             }
 
-            const mappedUsers = mappedPlatform.mapUsers({
+            let mappedUsers = mappedPlatform.mapUsers({
                 payload: sanitizedPayload,
             });
+
+            // GitLab webhooks expose `payload.user` as the actor (pusher /
+            // commenter), not the MR author. Replace it so license validation
+            // and downstream consumers see the actual author.
+            if (platformType === PlatformType.GITLAB) {
+                const author =
+                    await this.codeManagementService.resolveMrAuthorFromWebhookPayload(
+                        {
+                            payload: sanitizedPayload,
+                            organizationAndTeamData,
+                        },
+                        PlatformType.GITLAB,
+                    );
+                if (author) {
+                    this.logger.log({
+                        message:
+                            'GitLab webhook actor replaced by resolved MR author',
+                        context: RunCodeReviewAutomationUseCase.name,
+                        metadata: {
+                            organizationAndTeamData,
+                            mrIid:
+                                sanitizedPayload?.object_attributes?.iid ??
+                                sanitizedPayload?.merge_request?.iid,
+                            webhookActorId: sanitizedPayload?.user?.id,
+                            resolvedAuthorId: author?.id,
+                        },
+                    });
+                    mappedUsers = {
+                        assignees: mappedUsers?.assignees,
+                        reviewers: mappedUsers?.reviewers,
+                        ...(mappedUsers ?? {}),
+                        user: author,
+                    };
+                }
+            }
 
             let pullRequestData = null;
             const pullRequest = mappedPlatform.mapPullRequest({
@@ -132,6 +167,17 @@ export class RunCodeReviewAutomationUseCase implements IUseCase {
             }
 
             pullRequestData = pullRequestData ?? pullRequest;
+
+            if (
+                platformType === PlatformType.GITLAB &&
+                mappedUsers?.user &&
+                pullRequestData
+            ) {
+                pullRequestData = {
+                    ...pullRequestData,
+                    user: mappedUsers.user,
+                };
+            }
 
             let repositoryData = repository;
             // Only github provides the language in the webhook, so for the others try to get it

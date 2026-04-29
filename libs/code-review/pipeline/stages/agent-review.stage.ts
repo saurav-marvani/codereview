@@ -4,6 +4,7 @@ import { createLogger } from '@kodus/flow';
 import { Output, jsonSchema } from 'ai';
 import { Inject, Injectable } from '@nestjs/common';
 import { tracedGenerateText } from '@libs/code-review/infrastructure/agents/llm/agent-loop';
+import { buildKodyRuleLink } from '@libs/code-review/utils/build-kody-rule-link';
 import {
     buildLangfuseTelemetry,
     type LangfuseTelemetryMetadata,
@@ -793,11 +794,12 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     continue;
                 }
 
-                const repoPath =
-                    rule.repositoryId === 'global'
-                        ? 'global'
-                        : rule.repositoryId;
-                const ruleLink = `${baseUrl}/settings/code-review/${repoPath}/kody-rules/${ruleId}`;
+                const ruleLink = buildKodyRuleLink(
+                    baseUrl,
+                    ruleId,
+                    rule,
+                    context.organizationAndTeamData,
+                );
                 const escapedTitle = rule.title.replace(
                     /([[\]\\`*_{}()#+\-.!])/g,
                     '\\$1',

@@ -309,9 +309,24 @@ export const KodyRuleItem = ({
                                 </Section.Header>
 
                                 <Section.Content>
-                                    {isMemory
-                                        ? "All prompts and conversations"
-                                        : rule.path || "all files (default)"}
+                                    {isMemory ? (
+                                        "All prompts and conversations"
+                                    ) : rule.path ? (
+                                        // Plain monospaced text mirrors the
+                                        // Source field below — the dark
+                                        // InlineCode pill clashed with the
+                                        // card surface and made Path look
+                                        // heavier than any other field.
+                                        <code className="font-mono text-xs break-all">
+                                            {rule.path
+                                                .split(",")
+                                                .map((g) => g.trim())
+                                                .filter((g) => g.length > 0)
+                                                .join(", ")}
+                                        </code>
+                                    ) : (
+                                        "all files (default)"
+                                    )}
                                 </Section.Content>
                             </Section.Root>
 

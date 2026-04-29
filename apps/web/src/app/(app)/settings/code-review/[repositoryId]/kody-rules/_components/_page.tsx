@@ -69,11 +69,13 @@ import {
 
 import { ActiveFiltersChips } from "./active-filters-chips";
 import { BulkActionToolbar } from "./bulk-action-toolbar";
+import { BulkDeleteConfirmationModal } from "./bulk-delete-confirmation-modal";
 import { GeneratedMemoriesApprovalSetting } from "./generated-memories-approval";
 import { KodyRulesNoMatches } from "./no-matches";
 import { SeverityHeatmap } from "./severity-heatmap";
 import { KodyRulesList } from "./list";
 import { OrphanRulesChip } from "./orphan-rules-chip";
+import { KodyRulesPageSkeleton } from "./page-skeleton";
 import { KodyRulesToolbar, type VisibleScopes } from "./toolbar";
 
 type KodyRulesTab = "review-rules" | "memories" | "configuration";
@@ -521,6 +523,19 @@ const KodyRulesPageContent = () => {
         async () => {
             const ids = Array.from(selection);
             if (ids.length === 0) return;
+
+            // Selection only contains scope-local rules (the toolbar
+            // disables inherited cards), so `kodyRules` is the right
+            // pool to resolve titles from.
+            const titles = kodyRules
+                .filter((rule) => rule.uuid && selection.has(rule.uuid))
+                .map((rule) => rule.title ?? "Untitled rule");
+
+            const confirmed = await magicModal.show<boolean>(() => (
+                <BulkDeleteConfirmationModal titles={titles} />
+            ));
+            if (!confirmed) return;
+
             try {
                 await changeStatusKodyRules(ids, KodyRulesStatus.DELETED);
                 toast({
@@ -1070,7 +1085,8 @@ export const KodyRulesPage = () => {
     return (
         <PageBoundary
             errorVariant="card"
-            errorMessage="Failed to load Kody Rules. Please try again.">
+            errorMessage="Failed to load Kody Rules. Please try again."
+            loading={<KodyRulesPageSkeleton />}>
             <KodyRulesPageContent />
         </PageBoundary>
     );
