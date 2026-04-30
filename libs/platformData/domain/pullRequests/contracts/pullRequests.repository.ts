@@ -89,6 +89,7 @@ export interface IPullRequestsRepository {
         prnumber: number,
         repositoryName: string,
         filePath: string,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<IFile | null>;
     findSuggestionsByPRAndFilename(
         prNumber: number,
@@ -127,12 +128,14 @@ export interface IPullRequestsRepository {
         pullRequestNumber: number,
         repositoryName: string,
         newFile: Omit<IFile, 'id'>,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<PullRequestsEntity | null>;
     addSuggestionToFile(
         fileId: string,
         newSuggestion: Omit<ISuggestion, 'id'>,
         pullRequestNumber: number,
         repositoryName: string,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<PullRequestsEntity | null>;
     findRecentByRepositoryId(
         organizationId: string,
@@ -147,10 +150,12 @@ export interface IPullRequestsRepository {
     updateFile(
         fileId: string,
         updateData: Partial<IFile>,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<PullRequestsEntity | null>;
     updateSuggestion(
         suggestionId: string,
         updateData: Partial<ISuggestion>,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<PullRequestsEntity | null>;
     updateSyncedSuggestionsFlag(
         pullRequestNumbers: number[],

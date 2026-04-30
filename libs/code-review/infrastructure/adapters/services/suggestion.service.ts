@@ -154,6 +154,7 @@ export class SuggestionService implements ISuggestionService {
                                     suggestion.implementationStatus,
                                 updatedAt: new Date().toISOString(),
                             },
+                            organizationAndTeamData,
                         );
                     }
                 }

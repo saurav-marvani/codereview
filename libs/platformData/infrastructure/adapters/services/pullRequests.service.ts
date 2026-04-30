@@ -223,11 +223,13 @@ export class PullRequestsService implements IPullRequestsService {
         prnumber: number,
         repositoryName: string,
         filePath: string,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<IFile | null> {
         return this.pullRequestsRepository.findFileWithSuggestions(
             prnumber,
             repositoryName,
             filePath,
+            organizationAndTeamData,
         );
     }
 
@@ -266,11 +268,13 @@ export class PullRequestsService implements IPullRequestsService {
         pullRequestNumber: number,
         repositoryName: string,
         newFile: Omit<IFile, 'id'>,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<PullRequestsEntity | null> {
         return this.pullRequestsRepository.addFileToPullRequest(
             pullRequestNumber,
             repositoryName,
             newFile,
+            organizationAndTeamData,
         );
     }
 
@@ -279,12 +283,14 @@ export class PullRequestsService implements IPullRequestsService {
         newSuggestion: Omit<ISuggestion, 'id'>,
         pullRequestNumber: number,
         repositoryName: string,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<PullRequestsEntity | null> {
         return this.pullRequestsRepository.addSuggestionToFile(
             fileId,
             newSuggestion,
             pullRequestNumber,
             repositoryName,
+            organizationAndTeamData,
         );
     }
 
@@ -365,17 +371,24 @@ export class PullRequestsService implements IPullRequestsService {
     async updateFile(
         fileId: string,
         updateData: Partial<IFile>,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<PullRequestsEntity | null> {
-        return this.pullRequestsRepository.updateFile(fileId, updateData);
+        return this.pullRequestsRepository.updateFile(
+            fileId,
+            updateData,
+            organizationAndTeamData,
+        );
     }
 
     async updateSuggestion(
         suggestionId: string,
         updateData: Partial<ISuggestion>,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<PullRequestsEntity | null> {
         return this.pullRequestsRepository.updateSuggestion(
             suggestionId,
             updateData,
+            organizationAndTeamData,
         );
     }
 
@@ -896,6 +909,7 @@ export class PullRequestsService implements IPullRequestsService {
                     pullRequest?.number,
                     repository?.name,
                     file?.filename,
+                    organizationAndTeamData,
                 );
 
                 if (existingFile) {
@@ -909,7 +923,11 @@ export class PullRequestsService implements IPullRequestsService {
                         codeReviewModelUsed: file.codeReviewModelUsed ?? '',
                     };
 
-                    await this.updateFile(existingFile.id, updatedFile);
+                    await this.updateFile(
+                        existingFile.id,
+                        updatedFile,
+                        organizationAndTeamData,
+                    );
 
                     const newSuggestions = this.getSuggestionsForFile(
                         file.filename,
@@ -923,6 +941,7 @@ export class PullRequestsService implements IPullRequestsService {
                             suggestion,
                             pullRequest?.number,
                             repository?.name,
+                            organizationAndTeamData,
                         );
                     }
 
@@ -957,6 +976,7 @@ export class PullRequestsService implements IPullRequestsService {
                         pullRequest.number,
                         repository.name,
                         formattedFile,
+                        organizationAndTeamData,
                     );
 
                     this.logger.log({

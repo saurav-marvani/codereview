@@ -344,6 +344,7 @@ export class PullRequestsRepository implements IPullRequestsRepository {
         prnumber: number,
         repositoryName: string,
         filePath: string,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<IFile | null> {
         const result = await this.pullRequestsModel
             .aggregate([
@@ -351,6 +352,8 @@ export class PullRequestsRepository implements IPullRequestsRepository {
                     $match: {
                         'number': prnumber,
                         'repository.name': repositoryName,
+                        'organizationId':
+                            organizationAndTeamData.organizationId,
                     },
                 },
                 {
@@ -835,12 +838,14 @@ export class PullRequestsRepository implements IPullRequestsRepository {
         pullRequestNumber: number,
         repositoryName: string,
         newFile: Omit<IFile, 'id'>,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<PullRequestsEntity | null> {
         const doc = await this.pullRequestsModel
             .findOneAndUpdate(
                 {
                     'number': pullRequestNumber,
                     'repository.name': repositoryName,
+                    'organizationId': organizationAndTeamData.organizationId,
                 },
                 {
                     $push: {
@@ -864,6 +869,7 @@ export class PullRequestsRepository implements IPullRequestsRepository {
         newSuggestion: Omit<ISuggestion, 'id'> & { id?: string },
         pullRequestNumber: number,
         repositoryName: string,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<PullRequestsEntity | null> {
         const suggestionWithId = {
             ...newSuggestion,
@@ -875,6 +881,7 @@ export class PullRequestsRepository implements IPullRequestsRepository {
                 {
                     'number': pullRequestNumber,
                     'repository.name': repositoryName,
+                    'organizationId': organizationAndTeamData.organizationId,
                     'files.id': fileId,
                 },
                 {
@@ -924,13 +931,17 @@ export class PullRequestsRepository implements IPullRequestsRepository {
     async updateFile(
         fileId: string,
         updateData: Partial<IFile>,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<PullRequestsEntity | null> {
         const sanitizedUpdateData =
             this.sanitizeCodeReviewConfigData(updateData);
 
         const doc = await this.pullRequestsModel
             .findOneAndUpdate(
-                { 'files.id': fileId },
+                {
+                    'files.id': fileId,
+                    'organizationId': organizationAndTeamData.organizationId,
+                },
                 {
                     $set: Object.entries(sanitizedUpdateData).reduce(
                         (acc, [key, value]) => ({
@@ -999,6 +1010,7 @@ export class PullRequestsRepository implements IPullRequestsRepository {
     async updateSuggestion(
         suggestionId: string,
         updateData: Partial<ISuggestion>,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<PullRequestsEntity | null> {
         const updateFields = Object.entries(updateData).reduce(
             (acc, [key, value]) => {
@@ -1010,7 +1022,10 @@ export class PullRequestsRepository implements IPullRequestsRepository {
 
         const doc = await this.pullRequestsModel
             .findOneAndUpdate(
-                { 'files.suggestions.id': suggestionId },
+                {
+                    'files.suggestions.id': suggestionId,
+                    'organizationId': organizationAndTeamData.organizationId,
+                },
                 { $set: updateFields },
                 {
                     arrayFilters: [
