@@ -203,8 +203,42 @@ export class ValidatePrerequisitesStage extends BasePipelineStage<CodeReviewPipe
             });
         }
 
-        // If auto-review is disabled and this is not a command-triggered review,
-        // skip silently without posting notifications (e.g. BYOK required).
+        // If validation failed due to USER_NOT_LICENSED, try auto-assign FIRST
+        // (before checking autoReviewEnabled, because auto-assign should work regardless)
+        if (validationResult.errorType === ValidationErrorType.USER_NOT_LICENSED) {
+            const failureHandled = await this.handleValidationFailure(
+                context,
+                validationResult,
+                showStatusFeedback,
+            );
+
+            if (failureHandled === 'auto_assigned') {
+                // Auto-assign succeeded, continue with review
+                return this.updateContext(context, (draft) => {
+                    applyShowStatusFeedbackMetadata(draft);
+                });
+            }
+
+            // Auto-assign failed - skip review with notification already handled
+            return this.updateContext(context, (draft) => {
+                applyShowStatusFeedbackMetadata(draft);
+                draft.statusInfo = {
+                    status: AutomationStatus.SKIPPED,
+                    message: StageMessageHelper.skippedWithReason(
+                        this.getLicenseSkipReason(validationResult.errorType),
+                    ),
+                };
+                // Notification already posted by handleValidationFailure above
+                if (!draft.pipelineMetadata) {
+                    draft.pipelineMetadata = {};
+                }
+                draft.pipelineMetadata.notificationHandled = true;
+            });
+        }
+
+        // For other errors, check autoReviewEnabled BEFORE handling failure
+        // (these errors don't benefit from auto-assign)
+
         try {
             if (context.origin !== 'command') {
                 const autoReviewEnabled =
@@ -228,40 +262,26 @@ export class ValidatePrerequisitesStage extends BasePipelineStage<CodeReviewPipe
             });
         }
 
-        // Validation failed
-        const failureHandled = await this.handleValidationFailure(
+        // Handle other validation failures (INVALID_LICENSE, BYOK_REQUIRED, etc.)
+        await this.handleValidationFailure(
             context,
             validationResult,
             showStatusFeedback,
         );
 
-        if (failureHandled === 'auto_assigned') {
-            return this.updateContext(context, (draft) => {
-                applyShowStatusFeedbackMetadata(draft);
-            });
-        }
-
+        // Return SKIPPED - notification already handled by handleValidationFailure
         return this.updateContext(context, (draft) => {
             applyShowStatusFeedbackMetadata(draft);
             draft.statusInfo = {
-                status: AutomationStatus.SKIPPED, // Or FAILED? Usually SKIPPED if business logic prevents it.
+                status: AutomationStatus.SKIPPED,
                 message: StageMessageHelper.skippedWithReason(
                     this.getLicenseSkipReason(validationResult.errorType),
                 ),
             };
-
-            // If we failed validation, we likely sent a specific license notification (for Azure/Bitbucket).
-            // Mark it so the handler doesn't send a generic "Skipped" message on top.
-            if (
-                context.platformType === PlatformType.AZURE_REPOS ||
-                context.platformType === PlatformType.BITBUCKET ||
-                !showStatusFeedback
-            ) {
-                if (!draft.pipelineMetadata) {
-                    draft.pipelineMetadata = {};
-                }
-                draft.pipelineMetadata.notificationHandled = true;
+            if (!draft.pipelineMetadata) {
+                draft.pipelineMetadata = {};
             }
+            draft.pipelineMetadata.notificationHandled = true;
         });
     }
 
