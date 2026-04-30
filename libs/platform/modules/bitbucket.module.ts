@@ -6,6 +6,8 @@ import { IntegrationConfigCoreModule } from '@libs/integrations/modules/config-c
 import { AuthIntegrationModule } from '@libs/integrations/modules/authIntegration.module';
 import { GlobalCacheModule } from '@libs/core/cache/cache.module';
 import { McpCoreModule } from '@libs/mcp-server/mcp-core.module';
+import { BitbucketCloudService } from '../infrastructure/adapters/services/bitbucket/bitbucket-cloud.service';
+import { BitbucketDataCenterService } from '../infrastructure/adapters/services/bitbucket/bitbucket-data-center.service';
 
 @Module({
     imports: [
@@ -15,7 +17,11 @@ import { McpCoreModule } from '@libs/mcp-server/mcp-core.module';
         forwardRef(() => GlobalCacheModule),
         forwardRef(() => McpCoreModule),
     ],
-    providers: [BitbucketService],
+    providers: [
+        BitbucketService,
+        BitbucketCloudService,
+        BitbucketDataCenterService,
+    ],
     exports: [BitbucketService],
 })
 export class BitbucketModule {}
