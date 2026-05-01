@@ -260,6 +260,34 @@ export const EFFORT_TO_BUDGET: Record<ReasoningEffort, number> = {
  *   Gemini: https://ai.google.dev/gemini-api/docs/thinking
  *   OpenRouter: https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
  */
+
+/**
+ * Wrap the system prompt with Anthropic cacheControl when the provider is
+ * Anthropic. For other providers, return the plain string — they either have
+ * implicit caching (OpenAI/Kimi) or don't support it.
+ *
+ * The Vercel AI SDK `system` param accepts `string | SystemModelMessage | Array<SystemModelMessage>`.
+ * Anthropic requires explicit `cache_control: { type: 'ephemeral' }` markers
+ * on content blocks to enable prompt caching.
+ */
+export function buildSystemPromptWithCache(
+    systemPrompt: string,
+    provider?: BYOKProvider | string,
+): string | { role: 'system'; content: string; providerOptions?: Record<string, any> } {
+    if (provider === BYOKProvider.ANTHROPIC) {
+        return {
+            role: 'system' as const,
+            content: systemPrompt,
+            providerOptions: {
+                anthropic: {
+                    cacheControl: { type: 'ephemeral' },
+                },
+            },
+        };
+    }
+    return systemPrompt;
+}
+
 export function buildReasoningProviderOptions(
     provider?: BYOKProvider | string,
     effort?: ReasoningEffort,
@@ -924,7 +952,10 @@ export async function runAgentLoop(
                     ...({ __kodusHardTimeoutMs: AGENT_TIMEOUT_MS } as any),
                     model: input.model,
                     abortSignal: abortController.signal,
-                    system: input.systemPrompt,
+                    system: buildSystemPromptWithCache(
+                        input.systemPrompt,
+                        input.byokProvider,
+                    ) as any,
                     prompt: input.userPrompt,
                     experimental_telemetry: _buildLangfuseTelemetry(
                         input.agentName ?? 'agent-loop',
@@ -1404,7 +1435,10 @@ export async function runAgentLoop(
                     generateText({
                         abortSignal: secondChanceSignal,
                         model: input.model,
-                        system: input.systemPrompt,
+                        system: buildSystemPromptWithCache(
+                            input.systemPrompt,
+                            input.byokProvider,
+                        ) as any,
                         experimental_telemetry: _buildLangfuseTelemetry(
                             `${input.agentName ?? 'agent-loop'}-second-chance`,
                             input.telemetryMetadata,
