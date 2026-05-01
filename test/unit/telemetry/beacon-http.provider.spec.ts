@@ -15,52 +15,24 @@ describe('BeaconHttpProvider', () => {
             'returns true for KODUS_TELEMETRY_DISABLED=%s',
             (value) => {
                 process.env.KODUS_TELEMETRY_DISABLED = value;
-                delete process.env.DO_NOT_TRACK;
 
                 expect(new BeaconHttpProvider().isDisabled()).toBe(true);
             },
         );
 
-        it('returns true for DO_NOT_TRACK=1', () => {
-            delete process.env.KODUS_TELEMETRY_DISABLED;
-            process.env.DO_NOT_TRACK = '1';
-
-            expect(new BeaconHttpProvider().isDisabled()).toBe(true);
-        });
-
         it.each(['', '0', 'false', 'no', 'off', 'maybe'])(
             'returns false for KODUS_TELEMETRY_DISABLED=%s',
             (value) => {
                 process.env.KODUS_TELEMETRY_DISABLED = value;
-                delete process.env.DO_NOT_TRACK;
 
                 expect(new BeaconHttpProvider().isDisabled()).toBe(false);
             },
         );
 
-        it('returns false when neither var is set', () => {
+        it('returns false when the var is not set', () => {
             delete process.env.KODUS_TELEMETRY_DISABLED;
-            delete process.env.DO_NOT_TRACK;
 
             expect(new BeaconHttpProvider().isDisabled()).toBe(false);
-        });
-    });
-
-    describe('endpoint', () => {
-        it('falls back to the production beacon URL', () => {
-            delete process.env.KODUS_TELEMETRY_URL;
-
-            expect(new BeaconHttpProvider().endpoint()).toBe(
-                'https://telemetry.kodus.io/v1/heartbeat',
-            );
-        });
-
-        it('honors KODUS_TELEMETRY_URL override', () => {
-            process.env.KODUS_TELEMETRY_URL = 'http://localhost:3001/v1/heartbeat';
-
-            expect(new BeaconHttpProvider().endpoint()).toBe(
-                'http://localhost:3001/v1/heartbeat',
-            );
         });
     });
 

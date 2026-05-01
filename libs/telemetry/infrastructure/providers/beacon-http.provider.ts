@@ -1,7 +1,7 @@
 import { createLogger } from '@kodus/flow';
 import { Injectable } from '@nestjs/common';
 
-const DEFAULT_ENDPOINT = 'https://telemetry.kodus.io/v1/heartbeat';
+const ENDPOINT = 'https://telemetry.kodus.io/v1/heartbeat';
 const TIMEOUT_MS = 5_000;
 
 /**
@@ -9,35 +9,31 @@ const TIMEOUT_MS = 5_000;
  * pre-built payload to the receiver and surface only "did it land" — the
  * caller decides what to do on failure.
  *
- * Endpoint and disable flags are read every call so operators can flip them at
- * runtime without restarting the worker (cron is daily — short-lived envs are
- * fine).
+ * Opt-out is the only knob: `KODUS_TELEMETRY_DISABLED=1` (also accepts
+ * `true`/`yes`/`on`, case-insensitive). Read on every call so operators can
+ * flip it at runtime without restarting the worker.
  */
 @Injectable()
 export class BeaconHttpProvider {
     private readonly logger = createLogger(BeaconHttpProvider.name);
 
     isDisabled(): boolean {
-        return (
-            isTruthy(process.env.KODUS_TELEMETRY_DISABLED) ||
-            isTruthy(process.env.DO_NOT_TRACK)
-        );
-    }
-
-    endpoint(): string {
-        return process.env.KODUS_TELEMETRY_URL ?? DEFAULT_ENDPOINT;
+        const value = process.env.KODUS_TELEMETRY_DISABLED;
+        if (!value) {
+            return false;
+        }
+        return /^(1|true|yes|on)$/i.test(value);
     }
 
     async send(
         payload: Record<string, unknown>,
         kodusVersion: string,
     ): Promise<boolean> {
-        const url = this.endpoint();
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
         try {
-            const response = await fetch(url, {
+            const response = await fetch(ENDPOINT, {
                 body: JSON.stringify(payload),
                 headers: {
                     'Content-Type': 'application/json',
@@ -54,7 +50,7 @@ export class BeaconHttpProvider {
             this.logger.warn({
                 message: 'beacon rejected heartbeat',
                 context: BeaconHttpProvider.name,
-                metadata: { status: response.status, url },
+                metadata: { status: response.status },
             });
             return false;
         } catch (error) {
@@ -64,7 +60,6 @@ export class BeaconHttpProvider {
                 metadata: {
                     error:
                         error instanceof Error ? error.message : String(error),
-                    url,
                 },
             });
             return false;
@@ -72,11 +67,4 @@ export class BeaconHttpProvider {
             clearTimeout(timer);
         }
     }
-}
-
-function isTruthy(value: string | undefined): boolean {
-    if (!value) {
-        return false;
-    }
-    return /^(1|true|yes|on)$/i.test(value);
 }

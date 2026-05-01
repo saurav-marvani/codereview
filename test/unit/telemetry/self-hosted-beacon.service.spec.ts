@@ -13,7 +13,6 @@ type MockCollector = {
 type MockTransport = {
     isDisabled: jest.Mock;
     send: jest.Mock;
-    endpoint: jest.Mock;
 };
 
 function makeMetrics(version = '1.2.3') {
@@ -64,7 +63,6 @@ function build(): {
     const transport: MockTransport = {
         isDisabled: jest.fn().mockReturnValue(false),
         send: jest.fn().mockResolvedValue(true),
-        endpoint: jest.fn().mockReturnValue('https://telemetry.kodus.io/v1/heartbeat'),
     };
 
     const service = new SelfHostedBeaconService(

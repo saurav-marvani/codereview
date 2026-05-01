@@ -9,8 +9,8 @@ import { SelfHostedBeaconService } from '@libs/telemetry/application/services/se
  * UTC day to the `kodus-beacon` receiver (telemetry.kodus.io); the service
  * itself owns dedupe, opt-out, and `instance_id` persistence.
  *
- * Schedule: jittered around 03:00 UTC so the global fleet doesn't stampede.
- * Override via `API_CRON_SELF_HOSTED_BEACON` (standard cron expression).
+ * Schedule: 03:17 UTC daily — the odd minute is intentional jitter so the
+ * global fleet doesn't stampede the receiver at the top of the hour.
  *
  * Scope: self-hosted only. Cloud already has rich product telemetry via
  * PostHog/Resend/n8n; the cloud control plane has no use for its own
@@ -23,7 +23,7 @@ export class SelfHostedBeaconCron {
 
     constructor(private readonly beacon: SelfHostedBeaconService) {}
 
-    @Cron(process.env.API_CRON_SELF_HOSTED_BEACON || '17 3 * * *', {
+    @Cron('17 3 * * *', {
         name: 'self-hosted-beacon',
         timeZone: 'UTC',
     })
