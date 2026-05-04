@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { readFileSync } from 'fs';
-import { join } from 'path';
+import { resolve } from 'path';
 
 interface IntegrationDescriptions {
     [provider: string]: {
@@ -20,9 +20,12 @@ export class IntegrationDescriptionService {
 
     private loadDescriptions(): void {
         try {
-            const filePath = join(
-                process.cwd(),
-                'src/config/integration-descriptions.json',
+            // Resolve relative to this file so the path works regardless of
+            // process.cwd() — important in the kodus-ai monorepo where cwd
+            // is the repo root, not apps/mcp-manager. Mirrors kodus-mcp.provider.ts.
+            const filePath = resolve(
+                __dirname,
+                '../../../config/integration-descriptions.json',
             );
             const fileContent = readFileSync(filePath, 'utf8');
             this.descriptions = JSON.parse(fileContent);
