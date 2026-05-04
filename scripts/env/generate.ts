@@ -170,7 +170,13 @@ function renderDocsSnippet(sections: SchemaSection[]): string {
             const type = item.sensitive
                 ? `secret${item.type ? ` (${item.type})` : ''}`
                 : item.type ?? 'string';
-            const desc = item.description.join(' ').replace(/\|/g, '\\|');
+            // Escape backslash first (otherwise the next replace would
+            // produce inconsistent escaping when descriptions contain
+            // both `\` and `|`), then escape the markdown table delimiter.
+            const desc = item.description
+                .join(' ')
+                .replace(/\\/g, '\\\\')
+                .replace(/\|/g, '\\|');
             out.push(
                 `| \`${item.name}\` | ${required} | ${type} | ${audienceBadge(item)} | ${desc} |`,
             );

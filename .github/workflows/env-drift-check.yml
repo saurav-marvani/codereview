@@ -6,6 +6,12 @@
 # Runs in ~15s — no Docker, no LLM, just yarn.
 name: env-drift-check
 
+# Read-only — this workflow only fetches code and runs scripts; it does
+# not push, comment, or modify anything. Lock GITHUB_TOKEN to the bare
+# minimum (CodeQL alert: actions/missing-workflow-permissions).
+permissions:
+    contents: read
+
 on:
     pull_request:
         # Coverage check needs to re-scan the codebase whenever ANY .ts/.js

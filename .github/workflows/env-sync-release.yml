@@ -7,6 +7,12 @@
 # is needed for docs.
 name: env-sync-release
 
+# kodus-ai side is only checked out (read). Cross-repo writes go through
+# CROSS_REPO_PAT, not the default GITHUB_TOKEN — so the local token can
+# stay minimal (CodeQL alert: actions/missing-workflow-permissions).
+permissions:
+    contents: read
+
 on:
     push:
         tags:
