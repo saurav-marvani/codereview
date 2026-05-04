@@ -234,12 +234,13 @@ export default function CardsGroup({
         email?: string;
         organizationName?: string;
         selfHostedUrl?: string;
+        authMode?: AuthMode;
         integrationKey: INTEGRATIONS_KEY;
         integrationType: PlatformType;
     }) => {
         const integrationResponse = await createCodeManagementIntegration({
             integrationType: params.integrationType,
-            authMode: AuthMode.TOKEN,
+            authMode: params.authMode ?? AuthMode.TOKEN,
             token: params.token,
             host: params?.selfHostedUrl,
             username: params.username,
@@ -324,12 +325,19 @@ export default function CardsGroup({
     const openBitbucketModal = async () => {
         magicModal.show(() => (
             <BitbucketModal
-                onSave={async (token, username, email, selfHostedUrl) => {
+                onSave={async (
+                    token,
+                    username,
+                    email,
+                    selfHostedUrl,
+                    authMode,
+                ) => {
                     await onSaveToken({
                         token,
                         username,
                         email,
                         selfHostedUrl,
+                        authMode,
                         integrationKey: INTEGRATIONS_KEY.BITBUCKET,
                         integrationType: PlatformType.BITBUCKET,
                     });

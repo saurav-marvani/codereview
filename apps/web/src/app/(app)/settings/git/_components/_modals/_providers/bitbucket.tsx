@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { GitTokenDocs } from "@components/system/git-token-docs";
 import { Button } from "@components/ui/button";
+import { Badge } from "@components/ui/badge";
 import { Card, CardHeader } from "@components/ui/card";
 import {
     Collapsible,
@@ -23,6 +24,7 @@ import { Switch } from "@components/ui/switch";
 import { useAsyncAction } from "@hooks/use-async-action";
 import { AxiosError } from "axios";
 import { Save } from "lucide-react";
+import { AuthMode } from "src/core/types";
 
 type Props = {
     onSaveAction: (
@@ -30,6 +32,7 @@ type Props = {
         username: string,
         email: string,
         selfHostedUrl?: string,
+        authMode?: AuthMode,
     ) => Promise<void>;
 };
 
@@ -39,18 +42,19 @@ export const BitbucketModal = (props: Props) => {
     const [email, setEmail] = useState("");
     const [selfhosted, setSelfhosted] = useState(false);
     const [selfHostedUrl, setSelfHostedUrl] = useState("");
+    const [dataCenterPassword, setDataCenterPassword] = useState("");
     const [error, setError] = useState({ message: "" });
 
     useEffect(() => {
         setError({ message: "" });
-    }, [token, username, email, selfHostedUrl]);
+    }, [token, username, email, selfHostedUrl, dataCenterPassword]);
 
     const canSubmit =
         !!username &&
-        !!token &&
-        !!email &&
         !error.message &&
-        (!selfhosted || !!selfHostedUrl.trim());
+        (!selfhosted
+            ? !!token && !!email
+            : !!selfHostedUrl.trim() && !!dataCenterPassword.trim());
 
     const [saveToken, { loading: loadingSaveToken }] = useAsyncAction(
         async () => {
@@ -58,10 +62,11 @@ export const BitbucketModal = (props: Props) => {
 
             try {
                 await props.onSaveAction(
-                    token,
+                    selfhosted ? dataCenterPassword : token,
                     username,
-                    email,
+                    selfhosted ? "" : email,
                     selfhosted ? selfHostedUrl : undefined,
+                    selfhosted ? AuthMode.BASIC : AuthMode.TOKEN,
                 );
                 magicModal.hide();
             } catch (error) {
@@ -103,44 +108,75 @@ export const BitbucketModal = (props: Props) => {
                                 error={error.message}
                                 id="bitbucket-username-input"
                                 onChange={(e) => setUsername(e.target.value)}
-                                placeholder="Paste your username"
+                                placeholder={
+                                    selfhosted
+                                        ? "Enter your Data Center username"
+                                        : "Paste your username"
+                                }
                             />
                         </FormControl.Input>
                     </FormControl.Root>
 
-                    <FormControl.Root>
-                        <FormControl.Label htmlFor="bitbucket-email-input">
-                            Email
-                        </FormControl.Label>
-                        <FormControl.Input>
-                            <Input
-                                type="email"
-                                value={email}
-                                error={error.message}
-                                id="bitbucket-email-input"
-                                onChange={(e) => setEmail(e.target.value)}
-                                placeholder="Enter your email address"
-                            />
-                        </FormControl.Input>
-                    </FormControl.Root>
+                    {!selfhosted && (
+                        <FormControl.Root>
+                            <FormControl.Label htmlFor="bitbucket-email-input">
+                                Email
+                            </FormControl.Label>
+                            <FormControl.Input>
+                                <Input
+                                    type="email"
+                                    value={email}
+                                    error={error.message}
+                                    id="bitbucket-email-input"
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    placeholder="Enter your email address"
+                                />
+                            </FormControl.Input>
+                        </FormControl.Root>
+                    )}
 
-                    <FormControl.Root>
-                        <FormControl.Label htmlFor="bitbucket-api-token-input">
-                            API token
-                        </FormControl.Label>
-                        <FormControl.Input>
-                            <Input
-                                type="password"
-                                value={token}
-                                error={error.message}
-                                id="bitbucket-api-token-input"
-                                onChange={(e) => setToken(e.target.value)}
-                                placeholder="Paste your API token"
-                            />
-                        </FormControl.Input>
+                    {!selfhosted && (
+                        <FormControl.Root>
+                            <FormControl.Label htmlFor="bitbucket-api-token-input">
+                                API token
+                            </FormControl.Label>
+                            <FormControl.Input>
+                                <Input
+                                    type="password"
+                                    value={token}
+                                    error={error.message}
+                                    id="bitbucket-api-token-input"
+                                    onChange={(e) => setToken(e.target.value)}
+                                    placeholder="Paste your API token"
+                                />
+                            </FormControl.Input>
 
-                        <FormControl.Error>{error.message}</FormControl.Error>
-                    </FormControl.Root>
+                            <FormControl.Error>
+                                {error.message}
+                            </FormControl.Error>
+                        </FormControl.Root>
+                    )}
+
+                    {selfhosted && (
+                        <FormControl.Root>
+                            <FormControl.Label htmlFor="bitbucket-basic-auth-password-input">
+                                Basic auth password
+                            </FormControl.Label>
+
+                            <FormControl.Input>
+                                <Input
+                                    type="password"
+                                    value={dataCenterPassword}
+                                    error={error.message}
+                                    id="bitbucket-basic-auth-password-input"
+                                    onChange={(e) =>
+                                        setDataCenterPassword(e.target.value)
+                                    }
+                                    placeholder="Enter your Data Center password"
+                                />
+                            </FormControl.Input>
+                        </FormControl.Root>
+                    )}
 
                     <Collapsible
                         open={selfhosted}
@@ -153,8 +189,13 @@ export const BitbucketModal = (props: Props) => {
                                     variant="helper"
                                     size="lg"
                                     className="w-full items-center justify-between py-4">
-                                    <FormControl.Label className="mb-0">
-                                        Self-hosted
+                                    <FormControl.Label className="mb-0 flex items-center gap-2">
+                                        <span>Bitbucket Data Center</span>
+                                        <Badge
+                                            variant="helper"
+                                            className="h-6 px-2 text-[10px] uppercase">
+                                            Alpha
+                                        </Badge>
                                     </FormControl.Label>
                                 </Button>
                             </CollapsibleTrigger>
@@ -169,7 +210,7 @@ export const BitbucketModal = (props: Props) => {
                                 <CardHeader>
                                     <FormControl.Root>
                                         <FormControl.Label htmlFor="bitbucket-selfhost-url">
-                                            Bitbucket Base URL
+                                            Bitbucket Data Center Base URL
                                         </FormControl.Label>
 
                                         <FormControl.Input>
@@ -190,7 +231,7 @@ export const BitbucketModal = (props: Props) => {
                         </CollapsibleContent>
                     </Collapsible>
 
-                    <GitTokenDocs provider="bitbucket" />
+                    {!selfhosted && <GitTokenDocs provider="bitbucket" />}
 
                     <DialogFooter>
                         <Button

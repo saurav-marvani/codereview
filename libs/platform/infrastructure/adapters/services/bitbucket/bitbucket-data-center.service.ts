@@ -151,10 +151,17 @@ export class BitbucketDataCenterService implements Omit<
         username?: string;
         email?: string;
         host?: string;
+        authMode?: AuthMode;
     }): Promise<{ success: boolean; status?: CreateAuthIntegrationStatus }> {
         try {
-            const { organizationAndTeamData, token, username, email, host } =
-                params;
+            const {
+                organizationAndTeamData,
+                token,
+                username,
+                email,
+                host,
+                authMode = AuthMode.TOKEN,
+            } = params;
 
             if (!host) {
                 throw new BadRequestException(
@@ -165,7 +172,7 @@ export class BitbucketDataCenterService implements Omit<
             const authDetails: BitbucketAuthDetail = {
                 username: username || '',
                 appPassword: encrypt(token),
-                authMode: AuthMode.TOKEN,
+                authMode,
                 email: email,
                 host: host,
             };
@@ -2625,17 +2632,23 @@ export class BitbucketDataCenterService implements Omit<
         // Data Center leverages Token Authentication (or Basic) primarily.
         if (params.authMode === AuthMode.OAUTH) {
             throw new BadRequestException(
-                'OAuth not natively supported in standard Data Center setup. Use PAT.',
+                'OAuth not natively supported in standard Data Center setup. Use PAT or Basic.',
             );
         }
 
         if (params.token) {
+            const resolvedAuthMode =
+                params.authMode === AuthMode.BASIC
+                    ? AuthMode.BASIC
+                    : AuthMode.TOKEN;
+
             const res = await this.authenticateWithToken({
                 organizationAndTeamData: params.organizationAndTeamData,
                 token: params.token,
                 username: params.username,
                 email: params.email,
                 host: params.host,
+                authMode: resolvedAuthMode,
             });
 
             // Trigger background syncs if MCP is configured
@@ -2648,7 +2661,7 @@ export class BitbucketDataCenterService implements Omit<
         }
 
         throw new BadRequestException(
-            'Token required for Data Center integration.',
+            'Token or password required for Data Center integration.',
         );
     }
 

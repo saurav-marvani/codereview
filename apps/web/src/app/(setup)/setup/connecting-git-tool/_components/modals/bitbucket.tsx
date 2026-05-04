@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@components/ui/button";
+import { Badge } from "@components/ui/badge";
 import { Card, CardHeader } from "@components/ui/card";
 import {
     Collapsible,
@@ -32,16 +33,16 @@ import { AuthMode, PlatformType } from "src/core/types";
 import { z } from "zod";
 
 const tokenFormSchema = z.object({
-    token: z.string().min(1, {
-        error: "Enter a Token",
-    }),
-    username: z.string().min(1, {
-        error: "Enter a Username",
-    }),
-    email: z.email({
-        error: "Enter a valid email",
-    }),
+    token: z.string().optional(),
+    username: z.string().optional(),
+    email: z
+        .string()
+        .email({
+            error: "Enter a valid email",
+        })
+        .optional(),
     selfHostedUrl: z.string().optional(),
+    dataCenterPassword: z.string().optional(),
 });
 
 function getUsernameFromEmail(email: string): string {
@@ -74,13 +75,15 @@ export const BitbucketTokenModal = (props: {
         try {
             const integrationResponse = await createCodeManagementIntegration({
                 integrationType: PlatformType.BITBUCKET,
-                authMode: AuthMode.TOKEN,
-                token: data.token,
+                authMode: selfhosted ? AuthMode.BASIC : AuthMode.TOKEN,
+                token: selfhosted
+                    ? data.dataCenterPassword
+                    : data.token,
                 organizationAndTeamData: {
                     teamId: props.teamId,
                 },
                 username: data.username,
-                email: data.email,
+                email: selfhosted ? undefined : data.email,
                 host: selfhosted ? data.selfHostedUrl : undefined,
             });
 
@@ -113,15 +116,25 @@ export const BitbucketTokenModal = (props: {
         }
     };
 
-    const {
-        isDirty: formIsDirty,
-        isValid: formIsValid,
-        isSubmitting: formIsSubmitting,
-    } = form.formState;
+    const { isValid: formIsValid, isSubmitting: formIsSubmitting } =
+        form.formState;
 
     const watchedUsername = form.watch("username");
+    const watchedEmail = form.watch("email");
+    const watchedToken = form.watch("token");
+    const watchedHost = form.watch("selfHostedUrl");
+    const watchedPassword = form.watch("dataCenterPassword");
+
     const displayName =
         watchedUsername || getUsernameFromEmail(props.userEmail);
+
+        const hasRequiredFields = selfhosted
+                ? !!watchedUsername?.trim() &&
+                    !!watchedHost?.trim() &&
+                    !!watchedPassword?.trim()
+                : !!watchedUsername?.trim() &&
+                    !!watchedEmail?.trim() &&
+                    !!watchedToken?.trim();
 
     return (
         <Dialog open onOpenChange={() => magicModal.hide()}>
@@ -154,6 +167,12 @@ export const BitbucketTokenModal = (props: {
                         <Controller
                             name="username"
                             control={form.control}
+                            rules={{
+                                validate: (value) =>
+                                    value?.trim().length
+                                        ? true
+                                        : "Enter a Username",
+                            }}
                             render={({ field, fieldState }) => (
                                 <FormControl.Root>
                                     <FormControl.Input>
@@ -161,7 +180,11 @@ export const BitbucketTokenModal = (props: {
                                             {...field}
                                             type="text"
                                             error={fieldState.error}
-                                            placeholder="Paste your Bitbucket username here"
+                                            placeholder={
+                                                selfhosted
+                                                    ? "Enter your Data Center username"
+                                                    : "Paste your Bitbucket username here"
+                                            }
                                         />
                                     </FormControl.Input>
 
@@ -172,47 +195,63 @@ export const BitbucketTokenModal = (props: {
                             )}
                         />
 
-                        <Controller
-                            name="email"
-                            control={form.control}
-                            render={({ field, fieldState }) => (
-                                <FormControl.Root>
-                                    <FormControl.Input>
-                                        <Input
-                                            {...field}
-                                            type="email"
-                                            error={fieldState.error}
-                                            placeholder="Enter your email address"
-                                        />
-                                    </FormControl.Input>
+                        {!selfhosted && (
+                            <Controller
+                                name="email"
+                                control={form.control}
+                                rules={{
+                                    validate: (value) =>
+                                        value?.trim().length
+                                            ? true
+                                            : "Enter a valid email",
+                                }}
+                                render={({ field, fieldState }) => (
+                                    <FormControl.Root>
+                                        <FormControl.Input>
+                                            <Input
+                                                {...field}
+                                                type="email"
+                                                error={fieldState.error}
+                                                placeholder="Enter your email address"
+                                            />
+                                        </FormControl.Input>
 
-                                    <FormControl.Error>
-                                        {fieldState.error?.message}
-                                    </FormControl.Error>
-                                </FormControl.Root>
-                            )}
-                        />
+                                        <FormControl.Error>
+                                            {fieldState.error?.message}
+                                        </FormControl.Error>
+                                    </FormControl.Root>
+                                )}
+                            />
+                        )}
 
-                        <Controller
-                            name="token"
-                            control={form.control}
-                            render={({ field, fieldState }) => (
-                                <FormControl.Root>
-                                    <FormControl.Input>
-                                        <Input
-                                            {...field}
-                                            type="password"
-                                            error={fieldState.error}
-                                            placeholder="Paste your API token here"
-                                        />
-                                    </FormControl.Input>
+                        {!selfhosted && (
+                            <Controller
+                                name="token"
+                                control={form.control}
+                                rules={{
+                                    validate: (value) =>
+                                        value?.trim().length
+                                            ? true
+                                            : "Enter a Token",
+                                }}
+                                render={({ field, fieldState }) => (
+                                    <FormControl.Root>
+                                        <FormControl.Input>
+                                            <Input
+                                                {...field}
+                                                type="password"
+                                                error={fieldState.error}
+                                                placeholder="Paste your API token here"
+                                            />
+                                        </FormControl.Input>
 
-                                    <FormControl.Error>
-                                        {fieldState.error?.message}
-                                    </FormControl.Error>
-                                </FormControl.Root>
-                            )}
-                        />
+                                        <FormControl.Error>
+                                            {fieldState.error?.message}
+                                        </FormControl.Error>
+                                    </FormControl.Root>
+                                )}
+                            />
+                        )}
 
                         <Collapsible
                             open={selfhosted}
@@ -225,8 +264,13 @@ export const BitbucketTokenModal = (props: {
                                         variant="helper"
                                         size="lg"
                                         className="w-full items-center justify-between py-4">
-                                        <FormControl.Label className="mb-0">
-                                            Self-hosted
+                                        <FormControl.Label className="mb-0 flex items-center gap-2">
+                                            <span>Bitbucket Data Center</span>
+                                            <Badge
+                                                variant="helper"
+                                                className="h-6 px-2 text-[10px] uppercase">
+                                                Alpha
+                                            </Badge>
                                         </FormControl.Label>
                                     </Button>
                                 </CollapsibleTrigger>
@@ -246,13 +290,13 @@ export const BitbucketTokenModal = (props: {
                                                 validate: (value) =>
                                                     !selfhosted ||
                                                     !!value?.trim() ||
-                                                    "Enter the Bitbucket base URL",
+                                                    "Enter the Bitbucket Data Center base URL",
                                             }}
                                             render={({ field, fieldState }) => (
                                                 <FormControl.Root>
                                                     <FormControl.Label
                                                         htmlFor={field.name}>
-                                                        Bitbucket Base URL
+                                                        Bitbucket Data Center Base URL
                                                     </FormControl.Label>
 
                                                     <FormControl.Input>
@@ -275,12 +319,50 @@ export const BitbucketTokenModal = (props: {
                                                 </FormControl.Root>
                                             )}
                                         />
+
+                                        <Controller
+                                            name="dataCenterPassword"
+                                            control={form.control}
+                                            rules={{
+                                                validate: (value) =>
+                                                    !selfhosted ||
+                                                    !!value?.trim() ||
+                                                    "Enter a password",
+                                            }}
+                                            render={({ field, fieldState }) => (
+                                                <FormControl.Root>
+                                                    <FormControl.Label
+                                                        htmlFor={field.name}>
+                                                        Basic auth password
+                                                    </FormControl.Label>
+
+                                                    <FormControl.Input>
+                                                        <Input
+                                                            {...field}
+                                                            id={field.name}
+                                                            type="password"
+                                                            error={
+                                                                fieldState.error
+                                                            }
+                                                            placeholder="Enter your Data Center password"
+                                                        />
+                                                    </FormControl.Input>
+
+                                                    <FormControl.Error>
+                                                        {
+                                                            fieldState.error
+                                                                ?.message
+                                                        }
+                                                    </FormControl.Error>
+                                                </FormControl.Root>
+                                            )}
+                                        />
                                     </CardHeader>
                                 </Card>
                             </CollapsibleContent>
                         </Collapsible>
 
-                        <GitTokenDocs provider="bitbucket" />
+                        {!selfhosted && <GitTokenDocs provider="bitbucket" />}
                     </div>
 
                     <DialogFooter>
@@ -298,11 +380,7 @@ export const BitbucketTokenModal = (props: {
                             variant="primary"
                             leftIcon={<SaveIcon />}
                             loading={formIsSubmitting}
-                            disabled={
-                                !formIsValid ||
-                                (selfhosted &&
-                                    !form.watch("selfHostedUrl")?.trim())
-                            }>
+                            disabled={!formIsValid || !hasRequiredFields}>
                             Validate and save
                         </Button>
                     </DialogFooter>
