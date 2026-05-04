@@ -1,15 +1,26 @@
-# Fails the PR if .env.example (or any generated env target) drifted
-# from .env.schema. Runs in ~10s — no Docker, no LLM, just yarn.
+# Two gates in one workflow:
+#  1. drift   — generated outputs (.env.example, docs snippet) match .env.schema
+#  2. coverage — every process.env.X / env.X reference in code is declared
+#                in .env.schema (with an allowlist for CLI/test/false-positives)
+#
+# Runs in ~15s — no Docker, no LLM, just yarn.
 name: env-drift-check
 
 on:
     pull_request:
+        # Coverage check needs to re-scan the codebase whenever ANY .ts/.js
+        # changes, not only schema files. Otherwise a PR adding a stray
+        # `process.env.NEW_VAR` outside schema/scripts would slip through.
         paths:
             - '.env.schema'
             - '.env.example'
+            - 'docs/_snippets/env-vars-generated.mdx'
             - 'scripts/env/**'
             - 'package.json'
             - 'yarn.lock'
+            - '**/*.ts'
+            - '**/*.tsx'
+            - '**/*.js'
 
 jobs:
     check:
@@ -21,13 +32,17 @@ jobs:
                   node-version: 22
                   cache: yarn
             - run: yarn install --frozen-lockfile
+
             - name: Regenerate from schema and diff
               run: yarn env:apply
-            - name: Fail if anything changed
+            - name: Fail if anything drifted from schema
               run: |
                   if ! git diff --quiet; then
-                      echo "::error::.env.example drifted from .env.schema."
+                      echo "::error::Generated outputs drifted from .env.schema."
                       echo "Run \`yarn env:apply\` locally and commit the result."
                       git --no-pager diff
                       exit 1
                   fi
+
+            - name: Check schema covers every env var used in code
+              run: yarn env:check:coverage

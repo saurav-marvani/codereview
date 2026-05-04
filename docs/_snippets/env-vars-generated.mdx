@@ -342,7 +342,7 @@
 
 | Variable | Required | Type | Scope | Description |
 | --- | --- | --- | --- | --- |
-| `API_AGENT_REVIEW_ENABLED` | – | boolean | 🏢 ☁️ Cloud | Force the new agent-based code review engine on for ALL orgs in this instance (bypasses the PostHog feature flag). Set "true" to enable. Read by libs/core/providers/code-review-pipeline.provider.ee.ts — .ee.ts file means it only takes effect in EE contexts. |
+| `API_AGENT_REVIEW_ENABLED` | – | boolean | ⚙️ Both | Force the new agent-based code review engine on for ALL orgs in this instance (bypasses the PostHog feature flag). Set "true" to enable. Read by libs/core/providers/code-review-pipeline.provider.ee.ts — .ee.ts file means it only takes effect in EE contexts. |
 | `API_RABBITMQ_WAIT` | – | boolean | ⚙️ Both | Wait for RabbitMQ to become reachable before completing app boot. |
 | `API_WORKER_DRAIN_TIMEOUT_MS` | – | number | ⚙️ Both | Worker drain timeout (ms) — how long to keep accepting in-flight jobs during graceful shutdown before forcing exit. |
 
