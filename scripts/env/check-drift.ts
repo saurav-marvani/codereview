@@ -27,12 +27,12 @@ execSync(`ts-node ${join(__dirname, 'generate.ts')}`, {
 const targets: Target[] = [
     {
         name: 'kodus-ai/.env.example',
-        generated: join(REPO_ROOT, 'poc-env', 'kodus-ai.env.example'),
+        generated: join(REPO_ROOT, '.env-preview', 'kodus-ai.env.example'),
         committed: join(REPO_ROOT, '.env.example'),
     },
     {
         name: 'docs/_snippets/env-vars-generated.mdx',
-        generated: join(REPO_ROOT, 'poc-env', 'env-vars-generated.mdx'),
+        generated: join(REPO_ROOT, '.env-preview', 'env-vars-generated.mdx'),
         committed: join(
             REPO_ROOT,
             'docs',

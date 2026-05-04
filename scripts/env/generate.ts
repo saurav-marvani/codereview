@@ -2,7 +2,7 @@
  * Generates env templates and docs from .env.schema.
  *
  * Usage:
- *   yarn env:generate              # writes to poc-env/ (compare without overwriting)
+ *   yarn env:generate              # writes to .env-preview/ (compare without overwriting)
  *   yarn env:generate --apply      # writes to real targets
  *
  * Targets:
@@ -37,7 +37,7 @@ const INSTALLER_OUT_ARG = process.argv.find((a) =>
 const INSTALLER_OUT = INSTALLER_OUT_ARG
     ? INSTALLER_OUT_ARG.replace('--installer-out=', '')
     : join(REPO_ROOT, '..', 'kodus-installer', '.env.example');
-const POC_DIR = join(REPO_ROOT, 'poc-env');
+const POC_DIR = join(REPO_ROOT, '.env-preview');
 
 const TARGETS = APPLY
     ? {
@@ -211,7 +211,7 @@ function main(): void {
     console.log(
         `  cloud:${cloudCount}  self-hosted:${selfHostedCount}  required:${requiredCount}  sensitive:${sensitiveCount}`,
     );
-    console.log(`Mode: ${APPLY ? 'APPLY (real targets)' : 'POC (poc-env/)'}`);
+    console.log(`Mode: ${APPLY ? 'APPLY (real targets)' : 'POC (.env-preview/)'}`);
     console.log(`Wrote:`);
     console.log(`  ${TARGETS.envExample}`);
     console.log(`  ${TARGETS.installerEnv}`);

@@ -178,4 +178,4 @@ scripts/benchmark/runs/*
 
 # Analytics parity harness output (regenerated per run)
 parity-report.json
-/poc-env/
+/.env-preview/

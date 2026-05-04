@@ -1,10 +1,10 @@
 /**
- * Generates poc-env/review.csv — a slim CSV for spreadsheet review.
+ * Generates .env-preview/review.csv — a slim CSV for spreadsheet review.
  *
  * 7 columns. One decision per row. Pre-filled with my best guess.
  * You only TYPE when you disagree (in the "your_decision" column).
  *
- * Open with: `open poc-env/review.csv` (Numbers / Excel / Sheets).
+ * Open with: `open .env-preview/review.csv` (Numbers / Excel / Sheets).
  */
 
 import { spawnSync } from 'node:child_process';
@@ -14,7 +14,7 @@ import { dirname, join } from 'node:path';
 import { flatten, parseSchema, SchemaItem } from './parse-schema';
 
 const REPO_ROOT = join(__dirname, '..', '..');
-const OUT = join(REPO_ROOT, 'poc-env', 'review.csv');
+const OUT = join(REPO_ROOT, '.env-preview', 'review.csv');
 
 const SECRET_RE = /(KEY|SECRET|PASSWORD|TOKEN|DSN|CREDENTIAL|PASS$)/;
 const PORT_RE = /_PORT$/;
@@ -81,7 +81,7 @@ function grepUsage(): Usage {
         '--exclude-dir=.next',
         '--exclude-dir=.cache',
         '--exclude-dir=.git',
-        '--exclude-dir=poc-env',
+        '--exclude-dir=.env-preview',
         '--include=*.ts',
         '--include=*.tsx',
         '--include=*.js',
