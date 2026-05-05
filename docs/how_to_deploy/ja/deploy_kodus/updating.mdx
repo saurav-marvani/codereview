@@ -1,0 +1,26 @@
+---
+title: "アップデート"
+description: "Kodusのインストールをアップデートする。"
+icon: "arrow-up"
+---
+
+Kodusのインストールを最新バージョンにアップデートするには：
+
+```bash
+# Kodusのインストールディレクトリに移動
+cd kodus-installer
+
+# リポジトリから最新の変更を取得
+git pull
+
+# 1.xからアップグレードする場合は、.envを新しい2.0の変数で更新してください
+# （RabbitMQ、MCP Manager、Webhooks）
+
+# インストーラーを再実行してイメージを取得し、サービスを起動してマイグレーションを実行
+./scripts/install.sh
+
+# オプション：診断を実行
+./scripts/doctor.sh
+```
+
+

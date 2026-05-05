@@ -30,6 +30,10 @@ variable "WEB_TAGS" {
   default = "kodus-ai-web:local"
 }
 
+variable "MCP_MANAGER_TAGS" {
+  default = "kodus-mcp-manager:local"
+}
+
 variable "RABBITMQ_TAGS" {
   default = "kodus-rabbitmq:local"
 }
@@ -63,6 +67,12 @@ target "worker" {
   tags = split(",", WORKER_TAGS)
 }
 
+target "mcp-manager" {
+  inherits = ["base"]
+  target = "mcp-manager"
+  tags = split(",", MCP_MANAGER_TAGS)
+}
+
 target "web" {
   # Unified Dockerfile for cloud and self-hosted — env values come from
   # ConfigProvider/useConfig() at runtime now (see
@@ -92,5 +102,5 @@ target "rabbitmq" {
 }
 
 group "default" {
-  targets = ["api", "webhooks", "worker", "web"]
+  targets = ["api", "webhooks", "worker", "web", "mcp-manager"]
 }

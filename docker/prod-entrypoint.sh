@@ -74,6 +74,20 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
   else
       echo "⚠️ Analytics ormconfig not found at dist/libs/ee/analytics-warehouse/infrastructure/ormconfig.js. Skipping."
   fi
+
+  echo "▶ Ensuring mcp-manager schema exists (PROD)..."
+  if [ -f "dist/scripts/mcp-manager/ensure-schema.cli.js" ]; then
+      yarn mcp-manager:ensure-schema:prod
+  else
+      echo "⚠️ mcp-manager ensure-schema CLI not found in dist/. Skipping (migration may fail on first boot)."
+  fi
+
+  echo "▶ Running mcp-manager migrations (PROD)..."
+  if [ -f "dist/apps/mcp-manager/src/config/typeorm.config.js" ]; then
+      yarn mcp-manager:migration:run:prod
+  else
+      echo "⚠️ mcp-manager typeorm.config not found at dist/apps/mcp-manager/src/config/typeorm.config.js. Skipping."
+  fi
 else
   echo "▶ Skipping migrations (RUN_MIGRATIONS=$RUN_MIGRATIONS)"
 fi

@@ -1,0 +1,65 @@
+# Cross-repo sync — opens a PR in kodus-installer with the regenerated
+# .env.example whenever it drifts from kodus-ai/.env.schema.
+#
+# Triggered on release tag (same cadence as Docker images). docs/ used
+# to be a sister repo too — it now lives inside kodus-ai, so the schema
+# generates the snippet directly into the monorepo and no cross-repo PR
+# is needed for docs.
+name: env-sync-release
+
+# kodus-ai side is only checked out (read). Cross-repo writes go through
+# CROSS_REPO_PAT, not the default GITHUB_TOKEN — so the local token can
+# stay minimal (CodeQL alert: actions/missing-workflow-permissions).
+permissions:
+    contents: read
+
+on:
+    push:
+        tags:
+            - 'v*'
+    workflow_dispatch: # allow manual re-run if a PR was closed without merge
+
+jobs:
+    sync-installer:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout kodus-ai
+              uses: actions/checkout@v4
+              with:
+                  path: kodus-ai
+
+            - name: Checkout kodus-installer
+              uses: actions/checkout@v4
+              with:
+                  repository: kodustech/kodus-installer
+                  path: kodus-installer
+                  token: ${{ secrets.CROSS_REPO_PAT }}
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: yarn
+                  cache-dependency-path: kodus-ai/yarn.lock
+
+            - name: Install deps
+              working-directory: kodus-ai
+              run: yarn install --frozen-lockfile
+
+            - name: Regenerate kodus-installer/.env.example from schema
+              working-directory: kodus-ai
+              run: |
+                  npx ts-node scripts/env/generate.ts \
+                      --apply \
+                      --installer \
+                      --installer-out=../kodus-installer/.env.example
+
+            - name: Open PR in kodus-installer (if drifted)
+              working-directory: kodus-installer
+              env:
+                  GH_TOKEN: ${{ secrets.CROSS_REPO_PAT }}
+                  TAG: ${{ github.ref_name }}
+                  SHA: ${{ github.sha }}
+              run: |
+                  ../kodus-ai/scripts/env/open-sync-pr.sh \
+                      kodus-installer \
+                      .env.example

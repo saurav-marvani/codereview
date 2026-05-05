@@ -1,0 +1,26 @@
+---
+title: "Updating"
+description: "Update your Kodus installation."
+icon: "arrow-up"
+---
+
+To update your Kodus installation to the latest version:
+
+```bash
+# Navigate to your Kodus installation directory
+cd kodus-installer
+
+# Pull the latest changes from the repository
+git pull
+
+# If you are upgrading from 1.x, update your .env with the new 2.0 variables
+# (RabbitMQ, MCP Manager, and webhooks).
+
+# Re-run the installer to pull images, start services, and run migrations
+./scripts/install.sh
+
+# Optional: run diagnostics
+./scripts/doctor.sh
+```
+
+

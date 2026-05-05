@@ -188,3 +188,5 @@ FROM runtime-common AS webhooks
 CMD ["node", "dist/apps/webhooks/main.js"]
 FROM runtime-common AS worker
 CMD ["node", "dist/apps/worker/main.js"]
+FROM runtime-common AS mcp-manager
+CMD ["node", "dist/apps/mcp-manager/main.js"]

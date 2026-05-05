@@ -121,6 +121,14 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
   # Same Postgres host in self-hosted / dev; the loader cascades from
   # ANALYTICS_PG_DB_* to API_PG_DB_* when the dedicated host is unset.
   npm run analytics:migration:run:internal
+  # mcp-manager lives in apps/mcp-manager and uses the schema named
+  # in API_MCP_MANAGER_PG_DB_SCHEMA (default "mcp-manager"). Same
+  # ensure-schema dance applies because TypeORM's tracking table needs
+  # the schema to exist before the first migration runs.
+  echo "▶ Ensuring mcp-manager schema exists..."
+  npm run mcp-manager:ensure-schema
+  echo "▶ Running mcp-manager migrations..."
+  npm run mcp-manager:migration:run:internal
 else
   echo "▶ Skipping Migrations (RUN_MIGRATIONS=$RUN_MIGRATIONS)"
 fi

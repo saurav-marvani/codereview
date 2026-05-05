@@ -198,6 +198,45 @@ services:
             - PYROSCOPE_SERVER_ADDRESS=${PYROSCOPE_SERVER_ADDRESS:-http://pyroscope:4040}
             - PYROSCOPE_HEAP_PROFILING=${PYROSCOPE_HEAP_PROFILING:-false}
 
+    mcp-manager:
+        <<: *app-service-defaults
+        container_name: kodus_mcp_manager
+        ports:
+            - '${API_MCP_MANAGER_PORT:-3101}:${API_MCP_MANAGER_PORT:-3101}'
+            - '9230:9230'
+        command: yarn start:dev:mcp-manager
+        deploy:
+            resources:
+                limits:
+                    memory: 1G
+                reservations:
+                    memory: 256M
+        healthcheck:
+            test:
+                [
+                    'CMD-SHELL',
+                    'node -e "const http=require(''http''); const port=process.env.API_MCP_MANAGER_PORT||3101; const req=http.get({host:''127.0.0.1'', port, path:''/health'', timeout:2000}, (res)=>process.exit(res.statusCode===200?0:1)); req.on(''error'', ()=>process.exit(1)); req.on(''timeout'', ()=>{ req.destroy(); process.exit(1); });"',
+                ]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 60s
+        environment:
+            - NODE_OPTIONS=--max-old-space-size=1024 --max-semi-space-size=64
+            - DEBUG_PORT=9230
+            - API_MCP_MANAGER_PORT=${API_MCP_MANAGER_PORT:-3101}
+            - API_MCP_MANAGER_LOG_LEVEL=${API_MCP_MANAGER_LOG_LEVEL:-info}
+            - API_MCP_MANAGER_NODE_ENV=${API_MCP_MANAGER_NODE_ENV:-development}
+            - API_MCP_MANAGER_DATABASE_ENV=${API_MCP_MANAGER_DATABASE_ENV:-development}
+            - API_MCP_MANAGER_CORS_ORIGINS=${API_MCP_MANAGER_CORS_ORIGINS:-*}
+            - API_MCP_MANAGER_JWT_SECRET=${API_MCP_MANAGER_JWT_SECRET:-}
+            - API_MCP_MANAGER_ENCRYPTION_SECRET=${API_MCP_MANAGER_ENCRYPTION_SECRET:-}
+            - API_MCP_MANAGER_PG_DB_SCHEMA=${API_MCP_MANAGER_PG_DB_SCHEMA:-mcp-manager}
+            - API_MCP_MANAGER_MCP_PROVIDERS=${API_MCP_MANAGER_MCP_PROVIDERS:-kodusmcp,composio,custom}
+            - API_MCP_MANAGER_REDIRECT_URI=${API_MCP_MANAGER_REDIRECT_URI:-http://localhost:3000/setup/mcp/oauth}
+            - API_MCP_MANAGER_COMPOSIO_BASE_URL=${API_MCP_MANAGER_COMPOSIO_BASE_URL:-https://backend.composio.dev/api/v3}
+            - API_MCP_MANAGER_COMPOSIO_API_KEY=${API_MCP_MANAGER_COMPOSIO_API_KEY:-}
+
     #----------------------------------------------------------------
     # Web Frontend
     #----------------------------------------------------------------

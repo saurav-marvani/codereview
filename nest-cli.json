@@ -80,6 +80,22 @@
                 "tsConfigPath": "apps/analytics-cli/tsconfig.json",
                 "deleteOutDir": true
             }
+        },
+        "mcp-manager": {
+            "type": "application",
+            "root": "apps/mcp-manager",
+            "entryFile": "main",
+            "sourceRoot": "apps/mcp-manager/src",
+            "compilerOptions": {
+                "tsConfigPath": "apps/mcp-manager/tsconfig.json",
+                "deleteOutDir": true,
+                "assets": [
+                    {
+                        "include": "apps/mcp-manager/src/config/*.json",
+                        "outDir": "dist/apps/mcp-manager/config"
+                    }
+                ]
+            }
         }
     }
 }

@@ -1,0 +1,95 @@
+## 系统要求
+
+<AccordionGroup>
+  <Accordion title="Recommended Hardware">
+    - CPU: 2+ cores - RAM: 8GB+ - Storage: 60GB+ free space
+  </Accordion>
+  <Accordion title="Required Software">
+    - Docker (latest stable version) 
+    - Node.js (latest LTS version) 
+    - Yarn or NPM (latest stable version) 
+    - Domain name or fixed IP (for external
+    deployments)
+  </Accordion>
+  <Accordion title="Required Ports">
+    - 3000: Kodus Web App 
+    - 3001: API 
+    - 3332: Webhooks 
+    - 5672, 15672, 15692: RabbitMQ (AMQP, management, metrics) 
+    - 3101: MCP Manager (API, metrics) 
+    - 5432: PostgreSQL - 27017: MongoDB
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  **如果您计划连接云端 Git 服务（GitHub、GitLab、Bitbucket）或云端 LLM 提供商（OpenAI、Anthropic 等），则需要互联网访问。** 对于内网自托管的 Git 工具和本地/自托管 LLM，外网访问是可选的。
+</Note>
+
+## 域名设置（可选）
+
+If you're planning to integrate Kodus with cloud-based Git providers (GitHub, GitLab, or Bitbucket), you'll need public-facing URLs for both the Kodus Web App and its API. This allows your server to receive webhooks for proper Code Review functionality and ensures correct application behavior.
+
+We recommend setting up two subdomains:
+- One for the Web Application, e.g., `kodus-web.yourdomain.com`.
+- One for the API, e.g., `kodus-api.yourdomain.com`.
+
+Webhook 由独立服务处理（端口 3332）。您可以选择：
+- 使用独立的 webhook 子域名，例如 `kodus-webhooks.yourdomain.com`，或
+- 继续使用 API 域名，并在反向代理中将 `/github/webhook`、`/gitlab/webhook` 等路径转发到 webhook 服务。
+
+Both subdomains should have DNS A records pointing to your server's IP address. Later in this guide, we will configure a reverse proxy (Nginx) to route requests to these subdomains to the correct internal services. This setup is essential for full functionality, including webhooks and authentication.
+
+> **Note**: If you're only connecting to self-hosted Git tools on your network and do not require public access or webhooks, you might be able to use a simpler setup, but this guide focuses on public-facing deployments.
+
+## Setup
+
+<Steps>
+  <Step title="Clone the installer repository">
+    ```bash
+    git clone https://github.com/kodustech/kodus-installer.git
+    cd kodus-installer
+    ```
+  </Step>
+  <Step title="Copy the example environment file">
+    ```bash
+    cp .env.example .env
+    ```
+  </Step>
+  <Step title="Generate secure keys for the required environment variables">
+    ```bash
+    ./generate-keys.sh
+    ```
+  </Step>
+  <Step title="Edit the environment file">
+    Edit `.env` with your values using your preferred text editor. 
+    ```bash
+    nano .env
+    ```
+
+    详细说明请参见 [环境变量配置](/how_to_deploy/zh/deploy_kodus/generic_vm)。  
+  </Step>
+
+  <Step title="Run the installer">
+    ```bash
+    ./scripts/install.sh
+    ```
+  </Step>
+  <Step title="Success 🎉">
+  When complete, Kodus Services should be running on your machine.
+  You can verify your installation using the following script:
+  ```bash
+  ./scripts/doctor.sh
+  ```
+  </Step>
+  <Step title="Access the web interface">
+    Once you access the web interface for the first time, you'll need to:
+
+1. **Create your admin account** - This will be the first user with full system access
+2. **Configure your Git provider** - Connect GitHub, GitLab, or Bitbucket following the on-screen instructions
+3. **Select repositories** for analysis - Choose which code repositories Kody will review
+
+<Info>
+  详细步骤请参见 [快速开始指南](/how_to_use/zh/quickstart)。
+</Info>
+  </Step>
+</Steps>
