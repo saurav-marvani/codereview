@@ -160,6 +160,7 @@
                                     "how_to_deploy/en/deploy_kodus/generic_vm",
                                     "how_to_deploy/en/deploy_kodus/mcp_manager",
                                     "how_to_deploy/en/deploy_kodus/reverse_proxy",
+                                    "how_to_deploy/en/deploy_kodus/telemetry",
                                     "how_to_deploy/en/deploy_kodus/troubleshooting",
                                     "how_to_deploy/en/deploy_kodus/updating"
                                 ]

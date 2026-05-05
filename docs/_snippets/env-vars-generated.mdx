@@ -346,6 +346,12 @@
 | `API_RABBITMQ_WAIT` | – | boolean | ⚙️ Both | Wait for RabbitMQ to become reachable before completing app boot. |
 | `API_WORKER_DRAIN_TIMEOUT_MS` | – | number | ⚙️ Both | Worker drain timeout (ms) — how long to keep accepting in-flight jobs during graceful shutdown before forcing exit. |
 
+## Self-hosted telemetry
+
+| Variable | Required | Type | Scope | Description |
+| --- | --- | --- | --- | --- |
+| `KODUS_TELEMETRY_DISABLED` | – | boolean | ⚙️ Both | Opt out of the daily anonymous heartbeat sent to telemetry.kodus.io. Cloud is unaffected — the cron skips when API_CLOUD_MODE=true regardless. Self-hosted operators flip this to "true" to disable. The payload is aggregated counters (active users, PRs reviewed, repos connected, etc.) plus runtime metadata (Node version, OS, deployment). It never includes emails, repo/branch/PR names, code, or any identifying data. Full schema published at https://github.com/kodustech/kodus-beacon/blob/main/docs/api.md |
+
 ## MCP — additional client config
 
 | Variable | Required | Type | Scope | Description |

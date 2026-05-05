@@ -33,4 +33,14 @@ Your code is processed temporarily and never used for training:
 - **Regular Audits**: Periodic security audits for compliance
 - **Security Updates**: Regular patches and updates
 
+## Self-hosted telemetry
+
+If you run Kodus self-hosted, each instance sends one anonymous daily
+heartbeat to `telemetry.kodus.io` with aggregated counters and runtime
+metadata — never code, identities, or anything that could trace back to
+your users. You can inspect the exact payload with `yarn telemetry:preview`
+or disable it with `KODUS_TELEMETRY_DISABLED=true`. Full schema, retention
+policy, and source code links are documented in
+[Anonymous Telemetry](/how_to_deploy/en/deploy_kodus/telemetry).
+
 Questions? Contact our support team or join [Discord](https://discord.gg/TFZBRk9fT6).
