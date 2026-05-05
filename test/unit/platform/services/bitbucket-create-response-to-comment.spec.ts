@@ -35,16 +35,28 @@ jest.mock('@kodus/flow', () => ({
 }));
 
 let BitbucketService: any;
+let BitbucketCloudService: any;
+let BitbucketDataCenterService: any;
 
 describe('BitbucketService.createResponseToComment', () => {
     let bitbucketService: any;
+    let bitbucketCloudService: any;
+    let bitbucketDataCenterService: any;
     let createCommentMock: jest.Mock;
 
     beforeAll(async () => {
-        const module = await import(
-            '@libs/platform/infrastructure/adapters/services/bitbucket.service'
-        );
+        const module =
+            await import('@libs/platform/infrastructure/adapters/services/bitbucket.service');
         BitbucketService = (module as any).default || module.BitbucketService;
+        const cloudModule =
+            await import('@libs/platform/infrastructure/adapters/services/bitbucket/bitbucket-cloud.service');
+        BitbucketCloudService =
+            (cloudModule as any).default || cloudModule.BitbucketCloudService;
+        const dataCenterModule =
+            await import('@libs/platform/infrastructure/adapters/services/bitbucket/bitbucket-data-center.service');
+        BitbucketDataCenterService =
+            (dataCenterModule as any).default ||
+            dataCenterModule.BitbucketDataCenterService;
     });
 
     beforeEach(async () => {
@@ -55,6 +67,8 @@ describe('BitbucketService.createResponseToComment', () => {
         const moduleRef = await Test.createTestingModule({
             providers: [
                 BitbucketService,
+                BitbucketCloudService,
+                BitbucketDataCenterService,
                 {
                     provide: ConfigService,
                     useValue: { get: jest.fn() },
@@ -89,10 +103,20 @@ describe('BitbucketService.createResponseToComment', () => {
         }).compile();
 
         bitbucketService = moduleRef.get(BitbucketService);
+        bitbucketCloudService = moduleRef.get(BitbucketCloudService);
+        bitbucketDataCenterService = moduleRef.get(BitbucketDataCenterService);
 
-        jest.spyOn(bitbucketService, 'getAuthDetails').mockResolvedValue({});
-        jest.spyOn(bitbucketService, 'getWorkspaceFromRepository').mockResolvedValue('workspace-uuid');
-        jest.spyOn(bitbucketService, 'instanceBitbucketApi').mockReturnValue({
+        jest.spyOn(bitbucketCloudService, 'getAuthDetails').mockResolvedValue(
+            {},
+        );
+        jest.spyOn(
+            bitbucketCloudService,
+            'getWorkspaceFromRepository',
+        ).mockResolvedValue('workspace-uuid');
+        jest.spyOn(
+            bitbucketCloudService,
+            'instanceBitbucketApi',
+        ).mockReturnValue({
             pullrequests: { createComment: createCommentMock },
         });
     });
@@ -125,13 +149,15 @@ describe('BitbucketService.createResponseToComment', () => {
     });
 
     it('returns the API response data on success', async () => {
-        const result = await bitbucketService.createResponseToComment(baseParams);
+        const result =
+            await bitbucketService.createResponseToComment(baseParams);
         expect(result).toEqual({ id: 'comment-id' });
     });
 
     it('returns null when the API call throws', async () => {
         createCommentMock.mockRejectedValueOnce(new Error('boom'));
-        const result = await bitbucketService.createResponseToComment(baseParams);
+        const result =
+            await bitbucketService.createResponseToComment(baseParams);
         expect(result).toBeNull();
     });
 });

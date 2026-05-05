@@ -16,13 +16,14 @@ const onSaveToken = async (params: {
     email?: string;
     organizationName?: string;
     selfHostedUrl?: string;
+    authMode?: AuthMode;
     integrationKey: INTEGRATIONS_KEY;
     integrationType: PlatformType;
     onSuccess: () => void;
 }) => {
     const integrationResponse = await createCodeManagementIntegration({
         integrationType: params.integrationType,
-        authMode: AuthMode.TOKEN,
+        authMode: params.authMode ?? AuthMode.TOKEN,
         token: params.token,
         host: params.selfHostedUrl,
         username: params.username,
@@ -74,11 +75,19 @@ const openBitbucketModal = async (props: {
 }) =>
     magicModal.show(() => (
         <BitbucketModal
-            onSaveAction={async (token, username, email) => {
+            onSaveAction={async (
+                token,
+                username,
+                email,
+                selfHostedUrl,
+                authMode,
+            ) => {
                 await onSaveToken({
                     token,
                     username,
                     email,
+                    selfHostedUrl,
+                    authMode,
                     teamId: props.teamId,
                     onSuccess: props.onSaveToken,
                     integrationKey: INTEGRATIONS_KEY.BITBUCKET,
