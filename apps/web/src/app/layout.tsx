@@ -28,6 +28,11 @@ export const metadata: Metadata = {
         template: "%s | Kodus",
     },
     icons: { icon: "/favicon.ico" },
+    robots: {
+        index: false,
+        follow: false,
+        googleBot: { index: false, follow: false, noimageindex: true },
+    },
     openGraph: {
         locale: "en_US",
         type: "website",
