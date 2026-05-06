@@ -121,6 +121,8 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
   # Same Postgres host in self-hosted / dev; the loader cascades from
   # ANALYTICS_PG_DB_* to API_PG_DB_* when the dedicated host is unset.
   npm run analytics:migration:run:internal
+  # MCP manager owns its own schema and runs ensure-schema +
+  # migrations from its own service command (see docker-compose.dev.yml).
 else
   echo "▶ Skipping Migrations (RUN_MIGRATIONS=$RUN_MIGRATIONS)"
 fi

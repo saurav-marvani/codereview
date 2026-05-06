@@ -3,6 +3,7 @@ name: "Backend: Production GitOps Deploy"
 # Release routing:
 # - backend: semantic tags like 1.2.3
 # - web: tags prefixed with web- (handled by Web workflows)
+# - mcp-manager: tags prefixed with mcp-manager- (handled by MCP Manager workflows)
 # - selfhosted: separate workflow that builds all services together
 
 on:
@@ -51,8 +52,12 @@ jobs:
         environment: production
         if: |
             github.event_name == 'workflow_dispatch' ||
-            (github.event_name == 'release' && !startsWith(github.event.release.tag_name, 'web-')) ||
-            (startsWith(github.ref, 'refs/tags/') && !startsWith(github.ref_name, 'web-'))
+            (github.event_name == 'release' &&
+             !startsWith(github.event.release.tag_name, 'web-') &&
+             !startsWith(github.event.release.tag_name, 'mcp-manager-')) ||
+            (startsWith(github.ref, 'refs/tags/') &&
+             !startsWith(github.ref_name, 'web-') &&
+             !startsWith(github.ref_name, 'mcp-manager-'))
         permissions:
             contents: read
             id-token: write

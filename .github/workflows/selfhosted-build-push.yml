@@ -172,6 +172,10 @@ jobs:
                       needs.create-release.outputs.release_version
                       }},ghcr.io/${{ github.repository_owner
                       }}/kodus-ai-web:latest
+                  MCP_MANAGER_TAGS: ghcr.io/${{ github.repository_owner }}/kodus-mcp-manager:${{
+                      needs.create-release.outputs.release_version
+                      }},ghcr.io/${{ github.repository_owner
+                      }}/kodus-mcp-manager:latest
               run: |
                   set -euo pipefail
 
@@ -233,6 +237,17 @@ jobs:
                   ignore-unfixed: true
                   exit-code: "0"
 
+            - name: Trivy scan — kodus-mcp-manager
+              uses: aquasecurity/trivy-action@v0.36.0
+              with:
+                  image-ref: ghcr.io/${{ github.repository_owner }}/kodus-mcp-manager:${{
+                      needs.create-release.outputs.release_version }}
+                  format: "sarif"
+                  output: "trivy-mcp-manager.sarif"
+                  severity: "CRITICAL,HIGH"
+                  ignore-unfixed: true
+                  exit-code: "0"
+
             # CodeQL Action v4 rejects multiple SARIF runs sharing a
             # category — one upload step per image with its own category.
             - name: Upload Trivy SARIF — api
@@ -258,6 +273,12 @@ jobs:
               with:
                   sarif_file: trivy-web.sarif
                   category: trivy-selfhosted-web
+
+            - name: Upload Trivy SARIF — mcp-manager
+              uses: github/codeql-action/upload-sarif@v4
+              with:
+                  sarif_file: trivy-mcp-manager.sarif
+                  category: trivy-selfhosted-mcp-manager
 
     notify-discord:
         name: Notify Discord

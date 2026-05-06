@@ -36,6 +36,7 @@ import {
     CoverageSummary,
     CoverageTier,
     formatCoverageTargetsForPrompt,
+    normalizeRepoPath,
 } from './llm/coverage-ledger';
 
 /** Rough token estimate: 1 token ≈ 4 characters */
@@ -870,7 +871,7 @@ export abstract class BaseCodeReviewAgentProvider {
 
             // Map findings to CodeSuggestion format
             const validFiles = new Set(
-                input.changedFiles.map((f) => f.filename),
+                input.changedFiles.map((f) => normalizeRepoPath(f.filename)),
             );
             const isKodyRules = this.getCategoryLabel() === 'kody_rules';
             const kodyRulesByUuid = new Map(
@@ -915,10 +916,39 @@ export abstract class BaseCodeReviewAgentProvider {
                         return false;
                     }
                     // PR-level kody_rules omit relevantFile by design.
-                    return !s.relevantFile || validFiles.has(s.relevantFile);
+                    const kodyRulePathMatch = !s.relevantFile || validFiles.has(normalizeRepoPath(s.relevantFile));
+                    if (!kodyRulePathMatch) {
+                        this.agentLogger.warn({
+                            message: `@@PATH_MISMATCH@@ Dropping kody_rules suggestion — relevantFile not in changedFiles after normalization`,
+                            context: this.getIdentity().name,
+                            metadata: {
+                                prNumber: input.prNumber,
+                                relevantFile: s.relevantFile,
+                                normalizedRelevantFile: normalizeRepoPath(s.relevantFile),
+                                changedFiles: [...validFiles],
+                                suggestionPreview: (s.oneSentenceSummary || s.suggestionContent || '').slice(0, 140),
+                            },
+                        });
+                    }
+                    return kodyRulePathMatch;
                 }
 
-                return !!s.relevantFile && validFiles.has(s.relevantFile);
+                const pathMatch = !!s.relevantFile && validFiles.has(normalizeRepoPath(s.relevantFile));
+                if (!pathMatch && s.relevantFile) {
+                    this.agentLogger.warn({
+                        message: `@@PATH_MISMATCH@@ Dropping suggestion — relevantFile not in changedFiles after normalization`,
+                        context: this.getIdentity().name,
+                        metadata: {
+                            prNumber: input.prNumber,
+                            relevantFile: s.relevantFile,
+                            normalizedRelevantFile: normalizeRepoPath(s.relevantFile),
+                            changedFiles: [...validFiles],
+                            severity: s.severity,
+                            suggestionPreview: (s.oneSentenceSummary || s.suggestionContent || '').slice(0, 140),
+                        },
+                    });
+                }
+                return pathMatch;
             });
 
             const suggestions = rawSuggestions.map((s) => {

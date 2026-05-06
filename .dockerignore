@@ -37,13 +37,22 @@ coverage
 *.md
 test
 docs
+docs-internal
 evals
 specs
 e2b-sandbox
 stress-test-prs.ts
 ormlogs.log
+# Schema-as-code preview output (regenerated locally, never shipped)
+.env-preview
+poc-env
 # Dev-only tooling for generating benchmark PRs — not called by the runtime
 scripts/pr-creator
+# CLI app is a standalone tool (apps/cli/), not part of the API/worker/web/
+# webhooks/mcp-manager runtime. Skipped from build context to reduce context
+# transfer time. If you ever build a Docker image FOR the CLI, override this
+# in a Dockerfile-specific .dockerignore.
+apps/cli
 
 # Env files — never ship these into an image, INCLUDING nested ones.
 # Plain `.env` only matches the context root — Docker's .dockerignore is

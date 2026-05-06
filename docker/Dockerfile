@@ -170,6 +170,7 @@ COPY --chown=1000:1000 --from=build /usr/src/app/scripts ./scripts
 COPY --chown=1000:1000 --from=build /usr/src/app/tsconfig-paths-bootstrap.js ./tsconfig-paths-bootstrap.js
 
 COPY --chmod=0755 docker/prod-entrypoint.sh /usr/local/bin/prod-entrypoint
+COPY --chmod=0755 docker/prod-entrypoint-mcp-manager.sh /usr/local/bin/prod-entrypoint-mcp-manager
 
 # Ensure the working directory is owned by user 1000 so Node can read
 # the tree as a non-root user. The image no longer writes files into
@@ -188,3 +189,6 @@ FROM runtime-common AS webhooks
 CMD ["node", "dist/apps/webhooks/main.js"]
 FROM runtime-common AS worker
 CMD ["node", "dist/apps/worker/main.js"]
+FROM runtime-common AS mcp-manager
+ENTRYPOINT ["/usr/local/bin/prod-entrypoint-mcp-manager"]
+CMD ["node", "dist/apps/mcp-manager/main.js"]

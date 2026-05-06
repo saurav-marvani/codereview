@@ -74,6 +74,9 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
   else
       echo "⚠️ Analytics ormconfig not found at dist/libs/ee/analytics-warehouse/infrastructure/ormconfig.js. Skipping."
   fi
+
+  # MCP manager owns its own schema and runs its migration from a
+  # dedicated entrypoint. The API container does NOT touch it.
 else
   echo "▶ Skipping migrations (RUN_MIGRATIONS=$RUN_MIGRATIONS)"
 fi

@@ -3,7 +3,9 @@ import { getTeamParametersNoCache } from "@services/parameters/fetch";
 import { ParametersConfigKey } from "@services/parameters/types";
 import { Action, ResourceType } from "@services/permissions/types";
 import { auth } from "src/core/config/auth";
+import { UserRole } from "src/core/enums";
 import { NavMenu } from "src/core/layout/navbar";
+import { UpdateAvailableTopbar } from "src/core/layout/update-available-topbar";
 import { TEAM_STATUS } from "src/core/types";
 import { BYOKMissingKeyTopbar } from "src/features/ee/byok/_components/missing-key-topbar";
 import {
@@ -126,6 +128,10 @@ export default async function Layout({ children }: React.PropsWithChildren) {
                 <NavMenu />
                 <FinishedTrialModal />
                 <SubscriptionStatusTopbar />
+
+                <UpdateAvailableTopbar
+                    isOwner={session.user.role === UserRole.OWNER}
+                />
 
                 {showBYOKMissingKeyTopbar && <BYOKMissingKeyTopbar />}
 
