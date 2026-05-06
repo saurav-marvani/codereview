@@ -288,6 +288,68 @@ export function buildSystemPromptWithCache(
     return systemPrompt;
 }
 
+/**
+ * Build a system prompt with a suffix appended, preserving cache on the base
+ * portion for Anthropic. For other providers, returns the concatenated string.
+ *
+ * Anthropic caches by prefix — by sending the base as a cached block and the
+ * suffix as a separate uncached block, the base portion hits cache from the
+ * main agent loop while the suffix is processed fresh.
+ */
+export function buildSystemPromptWithSuffix(
+    systemPrompt: string,
+    suffix: string,
+    provider?: BYOKProvider | string,
+): string | Array<{ role: 'system'; content: string; providerOptions?: Record<string, any> }> {
+    if (provider === BYOKProvider.ANTHROPIC) {
+        return [
+            {
+                role: 'system' as const,
+                content: systemPrompt,
+                providerOptions: {
+                    anthropic: {
+                        cacheControl: { type: 'ephemeral' },
+                    },
+                },
+            },
+            {
+                role: 'system' as const,
+                content: suffix,
+            },
+        ];
+    }
+    return systemPrompt + suffix;
+}
+
+/**
+ * Wrap the user prompt with Anthropic cacheControl when the provider is
+ * Anthropic. The user prompt contains diffs and PR context that are identical
+ * across all steps in the agent loop — caching it avoids reprocessing
+ * hundreds of thousands of tokens on every step.
+ *
+ * For other providers, returns the plain string (implicit caching handles it).
+ * When `prompt` receives an array, the Vercel AI SDK treats it as `messages`.
+ */
+export function buildUserPromptWithCache(
+    userPrompt: string,
+    provider?: BYOKProvider | string,
+): string | Array<{ role: 'user'; content: string; providerOptions?: Record<string, any> }> {
+    if (provider === BYOKProvider.ANTHROPIC) {
+        return [
+            {
+                role: 'user' as const,
+                content: userPrompt,
+                providerOptions: {
+                    anthropic: {
+                        cacheControl: { type: 'ephemeral' },
+                    },
+                },
+            },
+        ];
+    }
+    return userPrompt;
+}
+
 export function buildReasoningProviderOptions(
     provider?: BYOKProvider | string,
     effort?: ReasoningEffort,
@@ -397,6 +459,7 @@ import {
     getCoverageSummary,
     isCoverageSatisfied,
     markCoverageFromToolCall,
+    markCoverageFromReadFailure,
     TIERED_TOTAL_COVERAGE_THRESHOLD,
 } from './coverage-ledger';
 import {
@@ -910,6 +973,10 @@ export async function runAgentLoop(
         fileTiers: input.fileTiers,
     });
 
+    // Track readFile failures per file path. After 3 failed attempts on the
+    // same file, mark it as covered so the agent can proceed.
+    const readFailureCounts = new Map<string, number>();
+
     // Cache-friendly step budget injection: Gemini implicit prompt caching
     // is prefix-based — any change to the `system` field invalidates the
     // whole prefix for the next call. We track whether the encourage/urgent
@@ -917,6 +984,7 @@ export async function runAgentLoop(
     // only break the cache once per band transition, not every step.
     let encourageNoteAppended = false;
     let urgentNoteAppended = false;
+    let coverageDebtNoteAppended = false;
 
     const allToolCalls: AgentLoopOutput['toolCalls'] = [];
     let stepCount = 0;
@@ -956,7 +1024,10 @@ export async function runAgentLoop(
                         input.systemPrompt,
                         input.byokProvider,
                     ) as any,
-                    prompt: input.userPrompt,
+                    prompt: buildUserPromptWithCache(
+                        input.userPrompt,
+                        input.byokProvider,
+                    ) as any,
                     experimental_telemetry: _buildLangfuseTelemetry(
                         input.agentName ?? 'agent-loop',
                         input.telemetryMetadata,
@@ -1096,13 +1167,65 @@ export async function runAgentLoop(
                                     : {}),
                                 toolChoice: 'none' as const,
                                 activeTools: [],
-                                system:
-                                    input.systemPrompt +
+                                system: buildSystemPromptWithSuffix(
+                                    input.systemPrompt,
                                     '\n\nIMPORTANT: You have reached the final response step. ' +
                                     'Do NOT call any more tools. ' +
                                     'Respond ONLY with a JSON object containing your findings. ' +
                                     'If you found no issues, return an empty suggestions array.',
+                                    input.byokProvider,
+                                ) as any,
                             };
+                        }
+
+                        // Coverage gate: hide submitResult for the first
+                        // 5 steps to prevent the model from exiting too
+                        // early without investigating. From step 6 onward,
+                        // submitResult is always available — the model
+                        // decides whether pending files need inspection.
+                        const COVERAGE_GATE_MIN_STEPS = 5;
+                        let coverageGateActiveTools: string[] | undefined;
+                        if (
+                            stepNumber < COVERAGE_GATE_MIN_STEPS &&
+                            coverageTargets.length > 0
+                        ) {
+                            const allToolNames = Object.keys(
+                                isSelfContained
+                                    ? tools
+                                    : {
+                                          ...tools,
+                                          [DONE_TOOL_NAME]:
+                                              buildDoneTools(input.model)
+                                                  .findings,
+                                      },
+                            );
+                            coverageGateActiveTools = allToolNames.filter(
+                                (name) => name !== DONE_TOOL_NAME,
+                            );
+                            if (stepNumber <= 1) {
+                                logger.log({
+                                    message: `[AGENT-COVERAGE-GATE] submitResult hidden for first ${COVERAGE_GATE_MIN_STEPS} steps`,
+                                    context: 'AgentLoop',
+                                });
+                            }
+                        }
+
+                        // Coverage debt injection: from step 5 onward,
+                        // append the list of pending files as a user
+                        // message so the model knows what's uncovered
+                        // before it can submit.
+                        const COVERAGE_DEBT_FROM_STEP = 5;
+                        let coverageDebtNote: string | null = null;
+                        if (
+                            stepNumber >= COVERAGE_DEBT_FROM_STEP &&
+                            !coverageDebtNoteAppended
+                        ) {
+                            const debtMessage =
+                                formatCoverageDebt(coverageTargets);
+                            if (debtMessage) {
+                                coverageDebtNote = debtMessage;
+                                coverageDebtNoteAppended = true;
+                            }
                         }
 
                         // Cache-friendly injection: instead of appending
@@ -1131,14 +1254,25 @@ export async function runAgentLoop(
                             encourageNoteAppended = true;
                         }
 
-                        if (appendedNote) {
+                        // Combine coverage debt with step budget note
+                        const combinedNote = [
+                            appendedNote,
+                            coverageDebtNote,
+                        ]
+                            .filter(Boolean)
+                            .join('\n\n') || null;
+
+                        if (combinedNote) {
                             const baseMessages = compressedMessages || messages;
                             return {
+                                ...(coverageGateActiveTools
+                                    ? { activeTools: coverageGateActiveTools }
+                                    : {}),
                                 messages: [
                                     ...baseMessages,
                                     {
                                         role: 'user' as const,
-                                        content: appendedNote,
+                                        content: combinedNote,
                                     },
                                 ],
                             };
@@ -1146,8 +1280,16 @@ export async function runAgentLoop(
 
                         // Steady state: never touch `system`. Only return a
                         // compressed messages array if compression fired.
-                        return compressedMessages
-                            ? { messages: compressedMessages }
+                        if (compressedMessages) {
+                            return {
+                                ...(coverageGateActiveTools
+                                    ? { activeTools: coverageGateActiveTools }
+                                    : {}),
+                                messages: compressedMessages,
+                            };
+                        }
+                        return coverageGateActiveTools
+                            ? { activeTools: coverageGateActiveTools }
                             : {};
                     },
                     onStepFinish: (event: any) => {
@@ -1201,6 +1343,30 @@ export async function runAgentLoop(
                                     args,
                                     result: resultStr.substring(0, 500),
                                 });
+
+                                // Track readFile failures — if the result
+                                // starts with "Error" the read failed (file
+                                // not found, sandbox down, etc.). After 3
+                                // failures on the same file, mark it as
+                                // covered so the agent can finalize.
+                                const isReadFailure =
+                                    tc.toolName === 'readFile' &&
+                                    resultStr.startsWith('Error');
+                                if (isReadFailure) {
+                                    const failTouched =
+                                        markCoverageFromReadFailure(
+                                            coverageTargets,
+                                            tc.toolName,
+                                            args,
+                                            readFailureCounts,
+                                        );
+                                    if (failTouched.length > 0) {
+                                        logger.log({
+                                            message: `[AGENT-COVERAGE] step=${stepCount} force-covered after repeated read failures: ${failTouched.map((t) => t.file).join(', ')}`,
+                                            context: 'AgentLoop',
+                                        });
+                                    }
+                                }
 
                                 const newlyTouched = markCoverageFromToolCall(
                                     coverageTargets,
@@ -2037,9 +2203,11 @@ async function runCoverageRecoveryPass(params: {
                                 input.openrouterAllowFallbacks,
                         },
                     ),
-                    system:
-                        input.systemPrompt +
+                    system: buildSystemPromptWithSuffix(
+                        input.systemPrompt,
                         '\n\nIMPORTANT: This is a coverage recovery pass. You must inspect the remaining changed files before responding.',
+                        input.byokProvider,
+                    ) as any,
                     prompt: `You already investigated this review, but some changed files are still uncovered.
 
 <RecentInvestigation>
@@ -2070,9 +2238,11 @@ Investigate the remaining changed files now.
                             return {
                                 toolChoice: 'none' as const,
                                 activeTools: [],
-                                system:
-                                    input.systemPrompt +
+                                system: buildSystemPromptWithSuffix(
+                                    input.systemPrompt,
                                     '\n\nIMPORTANT: This is the final step of the coverage recovery pass. Do NOT call tools. Respond with JSON only.',
+                                    input.byokProvider,
+                                ) as any,
                             };
                         }
 
@@ -2304,9 +2474,11 @@ async function runLowCoverageSecondChance(params: {
                                 input.openrouterAllowFallbacks,
                         },
                     ),
-                    system:
-                        input.systemPrompt +
+                    system: buildSystemPromptWithSuffix(
+                        input.systemPrompt,
                         '\n\nIMPORTANT: Coverage is still too low. This is a final targeted inspection pass. You must inspect the remaining changed files with readFile before responding.',
+                        input.byokProvider,
+                    ) as any,
                     prompt: `Your previous review finished with low changed-file coverage.
 
 <RecentInvestigation>
@@ -2336,9 +2508,11 @@ Instructions:
                             return {
                                 toolChoice: 'none' as const,
                                 activeTools: [],
-                                system:
-                                    input.systemPrompt +
+                                system: buildSystemPromptWithSuffix(
+                                    input.systemPrompt,
                                     '\n\nIMPORTANT: Final step of the low-coverage second chance. Do NOT call tools. Return JSON only.',
+                                    input.byokProvider,
+                                ) as any,
                             };
                         }
 
@@ -2558,9 +2732,11 @@ async function runSynthesisRescuePass(params: {
                                 input.openrouterAllowFallbacks,
                         },
                     ),
-                    system:
-                        input.systemPrompt +
+                    system: buildSystemPromptWithSuffix(
+                        input.systemPrompt,
                         '\n\nIMPORTANT: This is a synthesis pass, not an exploration pass. Do NOT call tools. Re-evaluate the diff, call graph, inspected files, and current findings to detect at most one concrete missed bug.',
+                        input.byokProvider,
+                    ) as any,
                     prompt: `${input.userPrompt}
 
 <AlreadyInspectedFiles>
