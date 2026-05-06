@@ -422,6 +422,43 @@ function mergeRanges(
     return merged;
 }
 
+/**
+ * Track readFile failures per file. After MAX_READ_FAILURES attempts on the
+ * same file, mark it as covered so the agent isn't stuck in a loop when a
+ * file is inaccessible (deleted branch, sandbox error, etc.).
+ */
+const MAX_READ_FAILURES = 3;
+
+export function markCoverageFromReadFailure(
+    targets: CoverageTarget[],
+    toolName: string,
+    args: Record<string, unknown>,
+    readFailureCounts: Map<string, number>,
+): CoverageTarget[] {
+    if (toolName !== 'readFile') return [];
+
+    const filePath = String(args.path || args.filePath || args.file || '');
+    if (!filePath) return [];
+
+    const normalizedPath = normalizeRepoPath(filePath);
+    const count = (readFailureCounts.get(normalizedPath) || 0) + 1;
+    readFailureCounts.set(normalizedPath, count);
+
+    if (count < MAX_READ_FAILURES) return [];
+
+    // After MAX_READ_FAILURES, mark the file as covered
+    const newlyTouched: CoverageTarget[] = [];
+    for (const target of targets) {
+        if (!pathsMatch(target.file, normalizedPath)) continue;
+        if (target.status === 'pending') {
+            target.touchedRanges = [[1, Number.MAX_SAFE_INTEGER]];
+            target.status = 'touched';
+            newlyTouched.push(target);
+        }
+    }
+    return newlyTouched;
+}
+
 function extractCoverageObservation(
     toolName: string,
     args: Record<string, unknown>,
