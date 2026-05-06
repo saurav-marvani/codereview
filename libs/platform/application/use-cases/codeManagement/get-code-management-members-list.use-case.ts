@@ -54,36 +54,27 @@ export class GetCodeManagementMemberListUseCase implements IUseCase {
             // Cache miss or error, proceed with fetch
         }
 
-        const platformMembers = await this.fetchMembersFromCodeIntegration(
-            organizationAndTeamData,
-        );
+         const [platformMembers, prMembers] = await Promise.all([
+        this.fetchMembersFromCodeIntegration(organizationAndTeamData),
+        this.fetchMembersFromPullRequests(organizationAndTeamData),
+    ]);
+    const mergedMembers = this.normalizeMembers([
+        ...platformMembers,
+        ...prMembers,
+    ]);
 
-        if (platformMembers.length > 0) {
+
+        if (mergedMembers.length > 0) {
             await this.cacheService
                 .addToCache(
                     cacheKey,
-                    platformMembers,
-                    GetCodeManagementMemberListUseCase.CACHE_TTL,
-                )
-                .catch(() => {});
-            return platformMembers;
-        }
-
-        const prMembers = await this.fetchMembersFromPullRequests(
-            organizationAndTeamData,
-        );
-
-        if (prMembers.length > 0) {
-            await this.cacheService
-                .addToCache(
-                    cacheKey,
-                    prMembers,
+                    mergedMembers,
                     GetCodeManagementMemberListUseCase.CACHE_TTL,
                 )
                 .catch(() => {});
         }
 
-        return prMembers;
+        return mergedMembers;
     }
 
     public async refreshMembers(
