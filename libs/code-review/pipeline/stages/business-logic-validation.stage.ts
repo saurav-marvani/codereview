@@ -5,6 +5,7 @@ import { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';
 import { BasePipelineStage } from '@libs/core/infrastructure/pipeline/abstracts/base-stage.abstract';
 import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-visibility.enum';
 import { PipelineError } from '@libs/core/infrastructure/pipeline/interfaces/pipeline-context.interface';
+import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
 import { ISuggestionByPR } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
 import { Injectable } from '@nestjs/common';
@@ -43,8 +44,32 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
     ];
     private static readonly TIMEOUT_MS = 300_000; // 5 min
 
+    private static readonly TASK_MANAGEMENT_HINTS = [
+        'jira',
+        'linear',
+        'notion',
+        'clickup',
+        'googledocs',
+        'atlassianrovo',
+        'githubissues',
+    ];
+
+    /** Maps task-management MCP names to URL domain patterns.
+     *  If a URL in the PR description contains one of these domains,
+     *  it's considered a valid signal for that MCP. */
+    private static readonly MCP_URL_PATTERNS: Record<string, string[]> = {
+        jira: ['atlassian.net', 'jira.'],
+        linear: ['linear.app'],
+        notion: ['notion.so', 'notion.site'],
+        clickup: ['clickup.com'],
+        googledocs: ['docs.google.com'],
+        githubissues: ['github.com'],
+        atlassianrovo: ['atlassian.net'],
+    };
+
     constructor(
         private readonly businessRulesValidationAgentProvider: BusinessRulesValidationAgentProvider,
+        private readonly mcpManagerService: MCPManagerService,
     ) {
         super();
     }
@@ -117,15 +142,38 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
                 });
 
             const result = await Promise.race([agentPromise, timeoutPromise]);
+
+            // No task-management MCP connected — treat as if the category
+            // were disabled: skip silently, no PR comment.
+            if (
+                result ===
+                BusinessRulesValidationAgentProvider.NO_TASK_MCP_SENTINEL
+            ) {
+                this.logger.log({
+                    message:
+                        '[BUSINESS-LOGIC] Skipped — no task-management MCP connected.',
+                    context: this.stageName,
+                    metadata: {
+                        organizationId:
+                            context.organizationAndTeamData?.organizationId,
+                        prNumber: context.pullRequest?.number,
+                    },
+                });
+
+                return this.updateContext(context, (draft) => {
+                    draft.businessLogicResults = [];
+                    draft.businessLogicOutcome = {
+                        kind: 'skipped',
+                        reason: 'no_task_mcp',
+                        message:
+                            'Skipped: no task-management MCP connected.',
+                    };
+                });
+            }
+
             const classification = this.classifyResult(result);
 
             if (classification.kind === 'limitation') {
-                // Surface the actual reason the agent gave up (MCP connection
-                // failed, missing task context, etc.) at WARN level with a
-                // preview of the agent's response. Without this the only
-                // signal that the validation did not run is a separate WARN
-                // from BusinessRulesValidationAgentProvider, which is easy
-                // to miss when triaging a pipeline run.
                 this.logger.warn({
                     message: `[BUSINESS-LOGIC] Skipped — agent could not validate: ${classification.message}`,
                     context: this.stageName,
@@ -140,24 +188,33 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
                     },
                 });
 
-                // Still surface the agent's response as a PR-level suggestion
-                // so the user knows why business logic validation could not run
-                // and what information is needed.
-                const limitationSuggestion: ISuggestionByPR = {
-                    id: uuidv4(),
-                    suggestionContent: result,
-                    oneSentenceSummary:
-                        'Business logic gap detected based on PR requirements.',
-                    label: LabelType.BUSINESS_LOGIC,
-                    severity: SeverityLevel.MEDIUM,
-                    deliveryStatus: DeliveryStatus.NOT_SENT,
-                };
+                // Only post to the PR when the limitation is about weak
+                // task context — the user can improve the task description.
+                // All other limitations (MCP missing, auth error, diff
+                // unavailable, etc.) are silenced.
+                if (this.isWeakTaskContext(result)) {
+                    const limitationSuggestion: ISuggestionByPR = {
+                        id: uuidv4(),
+                        suggestionContent: result,
+                        oneSentenceSummary:
+                            'Task description is insufficient for business logic validation.',
+                        label: LabelType.BUSINESS_LOGIC,
+                        severity: SeverityLevel.MEDIUM,
+                        deliveryStatus: DeliveryStatus.NOT_SENT,
+                    };
+
+                    return this.updateContext(context, (draft) => {
+                        draft.businessLogicResults = [limitationSuggestion];
+                        draft.businessLogicOutcome = {
+                            kind: 'skipped',
+                            reason: 'weak_task_context',
+                            message: `Skipped: task context is too weak for validation (${classification.message}).`,
+                        };
+                    });
+                }
 
                 return this.updateContext(context, (draft) => {
-                    draft.businessLogicResults = [limitationSuggestion];
-                    // Do NOT bump businessLogicPrBodyHash: the agent never
-                    // actually validated this description, so the next run
-                    // should still try.
+                    draft.businessLogicResults = [];
                     draft.businessLogicOutcome = {
                         kind: 'skipped',
                         reason: 'agent_limitation',
@@ -179,8 +236,18 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
             });
 
             if (classification.kind === 'no_gap') {
+                const noGapSuggestion: ISuggestionByPR = {
+                    id: uuidv4(),
+                    suggestionContent: result,
+                    oneSentenceSummary:
+                        'Business logic validation passed — PR aligns with task requirements.',
+                    label: LabelType.BUSINESS_LOGIC,
+                    severity: SeverityLevel.LOW,
+                    deliveryStatus: DeliveryStatus.NOT_SENT,
+                };
+
                 return this.updateContext(context, (draft) => {
-                    draft.businessLogicResults = [];
+                    draft.businessLogicResults = [noGapSuggestion];
                     draft.businessLogicPrBodyHash = prBodyHash;
                     draft.businessLogicOutcome = {
                         kind: 'success',
@@ -268,12 +335,22 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
             };
         }
 
+        const connectedMcps = await this.getConnectedTaskManagementMcps(context);
+
+        if (connectedMcps.length === 0) {
+            return {
+                reason: 'no_task_mcp',
+                message:
+                    'Skipped: no task-management MCP connected (Jira, Linear, Notion, ClickUp, etc.).',
+            };
+        }
+
         const prBody = context.pullRequest?.body ?? '';
-        if (!this.hasBusinessSignals(prBody)) {
+        if (!this.hasRelevantBusinessSignals(prBody, connectedMcps)) {
             return {
                 reason: 'no_signals',
                 message:
-                    'Skipped: no ticket key (e.g. ABC-123), task link, or requirement keyword found in the PR description.',
+                    'Skipped: no ticket key or task link matching a connected MCP found in the PR description.',
             };
         }
 
@@ -304,6 +381,93 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
             taskLinks: this.detectTaskLinks(body),
             requirementKeywords: this.detectRequirementKeywords(body),
         };
+    }
+
+    /**
+     * Returns the normalized names of connected task-management MCPs
+     * (e.g. ['jira', 'linear']). Empty array = none connected.
+     */
+    private async getConnectedTaskManagementMcps(
+        context: CodeReviewPipelineContext,
+    ): Promise<string[]> {
+        try {
+            const allConnections = await this.mcpManagerService.getConnections(
+                context.organizationAndTeamData,
+                false,
+            );
+
+            const orgId = context.organizationAndTeamData?.organizationId;
+            const connections = (allConnections ?? []).filter(
+                (c) => c.organizationId === orgId,
+            );
+
+            const matched: string[] = [];
+
+            for (const conn of connections) {
+                const aliases = [conn.appName, conn.provider]
+                    .map((v) =>
+                        typeof v === 'string'
+                            ? v.trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
+                            : '',
+                    )
+                    .filter(Boolean);
+
+                for (const alias of aliases) {
+                    const hint = BusinessLogicValidationStage.TASK_MANAGEMENT_HINTS.find(
+                        (h) => alias.includes(h) || h.includes(alias),
+                    );
+                    if (hint && !matched.includes(hint)) {
+                        matched.push(hint);
+                    }
+                }
+            }
+
+            return matched;
+        } catch (error) {
+            this.logger.warn({
+                message: `[BUSINESS-LOGIC] Failed to fetch MCP connections: ${error instanceof Error ? error.message : String(error)}`,
+                context: this.stageName,
+                error,
+            });
+            return [];
+        }
+    }
+
+    /**
+     * Returns true when the PR description contains business signals
+     * (ticket keys or URLs) that match a connected task-management MCP.
+     * Random URLs like bananinha.com are ignored if no MCP matches.
+     */
+    private hasRelevantBusinessSignals(
+        body: string,
+        connectedMcps: string[],
+    ): boolean {
+        // Ticket keys (e.g. KAN-1) are valid if any MCP that handles
+        // tickets is connected (jira, linear, clickup, githubissues).
+        const ticketKeys = this.detectTicketKeys(body);
+        const ticketMcps = ['jira', 'linear', 'clickup', 'githubissues'];
+        if (
+            ticketKeys.length > 0 &&
+            connectedMcps.some((mcp) => ticketMcps.includes(mcp))
+        ) {
+            return true;
+        }
+
+        // URLs are valid only if they match the domain pattern of a
+        // connected MCP.
+        const urls = this.detectTaskLinks(body);
+        for (const url of urls) {
+            const lower = url.toLowerCase();
+            for (const mcp of connectedMcps) {
+                const patterns =
+                    BusinessLogicValidationStage.MCP_URL_PATTERNS[mcp] ?? [];
+                if (patterns.some((pattern) => lower.includes(pattern))) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private detectTicketKeys(body: string): string[] {
@@ -395,6 +559,23 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
         }
 
         return { kind: 'gap_found' };
+    }
+
+    /**
+     * Returns true when the limitation is specifically about the task
+     * description being too weak / incomplete — the one case where we
+     * still want to surface feedback on the PR so the author knows the
+     * task needs better acceptance criteria.
+     *
+     * Detection is based on a structured marker embedded by the agent
+     * provider, not on natural-language matching (which would break
+     * across locales).
+     */
+    private isWeakTaskContext(result: string): boolean {
+        if (!result) return false;
+        return result.includes(
+            BusinessRulesValidationAgentProvider.WEAK_TASK_CONTEXT_MARKER,
+        );
     }
 
     private firstNonEmptyLine(text: string): string {

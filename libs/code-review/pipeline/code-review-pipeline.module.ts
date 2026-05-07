@@ -1,5 +1,6 @@
 import { CloneParamsResolverService } from './services/clone-params-resolver.service';
 import { Module, forwardRef } from '@nestjs/common';
+import { McpCoreModule } from '@libs/mcp-server/mcp-core.module';
 
 // Stages
 import { AggregateResultsStage } from './stages/aggregate-result.stage';
@@ -94,6 +95,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         forwardRef(() => PermissionValidationModule),
         forwardRef(() => LicenseModule),
         AstGraphModule,
+        forwardRef(() => McpCoreModule),
         WorkflowCoreModule,
         DryRunCoreModule,
         SandboxModule,
