@@ -1,6 +1,6 @@
 import { createLogger } from '@kodus/flow';
 import { Injectable } from '@nestjs/common';
-import { SandboxInstance } from '@libs/code-review/domain/contracts/sandbox.provider';
+import { SandboxInstance } from '@libs/sandbox/domain/contracts/sandbox.provider';
 import { shSingleQuote } from '../shell-quote';
 
 export const KODUS_GRAPH_VERSION = '0.2.19';

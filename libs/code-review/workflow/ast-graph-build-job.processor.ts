@@ -13,7 +13,7 @@ import {
     ISandboxProvider,
     SANDBOX_PROVIDER_TOKEN,
     SandboxInstance,
-} from '@libs/code-review/domain/contracts/sandbox.provider';
+} from '@libs/sandbox/domain/contracts/sandbox.provider';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { GraphIndexerService } from '@libs/code-review/infrastructure/adapters/services/graph/graph-indexer.service';
 import {

@@ -84,8 +84,8 @@ describe('CentralizedConfigPrService', () => {
             parametersService as any,
             integrationConfigService as any,
             kodyRulesService as any,
-            codeManagementService as any,
             centralizedConfigSyncUseCase as any,
+            codeManagementService as any,
         );
 
         return {

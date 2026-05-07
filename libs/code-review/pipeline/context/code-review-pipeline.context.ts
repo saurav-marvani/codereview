@@ -5,7 +5,7 @@ import { AutomationExecutionEntity } from '@libs/automation/domain/automationExe
 import {
     CreateSandboxParams,
     SandboxInstance,
-} from '@libs/code-review/domain/contracts/sandbox.provider';
+} from '@libs/sandbox/domain/contracts/sandbox.provider';
 import { IPullRequestMessages } from '@libs/code-review/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import { CollectCrossFileContextsResult } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import { PlatformType } from '@libs/core/domain/enums';

@@ -5,47 +5,11 @@ import {
     COLLECT_CROSS_FILE_CONTEXTS_SERVICE_TOKEN,
     CollectCrossFileContextsService,
 } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
-import {
-    ISandboxProvider,
-    SANDBOX_PROVIDER_TOKEN,
-} from '@libs/code-review/domain/contracts/sandbox.provider';
 import { GraphContextService } from '@libs/code-review/infrastructure/adapters/services/graph/graph-context.service';
 import { BasePipelineStage } from '@libs/core/infrastructure/pipeline/abstracts/base-stage.abstract';
 import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-visibility.enum';
-import { CloneParamsResolverService } from '../services/clone-params-resolver.service';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 import { CliReviewPipelineContext } from '@libs/cli-review/pipeline/context/cli-review-pipeline.context';
-
-/**
- * Parse a git remote URL (HTTPS or SSH) into fullName/name parts. Accepts any
- * number of path segments (GitLab subgroups, Bitbucket workspaces). The final
- * segment is the repo name; everything between the host and the repo name is
- * the path-prefixed fullName.
- */
-export function parseGitRemoteUrl(
-    url: string,
-): { fullName: string; name: string } | null {
-    const extract = (path: string) => {
-        const fullName = path.replace(/\.git$/, '').replace(/\/+$/, '');
-        const name = fullName.split('/').pop() || '';
-        if (!fullName || !name) return null;
-        return { fullName, name };
-    };
-
-    const httpsMatch = url.match(/^https?:\/\/[^/]+\/(.+?)\/?$/);
-    if (httpsMatch) {
-        const parsed = extract(httpsMatch[1]);
-        if (parsed) return parsed;
-    }
-
-    const sshMatch = url.match(/^[^@\s]+@[^:]+:(.+?)\/?$/);
-    if (sshMatch) {
-        const parsed = extract(sshMatch[1]);
-        if (parsed) return parsed;
-    }
-
-    return null;
-}
 
 @Injectable()
 export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -58,9 +22,6 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
     constructor(
         @Inject(COLLECT_CROSS_FILE_CONTEXTS_SERVICE_TOKEN)
         private readonly collectCrossFileContextsService: CollectCrossFileContextsService,
-        @Inject(SANDBOX_PROVIDER_TOKEN)
-        private readonly sandboxProvider: ISandboxProvider,
-        private readonly cloneParamsResolver: CloneParamsResolverService,
         private readonly graphContext: GraphContextService,
     ) {
         super();
@@ -123,14 +84,17 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
             return context;
         }
 
-        // Guard: skip if sandbox is not available
-        if (!this.sandboxProvider.isAvailable()) {
+        // Guard: skip if no sandbox available in context. The lease-managed
+        // sandbox is owned by CreateSandboxStage which runs earlier in the
+        // pipeline; this stage just consumes it.
+        const sandbox = context.sandboxHandle;
+        if (!sandbox) {
             this.logger.log({
-                message: `Skipping cross-file context collection: no sandbox provider configured for ${label}`,
+                message: `Skipping cross-file context collection: no sandbox in context for ${label}`,
                 context: this.stageName,
                 metadata: {
                     sandboxDecision: 'skipped',
-                    sandboxSkipReason: 'no_provider',
+                    sandboxSkipReason: 'no_sandbox',
                     organizationAndTeamData: context?.organizationAndTeamData,
                     prNumber: context?.pullRequest?.number,
                 },
@@ -151,60 +115,14 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
             return context;
         }
 
-        let cleanup: (() => Promise<void>) | undefined;
-
         try {
-            const cloneInfo = await this.cloneParamsResolver.resolve(
-                context,
-                cliContext,
-            );
-            if (!cloneInfo) {
-                this.logger.warn({
-                    message: `[DEBUG] resolveCloneParams returned null for ${label}`,
-                    context: this.stageName,
-                    metadata: {
-                        sandboxDecision: 'skipped',
-                        sandboxSkipReason: 'no_clone_params',
-                        prNumber: context?.pullRequest?.number,
-                    },
-                });
-                return context;
-            }
-
             this.logger.log({
-                message: `[DEBUG] Clone params resolved for ${label}: url=${cloneInfo.url} platform=${cloneInfo.platform} branch=${cloneInfo.branch} prNumber=${cloneInfo.prNumber} hasToken=${!!cloneInfo.authToken}`,
+                message: `[DEBUG] Reusing lease-managed sandbox for ${label} (type=${sandbox.type}, sandboxId=${sandbox.sandboxId})`,
                 context: this.stageName,
                 metadata: {
-                    cloneUrl: cloneInfo.url,
-                    platform: cloneInfo.platform,
-                    branch: cloneInfo.branch,
-                    prNumber: cloneInfo.prNumber,
-                    hasAuthToken: !!cloneInfo.authToken,
-                    tokenLength: cloneInfo.authToken?.length ?? 0,
-                    sandboxProviderType: this.sandboxProvider.constructor.name,
-                },
-            });
-
-            // Create sandbox and clone repo
-            const sandbox = await this.sandboxProvider.createSandboxWithRepo({
-                cloneUrl: cloneInfo.url,
-                authToken: cloneInfo.authToken,
-                authUsername: cloneInfo.authUsername,
-                branch: cloneInfo.branch,
-                baseBranch: cloneInfo.baseBranch,
-                prNumber: cloneInfo.prNumber,
-                platform: cloneInfo.platform,
-                sandboxMetadata: { stage: 'cross-file-context' },
-            });
-
-            cleanup = sandbox.cleanup;
-
-            this.logger.log({
-                message: `[DEBUG] Sandbox created successfully for ${label}, starting collectContexts`,
-                context: this.stageName,
-                metadata: {
-                    sandboxDecision: 'created',
-                    sandboxSkipReason: null,
+                    sandboxDecision: 'reused',
+                    sandboxType: sandbox.type,
+                    sandboxId: sandbox.sandboxId,
                     prNumber: context?.pullRequest?.number,
                 },
             });
@@ -269,37 +187,13 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
 
             return this.updateContext(context, (draft) => {
                 draft.crossFileContexts = result;
-                // Keep sandbox alive for downstream stages (safeguard, syntax validation)
-                draft.sandboxHandle = sandbox;
                 if (graphJson) {
                     draft.callGraphJson = graphJson;
                 }
-                // Save a factory for clone params so safeguard can renew sandbox if it expires
-                draft.getFreshCloneParams = async () => {
-                    const freshCloneInfo =
-                        await this.cloneParamsResolver.resolve(
-                            context,
-                            cliContext,
-                        );
-                    if (!freshCloneInfo) {
-                        throw new Error(
-                            'Failed to resolve fresh clone parameters',
-                        );
-                    }
-                    return {
-                        cloneUrl: freshCloneInfo.url,
-                        authToken: freshCloneInfo.authToken,
-                        authUsername: freshCloneInfo.authUsername,
-                        branch: freshCloneInfo.branch,
-                        baseBranch: freshCloneInfo.baseBranch,
-                        prNumber: freshCloneInfo.prNumber,
-                        platform: freshCloneInfo.platform,
-                        sandboxMetadata: { stage: 'cross-file-renewed' },
-                    };
-                };
             });
         } catch (error) {
-            // Non-fatal: log error and return context unchanged
+            // Non-fatal: log error and return context unchanged. Sandbox
+            // lifecycle is owned by SandboxLeaseManager — no cleanup here.
             this.logger.error({
                 message: `Failed to collect cross-file context for ${label}, continuing without it`,
                 context: this.stageName,
@@ -309,18 +203,6 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
                     prNumber: context?.pullRequest?.number,
                 },
             });
-            // Cleanup sandbox on error since we won't store it in context
-            if (cleanup) {
-                try {
-                    await cleanup();
-                } catch (cleanupErr) {
-                    this.logger.warn({
-                        message: `Sandbox cleanup failed after cross-file context error`,
-                        context: this.stageName,
-                        error: cleanupErr,
-                    });
-                }
-            }
             return context;
         }
     }

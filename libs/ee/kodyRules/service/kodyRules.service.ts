@@ -11,6 +11,7 @@ import libraryKodyRules from './data/library-kody-rules.json';
 
 import { createLogger } from '@kodus/flow';
 import { CentralizedConfigPrService } from '@libs/centralized-config/infrastructure/adapters/services/centralized-config-pr.service';
+import { ModuleRef } from '@nestjs/core';
 import {
     buildKodyRuleCentralizedFilePath,
     buildKodyRuleCentralizedMutationRequest,
@@ -110,11 +111,36 @@ export class KodyRulesService implements IKodyRulesService {
 
         private readonly permissionValidationService: PermissionValidationService,
 
-        private readonly centralizedConfigPrService: CentralizedConfigPrService,
+        // ModuleRef em vez de injetar CentralizedConfigPrService direto.
+        // KodyRulesService ↔ CentralizedConfigPrService formam um ciclo
+        // profundo, e CCP é request-scoped (transitivamente, via
+        // codeManagementService). forwardRef nessa combinação produzia
+        // um proxy vazio em runtime. moduleRef.resolve() resolve o
+        // provider lazy, no contexto correto, sem precisar refatorar o
+        // ciclo.
+        private readonly moduleRef: ModuleRef,
 
         @Inject(forwardRef(() => CODE_BASE_CONFIG_SERVICE_TOKEN))
         private readonly codeBaseConfigService: ICodeBaseConfigService,
     ) {}
+
+    // CCP é request-scoped (depende transitivamente de algo
+    // request-scoped, provavelmente codeManagementService com token
+    // multi-tenant). ModuleRef.get() não funciona com scoped providers
+    // — precisa ser ModuleRef.resolve(), que é async e cria uma
+    // instância no contexto atual de injeção.
+    private async resolveCentralizedConfigPrService(): Promise<CentralizedConfigPrService> {
+        return this.moduleRef.resolve(CentralizedConfigPrService, undefined, {
+            strict: false,
+        });
+    }
+
+    countRules(
+        organizationId: string,
+        status?: KodyRulesStatus,
+    ): Promise<number> {
+        throw new Error('Method not implemented.');
+    }
 
     getNativeCollection() {
         throw new Error('Method not implemented.');
@@ -911,12 +937,14 @@ export class KodyRulesService implements IKodyRulesService {
                 new Map<string, number>(),
             );
 
-            const bucketsWithCount = bucketsData.map((bucket: BucketInfo) => ({
-                slug: bucket.slug,
-                title: bucket.title,
-                description: bucket.description,
-                rulesCount: bucketRuleCounts.get(bucket.slug) || 0,
-            }));
+            const bucketsWithCount: BucketInfo[] = bucketsData.map(
+                (bucket) => ({
+                    slug: bucket.slug,
+                    title: bucket.title,
+                    description: bucket.description,
+                    rulesCount: bucketRuleCounts.get(bucket.slug) || 0,
+                }),
+            );
 
             return bucketsWithCount;
         } catch (error) {
@@ -1307,17 +1335,17 @@ Analyze the suggestions and recommend the most relevant rules.`;
                 : memory.status || KodyRulesStatus.ACTIVE,
         };
 
-        const centralizedPr =
-            await this.centralizedConfigPrService.createMutationPullRequestIfEnabled(
-                buildKodyRuleCentralizedMutationRequest({
-                    centralizedConfigPrService: this.centralizedConfigPrService,
-                    organizationAndTeamData,
-                    repositoryId: payload.repositoryId,
-                    ruleContent: payload,
-                    ruleType: KodyRulesType.MEMORY,
-                    operation,
-                }),
-            );
+        const ccp = await this.resolveCentralizedConfigPrService();
+        const centralizedPr = await ccp.createMutationPullRequestIfEnabled(
+            buildKodyRuleCentralizedMutationRequest({
+                centralizedConfigPrService: ccp,
+                organizationAndTeamData,
+                repositoryId: payload.repositoryId,
+                ruleContent: payload,
+                ruleType: KodyRulesType.MEMORY,
+                operation,
+            }),
+        );
 
         if (centralizedPr.mode !== 'centralized-pr') {
             const rule = await this.createOrUpdate(
@@ -1353,14 +1381,14 @@ Analyze the suggestions and recommend the most relevant rules.`;
             return null;
         }
 
-        const repositoryFolder =
-            await this.centralizedConfigPrService.resolveRepositoryFolderName(
-                organizationAndTeamData,
-                memoryPayload.repositoryId,
-            );
+        const ccp = await this.resolveCentralizedConfigPrService();
+        const repositoryFolder = await ccp.resolveRepositoryFolderName(
+            organizationAndTeamData,
+            memoryPayload.repositoryId,
+        );
 
         const centralizedPath = buildKodyRuleCentralizedFilePath({
-            centralizedConfigPrService: this.centralizedConfigPrService,
+            centralizedConfigPrService: ccp,
             repositoryFolder,
             rulesDirectory: 'memories',
             ruleContent: memoryPayload,

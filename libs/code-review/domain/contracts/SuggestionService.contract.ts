@@ -1,5 +1,5 @@
 import { BYOKConfig } from '@kodus/kodus-common/llm';
-import { CreateSandboxParams } from '@libs/code-review/domain/contracts/sandbox.provider';
+import { CreateSandboxParams } from '@libs/sandbox/domain/contracts/sandbox.provider';
 import {
     CrossFileContextSnippet,
     RemoteCommands,

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as fs from 'fs';
-import * as path from 'path';
+
+import managedMcpServers from '../../../config/managed-mcp-servers.json';
 import { CustomClient } from '../../../clients/custom';
 import { KodusMCPClient } from '../../../clients/kodusMCP';
 import {
@@ -62,30 +62,13 @@ export class KodusMCPProvider extends BaseProvider {
 
     private loadManagedIntegrationsFromConfig() {
         try {
-            // Try loading from src/config first (development)
-            let configPath = path.resolve(
-                __dirname,
-                '../../../config/managed-mcp-servers.json',
-            );
-
-            // If not found, try loading from a common production config path
-            if (!fs.existsSync(configPath)) {
-                // In production, the config might be at the root of the dist folder,
-                // not inside a nested 'src' directory.
-                configPath = path.resolve(
-                    process.cwd(),
-                    'dist/config/managed-mcp-servers.json',
-                );
-            }
-
-            if (!fs.existsSync(configPath)) {
-                return;
-            }
-
-            const raw = fs.readFileSync(configPath, 'utf-8');
-            const managedConfigs = JSON.parse(
-                raw,
-            ) as ManagedIntegrationConfig[];
+            // Imported at build time via `resolveJsonModule`. Webpack (the
+            // active builder per nest-cli.json `builder: webpack`, used in
+            // both dev and prod) inlines the JSON into the compiled bundle,
+            // so there is no runtime fs lookup. Path-resolve / dist-fallback
+            // are not needed.
+            const managedConfigs =
+                managedMcpServers as ManagedIntegrationConfig[];
 
             for (const entry of managedConfigs) {
                 entry.baseUrl = this.resolveManagedBaseUrl(entry.baseUrl);
@@ -106,14 +89,32 @@ export class KodusMCPProvider extends BaseProvider {
             return baseUrl;
         }
 
-        const backendUrl = process.env.API_MCP_MANAGER_BACKEND_URL;
-        if (!backendUrl) {
+        // Relative base URLs (e.g. `/mcp/github-issues`) are absolute paths
+        // served by the kodus-api MCP server, NOT the mcp-manager. Resolve
+        // against the kodus-api origin so the URL ends up addressable.
+        //
+        // `API_KODUS_MCP_SERVER_URL` (already in every .env) carries the
+        // canonical address — e.g. `http://kodus_api:3001/mcp`. We extract
+        // just the origin (protocol://host:port) and append the JSON's
+        // absolute path; this avoids double-prefixing `/mcp/...`.
+        //
+        // `API_MCP_MANAGER_BACKEND_URL` remains as an explicit override for
+        // deployments where the MCP server is published at a different
+        // origin (e.g. cloud edge URL).
+        const override = process.env.API_MCP_MANAGER_BACKEND_URL;
+        if (override) {
+            return `${override.replace(/\/$/, '')}${baseUrl}`;
+        }
+
+        const mcpServerUrl = process.env.API_KODUS_MCP_SERVER_URL;
+        if (!mcpServerUrl) {
             throw new Error(
-                'API_MCP_MANAGER_BACKEND_URL environment variable is required for relative base URLs',
+                'Cannot resolve relative MCP base URL: set API_KODUS_MCP_SERVER_URL or API_KODUS_MCP_MANAGER_BACKEND_URL',
             );
         }
 
-        return `${backendUrl.replace(/\/$/, '')}${baseUrl}`;
+        const origin = new URL(mcpServerUrl).origin;
+        return `${origin}${baseUrl}`;
     }
 
     private transformManagedIntegration(

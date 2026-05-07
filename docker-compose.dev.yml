@@ -4,6 +4,7 @@ x-app-service-template: &app-service-defaults
         dockerfile: docker/Dockerfile.dev
         args:
             - API_CLOUD_MODE=${API_CLOUD_MODE:-false}
+    image: kodus-ai-dev:latest
     env_file:
         - ${ENV_FILE:-.env}
     environment:
@@ -13,6 +14,8 @@ x-app-service-template: &app-service-defaults
     volumes:
         - .:/usr/src/app:delegated
         - node_modules_cache:/usr/src/app/node_modules
+        - yarn_cache:/yarn-cache
+        - logs_data:/usr/src/app/logs
         - yalc_store:/root/.yalc
     networks:
         - kodus-backend-services
@@ -87,6 +90,8 @@ services:
         volumes:
             - .:/usr/src/app:delegated
             - node_modules_cache:/usr/src/app/node_modules:nocopy
+            - yarn_cache:/yarn-cache
+            - logs_data:/usr/src/app/logs
             - yalc_store:/root/.yalc
         ports:
             - '9231:9231'
@@ -128,6 +133,8 @@ services:
         volumes:
             - .:/usr/src/app:delegated
             - node_modules_cache:/usr/src/app/node_modules:nocopy
+            - yarn_cache:/yarn-cache
+            - logs_data:/usr/src/app/logs
             - yalc_store:/root/.yalc
         ports:
             - '9241:9241'
@@ -172,6 +179,8 @@ services:
         volumes:
             - .:/usr/src/app:delegated
             - node_modules_cache:/usr/src/app/node_modules:nocopy
+            - yarn_cache:/yarn-cache
+            - logs_data:/usr/src/app/logs
             - yalc_store:/root/.yalc
         ports:
             - '${API_WEBHOOKS_PORT:-3332}:${API_WEBHOOKS_PORT:-3332}'
@@ -200,7 +209,8 @@ services:
 
     mcp-manager:
         <<: *app-service-defaults
-        container_name: kodus_mcp_manager
+        image: kodus-ai-mcp-manager:latest
+        container_name: kodus-mcp-manager
         ports:
             - '${API_MCP_MANAGER_PORT:-3101}:${API_MCP_MANAGER_PORT:-3101}'
             - '9230:9230'
@@ -417,6 +427,8 @@ services:
 volumes:
     yalc_store:
     node_modules_cache:
+    yarn_cache:
+    logs_data:
     web_node_modules_cache:
     web_next_cache:
     pgdata:

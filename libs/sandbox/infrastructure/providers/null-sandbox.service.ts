@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
     ISandboxProvider,
     SandboxInstance,
-} from '@libs/code-review/domain/contracts/sandbox.provider';
+} from '@libs/sandbox/domain/contracts/sandbox.provider';
 
 @Injectable()
 export class NullSandboxProvider implements ISandboxProvider {
@@ -23,6 +23,7 @@ export const NULL_SANDBOX_INSTANCE: SandboxInstance = {
     },
     cleanup: async () => {},
     type: 'null',
+    sandboxId: '',
     repoDir: '',
     run: async () => ({ stdout: '', stderr: '', exitCode: 1 }),
     readFile: async () => { throw new Error('No sandbox configured'); },

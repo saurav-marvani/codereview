@@ -72,9 +72,10 @@ export class CentralizedConfigPrService {
         private readonly integrationConfigService: IIntegrationConfigService,
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: IKodyRulesService,
-        private readonly codeManagementService: CodeManagementService,
         @Inject(forwardRef(() => CentralizedConfigSyncUseCase))
         private readonly centralizedConfigSyncUseCase: CentralizedConfigSyncUseCase,
+
+        private readonly codeManagementService: CodeManagementService,
     ) {}
 
     async handleTrackedPullRequestClose(params: {

@@ -25,7 +25,7 @@ import {
 // Langfuse tracing is consumed via `experimental_telemetry` on each call
 // (see `buildLangfuseTelemetry`) and exported through the OTel span
 // processor registered in `libs/core/log/langfuse.ts`.
-let generateText: typeof _aiSdkGenerateText = (async (
+const generateText: typeof _aiSdkGenerateText = (async (
     ...args: Parameters<typeof _aiSdkGenerateText>
 ) => {
     const opts = args[0] as any;
@@ -52,6 +52,10 @@ function throttledGenerateText<T>(params: {
     role?: BYOKLimiterRole;
     label?: string;
     abortSignal?: AbortSignal;
+    /** MAINT-02: generic queue timeout forwarded from AgentLoopSecrets.byokQueueTimeoutMs.
+     *  When undefined, runWithBYOKLimiter falls back to DEFAULT_LIMITER_QUEUE_TIMEOUT_MS (0 = infinite).
+     *  Conversation callers set 60_000 via runConversationLoop; review callers leave undefined. */
+    queueTimeoutMs?: number;
     fn: () => Promise<T>;
 }): Promise<T> {
     return runWithBYOKLimiter(
@@ -60,6 +64,7 @@ function throttledGenerateText<T>(params: {
             organizationId: params.organizationId,
             role: params.role ?? 'main',
             abortSignal: params.abortSignal,
+            queueTimeoutMs: params.queueTimeoutMs,
         },
         params.fn,
         params.label ?? 'generateText',
@@ -362,11 +367,11 @@ export function buildReasoningProviderOptions(
             // Newer models (Sonnet 4.6, Opus 4.6+) use adaptive thinking +
             // effort parameter (low/medium/high). budget_tokens is deprecated.
             // Older models (Sonnet 3.7, Opus 4.5) use enabled + budget_tokens.
-            const isAdaptiveCapable = modelName && (
-                modelName.includes('sonnet-4') ||
-                modelName.includes('opus-4') ||
-                modelName.includes('mythos')
-            );
+            const isAdaptiveCapable =
+                modelName &&
+                (modelName.includes('sonnet-4') ||
+                    modelName.includes('opus-4') ||
+                    modelName.includes('mythos'));
 
             if (isAdaptiveCapable) {
                 return {
@@ -392,10 +397,10 @@ export function buildReasoningProviderOptions(
             // Gemini 3+: thinkingLevel (minimal/low/medium/high)
             // Gemini 2.5: thinkingBudget (number)
             // Cannot disable thinking on Gemini 3.1 Pro.
-            const isGemini3 = modelName && (
-                modelName.includes('gemini-3') ||
-                modelName.includes('gemini3')
-            );
+            const isGemini3 =
+                modelName &&
+                (modelName.includes('gemini-3') ||
+                    modelName.includes('gemini3'));
 
             if (isGemini3) {
                 return {
@@ -494,8 +499,7 @@ function extractUsage(usage: any): {
         };
     }
     const details = usage.inputTokenDetails || {};
-    const cacheRead =
-        details.cacheReadTokens ?? usage.cachedInputTokens ?? 0;
+    const cacheRead = details.cacheReadTokens ?? usage.cachedInputTokens ?? 0;
     const cacheWrite = details.cacheWriteTokens ?? 0;
     return {
         inputTokens: usage.inputTokens ?? 0,
@@ -757,9 +761,7 @@ function extractDoneToolResult<T>(result: any): T | null {
 
     // Check result.toolCalls (last step) first
     const calls: any[] = result?.toolCalls || [];
-    const doneCall = calls.find(
-        (tc: any) => tc.toolName === DONE_TOOL_NAME,
-    );
+    const doneCall = calls.find((tc: any) => tc.toolName === DONE_TOOL_NAME);
     if (doneCall) {
         return extract(doneCall);
     }
@@ -854,6 +856,14 @@ export interface AgentLoopSecrets {
     documentationSearchService?: DocumentationSearchAdapter;
     /** Options forwarded to the documentation search adapter on each call. */
     documentationSearchOptions?: Record<string, unknown>;
+    /**
+     * Queue timeout passed to runWithBYOKLimiter for all LLM calls in this loop.
+     * When undefined, falls back to DEFAULT_LIMITER_QUEUE_TIMEOUT_MS (0 = infinite).
+     * Conversation callers set this to 60_000 to fail fast if review holds the slot.
+     * MAINT-02: This is a generic field — not conversation-specific; review callers
+     * can also set it if they need bounded queue behavior.
+     */
+    byokQueueTimeoutMs?: number;
 }
 
 export interface AgentLoopOutput {
@@ -1015,6 +1025,7 @@ export async function runAgentLoop(
             role: 'main',
             label: input.agentName ?? 'agent-loop',
             abortSignal: abortController.signal,
+            queueTimeoutMs: secrets.byokQueueTimeoutMs,
             fn: () =>
                 generateText({
                     ...({ __kodusHardTimeoutMs: AGENT_TIMEOUT_MS } as any),
@@ -1235,7 +1246,10 @@ export async function runAgentLoop(
                         // at band transitions. Everything before the new
                         // message stays cacheable.
                         let appendedNote: string | null = null;
-                        if (stepBudgetPhase === 'urgent' && !urgentNoteAppended) {
+                        if (
+                            stepBudgetPhase === 'urgent' &&
+                            !urgentNoteAppended
+                        ) {
                             appendedNote =
                                 stepBudgetNote.trim() +
                                 (coverageDebt
@@ -1482,6 +1496,7 @@ export async function runAgentLoop(
                             bestText,
                             secrets.byokConfig,
                             input.telemetryMetadata?.organizationId,
+                            secrets.byokQueueTimeoutMs,
                         );
                         if (
                             fallbackResult &&
@@ -1573,11 +1588,7 @@ export async function runAgentLoop(
 
     // Second chance: when the model hit MAX_STEPS without calling submitResult
     // and without producing text. Uses full response.messages for complete context.
-    if (
-        !doneToolFindings &&
-        !finalText &&
-        allToolCalls.length > 0
-    ) {
+    if (!doneToolFindings && !finalText && allToolCalls.length > 0) {
         logger.log({
             message: `[AGENT-SECOND-CHANCE] Agent finished ${allToolCalls.length} tool calls without submitResult or text. Retrying with full context.`,
             context: 'AgentLoop',
@@ -1588,8 +1599,7 @@ export async function runAgentLoop(
 
             // Use full conversation history from result.response.messages
             // so the model has complete file contents, grep results, etc.
-            const responseMessages: any[] =
-                result?.response?.messages || [];
+            const responseMessages: any[] = result?.response?.messages || [];
 
             const secondChanceResult: any = await throttledGenerateText({
                 byokConfig: secrets.byokConfig,
@@ -1597,6 +1607,7 @@ export async function runAgentLoop(
                 role: 'main',
                 label: `${input.agentName ?? 'agent-loop'}-second-chance`,
                 abortSignal: secondChanceSignal,
+                queueTimeoutMs: secrets.byokQueueTimeoutMs,
                 fn: () =>
                     generateText({
                         abortSignal: secondChanceSignal,
@@ -1626,7 +1637,10 @@ export async function runAgentLoop(
                         ),
                         messages: [
                             // Original user prompt with diffs and PR context
-                            { role: 'user' as const, content: input.userPrompt },
+                            {
+                                role: 'user' as const,
+                                content: input.userPrompt,
+                            },
                             // Full conversation history: all tool calls + complete results
                             ...responseMessages,
                             // Instruction to finalize
@@ -1712,6 +1726,7 @@ export async function runAgentLoop(
             finalText,
             secrets.byokConfig,
             input.telemetryMetadata?.organizationId,
+            secrets.byokQueueTimeoutMs,
         );
         if (fallbackResult) {
             findings = fallbackResult.findings;
@@ -1761,6 +1776,7 @@ export async function runAgentLoop(
         const coverageRecovery = await runCoverageRecoveryPass({
             input,
             byokConfig: secrets.byokConfig,
+            queueTimeoutMs: secrets.byokQueueTimeoutMs,
             tools,
             coverageTargets,
             allToolCalls,
@@ -1789,6 +1805,7 @@ export async function runAgentLoop(
                     coverageRecovery.text,
                     secrets.byokConfig,
                     input.telemetryMetadata?.organizationId,
+                    secrets.byokQueueTimeoutMs,
                 );
                 if (fallbackResult) {
                     extraFindings = fallbackResult.findings;
@@ -1825,6 +1842,7 @@ export async function runAgentLoop(
         const coverageSecondChance = await runLowCoverageSecondChance({
             input,
             byokConfig: secrets.byokConfig,
+            queueTimeoutMs: secrets.byokQueueTimeoutMs,
             tools,
             coverageTargets,
             allToolCalls,
@@ -1849,6 +1867,7 @@ export async function runAgentLoop(
                     coverageSecondChance.text,
                     secrets.byokConfig,
                     input.telemetryMetadata?.organizationId,
+                    secrets.byokQueueTimeoutMs,
                 );
                 if (fallbackResult) {
                     extraFindings = fallbackResult.findings;
@@ -1887,6 +1906,7 @@ export async function runAgentLoop(
         const coverageThirdChance = await runLowCoverageSecondChance({
             input,
             byokConfig: secrets.byokConfig,
+            queueTimeoutMs: secrets.byokQueueTimeoutMs,
             tools,
             coverageTargets,
             allToolCalls,
@@ -1911,6 +1931,7 @@ export async function runAgentLoop(
                     coverageThirdChance.text,
                     secrets.byokConfig,
                     input.telemetryMetadata?.organizationId,
+                    secrets.byokQueueTimeoutMs,
                 );
                 if (fallbackResult) {
                     extraFindings = fallbackResult.findings;
@@ -1940,6 +1961,7 @@ export async function runAgentLoop(
         const synthesisRescue = await runSynthesisRescuePass({
             input,
             byokConfig: secrets.byokConfig,
+            queueTimeoutMs: secrets.byokQueueTimeoutMs,
             findings,
             allToolCalls,
             totalInputTokens,
@@ -1973,9 +1995,7 @@ export async function runAgentLoop(
     // and for generalist findings the agent's rough severity can be flipped
     // by the reclassifier (e.g. "low" → "critical"). The pre-filter was
     // discarding findings that should have been kept.
-    const isKodyRuleFinding = (
-        s: (typeof findings.suggestions)[number],
-    ) =>
+    const isKodyRuleFinding = (s: (typeof findings.suggestions)[number]) =>
         typeof (s as any).ruleUuid === 'string' &&
         (s as any).ruleUuid.trim().length > 0;
     const discardedBySeverity: FindingsOutput['suggestions'] = [];
@@ -1998,7 +2018,11 @@ export async function runAgentLoop(
     // rules, so if the agent matched a ruleUuid the violation should surface.
     // The verifier is a false-positive guard for heuristic findings, not for
     // user-configured rules.
-    if (!isSelfContained && findings.suggestions.length > 0) {
+    if (
+        !isSelfContained &&
+        !skipHeavyPasses &&
+        (findings.suggestions?.length ?? 0) > 0
+    ) {
         const kodyRuleSuggestions = findings.suggestions.filter((s) =>
             isKodyRuleFinding(s),
         );
@@ -2114,6 +2138,7 @@ export async function runAgentLoop(
 async function runCoverageRecoveryPass(params: {
     input: AgentLoopInput;
     byokConfig?: BYOKConfig;
+    queueTimeoutMs?: number;
     tools: Record<string, any>;
     coverageTargets: ReturnType<typeof buildCoverageLedger>;
     allToolCalls: AgentLoopOutput['toolCalls'];
@@ -2133,6 +2158,7 @@ async function runCoverageRecoveryPass(params: {
     const {
         input,
         byokConfig,
+        queueTimeoutMs,
         tools,
         coverageTargets,
         allToolCalls,
@@ -2180,6 +2206,7 @@ async function runCoverageRecoveryPass(params: {
             role: 'main',
             label: `${input.agentName ?? 'agent-loop'}-coverage-recovery`,
             abortSignal: recoverySignal,
+            queueTimeoutMs,
             fn: () =>
                 generateText({
                     abortSignal: recoverySignal,
@@ -2332,20 +2359,16 @@ Investigate the remaining changed files now.
         }
 
         const rUsage = extractUsage(
-            (recoveryResult as any).totalUsage ??
-                recoveryResult.usage ??
-                null,
+            (recoveryResult as any).totalUsage ?? recoveryResult.usage ?? null,
         );
         return {
             text: recoveryText,
             totalInputTokens: totalInputTokens + rUsage.inputTokens,
-            totalCacheReadTokens:
-                totalCacheReadTokens + rUsage.cacheReadTokens,
+            totalCacheReadTokens: totalCacheReadTokens + rUsage.cacheReadTokens,
             totalCacheWriteTokens:
                 totalCacheWriteTokens + rUsage.cacheWriteTokens,
             totalOutputTokens: totalOutputTokens + rUsage.outputTokens,
-            totalReasoningTokens:
-                totalReasoningTokens + rUsage.reasoningTokens,
+            totalReasoningTokens: totalReasoningTokens + rUsage.reasoningTokens,
         };
     } catch (error) {
         logger.warn({
@@ -2385,6 +2408,7 @@ function shouldRunLowCoverageSecondChance(
 async function runLowCoverageSecondChance(params: {
     input: AgentLoopInput;
     byokConfig?: BYOKConfig;
+    queueTimeoutMs?: number;
     tools: Record<string, any>;
     coverageTargets: ReturnType<typeof buildCoverageLedger>;
     allToolCalls: AgentLoopOutput['toolCalls'];
@@ -2404,6 +2428,7 @@ async function runLowCoverageSecondChance(params: {
     const {
         input,
         byokConfig,
+        queueTimeoutMs,
         tools,
         coverageTargets,
         allToolCalls,
@@ -2451,6 +2476,7 @@ async function runLowCoverageSecondChance(params: {
             role: 'main',
             label: `${input.agentName ?? 'agent-loop'}-coverage-second-chance`,
             abortSignal: lowCoverageSignal,
+            queueTimeoutMs,
             fn: () =>
                 generateText({
                     abortSignal: lowCoverageSignal,
@@ -2532,10 +2558,7 @@ Instructions:
                             coverageTargets,
                             12,
                         );
-                        if (
-                            phase === 'urgent' &&
-                            !secondChanceUrgentAppended
-                        ) {
+                        if (phase === 'urgent' && !secondChanceUrgentAppended) {
                             appendedNote =
                                 stepBudgetNote.trim() +
                                 (debtSnapshot ? `\n\n${debtSnapshot}` : '');
@@ -2599,8 +2622,7 @@ Instructions:
         if (doneResult) {
             secondChanceText = JSON.stringify(doneResult);
         } else {
-            secondChanceText =
-                secondChanceResult.text || secondChanceText;
+            secondChanceText = secondChanceResult.text || secondChanceText;
         }
 
         const scuUsage = extractUsage(
@@ -2639,6 +2661,7 @@ Instructions:
 async function runSynthesisRescuePass(params: {
     input: AgentLoopInput;
     byokConfig?: BYOKConfig;
+    queueTimeoutMs?: number;
     findings: FindingsOutput;
     allToolCalls: AgentLoopOutput['toolCalls'];
     totalInputTokens: number;
@@ -2657,6 +2680,7 @@ async function runSynthesisRescuePass(params: {
     const {
         input,
         byokConfig,
+        queueTimeoutMs,
         findings,
         allToolCalls,
         totalInputTokens: initialTotalInputTokens,
@@ -2709,6 +2733,7 @@ async function runSynthesisRescuePass(params: {
             role: 'main',
             label: `${input.agentName ?? 'agent-loop'}-synthesis-rescue`,
             abortSignal: synthesisSignal,
+            queueTimeoutMs,
             fn: () =>
                 generateText({
                     abortSignal: synthesisSignal,
@@ -2791,21 +2816,22 @@ Return ONLY JSON:
                 synthesisText,
                 byokConfig,
                 input.telemetryMetadata?.organizationId,
+                queueTimeoutMs,
             );
             if (fallbackResult) {
                 extraFindings = fallbackResult.findings;
                 totalInputTokens += fallbackResult.usage.inputTokens;
-                totalCacheReadTokens +=
-                    fallbackResult.usage.cacheReadTokens;
-                totalCacheWriteTokens +=
-                    fallbackResult.usage.cacheWriteTokens;
+                totalCacheReadTokens += fallbackResult.usage.cacheReadTokens;
+                totalCacheWriteTokens += fallbackResult.usage.cacheWriteTokens;
                 totalOutputTokens += fallbackResult.usage.outputTokens;
                 totalReasoningTokens += fallbackResult.usage.reasoningTokens;
             }
         }
 
         const usage = extractUsage(
-            synthesisResult.usage ?? (synthesisResult as any).totalUsage ?? null,
+            synthesisResult.usage ??
+                (synthesisResult as any).totalUsage ??
+                null,
         );
         totalInputTokens += usage.inputTokens;
         totalCacheReadTokens += usage.cacheReadTokens;
@@ -3105,7 +3131,8 @@ async function verifyFindingsWithTools(params: {
                 verifierRawTextByIndex.set(idx, vr.rawTextPreview);
                 totalInputTokens += vr.usage.inputTokens;
                 totalCacheReadTokens += (vr.usage as any).cacheReadTokens ?? 0;
-                totalCacheWriteTokens += (vr.usage as any).cacheWriteTokens ?? 0;
+                totalCacheWriteTokens +=
+                    (vr.usage as any).cacheWriteTokens ?? 0;
                 totalOutputTokens += vr.usage.outputTokens;
                 totalReasoningTokens += vr.usage.reasoningTokens;
             }
@@ -3316,6 +3343,7 @@ async function verifySingleFindingWithTools(params: {
         role: 'internal',
         label: `${input.agentName ?? 'agent-loop'}-verify-finding`,
         abortSignal: verifierSignal,
+        queueTimeoutMs: secrets.byokQueueTimeoutMs,
         fn: () =>
             generateText({
                 abortSignal: verifierSignal,
@@ -3429,7 +3457,10 @@ async function verifySingleFindingWithTools(params: {
     });
 
     // ─── Done-tool extraction for verifier ─────────────────────────────
-    const verifyDoneResult = extractDoneToolResult<z.infer<typeof _verificationSchema>>(verificationRun);
+    const verifyDoneResult =
+        extractDoneToolResult<z.infer<typeof _verificationSchema>>(
+            verificationRun,
+        );
 
     if (verifyDoneResult) {
         logger.log({
@@ -3480,6 +3511,7 @@ async function verifySingleFindingWithTools(params: {
                 role: 'internal',
                 label: `${input.agentName ?? 'agent-loop'}-verify-finding-second-chance`,
                 abortSignal: verifierSecondChanceSignal,
+                queueTimeoutMs: secrets.byokQueueTimeoutMs,
                 fn: () =>
                     generateText({
                         abortSignal: verifierSecondChanceSignal,
@@ -3506,7 +3538,10 @@ async function verifySingleFindingWithTools(params: {
                         system: 'You are a surgical code review verifier.',
                         messages: [
                             // Original verification prompt with evidence
-                            { role: 'user' as const, content: verificationPrompt.prompt },
+                            {
+                                role: 'user' as const,
+                                content: verificationPrompt.prompt,
+                            },
                             // Full conversation history from verifier (tool calls + results)
                             ...verifierResponseMessages,
                             // Instruction to finalize
@@ -3557,6 +3592,7 @@ async function verifySingleFindingWithTools(params: {
                 index,
                 secrets.byokConfig,
                 input.telemetryMetadata?.organizationId,
+                secrets.byokQueueTimeoutMs,
             );
 
         if (fallbackDecision) {
@@ -4051,6 +4087,7 @@ async function structureVerificationDecisionWithFallbackModel(
     index: number,
     byokConfig?: BYOKConfig,
     organizationId?: string,
+    queueTimeoutMs?: number,
 ): Promise<{
     decision: SuggestionVerificationDecision;
     usage: {
@@ -4081,6 +4118,7 @@ async function structureVerificationDecisionWithFallbackModel(
             role: 'internal',
             label: 'verify-structure-fallback',
             abortSignal: verifierFallbackSignal,
+            queueTimeoutMs,
             fn: () =>
                 generateText({
                     abortSignal: verifierFallbackSignal,
@@ -4302,6 +4340,7 @@ async function structureWithFallbackModel(
     reviewText: string,
     byokConfig?: BYOKConfig,
     organizationId?: string,
+    queueTimeoutMs?: number,
 ): Promise<{
     findings: FindingsOutput;
     usage: {
@@ -4356,6 +4395,7 @@ async function structureWithFallbackModel(
             role: 'internal',
             label: 'review-structure-fallback',
             abortSignal: structureFallbackSignal,
+            queueTimeoutMs,
             fn: () =>
                 generateText({
                     abortSignal: structureFallbackSignal,

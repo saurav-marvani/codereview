@@ -122,6 +122,12 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
 
         const validationService = new KodyRulesValidationService({} as any);
 
+        const moduleRefMock = {
+            resolve: jest
+                .fn()
+                .mockResolvedValue(centralizedConfigPrServiceMock),
+        };
+
         const service = new KodyRulesService(
             repositoryMock as any,
             { emit: jest.fn() } as any,
@@ -132,7 +138,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
             {} as any,
             observabilityServiceMock as any,
             permissionValidationServiceMock as any,
-            centralizedConfigPrServiceMock as any,
+            moduleRefMock as any,
             codeBaseConfigServiceMock as any,
         );
 
@@ -632,6 +638,15 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
                 }),
         };
 
+        const ccpMock = {
+            createMutationPullRequestIfEnabled: jest.fn().mockResolvedValue({
+                mode: 'disabled',
+            }),
+            resolveRepositoryFolderName: jest.fn(),
+            sanitizeFileName: jest.fn(),
+            buildCentralizedPath: jest.fn(),
+        };
+
         const service = new KodyRulesService(
             repositoryMock as any,
             { emit: jest.fn() } as any,
@@ -642,16 +657,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
             {} as any,
             {} as any,
             {} as any,
-            {
-                createMutationPullRequestIfEnabled: jest
-                    .fn()
-                    .mockResolvedValue({
-                        mode: 'disabled',
-                    }),
-                resolveRepositoryFolderName: jest.fn(),
-                sanitizeFileName: jest.fn(),
-                buildCentralizedPath: jest.fn(),
-            } as any,
+            { resolve: jest.fn().mockResolvedValue(ccpMock) } as any,
             {} as any,
         );
 

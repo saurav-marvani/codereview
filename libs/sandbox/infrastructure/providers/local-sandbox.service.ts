@@ -21,8 +21,8 @@ import {
     ISandboxProvider,
     SandboxInstance,
     SandboxRunResult,
-} from '@libs/code-review/domain/contracts/sandbox.provider';
-import { RemoteCommands } from './collectCrossFileContexts.service';
+} from '@libs/sandbox/domain/contracts/sandbox.provider';
+import { RemoteCommands } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 
 const execFileAsync = promisify(execFile);
 
@@ -34,10 +34,20 @@ const MAX_BUFFER = 5 * 1024 * 1024; // 5 MB — cap output to prevent memory iss
 export class LocalSandboxService implements ISandboxProvider {
     private readonly logger = createLogger(LocalSandboxService.name);
 
-    constructor(private readonly configService: ConfigService) {}
+    // ConfigService is kept on the constructor signature so SandboxModule's
+    // factory can call `new LocalSandboxService(configService)` uniformly with
+    // E2BSandboxService — but no longer used internally now that
+    // `isAvailable()` always returns true (the module owns provider
+    // selection).
+    constructor(_configService: ConfigService) {}
 
     isAvailable(): boolean {
-        return this.configService.get<string>('SANDBOX_PROVIDER') === 'local';
+        // If SandboxModule instantiated us, we're the chosen provider — the
+        // module already weighed `SANDBOX_PROVIDER` and `API_E2B_KEY`. Don't
+        // second-guess it here, otherwise self-hosted setups (auto + no E2B
+        // key → LocalSandbox) silently fall back to NullSandbox in the
+        // lease manager and never clone the repo.
+        return true;
     }
 
     async createSandboxWithRepo(
@@ -231,6 +241,7 @@ export class LocalSandboxService implements ISandboxProvider {
                 remoteCommands,
                 cleanup,
                 type: 'local' as const,
+                sandboxId: capturedRepoDir,
                 repoDir: capturedRepoDir,
                 run,
                 readFile: sandboxReadFile,

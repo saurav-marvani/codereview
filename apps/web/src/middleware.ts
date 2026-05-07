@@ -139,6 +139,6 @@ export const config = {
     // exclusion, unauthenticated calls (e.g. email-existence check on
     // sign-up) get redirected to /sign-in and the client sees a 307 loop.
     matcher: [
-        "/((?!api/webhooks|api/play|api/proxy|_next|assets|favicon.ico|api/health).*)",
+        "/((?!api/webhooks|api/play|api/proxy|_next|assets|favicon.ico|api/health|robots.txt).*)",
     ],
 };

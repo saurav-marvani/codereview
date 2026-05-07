@@ -23,8 +23,16 @@ import {
     WebhookForgejoHookIssueAction,
 } from '@libs/platform/domain/platformIntegrations/types/webhooks/webhooks-forgejo.type';
 import { SavePullRequestUseCase } from '@libs/platformData/application/use-cases/pullRequests/save.use-case';
-import { Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import {
+    IOutboxMessageRepository,
+    OUTBOX_MESSAGE_REPOSITORY_TOKEN,
+} from '@libs/core/workflow/domain/contracts/outbox-message.repository.contract';
+import {
+    SANDBOX_INVALIDATE_ROUTING_KEY,
+    SandboxInvalidatePayload,
+} from '@libs/sandbox/domain/events/sandbox-invalidate.event';
 import { CodeManagementService } from '../../adapters/services/codeManagement.service';
 
 /**
@@ -44,6 +52,8 @@ export class ForgejoPullRequestHandler implements IWebhookEventHandler {
         private readonly eventEmitter: EventEmitter2,
         private readonly enqueueCodeReviewJobUseCase: EnqueueCodeReviewJobUseCase,
         private readonly enqueueImplementationCheckUseCase: EnqueueImplementationCheckUseCase,
+        @Inject(OUTBOX_MESSAGE_REPOSITORY_TOKEN)
+        private readonly outboxRepository: IOutboxMessageRepository,
         @Optional()
         private readonly enqueueAstGraphUpdateOnMergedUseCase?: EnqueueAstGraphUpdateOnMergedUseCase,
     ) {}
@@ -215,6 +225,28 @@ export class ForgejoPullRequestHandler implements IWebhookEventHandler {
 
             if (payload?.action === WebhookForgejoHookIssueAction.CLOSED) {
                 this.generateIssuesFromPrClosedUseCase.execute(params);
+
+                // Durable sandbox invalidation via outbox (SBX-05).
+                // Written in the same DB transaction context so it survives worker crashes.
+                const prKey = `${context.organizationAndTeamData.organizationId}:${repository.id}:${payload?.pull_request?.number}`;
+                this.outboxRepository.create({
+                    jobId: undefined,
+                    exchange: 'sandbox.events',
+                    routingKey: SANDBOX_INVALIDATE_ROUTING_KEY,
+                    payload: {
+                        prKey,
+                        reason: 'pr_closed',
+                    } satisfies SandboxInvalidatePayload,
+                }).catch((err) => {
+                    this.logger.warn({
+                        message: '[SBX-05] Failed to write sandbox invalidation outbox message',
+                        context: ForgejoPullRequestHandler.name,
+                        error: err instanceof Error ? err : undefined,
+                        metadata: { prKey },
+                    });
+                });
+
+                // TODO(SBX-05): force-push not surfaced by this platform's webhook payload — add when available.
 
                 // If merged into default branch, trigger Kody Rules sync for main
                 const merged = payload?.pull_request?.merged === true;

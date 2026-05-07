@@ -1,6 +1,6 @@
 import { createLogger } from '@kodus/flow';
 import { Inject, Injectable } from '@nestjs/common';
-import { SandboxInstance } from '@libs/code-review/domain/contracts/sandbox.provider';
+import { SandboxInstance } from '@libs/sandbox/domain/contracts/sandbox.provider';
 import {
     IRepositoryService,
     REPOSITORY_SERVICE_TOKEN,

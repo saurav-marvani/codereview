@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
+
+import integrationDescriptions from '../../../config/integration-descriptions.json';
 
 interface IntegrationDescriptions {
     [provider: string]: {
@@ -12,28 +12,11 @@ interface IntegrationDescriptions {
 
 @Injectable()
 export class IntegrationDescriptionService {
-    private descriptions: IntegrationDescriptions;
-
-    constructor() {
-        this.loadDescriptions();
-    }
-
-    private loadDescriptions(): void {
-        try {
-            // Resolve relative to this file so the path works regardless of
-            // process.cwd() — important in the kodus-ai monorepo where cwd
-            // is the repo root, not apps/mcp-manager. Mirrors kodus-mcp.provider.ts.
-            const filePath = resolve(
-                __dirname,
-                '../../../config/integration-descriptions.json',
-            );
-            const fileContent = readFileSync(filePath, 'utf8');
-            this.descriptions = JSON.parse(fileContent);
-        } catch (error) {
-            console.warn('Error loading integration descriptions:', error);
-            this.descriptions = {};
-        }
-    }
+    // Imported at build time via `resolveJsonModule`. Webpack bundles the
+    // JSON contents into the compiled main.js, so there's no runtime I/O —
+    // works regardless of __dirname / process.cwd() / build layout.
+    private descriptions: IntegrationDescriptions =
+        integrationDescriptions as IntegrationDescriptions;
 
     getDescription(provider: string, appName: string): string {
         const providerDescriptions = this.descriptions[provider];

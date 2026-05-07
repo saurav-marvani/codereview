@@ -10,6 +10,7 @@ import { IPipelineStrategy } from '@libs/core/infrastructure/pipeline/interfaces
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 import { AggregateResultsStage } from '../stages/aggregate-result.stage';
 import { CollectCrossFileContextStage } from '../stages/collect-cross-file-context.stage';
+import { CreateSandboxStage } from '../stages/create-sandbox.stage';
 import {
     ILoadExternalContextStage,
     LOAD_EXTERNAL_CONTEXT_STAGE_TOKEN,
@@ -37,6 +38,7 @@ export class CodeReviewPipelineStrategy implements IPipelineStrategy<CodeReviewP
         private readonly resolveConfigStage: ResolveConfigStage,
         private readonly validateConfigStage: ValidateConfigStage,
         private readonly fetchChangedFilesStage: FetchChangedFilesStage,
+        private readonly createSandboxStage: CreateSandboxStage,
         private readonly gatherDocumentationContextStage: GatherDocumentationContextStage,
         @Inject(LOAD_EXTERNAL_CONTEXT_STAGE_TOKEN)
         private readonly loadExternalContextStage: ILoadExternalContextStage,
@@ -60,6 +62,7 @@ export class CodeReviewPipelineStrategy implements IPipelineStrategy<CodeReviewP
             this.resolveConfigStage,
             this.validateConfigStage,
             this.fetchChangedFilesStage,
+            this.createSandboxStage,
             this.gatherDocumentationContextStage,
             this.loadExternalContextStage,
             this.fileContextGateStage,

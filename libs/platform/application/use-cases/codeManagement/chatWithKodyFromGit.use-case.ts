@@ -1,5 +1,5 @@
 import { createLogger, createThreadId } from '@kodus/flow';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 
 import { BusinessRulesValidationAgentUseCase } from '@libs/agents/application/use-cases/business-rules-validation-agent.use-case';
 import { ConversationAgentUseCase } from '@libs/agents/application/use-cases/conversation-agent.use-case';
@@ -7,6 +7,12 @@ import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { IntegrationConfigEntity } from '@libs/integrations/domain/integrationConfigs/entities/integration-config.entity';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
+import {
+    ISandboxLeaseManager,
+    SANDBOX_LEASE_MANAGER_TOKEN,
+    buildPrKey,
+} from '@libs/sandbox/domain/contracts/sandbox-lease-manager.contract';
+import { CreateSandboxParams } from '@libs/sandbox/domain/contracts/sandbox.provider';
 
 import { PlatformResponsePolicyFactory } from './policies/platform-response.policy';
 
@@ -157,6 +163,9 @@ export class ChatWithKodyFromGitUseCase {
         private readonly codeManagementService: CodeManagementService,
         private readonly conversationAgentUseCase: ConversationAgentUseCase,
         private readonly businessRulesValidationAgentUseCase: BusinessRulesValidationAgentUseCase,
+
+        @Inject(SANDBOX_LEASE_MANAGER_TOKEN)
+        private readonly leaseManager: ISandboxLeaseManager,
     ) {}
 
     async execute(params: WebhookParams): Promise<void> {
@@ -1814,12 +1823,120 @@ export class ChatWithKodyFromGitUseCase {
     }): Promise<string> {
         const { prepareContext, organizationAndTeamData, thread } = context;
 
-        return await this.conversationAgentUseCase.execute({
-            prompt: prepareContext.userQuestion,
+        // Acquire a sandbox lease for the duration of the conversation turn.
+        // Same prKey as review → warm-resume reuse when both run on the same PR.
+        // The lease lets the conversation agent invoke native tools (grep, readFile,
+        // listDir, etc.) inside the sandbox so replies can reference real repo
+        // content — not just MCP tools. 5min TTL covers LLM + comment posting.
+        const prKey = buildPrKey(
+            organizationAndTeamData.organizationId,
+            prepareContext.repository?.id ?? 'unknown',
+            prepareContext.pullRequest?.pullRequestNumber ?? 0,
+        );
+
+        // Resolve clone params so the lease manager can cold-create the sandbox
+        // when this is the first acquire for this PR (no review ran yet, or this
+        // PR has no automated review). Without these params the manager falls
+        // back to NullSandbox and the agent loses native tools entirely.
+        // When review acquired first, these params are simply ignored — the
+        // existing sandbox is connected for warm-resume.
+        const cloneParams = await this.buildSandboxCloneParams(
+            prepareContext,
             organizationAndTeamData,
-            prepareContext: prepareContext,
-            thread: thread,
-        });
+        );
+
+        const { sandbox, leaseId } = await this.leaseManager.acquire(
+            prKey,
+            'conversation',
+            5 * 60 * 1000,
+            cloneParams,
+        );
+
+        try {
+            return await this.conversationAgentUseCase.execute({
+                prompt: prepareContext.userQuestion,
+                organizationAndTeamData,
+                prepareContext,
+                thread,
+                sandbox,
+            });
+        } finally {
+            await this.leaseManager.release(leaseId);
+        }
+    }
+
+    private async buildSandboxCloneParams(
+        prepareContext: any,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<CreateSandboxParams | undefined> {
+        const repository = prepareContext.repository;
+        const pr = prepareContext.pullRequest;
+        const platform: PlatformType | undefined =
+            prepareContext.platformType;
+
+        if (!repository || !pr || !platform) {
+            this.logger.warn({
+                message:
+                    'Cannot build sandbox clone params — missing repository/pullRequest/platform',
+                context: ChatWithKodyFromGitUseCase.name,
+                metadata: {
+                    hasRepository: !!repository,
+                    hasPullRequest: !!pr,
+                    platform,
+                },
+            });
+            return undefined;
+        }
+
+        try {
+            // Webhook payloads for `pull_request_review_comment` and
+            // `issue_comment` give us { id, name, owner } but no `fullName`.
+            // GitHub's getCloneParams builds the clone URL from `fullName`,
+            // so we synthesize it here from owner/name when missing.
+            const enrichedRepository =
+                repository.fullName
+                    ? repository
+                    : {
+                          ...repository,
+                          fullName:
+                              repository.owner && repository.name
+                                  ? `${repository.owner}/${repository.name}`
+                                  : repository.name,
+                      };
+
+            const cp = await this.codeManagementService.getCloneParams(
+                {
+                    repository: enrichedRepository,
+                    organizationAndTeamData,
+                },
+                platform,
+            );
+
+            return {
+                cloneUrl: cp.url,
+                authToken: cp.auth?.token || '',
+                authUsername: cp.auth?.username,
+                branch: pr.headRef,
+                baseBranch: pr.baseRef,
+                prNumber: pr.pullRequestNumber,
+                platform,
+                sandboxMetadata: { stage: 'conversation' },
+            };
+        } catch (err) {
+            // Auth lookup or repo metadata fetch failed — log and let the lease
+            // manager fall back to NullSandbox. The agent still answers via
+            // MCP-only tools (memory).
+            this.logger.warn({
+                message:
+                    'Failed to resolve sandbox clone params; conversation will run without native tools',
+                context: ChatWithKodyFromGitUseCase.name,
+                metadata: {
+                    organizationId: organizationAndTeamData.organizationId,
+                    error: err instanceof Error ? err.message : String(err),
+                },
+            });
+            return undefined;
+        }
     }
 
     private getGitUser(params: WebhookParams): {

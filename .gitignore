@@ -183,3 +183,6 @@ scripts/benchmark/runs/*
 # Analytics parity harness output (regenerated per run)
 parity-report.json
 /.env-preview/
+
+# GSD planning workspace (local-only)
+.planning/

@@ -455,15 +455,19 @@ class BYOKConcurrencyLimiter {
     private activeCount = 0;
     private nextTaskId = 1;
 
-    constructor(
-        readonly concurrency: number,
-        readonly queueTimeoutMs: number,
-    ) {}
+    constructor(readonly concurrency: number) {}
 
+    /**
+     * @param queueTimeoutMs Per-task queue wait timeout. When > 0, the task
+     *   is rejected with [BYOK-QUEUE-TIMEOUT] if it cannot acquire a slot within
+     *   this duration. Pass 0 (or omit) for infinite wait (review callers).
+     *   Conversation callers pass 60_000 to fail fast when a review holds the slot.
+     */
     run<T>(
         label: string,
         fn: () => Promise<T>,
         abortSignal?: AbortSignal,
+        queueTimeoutMs = DEFAULT_LIMITER_QUEUE_TIMEOUT_MS,
     ): Promise<T> {
         return new Promise<T>((resolve, reject) => {
             const task: QueuedTask<T> = {
@@ -507,7 +511,7 @@ class BYOKConcurrencyLimiter {
                     abortSignal.removeEventListener('abort', abortQueuedTask);
             }
 
-            if (this.queueTimeoutMs > 0) {
+            if (queueTimeoutMs > 0) {
                 task.timer = setTimeout(() => {
                     if (task.started || task.cancelled) return;
                     task.cancelled = true;
@@ -521,11 +525,11 @@ class BYOKConcurrencyLimiter {
                     reject(
                         new Error(
                             `[BYOK-QUEUE-TIMEOUT] ${label} waited more than ${Math.round(
-                                this.queueTimeoutMs / 1000,
+                                queueTimeoutMs / 1000,
                             )}s for an LLM concurrency slot`,
                         ),
                     );
-                }, this.queueTimeoutMs);
+                }, queueTimeoutMs);
             }
 
             this.queue.push(task as QueuedTask<unknown>);
@@ -629,14 +633,10 @@ export function runWithBYOKLimiter<T>(
     const queueTimeoutMs =
         params.queueTimeoutMs ?? DEFAULT_LIMITER_QUEUE_TIMEOUT_MS;
     let limiter = limiterCache.get(cacheKey);
-    if (
-        !limiter ||
-        limiter.concurrency !== maxConcurrent ||
-        limiter.queueTimeoutMs !== queueTimeoutMs
-    ) {
-        limiter = new BYOKConcurrencyLimiter(maxConcurrent, queueTimeoutMs);
+    if (!limiter || limiter.concurrency !== maxConcurrent) {
+        limiter = new BYOKConcurrencyLimiter(maxConcurrent);
         limiterCache.set(cacheKey, limiter);
     }
 
-    return limiter.run(label, fn, params.abortSignal);
+    return limiter.run(label, fn, params.abortSignal, queueTimeoutMs);
 }

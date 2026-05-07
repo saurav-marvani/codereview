@@ -3,7 +3,7 @@ import { GraphContextService } from '@libs/code-review/infrastructure/adapters/s
 import { KodusGraphCli } from '@libs/code-review/infrastructure/adapters/services/graph/kodus-graph-cli';
 import { AstGraphRepository } from '@libs/code-review/infrastructure/adapters/repositories/astGraph.repository';
 import { IRepositoryService, REPOSITORY_SERVICE_TOKEN } from '@libs/code-review/domain/contracts/RepositoryService.contract';
-import { SandboxInstance } from '@libs/code-review/domain/contracts/sandbox.provider';
+import { SandboxInstance } from '@libs/sandbox/domain/contracts/sandbox.provider';
 import type { FileChange } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 
 jest.mock('@kodus/flow', () => ({

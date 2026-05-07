@@ -1,6 +1,14 @@
 import { createLogger } from '@kodus/flow';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import {
+    IOutboxMessageRepository,
+    OUTBOX_MESSAGE_REPOSITORY_TOKEN,
+} from '@libs/core/workflow/domain/contracts/outbox-message.repository.contract';
+import {
+    SANDBOX_INVALIDATE_ROUTING_KEY,
+    SandboxInvalidatePayload,
+} from '@libs/sandbox/domain/events/sandbox-invalidate.event';
 
 import { EnqueueAstGraphUpdateOnMergedUseCase } from '@libs/code-review/application/use-cases/enqueue-ast-graph-update-on-merged.use-case';
 import { EnqueueImplementationCheckUseCase } from '@libs/code-review/application/use-cases/enqueue-implementation-check.use-case';
@@ -48,6 +56,8 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
         private readonly eventEmitter: EventEmitter2,
         private readonly enqueueCodeReviewJobUseCase: EnqueueCodeReviewJobUseCase,
         private readonly enqueueImplementationCheckUseCase: EnqueueImplementationCheckUseCase,
+        @Inject(OUTBOX_MESSAGE_REPOSITORY_TOKEN)
+        private readonly outboxRepository: IOutboxMessageRepository,
         @Optional()
         private readonly enqueueAstGraphUpdateOnMergedUseCase?: EnqueueAstGraphUpdateOnMergedUseCase,
     ) {}
@@ -294,6 +304,28 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
 
                 if (pullRequest && pullRequest.status === 'closed') {
                     this.generateIssuesFromPrClosedUseCase.execute(params);
+
+                    // Durable sandbox invalidation via outbox (SBX-05).
+                    const prKey = `${context.organizationAndTeamData.organizationId}:${repository.id}:${payload?.pullrequest?.id}`;
+                    await this.outboxRepository.create({
+                        jobId: undefined,
+                        exchange: 'sandbox.events',
+                        routingKey: SANDBOX_INVALIDATE_ROUTING_KEY,
+                        payload: {
+                            prKey,
+                            reason: 'pr_closed',
+                        } satisfies SandboxInvalidatePayload,
+                    }).catch((err) => {
+                        this.logger.warn({
+                            message: '[SBX-05] Failed to write sandbox invalidation outbox message',
+                            context: BitbucketPullRequestHandler.name,
+                            error: err instanceof Error ? err : undefined,
+                            metadata: { prKey },
+                        });
+                    });
+
+                    // TODO(SBX-05): Bitbucket 'pullrequest:updated' events do not distinguish
+                    // force-push from regular push — no force-push outbox write is added here.
 
                     const merged = payload?.pullrequest?.state === 'MERGED';
 

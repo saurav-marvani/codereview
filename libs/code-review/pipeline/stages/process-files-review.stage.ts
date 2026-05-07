@@ -155,7 +155,9 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 },
             });
 
-            // Mesmo em caso de erro, retornamos o contexto para que o pipeline continue
+            // Mesmo em caso de erro, retornamos o contexto para que o pipeline continue.
+            // Sandbox cleanup é responsabilidade do observer.onPipelineFinish — não
+            // duplicamos aqui pra evitar "release called with unknown leaseId" warnings.
             return this.updateContext(context, (draft) => {
                 draft.validSuggestions = [];
                 draft.discardedSuggestions = [];
@@ -167,19 +169,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     }),
                 );
             });
-        } finally {
-            // Cleanup original sandbox — this stage is the last consumer
-            if (context.sandboxHandle?.cleanup) {
-                try {
-                    await context.sandboxHandle.cleanup();
-                } catch (cleanupErr) {
-                    this.logger.warn({
-                        message: 'Sandbox cleanup failed after file analysis',
-                        context: this.stageName,
-                        error: cleanupErr,
-                    });
-                }
-            }
         }
     }
 

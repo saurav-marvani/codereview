@@ -7,7 +7,7 @@ import {
     COMMENT_MANAGER_SERVICE_TOKEN,
     ICommentManagerService,
 } from '@libs/code-review/domain/contracts/CommentManagerService.contract';
-import { CreateSandboxParams } from '@libs/code-review/domain/contracts/sandbox.provider';
+import { CreateSandboxParams } from '@libs/sandbox/domain/contracts/sandbox.provider';
 import { ISuggestionService } from '@libs/code-review/domain/contracts/SuggestionService.contract';
 import {
     CrossFileContextSnippet,

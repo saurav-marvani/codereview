@@ -2,9 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CloneParamsResolverService } from '@libs/code-review/pipeline/services/clone-params-resolver.service';
 import { CreateSandboxStage } from '@/code-review/pipeline/stages/create-sandbox.stage';
 import {
-    ISandboxProvider,
-    SANDBOX_PROVIDER_TOKEN,
-} from '@/code-review/domain/contracts/sandbox.provider';
+    ISandboxLeaseManager,
+    SANDBOX_LEASE_MANAGER_TOKEN,
+    AcquireResult,
+} from '@libs/sandbox/domain/contracts/sandbox-lease-manager.contract';
+import { NULL_SANDBOX_INSTANCE } from '@libs/sandbox/infrastructure/providers/null-sandbox.service';
 import { CodeManagementService } from '@/platform/infrastructure/adapters/services/codeManagement.service';
 import { CodeReviewPipelineContext } from '@/code-review/pipeline/context/code-review-pipeline.context';
 import { PlatformType } from '@/core/domain/enums';
@@ -21,10 +23,30 @@ jest.mock('@kodus/flow', () => ({
 
 describe('CreateSandboxStage', () => {
     let stage: CreateSandboxStage;
-    let mockSandboxProvider: jest.Mocked<ISandboxProvider>;
+    let mockLeaseManager: jest.Mocked<ISandboxLeaseManager>;
     let mockCodeManagementService: jest.Mocked<CodeManagementService>;
 
     let mockCloneParamsResolver: any;
+
+    const makeMockAcquireResult = (): AcquireResult => ({
+        sandbox: {
+            ...NULL_SANDBOX_INSTANCE,
+            type: 'e2b',
+            repoDir: '/home/user/repo',
+            cleanup: jest.fn().mockResolvedValue(undefined),
+            remoteCommands: {
+                grep: jest.fn(),
+                read: jest.fn(),
+                listDir: jest.fn(),
+            },
+            run: jest.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
+            readFile: jest.fn().mockResolvedValue(''),
+            writeFile: jest.fn().mockResolvedValue(undefined),
+        },
+        leaseId: 'test-lease-id',
+        sandboxId: 'test-sandbox-id',
+        wasCreated: true,
+    });
 
     const createBaseContext = (
         overrides: Partial<CodeReviewPipelineContext> = {},
@@ -32,7 +54,7 @@ describe('CreateSandboxStage', () => {
         ({
             dryRun: { enabled: false },
             organizationAndTeamData: {
-                organizationId: 'org-123',
+                organizationId: '7e2e97b8-aefa-422e-92d4-30b378c0332e',
                 teamId: 'team-456',
             } as any,
             repository: {
@@ -67,16 +89,10 @@ describe('CreateSandboxStage', () => {
         }) as CodeReviewPipelineContext;
 
     beforeEach(async () => {
-        mockSandboxProvider = {
-            isAvailable: jest.fn().mockReturnValue(true),
-            createSandboxWithRepo: jest.fn().mockResolvedValue({
-                remoteCommands: {
-                    grep: jest.fn(),
-                    read: jest.fn(),
-                    listDir: jest.fn(),
-                },
-                cleanup: jest.fn(),
-            }),
+        mockLeaseManager = {
+            acquire: jest.fn().mockResolvedValue(makeMockAcquireResult()),
+            release: jest.fn().mockResolvedValue(undefined),
+            invalidate: jest.fn().mockResolvedValue(undefined),
         };
 
         mockCodeManagementService = {
@@ -100,8 +116,8 @@ describe('CreateSandboxStage', () => {
             providers: [
                 CreateSandboxStage,
                 {
-                    provide: SANDBOX_PROVIDER_TOKEN,
-                    useValue: mockSandboxProvider,
+                    provide: SANDBOX_LEASE_MANAGER_TOKEN,
+                    useValue: mockLeaseManager,
                 },
                 {
                     provide: CodeManagementService,
@@ -127,6 +143,7 @@ describe('CreateSandboxStage', () => {
                 changedFiles: [{ filename: 'test.ts' } as any],
                 sandboxHandle: {
                     type: 'e2b' as const,
+                    sandboxId: 'mock-sandbox-id',
                     remoteCommands: {
                         grep: jest.fn(),
                         read: jest.fn(),
@@ -142,9 +159,7 @@ describe('CreateSandboxStage', () => {
 
             const result = await (stage as any).executeStage(context);
 
-            expect(
-                mockSandboxProvider.createSandboxWithRepo,
-            ).not.toHaveBeenCalled();
+            expect(mockLeaseManager.acquire).not.toHaveBeenCalled();
             expect(result.sandboxHandle).toBeDefined();
         });
 
@@ -153,43 +168,62 @@ describe('CreateSandboxStage', () => {
 
             const _result = await (stage as any).executeStage(context);
 
-            expect(
-                mockSandboxProvider.createSandboxWithRepo,
-            ).not.toHaveBeenCalled();
+            expect(mockLeaseManager.acquire).not.toHaveBeenCalled();
         });
 
-        it('should skip if sandbox provider is not available', async () => {
-            mockSandboxProvider.isAvailable.mockReturnValue(false);
+        it('should proceed and acquire lease even when sandbox provider type is null', async () => {
+            // With the lease manager, availability is no longer a guard in the stage.
+            // The manager returns a null sandbox when E2B is not configured.
+            const nullAcquireResult: AcquireResult = {
+                sandbox: { ...NULL_SANDBOX_INSTANCE, cleanup: jest.fn().mockResolvedValue(undefined) },
+                leaseId: 'null-lease-id',
+                sandboxId: '',
+                wasCreated: true,
+            };
+            mockLeaseManager.acquire.mockResolvedValue(nullAcquireResult);
 
-            const context = createBaseContext({
-                changedFiles: [{ filename: 'test.ts' } as any],
-            });
-
-            const _result = await (stage as any).executeStage(context);
-
-            expect(
-                mockSandboxProvider.createSandboxWithRepo,
-            ).not.toHaveBeenCalled();
-        });
-    });
-
-    describe('sandbox creation', () => {
-        it('should create sandbox and store in context', async () => {
             const context = createBaseContext({
                 changedFiles: [{ filename: 'test.ts' } as any],
             });
 
             const result = await (stage as any).executeStage(context);
 
-            expect(
-                mockSandboxProvider.createSandboxWithRepo,
-            ).toHaveBeenCalledWith(
+            expect(mockLeaseManager.acquire).toHaveBeenCalledWith(
+                '7e2e97b8-aefa-422e-92d4-30b378c0332e:repo-1:42',
+                'review',
+                undefined,
                 expect.objectContaining({
                     cloneUrl: 'https://github.com/org/test-repo.git',
-                    authToken: 'ghp_test_token',
+                    platform: 'GITHUB',
                     branch: 'feature-branch',
                     prNumber: 42,
-                    platform: PlatformType.GITHUB,
+                    sandboxMetadata: { stage: 'review' },
+                }),
+            );
+            // Null sandbox is stored in context — review runs in self-contained mode
+            expect(result.sandboxHandle).toBeDefined();
+            expect(result.sandboxHandle.type).toBe('null');
+        });
+    });
+
+    describe('sandbox creation', () => {
+        it('should acquire lease and store sandbox in context', async () => {
+            const context = createBaseContext({
+                changedFiles: [{ filename: 'test.ts' } as any],
+            });
+
+            const result = await (stage as any).executeStage(context);
+
+            expect(mockLeaseManager.acquire).toHaveBeenCalledWith(
+                '7e2e97b8-aefa-422e-92d4-30b378c0332e:repo-1:42',
+                'review',
+                undefined,
+                expect.objectContaining({
+                    cloneUrl: 'https://github.com/org/test-repo.git',
+                    platform: 'GITHUB',
+                    branch: 'feature-branch',
+                    prNumber: 42,
+                    sandboxMetadata: { stage: 'review' },
                 }),
             );
 
@@ -203,9 +237,27 @@ describe('CreateSandboxStage', () => {
             );
         });
 
-        it('should handle sandbox creation failure gracefully', async () => {
-            mockSandboxProvider.createSandboxWithRepo.mockRejectedValue(
-                new Error('E2B timeout'),
+        it('cleanup closure calls leaseManager.release with correct leaseId', async () => {
+            const context = createBaseContext({
+                changedFiles: [{ filename: 'test.ts' } as any],
+            });
+
+            const result = await (stage as any).executeStage(context);
+
+            expect(result.sandboxHandle).toBeDefined();
+            // Invoke cleanup — should call release, not kill
+            await result.sandboxHandle.cleanup();
+            // Review flow shrinks the idle window to 30s (REVIEW_IDLE_TIMEOUT_MS)
+            // so the sandbox pauses fast when no @kody arrives.
+            expect(mockLeaseManager.release).toHaveBeenCalledWith(
+                'test-lease-id',
+                { idleMs: 30_000 },
+            );
+        });
+
+        it('should handle lease acquisition failure gracefully', async () => {
+            mockLeaseManager.acquire.mockRejectedValue(
+                new Error('Lease acquisition timeout'),
             );
 
             const context = createBaseContext({
@@ -215,6 +267,25 @@ describe('CreateSandboxStage', () => {
             // Should NOT throw
             const result = await (stage as any).executeStage(context);
 
+            expect(result.sandboxHandle).toBeUndefined();
+        });
+
+        it('does not retry acquire itself — retry+backoff lives inside the lease manager', async () => {
+            // The stage used to retry once on failure; that responsibility moved
+            // to SandboxLeaseManager.createWithRetry (3 attempts, 60s/120s backoff).
+            // The stage now makes a single acquire() call and falls back to a
+            // null context if it throws.
+            mockLeaseManager.acquire.mockRejectedValue(
+                new Error('Network timeout'),
+            );
+
+            const context = createBaseContext({
+                changedFiles: [{ filename: 'test.ts' } as any],
+            });
+
+            const result = await (stage as any).executeStage(context);
+
+            expect(mockLeaseManager.acquire).toHaveBeenCalledTimes(1);
             expect(result.sandboxHandle).toBeUndefined();
         });
     });

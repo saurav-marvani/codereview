@@ -4,7 +4,7 @@ import { KodusGraphCli } from '@libs/code-review/infrastructure/adapters/service
 import { AstGraphRepository } from '@libs/code-review/infrastructure/adapters/repositories/astGraph.repository';
 import { IRepositoryService, REPOSITORY_SERVICE_TOKEN } from '@libs/code-review/domain/contracts/RepositoryService.contract';
 import { AstGraphStatus } from '@libs/code-review/infrastructure/adapters/repositories/schemas/repository.model';
-import { SandboxInstance } from '@libs/code-review/domain/contracts/sandbox.provider';
+import { SandboxInstance } from '@libs/sandbox/domain/contracts/sandbox.provider';
 
 jest.mock('@kodus/flow', () => ({
     createLogger: () => ({
