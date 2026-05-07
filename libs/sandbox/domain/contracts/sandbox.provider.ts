@@ -1,5 +1,5 @@
 import { PlatformType } from '@libs/core/domain/enums';
-import { RemoteCommands } from '../../infrastructure/adapters/services/collectCrossFileContexts.service';
+import { RemoteCommands } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 
 export interface CreateSandboxParams {
     cloneUrl: string;
@@ -40,6 +40,13 @@ export interface SandboxInstance {
     cleanup: () => Promise<void>;
     /** Which sandbox provider created this instance */
     type: 'e2b' | 'local' | 'null';
+    /**
+     * Stable identifier the lease manager persists on the lease doc so a
+     * second consumer can warm-resume by reconnecting via the provider.
+     * For e2b this is the E2B sandboxId; for local it is a generated id;
+     * for null it is the empty string (marker for "no real sandbox").
+     */
+    sandboxId: string;
     /** Base branch fetched in the sandbox (e.g. "main"). Allows tools to run git diff origin/${baseBranch}...HEAD */
     baseBranch?: string;
     /** Absolute path to the repo root inside the sandbox */

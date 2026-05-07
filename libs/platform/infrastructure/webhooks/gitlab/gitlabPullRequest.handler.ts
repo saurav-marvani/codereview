@@ -1,6 +1,14 @@
 import { createLogger } from '@kodus/flow';
-import { Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import {
+    IOutboxMessageRepository,
+    OUTBOX_MESSAGE_REPOSITORY_TOKEN,
+} from '@libs/core/workflow/domain/contracts/outbox-message.repository.contract';
+import {
+    SANDBOX_INVALIDATE_ROUTING_KEY,
+    SandboxInvalidatePayload,
+} from '@libs/sandbox/domain/events/sandbox-invalidate.event';
 
 import { EnqueueAstGraphUpdateOnMergedUseCase } from '@libs/code-review/application/use-cases/enqueue-ast-graph-update-on-merged.use-case';
 import { EnqueueImplementationCheckUseCase } from '@libs/code-review/application/use-cases/enqueue-implementation-check.use-case';
@@ -39,6 +47,8 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
         private readonly codeManagement: CodeManagementService,
         private readonly enqueueCodeReviewJobUseCase: EnqueueCodeReviewJobUseCase,
         private readonly enqueueImplementationCheckUseCase: EnqueueImplementationCheckUseCase,
+        @Inject(OUTBOX_MESSAGE_REPOSITORY_TOKEN)
+        private readonly outboxRepository: IOutboxMessageRepository,
         @Optional()
         private readonly enqueueAstGraphUpdateOnMergedUseCase?: EnqueueAstGraphUpdateOnMergedUseCase,
     ) {}
@@ -308,6 +318,30 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
                     }
 
                     if (context.organizationAndTeamData) {
+                        // Durable sandbox invalidation via outbox (SBX-05).
+                        const prKey = `${context.organizationAndTeamData.organizationId}:${repository.id}:${payload?.object_attributes?.iid}`;
+                        await this.outboxRepository.create({
+                            jobId: undefined,
+                            exchange: 'sandbox.events',
+                            routingKey: SANDBOX_INVALIDATE_ROUTING_KEY,
+                            payload: {
+                                prKey,
+                                reason: 'pr_closed',
+                            } satisfies SandboxInvalidatePayload,
+                        }).catch((err) => {
+                            this.logger.warn({
+                                message: '[SBX-05] Failed to write sandbox invalidation outbox message',
+                                context: GitLabMergeRequestHandler.name,
+                                error: err instanceof Error ? err : undefined,
+                                metadata: { prKey },
+                            });
+                        });
+
+                        // TODO(SBX-05): GitLab force-push events arrive as 'update' with
+                        // oldrev !== last_commit.id — not distinguishable from regular push
+                        // in this handler without inspecting forced_push field (not always present).
+                        // Add force-push outbox write when GitLab exposes a reliable forced_push flag.
+
                         this.eventEmitter.emit(
                             'pull-request.closed',
                             new PullRequestClosedEvent(
@@ -323,6 +357,25 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
 
                 if (payload?.object_attributes?.action === 'close') {
                     if (context.organizationAndTeamData) {
+                        // Durable sandbox invalidation via outbox (SBX-05).
+                        const prKey = `${context.organizationAndTeamData.organizationId}:${repository.id}:${payload?.object_attributes?.iid}`;
+                        await this.outboxRepository.create({
+                            jobId: undefined,
+                            exchange: 'sandbox.events',
+                            routingKey: SANDBOX_INVALIDATE_ROUTING_KEY,
+                            payload: {
+                                prKey,
+                                reason: 'pr_closed',
+                            } satisfies SandboxInvalidatePayload,
+                        }).catch((err) => {
+                            this.logger.warn({
+                                message: '[SBX-05] Failed to write sandbox invalidation outbox message',
+                                context: GitLabMergeRequestHandler.name,
+                                error: err instanceof Error ? err : undefined,
+                                metadata: { prKey },
+                            });
+                        });
+
                         this.eventEmitter.emit(
                             'pull-request.closed',
                             new PullRequestClosedEvent(

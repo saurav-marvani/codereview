@@ -42,6 +42,14 @@ import {
     BackoffOptions,
 } from '@libs/common/utils/polling';
 import { formatHeartbeatContext } from '@libs/core/infrastructure/incident/heartbeat-context.util';
+import {
+    ISandboxLeaseManager,
+    SANDBOX_LEASE_MANAGER_TOKEN,
+} from '@libs/sandbox/domain/contracts/sandbox-lease-manager.contract';
+import {
+    SANDBOX_INVALIDATE_ROUTING_KEY,
+    SandboxInvalidatePayload,
+} from '@libs/sandbox/domain/events/sandbox-invalidate.event';
 
 /**
  * Backoff configuration for outbox relay.
@@ -118,6 +126,8 @@ export class OutboxRelayService
         private readonly observability: ObservabilityService,
         private readonly configService: ConfigService,
         private readonly distributedLockService: DistributedLockService,
+        @Inject(SANDBOX_LEASE_MANAGER_TOKEN)
+        private readonly sandboxLeaseManager: ISandboxLeaseManager,
         @Optional()
         private readonly incidentManager?: IncidentManagerService,
     ) {}
@@ -494,6 +504,51 @@ export class OutboxRelayService
     }
 
     private async processMessage(message: OutboxMessageModel): Promise<void> {
+        // Sandbox invalidation is consumed in-process — never published to RabbitMQ.
+        // This branch must come BEFORE the observability span to avoid span overhead on
+        // a non-broker path, and before the broker connectivity check below.
+        if (message.routingKey === SANDBOX_INVALIDATE_ROUTING_KEY) {
+            const payload =
+                message.payload as unknown as SandboxInvalidatePayload;
+            try {
+                await this.sandboxLeaseManager.invalidate(payload.prKey);
+                await this.outboxRepository.markAsSent(message.uuid);
+                this.logger.log({
+                    message: '[SANDBOX-RELAY] Sandbox invalidated via outbox',
+                    context: OutboxRelayService.name,
+                    metadata: {
+                        prKey: payload.prKey,
+                        reason: payload.reason,
+                    },
+                });
+            } catch (error) {
+                // Use the standard backoff path — same as publish failures.
+                const delayMs = calculateBackoffInterval(
+                    message.attempts,
+                    OUTBOX_BACKOFF,
+                );
+                const nextAttemptAt = new Date(Date.now() + delayMs);
+                await this.outboxRepository.markAsFailed(
+                    message.uuid,
+                    error instanceof Error ? error.message : String(error),
+                    nextAttemptAt,
+                );
+                this.logger.error({
+                    message:
+                        '[SANDBOX-RELAY] Failed to invalidate sandbox via outbox — retrying',
+                    context: OutboxRelayService.name,
+                    error: error instanceof Error ? error : undefined,
+                    metadata: {
+                        messageUuid: message.uuid,
+                        prKey: payload.prKey,
+                        attempts: message.attempts,
+                    },
+                });
+                throw error;
+            }
+            return;
+        }
+
         return await this.observability.runInSpan(
             'workflow.outbox.publish',
             async (span) => {

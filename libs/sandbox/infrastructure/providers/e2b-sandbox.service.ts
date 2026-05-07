@@ -9,17 +9,21 @@ import {
     ISandboxProvider,
     SandboxInstance,
     SandboxRunResult,
-} from '@libs/code-review/domain/contracts/sandbox.provider';
-import { RemoteCommands } from './collectCrossFileContexts.service';
-import { shSingleQuote } from './shell-quote';
+} from '@libs/sandbox/domain/contracts/sandbox.provider';
+import { RemoteCommands } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
+import { shSingleQuote } from '@libs/code-review/infrastructure/adapters/services/shell-quote';
 
-// 45 minutes — upper bound for the longest possible review:
-// 3 agents in parallel (bug + security + performance) × ~25 min each,
-// plus coverage-recovery + synthesis-rescue + verify passes.
-// E2B bills by live-minute, not by the TTL ceiling — the pipeline's
+// 35 minutes — aligned with the lease lifecycle ceiling.
+// Lease docs expire at DEFAULT_LEASE_TTL_MS (30 min) and the reaper cron
+// runs every 5 min, so a sandbox is always explicitly killed by the reaper
+// within ≤35 min of creation regardless of E2B's own timeout. Setting
+// `timeoutMs` higher than that is dead weight. With `onTimeout: 'pause'`
+// + `autoResume: true`, hitting 35 min just pauses the sandbox — the
+// reaper then issues `Sandbox.kill` on the next cron tick.
+// E2B bills by live-minute, not by this ceiling — the pipeline's
 // onPipelineFinish observer calls sandbox.cleanup() on every exit path,
 // so this is a safety ceiling, not a cost floor.
-const SANDBOX_TIMEOUT_MS = 45 * 60 * 1000;
+const SANDBOX_TIMEOUT_MS = 35 * 60 * 1000;
 const REPO_DIR = '/home/user/repo';
 
 const TIMEOUTS = {
@@ -131,6 +135,7 @@ export class E2BSandboxService implements ISandboxProvider {
                 remoteCommands,
                 cleanup,
                 type: 'e2b' as const,
+                sandboxId: sandbox.sandboxId,
                 baseBranch: resolvedBaseBranch,
                 repoDir: REPO_DIR,
                 run: async (
@@ -170,6 +175,45 @@ export class E2BSandboxService implements ISandboxProvider {
             }
             throw error;
         }
+    }
+
+    /**
+     * Set an idle timeout on an existing sandbox.
+     * Called by SandboxLeaseManager.release() when leaseCount hits 0 to set
+     * a short idle window before E2B pauses the sandbox automatically.
+     * The sandbox stays alive until idleMs elapses with no active connections.
+     */
+    async pauseAfterIdle(sandboxId: string, idleMs: number): Promise<void> {
+        const apiKey = this.configService.get<string>('API_E2B_KEY');
+        if (!apiKey) {
+            throw new Error('API_E2B_KEY is not configured');
+        }
+        await Sandbox.setTimeout(sandboxId, idleMs, { apiKey });
+        this.logger.log({
+            message: `[DEBUG] pauseAfterIdle: set idleMs=${idleMs} on sandboxId=${sandboxId}`,
+            context: E2BSandboxService.name,
+            metadata: { sandboxId, idleMs },
+        });
+    }
+
+    /**
+     * Connect to an existing sandbox by ID, resuming it if it is paused.
+     * SDK doc: "If the sandbox is paused, it will be automatically resumed"
+     * (e2b/dist/index.d.ts:7990). autoResume: true at create time is what
+     * makes this work — see createSandbox() above.
+     * Called by SandboxLeaseManager.acquire() when state === 'READY'.
+     */
+    async connectExisting(sandboxId: string): Promise<Sandbox> {
+        const apiKey = this.configService.get<string>('API_E2B_KEY');
+        if (!apiKey) {
+            throw new Error('API_E2B_KEY is not configured');
+        }
+        this.logger.log({
+            message: `[DEBUG] connectExisting: connecting to sandboxId=${sandboxId}`,
+            context: E2BSandboxService.name,
+            metadata: { sandboxId },
+        });
+        return Sandbox.connect(sandboxId, { apiKey });
     }
 
     private async installDependencies(sandbox: Sandbox): Promise<void> {
@@ -458,10 +502,12 @@ export class E2BSandboxService implements ISandboxProvider {
 
         if (templateId) {
             try {
+                // autoResume: true is required — SDK default is false; omitting it causes Sandbox.connect() to throw on paused sandboxes
                 const sandbox = await Sandbox.create(templateId, {
                     timeoutMs: SANDBOX_TIMEOUT_MS,
                     apiKey,
                     metadata,
+                    lifecycle: { onTimeout: 'pause', autoResume: true },  // SBX-03: pause not kill; autoResume must be explicit
                 });
                 return { sandbox, usedTemplate: true };
             } catch (error) {
@@ -473,10 +519,12 @@ export class E2BSandboxService implements ISandboxProvider {
             }
         }
 
+        // autoResume: true is required — SDK default is false; omitting it causes Sandbox.connect() to throw on paused sandboxes
         const sandbox = await Sandbox.create({
             timeoutMs: SANDBOX_TIMEOUT_MS,
             apiKey,
             metadata,
+            lifecycle: { onTimeout: 'pause', autoResume: true },  // SBX-03: pause not kill; autoResume must be explicit
         });
         return { sandbox, usedTemplate: false };
     }

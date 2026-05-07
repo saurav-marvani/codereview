@@ -11,7 +11,7 @@ import z from 'zod';
 import type { ContextAugmentationsMap } from '@libs/ai-engine/infrastructure/adapters/services/context/interfaces/code-review-context-pack.interface';
 import { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';
 
-import { CreateSandboxParams } from '@libs/code-review/domain/contracts/sandbox.provider';
+import { CreateSandboxParams } from '@libs/sandbox/domain/contracts/sandbox.provider';
 import {
     CrossFileContextSnippet,
     RemoteCommands,

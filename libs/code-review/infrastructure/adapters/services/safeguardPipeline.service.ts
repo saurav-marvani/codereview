@@ -14,7 +14,7 @@ import {
     ISandboxProvider,
     SANDBOX_PROVIDER_TOKEN,
     SandboxInstance,
-} from '@libs/code-review/domain/contracts/sandbox.provider';
+} from '@libs/sandbox/domain/contracts/sandbox.provider';
 import {
     CrossFileContextSnippet,
     RemoteCommands,

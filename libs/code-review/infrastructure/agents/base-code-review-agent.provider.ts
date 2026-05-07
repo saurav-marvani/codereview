@@ -528,7 +528,6 @@ export abstract class BaseCodeReviewAgentProvider {
                         reviewMode: input.reviewMode,
                     },
                 });
-                estimatedPromptTokens = filteredTokens;
             }
 
             const scores = computeFileScores(

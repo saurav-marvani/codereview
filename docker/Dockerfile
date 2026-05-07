@@ -136,6 +136,7 @@ RUN rm -rf node_modules/@kodus/flow && cp -r packages/kodus-flow node_modules/@k
 FROM docker.io/oven/bun:${BUN_VERSION}-debian AS bun-source
 
 FROM docker.io/library/node:22.22.0-slim AS runtime-common
+LABEL org.opencontainers.image.source="https://github.com/kodustech/kodus-ai"
 WORKDIR /usr/src/app
 ENV NODE_ENV=production
 

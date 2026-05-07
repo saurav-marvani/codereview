@@ -3,7 +3,7 @@ import { SafeguardPipelineService } from '@/code-review/infrastructure/adapters/
 import { ReviewModeResponse } from '@/core/infrastructure/config/types/general/codeReview.type';
 import { ObservabilityService } from '@/core/log/observability.service';
 import { PromptRunnerService } from '@kodus/kodus-common/llm';
-import { SANDBOX_PROVIDER_TOKEN } from '@libs/code-review/domain/contracts/sandbox.provider';
+import { SANDBOX_PROVIDER_TOKEN } from '@libs/sandbox/domain/contracts/sandbox.provider';
 import { Test, TestingModule } from '@nestjs/testing';
 
 // Mock logger to silence logs during tests

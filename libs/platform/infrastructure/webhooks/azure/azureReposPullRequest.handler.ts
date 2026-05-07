@@ -28,6 +28,14 @@ import {
     IPullRequestsService,
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@libs/platformData/domain/pullRequests/contracts/pullRequests.service.contracts';
+import {
+    IOutboxMessageRepository,
+    OUTBOX_MESSAGE_REPOSITORY_TOKEN,
+} from '@libs/core/workflow/domain/contracts/outbox-message.repository.contract';
+import {
+    SANDBOX_INVALIDATE_ROUTING_KEY,
+    SandboxInvalidatePayload,
+} from '@libs/sandbox/domain/events/sandbox-invalidate.event';
 import { CodeManagementService } from '../../adapters/services/codeManagement.service';
 
 @Injectable()
@@ -46,6 +54,8 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
         private readonly enqueueImplementationCheckUseCase: EnqueueImplementationCheckUseCase,
         @Inject(PULL_REQUESTS_SERVICE_TOKEN)
         private readonly pullRequestsService: IPullRequestsService,
+        @Inject(OUTBOX_MESSAGE_REPOSITORY_TOKEN)
+        private readonly outboxRepository: IOutboxMessageRepository,
         @Optional()
         private readonly enqueueAstGraphUpdateOnMergedUseCase?: EnqueueAstGraphUpdateOnMergedUseCase,
     ) {}
@@ -259,8 +269,36 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
 
                     this.generateIssuesFromPrClosedUseCase.execute(params);
 
-                    const merged =
-                        params?.payload?.resource?.status === 'completed';
+                    const prStatus = params?.payload?.resource?.status;
+                    const merged = prStatus === 'completed';
+                    const abandoned = prStatus === 'abandoned';
+
+                    // Durable sandbox invalidation via outbox (SBX-05).
+                    // Azure fires git.pullrequest.updated with status=completed (merged) or
+                    // status=abandoned (closed without merge). Both paths must invalidate the sandbox.
+                    if ((merged || abandoned) && context.organizationAndTeamData) {
+                        const sandboxPrKey = `${context.organizationAndTeamData.organizationId}:${repository.id}:${params?.payload?.resource?.pullRequestId}`;
+                        this.outboxRepository.create({
+                            jobId: undefined,
+                            exchange: 'sandbox.events',
+                            routingKey: SANDBOX_INVALIDATE_ROUTING_KEY,
+                            payload: {
+                                prKey: sandboxPrKey,
+                                reason: 'pr_closed',
+                            } satisfies SandboxInvalidatePayload,
+                        }).catch((err) => {
+                            this.logger.warn({
+                                message: '[SBX-05] Failed to write sandbox invalidation outbox message',
+                                context: AzureReposPullRequestHandler.name,
+                                error: err instanceof Error ? err : undefined,
+                                metadata: { prKey: sandboxPrKey },
+                            });
+                        });
+                    }
+
+                    // TODO(SBX-05): Azure Repos does not expose a distinct force-push event;
+                    // force-pushes arrive as git.pullrequest.updated with a new commit SHA.
+                    // Add force-push outbox write here when Azure surfaces a dedicated event or flag.
                     let changedFiles:
                         | Array<{
                               filename: string;

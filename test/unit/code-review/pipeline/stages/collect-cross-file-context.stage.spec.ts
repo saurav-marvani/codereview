@@ -17,17 +17,13 @@ jest.mock('@kodus/flow', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { CloneParamsResolverService } from '@libs/code-review/pipeline/services/clone-params-resolver.service';
 import { CollectCrossFileContextStage } from '@libs/code-review/pipeline/stages/collect-cross-file-context.stage';
 import { parseGitRemoteUrl } from '@libs/code-review/pipeline/services/clone-params-resolver.service';
 import {
     COLLECT_CROSS_FILE_CONTEXTS_SERVICE_TOKEN,
     CollectCrossFileContextsResult,
 } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
-import { SANDBOX_PROVIDER_TOKEN } from '@libs/code-review/domain/contracts/sandbox.provider';
 import { GraphContextService } from '@libs/code-review/infrastructure/adapters/services/graph/graph-context.service';
-import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
-import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import {
     createCrossFileBaseContext,
     createCliCrossFileBaseContext,
@@ -42,21 +38,24 @@ describe('CollectCrossFileContextStage', () => {
         collectContexts: mockCollectContexts,
     };
 
-    const mockSandboxProvider = {
-        isAvailable: jest.fn(),
-        createSandboxWithRepo: jest.fn(),
-    };
-
-    const mockCloneParamsResolver = {
-        resolve: jest.fn(),
-    };
-
-    const mockCodeManagementService = {
-        getCloneParams: jest.fn(),
-    };
-
     const mockGraphContextService = {
         parseAndGetGraphJson: jest.fn().mockResolvedValue(null),
+    };
+
+    const sandboxFromContext = {
+        type: 'e2b' as const,
+        sandboxId: 'lease-sandbox-id',
+        repoDir: '/home/user/repo',
+        baseBranch: 'main',
+        cleanup: jest.fn().mockResolvedValue(undefined),
+        remoteCommands: {
+            grep: jest.fn(),
+            read: jest.fn(),
+            listDir: jest.fn(),
+        },
+        run: jest.fn(),
+        readFile: jest.fn(),
+        writeFile: jest.fn(),
     };
 
     beforeEach(async () => {
@@ -66,18 +65,6 @@ describe('CollectCrossFileContextStage', () => {
                 {
                     provide: COLLECT_CROSS_FILE_CONTEXTS_SERVICE_TOKEN,
                     useValue: mockCollectCrossFileContextsService,
-                },
-                {
-                    provide: SANDBOX_PROVIDER_TOKEN,
-                    useValue: mockSandboxProvider,
-                },
-                {
-                    provide: CodeManagementService,
-                    useValue: mockCodeManagementService,
-                },
-                {
-                    provide: CloneParamsResolverService,
-                    useValue: mockCloneParamsResolver,
                 },
                 {
                     provide: GraphContextService,
@@ -111,6 +98,7 @@ describe('CollectCrossFileContextStage', () => {
         it('should return context unchanged when changedFiles is empty', async () => {
             const context = createCrossFileBaseContext({
                 changedFiles: [],
+                sandboxHandle: sandboxFromContext as any,
             });
 
             const result = await stage.execute(context);
@@ -119,380 +107,133 @@ describe('CollectCrossFileContextStage', () => {
             expect(mockCollectContexts).not.toHaveBeenCalled();
         });
 
-        it('should return context unchanged when E2B is not available', async () => {
-            const context = createCrossFileBaseContext();
-            mockSandboxProvider.isAvailable.mockReturnValue(false);
+        it('should skip when no sandbox in context (lease manager owns lifecycle)', async () => {
+            const context = createCrossFileBaseContext({
+                sandboxHandle: undefined,
+            });
 
             const result = await stage.execute(context);
 
             expect(result.crossFileContexts).toBeUndefined();
             expect(mockCollectContexts).not.toHaveBeenCalled();
-            expect(mockLogger.log).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    context: 'CollectCrossFileContextStage',
-                    metadata: expect.objectContaining({
-                        sandboxDecision: 'skipped',
-                        sandboxSkipReason: 'no_provider',
-                        prNumber: context.pullRequest.number,
-                    }),
-                }),
-            );
+        });
+
+        it('should skip in fast review mode', async () => {
+            const context = createCrossFileBaseContext({
+                sandboxHandle: sandboxFromContext as any,
+                codeReviewConfig: {
+                    reviewMode: 'fast',
+                    reviewOptions: { cross_file: true },
+                } as any,
+            });
+
+            const result = await stage.execute(context);
+
+            expect(result.crossFileContexts).toBeUndefined();
+            expect(mockCollectContexts).not.toHaveBeenCalled();
         });
     });
 
-    // ─── Happy Path ────────────────────────────────────────────────────────
+    // ─── Happy path ────────────────────────────────────────────────────────
 
     describe('happy path', () => {
-        const setupHappyPath = () => {
-            const mockCleanup = jest.fn().mockResolvedValue(undefined);
-            const mockRemoteCommands = {
-                grep: jest.fn(),
-                read: jest.fn(),
-                listDir: jest.fn(),
-            };
-
-            mockSandboxProvider.isAvailable.mockReturnValue(true);
-            mockCloneParamsResolver.resolve.mockResolvedValue({
-                url: 'https://github.com/org/repo.git',
-                authToken: 'test-token',
-                branch: 'main',
-                platform: PlatformType.GITHUB,
-            });
-            mockSandboxProvider.createSandboxWithRepo.mockResolvedValue({
-                remoteCommands: mockRemoteCommands,
-                cleanup: mockCleanup,
-            });
-
-            const collectResult: CollectCrossFileContextsResult = {
+        it('should reuse sandbox from context and collect cross-file contexts', async () => {
+            const result: CollectCrossFileContextsResult = {
                 contexts: [createSampleSnippet()],
-                plannerQueries: [
-                    {
-                        symbolName: 'greet',
-                        pattern: 'greet\\(',
-                        rationale: 'test',
-                        riskLevel: 'high',
-                        sourceFile: 'test.ts',
-                        fileGlob: '**/*.ts',
-                    },
-                ],
                 totalSearches: 1,
-                totalSnippetsBeforeDedup: 2,
+                totalSnippetsBeforeDedup: 1,
+                plannerQueries: [],
             };
-            mockCollectContexts.mockResolvedValue(collectResult);
+            mockCollectContexts.mockResolvedValue(result);
 
-            return { mockCleanup, collectResult };
-        };
+            const context = createCrossFileBaseContext({
+                sandboxHandle: sandboxFromContext as any,
+            });
 
-        it('should execute full flow: getCloneParams → createSandbox → collectContexts → context updated', async () => {
-            const { collectResult } = setupHappyPath();
-            const context = createCrossFileBaseContext();
+            const out = await stage.execute(context);
 
-            const result = await stage.execute(context);
-
-            expect(mockCloneParamsResolver.resolve).toHaveBeenCalled();
-            expect(
-                mockSandboxProvider.createSandboxWithRepo,
-            ).toHaveBeenCalled();
-            expect(mockCollectContexts).toHaveBeenCalled();
-            expect(result.crossFileContexts).toEqual(collectResult);
-        });
-
-        it('should store sandboxHandle in context for safeguard agent (cleanup deferred)', async () => {
-            const { mockCleanup } = setupHappyPath();
-            const context = createCrossFileBaseContext();
-
-            const result = await stage.execute(context);
-
-            // Cleanup is no longer called in the stage — sandbox is kept alive
-            // for safeguard agent verification in ProcessFilesReview
-            expect(mockCleanup).not.toHaveBeenCalled();
-            expect(result.sandboxHandle).toBeDefined();
-            expect(result.sandboxHandle.cleanup).toBe(mockCleanup);
+            // Stage should NOT create a sandbox of its own — it consumes
+            // the lease-managed sandbox already on the context.
+            expect(mockCollectContexts).toHaveBeenCalledTimes(1);
+            expect(mockCollectContexts).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    remoteCommands: sandboxFromContext.remoteCommands,
+                }),
+            );
+            expect(out.crossFileContexts).toEqual(result);
         });
     });
 
-    // ─── Error Handling ────────────────────────────────────────────────────
+    // ─── Error handling ────────────────────────────────────────────────────
 
     describe('error handling', () => {
-        const setupWithError = () => {
-            const mockCleanup = jest.fn().mockResolvedValue(undefined);
+        it('should swallow collectContexts error and return context unchanged (non-fatal)', async () => {
+            mockCollectContexts.mockRejectedValue(new Error('boom'));
 
-            mockSandboxProvider.isAvailable.mockReturnValue(true);
-            mockCloneParamsResolver.resolve.mockResolvedValue({
-                url: 'https://github.com/org/repo.git',
-                authToken: 'test-token',
-                branch: 'main',
-                platform: PlatformType.GITHUB,
-            });
-            mockSandboxProvider.createSandboxWithRepo.mockResolvedValue({
-                remoteCommands: {
-                    grep: jest.fn(),
-                    read: jest.fn(),
-                    listDir: jest.fn(),
-                },
-                cleanup: mockCleanup,
+            const context = createCrossFileBaseContext({
+                sandboxHandle: sandboxFromContext as any,
             });
 
-            return { mockCleanup };
-        };
+            const out = await stage.execute(context);
 
-        it('should return context unchanged on collectContexts error (non-fatal)', async () => {
-            const { mockCleanup } = setupWithError();
-            mockCollectContexts.mockRejectedValue(
-                new Error('collectContexts failed'),
-            );
-
-            const context = createCrossFileBaseContext();
-            const result = await stage.execute(context);
-
-            expect(result.crossFileContexts).toBeUndefined();
-            expect(mockCleanup).toHaveBeenCalled();
-        });
-
-        it('should swallow cleanup failure and return context unchanged', async () => {
-            mockSandboxProvider.isAvailable.mockReturnValue(true);
-            mockCloneParamsResolver.resolve.mockResolvedValue({
-                url: 'https://github.com/org/repo.git',
-                authToken: 'test-token',
-                branch: 'main',
-                platform: PlatformType.GITHUB,
-            });
-
-            const failingCleanup = jest
-                .fn()
-                .mockRejectedValue(new Error('cleanup exploded'));
-            mockSandboxProvider.createSandboxWithRepo.mockResolvedValue({
-                remoteCommands: {
-                    grep: jest.fn(),
-                    read: jest.fn(),
-                    listDir: jest.fn(),
-                },
-                cleanup: failingCleanup,
-            });
-            mockCollectContexts.mockRejectedValue(new Error('some error'));
-
-            const context = createCrossFileBaseContext();
-
-            // Cleanup failure is now caught and logged as a warning
-            // (sandbox is kept alive for safeguard agent verification on success,
-            //  and cleaned up in catch block on error with try/catch protection)
-            const result = await stage.execute(context);
-            expect(result.crossFileContexts).toBeUndefined();
-            expect(failingCleanup).toHaveBeenCalled();
+            expect(out.crossFileContexts).toBeUndefined();
+            // Sandbox lifecycle is owned by the lease manager — stage MUST NOT
+            // call cleanup() on the lease-managed sandbox.
+            expect(sandboxFromContext.cleanup).not.toHaveBeenCalled();
         });
     });
 
-    // ─── CLI Mode Guards ────────────────────────────────────────────────────
+    // ─── CLI mode ──────────────────────────────────────────────────────────
 
     describe('CLI mode guards', () => {
-        it('should skip when isTrialMode is true (trial runs agent in self-contained mode)', async () => {
+        it('should skip when isTrialMode is true', async () => {
             const context = createCliCrossFileBaseContext({
                 isTrialMode: true,
-            });
+                sandboxHandle: sandboxFromContext as any,
+            } as any);
 
-            const result = await stage.execute(context);
+            const out = await stage.execute(context as any);
 
-            expect(result.crossFileContexts).toBeUndefined();
-            expect(mockSandboxProvider.isAvailable).not.toHaveBeenCalled();
+            expect(out.crossFileContexts).toBeUndefined();
+            expect(mockCollectContexts).not.toHaveBeenCalled();
         });
 
         it('should skip when gitContext.remote is missing', async () => {
             const context = createCliCrossFileBaseContext({
-                gitContext: { branch: 'main' },
-            });
-            mockSandboxProvider.isAvailable.mockReturnValue(true);
+                gitContext: { remote: '' } as any,
+                sandboxHandle: sandboxFromContext as any,
+            } as any);
 
-            const result = await stage.execute(context);
+            const out = await stage.execute(context as any);
 
-            expect(result.crossFileContexts).toBeUndefined();
-            expect(
-                mockSandboxProvider.createSandboxWithRepo,
-            ).not.toHaveBeenCalled();
-        });
-
-        it('should NOT apply CLI-specific guards for PR mode (origin !== cli)', async () => {
-            // PR context with origin=github should NOT be affected by CLI guards
-            const context = createCrossFileBaseContext();
-            mockSandboxProvider.isAvailable.mockReturnValue(true);
-            mockCloneParamsResolver.resolve.mockResolvedValue({
-                url: 'https://github.com/org/repo.git',
-                authToken: 'test-token',
-                branch: 'main',
-                platform: PlatformType.GITHUB,
-            });
-            mockSandboxProvider.createSandboxWithRepo.mockResolvedValue({
-                remoteCommands: {
-                    grep: jest.fn(),
-                    read: jest.fn(),
-                    listDir: jest.fn(),
-                },
-                cleanup: jest.fn().mockResolvedValue(undefined),
-            });
-            mockCollectContexts.mockResolvedValue({
-                contexts: [createSampleSnippet()],
-                plannerQueries: [],
-                totalSearches: 1,
-                totalSnippetsBeforeDedup: 1,
-            });
-
-            const result = await stage.execute(context);
-
-            // PR mode should still execute the full flow
-            expect(mockCollectContexts).toHaveBeenCalled();
-            expect(result.crossFileContexts).toBeDefined();
+            expect(out.crossFileContexts).toBeUndefined();
+            expect(mockCollectContexts).not.toHaveBeenCalled();
         });
     });
 
-    // ─── CLI Mode Happy Path ────────────────────────────────────────────────
-
-    describe('CLI mode happy path', () => {
-        const setupCliHappyPath = () => {
-            const mockCleanup = jest.fn().mockResolvedValue(undefined);
-            const mockRemoteCommands = {
-                grep: jest.fn(),
-                read: jest.fn(),
-                listDir: jest.fn(),
-            };
-
-            mockSandboxProvider.isAvailable.mockReturnValue(true);
-            mockCloneParamsResolver.resolve.mockResolvedValue({
-                url: 'https://github.com/org/test-repo.git',
-                authToken: 'integration-token',
-                branch: 'feat/cli-test',
-                platform: PlatformType.GITHUB,
-            });
-            mockSandboxProvider.createSandboxWithRepo.mockResolvedValue({
-                remoteCommands: mockRemoteCommands,
-                cleanup: mockCleanup,
-            });
-
-            const collectResult: CollectCrossFileContextsResult = {
-                contexts: [createSampleSnippet()],
-                plannerQueries: [],
-                totalSearches: 1,
-                totalSnippetsBeforeDedup: 2,
-            };
-            mockCollectContexts.mockResolvedValue(collectResult);
-
-            return { mockCleanup, collectResult };
-        };
-
-        it('should resolve clone params from gitContext and collect cross-file contexts', async () => {
-            const { collectResult } = setupCliHappyPath();
-            const context = createCliCrossFileBaseContext();
-
-            const result = await stage.execute(context);
-
-            expect(result.crossFileContexts).toEqual(collectResult);
-            expect(
-                mockSandboxProvider.createSandboxWithRepo,
-            ).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    cloneUrl: 'https://github.com/org/test-repo.git',
-                    branch: 'feat/cli-test',
-                    prNumber: undefined,
-                    platform: PlatformType.GITHUB,
-                }),
-            );
-        });
-    });
-
-    // ─── CLI Mode Auth Fallback ─────────────────────────────────────────────
-
-    describe('CLI mode auth fallback', () => {
-        it('should continue with empty auth token when getCloneParams fails', async () => {
-            mockSandboxProvider.isAvailable.mockReturnValue(true);
-            mockCloneParamsResolver.resolve.mockResolvedValue({
-                url: 'https://github.com/org/repo.git',
-                authToken: '',
-                branch: 'main',
-                platform: PlatformType.GITHUB,
-            });
-            const mockCleanup = jest.fn().mockResolvedValue(undefined);
-            mockSandboxProvider.createSandboxWithRepo.mockResolvedValue({
-                remoteCommands: {
-                    grep: jest.fn(),
-                    read: jest.fn(),
-                    listDir: jest.fn(),
-                },
-                cleanup: mockCleanup,
-            });
-            mockCollectContexts.mockResolvedValue({
-                contexts: [createSampleSnippet()],
-                plannerQueries: [],
-                totalSearches: 1,
-                totalSnippetsBeforeDedup: 1,
-            });
-
-            const context = createCliCrossFileBaseContext();
-            const result = await stage.execute(context);
-
-            // Should still try to create sandbox with empty auth
-            expect(
-                mockSandboxProvider.createSandboxWithRepo,
-            ).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    authToken: '',
-                }),
-            );
-            expect(result.crossFileContexts).toBeDefined();
-        });
-
-        it('should return context unchanged when git remote URL cannot be parsed', async () => {
-            mockSandboxProvider.isAvailable.mockReturnValue(true);
-            mockCloneParamsResolver.resolve.mockResolvedValue(null);
-
-            const context = createCliCrossFileBaseContext({
-                gitContext: {
-                    remote: 'not-a-valid-url',
-                    branch: 'main',
-                },
-            });
-
-            const result = await stage.execute(context);
-
-            expect(result.crossFileContexts).toBeUndefined();
-            expect(
-                mockSandboxProvider.createSandboxWithRepo,
-            ).not.toHaveBeenCalled();
-        });
-    });
-
-    // ─── parseGitRemoteUrl ──────────────────────────────────────────────────
+    // ─── parseGitRemoteUrl ─────────────────────────────────────────────────
 
     describe('parseGitRemoteUrl()', () => {
         it('should parse HTTPS URLs with .git suffix', () => {
             const result = parseGitRemoteUrl(
                 'https://github.com/owner/repo.git',
             );
-            expect(result).toEqual({
-                fullName: 'owner/repo',
-                name: 'repo',
-            });
+            expect(result).toEqual({ fullName: 'owner/repo', name: 'repo' });
         });
 
         it('should parse HTTPS URLs without .git suffix', () => {
             const result = parseGitRemoteUrl('https://github.com/owner/repo');
-            expect(result).toEqual({
-                fullName: 'owner/repo',
-                name: 'repo',
-            });
+            expect(result).toEqual({ fullName: 'owner/repo', name: 'repo' });
         });
 
         it('should parse SSH URLs', () => {
             const result = parseGitRemoteUrl('git@github.com:owner/repo.git');
-            expect(result).toEqual({
-                fullName: 'owner/repo',
-                name: 'repo',
-            });
+            expect(result).toEqual({ fullName: 'owner/repo', name: 'repo' });
         });
 
         it('should parse SSH URLs without .git suffix', () => {
             const result = parseGitRemoteUrl('git@github.com:owner/repo');
-            expect(result).toEqual({
-                fullName: 'owner/repo',
-                name: 'repo',
-            });
+            expect(result).toEqual({ fullName: 'owner/repo', name: 'repo' });
         });
 
         it('should parse GitLab SSH URLs', () => {

@@ -1,6 +1,16 @@
 #!/bin/sh
 set -eu
 
+# Point yarn at a named-volume cache instead of the default
+# /usr/local/share/.cache/yarn — that path lives in the container's
+# writable layer, so every install bloated each container by ~4GB
+# (worse: it cached @next/swc binaries for every platform, including
+# Windows/macOS, that the Linux backend never runs). The volume is
+# declared in docker-compose.dev.yml and shared across services so a
+# single install populates the cache once.
+export YARN_CACHE_FOLDER=/yarn-cache
+mkdir -p "$YARN_CACHE_FOLDER"
+
 echo "▶ dev-entrypoint: starting (NODE_ENV=${NODE_ENV:-})"
 
 # ----------------------------------------------------------------
