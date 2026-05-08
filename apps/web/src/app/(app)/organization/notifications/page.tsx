@@ -209,7 +209,7 @@ export default function NotificationsConfigPage() {
     return (
         <Page.Root>
             <Page.Header>
-                <div className="flex items-center justify-between">
+                <div className="flex w-full items-center justify-between">
                     <div>
                         <h1 className="text-lg font-semibold text-white">
                             Notification Settings
@@ -222,7 +222,7 @@ export default function NotificationsConfigPage() {
                     <div className="flex items-center gap-2">
                         <Button
                             size="sm"
-                            variant="ghost"
+                            variant="secondary"
                             leftIcon={<RotateCcwIcon className="size-4" />}
                             onClick={handleReset}
                             disabled={resetMutation.isPending}>
