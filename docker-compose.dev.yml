@@ -51,9 +51,14 @@ services:
                 # docker waits for its healthcheck before starting.
                 required: false
         ports:
+            # Host-side port vars (`<HOST>_PORT:-default`) let parallel
+            # worktrees coexist by overriding to a per-slot offset (e.g.
+            # `.env.local` in worktree B sets API_DEBUG_PORT=9329 etc).
+            # Container-side ports stay fixed because each container has
+            # its own network namespace.
             - '${API_PORT:-3001}:${API_PORT:-3001}'
-            - '9229:9229'
-            - '8000:8000'
+            - '${API_DEBUG_PORT:-9229}:9229'
+            - '${API_METRICS_PORT:-8000}:8000'
         command: yarn start:dev:api
         deploy:
             resources:
@@ -108,8 +113,10 @@ services:
             - logs_data:/usr/src/app/logs
             - yalc_store:/root/.yalc
         ports:
-            - '9231:9231'
-            - '8001:8001'
+            # See kodus-api comment on host-side port parametrization for
+            # worktree coexistence.
+            - '${API_WORKER_DEBUG_PORT:-9231}:9231'
+            - '${API_WORKER_METRICS_PORT:-8001}:8001'
         command: yarn start:dev:worker
         deploy:
             resources:
@@ -162,8 +169,13 @@ services:
             - logs_data:/usr/src/app/logs
             - yalc_store:/root/.yalc
         ports:
-            - '9241:9241'
-            - '8011:8001'
+            # See kodus-api comment on host-side port parametrization for
+            # worktree coexistence. Container side is 8001 (same as the
+            # code-review worker — they're the same image; only WORKER_ROLE
+            # differs); host side is offset to 8011 so both workers can
+            # publish metrics in parallel.
+            - '${API_WORKER_ANALYTICS_DEBUG_PORT:-9241}:9241'
+            - '${API_WORKER_ANALYTICS_METRICS_PORT:-8011}:8001'
         command: yarn start:dev:worker
         deploy:
             resources:
@@ -213,9 +225,11 @@ services:
             - logs_data:/usr/src/app/logs
             - yalc_store:/root/.yalc
         ports:
+            # See kodus-api comment on host-side port parametrization for
+            # worktree coexistence.
             - '${API_WEBHOOKS_PORT:-3332}:${API_WEBHOOKS_PORT:-3332}'
-            - '9232:9232'
-            - '8002:8002'
+            - '${API_WEBHOOKS_DEBUG_PORT:-9232}:9232'
+            - '${API_WEBHOOKS_METRICS_PORT:-8002}:8002'
         command: yarn start:dev:webhooks
         deploy:
             resources:
@@ -247,8 +261,10 @@ services:
         image: kodus-ai-mcp-manager:latest
         container_name: kodus-mcp-manager
         ports:
+            # See kodus-api comment on host-side port parametrization for
+            # worktree coexistence.
             - '${API_MCP_MANAGER_PORT:-3101}:${API_MCP_MANAGER_PORT:-3101}'
-            - '9230:9230'
+            - '${API_MCP_MANAGER_DEBUG_PORT:-9230}:9230'
         # mcp-manager owns its own schema. ensure-schema + migration
         # run inline before the dev server boots (see fix(mcp-manager):
         # isolate migration ownership from API entrypoint). The api
