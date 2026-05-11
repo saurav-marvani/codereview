@@ -158,6 +158,14 @@ services:
     worker-analytics:
         <<: *app-service-defaults
         container_name: kodus_analytics_worker
+        # Opt-in. Default `yarn docker:start` leaves this off — the cockpit
+        # ingestion cron isn't useful for most dev flows and costs ~700 MiB
+        # idle (Nest DI + ts-node-dev watch). Bring it up explicitly via
+        # `KODUS_DEV_EXTRAS=analytics yarn docker:start` (or `=extras` for
+        # all opt-in services).
+        profiles:
+            - analytics
+            - extras
         depends_on:
             rabbitmq:
                 condition: service_healthy
@@ -267,6 +275,13 @@ services:
         <<: *app-service-defaults
         image: kodus-ai-mcp-manager:latest
         container_name: kodus-mcp-manager
+        # Opt-in. Default `yarn docker:start` leaves this off — the web UI
+        # degrades gracefully (MCP setup/plugins pages show empty state).
+        # Bring it up via `KODUS_DEV_EXTRAS=mcp yarn docker:start` (or
+        # `=extras` for all opt-in services).
+        profiles:
+            - mcp
+            - extras
         ports:
             # See kodus-api comment on host-side port parametrization for
             # worktree coexistence.
@@ -378,8 +393,14 @@ services:
     # Observability & Profiling
     #----------------------------------------------------------------
     pyroscope:
+        # `profiling` is the historic, explicit profile (activated by
+        # `ENABLE_PROFILING=true` or `yarn docker:start:profiling`).
+        # `extras` is the new umbrella alongside mcp-manager and
+        # worker-analytics — `yarn docker:start:full` brings everything
+        # up in one command.
         profiles:
             - profiling
+            - extras
             - infra
         image: docker.io/grafana/pyroscope:latest
         container_name: pyroscope
@@ -396,9 +417,6 @@ services:
     # Databases & Infrastructure
     #----------------------------------------------------------------
     rabbitmq:
-        profiles:
-            - local-db
-            - infra
         build:
             context: ./docker/rabbitMQ
             dockerfile: Dockerfile
@@ -439,9 +457,6 @@ services:
         command: /usr/local/bin/init-definitions.sh
 
     db_postgres:
-        profiles:
-            - local-db
-            - infra
         image: docker.io/pgvector/pgvector:pg16
         container_name: db_postgres
         ports:
@@ -469,9 +484,6 @@ services:
         logging: *default-logging
 
     db_mongodb:
-        profiles:
-            - local-db
-            - infra
         image: docker.io/mongo:8
         container_name: mongodb
         ports:
