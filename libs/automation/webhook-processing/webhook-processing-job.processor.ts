@@ -57,10 +57,14 @@ export class WebhookProcessingJobProcessorService implements IJobProcessorServic
         ]);
     }
 
-    async process(jobId: string): Promise<void> {
+    async process(jobId: string, signal?: AbortSignal): Promise<void> {
         const job = await this.jobRepository.findOne(jobId);
         if (!job) {
             throw new Error(`Workflow job ${jobId} not found`);
+        }
+
+        if (signal?.aborted) {
+            throw new Error(`Job ${jobId} aborted before start`);
         }
 
         // Validate job type

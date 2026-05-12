@@ -22,10 +22,14 @@ export class CliReviewJobProcessorService implements IJobProcessorService {
         private readonly executeCliReviewUseCase: ExecuteCliReviewUseCase,
     ) {}
 
-    async process(jobId: string): Promise<void> {
+    async process(jobId: string, signal?: AbortSignal): Promise<void> {
         const job = await this.jobRepository.findOne(jobId);
         if (!job) {
             throw new Error(`CLI review job ${jobId} not found`);
+        }
+
+        if (signal?.aborted) {
+            throw new Error(`Job ${jobId} aborted before start`);
         }
 
         const payload = job.payload as CliReviewJobPayload;

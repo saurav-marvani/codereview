@@ -47,12 +47,16 @@ export class AstGraphBuildJobProcessor implements IJobProcessorService {
         private readonly repositoryService: IRepositoryService,
     ) {}
 
-    async process(jobId: string): Promise<void> {
+    async process(jobId: string, signal?: AbortSignal): Promise<void> {
         const jobStart = Date.now();
         const job = await this.jobRepository.findOne(jobId);
 
         if (!job) {
             throw new Error(`Job ${jobId} not found`);
+        }
+
+        if (signal?.aborted) {
+            throw new Error(`Job ${jobId} aborted before start`);
         }
 
         const payload = job.payload as unknown as AstGraphBuildJobPayload;

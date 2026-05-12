@@ -351,6 +351,10 @@ export interface ReviewAgentInput {
     skipSynthesisRescue?: boolean;
     /** Categories allowed for this run when using a mixed/generalist reviewer. */
     requestedCategories?: Array<'bug' | 'security' | 'performance'>;
+    /** Parent (job-level) AbortSignal. Forwarded to runAgentLoop so the
+     *  outer router timeout cancels the LLM call instead of leaving it
+     *  running ghost in the background. */
+    parentSignal?: AbortSignal;
 }
 
 /**
@@ -677,6 +681,7 @@ export abstract class BaseCodeReviewAgentProvider {
                     ?.openrouterProviderOrder,
                 openrouterAllowFallbacks: (byokConfig?.main as any)
                     ?.openrouterAllowFallbacks,
+                parentSignal: input.parentSignal,
 
                 onStepFinish: (step: any) => {
                     stepCount++;

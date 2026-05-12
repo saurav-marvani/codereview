@@ -1,6 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { createLogger } from '@kodus/flow';
 
+import { runWithTimeout } from './run-with-timeout';
 import { IJobProcessorRouter } from '@libs/core/workflow/domain/contracts/job-processor-router.contract';
 import { IJobProcessorService } from '@libs/core/workflow/domain/contracts/job-processor.service.contract';
 import {
@@ -19,12 +20,18 @@ import { AstGraphBuildJobProcessor } from '@libs/code-review/workflow/ast-graph-
 import { AstGraphIncrementalJobProcessor } from '@libs/code-review/workflow/ast-graph-incremental-job.processor';
 import { CliReviewJobProcessorService } from '@libs/cli-review/workflow/cli-review-job-processor.service';
 
-const WEBHOOK_PROCESS_TIMEOUT_MS = 10 * 60 * 1000;
-const CODE_REVIEW_PROCESS_TIMEOUT_MS = 2 * 60 * 60 * 1000;
-const CLI_CODE_REVIEW_PROCESS_TIMEOUT_MS = 30 * 60 * 1000; // 30 min
-const CHECK_IMPLEMENTATION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
-const AST_GRAPH_BUILD_TIMEOUT_MS = 20 * 60 * 1000; // 20 min
-const AST_GRAPH_INCREMENTAL_TIMEOUT_MS = 10 * 60 * 1000; // 10 min
+// App-level timeouts MUST be strictly less than the broker's consumer_timeout
+// (7200000ms / 2h in prod — see envs/aws/prod/rabbitmq-ec2.tfvars in kodus-infra).
+// The margin lets the app run its cleanup chain (catch → update FAILED →
+// releaseLock → throw → errorHandler.republish → channel.ack) BEFORE the broker
+// kills the channel, which would otherwise leave the message unacked and only
+// freed on a physical worker restart (the symptom seen in 2026-05).
+const WEBHOOK_PROCESS_TIMEOUT_MS = 9 * 60 * 1000; // 9 min (broker default 30min)
+const CODE_REVIEW_PROCESS_TIMEOUT_MS = 105 * 60 * 1000; // 1h45min (broker 2h)
+const CLI_CODE_REVIEW_PROCESS_TIMEOUT_MS = 28 * 60 * 1000; // 28 min
+const CHECK_IMPLEMENTATION_TIMEOUT_MS = 9 * 60 * 1000; // 9 min
+const AST_GRAPH_BUILD_TIMEOUT_MS = 19 * 60 * 1000; // 19 min
+const AST_GRAPH_INCREMENTAL_TIMEOUT_MS = 9 * 60 * 1000; // 9 min
 
 @Injectable()
 export class JobProcessorRouterService
@@ -54,8 +61,8 @@ export class JobProcessorRouterService
         const timeoutMs = this.getProcessTimeoutMs(job.workflowType);
 
         try {
-            return await this.runWithTimeout(
-                processor.process(jobId),
+            return await runWithTimeout(
+                (signal) => processor.process(jobId, signal),
                 timeoutMs,
                 `Workflow job ${jobId} timeout after ${timeoutMs}ms`,
             );
@@ -158,25 +165,4 @@ export class JobProcessorRouterService
         }
     }
 
-    private async runWithTimeout<T>(
-        promise: Promise<T>,
-        timeoutMs: number,
-        timeoutMessage: string,
-    ): Promise<T> {
-        let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
-        const timeoutPromise = new Promise<never>((_, reject) => {
-            timeoutId = setTimeout(() => {
-                reject(new Error(timeoutMessage));
-            }, timeoutMs);
-        });
-
-        try {
-            return await Promise.race([promise, timeoutPromise]);
-        } finally {
-            if (timeoutId) {
-                clearTimeout(timeoutId);
-            }
-        }
-    }
 }
