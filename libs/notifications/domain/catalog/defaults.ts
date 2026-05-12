@@ -165,6 +165,59 @@ export const EVENT_DEFAULTS: Readonly<
         defaultChannels: new Set([NotificationChannel.IN_APP]),
         icon: 'info',
     },
+
+    // ── Billing ────────────────────────────────────────────────
+
+    [NotificationEvent.BILLING_PAYMENT_FAILED]: {
+        criticality: Criticality.CRITICAL,
+        category: 'billing',
+        label: 'Payment Failed',
+        defaultChannels: new Set([
+            NotificationChannel.EMAIL,
+            NotificationChannel.IN_APP,
+        ]),
+        icon: 'credit-card',
+        pageSeverity: true,
+        actionLabel: 'Update payment',
+    },
+    [NotificationEvent.BILLING_TRIAL_EXPIRING]: {
+        criticality: Criticality.TRANSACTIONAL,
+        category: 'billing',
+        label: 'Trial Expiring',
+        defaultChannels: new Set([
+            NotificationChannel.EMAIL,
+            NotificationChannel.IN_APP,
+        ]),
+        icon: 'credit-card',
+        actionLabel: 'Upgrade plan',
+    },
+
+    // ── BYOK ───────────────────────────────────────────────────
+
+    [NotificationEvent.BYOK_LLM_ERRORS_THRESHOLD]: {
+        criticality: Criticality.CRITICAL,
+        category: 'byok',
+        label: 'BYOK LLM Errors Exceeded Threshold',
+        defaultChannels: new Set([
+            NotificationChannel.EMAIL,
+            NotificationChannel.IN_APP,
+        ]),
+        icon: 'shield-alert',
+        pageSeverity: true,
+    },
+
+    // ── Kody Rules (file reference validation) ────────────────
+
+    [NotificationEvent.RULE_FILE_REFERENCES_INVALID]: {
+        criticality: Criticality.TRANSACTIONAL,
+        category: 'kody_rules',
+        label: 'Rule File References Invalid',
+        defaultChannels: new Set([
+            NotificationChannel.EMAIL,
+            NotificationChannel.IN_APP,
+        ]),
+        icon: 'shield-alert',
+    },
 };
 
 /** All event categories, derived from the catalog. */
@@ -202,6 +255,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
     cockpit: 'Cockpit',
     billing: 'Billing',
     review: 'Code Review',
+    byok: 'BYOK',
 };
 
 /**

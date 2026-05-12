@@ -10,6 +10,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import { v4 as uuid } from 'uuid';
 
+import { ValidateRuleFileReferencesUseCase } from './validate-rule-file-references.use-case';
+
 /**
  * Triggered exclusively from authenticated HTTP requests
  * (apps/api/src/controllers/kodyRules.controller.ts) — `REQUEST` is
@@ -25,6 +27,7 @@ export class FastSyncIdeRulesUseCase {
         private readonly kodyRulesSyncService: KodyRulesSyncService,
         private readonly codeManagementService: CodeManagementService,
         private readonly notificationService: NotificationService,
+        private readonly validateRuleFileReferences: ValidateRuleFileReferencesUseCase,
         @Inject(REQUEST)
         private readonly request: UserRequest,
     ) {}
@@ -87,6 +90,19 @@ export class FastSyncIdeRulesUseCase {
                     ? (result as any).rules.length
                     : 0,
             );
+
+            // Validate external file references against the repo's current
+            // state. Failure is logged and swallowed inside the validator
+            // so the sync result still reaches the caller.
+            await this.validateRuleFileReferences.execute({
+                organizationAndTeamData,
+                repository: {
+                    id: String(repository.id),
+                    name: repository.name,
+                },
+                source: 'ide',
+                syncInitiatorUserId: this.request.user?.uuid,
+            });
 
             return result;
         } catch (error) {

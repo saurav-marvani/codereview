@@ -11,6 +11,8 @@ import { NotificationService } from '@libs/notifications/application/notificatio
 import { NotificationEvent } from '@libs/notifications/domain/catalog/events';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 
+import { ValidateRuleFileReferencesUseCase } from './validate-rule-file-references.use-case';
+
 /**
  * Triggered exclusively from authenticated HTTP requests
  * (apps/api/src/controllers/kodyRules.controller.ts) — `REQUEST` is
@@ -25,6 +27,7 @@ export class ResyncRulesFromIdeUseCase {
         private readonly kodyRulesSyncService: KodyRulesSyncService,
         private readonly codeManagementService: CodeManagementService,
         private readonly notificationService: NotificationService,
+        private readonly validateRuleFileReferences: ValidateRuleFileReferencesUseCase,
         @Inject(REQUEST)
         private readonly request: UserRequest,
     ) {}
@@ -78,6 +81,19 @@ export class ResyncRulesFromIdeUseCase {
                         organizationAndTeamData.organizationId,
                         repo.name,
                     );
+                    // Validate external file references for this repo's
+                    // rules; targeting rule owners so they can fix the
+                    // references they own. Errors swallowed inside the
+                    // validator so a failing check doesn't block the
+                    // remaining repos.
+                    await this.validateRuleFileReferences.execute({
+                        organizationAndTeamData,
+                        repository: {
+                            id: String(repo.id),
+                            name: repo.name,
+                        },
+                        source: 'manual',
+                    });
                 } catch (perRepoError) {
                     // Per-repo failure: notify and continue with other
                     // repos rather than aborting the whole resync.

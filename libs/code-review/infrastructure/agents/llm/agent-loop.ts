@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 import {
     buildAgentTools,
     type DocumentationSearchAdapter,
@@ -18,6 +20,41 @@ import {
     tool as defineTool,
     type LanguageModel,
 } from 'ai';
+
+/**
+ * Per-call BYOK error reporting context. Set once at `runAgentLoop`
+ * entry; read inside `throttledGenerateText` when a call fails. Using
+ * AsyncLocalStorage instead of plumbing the reporter through 9 call
+ * sites and 6 helper functions — propagation is implicit across the
+ * awaits inside the loop body.
+ */
+interface ByokErrorReportingContext {
+    reporter?: (input: {
+        organizationId?: string;
+        provider: string;
+        errorMessage: string;
+    }) => void;
+    organizationId?: string;
+    provider?: string;
+}
+const byokErrorContext =
+    new AsyncLocalStorage<ByokErrorReportingContext>();
+
+function reportByokError(err: unknown): void {
+    const ctx = byokErrorContext.getStore();
+    if (!ctx?.reporter || !ctx.provider) return;
+    try {
+        ctx.reporter({
+            organizationId: ctx.organizationId,
+            provider: ctx.provider,
+            errorMessage:
+                err instanceof Error ? err.message : String(err ?? 'unknown'),
+        });
+    } catch {
+        // Never let reporter failures surface — the LLM error is the
+        // signal the caller cares about.
+    }
+}
 
 // Wrap generateText with a hard timeout safety net.
 // Some BYOK providers (Synthetic, Z.AI) ignore AbortSignal and hang forever.
@@ -58,6 +95,14 @@ function throttledGenerateText<T>(params: {
     queueTimeoutMs?: number;
     fn: () => Promise<T>;
 }): Promise<T> {
+    const wrapped = async () => {
+        try {
+            return await params.fn();
+        } catch (err) {
+            reportByokError(err);
+            throw err;
+        }
+    };
     return runWithBYOKLimiter(
         {
             byokConfig: params.byokConfig,
@@ -66,7 +111,7 @@ function throttledGenerateText<T>(params: {
             abortSignal: params.abortSignal,
             queueTimeoutMs: params.queueTimeoutMs,
         },
-        params.fn,
+        wrapped,
         params.label ?? 'generateText',
     );
 }
@@ -798,6 +843,17 @@ export interface AgentLoopSecrets {
      * can also set it if they need bounded queue behavior.
      */
     byokQueueTimeoutMs?: number;
+    /**
+     * Optional sink for BYOK LLM failures. Called once per failed
+     * `generateText` call inside the loop; safe to omit. Used to drive
+     * the `byok.llm_errors_threshold` notification — caller wires it to
+     * `ByokErrorCounter.record`.
+     */
+    byokErrorReporter?: (input: {
+        organizationId?: string;
+        provider: string;
+        errorMessage: string;
+    }) => void;
 }
 
 export interface AgentLoopOutput {
@@ -900,6 +956,25 @@ export interface AgentAnomalySummary {
  * instances that carry ConfigService with all env vars.
  */
 export async function runAgentLoop(
+    input: AgentLoopInput,
+    secrets: AgentLoopSecrets,
+): Promise<AgentLoopOutput> {
+    // Establish the BYOK error reporting context once at the top of the
+    // loop; all nested throttledGenerateText calls inherit it via ALS.
+    return byokErrorContext.run(
+        {
+            reporter: secrets.byokErrorReporter,
+            organizationId: input.telemetryMetadata?.organizationId,
+            provider:
+                typeof input.byokProvider === 'string'
+                    ? input.byokProvider
+                    : undefined,
+        },
+        () => runAgentLoopBody(input, secrets),
+    );
+}
+
+async function runAgentLoopBody(
     input: AgentLoopInput,
     secrets: AgentLoopSecrets,
 ): Promise<AgentLoopOutput> {

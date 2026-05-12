@@ -50,6 +50,37 @@ describe('IN_APP_TEMPLATE_REGISTRY', () => {
             newRole: 'owner',
             organizationName: 'Acme',
         },
+        [NotificationEvent.BILLING_PAYMENT_FAILED]: {
+            amount: 2400,
+            currency: 'usd',
+            failureReason: 'Card declined',
+            updatePaymentUrl: 'https://app.kodus.io/billing',
+        },
+        [NotificationEvent.BILLING_TRIAL_EXPIRING]: {
+            daysRemaining: 7,
+            trialEndsAt: '2026-03-12T00:00:00Z',
+            upgradeUrl: 'https://app.kodus.io/billing',
+        },
+        [NotificationEvent.BYOK_LLM_ERRORS_THRESHOLD]: {
+            provider: 'anthropic',
+            errorCount: 14,
+            windowStart: '2026-03-05T14:00:00Z',
+            windowEnd: '2026-03-05T15:00:00Z',
+            sampleError: 'Rate limit exceeded',
+        },
+        [NotificationEvent.RULE_FILE_REFERENCES_INVALID]: {
+            source: 'manual',
+            repoName: 'acme/api',
+            invalidCount: 3,
+            issues: [
+                {
+                    ruleId: 'r-1',
+                    ruleName: 'No console.log',
+                    filePath: 'src/logger.ts',
+                    reason: 'File not found',
+                },
+            ],
+        },
     };
 
     it('has a builder registered for every event in NotificationEvent enum', () => {

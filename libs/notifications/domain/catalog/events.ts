@@ -35,8 +35,15 @@ export enum NotificationEvent {
     // ── Cockpit ────────────────────────────────────────────────
     WEEKLY_RECAP = 'cockpit.weekly_recap',
 
-    // ── Billing (future — critical) ────────────────────────────
-    // BILLING_PAYMENT_FAILED = 'billing.payment_failed',
+    // ── Billing ────────────────────────────────────────────────
+    BILLING_PAYMENT_FAILED = 'billing.payment_failed',
+    BILLING_TRIAL_EXPIRING = 'billing.trial_expiring',
+
+    // ── BYOK ───────────────────────────────────────────────────
+    BYOK_LLM_ERRORS_THRESHOLD = 'byok.llm_errors_threshold',
+
+    // ── Kody Rules (continued) ─────────────────────────────────
+    RULE_FILE_REFERENCES_INVALID = 'rule.file_references_invalid',
 
     // ── Security (future — critical) ───────────────────────────
     // SECURITY_API_KEY_LEAKED = 'security.api_key_leaked',
@@ -140,5 +147,45 @@ export interface NotificationPayloadMap {
         prUrl: string;
         repoName: string;
         ownerContact?: string;
+    };
+
+    // ── Billing ────────────────────────────────────────────────
+
+    [NotificationEvent.BILLING_PAYMENT_FAILED]: {
+        amount: number;
+        currency: string;
+        failureReason: string;
+        nextRetryAt?: string;
+        updatePaymentUrl?: string;
+    };
+
+    [NotificationEvent.BILLING_TRIAL_EXPIRING]: {
+        trialEndsAt: string;
+        daysRemaining: number;
+        upgradeUrl?: string;
+    };
+
+    // ── BYOK ───────────────────────────────────────────────────
+
+    [NotificationEvent.BYOK_LLM_ERRORS_THRESHOLD]: {
+        provider: string;
+        errorCount: number;
+        windowStart: string;
+        windowEnd: string;
+        sampleError: string;
+    };
+
+    // ── Kody Rules (file reference validation) ────────────────
+
+    [NotificationEvent.RULE_FILE_REFERENCES_INVALID]: {
+        source: 'ide' | 'manual' | 'auto_recheck';
+        repoName: string;
+        invalidCount: number;
+        issues: Array<{
+            ruleId: string;
+            ruleName: string;
+            filePath: string;
+            reason: string;
+        }>;
     };
 }

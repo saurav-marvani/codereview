@@ -19,6 +19,7 @@ import { USER_NOTIFICATION_REPOSITORY_TOKEN } from '../domain/contracts/user-not
 import { ROUTING_RULE_REPOSITORY_TOKEN } from '../domain/contracts/routing-rule.repository.contract';
 
 // Application services
+import { ByokErrorCounter } from '../application/byok-error-counter.service';
 import { NotificationService } from '../application/notification.service';
 import { NotificationDispatcherService } from '../application/notification-dispatcher.service';
 import { NotificationQueryService } from '../application/notification-query.service';
@@ -108,6 +109,7 @@ import { UserCoreModule } from '@libs/identity/modules/user-core.module';
         },
 
         // ── Application services ──────────────────────────────
+        ByokErrorCounter,
         NotificationService,
         NotificationDispatcherService,
         NotificationQueryService,
@@ -121,6 +123,7 @@ import { UserCoreModule } from '@libs/identity/modules/user-core.module';
         NotificationConsumer,
     ],
     exports: [
+        ByokErrorCounter,
         NotificationService,
         NotificationQueryService,
         NotificationRateLimiter,

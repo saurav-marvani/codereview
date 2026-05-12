@@ -2,6 +2,7 @@ import { createLogger } from '@kodus/flow';
 import { PromptRunnerService } from '@kodus/kodus-common/llm';
 import { Injectable, Optional } from '@nestjs/common';
 import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
+import { ByokErrorCounter } from '@libs/notifications/application/byok-error-counter.service';
 
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import {
@@ -397,6 +398,11 @@ export abstract class BaseCodeReviewAgentProvider {
          *  agent loop. Falsy when API_EXA_KEY is not configured. */
         @Optional()
         protected readonly documentationSearchService?: DocumentationSearchExaService,
+        /** Optional: when injected, wires BYOK LLM failures into the
+         *  notification engine so OWNER gets `byok.llm_errors_threshold`
+         *  after sustained errors. Falsy in the CLI/eval paths. */
+        @Optional()
+        protected readonly byokErrorCounter?: ByokErrorCounter,
     ) {}
 
     protected abstract getIdentity(): ReviewAgentIdentity;
@@ -633,6 +639,7 @@ export abstract class BaseCodeReviewAgentProvider {
             // Secrets are passed via closure (not as tracing arg) so that
             // Langfuse span I/O never serialises API keys, tokens, or
             // NestJS service instances (which carry ConfigService with all env vars).
+            const byokErrorCounter = this.byokErrorCounter;
             const loopSecrets: AgentLoopSecrets = {
                 remoteCommands: input.remoteCommands,
                 byokConfig,
@@ -643,6 +650,14 @@ export abstract class BaseCodeReviewAgentProvider {
                     prNumber: input.prNumber,
                     byokConfig,
                 },
+                byokErrorReporter: byokErrorCounter
+                    ? (entry) => {
+                          // Fire-and-forget; ByokErrorCounter.record never
+                          // throws, but we still drop the promise so the
+                          // LLM call path returns immediately.
+                          void byokErrorCounter.record(entry);
+                      }
+                    : undefined,
             };
 
             const loopParams = {

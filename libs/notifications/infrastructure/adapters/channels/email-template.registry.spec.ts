@@ -59,6 +59,38 @@ describe('EMAIL_TEMPLATE_REGISTRY', () => {
             reason: 'permission denied',
             correlationId: 'c-1',
         },
+        [NotificationEvent.BILLING_PAYMENT_FAILED]: {
+            amount: 2400,
+            currency: 'usd',
+            failureReason: 'Card declined',
+            nextRetryAt: '2026-03-05T00:00:00Z',
+            updatePaymentUrl: 'https://app.kodus.io/billing',
+        },
+        [NotificationEvent.BILLING_TRIAL_EXPIRING]: {
+            daysRemaining: 1,
+            trialEndsAt: '2026-03-05T00:00:00Z',
+            upgradeUrl: 'https://app.kodus.io/billing',
+        },
+        [NotificationEvent.BYOK_LLM_ERRORS_THRESHOLD]: {
+            provider: 'anthropic',
+            errorCount: 14,
+            windowStart: '2026-03-05T14:00:00Z',
+            windowEnd: '2026-03-05T15:00:00Z',
+            sampleError: 'Rate limit exceeded',
+        },
+        [NotificationEvent.RULE_FILE_REFERENCES_INVALID]: {
+            source: 'manual',
+            repoName: 'acme/api',
+            invalidCount: 1,
+            issues: [
+                {
+                    ruleId: 'r-1',
+                    ruleName: 'No console.log',
+                    filePath: 'src/logger.ts',
+                    reason: 'File not found',
+                },
+            ],
+        },
     };
 
     /** Events that intentionally do NOT have an email template. */

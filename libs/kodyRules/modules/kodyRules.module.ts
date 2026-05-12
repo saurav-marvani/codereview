@@ -40,6 +40,7 @@ import { GetRulesLimitStatusUseCase } from '../application/use-cases/get-rules-l
 import { ImportFastKodyRulesUseCase } from '../application/use-cases/import-fast-kody-rules.use-case';
 import { ManageImportedKodyRulesUseCase } from '../application/use-cases/manage-imported-kody-rules.use-case';
 import { ResyncRulesFromIdeUseCase } from '../application/use-cases/resync-rules-from-ide.use-case';
+import { ValidateRuleFileReferencesUseCase } from '../application/use-cases/validate-rule-file-references.use-case';
 import { RemoveRuleLikeUseCase } from '../application/use-cases/rule-like/remove-rule-like.use-case';
 import { SetRuleLikeUseCase } from '../application/use-cases/rule-like/set-rule-like.use-case';
 import { SendRulesNotificationUseCase } from '../application/use-cases/send-rules-notification.use-case';
@@ -124,6 +125,7 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         GetRulesLimitStatusUseCase,
         ImportFastKodyRulesUseCase,
         ResyncRulesFromIdeUseCase,
+        ValidateRuleFileReferencesUseCase,
         RemoveRuleLikeUseCase,
         SetRuleLikeUseCase,
         KodyRulesSyncListener,
@@ -158,6 +160,7 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         GetRulesLimitStatusUseCase,
         ImportFastKodyRulesUseCase,
         ResyncRulesFromIdeUseCase,
+        ValidateRuleFileReferencesUseCase,
         RemoveRuleLikeUseCase,
         SetRuleLikeUseCase,
         FindRecommendedKodyRulesUseCase, // Added

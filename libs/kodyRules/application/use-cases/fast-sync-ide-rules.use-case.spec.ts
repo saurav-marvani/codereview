@@ -8,6 +8,7 @@ import { KodyRulesSyncService } from '@libs/kodyRules/infrastructure/adapters/se
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 
 import { FastSyncIdeRulesUseCase } from './fast-sync-ide-rules.use-case';
+import { ValidateRuleFileReferencesUseCase } from './validate-rule-file-references.use-case';
 
 jest.mock('@kodus/flow', () => ({
     createLogger: () => ({
@@ -23,6 +24,7 @@ describe('FastSyncIdeRulesUseCase — emits', () => {
     let syncService: { syncRepositoryMainFast: jest.Mock };
     let codeMgmt: { getRepositories: jest.Mock };
     let notify: { emit: jest.Mock };
+    let validateReferences: { execute: jest.Mock };
 
     const REPO = {
         id: 'repo-1',
@@ -43,6 +45,11 @@ describe('FastSyncIdeRulesUseCase — emits', () => {
             getRepositories: jest.fn().mockResolvedValue([REPO]),
         };
         notify = { emit: jest.fn().mockResolvedValue(undefined) };
+        validateReferences = {
+            execute: jest
+                .fn()
+                .mockResolvedValue({ invalidCount: 0, issues: [] }),
+        };
 
         const module: TestingModule = await Test.createTestingModule({
             providers: [
@@ -50,6 +57,10 @@ describe('FastSyncIdeRulesUseCase — emits', () => {
                 { provide: KodyRulesSyncService, useValue: syncService },
                 { provide: CodeManagementService, useValue: codeMgmt },
                 { provide: NotificationService, useValue: notify },
+                {
+                    provide: ValidateRuleFileReferencesUseCase,
+                    useValue: validateReferences,
+                },
                 { provide: REQUEST, useValue: { user: requestUser } },
             ],
         }).compile();

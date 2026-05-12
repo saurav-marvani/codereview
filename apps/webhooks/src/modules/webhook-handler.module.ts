@@ -13,7 +13,10 @@ import { FeatureGateModule } from '@libs/feature-gate/modules/feature-gate.modul
 import { LangfuseShutdownProvider } from '@libs/core/log/langfuse-shutdown.provider';
 import { WebhookEnqueueModule } from './webhook-enqueue.module';
 
+import { NotificationModule } from '@libs/notifications/modules/notification.module';
+
 import { AzureReposController } from '../controllers/azureRepos.controller';
+import { BillingController } from '../controllers/billing.controller';
 import { BitbucketController } from '../controllers/bitbucket.controller';
 import { ForgejoController } from '../controllers/forgejo.controller';
 import { GithubController } from '../controllers/github.controller';
@@ -34,6 +37,7 @@ import { WebhookHealthController } from '../controllers/webhook-health.controlle
         RabbitMQWrapperModule.register({ enableConsumers: false }),
         WebhookEnqueueModule,
         EmailModule,
+        NotificationModule,
     ],
     controllers: [
         GithubController,
@@ -42,6 +46,7 @@ import { WebhookHealthController } from '../controllers/webhook-health.controlle
         AzureReposController,
         ForgejoController,
         WebhookHealthController,
+        BillingController,
     ],
     providers: [LangfuseShutdownProvider],
 })

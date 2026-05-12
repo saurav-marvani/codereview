@@ -106,4 +106,50 @@ export const IN_APP_TEMPLATE_REGISTRY: Partial<
         title: 'Your role changed',
         body: `Your role in ${m.organizationName ?? 'the organization'} changed from ${m.previousRole ?? 'unknown'} to ${m.newRole ?? 'unknown'}.`,
     }),
+
+    [NotificationEvent.BILLING_PAYMENT_FAILED]: (m) => {
+        const amount = m.amount as number | undefined;
+        const currency = (m.currency as string | undefined) ?? '';
+        const formatted =
+            amount != null
+                ? `${currency.toUpperCase()} ${(amount / 100).toFixed(2)}`
+                : 'your subscription';
+        return {
+            title: 'Payment failed',
+            body: `Your payment of ${formatted} could not be processed: ${m.failureReason ?? 'unknown error'}. Update your payment method to keep your subscription active.`,
+            ctaUrl: m.updatePaymentUrl as string | undefined,
+        };
+    },
+
+    [NotificationEvent.BILLING_TRIAL_EXPIRING]: (m) => {
+        const days = m.daysRemaining as number | undefined;
+        const remaining =
+            days == null
+                ? 'soon'
+                : days === 1
+                  ? 'tomorrow'
+                  : `in ${days} days`;
+        return {
+            title: 'Trial expiring',
+            body: `Your trial ends ${remaining}. Upgrade to keep Kody reviewing your pull requests.`,
+            ctaUrl: m.upgradeUrl as string | undefined,
+        };
+    },
+
+    [NotificationEvent.BYOK_LLM_ERRORS_THRESHOLD]: (m) => ({
+        title: 'BYOK LLM errors exceeded threshold',
+        body: `Your ${m.provider ?? 'BYOK'} model returned ${m.errorCount ?? 0} errors in the recent window. Reviews may be impacted. Latest error: ${m.sampleError ?? 'n/a'}.`,
+    }),
+
+    [NotificationEvent.RULE_FILE_REFERENCES_INVALID]: (m) => {
+        const count = m.invalidCount as number | undefined;
+        const repo = m.repoName ?? 'a repository';
+        return {
+            title: 'Kody rule references are invalid',
+            body:
+                count != null
+                    ? `${count} ${count === 1 ? 'rule has' : 'rules have'} a file reference that no longer matches in ${repo}. Affected rules are skipped during review until fixed.`
+                    : `Some Kody rules in ${repo} reference files that no longer match. Affected rules are skipped during review until fixed.`,
+        };
+    },
 };
