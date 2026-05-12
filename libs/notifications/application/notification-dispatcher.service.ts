@@ -101,15 +101,39 @@ export class NotificationDispatcherService {
             organizationId,
         );
 
+        // Per-recipient try/catch so a thrown error (DB outage, adapter
+        // bug) for one recipient does not abort the loop and bubble up
+        // to the worker. If it did, the message would be NACK'd and
+        // every recipient already processed before the failure would
+        // receive a duplicate notification on retry.
         for (const recipient of recipients) {
-            await this.dispatchToRecipient(
-                recipient,
-                event,
-                defaults,
-                payload,
-                organizationId,
-                correlationId,
-            );
+            try {
+                await this.dispatchToRecipient(
+                    recipient,
+                    event,
+                    defaults,
+                    payload,
+                    organizationId,
+                    correlationId,
+                );
+            } catch (error) {
+                this.logger.error({
+                    message:
+                        'Unhandled error dispatching to recipient — continuing fanout',
+                    error:
+                        error instanceof Error
+                            ? error
+                            : new Error(String(error)),
+                    context: NotificationDispatcherService.name,
+                    metadata: {
+                        event,
+                        recipientUserId: recipient.userId,
+                        recipientEmail: recipient.email,
+                        organizationId,
+                        correlationId,
+                    },
+                });
+            }
         }
     }
 
@@ -181,27 +205,59 @@ export class NotificationDispatcherService {
             // Create delivery record (pending). `recipientRole` is
             // captured as a snapshot so the retry worker can rebuild the
             // adapter context without re-querying the user.
-            const delivery = await this.deliveryRepo.create({
-                organization: { uuid: organizationId },
-                event,
-                criticality: defaults.criticality,
-                channel,
-                title,
-                body,
-                ctaUrl,
-                category: defaults.category,
-                recipientEmail:
-                    channel === NotificationChannel.EMAIL
-                        ? recipient.email
+            //
+            // The create call sits inside the same try/catch as the
+            // adapter call so a transient DB failure mid-fanout doesn't
+            // throw past the channel loop. If it did, the outer
+            // recipient loop would abort, the worker would NACK and
+            // retry, and every recipient processed before the failure
+            // would get a duplicate notification.
+            let delivery: INotificationDelivery;
+            try {
+                delivery = await this.deliveryRepo.create({
+                    organization: { uuid: organizationId },
+                    event,
+                    criticality: defaults.criticality,
+                    channel,
+                    title,
+                    body,
+                    ctaUrl,
+                    category: defaults.category,
+                    recipientEmail:
+                        channel === NotificationChannel.EMAIL
+                            ? recipient.email
+                            : undefined,
+                    recipientRole: recipient.role,
+                    recipientUser: recipient.userId
+                        ? { uuid: recipient.userId }
                         : undefined,
-                recipientRole: recipient.role,
-                recipientUser: recipient.userId
-                    ? { uuid: recipient.userId }
-                    : undefined,
-                deliveryStatus: DeliveryStatus.PENDING,
-                metadata: payload,
-                correlationId,
-            });
+                    deliveryStatus: DeliveryStatus.PENDING,
+                    metadata: payload,
+                    correlationId,
+                });
+            } catch (error) {
+                this.logger.error({
+                    message: `Failed to persist delivery row — skipping channel: ${channel}`,
+                    error:
+                        error instanceof Error
+                            ? error
+                            : new Error(String(error)),
+                    context: NotificationDispatcherService.name,
+                    metadata: {
+                        event,
+                        channel,
+                        recipientUserId: recipient.userId,
+                        organizationId,
+                        correlationId,
+                    },
+                });
+                this.metricsCollector?.recordCounter(
+                    'notification_deliveries_total',
+                    1,
+                    { channel, status: 'persist_failed' },
+                );
+                continue;
+            }
 
             try {
                 const context: NotificationDeliveryContext = {
@@ -498,14 +554,20 @@ export class NotificationDispatcherService {
     private async resolveByUserId(
         userId: string,
     ): Promise<ResolvedRecipient | null> {
-        const users = await this.usersService.find(
-            { uuid: userId },
-            [STATUS.ACTIVE],
-        );
+        // PENDING / PENDING_EMAIL users are exactly the ones who need to
+        // receive AUTH_EMAIL_CONFIRMATION and TEAM_MEMBER_INVITED — they
+        // can't transition to ACTIVE without first acting on the email
+        // we're trying to send. INACTIVE/REMOVED users are still excluded
+        // so a deleted account never gets re-engaged.
+        const users = await this.usersService.find({ uuid: userId }, [
+            STATUS.ACTIVE,
+            STATUS.PENDING,
+            STATUS.PENDING_EMAIL,
+        ]);
         if (!users?.length) {
             this.logger.warn({
                 message:
-                    'Notification recipient userId did not resolve to an active user — skipping',
+                    'Notification recipient userId did not resolve to a deliverable user — skipping',
                 context: NotificationDispatcherService.name,
                 metadata: { userId },
             });
@@ -525,7 +587,7 @@ export class NotificationDispatcherService {
     ): Promise<ResolvedRecipient> {
         const users = await this.usersService.find(
             { email, organization: { uuid: organizationId } },
-            [STATUS.ACTIVE],
+            [STATUS.ACTIVE, STATUS.PENDING, STATUS.PENDING_EMAIL],
         );
         if (users?.length) {
             return {
