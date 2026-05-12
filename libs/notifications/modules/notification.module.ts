@@ -45,6 +45,15 @@ import { NotificationConsumer } from '../infrastructure/consumers/notification.c
 // Identity — needed by dispatcher for user resolution
 import { UserCoreModule } from '@libs/identity/modules/user-core.module';
 
+// Cache (Redis/in-memory) — used by ByokErrorCounter and NotificationRateLimiter.
+import { GlobalCacheModule } from '@libs/core/cache/cache.module';
+
+// Workflow core — provides OUTBOX_MESSAGE_REPOSITORY_TOKEN and
+// MESSAGE_BROKER_SERVICE_TOKEN (the latter is also exported from the
+// @Global RabbitMQWrapperModule). NotificationService writes to the
+// outbox; the relay then publishes via the broker.
+import { WorkflowCoreModule } from '@libs/core/workflow/modules/workflow-core.module';
+
 /**
  * Full notification module — wires everything: repos, services, adapters,
  * and the RabbitMQ consumer. Import in API (for query endpoints) and
@@ -54,6 +63,17 @@ import { UserCoreModule } from '@libs/identity/modules/user-core.module';
     imports: [
         ConfigModule,
         UserCoreModule,
+        // GlobalCacheModule is @Global, but the webhooks app doesn't
+        // pull it in via any other path. Importing it here keeps
+        // NotificationModule self-sufficient — ByokErrorCounter and
+        // NotificationRateLimiter both need CacheService.
+        GlobalCacheModule,
+        // Same self-sufficiency story for the outbox repository: api
+        // and worker get WorkflowCoreModule via WorkflowModule, but the
+        // webhooks app uses the lighter WebhookEnqueueModule which
+        // doesn't expose the token across module boundaries. @Global so
+        // double-registration is idempotent.
+        WorkflowCoreModule,
         // ScheduleModule.forRoot() is idempotent across the dependency
         // graph — Nest only registers the scheduler once. Importing it
         // here means the notifications module's @Cron-driven worker
