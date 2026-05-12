@@ -34,7 +34,7 @@ export class CodeReviewJobProcessorService implements IJobProcessorService {
         private readonly metricsCollector?: MetricsCollectorService,
     ) {}
 
-    async process(jobId: string): Promise<void> {
+    async process(jobId: string, signal?: AbortSignal): Promise<void> {
         const job = await this.jobRepository.findOne(jobId);
 
         if (!job) {
@@ -48,6 +48,10 @@ export class CodeReviewJobProcessorService implements IJobProcessorService {
             context: CodeReviewJobProcessorService.name,
             metadata: { jobId, correlationId },
         });
+
+        if (signal?.aborted) {
+            throw new Error(`Job ${jobId} aborted before start`);
+        }
 
         const startTime = Date.now();
         let acquiredLock: DistributedLock | null = null;
@@ -90,15 +94,18 @@ export class CodeReviewJobProcessorService implements IJobProcessorService {
                 metadata: this.removeByokConcurrencyGateMetadata(job.metadata),
             });
 
-            await this.runCodeReviewAutomationUseCase.execute({
-                codeManagementPayload,
-                event,
-                platformType,
-                correlationId,
-                organizationAndTeamData,
-                teamAutomationId,
-                workflowJobId: jobId,
-            });
+            await this.runCodeReviewAutomationUseCase.execute(
+                {
+                    codeManagementPayload,
+                    event,
+                    platformType,
+                    correlationId,
+                    organizationAndTeamData,
+                    teamAutomationId,
+                    workflowJobId: jobId,
+                },
+                signal,
+            );
 
             await this.markCompleted(jobId);
 

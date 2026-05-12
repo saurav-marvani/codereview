@@ -78,6 +78,7 @@ import {
     buildLangfuseTelemetry as _buildLangfuseTelemetry,
     type LangfuseTelemetryMetadata,
 } from '@libs/core/log/langfuse';
+import { composeAbortSignal } from './parent-signal-compose';
 
 /**
  * Build provider-specific reasoning `providerOptions` for a generateText call.
@@ -759,6 +760,10 @@ export interface AgentLoopInput {
      *  undefined; set to false to hard-fail if the pinned providers aren't
      *  available. */
     openrouterAllowFallbacks?: boolean;
+    /** Parent (job-level) AbortSignal. When it aborts, the local
+     *  AGENT_TIMEOUT_MS controller is aborted too, propagating cancellation
+     *  to the underlying generateText call (which respects abortSignal). */
+    parentSignal?: AbortSignal;
 }
 
 /**
@@ -940,6 +945,21 @@ export async function runAgentLoop(
         });
         abortController.abort();
     }, AGENT_TIMEOUT_MS);
+
+    // Compose job-level (parentSignal) into the local controller. When the
+    // outer router timeout (1h45min for code_review) fires, we abort the
+    // agent's generateText too instead of leaving an LLM call running ghost
+    // in the background.
+    const detachParentSignal = composeAbortSignal(
+        input.parentSignal,
+        abortController,
+        () =>
+            logger.warn({
+                message:
+                    '[AGENT-TIMEOUT] Parent (job) signal aborted, cancelling agent',
+                context: 'AgentLoop',
+            }),
+    );
 
     let result;
     try {
@@ -1278,6 +1298,7 @@ export async function runAgentLoop(
         });
     } catch (error) {
         clearTimeout(timeoutHandle);
+        detachParentSignal();
         if (abortController.signal.aborted) {
             // Try to recover findings from the last text the model produced before timeout
             let findings: FindingsOutput | null = null;
@@ -1384,6 +1405,7 @@ export async function runAgentLoop(
         throw error;
     }
     clearTimeout(timeoutHandle);
+    detachParentSignal();
 
     // ─── Done-tool extraction ───────────────────────────────────────────
     // If the model called submitResult, extract findings directly from

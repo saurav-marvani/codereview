@@ -57,7 +57,15 @@ API_MG_DB_USERNAME=kodusdev                  # 数据库用户名
 API_MG_DB_PASSWORD=                          # 数据库密码
 API_MG_DB_DATABASE=kodus                     # 数据库名称
 API_MG_DB_PRODUCTION_CONFIG=''               # 其他生产设置
+
+# SSL — 本地 Postgres 容器不支持 SSL。该全局开关覆盖所有数据源
+# （default + analytics）。如果保持 false，api 会陷入 SSL 重试连接循环。
+API_DATABASE_DISABLE_SSL=true                # 为本地数据库禁用 SSL
 ```
+
+<Tip>
+  如果 `API_PG_DB_PASSWORD` 和 `API_MG_DB_PASSWORD` 留空，`./scripts/install.sh`（通过 `generate-secrets.sh`）会自动生成。只有当安装程序指向外部数据库时才需要手动设置。
+</Tip>
 
 ### RabbitMQ 配置
 
@@ -73,6 +81,20 @@ RABBITMQ_DEFAULT_PASS=kodus                  # RabbitMQ 密码（在生产环境
 # 保持 URI 与上面的用户、密码和 vhost 同步
 API_RABBITMQ_URI=amqp://kodus:kodus@rabbitmq:5672/kodus-ai # RabbitMQ 连接 URI
 API_RABBITMQ_ENABLED=true                    # RabbitMQ 是必需的
+```
+
+### Worker 配置
+
+Worker 容器需要一个角色来确定处理哪种工作负载。Self-hosted 仅运行代码审查
+角色；analytics 角色仅适用于云端。
+
+<Warning>
+  如果将 `WORKER_ROLE` 留空，worker 会在启动时崩溃。由于 `workflow.jobs.*` 队列是 worker 首次连接时创建的，worker 崩溃后 api 和 webhooks 会对每个 webhook 事件抛出 `QueueBind 404` 错误。
+</Warning>
+
+```env
+# Worker 角色 — 必填。Self-hosted = code-review。
+WORKER_ROLE=code-review
 ```
 
 ### Git 提供商配置

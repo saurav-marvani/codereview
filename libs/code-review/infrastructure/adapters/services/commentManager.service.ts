@@ -219,29 +219,9 @@ export class CommentManagerService implements ICommentManagerService {
                     updatedPR,
                 };
 
-                let userPromptPrefix = '';
-
-                if (
-                    isCommitRun &&
-                    summaryConfig?.behaviourForNewCommits ===
-                        BehaviourForNewCommits.REPLACE
-                ) {
-                    const existingBodyForPrompt = updatedPR?.body || '';
-                    const summaryBlockRegex =
-                        /<!-- kody-pr-summary:start -->([\s\S]*?)<!-- kody-pr-summary:end -->/;
-                    const previousMatch =
-                        existingBodyForPrompt.match(summaryBlockRegex);
-                    const previousSummary = previousMatch
-                        ? previousMatch[1].trim()
-                        : '';
-
-                    if (previousSummary) {
-                        userPromptPrefix = `
-                    This is the previous pull request summary (generated before the latest commits):
-                    <previousPullRequestSummary>${previousSummary}</previousPullRequestSummary>
-                    Generate a new, complete and updated summary that incorporates both the previous context and the new code changes. Do not include HTML comments or markers in your output.`;
-                    }
-                }
+                // For REPLACE on commit runs, the caller now provides the full PR
+                // diff (base...head), so the LLM generates a fresh summary from
+                // scratch — no need to inject the previous summary as context.
 
                 const fallbackProvider = LLMModelProvider.OPENAI_GPT_4O;
 
@@ -282,7 +262,7 @@ export class CommentManagerService implements ICommentManagerService {
                 const fileChunks = this.chunkChangedFilesForSummary(
                     changedFiles,
                     promptBase,
-                    userPromptPrefix,
+                    '',
                     maxInputTokens,
                 );
 
@@ -305,7 +285,6 @@ export class CommentManagerService implements ICommentManagerService {
                 if (fileChunks.length === 1) {
                     // Single chunk — normal path (no chunking needed)
                     const userPrompt =
-                        userPromptPrefix +
                         `<changedFilesContext>${JSON.stringify(fileChunks[0]) || 'No files changed'}</changedFilesContext>`;
 
                     const llmResult =
@@ -354,7 +333,6 @@ export class CommentManagerService implements ICommentManagerService {
 
                     for (let i = 0; i < fileChunks.length; i++) {
                         const chunkUserPrompt =
-                            userPromptPrefix +
                             `<changedFilesContext>${JSON.stringify(fileChunks[i])}</changedFilesContext>`;
 
                         const chunkRunName = `${runName}_chunk_${i + 1}`;

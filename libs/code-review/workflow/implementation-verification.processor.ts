@@ -56,7 +56,7 @@ export class ImplementationVerificationProcessor implements IJobProcessorService
         private readonly teamAutomationService: ITeamAutomationService,
     ) {}
 
-    async process(jobId: string): Promise<void> {
+    async process(jobId: string, signal?: AbortSignal): Promise<void> {
         const job = await this.jobRepository.findOne(jobId);
 
         if (!job) {
@@ -65,6 +65,10 @@ export class ImplementationVerificationProcessor implements IJobProcessorService
 
         if (job.workflowType !== WorkflowType.CHECK_SUGGESTION_IMPLEMENTATION) {
             throw new Error(`Invalid workflow type ${job.workflowType}`);
+        }
+
+        if (signal?.aborted) {
+            throw new Error(`Job ${jobId} aborted before start`);
         }
 
         try {

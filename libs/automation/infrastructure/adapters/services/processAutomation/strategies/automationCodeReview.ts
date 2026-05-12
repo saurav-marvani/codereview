@@ -95,7 +95,11 @@ export class AutomationCodeReviewService implements Omit<
             action,
             triggerCommentId,
             userGitId,
-        } = payload;
+            // Job-level AbortSignal injected by RunCodeReviewAutomationUseCase.
+            // Plumbed through handlePullRequest → pipeline context → agent-loop
+            // so the router-level workflow timeout cancels the LLM call cleanly.
+            signal,
+        } = payload as Record<string, any>;
 
         // Acquire distributed lock to prevent concurrent reviews of the same PR
         const orgId = organizationAndTeamData?.organizationId;
@@ -266,6 +270,7 @@ export class AutomationCodeReviewService implements Omit<
                     undefined, // workflowJobId
                     lastExecution?.dataExecution, // Pass last execution data
                     correlationId,
+                    signal, // parentSignal — forwarded to pipeline context
                 );
 
             await this._handleExecutionCompletion(execution, result, payload);

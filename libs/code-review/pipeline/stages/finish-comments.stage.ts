@@ -3,9 +3,16 @@ import {
     COMMENT_MANAGER_SERVICE_TOKEN,
     ICommentManagerService,
 } from '@libs/code-review/domain/contracts/CommentManagerService.contract';
+import {
+    PULL_REQUEST_MANAGER_SERVICE_TOKEN,
+    IPullRequestManagerService,
+} from '@libs/code-review/domain/contracts/PullRequestManagerService.contract';
 import { createLogger } from '@kodus/flow';
 import { PullRequestMessageStatus } from '@libs/core/infrastructure/config/types/general/pullRequestMessages.type';
-import { BehaviourForNewCommits } from '@libs/core/infrastructure/config/types/general/codeReview.type';
+import {
+    BehaviourForNewCommits,
+    FileChange,
+} from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { BasePipelineStage } from '@libs/core/infrastructure/pipeline/abstracts/base-stage.abstract';
 import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-visibility.enum';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
@@ -24,6 +31,8 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
     constructor(
         @Inject(COMMENT_MANAGER_SERVICE_TOKEN)
         private readonly commentManagerService: ICommentManagerService,
+        @Inject(PULL_REQUEST_MANAGER_SERVICE_TOKEN)
+        private readonly pullRequestManagerService: IPullRequestManagerService,
     ) {
         super();
     }
@@ -76,11 +85,33 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                     },
                 });
 
-                const changedFiles = context.changedFiles.map((file) => ({
-                    filename: file.filename,
-                    patch: file.patch,
-                    status: file.status,
-                }));
+                // For REPLACE on commit runs, fetch the full PR diff (base...head)
+                // so the LLM generates a complete summary, not just incremental.
+                const useFullDiff =
+                    isCommitRun &&
+                    commitBehaviour === BehaviourForNewCommits.REPLACE;
+
+                let changedFiles: Partial<FileChange>[];
+
+                if (useFullDiff) {
+                    const fullDiffFiles =
+                        await this.pullRequestManagerService.getChangedFilesMetadata(
+                            organizationAndTeamData,
+                            repository,
+                            pullRequest,
+                        );
+                    changedFiles = fullDiffFiles.map((file) => ({
+                        filename: file.filename,
+                        patch: file.patch,
+                        status: file.status,
+                    }));
+                } else {
+                    changedFiles = context.changedFiles.map((file) => ({
+                        filename: file.filename,
+                        patch: file.patch,
+                        status: file.status,
+                    }));
+                }
 
                 const summaryPR =
                     await this.commentManagerService.generateSummaryPR(

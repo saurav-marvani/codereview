@@ -172,7 +172,10 @@ export class PullRequestHandlerService implements IPullRequestManagerService {
         organizationAndTeamData: OrganizationAndTeamData,
         determineBots?: boolean,
     ): Promise<PullRequestAuthor[]> {
-        const cacheKey = `pr_authors_60d_${organizationAndTeamData.organizationId}`;
+        const baseKey = organizationAndTeamData.teamId
+            ? `pr_authors_60d_${organizationAndTeamData.organizationId}_${organizationAndTeamData.teamId}`
+            : `pr_authors_60d_${organizationAndTeamData.organizationId}`;
+        const cacheKey = determineBots ? `${baseKey}_bots` : baseKey;
         const TTL = 10 * 60 * 1000; // 10 minutos
 
         try {

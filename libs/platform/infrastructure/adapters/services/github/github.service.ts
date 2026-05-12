@@ -7,7 +7,6 @@ import { enterpriseServer313 } from '@octokit/plugin-enterprise-server';
 import { retry } from '@octokit/plugin-retry';
 import { throttling } from '@octokit/plugin-throttling';
 import { Octokit, RestEndpointMethodTypes } from '@octokit/rest';
-import type { EndpointDefaults } from '@octokit/types';
 
 import * as moment from 'moment-timezone';
 
@@ -2355,28 +2354,51 @@ export class GithubService
                     },
                     throttle: {
                         onRateLimit: (
-                            retryAfter: number,
-                            options: Required<EndpointDefaults>,
-                            octokit: Octokit,
-                            retryCount: number,
+                            retryAfter,
+                            options,
+                            octokit,
+                            retryCount,
                         ) => {
                             const attempts = retryCount;
                             const jitter = Math.floor(Math.random() * 1000);
 
+                            const headers =
+                                (options.request as any)?.response?.headers ??
+                                {};
+                            const rateLimit = headers['x-ratelimit-limit'];
+                            const rateRemaining =
+                                headers['x-ratelimit-remaining'];
+                            const rateReset = headers['x-ratelimit-reset'];
+                            const rateResource =
+                                headers['x-ratelimit-resource'];
+
                             // Log do Octokit (mantém compatibilidade com plugin)
                             octokit.log.warn(
-                                `RATE-LIMIT core: ${options.method} ${options.url} — retryAfter=${retryAfter}s attempts=${attempts}`,
+                                `RATE-LIMIT ${rateResource ?? 'core'}: ${options.method} ${options.url} — retryAfter=${retryAfter}s attempts=${attempts} limit=${rateLimit ?? '?'} remaining=${rateRemaining ?? '?'}`,
                             );
 
                             // Log do Pino (integração com sistema de logging)
                             this.logger.warn({
-                                message: `RATE-LIMIT core: ${options.method} ${options.url} — retryAfter=${retryAfter}s attempts=${attempts}`,
+                                message: `RATE-LIMIT ${rateResource ?? 'core'}: ${options.method} ${options.url} — retryAfter=${retryAfter}s attempts=${attempts} limit=${rateLimit ?? '?'} remaining=${rateRemaining ?? '?'}`,
                                 context: GithubService.name,
                                 metadata: {
                                     method: options.method,
                                     url: options.url,
                                     retryAfter,
                                     attempts,
+                                    rateLimit:
+                                        rateLimit !== undefined
+                                            ? Number(rateLimit)
+                                            : undefined,
+                                    rateRemaining:
+                                        rateRemaining !== undefined
+                                            ? Number(rateRemaining)
+                                            : undefined,
+                                    rateReset:
+                                        rateReset !== undefined
+                                            ? Number(rateReset)
+                                            : undefined,
+                                    rateResource,
                                     organizationId:
                                         organizationAndTeamData.organizationId,
                                     teamId: organizationAndTeamData.teamId,
@@ -2405,10 +2427,10 @@ export class GithubService
                             return false;
                         },
                         onSecondaryRateLimit: (
-                            retryAfter: number,
-                            options: Required<EndpointDefaults>,
-                            octokit: Octokit,
-                            retryCount: number,
+                            retryAfter,
+                            options,
+                            octokit,
+                            retryCount,
                         ) => {
                             octokit.log.error(
                                 `SECONDARY-RATE-LIMIT: ${options.method} ${options.url} — wait=${retryAfter}s`,
@@ -4916,8 +4938,17 @@ This is an experimental feature that generates committable changes. Review the d
 
         const fileWithContent = {
             ...file,
-            content: null,
+            content: null as string | null,
         };
+
+        const cacheKey = `gh:contents:${owner}/${repo}@${branch}:${file.path}`;
+        const cached = await this.cacheService.getFromCache<string | null>(
+            cacheKey,
+        );
+        if (cached !== undefined && cached !== null) {
+            fileWithContent.content = cached;
+            return fileWithContent;
+        }
 
         try {
             const { data } = await octokit.rest.repos.getContent({
@@ -4932,6 +4963,11 @@ This is an experimental feature that generates committable changes. Review the d
                     data.content,
                     'base64',
                 ).toString('utf-8');
+                await this.cacheService.addToCache(
+                    cacheKey,
+                    fileWithContent.content,
+                    5 * 60 * 1000,
+                );
             }
         } catch (error) {
             this.logger.error({
@@ -5383,6 +5419,14 @@ This is an experimental feature that generates committable changes. Review the d
     }): Promise<any> {
         const { organizationAndTeamData, username } = params;
 
+        const cacheKey = `gh:user:${organizationAndTeamData.organizationId}:${username.toLowerCase()}`;
+        const cached = await this.cacheService.getFromCache<any | null>(
+            cacheKey,
+        );
+        if (cached !== null && cached !== undefined) {
+            return cached;
+        }
+
         try {
             const octokit = await this.instanceOctokit(organizationAndTeamData);
 
@@ -5392,9 +5436,20 @@ This is an experimental feature that generates committable changes. Review the d
 
             const userData = userResponse.data;
 
+            await this.cacheService.addToCache(
+                cacheKey,
+                userData,
+                10 * 60 * 1000,
+            );
+
             return userData;
         } catch (error) {
             if (error?.response?.status === 404) {
+                await this.cacheService.addToCache(
+                    cacheKey,
+                    null,
+                    60 * 60 * 1000,
+                );
                 this.logger.warn({
                     message: `Github user not found: ${username}`,
                     context: GithubService.name,

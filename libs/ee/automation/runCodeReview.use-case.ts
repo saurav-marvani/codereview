@@ -24,7 +24,7 @@ export class RunCodeReviewAutomationUseCase implements IUseCase {
         private readonly codeManagementService: CodeManagementService,
     ) {}
 
-    async execute(params: EnqueueCodeReviewJobInput) {
+    async execute(params: EnqueueCodeReviewJobInput, signal?: AbortSignal) {
         try {
             const {
                 codeManagementPayload: payload,
@@ -234,6 +234,10 @@ export class RunCodeReviewAutomationUseCase implements IUseCase {
                 userGitId,
                 workflowJobId,
                 correlationId,
+                // Job-level AbortSignal — strategies that reach the LLM call
+                // chain (agent-loop, plan-pass, etc.) listen to this and abort
+                // when the 1h45min job timeout fires.
+                signal,
             };
 
             const result = await this.executeAutomation.executeStrategy(

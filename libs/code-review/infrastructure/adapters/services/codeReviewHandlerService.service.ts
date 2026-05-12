@@ -165,6 +165,11 @@ export class CodeReviewHandlerService {
         workflowJobId?: string, // Optional: ID of workflow job (for pausing/resuming)
         lastExecutionData?: any, // Data from the last successful execution
         correlationId?: string,
+        // Parent (job-level) AbortSignal — forwarded from the strategy
+        // which got it from runCodeReview use-case, originally created by
+        // JobProcessorRouterService.runWithTimeout. When this aborts, all
+        // downstream LLM/agent calls cancel via parentSignal composition.
+        parentSignal?: AbortSignal,
     ) {
         let initialContext: CodeReviewPipelineContext;
 
@@ -172,6 +177,7 @@ export class CodeReviewHandlerService {
             initialContext = {
                 correlationId,
                 workflowJobId,
+                parentSignal,
                 dryRun: {
                     enabled: false,
                 },
