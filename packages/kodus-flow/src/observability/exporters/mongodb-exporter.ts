@@ -688,10 +688,13 @@ export class MongoDBExporter implements LogProcessor, ObservabilityExporter {
         // with config↔request↔response, Mongoose documents, Error.cause
         // loops). Without sanitizing, BSON serialization in `insertMany`
         // throws "Cannot convert circular structure to BSON" and the
-        // entire batch is dropped. `deepSanitize` already replaces cycles
-        // with '[Circular]' and redacts sensitive keys — same helper the
-        // logger uses for stdout serializers, so behavior is consistent.
-        const logItem: MongoDBLogItem = {
+        // entire batch is dropped. We run `deepSanitize` over the WHOLE
+        // logItem (not just metadata/attributes) so cycles in any field —
+        // including `error.message` from atypical Error subclasses and
+        // top-level identifiers like `executionId`/`correlationId` that
+        // callers may accidentally hand in as objects — get replaced with
+        // '[Circular]' before they reach the buffer.
+        const rawLogItem: MongoDBLogItem = {
             timestamp: new Date(),
             level,
             message,
@@ -700,8 +703,8 @@ export class MongoDBExporter implements LogProcessor, ObservabilityExporter {
             tenantId: metadata.tenantId,
             executionId: normalizedContext?.executionId as string | undefined,
             sessionId: normalizedContext?.sessionId as string | undefined,
-            metadata: deepSanitize(metadata), // Clean bucket key
-            attributes: deepSanitize(attributes), // Detailed payload (schema-less)
+            metadata, // Clean bucket key — sanitized below as part of logItem
+            attributes, // Detailed payload (schema-less) — sanitized below
             error: error
                 ? {
                       name: error.name,
@@ -711,6 +714,8 @@ export class MongoDBExporter implements LogProcessor, ObservabilityExporter {
                 : undefined,
             createdAt: new Date(),
         } as any; // Cast necessary due to dynamic 'attributes' field injection
+
+        const logItem = deepSanitize(rawLogItem) as MongoDBLogItem;
 
         this.logBuffer.push(logItem);
 
@@ -859,6 +864,41 @@ export class MongoDBExporter implements LogProcessor, ObservabilityExporter {
         const logsToFlush = [...this.logBuffer];
         this.logBuffer = [];
 
+        // Pre-screen every log for serialization readiness. Logs that
+        // can't even round-trip through JSON.stringify — cycles missed
+        // by deepSanitize (BigInt, getters that throw, Symbol-keyed
+        // payloads) — would poison the whole insertMany batch at BSON
+        // time AND get re-pushed onto the buffer by the catch block
+        // below, forming the loop responsible for 24.7k consecutive
+        // "Failed to flush logs to MongoDB" errors observed in prod.
+        // Dropping the offenders here keeps the healthy majority on
+        // the happy path.
+        const sanitizedLogs: MongoDBLogItem[] = [];
+        let poisonedCount = 0;
+        for (const log of logsToFlush) {
+            try {
+                JSON.stringify(log);
+                sanitizedLogs.push(log);
+            } catch {
+                poisonedCount++;
+            }
+        }
+        if (poisonedCount > 0) {
+            this.logger.warn({
+                message: `Dropping ${poisonedCount} non-serializable log entr${poisonedCount === 1 ? 'y' : 'ies'} from flush batch (would have poisoned insertMany)`,
+                context: this.constructor.name,
+                metadata: {
+                    droppedCount: poisonedCount,
+                    batchSize: logsToFlush.length,
+                },
+            });
+        }
+
+        if (sanitizedLogs.length === 0) {
+            this.isFlushingLogs = false;
+            return;
+        }
+
         // PERFORMANCE OPTIMIZATION: Sort by Bucket Keys before inserting.
         // This drastically improves Time-Series compression and write throughput.
         const bucketKeys = this.config.bucketKeys || [
@@ -866,7 +906,7 @@ export class MongoDBExporter implements LogProcessor, ObservabilityExporter {
             'teamId',
         ];
 
-        logsToFlush.sort((a, b) => {
+        sanitizedLogs.sort((a, b) => {
             for (const key of bucketKeys) {
                 const valA = (a.metadata as any)?.[key] || '';
                 const valB = (b.metadata as any)?.[key] || '';
@@ -878,7 +918,7 @@ export class MongoDBExporter implements LogProcessor, ObservabilityExporter {
         });
 
         try {
-            await this.collections.logs.insertMany(logsToFlush);
+            await this.collections.logs.insertMany(sanitizedLogs);
             // Removed debug log to avoid recursive logging and pollution
         } catch (error) {
             this.logger.error({
@@ -889,13 +929,14 @@ export class MongoDBExporter implements LogProcessor, ObservabilityExporter {
 
             await this.handleConnectionError(error as Error, 'flushLogs');
 
-            // Put logs back (LIFO to preserve order roughly, or just push back)
-            // But respect max buffer size
+            // Re-buffer the (already-screened) sanitized batch only —
+            // never the poisoned originals, which were dropped above.
+            // Respect max buffer size; keep the most recent entries if
+            // capacity forces us to drop.
             const availableSpace = this.maxBufferSize - this.logBuffer.length;
             if (availableSpace > 0) {
-                // Keep the most recent ones if we have to drop
-                const toKeep = logsToFlush.slice(
-                    Math.max(0, logsToFlush.length - availableSpace),
+                const toKeep = sanitizedLogs.slice(
+                    Math.max(0, sanitizedLogs.length - availableSpace),
                 );
                 this.logBuffer.unshift(...toKeep);
             }

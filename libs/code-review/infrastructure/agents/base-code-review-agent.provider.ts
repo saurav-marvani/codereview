@@ -43,6 +43,15 @@ import {
 /** Rough token estimate: 1 token ≈ 4 characters */
 const CHARS_PER_TOKEN = 4;
 /**
+ * Hard cap on execute() → executeChunked() → execute() recursion. Set to
+ * 2 because the only legitimate recursion is one level deep (root review
+ * fans out into per-batch executes). Anything beyond that means the
+ * chunker couldn't reduce the file count and we'd loop forever — see
+ * executeChunked's fail-fast guard, which catches the same condition at
+ * its source. This guard remains as defense-in-depth.
+ */
+const MAX_RECURSION_DEPTH = 2;
+/**
  * Ceiling on the ESTIMATED full prompt (not just diffs) as a fraction of
  * the model context window. At 0.55 we reserve ~45% of the window for
  * accumulated tool results, LLM reasoning, and response — which in
@@ -356,6 +365,12 @@ export interface ReviewAgentInput {
      *  outer router timeout cancels the LLM call instead of leaving it
      *  running ghost in the background. */
     parentSignal?: AbortSignal;
+    /** Internal: how many times executeChunked has re-entered execute()
+     *  for this review. Bounded to MAX_RECURSION_DEPTH by execute() to
+     *  prevent the historical execute() ↔ executeChunked() loop from
+     *  exhausting the worker heap. Always undefined at the public entry
+     *  point; populated by executeChunked when fanning out per-batch. */
+    recursionDepth?: number;
 }
 
 /**
@@ -446,6 +461,21 @@ export abstract class BaseCodeReviewAgentProvider {
             name: input.agentRuntimeName || baseIdentity.name,
         };
         const agentCategory = this.getCategoryLabel();
+
+        const recursionDepth = input.recursionDepth ?? 0;
+        if (recursionDepth >= MAX_RECURSION_DEPTH) {
+            this.agentLogger.error({
+                message: `[AGENT] ${identity.name} recursion limit reached (depth=${recursionDepth}); aborting to protect the worker heap`,
+                context: identity.name,
+                metadata: {
+                    prNumber: input.prNumber,
+                    recursionDepth,
+                    maxRecursionDepth: MAX_RECURSION_DEPTH,
+                    filesCount: input.changedFiles.length,
+                },
+            });
+            throw new Error('AGENT_RECURSION_LIMIT_EXCEEDED');
+        }
 
         // When this execute() call is one batch of a chunked review
         // (executeChunked has split a large PR by token budget), enrich
@@ -1193,6 +1223,30 @@ export abstract class BaseCodeReviewAgentProvider {
         } = ctx;
         const chunks = chunkFilesByTokenBudget(input.changedFiles, diffBudget);
 
+        // Fail-fast on useless chunking: when chunkFilesByTokenBudget cannot
+        // reduce the file count (one chunk containing every input file), the
+        // prompt overhead — not the diff size — is what's blowing the budget.
+        // Recursing back into execute() with the same file set would just
+        // re-fire the same gate forever (the historical worker-OOM loop).
+        // Aborting here surfaces the real cause in the orchestrator's
+        // failures[] instead of silently exhausting the worker heap.
+        if (
+            chunks.length === 1 &&
+            chunks[0].length === input.changedFiles.length &&
+            input.changedFiles.length > 1
+        ) {
+            this.agentLogger.error({
+                message: `[AGENT] ${identity.name} chunking did not reduce file count (${input.changedFiles.length} files in 1 chunk); static prompt overhead exceeds budget on its own — aborting before recursion`,
+                context: identity.name,
+                metadata: {
+                    prNumber: input.prNumber,
+                    filesCount: input.changedFiles.length,
+                    diffBudget,
+                },
+            });
+            throw new Error('AGENT_PROMPT_OVERHEAD_EXCEEDS_BUDGET');
+        }
+
         this.agentLogger.log({
             message: `[AGENT] ${identity.name} PR#${input.prNumber}: reviewing ${input.changedFiles.length} files in ${chunks.length} batch(es)`,
             context: identity.name,
@@ -1216,7 +1270,12 @@ export abstract class BaseCodeReviewAgentProvider {
             const batchFiles = chunks[i];
             const batchFileSet = new Set(batchFiles.map((f) => f.filename));
             const batchIndex = i + 1;
-            const batchLabel = `${identity.name} batch ${batchIndex}/${batchTotal}`;
+            // Always use the unmodified getIdentity().name to build the label
+            // so recursive chunked runs do not accumulate
+            // " batch X/Y batch X/Y ..." suffixes in the agent name
+            // (logs grew unbounded — see the production smoking-gun trace
+            // captured in issue #1056).
+            const batchLabel = `${this.getIdentity().name} batch ${batchIndex}/${batchTotal}`;
             const batchStartedAt = Date.now();
 
             this.agentLogger.log({
@@ -1248,6 +1307,9 @@ export abstract class BaseCodeReviewAgentProvider {
                     // execute() can include it in their labels.
                     batchIndex,
                     batchTotal,
+                    // Increment the recursion counter so the depth guard in
+                    // execute() can short-circuit any unexpected re-entry.
+                    recursionDepth: (input.recursionDepth ?? 0) + 1,
                 };
 
                 const batchResult = await this.execute(batchInput);
