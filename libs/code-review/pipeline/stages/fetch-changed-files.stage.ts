@@ -91,15 +91,18 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
                 );
         }
 
-        // Aplicar filtro ignorePaths
         const ignorePaths = context.codeReviewConfig.ignorePaths || [];
         const filteredFiles =
             filesToProcess?.filter(
-                (file) => !isFileMatchingGlob(file.filename, ignorePaths),
+                (file) =>
+                    file.status !== 'removed' &&
+                    !isFileMatchingGlob(file.filename, ignorePaths),
             ) || [];
         const ignoredList =
-            filesToProcess?.filter((file) =>
-                isFileMatchingGlob(file.filename, ignorePaths),
+            filesToProcess?.filter(
+                (file) =>
+                    file.status === 'removed' ||
+                    isFileMatchingGlob(file.filename, ignorePaths),
             ) || [];
         const filesToAnalyze = filteredFiles;
 
