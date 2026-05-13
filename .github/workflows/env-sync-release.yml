@@ -43,6 +43,11 @@ jobs:
               uses: actions/checkout@v4
               with:
                   path: kodus-ai
+                  # When invoked via workflow_call from selfhosted-build-push
+                  # (running in `main`), github.ref would be `main` and we'd
+                  # sync the wrong commit. Honour the explicit `tag` input
+                  # so we always check out the actual release tag.
+                  ref: ${{ inputs.tag || github.ref }}
 
             - name: Checkout kodus-installer
               uses: actions/checkout@v4
@@ -74,7 +79,11 @@ jobs:
               working-directory: kodus-installer
               env:
                   GH_TOKEN: ${{ secrets.CROSS_REPO_PAT }}
-                  TAG: ${{ github.ref_name }}
+                  # Prefer the explicit tag input (from workflow_call) over
+                  # github.ref_name. Without this, a workflow_call from main
+                  # produces TAG=main → branch env-sync/main, force-pushed
+                  # every release (losing per-release history).
+                  TAG: ${{ inputs.tag || github.ref_name }}
                   SHA: ${{ github.sha }}
               run: |
                   ../kodus-ai/scripts/env/open-sync-pr.sh \
