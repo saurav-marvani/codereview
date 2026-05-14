@@ -4122,6 +4122,26 @@ This is an experimental feature that generates committable changes. Review the d
 
             const octokit = await this.instanceOctokit(organizationAndTeamData);
 
+            // Cache by BLOB sha (not branch+path) so the entry invalidates
+            // automatically when the file content changes — pushing a new
+            // commit that modifies app.ts produces a new blob sha and a
+            // fresh cache miss, instead of serving stale content for the
+            // 5-min TTL window. Files unchanged across commits share the
+            // cache entry (PR with 200 files where 5 changed = 195 hits
+            // on the second pass).
+            //
+            // Defensive: skip cache entirely when sha is missing/empty —
+            // better a fresh fetch than a wrong-cached value.
+            const cacheKey = file?.sha
+                ? `gh:contents:${githubAuthDetail?.org}/${repository.name}:${file.sha}:${file.filename}`
+                : undefined;
+            if (cacheKey) {
+                const cached = await this.cacheService.getFromCache<any>(
+                    cacheKey,
+                );
+                if (cached) return cached;
+            }
+
             try {
                 // First, try to fetch from the head branch of the PR
                 const lines = (await octokit.repos.getContent({
@@ -4131,6 +4151,19 @@ This is an experimental feature that generates committable changes. Review the d
                     ref: pullRequest.head.ref,
                 })) as any;
 
+                if (cacheKey && lines) {
+                    // 15 min TTL. The cache key already contains the
+                    // blob sha, so stale-on-content-change is impossible
+                    // — a TTL longer than `getFileWithContent`'s 5 min
+                    // is safe and gives more cross-retry hits on the
+                    // same job (router timeout retries can land 30s+
+                    // apart with backoff).
+                    await this.cacheService.addToCache(
+                        cacheKey,
+                        lines,
+                        15 * 60 * 1000,
+                    );
+                }
                 return lines;
             } catch (error) {
                 const status =

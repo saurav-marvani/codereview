@@ -31,7 +31,7 @@ import { GithubService } from '@libs/platform/infrastructure/adapters/services/g
 import { CacheService } from '@libs/core/cache/cache.service';
 
 type MockOctokit = {
-    repos: { get: jest.Mock };
+    repos: { get: jest.Mock; getContent: jest.Mock };
     rest: { pulls: { listFiles: jest.Mock } };
     pulls: { listCommits: jest.Mock };
     paginate: jest.Mock;
@@ -89,7 +89,7 @@ function makeService(): {
     );
 
     const octokit: MockOctokit = {
-        repos: { get: jest.fn() },
+        repos: { get: jest.fn(), getContent: jest.fn() },
         rest: { pulls: { listFiles: jest.fn() } },
         pulls: { listCommits: jest.fn() },
         paginate: jest.fn(),
@@ -308,6 +308,160 @@ describe('GithubService — cache layer (commit b7606bb5c)', () => {
 
             expect(octokit.paginate).toHaveBeenCalledTimes(2);
             expect(cache.addToCache).not.toHaveBeenCalled();
+        });
+    });
+
+    // Cache for the hot path during code review: per-file content fetch.
+    // Key uses blob SHA so a file's content change auto-invalidates without
+    // waiting for TTL — same key never points to mismatched content.
+    describe('getRepositoryContentFile', () => {
+        const ORG = { organizationId: 'org-1', teamId: 't1' };
+        const REPO = { name: 'backend-services', id: 'repo-1' };
+        const PR = {
+            number: 42,
+            head: { ref: 'feature/x' },
+            base: { ref: 'main' },
+        };
+
+        const fileWithSha = {
+            filename: 'src/App.tsx',
+            sha: 'blob-abc-123',
+            status: 'modified',
+        };
+
+        const fakeContentResponse = {
+            data: {
+                content: 'Y29udGVudA==',
+                encoding: 'base64',
+                sha: 'blob-abc-123',
+            },
+        };
+
+        it('hits GitHub on cache miss and caches the response', async () => {
+            const { service, cache, octokit } = makeService();
+            octokit.repos.getContent.mockResolvedValue(fakeContentResponse);
+
+            const result = await service.getRepositoryContentFile({
+                organizationAndTeamData: ORG,
+                repository: REPO,
+                file: fileWithSha,
+                pullRequest: PR,
+            });
+
+            expect(result).toEqual(fakeContentResponse);
+            expect(octokit.repos.getContent).toHaveBeenCalledTimes(1);
+            expect(cache.addToCache).toHaveBeenCalledWith(
+                expect.stringContaining(`:${fileWithSha.sha}:`),
+                fakeContentResponse,
+                15 * 60 * 1000,
+            );
+        });
+
+        it('serves from cache on the second call with the same blob sha', async () => {
+            const { service, octokit } = makeService();
+            octokit.repos.getContent.mockResolvedValue(fakeContentResponse);
+
+            const first = await service.getRepositoryContentFile({
+                organizationAndTeamData: ORG,
+                repository: REPO,
+                file: fileWithSha,
+                pullRequest: PR,
+            });
+            const second = await service.getRepositoryContentFile({
+                organizationAndTeamData: ORG,
+                repository: REPO,
+                file: fileWithSha,
+                pullRequest: PR,
+            });
+
+            expect(first).toEqual(fakeContentResponse);
+            expect(second).toEqual(fakeContentResponse);
+            expect(octokit.repos.getContent).toHaveBeenCalledTimes(1);
+        });
+
+        it('different blob shas do NOT collide (file changed in new commit)', async () => {
+            const { service, octokit } = makeService();
+            octokit.repos.getContent
+                .mockResolvedValueOnce({
+                    data: { content: 'old', encoding: 'utf-8' },
+                })
+                .mockResolvedValueOnce({
+                    data: { content: 'new', encoding: 'utf-8' },
+                });
+
+            const v1 = await service.getRepositoryContentFile({
+                organizationAndTeamData: ORG,
+                repository: REPO,
+                file: { ...fileWithSha, sha: 'sha-v1' },
+                pullRequest: PR,
+            });
+            const v2 = await service.getRepositoryContentFile({
+                organizationAndTeamData: ORG,
+                repository: REPO,
+                file: { ...fileWithSha, sha: 'sha-v2' },
+                pullRequest: PR,
+            });
+
+            expect((v1.data as any).content).toBe('old');
+            expect((v2.data as any).content).toBe('new');
+            expect(octokit.repos.getContent).toHaveBeenCalledTimes(2);
+        });
+
+        // Defensive — files without sha go straight to GitHub on every
+        // call. Better a fresh fetch than a wrong-cached value.
+        it('skips cache entirely when file.sha is missing', async () => {
+            const { service, cache, octokit } = makeService();
+            octokit.repos.getContent.mockResolvedValue(fakeContentResponse);
+
+            await service.getRepositoryContentFile({
+                organizationAndTeamData: ORG,
+                repository: REPO,
+                file: { filename: 'src/x.ts', sha: '', status: 'modified' },
+                pullRequest: PR,
+            });
+            await service.getRepositoryContentFile({
+                organizationAndTeamData: ORG,
+                repository: REPO,
+                file: { filename: 'src/x.ts', sha: '', status: 'modified' },
+                pullRequest: PR,
+            });
+
+            expect(octokit.repos.getContent).toHaveBeenCalledTimes(2);
+            expect(cache.addToCache).not.toHaveBeenCalled();
+            expect(cache.getFromCache).not.toHaveBeenCalled();
+        });
+
+        // The fallback path (head ref deleted → base ref) intentionally
+        // does NOT cache: the returned content belongs to the base ref
+        // but we'd be keying it by the head's blob sha — guaranteed wrong.
+        it('does NOT cache the base-ref fallback when head ref is missing', async () => {
+            const { service, cache, octokit } = makeService();
+            const headError = Object.assign(
+                new Error('No commit found for the ref feature/x'),
+                { status: 404 },
+            );
+            octokit.repos.getContent
+                .mockRejectedValueOnce(headError)
+                .mockResolvedValueOnce({
+                    data: { content: 'base-content', encoding: 'utf-8' },
+                });
+
+            const result = await service.getRepositoryContentFile({
+                organizationAndTeamData: ORG,
+                repository: REPO,
+                file: fileWithSha,
+                pullRequest: PR,
+            });
+
+            expect((result.data as any).content).toBe('base-content');
+            // Two octokit calls (head failed, base succeeded). Cache must
+            // NOT have been populated.
+            expect(octokit.repos.getContent).toHaveBeenCalledTimes(2);
+            const addCalls = (cache.addToCache as jest.Mock).mock.calls;
+            const wroteContentCache = addCalls.some((c) =>
+                String(c[0]).startsWith('gh:contents:'),
+            );
+            expect(wroteContentCache).toBe(false);
         });
     });
 });
