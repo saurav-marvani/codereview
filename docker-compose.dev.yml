@@ -389,6 +389,64 @@ services:
                     memory: 512M
         logging: *default-logging
 
+    try:
+        # Public PR review demo (try.kodus.io). Opt-in — the default
+        # `yarn docker:start` skips it because most backend flows don't
+        # need the marketing-facing surface running. Bring it up with
+        # `docker compose -f docker-compose.dev.yml --profile demo up try`
+        # or include it in the `extras` umbrella for everything-at-once.
+        profiles:
+            - demo
+            - extras
+        build:
+            context: ./apps/try
+            dockerfile: ../../docker/Dockerfile.try.dev
+        container_name: kodus_try
+        depends_on:
+            kodus-api:
+                condition: service_healthy
+        ports:
+            - '${TRY_PORT:-3002}:3002'
+        env_file:
+            - ${ENV_FILE:-.env}
+        volumes:
+            - ./apps/try:/usr/src/app:delegated
+            - try_node_modules_cache:/usr/src/app/node_modules
+            - try_next_cache:/usr/src/app/.next
+        restart: unless-stopped
+        healthcheck:
+            test:
+                [
+                    'CMD',
+                    'node',
+                    '-e',
+                    "fetch('http://localhost:3002').then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))",
+                ]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 30s
+        networks:
+            - kodus-backend-services
+            - shared-network
+        environment:
+            - CHOKIDAR_USEPOLLING=false
+            - NODE_ENV=development
+            - NEXT_TELEMETRY_DISABLED=1
+            # Inside the compose network the API is reachable as
+            # `kodus-api`, but the browser running outside the network
+            # hits the public host port instead. NEXT_PUBLIC_* is baked
+            # into the client bundle at build time / read in the browser,
+            # so the host-side URL is the correct choice.
+            - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+        deploy:
+            resources:
+                limits:
+                    memory: 1G
+                reservations:
+                    memory: 256M
+        logging: *default-logging
+
     #----------------------------------------------------------------
     # Observability & Profiling
     #----------------------------------------------------------------
@@ -516,6 +574,8 @@ volumes:
     logs_data:
     web_node_modules_cache:
     web_next_cache:
+    try_node_modules_cache:
+    try_next_cache:
     pgdata:
     mongodbdata:
     pyroscope-data:

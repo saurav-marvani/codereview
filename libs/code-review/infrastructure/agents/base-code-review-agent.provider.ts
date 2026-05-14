@@ -320,6 +320,14 @@ export interface ReviewAgentInput {
      *  tiered coverage is active. Safe to omit — the scorer falls back to
      *  a neutral structural weight of 1.0 when missing. */
     callGraphJson?: { nodes: unknown[]; edges: unknown[] };
+    /**
+     * When the caller has no BYOK config (e.g. the public-demo / trial
+     * flow with `organizationId='trial'`), this overrides the hardcoded
+     * gemini-3.1-pro default that `byokToVercelModel` falls back to.
+     * Used by the trial pipeline to force a cheaper, faster model
+     * (`gemini-2.5-flash`) so anonymous reviews don't take 5 minutes.
+     */
+    defaultModelOverride?: string;
     /** Internal: populated by the large-PR non-deep branch of execute().
      *  Downstream consumers (buildUserPrompt, runAgentLoop) switch the
      *  coverage ledger into tiered mode when this is set. Maps each
@@ -477,9 +485,19 @@ export abstract class BaseCodeReviewAgentProvider {
             input.organizationAndTeamData,
         );
 
-        // Create Vercel AI SDK model from BYOK config
-        const model = byokToVercelModel(byokConfig);
-        const modelName = getModelName(byokConfig);
+        // Create Vercel AI SDK model from BYOK config. The override
+        // kicks in only when byokConfig is null and the caller (e.g.
+        // the trial pipeline) asked for a specific default — production
+        // BYOK flows are untouched.
+        const model = byokToVercelModel(
+            byokConfig,
+            'main',
+            input.defaultModelOverride,
+        );
+        const modelName = getModelName(
+            byokConfig,
+            input.defaultModelOverride,
+        );
 
         this.agentLogger.log({
             message: `[AGENT] ${identity.name} using model: ${modelName}`,

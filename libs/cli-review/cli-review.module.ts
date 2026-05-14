@@ -12,6 +12,7 @@ import { CliReviewPipelineStrategy } from './pipeline/strategy/cli-review-pipeli
 import { ClassifyCliSessionCaptureUseCase } from './application/use-cases/classify-cli-session-capture.use-case';
 import { ClassifySessionUseCase } from './application/use-cases/classify-session.use-case';
 import { EnqueueCliReviewUseCase } from './application/use-cases/enqueue-cli-review.use-case';
+import { PublicPrReviewUseCase } from './application/use-cases/public-pr-review.use-case';
 import { ExecuteCliReviewUseCase } from './application/use-cases/execute-cli-review.use-case';
 import { GetCliReviewByIdUseCase } from './application/use-cases/dashboard/get-cli-review-by-id.use-case';
 import { GetCliReviewsUseCase } from './application/use-cases/dashboard/get-cli-reviews.use-case';
@@ -30,9 +31,17 @@ import {
     CliSessionCaptureModel,
     CliSessionCaptureSchema,
 } from './infrastructure/repositories/schemas/cli-session-capture.model';
+import {
+    FeaturedPublicReviewModel,
+    FeaturedPublicReviewSchema,
+} from './infrastructure/repositories/schemas/featured-public-review.model';
+import { FeaturedPublicReviewRepository } from './infrastructure/repositories/featured-public-review.repository';
 import { SessionEventModel } from './infrastructure/repositories/schemas/session-event.model';
 import { SessionEventRepository } from './infrastructure/repositories/session-event.repository';
 import { AuthenticatedRateLimiterService } from './infrastructure/services/authenticated-rate-limiter.service';
+import { GitHubPublicPrService } from './infrastructure/services/github-public-pr.service';
+import { PublicPrAiSummaryService } from './infrastructure/services/public-pr-ai-summary.service';
+import { PublicPrGroupingService } from './infrastructure/services/public-pr-grouping.service';
 import { TrialRateLimiterService } from './infrastructure/services/trial-rate-limiter.service';
 
 // External dependencies
@@ -70,6 +79,10 @@ import { OutboxMessageModel } from '@libs/core/workflow/infrastructure/repositor
                 name: CliSessionCaptureModel.name,
                 schema: CliSessionCaptureSchema,
             },
+            {
+                name: FeaturedPublicReviewModel.name,
+                schema: FeaturedPublicReviewSchema,
+            },
         ]),
         TypeOrmModule.forFeature([
             SessionEventModel,
@@ -96,6 +109,7 @@ import { OutboxMessageModel } from '@libs/core/workflow/infrastructure/repositor
         // Use Cases
         EnqueueCliReviewUseCase,
         ExecuteCliReviewUseCase,
+        PublicPrReviewUseCase,
         GetCliReviewByIdUseCase,
         GetCliReviewsUseCase,
         GetCliReviewJobStatusUseCase,
@@ -128,13 +142,18 @@ import { OutboxMessageModel } from '@libs/core/workflow/infrastructure/repositor
         CliInputConverter,
         TrialRateLimiterService,
         AuthenticatedRateLimiterService,
+        GitHubPublicPrService,
+        PublicPrAiSummaryService,
+        PublicPrGroupingService,
         CliSessionCaptureRepository,
+        FeaturedPublicReviewRepository,
         SessionEventRepository,
     ],
     exports: [
         // Export use case and services for controllers
         EnqueueCliReviewUseCase,
         ExecuteCliReviewUseCase,
+        PublicPrReviewUseCase,
         GetCliReviewByIdUseCase,
         GetCliReviewsUseCase,
         GetCliReviewJobStatusUseCase,
@@ -146,6 +165,10 @@ import { OutboxMessageModel } from '@libs/core/workflow/infrastructure/repositor
         SessionEventRepository,
         TrialRateLimiterService,
         AuthenticatedRateLimiterService,
+        GitHubPublicPrService,
+        PublicPrAiSummaryService,
+        PublicPrGroupingService,
+        FeaturedPublicReviewRepository,
         SessionEventRepository,
         ClassifySessionUseCase,
         JOB_QUEUE_SERVICE_TOKEN,

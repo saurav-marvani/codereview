@@ -139,11 +139,20 @@ const DEFAULT_MODEL = {
 export function byokToVercelModel(
     byokConfig?: BYOKConfig,
     role: 'main' | 'fallback' = 'main',
+    /**
+     * Override the hardcoded `DEFAULT_MODEL.model` when there's no BYOK
+     * config. Used by the public-demo / trial flow to force a cheaper
+     * model (gemini-2.5-flash) for anonymous reviews — the production
+     * default of gemini-3.1-pro-preview is ~5–10× slower and overkill
+     * for a free demo.
+     */
+    defaultModelOverride?: string,
 ): LanguageModel {
     const config =
         role === 'fallback' ? byokConfig?.fallback : byokConfig?.main;
 
     if (!config) {
+        const defaultModel = defaultModelOverride || DEFAULT_MODEL.model;
         // No BYOK — pick the default based on deployment mode.
         // Self-hosted: honor `API_LLM_PROVIDER_MODEL` (+ `API_OPEN_AI_API_KEY` /
         //   `API_OPENAI_FORCE_BASE_URL` / `API_VERTEX_AI_API_KEY`) so the
@@ -228,12 +237,28 @@ export function byokToVercelModel(
             // (it'll fail fast on the API call instead of here).
         }
 
+        // Kimi (Moonshot AI) — used by the public-demo trial flow.
+        // Detected by model-name prefix so we don't need a new BYOK
+        // provider entry just for the default-only path. Wires through
+        // the OpenAI-compatible adapter pointed at Moonshot's endpoint.
+        if (/^kimi[-_.]/i.test(defaultModel)) {
+            const moonshotKey =
+                process.env.API_MOONSHOT_API_KEY ||
+                process.env.MOONSHOT_API_KEY ||
+                '';
+            return createOpenAICompatible({
+                name: 'moonshot',
+                apiKey: moonshotKey,
+                baseURL: 'https://api.moonshot.ai/v1',
+            })(defaultModel);
+        }
+
         const googleKey =
             process.env.API_GOOGLE_AI_API_KEY ||
             process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
             '';
         return createGoogleGenerativeAI({ apiKey: googleKey })(
-            DEFAULT_MODEL.model,
+            defaultModel,
         );
     }
 
@@ -315,7 +340,10 @@ export function byokToVercelModel(
  * Mirrors the fallback logic in `byokToVercelModel` so telemetry/logs
  * reflect the model that will actually be used.
  */
-export function getModelName(byokConfig?: BYOKConfig): string {
+export function getModelName(
+    byokConfig?: BYOKConfig,
+    defaultModelOverride?: string,
+): string {
     if (byokConfig?.main) {
         return `${byokConfig.main.provider}:${byokConfig.main.model}`;
     }
@@ -345,7 +373,7 @@ export function getModelName(byokConfig?: BYOKConfig): string {
         }
     }
 
-    return DEFAULT_MODEL.model;
+    return defaultModelOverride || DEFAULT_MODEL.model;
 }
 
 /**

@@ -1,11 +1,17 @@
 import { EnqueueCliReviewUseCase } from '@libs/cli-review/application/use-cases/enqueue-cli-review.use-case';
 import { ExecuteCliReviewUseCase } from '@libs/cli-review/application/use-cases/execute-cli-review.use-case';
+import { PublicPrReviewUseCase } from '@libs/cli-review/application/use-cases/public-pr-review.use-case';
 import { GetCliReviewJobStatusUseCase } from '@libs/cli-review/application/use-cases/get-cli-review-job-status.use-case';
 import { IngestSessionEventUseCase } from '@libs/cli-review/application/use-cases/ingest-session-event.use-case';
 import { SubmitCliSessionCaptureUseCase } from '@libs/cli-review/application/use-cases/submit-cli-session-capture.use-case';
 import { WaitForCliReviewJobUseCase } from '@libs/cli-review/application/use-cases/wait-for-cli-review-job.use-case';
 import { AuthenticatedRateLimiterService } from '@libs/cli-review/infrastructure/services/authenticated-rate-limiter.service';
+import {
+    GitHubPublicPrService,
+    PublicPrFetchError,
+} from '@libs/cli-review/infrastructure/services/github-public-pr.service';
 import { TrialRateLimiterService } from '@libs/cli-review/infrastructure/services/trial-rate-limiter.service';
+import { FeaturedPublicReviewRepository } from '@libs/cli-review/infrastructure/repositories/featured-public-review.repository';
 import { JobStatus } from '@libs/core/workflow/domain/enums/job-status.enum';
 import { CliReviewResponse } from '@libs/cli-review/domain/types/cli-review.types';
 import {
@@ -64,6 +70,7 @@ import { ApiErrorDto } from '../../dtos/api-error.dto';
 import {
     CliBusinessValidationRequestDto,
     CliReviewRequestDto,
+    PublicPrReviewRequestDto,
     TrialCliReviewRequestDto,
 } from '../../dtos/cli-review.dto';
 import { CliSessionCaptureRequestDto } from '../../dtos/cli-session-capture.dto';
@@ -97,6 +104,9 @@ export class CliReviewController {
         private readonly submitCliSessionCaptureUseCase: SubmitCliSessionCaptureUseCase,
         private readonly trialRateLimiter: TrialRateLimiterService,
         private readonly authenticatedRateLimiter: AuthenticatedRateLimiterService,
+        private readonly githubPublicPrService: GitHubPublicPrService,
+        private readonly publicPrReviewUseCase: PublicPrReviewUseCase,
+        private readonly featuredPublicReviewRepository: FeaturedPublicReviewRepository,
         @Inject(TEAM_CLI_KEY_SERVICE_TOKEN)
         private readonly teamCliKeyService: ITeamCliKeyService,
         @Inject(TEAM_SERVICE_TOKEN)
@@ -1240,6 +1250,162 @@ export class CliReviewController {
                 limit: 2,
                 resetAt: rateLimitResult.resetAt?.toISOString(),
             },
+        };
+    }
+
+    /**
+     * Public PR review endpoint (no auth).
+     *
+     * Accepts a public GitHub PR URL, fetches metadata + diff from GitHub,
+     * and enqueues a trial-mode review. Returns a jobId the client can poll
+     * via GET /cli/public/review/jobs/:jobId.
+     *
+     * Rate-limited by device fingerprint (same bucket as /cli/trial/review).
+     * Repos that return 404/403 surface as 403 { code: 'requires_auth' } so
+     * the frontend can redirect to signup.
+     */
+    @Post('public/review-pr')
+    @ApiOperation({
+        summary: 'Run a code review on a public GitHub PR URL',
+        description:
+            'Fetches the PR diff from GitHub and enqueues a trial-mode review. Anonymous, rate-limited by device fingerprint.',
+    })
+    @ApiOkResponse({
+        description: 'Review enqueued',
+        schema: {
+            type: 'object',
+            properties: {
+                jobId: { type: 'string' },
+                status: { type: 'string', example: 'pending' },
+                statusUrl: { type: 'string' },
+                pr: {
+                    type: 'object',
+                    properties: {
+                        owner: { type: 'string' },
+                        repo: { type: 'string' },
+                        prNumber: { type: 'number' },
+                        title: { type: 'string' },
+                        headSha: { type: 'string' },
+                        baseSha: { type: 'string' },
+                        additions: { type: 'number' },
+                        deletions: { type: 'number' },
+                        changedFiles: { type: 'number' },
+                        htmlUrl: { type: 'string' },
+                    },
+                },
+            },
+        },
+    })
+    @ApiBadRequestResponse({ type: ApiErrorDto })
+    @ApiTooManyRequestsResponse({ type: CliReviewRateLimitErrorDto })
+    async publicPrReview(
+        @Body() body: PublicPrReviewRequestDto,
+        @Res({ passthrough: true }) res?: any,
+    ) {
+        if (!body.fingerprint) {
+            throw new BadRequestException(
+                'Device fingerprint is required for public reviews',
+            );
+        }
+
+        const result = await this.publicPrReviewUseCase.execute({
+            prUrl: body.prUrl,
+            fingerprint: body.fingerprint,
+        });
+
+        if (result.ok === false) {
+            if (result.code === 'rate_limited') {
+                throw new HttpException(
+                    {
+                        message: result.message,
+                        remaining: result.rateLimit?.remaining,
+                        resetAt: result.rateLimit?.resetAt,
+                        limit: result.rateLimit?.limit,
+                    },
+                    result.statusCode,
+                );
+            }
+            throw new HttpException(
+                { code: result.code, message: result.message },
+                result.statusCode,
+            );
+        }
+
+        if (res) {
+            res.status(HttpStatus.ACCEPTED);
+        }
+        return result.response;
+    }
+
+    /**
+     * Public job status endpoint (no auth).
+     *
+     * Mirrors GET /cli/review/jobs/:jobId but scopes lookup to the 'trial'
+     * organization so callers can poll public-demo jobs without a session.
+     * Cross-tenant lookups still fail because the use case validates
+     * organizationId match.
+     */
+    @Get('public/review/jobs/:jobId')
+    @ApiOperation({
+        summary: 'Get status of a public PR review job',
+        description:
+            'Poll for the result of a job enqueued via POST /cli/public/review-pr. No auth required.',
+    })
+    async getPublicReviewJob(
+        @Param('jobId') jobId: string,
+        @Query('omit') omit?: string,
+    ) {
+        // The frontend caches publicPr/publicDiff in sessionStorage
+        // after the first poll, so subsequent polls pass `?omit=payload`
+        // to skip re-downloading ~15 KB every 3 seconds.
+        const omitPayload = omit === 'payload';
+        return this.getCliReviewJobStatusUseCase.execute({
+            jobId,
+            organizationId: 'trial',
+            omitPayload,
+        });
+    }
+
+    /**
+     * Featured public reviews — pre-curated snapshots of real PRs the
+     * Kodus team picked because they expose interesting bugs. Used by
+     * the home grid on try.kodus.io and embedded on the kodus.io
+     * WordPress site so visitors can explore a real review without
+     * waiting for one to run.
+     */
+    @Get('public/featured-reviews')
+    @ApiOperation({
+        summary: 'List featured public PR reviews',
+        description:
+            'Lightweight metadata for the public-demo home grid. Each item links to /cli/public/featured-reviews/:slug for the full snapshot.',
+    })
+    async listFeaturedReviews() {
+        const items = await this.featuredPublicReviewRepository.listPublished();
+        return { items };
+    }
+
+    @Get('public/featured-reviews/:slug')
+    @ApiOperation({
+        summary: 'Get a featured public PR review snapshot',
+        description:
+            'Returns the full review (PR metadata, raw diff, issues). Slug is the URL-safe identifier assigned at curation time (e.g. "vercel-nextjs-93759").',
+    })
+    async getFeaturedReview(@Param('slug') slug: string) {
+        const doc =
+            await this.featuredPublicReviewRepository.findBySlug(slug);
+        if (!doc) {
+            throw new NotFoundException(
+                `Featured review "${slug}" not found`,
+            );
+        }
+        return {
+            slug: doc.slug,
+            tags: doc.tags,
+            highlight: doc.highlight,
+            prUrl: doc.prUrl,
+            pr: doc.pr,
+            diff: doc.diff,
+            result: doc.result,
         };
     }
 }

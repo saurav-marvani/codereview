@@ -8,6 +8,7 @@
         "analyze-pr": "ts-node scripts/analyze-pr-performance.cli.ts",
         "check-pr-errors": "ts-node scripts/check-pr-errors.cli.ts",
         "pr-report": "ts-node scripts/pr-performance-report.cli.ts",
+        "featured-review:promote": "ts-node scripts/featured-review-promote.ts",
         "setup": "./scripts/dev/setup.sh",
         "env:doctor": "./scripts/dev/env-doctor.sh --scope full",
         "env:doctor:backend": "./scripts/dev/env-doctor.sh --scope backend",

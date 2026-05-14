@@ -83,9 +83,14 @@ export function assertValidPrKey(prKey: string): void {
             `Invalid prKey shape: ${JSON.stringify(prKey)} (expected 3 or 4 ":"-separated segments)`,
         );
     }
-    if (!UUID_RE.test(parts[0])) {
+    // Accept the literal `'trial'` for public-demo / anonymous flows.
+    // Real tenants always use a UUID; the demo pipeline runs without
+    // a registered organization and needs a sandbox lease too. The
+    // string is namespaced enough that it can't collide with a real
+    // org id (UUIDs are 36 chars with dashes).
+    if (parts[0] !== 'trial' && !UUID_RE.test(parts[0])) {
         throw new Error(
-            `Invalid prKey: first segment must be a UUID organizationId, got ${JSON.stringify(parts[0])}`,
+            `Invalid prKey: first segment must be a UUID organizationId or 'trial', got ${JSON.stringify(parts[0])}`,
         );
     }
     if (!parts[1]) {

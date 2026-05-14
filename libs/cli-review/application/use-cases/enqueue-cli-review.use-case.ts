@@ -42,6 +42,8 @@ export class EnqueueCliReviewUseCase implements IUseCase {
             userEmail: input.userEmail,
             gitContext: input.gitContext,
             cliAuth: input.cliAuth,
+            publicPr: input.publicPr,
+            publicDiff: input.publicDiff,
         };
 
         const jobId = await this.jobQueueService.enqueue({

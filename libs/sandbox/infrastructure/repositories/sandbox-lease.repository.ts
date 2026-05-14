@@ -26,9 +26,11 @@ function decomposePrKey(prKey: string): {
             `decomposePrKey: invalid shape, expected 3 or 4 segments, got ${parts.length}`,
         );
     }
-    if (!ORG_UUID_RE.test(parts[0])) {
+    // Accept the literal `'trial'` for public-demo / anonymous flows
+    // (mirrors the relaxation in assertValidPrKey on the contract).
+    if (parts[0] !== 'trial' && !ORG_UUID_RE.test(parts[0])) {
         throw new Error(
-            `decomposePrKey: first segment must be a UUID organizationId`,
+            `decomposePrKey: first segment must be a UUID organizationId or 'trial'`,
         );
     }
     // PR mode shape: <orgId>:<repoId>:<prNumber>
