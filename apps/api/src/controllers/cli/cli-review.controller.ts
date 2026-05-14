@@ -8,6 +8,7 @@ import { WaitForCliReviewJobUseCase } from '@libs/cli-review/application/use-cas
 import { PublicPrFetchError } from '@libs/cli-review/infrastructure/services/github-public-pr.service';
 import { ListFeaturedPublicReviewsUseCase } from '@libs/cli-review/application/use-cases/list-featured-public-reviews.use-case';
 import { GetFeaturedPublicReviewUseCase } from '@libs/cli-review/application/use-cases/get-featured-public-review.use-case';
+import { ValidateCliKeyUseCase } from '@libs/cli-review/application/use-cases/validate-cli-key.use-case';
 import {
     ITrialRateLimiterService,
     TRIAL_RATE_LIMITER_SERVICE_TOKEN,
@@ -119,6 +120,7 @@ export class CliReviewController {
         private readonly publicPrReviewUseCase: PublicPrReviewUseCase,
         private readonly listFeaturedPublicReviewsUseCase: ListFeaturedPublicReviewsUseCase,
         private readonly getFeaturedPublicReviewUseCase: GetFeaturedPublicReviewUseCase,
+        private readonly validateCliKeyUseCase: ValidateCliKeyUseCase,
         @Inject(TEAM_CLI_KEY_SERVICE_TOKEN)
         private readonly teamCliKeyService: ITeamCliKeyService,
         @Inject(TEAM_SERVICE_TOKEN)
@@ -172,47 +174,17 @@ export class CliReviewController {
         @Headers('user-agent') userAgent: string,
         @Res() res,
     ) {
-        const payload = await this.validateKeyInternal(
+        const payload = await this.validateCliKeyUseCase.execute({
             teamKey,
             authHeader,
             queryTeamId,
-        );
-
-        // Device tracking (opt-in)
-        if (deviceId && payload.valid && payload.organizationId) {
-            try {
-                const deviceResult =
-                    await this.cliDeviceService.validateOrRegisterDevice({
-                        deviceId,
-                        deviceToken,
-                        organizationId: payload.organizationId,
-                        userAgent,
-                    });
-                if (deviceResult.deviceToken) {
-                    res.setHeader(
-                        'x-kodus-device-token',
-                        deviceResult.deviceToken,
-                    );
-                    payload.deviceToken = deviceResult.deviceToken;
-                    if (payload.data) {
-                        payload.data.deviceToken = deviceResult.deviceToken;
-                    }
-                }
-            } catch (error) {
-                return res.status(error.getStatus?.() ?? 401).json({
-                    ...payload,
-                    valid: false,
-                    error: error.message,
-                    ...(error.getResponse?.()?.code
-                        ? { code: error.getResponse().code }
-                        : {}),
-                    ...(error.getResponse?.()?.details
-                        ? { details: error.getResponse().details }
-                        : {}),
-                });
-            }
+            deviceId,
+            deviceToken,
+            userAgent,
+        });
+        if (payload.deviceToken) {
+            res.setHeader('x-kodus-device-token', payload.deviceToken);
         }
-
         return res.status(payload.valid ? 200 : 401).json(payload);
     }
 
@@ -254,231 +226,18 @@ export class CliReviewController {
         @Headers('user-agent') userAgent: string,
         @Res() res,
     ) {
-        const payload = await this.validateKeyInternal(
+        const payload = await this.validateCliKeyUseCase.execute({
             teamKey,
             authHeader,
             queryTeamId,
-        );
-
-        // Device tracking (opt-in)
-        if (deviceId && payload.valid && payload.organizationId) {
-            try {
-                const deviceResult =
-                    await this.cliDeviceService.validateOrRegisterDevice({
-                        deviceId,
-                        deviceToken,
-                        organizationId: payload.organizationId,
-                        userAgent,
-                    });
-                if (deviceResult.deviceToken) {
-                    res.setHeader(
-                        'x-kodus-device-token',
-                        deviceResult.deviceToken,
-                    );
-                    payload.deviceToken = deviceResult.deviceToken;
-                    if (payload.data) {
-                        payload.data.deviceToken = deviceResult.deviceToken;
-                    }
-                }
-            } catch (error) {
-                return res.status(error.getStatus?.() ?? 401).json({
-                    ...payload,
-                    valid: false,
-                    error: error.message,
-                    ...(error.getResponse?.()?.code
-                        ? { code: error.getResponse().code }
-                        : {}),
-                    ...(error.getResponse?.()?.details
-                        ? { details: error.getResponse().details }
-                        : {}),
-                });
-            }
-        }
-
-        return res.status(payload.valid ? 200 : 401).json(payload);
-    }
-
-    private async validateKeyInternal(
-        teamKey?: string,
-        authHeader?: string,
-        queryTeamId?: string,
-    ) {
-        const bearerToken = authHeader?.replace(/^Bearer\s+/i, '');
-
-        const buildPayload = (base: any) => ({
-            ...base,
-            data: {
-                ...base,
-            },
+            deviceId,
+            deviceToken,
+            userAgent,
         });
-
-        const buildInvalidPayload = (error: string) =>
-            buildPayload({
-                valid: false,
-                error,
-                team: {
-                    id: null,
-                    name: '',
-                },
-                organization: {
-                    id: null,
-                    name: '',
-                },
-                user: {
-                    email: '',
-                    name: '',
-                },
-            });
-
-        // Route 1: Team CLI key (via X-Team-Key or Bearer with kodus_ prefix)
-        if (teamKey || bearerToken?.startsWith('kodus_')) {
-            const key = teamKey || bearerToken;
-
-            if (!key) {
-                return buildInvalidPayload(
-                    'Team API key required. Provide via X-Team-Key or Authorization: Bearer header.',
-                );
-            }
-
-            const teamData = await this.teamCliKeyService.validateKey(key);
-
-            if (!teamData) {
-                return buildInvalidPayload('Invalid or revoked team API key');
-            }
-
-            const { team, organization } = teamData;
-
-            const safeTeam: any = team ?? {};
-            const safeOrg: any = organization ?? {};
-            const safeTeamName =
-                typeof safeTeam.name === 'string' ? safeTeam.name : '';
-            const safeOrgName =
-                typeof safeOrg.name === 'string' ? safeOrg.name : '';
-
-            const result = {
-                valid: !!(safeTeam.uuid && safeOrg.uuid),
-                teamId: safeTeam.uuid ?? null,
-                organizationId: safeOrg.uuid ?? null,
-                teamName: safeTeamName,
-                organizationName: safeOrgName,
-                team: {
-                    id: safeTeam.uuid ?? null,
-                    name: safeTeamName,
-                },
-                organization: {
-                    id: safeOrg.uuid ?? null,
-                    name: safeOrgName,
-                },
-                user: {
-                    email: '',
-                    name: '',
-                },
-                email: '',
-                userEmail: '',
-            };
-
-            if (!result.valid) {
-                result['error'] = 'Invalid or incomplete team API key';
-            }
-
-            return buildPayload(result);
+        if (payload.deviceToken) {
+            res.setHeader('x-kodus-device-token', payload.deviceToken);
         }
-
-        // Route 2: JWT Bearer token
-        if (bearerToken) {
-            let jwtPayload: any;
-            try {
-                jwtPayload = this.jwtService.verify(bearerToken, {
-                    secret: this.jwtConfig.secret,
-                });
-            } catch {
-                return buildInvalidPayload('Invalid or expired JWT token');
-            }
-
-            const user = await this.authService.validateUser({
-                email: jwtPayload.email,
-            });
-
-            if (
-                !user ||
-                user.role !== jwtPayload.role ||
-                user.status !== jwtPayload.status ||
-                user.status === STATUS.REMOVED
-            ) {
-                return buildInvalidPayload(
-                    'User account is inactive or removed',
-                );
-            }
-
-            // Resolve team: prefer queryTeamId lookup, fall back to first team
-            // for the organization (handles CLI sending organizationId as teamId)
-            let team = queryTeamId
-                ? await this.teamService.findById(queryTeamId)
-                : null;
-
-            // queryTeamId was explicitly provided but is not a valid team
-            // and is not the orgId (CLI compat: CLI sends orgId as teamId)
-            if (
-                !team &&
-                queryTeamId &&
-                queryTeamId !== jwtPayload.organizationId
-            ) {
-                return buildInvalidPayload(
-                    `Team not found for the provided teamId: ${queryTeamId}`,
-                );
-            }
-
-            if (!team) {
-                team = await this.teamService.findFirstCreatedTeam(
-                    jwtPayload.organizationId,
-                );
-            }
-
-            if (!team) {
-                return buildInvalidPayload(
-                    'No active team found for the authenticated user',
-                );
-            }
-
-            if (team.organization?.uuid !== jwtPayload.organizationId) {
-                return buildInvalidPayload(
-                    'Team does not belong to the authenticated organization',
-                );
-            }
-
-            const safeTeamName = typeof team.name === 'string' ? team.name : '';
-            const safeOrgName =
-                typeof team.organization?.name === 'string'
-                    ? team.organization.name
-                    : '';
-
-            return buildPayload({
-                valid: true,
-                teamId: team.uuid,
-                organizationId: jwtPayload.organizationId,
-                teamName: safeTeamName,
-                organizationName: safeOrgName,
-                team: {
-                    id: team.uuid,
-                    name: safeTeamName,
-                },
-                organization: {
-                    id: jwtPayload.organizationId,
-                    name: safeOrgName,
-                },
-                user: {
-                    email: jwtPayload.email ?? '',
-                    name: '',
-                },
-                email: jwtPayload.email ?? '',
-                userEmail: jwtPayload.email ?? '',
-            });
-        }
-
-        // No auth provided
-        return buildInvalidPayload(
-            'Authentication required. Provide a team API key via X-Team-Key header, or a JWT via Authorization: Bearer header.',
-        );
+        return res.status(payload.valid ? 200 : 401).json(payload);
     }
 
     @Post('business-validation')
@@ -511,11 +270,11 @@ export class CliReviewController {
         @Headers('authorization') authHeader?: string,
         @Query('teamId') queryTeamId?: string,
     ) {
-        const auth = await this.validateKeyInternal(
+        const auth = await this.validateCliKeyUseCase.execute({
             teamKey,
             authHeader,
             queryTeamId,
-        );
+        });
 
         if (!auth.valid || !auth.organizationId || !auth.teamId) {
             throw new UnauthorizedException(
@@ -994,11 +753,11 @@ export class CliReviewController {
         @Query('teamId') queryTeamId?: string,
         @Res({ passthrough: true }) res?: any,
     ) {
-        const auth = await this.validateKeyInternal(
+        const auth = await this.validateCliKeyUseCase.execute({
             teamKey,
             authHeader,
             queryTeamId,
-        );
+        });
 
         if (!auth.valid || !auth.organizationId || !auth.teamId) {
             throw new UnauthorizedException(
@@ -1076,11 +835,11 @@ export class CliReviewController {
         @Headers('authorization') authHeader?: string,
         @Query('teamId') queryTeamId?: string,
     ) {
-        const auth = await this.validateKeyInternal(
+        const auth = await this.validateCliKeyUseCase.execute({
             teamKey,
             authHeader,
             queryTeamId,
-        );
+        });
 
         if (!auth.valid || !auth.organizationId || !auth.teamId) {
             throw new UnauthorizedException(

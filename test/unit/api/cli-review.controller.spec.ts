@@ -29,6 +29,7 @@ import { IngestSessionEventUseCase } from '@libs/cli-review/application/use-case
 import { PublicPrReviewUseCase } from '@libs/cli-review/application/use-cases/public-pr-review.use-case';
 import { ListFeaturedPublicReviewsUseCase } from '@libs/cli-review/application/use-cases/list-featured-public-reviews.use-case';
 import { GetFeaturedPublicReviewUseCase } from '@libs/cli-review/application/use-cases/get-featured-public-review.use-case';
+import { ValidateCliKeyUseCase } from '@libs/cli-review/application/use-cases/validate-cli-key.use-case';
 
 jest.mock('@kodus/flow', () => ({
     createLogger: () => ({
@@ -244,6 +245,11 @@ describe('CliReviewController', () => {
                         execute: jest.fn().mockResolvedValue(null),
                     },
                 },
+                // Real use case wired against the existing mocked tokens
+                // (teamCliKey, team, auth, cliDevice, jwt, config) so
+                // the controller test scenarios keep exercising the
+                // validation logic end-to-end.
+                ValidateCliKeyUseCase,
                 {
                     provide: TEAM_CLI_KEY_SERVICE_TOKEN,
                     useValue: mockTeamCliKeyService,
@@ -685,13 +691,27 @@ describe('CliReviewController', () => {
     // =========================================================================
 
     describe('validateKeyInternal', () => {
+        // Helper kept after the validateKeyInternal helper was extracted
+        // into ValidateCliKeyUseCase. Behaviorally identical — same
+        // mocks back the same wires (teamCliKey, team, auth, jwt).
+        const runValidate = (
+            teamKey?: string,
+            authHeader?: string,
+            queryTeamId?: string,
+        ) =>
+            (controller as any).validateCliKeyUseCase.execute({
+                teamKey,
+                authHeader,
+                queryTeamId,
+            });
+
         describe('Team key route', () => {
             it('returns valid=true with team key via x-team-key', async () => {
                 mockTeamCliKeyService.validateKey.mockResolvedValue(
                     TEAM_KEY_DATA,
                 );
 
-                const result = await (controller as any).validateKeyInternal(
+                const result = await runValidate(
                     TEAM_KEY,
                     undefined,
                     undefined,
@@ -709,7 +729,7 @@ describe('CliReviewController', () => {
                     TEAM_KEY_DATA,
                 );
 
-                const result = await (controller as any).validateKeyInternal(
+                const result = await runValidate(
                     undefined,
                     BEARER_TEAM_KEY,
                     undefined,
@@ -724,7 +744,7 @@ describe('CliReviewController', () => {
             it('returns valid=false when team key is invalid', async () => {
                 mockTeamCliKeyService.validateKey.mockResolvedValue(null);
 
-                const result = await (controller as any).validateKeyInternal(
+                const result = await runValidate(
                     'kodus_invalid',
                     undefined,
                     undefined,
@@ -740,7 +760,7 @@ describe('CliReviewController', () => {
                     organization: { uuid: ORG_ID },
                 });
 
-                const result = await (controller as any).validateKeyInternal(
+                const result = await runValidate(
                     TEAM_KEY,
                     undefined,
                     undefined,
@@ -754,7 +774,7 @@ describe('CliReviewController', () => {
             it('returns valid=true with correct teamId resolved via findById', async () => {
                 mockTeamService.findById.mockResolvedValue(makeTeamEntity());
 
-                const result = await (controller as any).validateKeyInternal(
+                const result = await runValidate(
                     undefined,
                     BEARER_JWT,
                     TEAM_ID,
@@ -771,7 +791,7 @@ describe('CliReviewController', () => {
                     makeTeamEntity(),
                 );
 
-                const result = await (controller as any).validateKeyInternal(
+                const result = await runValidate(
                     undefined,
                     BEARER_JWT,
                     ORG_ID,
@@ -784,7 +804,7 @@ describe('CliReviewController', () => {
             it('returns valid=false when explicit teamId is not found and differs from orgId', async () => {
                 mockTeamService.findById.mockResolvedValue(null);
 
-                const result = await (controller as any).validateKeyInternal(
+                const result = await runValidate(
                     undefined,
                     BEARER_JWT,
                     'stale-team-uuid',
@@ -800,7 +820,7 @@ describe('CliReviewController', () => {
             it('returns valid=false when no teamId provided and no team exists for org', async () => {
                 mockTeamService.findFirstCreatedTeam.mockResolvedValue(null);
 
-                const result = await (controller as any).validateKeyInternal(
+                const result = await runValidate(
                     undefined,
                     BEARER_JWT,
                     undefined,
@@ -814,7 +834,7 @@ describe('CliReviewController', () => {
                     throw new Error('jwt expired');
                 });
 
-                const result = await (controller as any).validateKeyInternal(
+                const result = await runValidate(
                     undefined,
                     BEARER_JWT,
                     TEAM_ID,
@@ -829,7 +849,7 @@ describe('CliReviewController', () => {
                     makeTeamEntity({ orgUuid: 'other-org-uuid' }),
                 );
 
-                const result = await (controller as any).validateKeyInternal(
+                const result = await runValidate(
                     undefined,
                     BEARER_JWT,
                     TEAM_ID,
@@ -845,7 +865,7 @@ describe('CliReviewController', () => {
                     status: STATUS.REMOVED,
                 });
 
-                const result = await (controller as any).validateKeyInternal(
+                const result = await runValidate(
                     undefined,
                     BEARER_JWT,
                     TEAM_ID,
@@ -857,7 +877,7 @@ describe('CliReviewController', () => {
             it('includes user email in response', async () => {
                 mockTeamService.findById.mockResolvedValue(makeTeamEntity());
 
-                const result = await (controller as any).validateKeyInternal(
+                const result = await runValidate(
                     undefined,
                     BEARER_JWT,
                     TEAM_ID,
@@ -870,7 +890,7 @@ describe('CliReviewController', () => {
 
         describe('No auth', () => {
             it('returns valid=false when no auth is provided', async () => {
-                const result = await (controller as any).validateKeyInternal(
+                const result = await runValidate(
                     undefined,
                     undefined,
                     undefined,

@@ -40,6 +40,7 @@ import { IngestSessionEventUseCase } from '@libs/cli-review/application/use-case
 import { PublicPrReviewUseCase } from '@libs/cli-review/application/use-cases/public-pr-review.use-case';
 import { ListFeaturedPublicReviewsUseCase } from '@libs/cli-review/application/use-cases/list-featured-public-reviews.use-case';
 import { GetFeaturedPublicReviewUseCase } from '@libs/cli-review/application/use-cases/get-featured-public-review.use-case';
+import { ValidateCliKeyUseCase } from '@libs/cli-review/application/use-cases/validate-cli-key.use-case';
 
 describe('CLI business-validation integration', () => {
     let controller: CliReviewController;
@@ -123,6 +124,7 @@ describe('CLI business-validation integration', () => {
                         execute: jest.fn().mockResolvedValue(null),
                     },
                 },
+                ValidateCliKeyUseCase,
                 {
                     provide: TEAM_CLI_KEY_SERVICE_TOKEN,
                     useValue: mockTeamCliKeyService,
