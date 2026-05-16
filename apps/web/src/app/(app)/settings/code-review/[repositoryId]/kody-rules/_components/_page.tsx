@@ -673,6 +673,7 @@ const KodyRulesPageContent = () => {
         () =>
             pendingRules.filter(
                 (rule) =>
+                    getRuleType(rule) === KodyRulesType.MEMORY &&
                     rule.requestType === KodyRuleRequestType.MEMORY_UPDATE,
             ),
         [pendingRules],
@@ -682,6 +683,7 @@ const KodyRulesPageContent = () => {
         () =>
             pendingRules.filter(
                 (rule) =>
+                    getRuleType(rule) === KodyRulesType.MEMORY &&
                     rule.requestType !== KodyRuleRequestType.MEMORY_UPDATE,
             ),
         [pendingRules],
