@@ -39,7 +39,11 @@ import {
     checkPermissions,
     checkRepoPermissions,
 } from '@libs/identity/infrastructure/adapters/services/permissions/policy.handlers';
-import { KodyRulesStatus } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
+import {
+    IKodyRule,
+    KodyRulesStatus,
+    KodyRulesType,
+} from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import { AddLibraryKodyRulesDto } from '@libs/kodyRules/dtos/add-library-kody-rules.dto';
 import { ChangeStatusKodyRulesDTO } from '@libs/kodyRules/dtos/change-status-kody-rules.dto';
 import { ManageImportedKodyRulesDto } from '@libs/kodyRules/dtos/manage-imported-kody-rules.dto';
@@ -218,28 +222,39 @@ export class KodyRulesController {
         summary: 'Find rules by filter',
         description: 'Return rules matching a key/value filter.',
     })
-    @ApiQuery({ name: 'key', type: String, required: true })
-    @ApiQuery({ name: 'value', type: String, required: true })
+    @ApiQuery({ name: 'key', type: String, required: false })
+    @ApiQuery({ name: 'value', type: String, required: false })
     @ApiQuery({ name: 'repositoryId', type: String, required: false })
     @ApiQuery({ name: 'directoryId', type: String, required: false })
+    @ApiQuery({ name: 'type', enum: KodyRulesType, required: false })
     @ApiOkResponse({ type: ApiArrayResponseDto })
     public async findRulesInOrganizationByFilter(
         @Query('key')
-        key: string,
+        key?: string,
         @Query('value')
-        value: string,
+        value?: string,
         @Query('repositoryId')
         repositoryId?: string,
         @Query('directoryId')
         directoryId?: string,
+        @Query('type')
+        type?: KodyRulesType,
     ) {
         if (!this.request.user.organization.uuid) {
             throw new Error('Organization ID not found');
         }
 
+        const filter: Partial<IKodyRule> = {};
+        if (key && value !== undefined) {
+            (filter as Record<string, unknown>)[key] = value;
+        }
+        if (type) {
+            filter.type = type;
+        }
+
         return this.findRulesInOrganizationByRuleFilterKodyRulesUseCase.execute(
             this.request.user.organization.uuid,
-            { [key]: value },
+            filter,
             repositoryId,
             directoryId,
         );
