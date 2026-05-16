@@ -1,5 +1,6 @@
 import type {
     OpenPRArgs,
+    OpenPRFromBranchesArgs,
     OpenedPR,
     ProviderName,
     ProviderRepoRef,
@@ -124,6 +125,59 @@ export class GitHubProvider extends BaseProvider {
         }
     }
 
+    async openPRFromBranches(args: OpenPRFromBranchesArgs): Promise<OpenedPR> {
+        // Self-heal: GitHub refuses to open a second open PR for the same
+        // head→base combo. If a previous run crashed before `closePR` (or a
+        // human left a standing PR there), close it first so we can open
+        // fresh.
+        await this.closeOpenPRsBetween(args.head, args.base);
+
+        const resp = await http<{ number: number; html_url: string }>(
+            `${this.apiBase}/repos/${this.repoFullName}/pulls`,
+            {
+                method: "POST",
+                headers: this.headers(),
+                body: {
+                    title: args.title,
+                    body: args.body,
+                    head: args.head,
+                    base: args.base,
+                },
+            },
+        );
+        ensureOk(resp, "github:openPRFromBranches");
+        return {
+            number: resp.body.number,
+            url: resp.body.html_url,
+            branch: args.head,
+            baseBranch: args.base,
+            keepBranchOnClose: true,
+        };
+    }
+
+    private async closeOpenPRsBetween(
+        head: string,
+        base: string,
+    ): Promise<void> {
+        // GitHub's list-PRs `head` filter expects `owner:branch` form.
+        const owner = this.repoFullName.split("/")[0];
+        const headRef = `${owner}:${head}`;
+        const resp = await http<Array<{ number: number; state: string }>>(
+            `${this.apiBase}/repos/${this.repoFullName}/pulls?state=open&head=${encodeURIComponent(headRef)}&base=${encodeURIComponent(base)}&per_page=10`,
+            { headers: this.headers() },
+        );
+        for (const pr of resp.body ?? []) {
+            await http(
+                `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}`,
+                {
+                    method: "PATCH",
+                    headers: this.headers(),
+                    body: { state: "closed" },
+                },
+            );
+        }
+    }
+
     async closePR(pr: OpenedPR): Promise<void> {
         await http(
             `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}`,
@@ -133,6 +187,7 @@ export class GitHubProvider extends BaseProvider {
                 body: { state: "closed" },
             },
         );
+        if (pr.keepBranchOnClose) return;
         await http(
             `${this.apiBase}/repos/${this.repoFullName}/git/refs/heads/${pr.branch}`,
             { method: "DELETE", headers: this.headers() },
@@ -182,18 +237,29 @@ export class GitHubProvider extends BaseProvider {
                         { headers: this.headers() },
                     ),
                 ]);
+                // Filter out Kody's own status comments — they're placeholder
+                // "Code Review Started!" / "Completed!" notifications carrying
+                // no findings, identified by the `<!-- kody-codereview -->`
+                // HTML marker. Without this filter the test passes on Kody's
+                // "I'm starting" message instead of on actual review output.
+                const isStatusComment = (body: string) =>
+                    body.includes("<!-- kody-codereview");
                 const filterNonTrigger = (items: { id: number; body: string }[]) =>
                     items.filter(
                         (c) =>
                             String(c.id) !== opts.triggerId &&
-                            !(c.body ?? "").toLowerCase().startsWith("@kody"),
+                            !(c.body ?? "").toLowerCase().startsWith("@kody") &&
+                            !isStatusComment(c.body ?? ""),
                     );
                 const rc = filterNonTrigger(reviewComments.body ?? []);
                 const ic = filterNonTrigger(issueComments.body ?? []);
                 const rv = (reviews.body ?? []).filter((r) => {
                     const ts = r.submitted_at ?? r.created_at ?? "";
                     if (ts <= opts.sinceIso) return false;
-                    return !(r.body ?? "").toLowerCase().startsWith("@kody");
+                    const body = r.body ?? "";
+                    if (body.toLowerCase().startsWith("@kody")) return false;
+                    if (isStatusComment(body)) return false;
+                    return true;
                 });
                 if (rc.length || ic.length || rv.length) {
                     const sample = rc[0]?.body ?? ic[0]?.body ?? rv[0]?.body ?? "";

@@ -1,3 +1,4 @@
+import type { OpenPRFromBranchesArgs } from "../lib/types.js";
 import type {
     OpenPRArgs,
     OpenedPR,
@@ -136,6 +137,34 @@ export class GitLabProvider extends BaseProvider {
         }
     }
 
+    async openPRFromBranches(args: OpenPRFromBranchesArgs): Promise<OpenedPR> {
+        const projectId = await this.resolveProjectId();
+        const resp = await http<{ iid: number; web_url: string }>(
+            `${this.apiBase}/projects/${projectId}/merge_requests`,
+            {
+                method: "POST",
+                headers: this.headers(),
+                body: {
+                    source_branch: args.head,
+                    target_branch: args.base,
+                    title: args.title,
+                    description: args.body,
+                    // Don't auto-delete the source branch — it's a persistent
+                    // fixture branch, not something we just pushed.
+                    remove_source_branch: false,
+                },
+            },
+        );
+        ensureOk(resp, "gitlab:openPRFromBranches");
+        return {
+            number: resp.body.iid,
+            url: resp.body.web_url,
+            branch: args.head,
+            baseBranch: args.base,
+            keepBranchOnClose: true,
+        };
+    }
+
     async closePR(pr: OpenedPR): Promise<void> {
         const projectId = await this.resolveProjectId();
         await http(
@@ -146,6 +175,10 @@ export class GitLabProvider extends BaseProvider {
                 body: { state_event: "close" },
             },
         );
+        // GitLab's `closePR` doesn't delete the source branch by default —
+        // remove_source_branch on the original PR controls that on merge.
+        // For our close-without-merge path, there's nothing extra to do
+        // even when keepBranchOnClose is false.
     }
 
     async triggerReviewOnExistingPR(
@@ -185,7 +218,11 @@ export class GitLabProvider extends BaseProvider {
                     if (n.system) return false;
                     if (n.created_at <= opts.sinceIso) return false;
                     if (opts.triggerId && String(n.id) === opts.triggerId) return false;
-                    if ((n.body ?? "").toLowerCase().startsWith("@kody")) return false;
+                    const body = n.body ?? "";
+                    if (body.toLowerCase().startsWith("@kody")) return false;
+                    // Filter Kody's status comments (placeholder "Started!" /
+                    // "Completed!" notifications carrying no findings).
+                    if (body.includes("<!-- kody-codereview")) return false;
                     return true;
                 });
                 if (filtered.length) {

@@ -79,11 +79,30 @@ test("integration: code-review-basic runs end-to-end against mocked Kodus + GitH
     // so the repo-metadata route doesn't swallow deeper paths.
     const ghServer = await startMockServer([
         {
+            // Scenario opens a fresh PR via openPRFromBranches.
+            method: "POST",
+            pathRegex: /^\/repos\/[^/]+\/[^/]+\/pulls$/,
+            handler: (_req, res) => {
+                reviewSinceWindow.triggeredAt = new Date().toISOString();
+                json(res, 201, {
+                    number: TEST_PR_NUMBER,
+                    html_url: `https://github.com/${TEST_REPO}/pull/${TEST_PR_NUMBER}`,
+                });
+            },
+        },
+        {
+            // Scenario closes the PR in `finally`. Always succeed.
+            method: "PATCH",
+            pathRegex: /^\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/,
+            handler: (_req, res) => {
+                json(res, 200, {});
+            },
+        },
+        {
             method: "POST",
             pathRegex: /^\/repos\/[^/]+\/[^/]+\/issues\/\d+\/comments$/,
             handler: (_req, res) => {
                 const created = new Date().toISOString();
-                reviewSinceWindow.triggeredAt = created;
                 json(res, 201, { id: 1001, created_at: created, body: "@kody review" });
             },
         },
@@ -91,24 +110,26 @@ test("integration: code-review-basic runs end-to-end against mocked Kodus + GitH
             method: "GET",
             pathRegex: /^\/repos\/[^/]+\/[^/]+\/pulls\/\d+\/comments/,
             handler: (_req, res) => {
-                json(res, 200, []);
+                // Inline review comment from Kody — counts as `reviewComments`,
+                // which the new scenario assert requires (issueComments are
+                // ignored to avoid false-positives on Kody's status notice).
+                const responseTime = new Date(
+                    new Date(reviewSinceWindow.triggeredAt).getTime() + 1000,
+                ).toISOString();
+                json(res, 200, [
+                    {
+                        id: 3003,
+                        body: "Consider null-checking `b` before dividing.",
+                        created_at: responseTime,
+                    },
+                ]);
             },
         },
         {
             method: "GET",
             pathRegex: /^\/repos\/[^/]+\/[^/]+\/issues\/\d+\/comments/,
             handler: (_req, res) => {
-                // Pretend Kody answered with a non-@kody comment AFTER the trigger.
-                const responseTime = new Date(
-                    new Date(reviewSinceWindow.triggeredAt).getTime() + 1000,
-                ).toISOString();
-                json(res, 200, [
-                    {
-                        id: 2002,
-                        body: "Hello! I found 2 issues in this PR.",
-                        created_at: responseTime,
-                    },
-                ]);
+                json(res, 200, []);
             },
         },
         {
@@ -188,9 +209,15 @@ test("integration: code-review-basic runs end-to-end against mocked Kodus + GitH
                 prNumber?: number;
             };
             assert.equal(evidence.prNumber, TEST_PR_NUMBER);
+            const reviewEvidence = evidence.review as {
+                reviewComments?: number;
+                reviews?: number;
+            } | undefined;
             assert.ok(
-                (evidence.review?.issueComments ?? 0) > 0,
-                "should have detected at least one Kody response comment",
+                (reviewEvidence?.reviewComments ?? 0) +
+                    (reviewEvidence?.reviews ?? 0) >
+                    0,
+                "should have detected at least one real review finding (reviewComments or reviews)",
             );
 
             // Verify the runner actually hit the expected endpoints
@@ -224,16 +251,20 @@ test("integration: code-review-basic runs end-to-end against mocked Kodus + GitH
 
             const ghCalls = ghServer.requests.map((r) => `${r.method} ${r.path}`);
             assert.ok(
-                ghCalls.some((c) =>
-                    c.match(/^POST \/repos\/.+\/.+\/issues\/\d+\/comments$/),
-                ),
-                "@kody review trigger comment was not posted",
+                ghCalls.some((c) => c.match(/^POST \/repos\/.+\/.+\/pulls$/)),
+                "openPRFromBranches (POST /pulls) was not called",
             );
             assert.ok(
                 ghCalls.some((c) =>
-                    c.match(/^GET \/repos\/.+\/.+\/issues\/\d+\/comments/),
+                    c.match(/^GET \/repos\/.+\/.+\/pulls\/\d+\/comments/),
                 ),
-                "issue comments were not polled",
+                "PR review comments were not polled",
+            );
+            assert.ok(
+                ghCalls.some((c) =>
+                    c.match(/^PATCH \/repos\/.+\/.+\/pulls\/\d+$/),
+                ),
+                "closePR cleanup was not called",
             );
         } finally {
             global.fetch = originalFetch;

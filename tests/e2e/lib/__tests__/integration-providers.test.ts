@@ -125,11 +125,28 @@ test("integration: GitLab — runner drives MR review through provider abstracti
                     json(res, 200, { id: 12345 }),
             },
             {
+                // openPRFromBranches → creates a new MR
+                method: "POST",
+                pathRegex: /^\/api\/v4\/projects\/\d+\/merge_requests$/,
+                handler: (_req, res: ServerResponse) => {
+                    reviewWindow.triggeredAt = new Date().toISOString();
+                    json(res, 201, {
+                        iid: MR_IID,
+                        web_url: `https://gitlab.com/${PROJECT_PATH}/-/merge_requests/${MR_IID}`,
+                    });
+                },
+            },
+            {
+                // closePR
+                method: "PUT",
+                pathRegex: /^\/api\/v4\/projects\/\d+\/merge_requests\/\d+$/,
+                handler: (_req, res) => json(res, 200, { state: "closed" }),
+            },
+            {
                 method: "POST",
                 pathRegex: /^\/api\/v4\/projects\/\d+\/merge_requests\/\d+\/notes$/,
                 handler: (_req, res: ServerResponse) => {
                     const created = new Date().toISOString();
-                    reviewWindow.triggeredAt = created;
                     json(res, 201, {
                         id: 5555,
                         body: "@kody review",
@@ -169,10 +186,9 @@ test("integration: GitLab — runner drives MR review through provider abstracti
         result.providerRequests.some(
             (r) =>
                 r.method === "POST" &&
-                r.path.startsWith("/api/v4/projects/") &&
-                r.path.endsWith("/notes"),
+                r.path.match(/^\/api\/v4\/projects\/\d+\/merge_requests$/),
         ),
-        "GitLab @kody review note was not posted",
+        "GitLab openPRFromBranches (POST /merge_requests) was not called",
     );
     assert.ok(
         result.providerRequests.some(
@@ -210,11 +226,32 @@ test("integration: Bitbucket — runner drives PR review through provider abstra
                     }),
             },
             {
+                // openPRFromBranches → creates a new pull request
+                method: "POST",
+                pathRegex: /^\/repositories\/[^/]+\/[^/]+\/pullrequests$/,
+                handler: (_req, res) => {
+                    reviewWindow.triggeredAt = new Date().toISOString();
+                    json(res, 201, {
+                        id: PR_ID,
+                        links: {
+                            html: {
+                                href: `https://bitbucket.org/${WORKSPACE_SLUG}/pull-requests/${PR_ID}`,
+                            },
+                        },
+                    });
+                },
+            },
+            {
+                // closePR (decline)
+                method: "POST",
+                pathRegex: /^\/repositories\/[^/]+\/[^/]+\/pullrequests\/\d+\/decline$/,
+                handler: (_req, res) => json(res, 200, { state: "DECLINED" }),
+            },
+            {
                 method: "POST",
                 pathRegex: /^\/repositories\/[^/]+\/[^/]+\/pullrequests\/\d+\/comments$/,
                 handler: (_req, res) => {
                     const created = new Date().toISOString();
-                    reviewWindow.triggeredAt = created;
                     json(res, 201, {
                         id: 4001,
                         content: { raw: "@kody review" },
@@ -258,10 +295,9 @@ test("integration: Bitbucket — runner drives PR review through provider abstra
         result.providerRequests.some(
             (r) =>
                 r.method === "POST" &&
-                r.path.includes("/pullrequests/") &&
-                r.path.endsWith("/comments"),
+                r.path.match(/^\/repositories\/[^/]+\/[^/]+\/pullrequests$/),
         ),
-        "Bitbucket @kody review comment was not posted",
+        "Bitbucket openPRFromBranches (POST /pullrequests) was not called",
     );
 });
 
@@ -294,6 +330,28 @@ test("integration: Azure DevOps — runner drives PR review through provider abs
                 method: "GET",
                 pathRegex: /^\/[^/]+\/[^/]+\/_apis\/git\/repositories\/[^/?]+(?:\?|$)/,
                 handler: (_req, res) => json(res, 200, { id: REPO_GUID }),
+            },
+            {
+                // openPRFromBranches → creates a new PR
+                method: "POST",
+                pathRegex: /^\/[^/]+\/[^/]+\/_apis\/git\/repositories\/[^/]+\/pullrequests/,
+                handler: (_req, res) => {
+                    reviewWindow.triggeredAt = new Date().toISOString();
+                    json(res, 201, {
+                        pullRequestId: PR_ID,
+                        _links: {
+                            web: {
+                                href: `https://dev.azure.com/${ORG}/${PROJECT}/_git/${REPO}/pullrequest/${PR_ID}`,
+                            },
+                        },
+                    });
+                },
+            },
+            {
+                // closePR (PATCH abandon). Same path as above but PATCH method.
+                method: "PATCH",
+                pathRegex: /^\/[^/]+\/[^/]+\/_apis\/git\/repositories\/[^/]+\/pullrequests\/\d+/,
+                handler: (_req, res) => json(res, 200, { status: "abandoned" }),
             },
             {
                 method: "POST",
@@ -360,10 +418,11 @@ test("integration: Azure DevOps — runner drives PR review through provider abs
         result.providerRequests.some(
             (r) =>
                 r.method === "POST" &&
-                r.path.includes("/pullRequests/") &&
-                r.path.includes("/threads"),
+                /\/_apis\/git\/repositories\/[^/]+\/pullrequests(?:\?|$)/.test(
+                    r.path,
+                ),
         ),
-        "Azure DevOps trigger thread was not posted",
+        "Azure DevOps openPRFromBranches (POST /pullrequests) was not called",
     );
     assert.ok(
         result.providerRequests.some(

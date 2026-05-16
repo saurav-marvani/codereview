@@ -1,3 +1,4 @@
+import type { OpenPRFromBranchesArgs } from "../lib/types.js";
 import type {
     OpenPRArgs,
     OpenedPR,
@@ -134,11 +135,39 @@ export class BitbucketProvider extends BaseProvider {
         }
     }
 
+    async openPRFromBranches(args: OpenPRFromBranchesArgs): Promise<OpenedPR> {
+        const resp = await http<{ id: number; links: { html: { href: string } } }>(
+            `${this.apiBase}/repositories/${this.workspaceSlug}/pullrequests`,
+            {
+                method: "POST",
+                headers: this.headers(),
+                body: {
+                    title: args.title,
+                    description: args.body,
+                    source: { branch: { name: args.head } },
+                    destination: { branch: { name: args.base } },
+                    // Persistent fixture branch — don't auto-delete on close.
+                    close_source_branch: false,
+                },
+            },
+        );
+        ensureOk(resp, "bitbucket:openPRFromBranches");
+        return {
+            number: resp.body.id,
+            url: resp.body.links.html.href,
+            branch: args.head,
+            baseBranch: args.base,
+            keepBranchOnClose: true,
+        };
+    }
+
     async closePR(pr: OpenedPR): Promise<void> {
         await http(
             `${this.apiBase}/repositories/${this.workspaceSlug}/pullrequests/${pr.number}/decline`,
             { method: "POST", headers: this.headers() },
         );
+        // Bitbucket's decline doesn't delete the source branch; nothing
+        // extra needed here whether keepBranchOnClose is true or false.
     }
 
     async triggerReviewOnExistingPR(
@@ -177,6 +206,8 @@ export class BitbucketProvider extends BaseProvider {
                     if (opts.triggerId && String(c.id) === opts.triggerId) return false;
                     const raw = c.content?.raw ?? "";
                     if (raw.toLowerCase().startsWith("@kody")) return false;
+                    // Filter Kody's status comments (placeholder notifications).
+                    if (raw.includes("<!-- kody-codereview")) return false;
                     return true;
                 });
                 if (filtered.length) {

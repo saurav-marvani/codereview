@@ -32,11 +32,28 @@ export interface OpenPRArgs {
     baseBranch?: string;
 }
 
+// For test repos that already have head/base branch pairs with deliberate
+// diffs committed (e.g. the forked benchmark repos in the kodus-e2e org).
+// No clone, no push — just opens a PR between two existing branches. Each
+// call creates a fresh PR number, so the `validate-new-commits` pipeline
+// stage always treats it as a new review (unlike re-triggering on a
+// standing PR, which gets short-circuited as "already reviewed").
+export interface OpenPRFromBranchesArgs {
+    head: string;
+    base: string;
+    title: string;
+    body: string;
+}
+
 export interface OpenedPR {
     number: number;
     url: string;
     branch: string;
     baseBranch: string;
+    // When true, `closePR` only closes the PR and does NOT delete the head
+    // branch. Used by `openPRFromBranches` where the branch is a permanent
+    // fixture in the test repo, not something the scenario created.
+    keepBranchOnClose?: boolean;
 }
 
 export interface ReviewSignal {
@@ -54,6 +71,11 @@ export interface Provider {
     createWebhook(webhookUrl: string): Promise<{ id: string }>;
     deleteWebhook(id: string): Promise<void>;
     openPR(args: OpenPRArgs): Promise<OpenedPR>;
+    // Optional: opens a PR using two already-existing branches (head/base)
+    // without cloning or pushing. Providers that don't implement this throw
+    // a clear "not supported" error. See `OpenPRFromBranchesArgs` for the
+    // motivation (avoid `validate-new-commits` skip on standing PRs).
+    openPRFromBranches?(args: OpenPRFromBranchesArgs): Promise<OpenedPR>;
     closePR(pr: OpenedPR): Promise<void>;
     triggerReviewOnExistingPR(prNumber: number): Promise<{
         triggerId: string;

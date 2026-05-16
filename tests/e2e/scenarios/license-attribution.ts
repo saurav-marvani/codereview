@@ -34,6 +34,9 @@ export const licenseAttribution: Scenario = {
             { sinceIso, triggerId, timeoutSec: pollWindow },
         );
 
+        // Trust per-provider filter (excludes Kody's status placeholder by
+        // <!-- kody-codereview --> marker). Whatever survives counts as a
+        // real Kody response, regardless of which bucket the provider uses.
         const sawReview =
             review.reviewComments + review.issueComments + review.reviews > 0;
 

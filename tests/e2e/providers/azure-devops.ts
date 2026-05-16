@@ -1,3 +1,4 @@
+import type { OpenPRFromBranchesArgs } from "../lib/types.js";
 import type {
     OpenPRArgs,
     OpenedPR,
@@ -161,6 +162,37 @@ export class AzureDevOpsProvider extends BaseProvider {
         }
     }
 
+    async openPRFromBranches(args: OpenPRFromBranchesArgs): Promise<OpenedPR> {
+        const repoId = await this.resolveRepoId();
+        const resp = await http<{
+            pullRequestId: number;
+            _links?: { web?: { href: string } };
+        }>(
+            `${this.apiBase}/_apis/git/repositories/${repoId}/pullrequests?api-version=${this.apiVersion}`,
+            {
+                method: "POST",
+                headers: this.headers(),
+                body: {
+                    sourceRefName: `refs/heads/${args.head}`,
+                    targetRefName: `refs/heads/${args.base}`,
+                    title: args.title,
+                    description: args.body,
+                },
+            },
+        );
+        ensureOk(resp, "azure:openPRFromBranches");
+        const webUrl =
+            resp.body._links?.web?.href ??
+            `https://dev.azure.com/${this.org}/${this.project}/_git/${this.repo}/pullrequest/${resp.body.pullRequestId}`;
+        return {
+            number: resp.body.pullRequestId,
+            url: webUrl,
+            branch: args.head,
+            baseBranch: args.base,
+            keepBranchOnClose: true,
+        };
+    }
+
     async closePR(pr: OpenedPR): Promise<void> {
         const repoId = await this.resolveRepoId();
         await http(
@@ -171,6 +203,8 @@ export class AzureDevOpsProvider extends BaseProvider {
                 body: { status: "abandoned" },
             },
         );
+        // Azure DevOps PR abandon doesn't delete the source ref; no extra
+        // step needed regardless of keepBranchOnClose.
     }
 
     async triggerReviewOnExistingPR(
@@ -230,6 +264,8 @@ export class AzureDevOpsProvider extends BaseProvider {
                             continue;
                         const text = c.content ?? "";
                         if (text.toLowerCase().startsWith("@kody")) continue;
+                        // Filter Kody's status comments (placeholder notifications).
+                        if (text.includes("<!-- kody-codereview")) continue;
                         count++;
                         if (!sample) sample = text.slice(0, 240);
                     }
