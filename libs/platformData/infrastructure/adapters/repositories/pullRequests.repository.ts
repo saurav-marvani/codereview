@@ -1050,8 +1050,21 @@ export class PullRequestsRepository implements IPullRequestsRepository {
                     },
                 };
             case 'updateFile': {
+                // Reuse the same sanitizer that the per-file
+                // `updateFile()` method has applied historically.
+                // It drops empty/blank `reviewMode` and trims empty
+                // sub-fields from `codeReviewModelUsed` so webhook
+                // payloads (which never carry these pipeline-owned
+                // fields) cannot clobber values written by later
+                // review stages.
+                const sanitized = this.sanitizeCodeReviewConfigData(
+                    op.data as Partial<{
+                        reviewMode: unknown;
+                        codeReviewModelUsed: unknown;
+                    }> as any,
+                );
                 const $set: Record<string, unknown> = {};
-                for (const [k, v] of Object.entries(op.data)) {
+                for (const [k, v] of Object.entries(sanitized)) {
                     $set[`files.$.${k}`] = v;
                 }
                 return {

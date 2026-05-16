@@ -400,6 +400,73 @@ const shouldSkip = !MONGODB_URI;
             });
         });
 
+        it('preserves pipeline-owned `reviewMode` and `codeReviewModelUsed` when the webhook payload does not carry them', async () => {
+            // Pre-fix: the bulkWrite path's `$set` blindly included
+            // `reviewMode: ''` and `codeReviewModelUsed: ''` on every
+            // webhook save, clobbering values written by later
+            // pipeline stages. The repo's `sanitizeCodeReviewConfigData`
+            // — the same one `updateFile()` uses — is the canonical
+            // place to drop those empty values, and the bulk path
+            // now routes through it.
+            const existingFileId = repository.newSubDocumentId();
+            const existingPR = await seedExistingPR({
+                number: 3001,
+                files: [
+                    {
+                        id: existingFileId,
+                        path: 'src/preserve.ts',
+                        filename: 'preserve.ts',
+                        previousName: '',
+                        sha: 'sha',
+                        status: 'modified',
+                        suggestions: [],
+                        added: 1,
+                        deleted: 1,
+                        changes: 2,
+                        // Values written previously by the
+                        // code-review pipeline; the webhook must
+                        // never overwrite them.
+                        reviewMode: 'light',
+                        codeReviewModelUsed: {
+                            generateSuggestions: 'model-a',
+                            safeguard: 'model-b',
+                        },
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                    },
+                ],
+            });
+
+            await callHandleExisting(existingPR, [
+                {
+                    filename: 'src/preserve.ts',
+                    sha: 'new-sha',
+                    additions: 7,
+                    deletions: 0,
+                    changes: 7,
+                    status: 'modified',
+                    patch: '@@ updated',
+                    // intentionally no reviewMode / codeReviewModelUsed
+                },
+            ]);
+
+            const persisted = await model
+                .findOne({ _id: existingPR.uuid })
+                .lean();
+            const file = (persisted as any).files.find(
+                (f: any) => f.path === 'src/preserve.ts',
+            );
+            // Metrics updated as expected …
+            expect(file.added).toBe(7);
+            expect(file.patch).toBe('@@ updated');
+            // … but pipeline config untouched.
+            expect(file.reviewMode).toBe('light');
+            expect(file.codeReviewModelUsed).toEqual({
+                generateSuggestions: 'model-a',
+                safeguard: 'model-b',
+            });
+        });
+
         it('refuses to bulk-apply when organizationId is empty', async () => {
             const existingPR = await seedExistingPR({
                 number: 2001,

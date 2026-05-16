@@ -1113,6 +1113,11 @@ export class PullRequestsService implements IPullRequestsService {
                 const existing = existingByPath.get(filename);
 
                 if (existing) {
+                    // `reviewMode` / `codeReviewModelUsed` are
+                    // pipeline-owned config — the webhook payload
+                    // doesn't carry them and the repo's
+                    // `sanitizeCodeReviewConfigData` drops empty
+                    // values, so passing them through here is safe.
                     const fileFields = {
                         patch: file.patch ?? '',
                         status: file.status ?? '',
