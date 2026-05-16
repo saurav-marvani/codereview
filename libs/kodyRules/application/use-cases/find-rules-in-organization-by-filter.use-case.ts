@@ -52,13 +52,24 @@ export class FindRulesInOrganizationByRuleFilterKodyRulesUseCase implements IUse
         directoryId?: string,
     ) {
         try {
+            let allowedRepoScope: string[] | null | undefined;
+
             if (this.request?.user) {
-                await this.authorizationService.ensure({
-                    user: this.request.user,
-                    action: Action.Read,
-                    resource: ResourceType.KodyRules,
-                    repoIds: [repositoryId],
-                });
+                if (repositoryId) {
+                    await this.authorizationService.ensure({
+                        user: this.request.user,
+                        action: Action.Read,
+                        resource: ResourceType.KodyRules,
+                        repoIds: [repositoryId],
+                    });
+                } else {
+                    allowedRepoScope =
+                        await this.authorizationService.getRepositoryScope({
+                            user: this.request.user,
+                            action: Action.Read,
+                            resource: ResourceType.KodyRules,
+                        });
+                }
             }
 
             const ruleFilters: Partial<IKodyRule>[] = [];
@@ -85,6 +96,14 @@ export class FindRulesInOrganizationByRuleFilterKodyRulesUseCase implements IUse
             }, []);
 
             let filteredRules = allRules;
+
+            if (Array.isArray(allowedRepoScope)) {
+                const allowed = new Set([...allowedRepoScope, 'global']);
+                filteredRules = filteredRules.filter(
+                    (rule) =>
+                        !rule.repositoryId || allowed.has(rule.repositoryId),
+                );
+            }
 
             if (repositoryId && !directoryId) {
                 filteredRules = allRules.filter(
