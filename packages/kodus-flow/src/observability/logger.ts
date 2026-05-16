@@ -105,18 +105,22 @@ function getPinoLogger(): pino.Logger {
                     'req.headers["x-api-key"]',
                     'req.headers.cookie',
                     'res.headers["set-cookie"]',
-                    // got/axios HTTPError nested shapes — belt-and-suspenders
-                    // for paths that bypass the err serializer (e.g. when a
-                    // caller logs response/request directly in metadata).
-                    '*.headers.authorization',
-                    '*.headers.cookie',
-                    '*.headers["set-cookie"]',
-                    '*.*.headers.authorization',
-                    '*.*.headers.cookie',
-                    '*.*.headers["set-cookie"]',
-                    '*.*.*.headers.authorization',
-                    '*.*.*.headers.cookie',
-                    '*.*.*.headers["set-cookie"]',
+                    // Intermediate wildcards (`*.headers.X`, `*.*.headers.X`,
+                    // `*.*.*.headers.X`) were intentionally removed: they
+                    // crashed pino-redact whenever the log payload carried
+                    // an `undici` Response in its tree (issue #1105). The
+                    // wildcard traversal touches getter-defined properties
+                    // on Response (e.g. `.type`) whose internal state may
+                    // be invalid after the body is consumed or aborted,
+                    // raising a TypeError that escaped this logger.
+                    //
+                    // `deepSanitize` below (key-based, normalizes case +
+                    // punctuation) provides equivalent or stronger
+                    // redaction for `authorization` / `cookie` /
+                    // `set-cookie` / `x-api-key` / `proxy-authorization`
+                    // at arbitrary depth, so dropping the wildcards is
+                    // not a coverage loss — it removes redundant work
+                    // that was the actual crash site.
                 ],
                 censor: '[REDACTED]',
             },
