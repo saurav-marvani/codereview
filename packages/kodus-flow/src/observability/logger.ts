@@ -330,21 +330,6 @@ function deepSanitize(obj: any, seen?: WeakSet<object>): any {
         return obj;
     }
 
-    // Issue #1105: `undici` Response/Request expose state via prototype
-    // getters (`.type`, `.status`, `.headers`, `.url`) that THROW when
-    // the internal slot has been consumed/aborted. `Object.keys` returns
-    // [] for them (own enumerable empty), so a plain key walk would not
-    // crash — but it also would not redact anything inside, leaving
-    // `response.url` (potentially containing a token in the query
-    // string) and `response.headers` (potentially containing Set-Cookie)
-    // exposed to the downstream pino pipeline. Replacing the whole
-    // object with a flat string stub closes both holes: no getter is
-    // touched, and no sensitive sub-state can leak.
-    //
-    // `instanceof` is safe — it does not trigger property getters and
-    // works across `extends Response` subclasses. We guard on
-    // `globalThis.Response` because tests / older runtimes may not
-    // define it.
     if (
         typeof (globalThis as any).Response === 'function' &&
         obj instanceof (globalThis as any).Response
