@@ -77,14 +77,11 @@ export abstract class BasePipelineStage<
         const incoming: readonly string[] =
             typeof names === 'string' ? [names] : names;
         return produce(context, (draft) => {
-            const existing = draft.statusInfo.skipStages ?? [];
-            const merged = [...existing];
+            const mergedSet = new Set(draft.statusInfo.skipStages ?? []);
             for (const name of incoming) {
-                if (!merged.includes(name)) {
-                    merged.push(name);
-                }
+                mergedSet.add(name);
             }
-            draft.statusInfo.skipStages = merged;
+            draft.statusInfo.skipStages = Array.from(mergedSet);
             if (message !== undefined) {
                 draft.statusInfo.message = message;
             }
