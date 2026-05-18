@@ -159,21 +159,47 @@ describe('FeatureGateService', () => {
             ).resolves.toBe(true);
         });
 
-        it('passes repositoryId through to PostHog when supplied', async () => {
+        it('forwards a single group key to PostHog (rollout boundary)', async () => {
             mockedSnapshot.current = snapshotWith(FEATURE_KEYS.agentReview);
             const posthog = fakePostHog(async () => true);
             const svc = new FeatureGateService(posthog as never);
 
             await svc.isEnabled(FEATURE_KEYS.agentReview, {
                 ...orgCtx,
-                repositoryId: 'repo-9',
+                groups: { repository: 'repo-9' },
             });
 
             expect(posthog.isFeatureEnabled).toHaveBeenCalledWith(
                 FEATURE_KEYS.agentReview,
                 orgCtx.identifier,
                 orgCtx.organizationAndTeamData,
-                'repo-9',
+                { groups: { repository: 'repo-9' } },
+            );
+        });
+
+        it('forwards multiple group keys together (one id per type)', async () => {
+            mockedSnapshot.current = snapshotWith(FEATURE_KEYS.agentReview);
+            const posthog = fakePostHog(async () => true);
+            const svc = new FeatureGateService(posthog as never);
+
+            await svc.isEnabled(FEATURE_KEYS.agentReview, {
+                ...orgCtx,
+                groups: {
+                    repository: 'repo-9',
+                    directory: 'dir-42',
+                },
+            });
+
+            expect(posthog.isFeatureEnabled).toHaveBeenCalledWith(
+                FEATURE_KEYS.agentReview,
+                orgCtx.identifier,
+                orgCtx.organizationAndTeamData,
+                {
+                    groups: {
+                        repository: 'repo-9',
+                        directory: 'dir-42',
+                    },
+                },
             );
         });
 

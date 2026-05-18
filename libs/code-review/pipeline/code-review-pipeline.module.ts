@@ -40,10 +40,10 @@ import { DistributedLockService } from '@libs/core/workflow/infrastructure/distr
 import { DryRunCoreModule } from '@libs/dryRun/dry-run-core.module';
 import { FileReviewModule } from '@libs/ee/codeReview/fileReviewContextPreparation/fileReview.module';
 import { KodyFineTuningStage } from '@libs/ee/codeReview/stages/kody-fine-tuning.stage';
-import { CodeReviewPipelineStrategyEE } from '@libs/ee/codeReview/strategies/code-review-pipeline.strategy.ee';
 import { LicenseModule } from '@libs/ee/license/license.module';
 import { PermissionValidationModule } from '@libs/ee/shared/permission-validation.module';
 import { KodyFineTuningContextModule } from '@libs/kodyFineTuning/kodyFineTuningContext.module';
+import { OrganizationModule } from '@libs/organization/modules/organization.module';
 import { OrganizationParametersModule } from '@libs/organization/modules/organizationParameters.module';
 import { ParametersModule } from '@libs/organization/modules/parameters.module';
 import { GithubChecksService } from '@libs/platform/infrastructure/adapters/services/github/github-checks.service';
@@ -66,7 +66,7 @@ import { ImplementationVerificationProcessor } from '../workflow/implementation-
 import { LOAD_EXTERNAL_CONTEXT_STAGE_TOKEN } from './stages/contracts/loadExternalContextStage.contract';
 import { ValidateSuggestionsStage } from './stages/validate-suggestions.stage';
 import { CodeReviewPipelineStrategy } from './strategy/code-review-pipeline.strategy';
-import { CodeReviewAgentPipelineStrategy } from './strategy/code-review-agent-pipeline.strategy';
+import { SelectReviewEngineStage } from './stages/select-review-engine.stage';
 
 // Sandbox (lease manager)
 import { SandboxModule } from '@libs/sandbox/modules/sandbox.module';
@@ -90,6 +90,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         forwardRef(() => PullRequestMessagesModule),
         forwardRef(() => PullRequestsModule),
         forwardRef(() => ParametersModule),
+        forwardRef(() => OrganizationModule),
         forwardRef(() => OrganizationParametersModule),
         forwardRef(() => AgentsModule),
         forwardRef(() => AIEngineModule),
@@ -109,9 +110,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
     ],
     providers: [
         // Strategy
-        CodeReviewPipelineStrategyEE,
         CodeReviewPipelineStrategy,
-        CodeReviewAgentPipelineStrategy,
 
         // Job Processor
         CodeReviewJobProcessorService,
@@ -135,6 +134,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         ValidateNewCommitsStage,
         ValidatePrerequisitesStage,
         ResolveConfigStage,
+        SelectReviewEngineStage,
         ValidateConfigStage,
         FetchChangedFilesStage,
         {
@@ -189,9 +189,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         CodeReviewPipelineObserver,
     ],
     exports: [
-        CodeReviewPipelineStrategyEE,
         CodeReviewPipelineStrategy,
-        CodeReviewAgentPipelineStrategy,
 
         CodeReviewJobProcessorService,
         CodeReviewPipelineObserver,

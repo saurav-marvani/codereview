@@ -10,7 +10,10 @@ import {
     ISuggestionService,
     SUGGESTION_SERVICE_TOKEN,
 } from '@libs/code-review/domain/contracts/SuggestionService.contract';
-import { GraphContentFormatter, GraphJson } from '@libs/code-review/infrastructure/adapters/services/graphContentFormatter.service';
+import {
+    GraphContentFormatter,
+    GraphJson,
+} from '@libs/code-review/infrastructure/adapters/services/graphContentFormatter.service';
 import { CrossFileContextSnippet } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import {
     estimateFixedTokens,
@@ -198,10 +201,10 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
 
             const batches = this.createOptimizedBatches(changedFiles);
 
-            const {
-                results,
-                errors: batchErrors,
-            } = await this.runBatches(batches, analysisContext);
+            const { results, errors: batchErrors } = await this.runBatches(
+                batches,
+                analysisContext,
+            );
 
             // Create collections
             const validSuggestions: Partial<CodeSuggestion>[] = [];
@@ -400,7 +403,9 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         const { organizationAndTeamData, pullRequest } = context;
 
         // Use graph JSON from pipeline context if available
-        const graphJson = (context as any).callGraphJson as GraphJson | undefined; // typed on CodeReviewPipelineContext, cast here because AnalysisContext is generic
+        const graphJson = (context as any).callGraphJson as
+            | GraphJson
+            | undefined;
         const astResults = await this.graphContentFormatter.formatContent(
             batch,
             graphJson,
@@ -832,10 +837,11 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             const isTimeout = /timeout|timed out|ETIMEDOUT|abort/i.test(
                 errorMessage,
             );
+
             const enrichedError = new Error(
                 isTimeout
                     ? `File analysis timed out after ${Math.round((Date.now() - startMs) / 1000)}s`
-                    : `File analysis failed: ${errorMessage} (Check model config)`,
+                    : `File analysis failed: ${errorMessage}`,
             );
 
             return {
@@ -1023,10 +1029,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             mergedSuggestions.push(...suggestionsWithSeverity);
         }
 
-        mergedSuggestions = [
-            ...mergedSuggestions,
-            ...filteredCrossFileFinal,
-        ];
+        mergedSuggestions = [...mergedSuggestions, ...filteredCrossFileFinal];
 
         const VALID_ACTIONS = [
             'synchronize',

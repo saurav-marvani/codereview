@@ -1,4 +1,5 @@
 import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';
+import { EnterpriseTierGuard } from '@libs/ee/license/guards/enterprise-tier.guard';
 import {
     ISSOConfigService,
     SSO_CONFIG_SERVICE_TOKEN,
@@ -46,6 +47,7 @@ import { ApiObjectResponseDto } from '../dtos/api-response.dto';
 @ApiTags('SSO Config')
 @ApiBearerAuth('jwt')
 @ApiStandardResponses()
+@UseGuards(EnterpriseTierGuard)
 @Controller('sso-config')
 export class SSOConfigController {
     constructor(

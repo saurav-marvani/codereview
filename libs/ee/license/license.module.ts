@@ -7,6 +7,7 @@ import { forwardRef, Module } from '@nestjs/common';
 
 import { TeamModule } from '@libs/organization/modules/team.module';
 
+import { EnterpriseTierGuard } from './guards/enterprise-tier.guard';
 import { LICENSE_SERVICE_TOKEN } from './interfaces/license.interface';
 import { LicenseService } from './license.service';
 import { SelfHostedLicenseService } from './self-hosted-license.service';
@@ -35,12 +36,14 @@ import { environment } from '@libs/ee/configs/environment';
             inject: [LicenseService, SelfHostedLicenseService],
         },
         AutoAssignLicenseUseCase,
+        EnterpriseTierGuard,
     ],
     exports: [
         LicenseService,
         SelfHostedLicenseService,
         LICENSE_SERVICE_TOKEN,
         AutoAssignLicenseUseCase,
+        EnterpriseTierGuard,
     ],
 })
 export class LicenseModule {}

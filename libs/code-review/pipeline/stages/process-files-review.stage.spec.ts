@@ -92,9 +92,8 @@ describe('ProcessFilesReview', () => {
         } as CodeReviewPipelineContext;
     });
 
-    it('should capture errors in executeFileAnalysis', async () => {
+    it('should capture errors in executeFileAnalysis without the misleading "(Check model config)" suffix (#1105)', async () => {
         const error = new Error('Analysis failed');
-        // Ensure error gets prefixed with config hint
         (
             codeAnalysisOrchestrator.executeStandardAnalysis as jest.Mock
         ).mockRejectedValue(error);
@@ -126,8 +125,7 @@ describe('ProcessFilesReview', () => {
                 stage: 'FileAnalysisStage',
                 substage: 'test-file.ts',
                 error: expect.objectContaining({
-                    message:
-                        'File analysis failed: Analysis failed (Check model config)',
+                    message: 'File analysis failed: Analysis failed',
                 }),
                 metadata: {
                     filename: 'test-file.ts',

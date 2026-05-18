@@ -5,6 +5,13 @@ export interface PipelineContext {
         status: AutomationStatus;
         message?: string;
         jumpToStage?: string;
+        /**
+         * Names of stages the executor should bypass when reached. Unlike
+         * `jumpToStage` (which fast-forwards then resumes), entries here
+         * exclude specific stages while the rest of the pipeline runs
+         * normally. Status stays IN_PROGRESS.
+         */
+        skipStages?: string[];
         skippedReason?: {
             status: AutomationStatus;
             message?: string;

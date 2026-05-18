@@ -18,7 +18,7 @@ import {
 import {
     IKodyRule,
     KodyRulesStatus,
-    KodyRulesType
+    KodyRulesType,
 } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 
 import { createLogger } from '@kodus/flow';
@@ -52,7 +52,7 @@ export class FindRulesInOrganizationByRuleFilterKodyRulesUseCase implements IUse
         directoryId?: string,
     ) {
         try {
-             let allowedRepoScope: string[] | null | undefined;
+            let allowedRepoScope: string[] | null | undefined;
 
             if (this.request?.user) {
                 if (repositoryId) {
@@ -97,7 +97,7 @@ export class FindRulesInOrganizationByRuleFilterKodyRulesUseCase implements IUse
 
             let filteredRules = allRules;
 
-             if (Array.isArray(allowedRepoScope)) {
+            if (Array.isArray(allowedRepoScope)) {
                 const allowed = new Set([...allowedRepoScope, 'global']);
                 filteredRules = filteredRules.filter(
                     (rule) =>

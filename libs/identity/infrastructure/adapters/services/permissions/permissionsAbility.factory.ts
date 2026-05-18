@@ -92,7 +92,7 @@ export class PermissionsAbilityFactory {
                 canInRepo(Action.Update, ResourceType.CodeReviewSettings);
                 canInRepo(Action.Create, ResourceType.CodeReviewSettings);
 
-                canInRepo(Action.Read, ResourceType.KodyRules, {}, true);
+                canInOrg(Action.Read, ResourceType.KodyRules);
                 canInRepo(Action.Update, ResourceType.KodyRules);
                 canInRepo(Action.Create, ResourceType.KodyRules);
                 canInRepo(Action.Delete, ResourceType.KodyRules);
@@ -142,7 +142,7 @@ export class PermissionsAbilityFactory {
                     true,
                 );
 
-                canInRepo(Action.Read, ResourceType.KodyRules, {}, true);
+                canInOrg(Action.Read, ResourceType.KodyRules);
 
                 canInRepo(Action.Read, ResourceType.Issues);
 

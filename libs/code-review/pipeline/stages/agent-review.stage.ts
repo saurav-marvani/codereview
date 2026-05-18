@@ -1142,7 +1142,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             const { getInternalModel } = await import(
                 '@libs/code-review/infrastructure/agents/llm/byok-to-vercel'
             );
-            model = getInternalModel(byokConfig);
+            model = getInternalModel(byokConfig, { structuredOutputs: true });
         }
 
         if (!model) {
