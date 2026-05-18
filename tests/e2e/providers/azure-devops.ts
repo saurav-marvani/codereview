@@ -5,6 +5,7 @@ import type {
     ProviderName,
     ProviderRepoRef,
     ReviewSignal,
+    WebhookInfo,
 } from "../lib/types.js";
 import { BaseProvider, pollUntil, requireEnv } from "./base.js";
 import { ensureOk, http } from "../lib/http.js";
@@ -118,6 +119,37 @@ export class AzureDevOpsProvider extends BaseProvider {
             `https://dev.azure.com/${encodeURIComponent(this.org)}/_apis/hooks/subscriptions/${id}?api-version=7.1-preview.1`,
             { method: "DELETE", headers: this.headers() },
         );
+    }
+
+    async listWebhooks(): Promise<WebhookInfo[]> {
+        // Azure DevOps service hooks are subscriptions scoped to the
+        // organization. We filter client-side to only those whose
+        // publisherInputs.repository matches the test repo — otherwise
+        // unrelated subscriptions in the org leak into the assertion.
+        const repoId = await this.resolveRepoId();
+        const url = `https://dev.azure.com/${encodeURIComponent(this.org)}/_apis/hooks/subscriptions?api-version=7.1-preview.1`;
+        const resp = await http<{
+            value?: Array<{
+                id: string;
+                status: string;
+                eventType: string;
+                publisherInputs?: { repository?: string };
+                consumerInputs?: { url?: string };
+            }>;
+        }>(url, { headers: this.headers() });
+        ensureOk(resp, "azure:listWebhooks");
+        return (resp.body.value ?? [])
+            .filter(
+                (s) =>
+                    !s.publisherInputs?.repository ||
+                    s.publisherInputs.repository === repoId,
+            )
+            .map((s) => ({
+                id: s.id,
+                url: s.consumerInputs?.url ?? "",
+                active: s.status === "enabled",
+                events: s.eventType ? [s.eventType] : [],
+            }));
     }
 
     async openPR(args: OpenPRArgs): Promise<OpenedPR> {

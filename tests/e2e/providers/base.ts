@@ -5,6 +5,7 @@ import type {
     OpenedPR,
     ProviderRepoRef,
     ReviewSignal,
+    WebhookInfo,
 } from "../lib/types.js";
 
 export interface ProviderConfig {
@@ -21,6 +22,7 @@ export abstract class BaseProvider implements Provider {
     abstract repoRef(): Promise<ProviderRepoRef>;
     abstract createWebhook(webhookUrl: string): Promise<{ id: string }>;
     abstract deleteWebhook(id: string): Promise<void>;
+    abstract listWebhooks(): Promise<WebhookInfo[]>;
     abstract openPR(args: OpenPRArgs): Promise<OpenedPR>;
     abstract closePR(pr: OpenedPR): Promise<void>;
     abstract triggerReviewOnExistingPR(prNumber: number): Promise<{

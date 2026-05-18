@@ -1,10 +1,18 @@
 id: p0
 description: |
-    P0 gates that block every release. Covers code-review on all four providers
-    in both targets, license attribution gates, and the kody-rules apply flow
-    on the primary provider. Run before promoting any RC tag to client-visible.
+    P0 gates that block every release. Covers the core onboarding wiring
+    (webhook auto-registration per provider), code-review on all four
+    providers in both targets, license attribution gates, and the
+    kody-rules apply flow on the primary provider. Run before promoting
+    any RC tag to client-visible.
 
+# Order matters: onboarding-webhook-registration runs first per cell. If
+# the provider's webhook isn't registered after onboarding, the rest of
+# the scenarios are guaranteed to fail (events never reach Kodus) and
+# would just waste pipeline budget. Keeping it first surfaces the real
+# regression in ~30s instead of as a downstream 10-min timeout.
 scenarios:
+    - onboarding-webhook-registration
     - code-review-basic
     - kody-rules-create-and-apply
     - license-attribution

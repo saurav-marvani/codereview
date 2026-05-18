@@ -2,12 +2,13 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { allScenarios, resolveScenarios } from "../../scenarios/index.js";
 
-test("allScenarios: includes the 4 P0 scenarios", () => {
+test("allScenarios: includes the 5 P0 scenarios", () => {
     const ids = Object.keys(allScenarios).sort();
     assert.deepEqual(ids, [
         "code-review-basic",
         "kody-rules-create-and-apply",
         "license-attribution",
+        "onboarding-webhook-registration",
         "upgrade-n-1-to-n",
     ]);
 });
@@ -60,4 +61,20 @@ test("license-attribution applies to all 5 license modes", () => {
 test("upgrade-n-1-to-n only applies to self-hosted", () => {
     const s = allScenarios["upgrade-n-1-to-n"];
     assert.deepEqual(s.appliesTo.target, ["self-hosted"]);
+});
+
+test("onboarding-webhook-registration applies to all 4 providers", () => {
+    const s = allScenarios["onboarding-webhook-registration"];
+    assert.ok(s.appliesTo.provider);
+    for (const p of [
+        "github",
+        "gitlab",
+        "bitbucket",
+        "azure-devops",
+    ] as const) {
+        assert.ok(
+            s.appliesTo.provider.includes(p),
+            `webhook scenario missing provider: ${p}`,
+        );
+    }
 });

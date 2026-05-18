@@ -63,6 +63,13 @@ export interface ReviewSignal {
     sample?: string;
 }
 
+export interface WebhookInfo {
+    id: string;
+    url: string;
+    active: boolean;
+    events: string[];
+}
+
 export interface Provider {
     readonly name: ProviderName;
     readonly integrationType: string;
@@ -70,6 +77,13 @@ export interface Provider {
     repoRef(): Promise<ProviderRepoRef>;
     createWebhook(webhookUrl: string): Promise<{ id: string }>;
     deleteWebhook(id: string): Promise<void>;
+    // Lists webhooks currently registered against the target repo/project.
+    // Used by the onboarding-webhook-registration scenario to verify that
+    // Kodus's auto-register step actually wired a hook — the alternative
+    // (waiting for a review to materialize) only fails after 10+ min and
+    // doesn't distinguish "webhook never registered" from "review pipeline
+    // bug downstream of webhook receipt".
+    listWebhooks(): Promise<WebhookInfo[]>;
     openPR(args: OpenPRArgs): Promise<OpenedPR>;
     // Optional: opens a PR using two already-existing branches (head/base)
     // without cloning or pushing. Providers that don't implement this throw

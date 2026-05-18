@@ -16,7 +16,9 @@ import {
     login,
     registerIntegration,
     registerRepo,
+    signUp,
 } from "./onboarding.js";
+import { randomBytes } from "node:crypto";
 import { logger } from "./log.js";
 
 const log = logger("runner");
@@ -76,11 +78,28 @@ function envForTarget(target: Target): TargetContext {
     return { target, apiBaseUrl, webBaseUrl, tunnelUrl };
 }
 
-function tenantCredsFor(
-    target: Target,
+// Resolves tenant credentials for a cell.
+//
+// `cloud`: pre-provisioned tenants per license tier (free/trial/paid)
+// because the cloud control plane wires each tier into Stripe and we
+// can't reproduce that from the test runner. The env vars are seeded by
+// run.sh from `~/.kodus-dev/config` (or 1Password refs).
+//
+// `self-hosted`: ALWAYS sign up a fresh tenant per cell. Re-using a
+// single tenant across cells leaves stale integration records (e.g. a
+// GitHub integration from a previous cell), and Kodus's
+// `getTypeIntegration` returns the first match by category — not by
+// platform — so dispatches end up routed to whichever provider
+// happened to onboard first, silently breaking webhook auto-register
+// for every subsequent provider in the same matrix run. Fresh signup
+// avoids the contamination entirely. The signup endpoint is wide open
+// on self-hosted (no email verification), so this costs only one extra
+// API call per cell.
+async function resolveTenantForCell(
+    target: TargetContext,
     license: LicenseMode,
-): TenantCredentials | undefined {
-    if (target === "cloud") {
+): Promise<TenantCredentials | undefined> {
+    if (target.target === "cloud") {
         const map: Record<string, [string, string] | undefined> = {
             free: ["CLOUD_TENANT_FREE_EMAIL", "CLOUD_TENANT_FREE_PASSWORD"],
             trial: ["CLOUD_TENANT_TRIAL_EMAIL", "CLOUD_TENANT_TRIAL_PASSWORD"],
@@ -93,15 +112,11 @@ function tenantCredsFor(
         if (!email || !password) return undefined;
         return { email, password };
     }
-    const email =
-        process.env.SH_TENANT_EMAIL ??
-        process.env.TEST_USER_EMAIL ??
-        undefined;
-    const password =
-        process.env.SH_TENANT_PASSWORD ??
-        process.env.TEST_USER_PASSWORD ??
-        undefined;
-    if (!email || !password) return undefined;
+    // self-hosted: sign up a virgin tenant per cell.
+    const suffix = randomBytes(4).toString("hex");
+    const email = `e2e-${suffix}-${Date.now()}@kodus.local`;
+    const password = `E2eTest!${randomBytes(8).toString("hex")}`;
+    await signUp(target, { email, password });
     return { email, password };
 }
 
@@ -124,7 +139,7 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
             : envForTarget(cell.target);
         const tenant = opts.dryRun
             ? { email: "dry-run@kodus.test", password: "dry-run" }
-            : tenantCredsFor(cell.target, cell.license);
+            : await resolveTenantForCell(target, cell.license);
 
         for (const scenario of opts.scenarios) {
             const cellLabel = `${scenario.id} × ${cell.target} × ${cell.provider} × ${cell.license}`;

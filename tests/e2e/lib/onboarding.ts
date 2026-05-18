@@ -26,6 +26,46 @@ function decodeJwtPayload(jwt: string): Record<string, unknown> {
     }
 }
 
+// Signs up a fresh Kodus tenant. Used by smoke/matrix runs against
+// self-hosted droplets so every (provider × target) cell starts with a
+// virgin organization — no leftover integrations, repos, or rules from
+// previous cells. Without this, re-running the matrix against the same
+// droplet would re-use whichever tenant happened to onboard first, and
+// `getTypeIntegration` (which doesn't filter by platform) would route
+// dispatches to whatever provider was registered first — silently
+// breaking every subsequent provider's webhook auto-register flow.
+export async function signUp(
+    target: TargetContext,
+    creds: { email: string; password: string; name?: string },
+): Promise<void> {
+    log.info(`Signing up fresh tenant ${creds.email}`);
+    // Kodus's API has been spelled both `/auth/signUp` (camelCase) and
+    // `/auth/signup` (lowercase) at different versions — try the canonical
+    // form first, fall back to the lowercase variant on a 404.
+    let resp = await http(`${target.apiBaseUrl}/auth/signUp`, {
+        method: "POST",
+        body: {
+            name: creds.name ?? `e2e-${Date.now()}`,
+            email: creds.email,
+            password: creds.password,
+        },
+        timeoutMs: 30_000,
+    });
+    if (resp.status === 404) {
+        resp = await http(`${target.apiBaseUrl}/auth/signup`, {
+            method: "POST",
+            body: {
+                name: creds.name ?? `e2e-${Date.now()}`,
+                email: creds.email,
+                password: creds.password,
+            },
+            timeoutMs: 30_000,
+        });
+    }
+    ensureOk(resp, "onboarding:signUp");
+    log.ok(`Tenant ${creds.email} created`);
+}
+
 export async function login(
     target: TargetContext,
     creds: TenantCredentials,

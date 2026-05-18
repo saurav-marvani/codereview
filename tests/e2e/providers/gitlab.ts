@@ -5,6 +5,7 @@ import type {
     ProviderName,
     ProviderRepoRef,
     ReviewSignal,
+    WebhookInfo,
 } from "../lib/types.js";
 import { BaseProvider, pollUntil, requireEnv } from "./base.js";
 import { ensureOk, http } from "../lib/http.js";
@@ -99,6 +100,56 @@ export class GitLabProvider extends BaseProvider {
             `${this.apiBase}/projects/${projectId}/hooks/${id}`,
             { method: "DELETE", headers: this.headers() },
         );
+    }
+
+    async listWebhooks(): Promise<WebhookInfo[]> {
+        const projectId = await this.resolveProjectId();
+        // GitLab hooks API returns one bool field per event type (e.g.,
+        // `merge_requests_events: true`) rather than an `events: []` array
+        // like GitHub. We normalize back to a flat string[] so callers don't
+        // have to special-case per provider.
+        const resp = await http<
+            Array<{
+                id: number;
+                url: string;
+                push_events?: boolean;
+                merge_requests_events?: boolean;
+                note_events?: boolean;
+                issues_events?: boolean;
+                pipeline_events?: boolean;
+                tag_push_events?: boolean;
+                wiki_page_events?: boolean;
+                deployment_events?: boolean;
+                releases_events?: boolean;
+                // Field is sent as `disabled_until` (truthy = inactive) or
+                // omitted/null when active. There's no explicit `active` flag.
+                disabled_until?: string | null;
+            }>
+        >(`${this.apiBase}/projects/${projectId}/hooks?per_page=100`, {
+            headers: this.headers(),
+        });
+        ensureOk(resp, "gitlab:listWebhooks");
+        const eventFlags: Array<
+            [keyof (typeof resp.body)[number], string]
+        > = [
+            ["push_events", "push"],
+            ["merge_requests_events", "merge_request"],
+            ["note_events", "note"],
+            ["issues_events", "issue"],
+            ["pipeline_events", "pipeline"],
+            ["tag_push_events", "tag_push"],
+            ["wiki_page_events", "wiki_page"],
+            ["deployment_events", "deployment"],
+            ["releases_events", "release"],
+        ];
+        return (resp.body ?? []).map((h) => ({
+            id: String(h.id),
+            url: h.url ?? "",
+            active: !h.disabled_until,
+            events: eventFlags
+                .filter(([k]) => Boolean(h[k]))
+                .map(([, name]) => name),
+        }));
     }
 
     async openPR(args: OpenPRArgs): Promise<OpenedPR> {

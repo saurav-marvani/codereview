@@ -24,6 +24,12 @@ const FIXTURE_BRANCHES: Record<
         head: "fixture/kody-rule-todo-remove-me",
         base: "main",
     },
+    gitlab: {
+        // Same fixture mirrored into gitlab.com/kodus-e2e/tiny-url. The
+        // branch was pushed as part of the initial fixture seeding.
+        head: "fixture/kody-rule-todo-remove-me",
+        base: "main",
+    },
 };
 
 export const kodyRulesCreateAndApply: Scenario = {

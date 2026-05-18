@@ -5,6 +5,7 @@ import type {
     ProviderName,
     ProviderRepoRef,
     ReviewSignal,
+    WebhookInfo,
 } from "../lib/types.js";
 import { BaseProvider, nowIso, pollUntil, requireEnv } from "./base.js";
 import { ensureOk, http } from "../lib/http.js";
@@ -89,6 +90,26 @@ export class GitHubProvider extends BaseProvider {
             `${this.apiBase}/repos/${this.repoFullName}/hooks/${id}`,
             { method: "DELETE", headers: this.headers() },
         );
+    }
+
+    async listWebhooks(): Promise<WebhookInfo[]> {
+        const resp = await http<
+            Array<{
+                id: number;
+                active: boolean;
+                events: string[];
+                config?: { url?: string };
+            }>
+        >(`${this.apiBase}/repos/${this.repoFullName}/hooks?per_page=100`, {
+            headers: this.headers(),
+        });
+        ensureOk(resp, "github:listWebhooks");
+        return (resp.body ?? []).map((h) => ({
+            id: String(h.id),
+            url: h.config?.url ?? "",
+            active: Boolean(h.active),
+            events: h.events ?? [],
+        }));
     }
 
     async openPR(args: OpenPRArgs): Promise<OpenedPR> {

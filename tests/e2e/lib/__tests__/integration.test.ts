@@ -21,6 +21,16 @@ test("integration: code-review-basic runs end-to-end against mocked Kodus + GitH
 
     const kodusServer = await startMockServer([
         {
+            // Self-hosted target: runner.ts signs up a fresh tenant per cell
+            // before login. Accept both spellings the real API tolerates.
+            method: "POST",
+            pathRegex: /^\/auth\/(signUp|signup)$/,
+            handler: (_req, res) =>
+                json(res, 201, {
+                    data: { uuid: "user-1", email: "mock@kodus.local" },
+                }),
+        },
+        {
             method: "POST",
             pathRegex: /^\/auth\/login$/,
             handler: (_req, res) => {
@@ -279,6 +289,16 @@ test("integration: code-review-basic runs end-to-end against mocked Kodus + GitH
 
 test("integration: scenario fails clearly when Kody does NOT respond", async () => {
     const kodusServer = await startMockServer([
+        {
+            // Self-hosted target: runner.ts signs up a fresh tenant per cell
+            // before login. Accept both spellings the real API tolerates.
+            method: "POST",
+            pathRegex: /^\/auth\/(signUp|signup)$/,
+            handler: (_req, res) =>
+                json(res, 201, {
+                    data: { uuid: "user-1", email: "mock@kodus.local" },
+                }),
+        },
         {
             method: "POST",
             pathRegex: /^\/auth\/login$/,

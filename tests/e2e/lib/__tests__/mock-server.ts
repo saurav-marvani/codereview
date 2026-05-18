@@ -101,6 +101,14 @@ export function kodusRoutes(opts: {
     return [
         {
             method: "POST",
+            pathRegex: /^\/auth\/(signUp|signup)$/,
+            handler: (_req, res) =>
+                json(res, 201, {
+                    data: { uuid: "user-1", email: "mock@kodus.local" },
+                }),
+        },
+        {
+            method: "POST",
             pathRegex: /^\/auth\/login$/,
             handler: (_req, res) =>
                 json(res, 200, {

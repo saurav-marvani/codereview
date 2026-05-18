@@ -5,6 +5,7 @@ import type {
     ProviderName,
     ProviderRepoRef,
     ReviewSignal,
+    WebhookInfo,
 } from "../lib/types.js";
 import { BaseProvider, pollUntil, requireEnv } from "./base.js";
 import { ensureOk, http } from "../lib/http.js";
@@ -95,6 +96,27 @@ export class BitbucketProvider extends BaseProvider {
             `${this.apiBase}/repositories/${this.workspaceSlug}/hooks/${encodeURIComponent(id)}`,
             { method: "DELETE", headers: this.headers() },
         );
+    }
+
+    async listWebhooks(): Promise<WebhookInfo[]> {
+        const resp = await http<{
+            values?: Array<{
+                uuid: string;
+                url: string;
+                active: boolean;
+                events: string[];
+            }>;
+        }>(
+            `${this.apiBase}/repositories/${this.workspaceSlug}/hooks?pagelen=100`,
+            { headers: this.headers() },
+        );
+        ensureOk(resp, "bitbucket:listWebhooks");
+        return (resp.body.values ?? []).map((h) => ({
+            id: h.uuid,
+            url: h.url ?? "",
+            active: Boolean(h.active),
+            events: h.events ?? [],
+        }));
     }
 
     async openPR(args: OpenPRArgs): Promise<OpenedPR> {
