@@ -4008,7 +4008,9 @@ async function structureVerificationDecisionWithFallbackModel(
     };
 } | null> {
     try {
-        const internalModel = getInternalModel(byokConfig);
+        const internalModel = getInternalModel(byokConfig, {
+            structuredOutputs: true,
+        });
         const verifierFallbackSignal = timeoutSignal(LLM_CALL_TIMEOUT_MS);
 
         if (!internalModel) {
@@ -4285,7 +4287,9 @@ async function structureWithFallbackModel(
                 { type: 'null' as const },
             ],
         };
-        const internalModel = getInternalModel(byokConfig);
+        const internalModel = getInternalModel(byokConfig, {
+            structuredOutputs: true,
+        });
         const structureFallbackSignal = timeoutSignal(LLM_CALL_TIMEOUT_MS);
 
         if (!internalModel) {

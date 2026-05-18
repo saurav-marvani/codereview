@@ -104,6 +104,7 @@
         "eval:memory:quality:prepare": "cd evals/promptfoo/memory-quality && node convert-memory-quality-dataset.js",
         "eval:memory:quality": "cd evals/promptfoo/memory-quality && bash ./run-memory-quality-eval.sh",
         "eval:memory:quality:light": "cd evals/promptfoo/memory-quality && bash ./run-memory-quality-eval.sh --limit=3 --no-cache",
+        "repro:structured-outputs": "ts-node -r tsconfig-paths/register evals/structured-outputs/repro.ts",
         "typeorm": "TS_NODE_PROJECT=tsconfig.json ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli",
         "migration:generate": "f() { API_PG_DB_HOST=localhost yarn typeorm migration:generate -p -d libs/core/infrastructure/database/typeorm/ormconfig.ts \"libs/core/infrastructure/database/typeorm/migrations/$@\"; }; f",
         "migration:run": "API_PG_DB_HOST=localhost yarn typeorm migration:run -d libs/core/infrastructure/database/typeorm/ormconfig.ts",

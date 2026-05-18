@@ -135,10 +135,25 @@ const DEFAULT_MODEL = {
  * - OPEN_ROUTER → @ai-sdk/openai-compatible (OpenRouter is OpenAI-compatible)
  * - OPENAI_COMPATIBLE → @ai-sdk/openai-compatible
  * - NOVITA → @ai-sdk/openai-compatible
+ *
+ * `options.structuredOutputs` opts the OpenAI-compatible branches into
+ * `response_format: { type: "json_schema", json_schema: { schema, strict } }`
+ * by setting `supportsStructuredOutputs: true` on the provider. Scope this
+ * per-call to `generateObject` / `generateText({ output: Output.object })`
+ * sites — leaving it off keeps the agentic tool-call loop on the unchanged
+ * `json_object` (or absent) `response_format` path. Native SDKs
+ * (`@ai-sdk/openai`, `@ai-sdk/anthropic`, `@ai-sdk/google`,
+ * `@ai-sdk/google-vertex`, `@ai-sdk/amazon-bedrock`) handle structured
+ * outputs natively without any flag and are not affected by this option.
  */
+export type ByokModelOptions = {
+    structuredOutputs?: boolean;
+};
+
 export function byokToVercelModel(
     byokConfig?: BYOKConfig,
     role: 'main' | 'fallback' = 'main',
+    options: ByokModelOptions = {},
 ): LanguageModel {
     const config =
         role === 'fallback' ? byokConfig?.fallback : byokConfig?.main;
@@ -221,6 +236,8 @@ export function byokToVercelModel(
                     // api.openai.com to match the legacy v2 getChatGPT
                     // behavior when no custom endpoint is configured.
                     baseURL: openaiBaseURL || 'https://api.openai.com/v1',
+                    supportsStructuredOutputs:
+                        options.structuredOutputs === true,
                 })(envMode);
             }
             // self-hosted mode declared but no usable env key — fall through
@@ -264,6 +281,7 @@ export function byokToVercelModel(
                 name: 'open-router',
                 apiKey,
                 baseURL: baseURL || 'https://openrouter.ai/api/v1',
+                supportsStructuredOutputs: options.structuredOutputs === true,
             })(model);
 
         case BYOKProvider.OPENAI_COMPATIBLE:
@@ -271,6 +289,7 @@ export function byokToVercelModel(
                 name: 'openai-compatible',
                 apiKey,
                 baseURL: baseURL || '',
+                supportsStructuredOutputs: options.structuredOutputs === true,
             })(model);
 
         case BYOKProvider.NOVITA:
@@ -278,6 +297,7 @@ export function byokToVercelModel(
                 name: 'novita',
                 apiKey,
                 baseURL: baseURL || 'https://api.novita.ai/v3/openai',
+                supportsStructuredOutputs: options.structuredOutputs === true,
             })(model);
 
         case BYOKProvider.GOOGLE_VERTEX: {
@@ -306,6 +326,7 @@ export function byokToVercelModel(
                 name: String(provider),
                 apiKey,
                 baseURL: baseURL || '',
+                supportsStructuredOutputs: options.structuredOutputs === true,
             })(model);
     }
 }
@@ -358,15 +379,16 @@ export function getModelName(byokConfig?: BYOKConfig): string {
  */
 export function getInternalModel(
     byokConfig?: BYOKConfig,
+    options: ByokModelOptions = {},
 ): LanguageModel | null {
     const envMode = process.env.API_LLM_PROVIDER_MODEL ?? 'auto';
 
     // If BYOK is configured, use the client's fallback or main model
     if (byokConfig?.fallback) {
-        return byokToVercelModel(byokConfig, 'fallback');
+        return byokToVercelModel(byokConfig, 'fallback', options);
     }
     if (byokConfig?.main) {
-        return byokToVercelModel(byokConfig, 'main');
+        return byokToVercelModel(byokConfig, 'main', options);
     }
 
     // Self-hosted mode: match byokToVercelModel's provider selection so
@@ -409,6 +431,7 @@ export function getInternalModel(
                 name: 'self-hosted',
                 apiKey: openaiKey,
                 baseURL: openaiBaseURL || 'https://api.openai.com/v1',
+                supportsStructuredOutputs: options.structuredOutputs === true,
             })(envMode);
         }
 
