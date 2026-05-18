@@ -106,14 +106,14 @@ export class FindRulesInOrganizationByRuleFilterKodyRulesUseCase implements IUse
             }
 
             if (repositoryId && !directoryId) {
-                filteredRules = allRules.filter(
+                filteredRules = filteredRules.filter(
                     (rule) =>
                         rule.repositoryId === 'global' ||
                         (rule.repositoryId === repositoryId &&
                             !rule.directoryId),
                 );
             } else if (repositoryId && directoryId) {
-                filteredRules = allRules.filter(
+                filteredRules = filteredRules.filter(
                     (rule) =>
                         rule.repositoryId === 'global' ||
                         (rule.repositoryId === repositoryId &&
