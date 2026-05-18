@@ -1,4 +1,4 @@
-import { ConflictException, Inject } from '@nestjs/common';
+import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 
 import { CreateOrUpdateParametersUseCase } from '../parameters/create-or-update-use-case';
@@ -16,6 +16,7 @@ import {
 import { ParametersKey } from '@libs/core/domain/enums';
 import { TelemetryService } from '@libs/telemetry/application/services/telemetry.service';
 
+@Injectable()
 export class CreateTeamUseCase implements IUseCase {
     constructor(
         @Inject(TEAM_SERVICE_TOKEN)
@@ -23,7 +24,10 @@ export class CreateTeamUseCase implements IUseCase {
 
         @Inject(REQUEST)
         private readonly request: Request & {
-            user: { organization: { uuid: string; name?: string }; uuid?: string };
+            user: {
+                organization: { uuid: string; name?: string };
+                uuid?: string;
+            };
         },
 
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
