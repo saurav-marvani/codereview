@@ -86,6 +86,14 @@ interface ReviewComment {
 interface PullRequestFinishSummaryMarkdown {
     withComments: string;
     withoutComments: string;
+    /**
+     * Shown when the agent review failed before completion (e.g. BYOK key
+     * out of credits). Must include the `{{errorMessage}}` placeholder —
+     * commentManager replaces it with the human-readable reason. Optional
+     * for backward compatibility with older dictionaries; the resolver
+     * falls back to en-US when missing.
+     */
+    withErrors?: string;
 }
 
 interface PullRequestSummaryMarkdown {
