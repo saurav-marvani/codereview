@@ -131,6 +131,8 @@ export class SignUpUseCase implements IUseCase {
                 team = await this.createTeamUseCase.execute({
                     teamName: `${name} - team`,
                     organizationId: createdUser.organization.uuid,
+                    organizationName: createdUser.organization.name,
+                    actorUserId: createdUser.uuid,
                 });
 
                 if (!team) {
