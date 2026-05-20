@@ -163,7 +163,17 @@ env_set() {
 env_set API_URL "${API_BASE_URL}"
 env_set API_FRONTEND_URL "${APP_BASE_URL}"
 env_set NEXTAUTH_URL "${APP_BASE_URL}"
-env_set WEB_HOSTNAME_API "${API_BASE_URL}"
+# WEB_HOSTNAME_API is the upstream the web container's /api/proxy/api/*
+# server-side handler talks to. It MUST resolve from inside the
+# kodus-web container — i.e. the Docker-internal API name, not the
+# public sslip.io URL. NAT loopback to the droplet's own public IP
+# fails inside the container, so pointing this at the public URL
+# breaks every browser fetch routed through the proxy (e.g. the
+# sign-in form's /auth/sso/check call). The public API origin lives
+# in API_URL above for cookie-domain / SAML purposes — those code
+# paths read API_URL directly, not WEB_HOSTNAME_API.
+env_set WEB_HOSTNAME_API "kodus-api"
+env_set WEB_PORT_API "3001"
 # kodus-installer defaults API_NODE_ENV to "development" for the
 # self-hosted dev experience. The SSO cookie code path explicitly
 # bails out under development (returns no Domain, omits Secure)

@@ -81,23 +81,64 @@ ssh_vm \
     bash -s <<'REMOTE'
 set -euo pipefail
 
+# Repair WEB_HOSTNAME_API / WEB_PORT_API on droplets provisioned
+# before 2026-05-20: earlier provision.sh set WEB_HOSTNAME_API to the
+# public sslip.io URL, which the kodus-web container can't reach via
+# NAT loopback — every fetch through /api/proxy/api/* 500'd. The
+# correct value is the Docker-internal API container address.
+# Idempotent: if the values are already right, the sed is a no-op.
+env_set() {
+    local k=$1 v=$2
+    if grep -qE "^${k}=" /opt/kodus-installer/.env; then
+        sed -i "s|^${k}=.*|${k}=${v}|" /opt/kodus-installer/.env
+    else
+        echo "${k}=${v}" >> /opt/kodus-installer/.env
+    fi
+}
+CURR_HOSTNAME=$(grep -E '^WEB_HOSTNAME_API=' /opt/kodus-installer/.env | head -1 | cut -d= -f2-)
+if [ "${CURR_HOSTNAME}" != "kodus-api" ]; then
+    echo "==> repairing WEB_HOSTNAME_API (was '${CURR_HOSTNAME}') -> kodus-api" >&2
+    env_set WEB_HOSTNAME_API "kodus-api"
+    env_set WEB_PORT_API "3001"
+    cd /opt/kodus-installer && docker compose -p kodus-installer -f docker-compose.yml up -d --force-recreate kodus-web
+fi
+REMOTE
+
+ssh_vm \
+    KC_BASE_URL="${KC_BASE_URL}" \
+    NEWBIE_EMAIL="${NEWBIE_EMAIL}" \
+    REMOVED_EMAIL="${REMOVED_EMAIL}" \
+    USER_PASSWORD="${USER_PASSWORD}" \
+    ORG_ID="${ORG_ID}" \
+    bash -s <<'REMOTE'
+set -euo pipefail
+
 KC_ADMIN_PASSWORD=$(grep -E '^SSO_E2E_KC_ADMIN_PASSWORD=' /opt/kodus-installer/.env | head -1 | cut -d= -f2-)
 if [ -z "${KC_ADMIN_PASSWORD:-}" ]; then
     echo "error: SSO_E2E_KC_ADMIN_PASSWORD not present in /opt/kodus-installer/.env" >&2
     exit 1
 fi
 
-# Get admin token from master realm.
-TOKEN=$(curl -sfk -X POST "${KC_BASE_URL}/realms/master/protocol/openid-connect/token" \
+# Get admin token from master realm. Capture body + status separately
+# so we can surface the actual KC failure (4xx, network) instead of an
+# opaque "empty token" downstream.
+TOKEN_RESP=$(curl -sk -o /tmp/kc-token.body -w '%{http_code}' \
+    -X POST "${KC_BASE_URL}/realms/master/protocol/openid-connect/token" \
     -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "username=admin&password=${KC_ADMIN_PASSWORD}&grant_type=password&client_id=admin-cli" \
-    | python3 -c "import json,sys; print(json.load(sys.stdin)['access_token'], end='')")
+    -d "username=admin&password=${KC_ADMIN_PASSWORD}&grant_type=password&client_id=admin-cli")
+if [ "${TOKEN_RESP}" != "200" ]; then
+    echo "error: KC admin token HTTP ${TOKEN_RESP}" >&2
+    head -c 500 /tmp/kc-token.body >&2
+    echo >&2
+    exit 1
+fi
+TOKEN=$(python3 -c "import json,sys; print(json.load(open('/tmp/kc-token.body'))['access_token'], end='')")
 if [ -z "${TOKEN}" ]; then
     echo "error: empty admin token from Keycloak" >&2
     exit 1
 fi
 
-REALM="kodus"
+REALM="kodus-sso-e2e"
 auth() { curl -sfk -H "Authorization: Bearer ${TOKEN}" "$@"; }
 
 create_user() {
@@ -130,14 +171,28 @@ create_user "${REMOVED_EMAIL}"
 # verified domains — both have unit coverage. Sign-in / SSO check only
 # reads `active` from the row.
 echo "==> activating sso_config for org ${ORG_ID}" >&2
-docker exec -i kodus_postgres psql -U kodusdev -d kodus_db -v ON_ERROR_STOP=1 <<SQL
+
+# Discover the postgres container + connection from the installer .env
+# rather than hardcoding. The kodus-installer's compose names it
+# `db_kodus_postgres` today but that's an implementation detail of
+# the installer chart, not a contract.
+PG_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E '_postgres$|kodus[_-]postgres' | head -1)
+PG_USER=$(grep -E '^API_PG_DB_USERNAME=' /opt/kodus-installer/.env | head -1 | cut -d= -f2-)
+PG_DB=$(grep -E '^API_PG_DB_DATABASE=' /opt/kodus-installer/.env | head -1 | cut -d= -f2-)
+if [ -z "${PG_CONTAINER}" ] || [ -z "${PG_USER}" ] || [ -z "${PG_DB}" ]; then
+    echo "error: could not resolve PG container/user/db (container='${PG_CONTAINER}' user='${PG_USER}' db='${PG_DB}')" >&2
+    exit 1
+fi
+echo "==> using ${PG_CONTAINER} as ${PG_USER}@${PG_DB}" >&2
+
+docker exec -i "${PG_CONTAINER}" psql -U "${PG_USER}" -d "${PG_DB}" -v ON_ERROR_STOP=1 <<SQL
 UPDATE sso_config
 SET active = true
 WHERE organization_id = '${ORG_ID}';
 SQL
 
 # Smoke check.
-ACTIVE=$(docker exec -i kodus_postgres psql -U kodusdev -d kodus_db -At -c \
+ACTIVE=$(docker exec -i "${PG_CONTAINER}" psql -U "${PG_USER}" -d "${PG_DB}" -At -c \
     "SELECT active FROM sso_config WHERE organization_id = '${ORG_ID}';")
 if [ "${ACTIVE}" != "t" ]; then
     echo "error: sso_config.active is '${ACTIVE}' after update (expected 't')" >&2

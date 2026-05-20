@@ -42,6 +42,10 @@ _*
 !test/__mocks__/
 !**/__tests__/
 !scripts/selfhosted/_*.sh
+
+# Playwright failure dumps (screenshot + HTML, one per failed assertion)
+tests/e2e/playwright/failure-*.html
+tests/e2e/playwright/failure-*.png
 # Mintlify _snippets/ folder (docs/_snippets, mcp-manager/src/.../*) — those
 # are real source, not scratch files matched by _*.
 !docs/_snippets/
