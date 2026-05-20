@@ -300,21 +300,55 @@ case "$MODE" in
                 "$REPO_ROOT/scripts/e2e/cloud-setup-tenants.sh"
             fi
 
-            # Export TARGET_* + SH_TENANT_PASSWORD from the matrix
-            # droplet's state file so the runner doesn't depend on the
-            # caller having them pre-exported. Cloud-only runs don't
-            # need these; the runner reads CLOUD_* from cloud-tenants.json
-            # directly.
+            # Export SELFHOSTED_* + SH_TENANT_PASSWORD from the matrix
+            # droplet's state file. The runner reads SELFHOSTED_* only
+            # for the self-hosted target (and CLOUD_* for the cloud
+            # target) — using the target-scoped names instead of the
+            # generic TARGET_* avoids the env leaking into cloud cells
+            # and pointing them at the droplet (observed 2026-05-20:
+            # cloud login HTTP 401 because TARGET_BASE_URL hit the
+            # droplet's API instead of qa.web.kodus.io).
             if [ "$TARGET_NAME" != "cloud" ]; then
                 MATRIX_STATE="$STATE_DIR/selfhosted-vm-matrix.json"
                 if [ -f "$MATRIX_STATE" ]; then
                     MATRIX_IP=$(jq -r .server_ip "$MATRIX_STATE")
-                    MATRIX_TUNNEL=$(jq -r .tunnel_url "$MATRIX_STATE")
                     MATRIX_PWD=$(jq -r .tenant.password "$MATRIX_STATE")
-                    export TARGET_BASE_URL="http://${MATRIX_IP}:3001"
-                    [ -n "$MATRIX_TUNNEL" ] && [ "$MATRIX_TUNNEL" != "null" ] && export TARGET_TUNNEL_URL="$MATRIX_TUNNEL"
+                    export SELFHOSTED_API_BASE_URL="http://${MATRIX_IP}:3001"
                     [ -n "$MATRIX_PWD" ] && [ "$MATRIX_PWD" != "null" ] && export SH_TENANT_PASSWORD="$MATRIX_PWD"
-                    log "auto-provision: TARGET_BASE_URL=$TARGET_BASE_URL"
+
+                    # Refresh the cloudflared quick-tunnel URL. Quick
+                    # tunnels get a NEW random URL every time
+                    # `cloudflared tunnel --url` restarts — the systemd
+                    # unit's Restart=on-failure (kicked by the ~2-3h
+                    # session limit Cloudflare enforces) means the URL
+                    # stored in the state file from provision time goes
+                    # stale during long runs. Re-grep the live log on
+                    # the droplet for the most recent URL before each
+                    # matrix run.
+                    SSH_KEY="$STATE_DIR/ssh-keys/matrix"
+                    if [ -f "$SSH_KEY" ]; then
+                        LATEST_TUNNEL=$(ssh -i "$SSH_KEY" \
+                            -o StrictHostKeyChecking=no \
+                            -o UserKnownHostsFile=/dev/null \
+                            -o LogLevel=ERROR \
+                            -o ConnectTimeout=10 \
+                            "root@${MATRIX_IP}" \
+                            "grep -oE 'https://[a-zA-Z0-9-]+\\.trycloudflare\\.com' /var/log/cloudflared.log 2>/dev/null | tail -n1" 2>/dev/null || true)
+                        if [ -n "$LATEST_TUNNEL" ]; then
+                            export SELFHOSTED_TUNNEL_URL="$LATEST_TUNNEL"
+                            log "auto-provision: SELFHOSTED_TUNNEL_URL=$LATEST_TUNNEL (refreshed from droplet log)"
+                            # Persist the refreshed URL back into the
+                            # state file so other commands (status,
+                            # ssh, redeploy) see the current value too.
+                            tmp=$(mktemp)
+                            jq --arg url "$LATEST_TUNNEL" '.tunnel_url = $url' "$MATRIX_STATE" > "$tmp" && mv "$tmp" "$MATRIX_STATE"
+                        else
+                            MATRIX_TUNNEL=$(jq -r .tunnel_url "$MATRIX_STATE")
+                            [ -n "$MATRIX_TUNNEL" ] && [ "$MATRIX_TUNNEL" != "null" ] && export SELFHOSTED_TUNNEL_URL="$MATRIX_TUNNEL"
+                            warn "auto-provision: could not refresh tunnel URL via SSH; falling back to state file value ($MATRIX_TUNNEL)"
+                        fi
+                    fi
+                    log "auto-provision: SELFHOSTED_API_BASE_URL=$SELFHOSTED_API_BASE_URL"
                 fi
             fi
         fi

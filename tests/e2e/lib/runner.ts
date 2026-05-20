@@ -57,29 +57,41 @@ function envForTarget(target: Target): TargetContext {
         // an internal name not reachable from external machines. Default
         // to `qa.web.kodus.io` (the same URL `setup-tenants.ts` uses) so
         // the matrix runner and the seeder hit the same backend.
+        //
+        // Cloud DELIBERATELY does NOT honour TARGET_BASE_URL — that env
+        // is used by --auto-provision to broadcast the self-hosted
+        // droplet's API URL, and reading it here for the cloud target
+        // would point cloud cells at the self-hosted droplet (observed
+        // 2026-05-20: HTTP 401 on cloud login because the droplet's
+        // API doesn't know the cloud tenant). Cloud uses
+        // CLOUD_API_BASE_URL for overrides and the default otherwise.
         const webBaseUrl =
-            process.env.TARGET_WEB_URL ??
-            process.env.CLOUD_WEB_BASE_URL ??
-            "https://qa.web.kodus.io";
+            process.env.CLOUD_WEB_BASE_URL ?? "https://qa.web.kodus.io";
         const apiBaseUrl =
-            process.env.TARGET_BASE_URL ??
             process.env.CLOUD_API_BASE_URL ??
             `${webBaseUrl.replace(/\/$/, "")}/api/proxy/api`;
         return { target, apiBaseUrl, webBaseUrl };
     }
+    // Self-hosted prefers the target-scoped envs (SELFHOSTED_*) that
+    // auto-provision exports, falling back to the legacy generic
+    // TARGET_* envs for users running outside auto-provision.
     const apiBaseUrl =
+        process.env.SELFHOSTED_API_BASE_URL ??
         process.env.TARGET_BASE_URL ??
         (() => {
             throw new Error(
-                "TARGET_BASE_URL is required for self-hosted target (e.g. http://1.2.3.4:3001)",
+                "SELFHOSTED_API_BASE_URL (preferred) or TARGET_BASE_URL is required for self-hosted target (e.g. http://1.2.3.4:3001)",
             );
         })();
     const webBaseUrl =
-        process.env.TARGET_WEB_URL ?? apiBaseUrl.replace(/:3001$/, ":3000");
-    const tunnelUrl = process.env.TARGET_TUNNEL_URL;
+        process.env.SELFHOSTED_WEB_URL ??
+        process.env.TARGET_WEB_URL ??
+        apiBaseUrl.replace(/:3001$/, ":3000");
+    const tunnelUrl =
+        process.env.SELFHOSTED_TUNNEL_URL ?? process.env.TARGET_TUNNEL_URL;
     if (!tunnelUrl) {
         throw new Error(
-            "TARGET_TUNNEL_URL is required for self-hosted target (e.g. https://xxx.trycloudflare.com)",
+            "SELFHOSTED_TUNNEL_URL (preferred) or TARGET_TUNNEL_URL is required for self-hosted target (e.g. https://xxx.trycloudflare.com)",
         );
     }
     return { target, apiBaseUrl, webBaseUrl, tunnelUrl };

@@ -145,9 +145,19 @@ async function runLicenseScenario(opts: RunOpts): Promise<{
     const originalFetch = global.fetch;
 
     try {
+        // Both target-scoped envs and legacy generic envs so the test
+        // works against either branch of envForTarget. The runner now
+        // prefers SELFHOSTED_*/CLOUD_* (target-scoped) over the legacy
+        // TARGET_* (which cross-pollinated cloud cells with the
+        // self-hosted droplet URL in matrix runs — see 2026-05-20 fix).
         process.env.TARGET_BASE_URL = kodusServer.baseUrl;
         process.env.TARGET_WEB_URL = kodusServer.baseUrl;
         process.env.TARGET_TUNNEL_URL = "https://dummy.trycloudflare.com";
+        process.env.SELFHOSTED_API_BASE_URL = kodusServer.baseUrl;
+        process.env.SELFHOSTED_WEB_URL = kodusServer.baseUrl;
+        process.env.SELFHOSTED_TUNNEL_URL = "https://dummy.trycloudflare.com";
+        process.env.CLOUD_API_BASE_URL = kodusServer.baseUrl;
+        process.env.CLOUD_WEB_BASE_URL = kodusServer.baseUrl;
         if (opts.target === "self-hosted") {
             process.env.SH_TENANT_EMAIL = "test@kodus.test";
             process.env.SH_TENANT_PASSWORD = "secret";
