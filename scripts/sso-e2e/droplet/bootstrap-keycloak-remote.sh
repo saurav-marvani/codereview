@@ -143,12 +143,22 @@ fi
 # 4. IdP descriptor (entry point + signing cert) for Kodus SSO config.
 ENTRY_POINT="${KC_BASE_URL}/realms/${REALM}/protocol/saml"
 IDP_ISSUER="${KC_BASE_URL}/realms/${REALM}"
-CERT=$(auth "${KC_BASE_URL}/admin/realms/${REALM}/keys" \
+# Extract the SAML signing cert from the realm's SAML descriptor XML
+# rather than /admin/realms/<realm>/keys. /keys returns ALL realm keys
+# including encryption (RSA-OAEP) and the SAML signing key — but
+# Keycloak 26.5 sometimes uses a dedicated SAML signing key that isn't
+# the same as the first RS256 SIG key returned by /keys. Parsing it
+# from the descriptor matches what KC actually advertises as its SAML
+# signing certificate to any SP — which is what Kodus's SAML strategy
+# needs to validate signatures.
+CERT=$(curl -sfk "${KC_BASE_URL}/realms/${REALM}/protocol/saml/descriptor" \
     | python3 -c "
-import json, sys
-keys = json.load(sys.stdin).get('keys', [])
-sig = next((k for k in keys if k.get('use') == 'SIG' and k.get('certificate')), None)
-print(sig['certificate'] if sig else '', end='')
+import re, sys
+xml = sys.stdin.read()
+# Both <ds:X509Certificate> (signed) and the unprefixed form appear in
+# the wild; KC 26 uses the ds: prefix. Match both for robustness.
+m = re.search(r'<(?:ds:)?X509Certificate[^>]*>([^<]+)</(?:ds:)?X509Certificate>', xml)
+print(m.group(1).strip() if m else '', end='')
 ")
 
 if [ -z "${CERT}" ]; then

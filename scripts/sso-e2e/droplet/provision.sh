@@ -104,12 +104,6 @@ SSO_E2E_BASE="${SERVER_IP}.sslip.io"
 API_BASE_URL="https://api.${SSO_E2E_BASE}"
 APP_BASE_URL="https://app.${SSO_E2E_BASE}"
 KC_BASE_URL="https://kc.${SSO_E2E_BASE}"
-KC_ADMIN_PASSWORD="$(openssl rand -base64 24 | tr -d '=+/' | head -c 28)"
-
-log "Public hostnames:"
-log "  API       ${API_BASE_URL}"
-log "  Web       ${APP_BASE_URL}"
-log "  Keycloak  ${KC_BASE_URL}"
 
 ssh_vm() {
     ssh -i "${LOCAL_SSH_KEY}" \
@@ -127,6 +121,26 @@ scp_vm() {
         -o LogLevel=ERROR \
         "$@"
 }
+
+# Keycloak admin password: minted fresh on every provision and paired
+# with a `down -v` of the kc-sso-e2e container so KC bootstraps from
+# scratch with this exact password. Why not just reuse an existing
+# password from .env: KC_BOOTSTRAP_ADMIN_PASSWORD is honored only at
+# the very first container start (when the admin user is created).
+# After that, the env var is ignored and the admin keeps whatever
+# password the FIRST boot set. On --reuse, the .env and the running
+# KC's admin can drift (e.g. a previous broken run wrote a different
+# password). The bootstrap then fails with an empty token + cryptic
+# JSON decode error in python. Wiping kc-sso-e2e-data + force-recreate
+# is the cheapest robust fix: ~45s extra on --reuse, and the realm /
+# SAML client / test user are re-seeded by bootstrap-keycloak-remote.sh
+# (already idempotent).
+KC_ADMIN_PASSWORD="$(openssl rand -base64 24 | tr -d '=+/' | head -c 28)"
+
+log "Public hostnames:"
+log "  API       ${API_BASE_URL}"
+log "  Web       ${APP_BASE_URL}"
+log "  Keycloak  ${KC_BASE_URL}"
 
 # ---------- step 2: align base stack to public hostnames ----------
 # The base provision baked API_URL/API_FRONTEND_URL pointing at the raw
@@ -199,7 +213,24 @@ cd /opt/kodus-installer
 # Service names in the installer compose: `api`, `kodus-web`.
 docker compose -p kodus-installer up -d --force-recreate api kodus-web
 
-# Layer the overlay. --no-recreate avoids touching the base stack.
+# Wipe + recreate Keycloak so it bootstraps fresh with the password
+# we just wrote to .env. KC_BOOTSTRAP_ADMIN_PASSWORD is only honored
+# on the very first start (when the admin user is created), so if a
+# prior run left an admin user with a stale password, subsequent
+# admin-API calls fail with empty tokens. Cheapest robust fix: drop
+# the kc-sso-e2e-data volume + force-recreate. The realm, SAML client
+# and test user are re-seeded by bootstrap-keycloak.sh — idempotent
+# by design — so wiping doesn't lose anything that survives a
+# provision invocation anyway.
+docker compose \
+    -p kodus-installer \
+    -f /opt/kodus-installer/docker-compose.yml \
+    -f /opt/sso-e2e/compose.yml \
+    --env-file /opt/kodus-installer/.env \
+    rm -fsv kc-sso-e2e || true
+docker volume rm -f kodus-installer_kc-sso-e2e-data 2>/dev/null || true
+
+# Layer the overlay. Caddy stays (no-recreate); KC comes up fresh.
 docker compose \
     -p kodus-installer \
     -f /opt/kodus-installer/docker-compose.yml \

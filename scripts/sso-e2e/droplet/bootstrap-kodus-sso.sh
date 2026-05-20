@@ -99,10 +99,44 @@ echo -n "${ORG_ID}" > "${OUT_DIR}/sso-e2e-org-id.txt"
 
 # 4. SSO config (upsert).
 DOMAIN="$(echo "${ADMIN_EMAIL}" | cut -d@ -f2)"
-PAYLOAD=$(KC_JSON_PATH="${KC_JSON_PATH}" DOMAIN="${DOMAIN}" python3 -c "
+
+# Fetch any existing SSO config for the org. The createOrUpdate
+# endpoint only updates when `uuid` is present in the body; without
+# it, it CREATES a new row instead. Re-running provision would then
+# leave multiple sso_config rows for the same org with stale certs
+# from prior runs, and the SAML strategy might validate against the
+# wrong one ("Invalid document signature" at /sso-callback). Always
+# resolve the existing uuid first when present.
+EXISTING_UUID=$(curl_api "${API_BASE_URL}/sso-config" \
+    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+    | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+def walk(o):
+    if isinstance(o, dict):
+        if o.get('uuid') and (o.get('protocol') or o.get('providerConfig')):
+            return o['uuid']
+        for v in o.values():
+            r = walk(v)
+            if r: return r
+    if isinstance(o, list):
+        for item in o:
+            r = walk(item)
+            if r: return r
+    return None
+print(walk(d) or '', end='')
+")
+if [ -n "${EXISTING_UUID}" ]; then
+    echo "==> found existing SSO config uuid=${EXISTING_UUID} — will update in place" >&2
+fi
+
+PAYLOAD=$(EXISTING_UUID="${EXISTING_UUID}" KC_JSON_PATH="${KC_JSON_PATH}" DOMAIN="${DOMAIN}" python3 -c "
 import json, os
 kc = json.load(open(os.environ['KC_JSON_PATH']))
-print(json.dumps({
+body = {
     'protocol': 'saml',
     'providerConfig': {
         'entryPoint': kc['entryPoint'],
@@ -115,7 +149,10 @@ print(json.dumps({
     # this fixture doesn't exercise. The cookie-domain code path
     # at /auth/sso/login/<orgId> works the same either way.
     'active': False,
-}))
+}
+if os.environ.get('EXISTING_UUID'):
+    body['uuid'] = os.environ['EXISTING_UUID']
+print(json.dumps(body))
 ")
 
 SSO_RESP=$(curl_api -w '\n%{http_code}' -X POST "${API_BASE_URL}/sso-config" \
@@ -130,6 +167,6 @@ if [[ ! "${HTTP_CODE}" =~ ^2 ]]; then
     echo "${SSO_BODY}" | head -c 600 >&2
     exit 1
 fi
-echo "==> POST /sso-config HTTP ${HTTP_CODE}" >&2
+echo "==> POST /sso-config HTTP ${HTTP_CODE} (uuid=${EXISTING_UUID:-<new>})" >&2
 
 echo "${ORG_ID}"
