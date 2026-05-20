@@ -89,6 +89,11 @@ function grepStrongUsages(): Set<string> {
         // Standalone CLI app — already covered by the KODUS_* allowlist
         // pattern below, but excluding here too saves a few seconds.
         '--exclude-dir=apps/cli',
+        // E2E test harness with its own CLI under tests/e2e/cli. Reads
+        // local config (e.g. API_LLM_PROVIDER for BYOK seed) that's
+        // never consumed by api/web/worker runtime — same shape as
+        // apps/cli, just lives under tests/ instead of apps/.
+        '--exclude-dir=tests',
         // Schema/scripts/CI tooling itself references env var names as
         // strings (e.g. SECRET_RE in build-slim-csv.ts, KODUS_PREFIX_RE
         // here). Don't double-count those.

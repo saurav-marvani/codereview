@@ -109,6 +109,7 @@
 | `API_OPEN_AI_API_KEY` | – | secret | ⚙️ Both | OpenAI API key. Required when API_LLM_PROVIDER_MODEL targets an OpenAI model. |
 | `API_OPENAI_FORCE_BASE_URL` | – | url | ⚙️ Both | OpenAI-compatible endpoint override (e.g. point to a local model proxy). |
 | `API_LLM_PROVIDER_MODEL` | – | string | ⚙️ Both | Force a specific model. "auto" = router picks per task. |
+| `API_LLM_TEMPERATURE_OVERRIDE` | – | number | ⚙️ Both | Override the temperature for every LLM call (env-mode self-hosted only). Set this if `API_LLM_PROVIDER_MODEL` points at a reasoning/thinking model whose API restricts temperature (Moonshot's `kimi-k2.6` and `kimi-k2-thinking*` only accept temperature=1; OpenAI's o1 family is similar). When unset/empty, Kodus auto-clamps a small list of known reasoning models to 1 and falls through to each prompt's `setTemperature()` for everything else. Consumed by libs/code-review/.../env-llm-config.ts and surfaced in get-llm-config-status so the dashboard can explain why every prompt ignores its hard-coded temperature. |
 | `API_ANTHROPIC_API_KEY` | – | secret | ☁️ Cloud |  |
 | `API_GOOGLE_AI_API_KEY` | – | secret | ☁️ Cloud | Optional secondary providers — appear commented in the installer template. |
 | `GEMINI_API_KEY` | – | secret | ☁️ Cloud |  |
