@@ -226,13 +226,44 @@ test("integration: Bitbucket — runner drives PR review through provider abstra
                     }),
             },
             {
-                // openPRFromBranches → creates a new pull request
+                // openPRFromBranches step 1 — GET fixture branch ref
+                // (the new throwaway-branch flow reads its target.hash
+                // to use as the seed commit for the throwaway).
+                method: "GET",
+                pathRegex: /^\/repositories\/[^/]+\/[^/]+\/refs\/branches\/.+$/,
+                handler: (_req, res) =>
+                    json(res, 200, {
+                        name: "fixture/test",
+                        target: { hash: "deadbeefcafebabe1234" },
+                    }),
+            },
+            {
+                // openPRFromBranches step 2 — POST throwaway branch
+                // pointing at the fixture's tip commit. Bitbucket
+                // returns 201 with the created ref.
+                method: "POST",
+                pathRegex: /^\/repositories\/[^/]+\/[^/]+\/refs\/branches$/,
+                handler: (_req, res) =>
+                    json(res, 201, {
+                        name: "e2e/throwaway",
+                        target: { hash: "deadbeefcafebabe1234" },
+                    }),
+            },
+            {
+                // openPRFromBranches step 3 — POST /pullrequests.
+                // The freshness check on the provider now reads
+                // `state` and `created_on` from this body, so the
+                // mock must include both — without them the
+                // ageMs computation in the provider would mark
+                // the response as suspicious and throw.
                 method: "POST",
                 pathRegex: /^\/repositories\/[^/]+\/[^/]+\/pullrequests$/,
                 handler: (_req, res) => {
                     reviewWindow.triggeredAt = new Date().toISOString();
                     json(res, 201, {
                         id: PR_ID,
+                        state: "OPEN",
+                        created_on: reviewWindow.triggeredAt,
                         links: {
                             html: {
                                 href: `https://bitbucket.org/${WORKSPACE_SLUG}/pull-requests/${PR_ID}`,
@@ -242,10 +273,18 @@ test("integration: Bitbucket — runner drives PR review through provider abstra
                 },
             },
             {
-                // closePR (decline)
+                // closePR step 1 — decline PR.
                 method: "POST",
                 pathRegex: /^\/repositories\/[^/]+\/[^/]+\/pullrequests\/\d+\/decline$/,
                 handler: (_req, res) => json(res, 200, { state: "DECLINED" }),
+            },
+            {
+                // closePR step 2 — delete throwaway branch. Required
+                // since the new openPRFromBranches sets
+                // keepBranchOnClose: false.
+                method: "DELETE",
+                pathRegex: /^\/repositories\/[^/]+\/[^/]+\/refs\/branches\/.+$/,
+                handler: (_req, res) => json(res, 204, {}),
             },
             {
                 method: "POST",

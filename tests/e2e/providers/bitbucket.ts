@@ -166,7 +166,55 @@ export class BitbucketProvider extends BaseProvider {
     }
 
     async openPRFromBranches(args: OpenPRFromBranchesArgs): Promise<OpenedPR> {
-        const resp = await http<{ id: number; links: { html: { href: string } } }>(
+        // Why we don't POST directly from the fixture branch: observed
+        // 2026-05-20 on QA run 3d7866, bitbucket returned a DECLINED
+        // PR from 2 days earlier (id=12) in the body of a fresh
+        // `POST /pullrequests` request from `fixture/kody-rule-todo-
+        // remove-me` → `main`. The scenario then polled that closed
+        // PR for a review that would never come and failed after 12
+        // min. Couldn't reproduce manually 5 min later. Most likely a
+        // bitbucket-cloud quirk where POSTing from a branch whose
+        // tip-commit already has a recent PR returns the existing one
+        // — github/gitlab/azure don't share this quirk.
+        //
+        // Fix: create a throwaway branch pointing at the fixture
+        // branch's tip commit, open the PR from that throwaway, and
+        // delete the throwaway on closePR. Identical diff (same tip
+        // commit), but bitbucket can't dedup against a name it has
+        // never seen.
+        const fixtureRef = await http<{ target: { hash: string } }>(
+            `${this.apiBase}/repositories/${this.workspaceSlug}/refs/branches/${encodeURIComponent(args.head)}`,
+            { headers: this.headers() },
+        );
+        ensureOk(fixtureRef, "bitbucket:openPRFromBranches/getFixtureRef");
+        const fixtureHash = fixtureRef.body.target?.hash;
+        if (!fixtureHash) {
+            throw new Error(
+                `bitbucket:openPRFromBranches: fixture branch ${args.head} has no target.hash`,
+            );
+        }
+
+        // Throwaway branch name: short, sortable, unique. Bitbucket
+        // refs are case-sensitive and accept slashes.
+        const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        const throwawayBranch = `e2e/${args.head.replace(/[^a-z0-9-]/gi, "-")}-${suffix}`;
+
+        const createRef = await http(
+            `${this.apiBase}/repositories/${this.workspaceSlug}/refs/branches`,
+            {
+                method: "POST",
+                headers: this.headers(),
+                body: { name: throwawayBranch, target: { hash: fixtureHash } },
+            },
+        );
+        ensureOk(createRef, "bitbucket:openPRFromBranches/createBranch");
+
+        const resp = await http<{
+            id: number;
+            state?: string;
+            created_on?: string;
+            links: { html: { href: string } };
+        }>(
             `${this.apiBase}/repositories/${this.workspaceSlug}/pullrequests`,
             {
                 method: "POST",
@@ -174,20 +222,45 @@ export class BitbucketProvider extends BaseProvider {
                 body: {
                     title: args.title,
                     description: args.body,
-                    source: { branch: { name: args.head } },
+                    source: { branch: { name: throwawayBranch } },
                     destination: { branch: { name: args.base } },
-                    // Persistent fixture branch — don't auto-delete on close.
+                    // Throwaway branch — closePR deletes it explicitly
+                    // (close_source_branch on bitbucket only fires on
+                    // merge, not decline, so we can't rely on it).
                     close_source_branch: false,
                 },
             },
         );
         ensureOk(resp, "bitbucket:openPRFromBranches");
+
+        // Belt-and-suspenders: keep the freshness check from the
+        // earlier defensive landing in case bitbucket ever returns a
+        // stale PR even for a throwaway branch (it shouldn't be able
+        // to, since the branch name is brand new).
+        const createdOn = resp.body.created_on;
+        const state = resp.body.state;
+        const ageMs = createdOn ? Date.now() - Date.parse(createdOn) : -1;
+        const STALE_AGE_MS = 60_000;
+        if (
+            ageMs > STALE_AGE_MS ||
+            (state && state.toUpperCase() !== "OPEN")
+        ) {
+            throw new Error(
+                `bitbucket:openPRFromBranches returned a non-fresh PR even from a throwaway branch ` +
+                    `(id=${resp.body.id}, state=${state}, created_on=${createdOn}, ageMs=${ageMs}, ` +
+                    `branch=${throwawayBranch}). Unexpected — investigate bitbucket API state.`,
+            );
+        }
+
         return {
             number: resp.body.id,
             url: resp.body.links.html.href,
-            branch: args.head,
+            branch: throwawayBranch,
             baseBranch: args.base,
-            keepBranchOnClose: true,
+            // closePR must delete the throwaway branch; without this
+            // flag set to false the existing closePR no-ops on the
+            // branch deletion and we'd leak refs.
+            keepBranchOnClose: false,
         };
     }
 
@@ -196,8 +269,24 @@ export class BitbucketProvider extends BaseProvider {
             `${this.apiBase}/repositories/${this.workspaceSlug}/pullrequests/${pr.number}/decline`,
             { method: "POST", headers: this.headers() },
         );
-        // Bitbucket's decline doesn't delete the source branch; nothing
-        // extra needed here whether keepBranchOnClose is true or false.
+
+        // Throwaway branches created by openPRFromBranches must be
+        // explicitly deleted — bitbucket's decline never touches the
+        // ref. Without this every scenario run leaks an
+        // `e2e/<fixture>-<suffix>` branch into the repo. closePR is
+        // wrapped in a best-effort try/catch by every scenario, so a
+        // delete failure here surfaces as a warning, not a test fail.
+        if (pr.keepBranchOnClose === false && pr.branch) {
+            try {
+                await http(
+                    `${this.apiBase}/repositories/${this.workspaceSlug}/refs/branches/${encodeURIComponent(pr.branch)}`,
+                    { method: "DELETE", headers: this.headers() },
+                );
+            } catch {
+                // best-effort — a leaked branch is recoverable; failing
+                // the scenario on cleanup would mask real failures.
+            }
+        }
     }
 
     async triggerReviewOnExistingPR(
