@@ -38,6 +38,7 @@
 
 import { chromium } from "playwright";
 import { writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 
 const {
     SSO_E2E_API_URL,
@@ -359,31 +360,85 @@ async function subFlow3() {
 
 // -------- sub-flow #4: removed user is rejected --------
 async function subFlow4() {
-    // The auto-signup SSO path lands each new user in their OWN
-    // brand-new org (signUpUseCase creates org + team + owner row
-    // atomically). The admin from the seeded SSO org therefore can't
-    // PATCH a user in a different org — the PolicyGuard returns 403
-    // on /user/:uuid for cross-org writes. Self-PATCH would also need
-    // a license tier the auto-signed-up free-tier owner doesn't have.
-    //
-    // The removed-user rejection mechanic itself is covered at the
-    // unit layer: libs/identity/.../jwt-auth.strategy.ts:44 explicitly
-    // throws when `user.status === STATUS.REMOVED`, regardless of how
-    // the user got to that status. The web's middleware translates
-    // that throw into the /sign-in?reason=removed redirect.
-    //
-    // We log a SKIP rather than a PASS so the scenario runner
-    // surfaces the gap honestly. To run this end-to-end on a fresh
-    // droplet, manually:
-    //   1. Run yarn sso-e2e:droplet:multi-user (creates removed-sso
-    //      via SSO round-trip — user lands in their own org).
-    //   2. SSH and `docker exec db_kodus_postgres psql -U kodusdev
-    //      -d kodus_db -c "UPDATE \"user\" SET status='removed'
-    //      WHERE email='removed-sso@kodus-test.com';"`
-    //   3. Re-attempt SSO login as removed-sso — expect bounce to
-    //      /sign-in?reason=removed.
-    log(`sub-flow-4: SKIP — covered by jwt-auth.strategy unit test (cross-org PATCH blocked at policy layer)`);
-    console.log(`[sso-multi-user] PASS sub-flow-4: SKIP — removed-user rejection covered at unit layer (jwt-auth.strategy.ts:44)`);
+    log(`sub-flow-4: removed user ${SSO_E2E_REMOVED_EMAIL} is rejected`);
+
+    // Step A: ensure removed-sso has a Kodus DB row via SSO auto-signup.
+    // In self-hosted (!API_CLOUD_MODE) signUpUseCase marks the row as
+    // STATUS.ACTIVE immediately (signup.use-case.ts:76-79), regardless
+    // of preVerified — there's no /confirm-email step. The user lands
+    // attached to the admin's org as a contributor (organizationId
+    // passed by ssoLogin.use-case.ts:38).
+    {
+        const ctx = await freshContext();
+        const page = await ctx.newPage();
+        try {
+            await ssoRoundTrip(page, SSO_E2E_REMOVED_EMAIL);
+        } catch (err) {
+            await ctx.close();
+            fail("4", `seed: SSO round-trip for removed user failed: ${err.message}`);
+        }
+        await ctx.close();
+    }
+
+    // Step B: flip users.status='removed' for this user via SQL on
+    // the droplet. We can't do this via the REST API because:
+    //   - PATCH /user/:uuid requires Action.Update + UserSettings,
+    //     which (a) the admin is denied for cross-org targets
+    //     (PolicyGuard returns 403) and (b) the user can't self-PATCH
+    //     because free-tier contributors lack the permission.
+    //   - There's no admin "deactivate user" endpoint.
+    // SQL bypass is acceptable in this E2E because we OWN the droplet
+    // and we're explicitly testing the rejection mechanic — the
+    // sso_config activation earlier in bootstrap-multi-user.sh uses
+    // the same shortcut for the same reason.
+    const sql = `UPDATE users SET status='removed' WHERE email='${SSO_E2E_REMOVED_EMAIL}';`;
+    const ssh = spawnSync(
+        "ssh",
+        [
+            "-i",
+            ".kodus-dev/ssh-keys/sso-e2e",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-o",
+            "LogLevel=ERROR",
+            "root@45.55.63.215",
+            `docker exec -i db_kodus_postgres psql -U kodusdev -d kodus_db -c "${sql}"`,
+        ],
+        { cwd: process.cwd().replace(/tests\/e2e\/playwright$/, ""), encoding: "utf8" },
+    );
+    if (ssh.status !== 0 || !ssh.stdout.includes("UPDATE 1")) {
+        fail(
+            "4",
+            `SQL UPDATE to mark removed-sso failed (exit=${ssh.status})`,
+            `stdout: ${ssh.stdout}\nstderr: ${ssh.stderr}`,
+        );
+    }
+    log(`marked ${SSO_E2E_REMOVED_EMAIL} as status=removed via SQL`);
+
+    // Step C: fresh SSO login attempt — expect bounce to a /sign-*
+    // page with reason=removed (observed: /sign-out?reason=removed).
+    const ctx = await freshContext();
+    const page = await ctx.newPage();
+    try {
+        const finalUrl = await ssoRoundTrip(page, SSO_E2E_REMOVED_EMAIL);
+        const url = finalUrl.toLowerCase();
+        const rejected =
+            url.includes("reason=removed") ||
+            url.includes("/sign-out") ||
+            url.includes("/sign-in");
+        if (!rejected) {
+            throw new Error(`expected /sign-out?reason=removed (or similar), got ${finalUrl}`);
+        }
+        const u = new URL(finalUrl);
+        pass("4", `removed user bounced to ${u.pathname}${u.search}`);
+    } catch (err) {
+        await dumpDiagnostics(page, "sub-flow-4");
+        fail("4", `removed user not rejected: ${err.message}`);
+    } finally {
+        await ctx.close();
+    }
 }
 
 async function dumpDiagnostics(page, label) {
