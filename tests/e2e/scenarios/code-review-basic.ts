@@ -53,7 +53,11 @@ export const codeReviewBasic: Scenario = {
         provider: ["github", "gitlab", "bitbucket", "azure-devops"],
         license: ["paid", "trial", "license-paid"],
     },
-    timeoutSec: 900,
+    // Scenario budget must comfortably exceed the inner pollForReview
+    // budget (1500s) + onboarding + open-PR overhead. 1800s gives a
+    // ~5min cushion so the outer kill never fires before the inner
+    // timeout has a chance to surface a meaningful assertion message.
+    timeoutSec: 1800,
     async run(ctx: RunContext) {
         ctx.assert(
             ctx.tenant,
@@ -86,10 +90,23 @@ export const codeReviewBasic: Scenario = {
         });
 
         try {
+            // 25 min — matches per-seat-license-toggle's phase-2 budget.
+            // Bumped from 600s on 2026-05-20 after matrix run #3 showed
+            // gitlab/bitbucket/azure-devops × license-paid consistently
+            // timing out at ~10 min while github passed in 160s and
+            // per-seat (1500s budget) succeeded across all 4 providers.
+            // Non-github providers genuinely take longer end-to-end —
+            // probably a mix of webhook delivery latency and worker queue
+            // depth — and the only meaningful signal we lost by extending
+            // the budget is "review takes >10min", which we now expose
+            // via reviewLatencySec on the evidence record so trends can
+            // be observed across runs without re-introducing flakes.
+            const pollStartMs = Date.now();
             const review = await ctx.provider.pollForReview(
                 { number: pr.number },
-                { sinceIso, timeoutSec: 600 },
+                { sinceIso, timeoutSec: 1500 },
             );
+            const reviewLatencySec = Math.round((Date.now() - pollStartMs) / 1000);
 
             // Trust per-provider filter (each pollForReview excludes the
             // `<!-- kody-codereview -->` status comments). What survives the
@@ -100,13 +117,14 @@ export const codeReviewBasic: Scenario = {
             ctx.assert(
                 review.reviewComments + review.issueComments + review.reviews >
                     0,
-                `No real review findings on PR/MR #${pr.number} within timeout`,
+                `No real review findings on PR/MR #${pr.number} within timeout (${reviewLatencySec}s)`,
             );
 
             return {
                 prNumber: pr.number,
                 prUrl: pr.url,
                 fixture,
+                reviewLatencySec,
                 sinceIso,
                 review,
             };
