@@ -6,7 +6,8 @@
     "pullRequestFinishSummaryMarkdown": {
         "withComments": "## Kontrola kódu dokončena! 🔥\n\nKontrola kódu byla úspěšně dokončena na základě vašich aktuálních konfigurací.\n\n",
         "withoutComments": "# Kontrola Kody dokončena\n**Skvělé zprávy!** 🎉\nNebyly nalezeny žádné problémy, které by odpovídaly vašim aktuálním konfiguracím kontroly.\n\nPokračujte v skvělé práci! 🚀",
-        "withErrors": "## Code Review Could Not Complete ⚠️\n\nThe review failed before suggestions could be generated.\n\n**Reason:** {{errorMessage}}\n\nAfter fixing the issue, comment `@kody review` on this PR to re-run the review.\n\n"
+        "withErrors": "## Code Review Could Not Complete ⚠️\n\nThe review failed before suggestions could be generated.\n\n**Reason:** {{errorMessage}}\n\nAfter fixing the issue, comment `@kody review` on this PR to re-run the review.\n\n",
+        "partialErrorsNotice": "\n\n> ⚠️ Note: some auxiliary checks (Kody Rules) couldn't be completed this run, so auto-approval was skipped. Comment `@kody review` on this PR to retry once the issue is resolved.\n"
     },
     "pullRequestSummaryMarkdown": {
         "title": "Souhrn PR (Komentář vytvořený [Kody](https://kodus.io) 🤖)",

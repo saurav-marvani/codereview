@@ -6,7 +6,8 @@
     "pullRequestFinishSummaryMarkdown": {
         "withComments": "## Kod İncelemesi Tamamlandı! 🔥\n\nKod incelemesi, mevcut yapılandırmalarınıza göre başarıyla tamamlandı.\n\n",
         "withoutComments": "# Kody İncelemesi Tamamlandı\n**Harika haberler!** 🎉\nMevcut inceleme yapılandırmalarınıza uygun herhangi bir sorun bulunamadı.\n\nMükemmel çalışmaya devam edin! 🚀",
-        "withErrors": "## Code Review Could Not Complete ⚠️\n\nThe review failed before suggestions could be generated.\n\n**Reason:** {{errorMessage}}\n\nAfter fixing the issue, comment `@kody review` on this PR to re-run the review.\n\n"
+        "withErrors": "## Code Review Could Not Complete ⚠️\n\nThe review failed before suggestions could be generated.\n\n**Reason:** {{errorMessage}}\n\nAfter fixing the issue, comment `@kody review` on this PR to re-run the review.\n\n",
+        "partialErrorsNotice": "\n\n> ⚠️ Note: some auxiliary checks (Kody Rules) couldn't be completed this run, so auto-approval was skipped. Comment `@kody review` on this PR to retry once the issue is resolved.\n"
     },
     "pullRequestSummaryMarkdown": {
         "title": "PR Özeti (Yorum [Kody](https://kodus.io) tarafından oluşturuldu 🤖)",
