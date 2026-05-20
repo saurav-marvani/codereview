@@ -192,19 +192,51 @@ async function main() {
         ? [targetFilter]
         : Array.from(new Set(cells.map((c) => c.target))) as Target[];
 
-    for (const target of targetsToRun) {
-        const targetCells = cells.filter((c) => c.target === target);
-        if (!targetCells.length) continue;
-        log.info(`--- Running ${targetCells.length} cells for target=${target}`);
-        const outcome = await runMatrix({
-            artifactRoot: `${process.cwd()}/evidence`,
-            runId,
-            target,
-            cells: targetCells,
-            scenarios,
-            dryRun,
-        });
-        allResults.push(...outcome.results);
+    // Run targets in parallel. cloud and self-hosted don't share state:
+    // cloud talks to qa.web.kodus.io, self-hosted talks to its own
+    // droplet, tenants are per-target, evidence is per-cell. Cuts the
+    // wall-clock of a mixed-target nightly roughly in half compared to
+    // the earlier sequential loop.
+    //
+    // We deliberately do NOT parallelize WITHIN a target — concurrent
+    // reviews against the same LLM provider hit Kimi K2.6 / Moonshot
+    // rate limits and the per-cell logs would interleave to the point
+    // of being unreadable. That's a separate evolution if we ever
+    // need finer granularity than per-target.
+    const targetOutcomes = await Promise.allSettled(
+        targetsToRun.map(async (target) => {
+            const targetCells = cells.filter((c) => c.target === target);
+            if (!targetCells.length) {
+                return { target, results: [] };
+            }
+            log.info(
+                `--- [target=${target}] running ${targetCells.length} cells in parallel with other targets`,
+            );
+            const outcome = await runMatrix({
+                artifactRoot: `${process.cwd()}/evidence`,
+                runId,
+                target,
+                cells: targetCells,
+                scenarios,
+                dryRun,
+            });
+            return { target, results: outcome.results };
+        }),
+    );
+    for (const settled of targetOutcomes) {
+        if (settled.status === "fulfilled") {
+            allResults.push(...settled.value.results);
+        } else {
+            // A whole target crashing (e.g. provisioning failed before
+            // any cell could run) is rare — every cell's own
+            // assertion failures are caught inside runMatrix and end
+            // up in `results`. If this fires we surface it on stderr
+            // and continue tallying whatever the other target
+            // produced.
+            log.err(
+                `--- target run rejected: ${settled.reason instanceof Error ? settled.reason.message : String(settled.reason)}`,
+            );
+        }
     }
     const finishedAt = new Date().toISOString();
     const bundle = { runId, startedAt, finishedAt, results: allResults };
