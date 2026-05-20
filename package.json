@@ -46,6 +46,7 @@
         "selfhosted:clean": "scripts/selfhosted/clean.sh",
         "sso-e2e:droplet:provision": "scripts/sso-e2e/droplet/provision.sh",
         "sso-e2e:droplet:run": "scripts/sso-e2e/droplet/run.sh",
+        "sso-e2e:droplet:multi-user": "scripts/sso-e2e/droplet/run-multi-user.sh",
         "sso-e2e:droplet:destroy": "scripts/sso-e2e/droplet/destroy.sh",
         "e2e:dry-run": "scripts/e2e/run.sh dry-run",
         "e2e:smoke": "scripts/e2e/run.sh smoke",

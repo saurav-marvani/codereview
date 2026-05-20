@@ -14,6 +14,11 @@ scenarios:
     # sslip.io. Release-only because LE issuance + droplet boot adds
     # ~7-8 min on first run. Validated end-to-end on 2026-05-19.
     - sso-cookie-domain
+    # SSO multi-user flows (admin UI smoke + sign-in CTA + new-user
+    # signup via SSO + removed-user rejection). Reuses the
+    # `sso-e2e` droplet — runs after sso-cookie-domain so the second
+    # cell skips droplet provisioning entirely.
+    - sso-multi-user
 
 cells:
     # ---------- self-hosted ----------

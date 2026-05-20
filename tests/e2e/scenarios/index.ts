@@ -5,6 +5,7 @@ import licenseAttribution from "./license-attribution.js";
 import onboardingWebhookRegistration from "./onboarding-webhook-registration.js";
 import perSeatLicenseToggle from "./per-seat-license-toggle.js";
 import ssoCookieDomain from "./sso-cookie-domain.js";
+import ssoMultiUser from "./sso-multi-user.js";
 import upgradeNMinusOneToN from "./upgrade.js";
 
 export const allScenarios: Record<string, Scenario> = {
@@ -14,6 +15,7 @@ export const allScenarios: Record<string, Scenario> = {
     [licenseAttribution.id]: licenseAttribution,
     [perSeatLicenseToggle.id]: perSeatLicenseToggle,
     [ssoCookieDomain.id]: ssoCookieDomain,
+    [ssoMultiUser.id]: ssoMultiUser,
     [upgradeNMinusOneToN.id]: upgradeNMinusOneToN,
 };
 
@@ -36,5 +38,6 @@ export {
     onboardingWebhookRegistration,
     perSeatLicenseToggle,
     ssoCookieDomain,
+    ssoMultiUser,
     upgradeNMinusOneToN,
 };
