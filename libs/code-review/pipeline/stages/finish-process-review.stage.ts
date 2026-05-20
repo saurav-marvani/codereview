@@ -9,7 +9,6 @@ import { PullRequestReviewState } from '@libs/platform/domain/platformIntegratio
 import { NotificationService } from '@libs/notifications/application/notification.service';
 import { PrAuthorRecipientResolver } from '@libs/notifications/application/pr-author-recipient.resolver';
 import { NotificationEvent } from '@libs/notifications/domain/catalog/events';
-import { ReviewStatus } from '@libs/platformData/domain/pullRequests/enums/reviewStatus.enum';
 // SeverityLevel no longer used — request changes is driven by level classification
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 
@@ -58,14 +57,24 @@ export class RequestChangesOrApproveStage extends BasePipelineStage<CodeReviewPi
             lineComments,
         );
 
-        // Aprovar PR se não houver comentários
+        // Aprovar PR se não houver comentários. The review's overall
+        // outcome is encoded in `context.errors[].severity` (critical =
+        // ERROR, partial = PARTIAL_ERROR on the automation execution) —
+        // any non-empty severity must block auto-approve so we don't
+        // signal "all good" on a failed/degraded run.
+        const reviewHasFailures =
+            (context.errors ?? []).some(
+                (e) => (e?.severity ?? 'critical') === 'critical',
+            ) ||
+            (context.errors ?? []).some((e) => e?.severity === 'partial');
+
         const approved = await this.approvePullRequest(
             codeReviewConfig.pullRequestApprovalActive,
             lineComments.length,
             organizationAndTeamData,
             pullRequest.number,
             repository,
-            context.reviewStatus,
+            reviewHasFailures,
         );
 
         if (approved) {
@@ -143,27 +152,27 @@ export class RequestChangesOrApproveStage extends BasePipelineStage<CodeReviewPi
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         repository: { id: string; name: string },
-        reviewStatus?: ReviewStatus,
+        reviewHasFailures: boolean,
     ): Promise<boolean> {
         try {
             if (!pullRequestApprovalActive || lineCommentsLength > 0) {
                 return false;
             }
 
-            // FAILED reviews produce 0 line comments not because the PR is
-            // clean but because nothing could be analyzed (e.g. BYOK key
-            // out of credits). Approving here would tell the author "all
-            // good" when the truth is "we couldn't tell." Block until a
-            // successful re-run (`@kody review --force` after the fix)
-            // flips reviewStatus back to SUCCESS / PARTIAL.
-            if (reviewStatus === ReviewStatus.FAILED) {
+            // Reviews with critical/partial failures may produce 0 line
+            // comments not because the PR is clean but because something
+            // couldn't be analyzed (BYOK out of credits, kody-rules agent
+            // threw, sandbox unavailable, etc.). Approving here would
+            // signal "all good" when the truth is "we couldn't tell." The
+            // user must re-run (typically `@kody review --force` after
+            // fixing the upstream issue) before auto-approve can re-engage.
+            if (reviewHasFailures) {
                 this.logger.log({
-                    message: `Skipping auto-approve for PR#${prNumber} because the review failed`,
+                    message: `Skipping auto-approve for PR#${prNumber} because the review had failures`,
                     context: this.stageName,
                     metadata: {
                         prNumber,
                         repository,
-                        reviewStatus,
                     },
                 });
                 return false;

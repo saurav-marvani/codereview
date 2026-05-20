@@ -452,8 +452,7 @@ export class AutomationCodeReviewService implements Omit<
             return;
         }
 
-        const finalStatus =
-            result.statusInfo?.status || AutomationStatus.SUCCESS;
+        const finalStatus = this.deriveFinalStatus(result);
         const finalMessage =
             result.statusInfo?.message || 'Automation completed successfully.';
         const newData = this._buildExecutionData(payload, result);
@@ -474,6 +473,56 @@ export class AutomationCodeReviewService implements Omit<
                 ...result,
             },
         });
+    }
+
+    /**
+     * Derive the final automation_execution.status from the returned
+     * pipeline context. Single source of truth for the review outcome
+     * downstream (cron auto-approve, dashboards, retry policies).
+     *
+     * Precedence:
+     *  1. SKIPPED — preserved as-is. A stage explicitly skipped the run
+     *     (no new commits, etc.); not a failure.
+     *  2. Any errors[].severity === 'critical' → ERROR. The agent's main
+     *     review path failed OR a structural pre-agent stage threw
+     *     (sandbox / fetch / validation). Either way the review is not
+     *     trustworthy.
+     *  3. Any errors[].severity === 'partial' → PARTIAL_ERROR. Auxiliary
+     *     work failed (kody-rules agent, summary, PR-level comments)
+     *     but the main review still has value. Cron auto-approve filters
+     *     by SUCCESS, so this still blocks auto-approve — by design,
+     *     because the user should decide what to do about the gap.
+     *  4. Fallback to statusInfo.status or SUCCESS.
+     *
+     * Default severity (when omitted on a pushed error) is 'critical' —
+     * matches PipelineErrorSeverity's documented default and the
+     * observer's behavior.
+     */
+    private deriveFinalStatus(result: any): AutomationStatus {
+        const statusInfoStatus = result?.statusInfo?.status as
+            | AutomationStatus
+            | undefined;
+
+        if (statusInfoStatus === AutomationStatus.SKIPPED) {
+            return AutomationStatus.SKIPPED;
+        }
+
+        const errors: Array<{ severity?: 'critical' | 'partial' }> =
+            Array.isArray(result?.errors) ? result.errors : [];
+
+        const hasCritical = errors.some(
+            (e) => (e?.severity ?? 'critical') === 'critical',
+        );
+        if (hasCritical) {
+            return AutomationStatus.ERROR;
+        }
+
+        const hasPartial = errors.some((e) => e?.severity === 'partial');
+        if (hasPartial) {
+            return AutomationStatus.PARTIAL_ERROR;
+        }
+
+        return statusInfoStatus || AutomationStatus.SUCCESS;
     }
 
     private async _handleExecutionError(

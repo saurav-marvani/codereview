@@ -51,6 +51,19 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
             lineComments,
         } = context;
 
+        // A "failed" review (from the user's perspective) is one with a
+        // critical pipeline error — main agent rejected, sandbox blew up,
+        // validation aborted, etc. Auxiliary failures (severity = partial,
+        // e.g. only kody-rules) keep the SUCCESS copy of the comment; the
+        // gap is signaled via automation_execution.status = PARTIAL_ERROR
+        // which blocks auto-approve downstream. Default severity for a
+        // pushed error is 'critical', matching PipelineErrorSeverity's
+        // documented default.
+        const reviewFailed = (context.errors ?? []).some(
+            (e) => (e?.severity ?? 'critical') === 'critical',
+        );
+        const reviewErrorMessage = context.lastReviewError?.friendlyMessage;
+
         const isCommitRun = Boolean(lastExecution);
         const commitBehaviour =
             codeReviewConfig?.summary?.behaviourForNewCommits ??
@@ -179,8 +192,8 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 initialCommentData.threadId,
                 undefined,
                 context.dryRun,
-                context.reviewStatus,
-                context.lastReviewError?.friendlyMessage,
+                reviewFailed,
+                reviewErrorMessage,
             );
             return context;
         }
@@ -238,8 +251,8 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 initialCommentData.threadId,
                 finalCommentBody,
                 context.dryRun,
-                context.reviewStatus,
-                context.lastReviewError?.friendlyMessage,
+                reviewFailed,
+                reviewErrorMessage,
             );
             return context;
         }
@@ -274,8 +287,8 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 context.pullRequestMessagesConfig,
                 context.dryRun,
                 context.prLevelCommentResults ?? [],
-                context.reviewStatus,
-                context.lastReviewError?.friendlyMessage,
+                reviewFailed,
+                reviewErrorMessage,
             );
         }
 
