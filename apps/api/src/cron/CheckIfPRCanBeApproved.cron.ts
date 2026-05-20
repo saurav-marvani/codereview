@@ -53,7 +53,6 @@ import {
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@libs/platformData/domain/pullRequests/contracts/pullRequests.service.contracts';
 import { IPullRequestWithDeliveredSuggestions } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
-import { ReviewStatus } from '@libs/platformData/domain/pullRequests/enums/reviewStatus.enum';
 
 const API_CRON_CHECK_IF_PR_SHOULD_BE_APPROVED =
     process.env.API_CRON_CHECK_IF_PR_SHOULD_BE_APPROVED;
@@ -408,30 +407,6 @@ export class CheckIfPRCanBeApprovedCronProvider {
         const repository = pr?.repository;
         const prNumber = pr?.number;
         const platformType = pr?.provider as PlatformType;
-
-        // The latest review on this PR failed before producing any analysis
-        // (BYOK key exhausted, model unavailable, etc.). Approving here
-        // would tell the author "no issues found" when the truth is "we
-        // couldn't tell." Wait for a successful re-run — typically via
-        // `@kody review --force` after the user fixes the upstream issue —
-        // to flip reviewStatus back to SUCCESS / PARTIAL. PRs without the
-        // field (legacy / EE engine) keep the previous behavior.
-        if (pr?.reviewStatus === ReviewStatus.FAILED) {
-            this.logger.log({
-                message: `Skipping approval for PR#${prNumber} because the last review failed`,
-                context: CheckIfPRCanBeApprovedCronProvider.name,
-                metadata: {
-                    organizationAndTeamData,
-                    repository: {
-                        id: repository?.id,
-                        name: repository?.name,
-                    },
-                    prNumber,
-                    reviewStatus: pr.reviewStatus,
-                },
-            });
-            return false;
-        }
 
         const codeManagementRequestData = {
             organizationAndTeamData,

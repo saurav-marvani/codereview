@@ -9,7 +9,6 @@ import {
 import { IPullRequestMessages } from '@libs/code-review/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import { CollectCrossFileContextsResult } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import { ReviewErrorCategory } from '@libs/code-review/infrastructure/agents/llm/error-classifier';
-import { ReviewStatus } from '@libs/platformData/domain/pullRequests/enums/reviewStatus.enum';
 import { PlatformType } from '@libs/core/domain/enums';
 import {
     AnalysisContext,
@@ -214,38 +213,12 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     parentSignal?: AbortSignal;
 
     /**
-     * High-level outcome of the agent engine, derived by AgentReviewStage
-     * from the orchestrator's failures and used downstream to:
-     *  - shape the end-review message (success / no-findings / error variant)
-     *  - persist the review status on the PR (consumed by the auto-approve cron)
-     *
-     * Semantics:
-     *  - SUCCESS: main agent ran AND produced output; kody-rules agent (if
-     *    enabled) also succeeded. 0 suggestions counts as SUCCESS as long as
-     *    no agent threw — it just means the PR was clean.
-     *  - PARTIAL: main agent succeeded but the kody-rules agent failed. The
-     *    review still has value from the main agent.
-     *  - FAILED: main agent failed with a mapped error. Review has no value.
-     *
-     * Absent on legacy (non-agent) engine runs.
-     */
-    reviewStatus?: ReviewStatus;
-
-    /**
-     * Set to true when at least one agent failed with a terminal error
-     * category (AUTH_INVALID / QUOTA_EXCEEDED / MODEL_NOT_FOUND) — the user
-     * must fix billing/auth/config before retrying. Downstream stages that
-     * perform expensive work (summary generation, dedup re-runs, etc.) may
-     * consult this flag to skip themselves. Reserved for use by later
-     * stages; the agent-review stage only sets it.
-     */
-    reviewAborted?: boolean;
-
-    /**
-     * Snapshot of the most important error that drove reviewStatus = FAILED,
+     * Snapshot of the most important failure surfaced by AgentReviewStage —
      * carried in-memory through the rest of the pipeline so the end-review
-     * comment stage can render a precise message without re-walking errors.
-     * Detailed/structured info still goes to CodeReviewExecution.metadata.
+     * comment stage can render a precise message without re-walking errors[].
+     * The actual outcome (SUCCESS / PARTIAL_ERROR / ERROR) lives in
+     * `errors[].severity` and ultimately on `automation_execution.status`;
+     * this only exists to interpolate the user-facing reason.
      */
     lastReviewError?: {
         category: ReviewErrorCategory;
