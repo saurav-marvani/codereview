@@ -1,3 +1,4 @@
+import { createLogger } from '@kodus/flow';
 import { Inject, Injectable } from '@nestjs/common';
 import {
     IIntegrationConfigService,
@@ -28,6 +29,8 @@ export type WebhookDisambiguator = {
 
 @Injectable()
 export class WebhookContextService {
+    private readonly logger = createLogger(WebhookContextService.name);
+
     constructor(
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
@@ -67,13 +70,25 @@ export class WebhookContextService {
         const automation = automations?.[0];
 
         if (!automation) {
+            // The repository is connected but no code review automation exists
+            // in the system at all — a setup/seed problem, not a per-team one.
+            this.logger.warn({
+                message:
+                    'Webhook ignored: no code review automation is registered in the system',
+                context: WebhookContextService.name,
+                metadata: { platformType, repositoryId },
+            });
             return null;
         }
+
+        const candidateTeamIds: string[] = [];
 
         for (const config of candidates) {
             if (!config?.team?.organization?.uuid || !config?.team?.uuid) {
                 continue;
             }
+
+            candidateTeamIds.push(config.team.uuid);
 
             const teamAutomations = await this.teamAutomationService.find({
                 automation: { uuid: automation.uuid },
@@ -91,6 +106,18 @@ export class WebhookContextService {
                 };
             }
         }
+
+        // The repository is connected (integration configs were found) but no
+        // candidate team has an ACTIVE code review automation. This is the
+        // silent-drop path — e.g. a webhook arriving right after onboarding
+        // before the team_automation row is active. Log it so the gap is
+        // observable instead of vanishing without a trace.
+        this.logger.warn({
+            message:
+                'Webhook ignored: repository is connected but no team has an active code review automation',
+            context: WebhookContextService.name,
+            metadata: { platformType, repositoryId, candidateTeamIds },
+        });
 
         return null;
     }
