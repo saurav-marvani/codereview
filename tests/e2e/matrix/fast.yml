@@ -74,3 +74,14 @@ cells:
     - target: cloud
       provider: github
       license: community-byok
+    # GitHub App (OAuth installation) variant. Covers the
+    # authenticateWithCodeOauth code path in github.service.ts which
+    # `github` (PAT) doesn't touch. Cloud-only because each self-hosted
+    # droplet would need its own App registered + installed (webhook
+    # URL is per-app, not per-install). Uses kodus-ai-qa App installed
+    # scope-limited to kodus-e2e/tiny-url-app — set
+    # GH_APP_TEST_REPO and GH_APP_INSTALLATION_ID in the env to enable;
+    # the cell is SKIPPED otherwise via --skip-missing-tokens.
+    - target: cloud
+      provider: github-app
+      license: paid

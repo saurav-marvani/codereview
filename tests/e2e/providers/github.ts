@@ -34,15 +34,22 @@ export class GitHubProvider extends BaseProvider {
     readonly integrationType = "GITHUB";
     readonly webhookPath = "/github/webhook";
 
-    private readonly token: string;
-    private readonly repoFullName: string;
-    private readonly apiBase = "https://api.github.com";
-    private readonly existingPrNumber?: number;
+    protected readonly token: string;
+    protected readonly repoFullName: string;
+    protected readonly apiBase = "https://api.github.com";
+    protected readonly existingPrNumber?: number;
 
-    constructor() {
+    constructor(opts?: { repoOverride?: string }) {
         super();
         this.token = requireEnv("GH_TEST_TOKEN");
-        this.repoFullName = requireEnv("GH_TEST_REPO");
+        // Subclasses (notably GitHubAppProvider) need to target a
+        // DIFFERENT repo than the PAT-driven default — the GitHub App
+        // is installed scope-limited to that other repo, so any PR we
+        // open against GH_TEST_REPO would never reach the App's
+        // webhook. Pass repoOverride to redirect this provider's
+        // entire surface (clone URL, /repos/<owner>/<repo>/*, webhook
+        // listing) to the App-bound repo.
+        this.repoFullName = opts?.repoOverride ?? requireEnv("GH_TEST_REPO");
         const existing = process.env.GH_TEST_PR_NUMBER;
         if (existing) this.existingPrNumber = Number(existing);
     }

@@ -99,11 +99,18 @@ export async function login(
     if (!organizationId) {
         throw new Error("JWT payload missing organizationId");
     }
+    // 30s envelope: under cloud QA load /team/ can hit the proxy
+    // read-timeout window and abort with "This operation was aborted"
+    // even though the underlying request would have completed in <1s.
+    // Observed 2026-05-21 on the full matrix run b4hvjc1wv: login
+    // succeeded but the next call (/team/) aborted at ~15s. Bumping
+    // to 30s removes the flake without masking real failures (QA's
+    // own gateway times out at 60s upstream).
     const teamsResp = await http<{ data: { uuid: string }[] }>(
         `${target.apiBaseUrl}/team/`,
         {
             headers: { Authorization: `Bearer ${accessToken}` },
-            timeoutMs: 15_000,
+            timeoutMs: 30_000,
         },
     );
     ensureOk(teamsResp, "onboarding:listTeams");
@@ -122,21 +129,34 @@ export async function registerIntegration(
 ): Promise<void> {
     log.info(`Registering ${provider.integrationType} integration`);
     const extras = provider.authExtraFields?.() ?? {};
+    // OAuth path (GitHub App today): the backend expects `code` =
+    // installation_id and ignores `token` entirely. See
+    // github.service.ts:authenticateWithCodeOauth — it calls
+    // appOctokit.auth({ type: 'installation', installationId: params.code }).
+    // Token path (PAT / app-password): payload carries the secret as
+    // `token`, no `code` field.
+    const authMode = provider.authMode();
+    const isOAuth = authMode === "oauth";
+    const body: Record<string, unknown> = {
+        integrationType: provider.integrationType,
+        authMode,
+        organizationAndTeamData: {
+            organizationId: session.organizationId,
+            teamId: session.teamId,
+        },
+        ...extras,
+    };
+    if (isOAuth) {
+        body.code = provider.authToken();
+    } else {
+        body.token = provider.authToken();
+    }
     const resp = await http<{ data: { status?: string } }>(
         `${target.apiBaseUrl}/code-management/auth-integration`,
         {
             method: "POST",
             headers: { Authorization: `Bearer ${session.accessToken}` },
-            body: {
-                integrationType: provider.integrationType,
-                authMode: provider.authMode(),
-                token: provider.authToken(),
-                organizationAndTeamData: {
-                    organizationId: session.organizationId,
-                    teamId: session.teamId,
-                },
-                ...extras,
-            },
+            body,
             timeoutMs: 30_000,
         },
     );
@@ -354,6 +374,7 @@ export async function finishOnboarding(
         // side fix (validate-prerequisites should retry with backoff
         // when no automation is found).
         await new Promise((r) => setTimeout(r, 10_000));
+        await resetCodeReviewConfig(target, session);
         return;
     }
 
@@ -387,6 +408,7 @@ export async function finishOnboarding(
             // 10s buffer keeps a webhook fired immediately after this
             // call from being silently dropped by validate-prerequisites.
             await new Promise((r) => setTimeout(r, 10_000));
+            await resetCodeReviewConfig(target, session);
             return;
         }
         await new Promise((r) => setTimeout(r, 10_000));
@@ -395,4 +417,63 @@ export async function finishOnboarding(
     throw new Error(
         `onboarding:finishOnboarding: HTTP ${resp.status} from proxy AND kodyLearningStatus did not become 'enabled' within 300s polling. Backend appears stuck.`,
     );
+}
+
+// Restores the tenant's code-review config to the canonical "auto-review
+// enabled" baseline. Called at two points:
+//
+//   1. At the end of `finishOnboarding` — handles fresh self-hosted tenants
+//      that signed up via /auth/signup, which land with
+//      `code_review_config.configs.automatedReviewActive` unset (null).
+//      `validate-config.stage.ts:486` treats null as falsy and silently
+//      skips every PR-opened review, so without this the very first PR a
+//      scenario opens times out blaming "no review activity".
+//
+//   2. At the start of any scenario that depends on auto-review being on
+//      (code-review-basic, kody-rules-create-and-apply, license-attribution,
+//      per-seat-license-toggle). Defense-in-depth: if a previous cell on
+//      the same tenant (matrix tenants are deterministic per provider) left
+//      `automatedReviewActive=false` behind — e.g. command-review's finally
+//      didn't run after a kill-9, or the runner aborted mid-restore — the
+//      next scenario explicitly resets state and isn't penalized for what
+//      its predecessor broke.
+//
+// Cloud QA tenants are seeded once by `setup-tenants.ts` and stay; we don't
+// recycle them per run. Self-hosted tenants live in our droplet and could
+// in theory be recycled, but for the same reason — they outlive a single
+// matrix run — they're treated the same way. The right invariant in both
+// targets is "each scenario asserts its preconditions explicitly", which is
+// what this helper makes cheap.
+//
+// Best-effort: if the API call fails the scenario will still surface the
+// downstream "no review" symptom, which is the existing failure shape.
+export async function resetCodeReviewConfig(
+    target: TargetContext,
+    session: KodusSession,
+): Promise<void> {
+    try {
+        const resp = await http(
+            `${target.apiBaseUrl}/parameters/create-or-update-code-review`,
+            {
+                method: "POST",
+                headers: { Authorization: `Bearer ${session.accessToken}` },
+                body: {
+                    organizationAndTeamData: { teamId: session.teamId },
+                    configValue: { automatedReviewActive: true },
+                },
+                timeoutMs: 20_000,
+            },
+        );
+        if (resp.status < 200 || resp.status >= 300) {
+            log.info(
+                `resetCodeReviewConfig: non-2xx response (${resp.status}); continuing — scenario will surface downstream review timeout if this didn't stick`,
+            );
+        }
+    } catch (err) {
+        log.info(
+            `resetCodeReviewConfig: ${
+                (err as Error).message
+            } — continuing (best-effort)`,
+        );
+    }
 }

@@ -26,6 +26,15 @@ export const onboardingWebhookRegistration: Scenario = {
     priority: "P0",
     appliesTo: {
         target: ["cloud", "self-hosted"],
+        // github-app is intentionally excluded: GitHub Apps don't
+        // register per-repo webhooks via the REST API (no
+        // /repos/{owner}/{repo}/hooks entry). The webhook URL is
+        // configured ONCE at the App registration level on
+        // github.com, and GitHub delivers events to every install
+        // automatically. This scenario asserts that Kodus
+        // auto-registered a hook via REST after onboarding — it
+        // would always fail for github-app, but for the right reason
+        // (the App's webhook isn't supposed to appear there).
         provider: ["github", "gitlab", "bitbucket", "azure-devops"],
         // Webhook registration is independent of license tier — it
         // happens during onboarding regardless. We only run it on `paid`

@@ -12,6 +12,7 @@ const FIXTURE_BRANCHES: Record<
     { head: string; base: string } | undefined
 > = {
     github: { head: "refactor/use-map-storage", base: "main" },
+    "github-app": { head: "refactor/use-map-storage", base: "main" },
     gitlab: { head: "refactor/use-map-storage", base: "main" },
     bitbucket: { head: "refactor/use-map-storage", base: "main" },
     "azure-devops": { head: "refactor/use-map-storage", base: "main" },
@@ -24,7 +25,7 @@ export const commandReview: Scenario = {
     priority: "P0",
     appliesTo: {
         target: ["cloud", "self-hosted"],
-        provider: ["github", "gitlab", "bitbucket", "azure-devops"],
+        provider: ["github", "github-app", "gitlab", "bitbucket", "azure-devops"],
         license: ["paid", "trial", "license-paid"],
     },
     // Same envelope as code-review-basic: needs room for onboarding +
@@ -146,6 +147,38 @@ export const commandReview: Scenario = {
                 await ctx.provider.closePR(pr);
             } catch {
                 /* best-effort */
+            }
+            // CRITICAL: restore automatedReviewActive=true. Without this,
+            // any cell that runs command-review followed by another
+            // scenario on the same tenant has auto-review SILENTLY
+            // skipped at validate-config.stage.ts:486 — the next PR
+            // opens, the webhook arrives, validate-config sees
+            // automatedReviewActive=false and returns canProceed=false
+            // with NO comment posted on the PR. The downstream scenario
+            // looks like a flaky review timeout, but the tenant is
+            // permanently broken until automatedReviewActive is flipped
+            // back to true. Discovered 2026-05-20 on the github-app
+            // smoke (PRs #3, #4, #5 all silently skipped after PR #2's
+            // command-review left the config disabled).
+            try {
+                await http(
+                    `${baseUrl}/parameters/create-or-update-code-review`,
+                    {
+                        method: "POST",
+                        headers: {
+                            Authorization: `Bearer ${session.accessToken}`,
+                        },
+                        body: {
+                            organizationAndTeamData: {
+                                teamId: session.teamId,
+                            },
+                            configValue: { automatedReviewActive: true },
+                        },
+                        timeoutMs: 20_000,
+                    },
+                );
+            } catch {
+                /* best-effort cleanup */
             }
         }
     },

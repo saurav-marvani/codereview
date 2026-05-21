@@ -92,3 +92,9 @@ cells:
     - target: cloud
       provider: github
       license: community-byok
+    # GitHub App (OAuth installation) variant. Same rationale as in
+    # fast.yml — covers the authenticateWithCodeOauth code path that
+    # the PAT cells don't exercise. Cloud-only.
+    - target: cloud
+      provider: github-app
+      license: paid

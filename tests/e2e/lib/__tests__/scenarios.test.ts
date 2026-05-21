@@ -18,11 +18,12 @@ test("allScenarios: includes the 10 release-gate scenarios", () => {
     ]);
 });
 
-test("command-review: cloud + self-hosted × all 4 providers × paid/trial/license-paid", () => {
+test("command-review: cloud + self-hosted × github + github-app + 3 others × paid/trial/license-paid", () => {
     const s = allScenarios["command-review"];
     assert.deepEqual(s.appliesTo.target, ["cloud", "self-hosted"]);
     assert.deepEqual(s.appliesTo.provider, [
         "github",
+        "github-app",
         "gitlab",
         "bitbucket",
         "azure-devops",
@@ -120,7 +121,7 @@ test("upgrade-n-1-to-n only applies to self-hosted", () => {
     assert.deepEqual(s.appliesTo.target, ["self-hosted"]);
 });
 
-test("onboarding-webhook-registration applies to all 4 providers", () => {
+test("onboarding-webhook-registration applies to 4 platform providers (NOT github-app)", () => {
     const s = allScenarios["onboarding-webhook-registration"];
     assert.ok(s.appliesTo.provider);
     for (const p of [
@@ -134,4 +135,11 @@ test("onboarding-webhook-registration applies to all 4 providers", () => {
             `webhook scenario missing provider: ${p}`,
         );
     }
+    // github-app must NOT be in this list — GitHub Apps deliver
+    // webhooks at the App level, not via /repos/.../hooks REST
+    // entries, so this scenario would always fail for it.
+    assert.ok(
+        !s.appliesTo.provider.includes("github-app"),
+        "webhook scenario must exclude github-app — GitHub Apps don't register per-repo hooks via REST",
+    );
 });

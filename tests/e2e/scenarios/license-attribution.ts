@@ -40,6 +40,12 @@ const FIXTURE_BRANCHES: Record<
         head: "feature/add-stats",
         base: "main",
     },
+    // App-installed clone of tiny-url (kodus-e2e/tiny-url-app); same
+    // feature/add-stats branch carried over via the initial mirror.
+    "github-app": {
+        head: "feature/add-stats",
+        base: "main",
+    },
 };
 
 export const licenseAttribution: Scenario = {
@@ -49,7 +55,7 @@ export const licenseAttribution: Scenario = {
     priority: "P0",
     appliesTo: {
         target: ["cloud", "self-hosted"],
-        provider: ["github", "gitlab", "azure-devops", "bitbucket"],
+        provider: ["github", "github-app", "gitlab", "azure-devops", "bitbucket"],
         license: [
             "free",
             "trial",

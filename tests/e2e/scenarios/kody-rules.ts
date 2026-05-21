@@ -41,6 +41,13 @@ const FIXTURE_BRANCHES: Record<
         head: "fixture/kody-rule-todo-remove-me",
         base: "main",
     },
+    // App-installed clone of tiny-url (kodus-e2e/tiny-url-app) carries
+    // the same fixture/kody-rule-todo-remove-me branch via the
+    // initial mirror; instance-scoped via GH_APP_TEST_REPO.
+    "github-app": {
+        head: "fixture/kody-rule-todo-remove-me",
+        base: "main",
+    },
 };
 
 export const kodyRulesCreateAndApply: Scenario = {
@@ -49,7 +56,7 @@ export const kodyRulesCreateAndApply: Scenario = {
     priority: "P0",
     appliesTo: {
         target: ["cloud", "self-hosted"],
-        provider: ["github", "gitlab", "bitbucket", "azure-devops"],
+        provider: ["github", "github-app", "gitlab", "bitbucket", "azure-devops"],
         license: ["paid", "license-paid"],
     },
     timeoutSec: 1200,

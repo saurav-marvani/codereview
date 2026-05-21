@@ -163,6 +163,25 @@ const TENANTS: TenantSpec[] = [
         provider: "github",
         repoFullName: "kodus-e2e/tiny-url",
     },
+    {
+        // GitHub App (OAuth installation) variant. Needs a DEDICATED
+        // tenant — sharing one with the PAT cells would have the App
+        // and the PAT both registered against the same Kodus
+        // organization, which makes the auth-integration upsert
+        // overwrite one with the other on each run. The repo
+        // (kodus-e2e/tiny-url-app) is the scope-limited install
+        // target of the kodus-ai-qa GitHub App; the App's webhook
+        // delivers to qa.web.kodus.io. Connect step is SKIPPED at
+        // seed time (provider==="github-app") because the scenario
+        // itself calls /code-management/auth-integration with
+        // authMode=oauth + code=installation_id, which has a
+        // different payload than the PAT path used by the seeder.
+        email: "e2e-paid-gh-app@kodus.io",
+        name: "Smoke Paid GitHub App",
+        license: "paid",
+        provider: "github-app",
+        repoFullName: "kodus-e2e/tiny-url-app",
+    },
 ];
 
 interface SavedTenant extends TenantSpec {
@@ -487,8 +506,27 @@ async function seedTenant(
 
     const session = await login(target, { email: tenant.email, password });
 
-    const { integrationConnected, repoRegistered, onboardingFinished } =
-        await connectProvider(target, session, tenant);
+    // github-app tenants skip the PAT-based connectProvider — the
+    // scenario itself calls /code-management/auth-integration with
+    // authMode=oauth + code=installation_id, which uses a payload
+    // shape (no `token` field, repo discovery via App permissions)
+    // that the seeder's PAT-shaped registerIntegration doesn't
+    // produce. Running it here would either fail or leave a stale
+    // PAT integration on the org that the scenario's OAuth upsert
+    // would then overwrite — easier to just defer the whole thing.
+    let integrationConnected = false;
+    let repoRegistered = false;
+    let onboardingFinished = false;
+    if (tenant.provider === "github-app") {
+        console.log(
+            `  [info] skipping PAT connectProvider for github-app tenant — scenario will connect via OAuth at runtime`,
+        );
+    } else {
+        const result = await connectProvider(target, session, tenant);
+        integrationConnected = result.integrationConnected;
+        repoRegistered = result.repoRegistered;
+        onboardingFinished = result.onboardingFinished;
+    }
 
     const tierUpgraded = await ensureLicenseTier(target, session, tenant);
 

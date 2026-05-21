@@ -33,13 +33,19 @@ USER_EMAIL="${USER_EMAIL:-sso-user@kodus-test.com}"
 USER_PASSWORD="${USER_PASSWORD:-TestSso!2026}"
 
 # Wait for Keycloak to come up behind Caddy. ACME issuance on a freshly
-# booted droplet can take 30–90s, so allow generous slack.
-echo "==> waiting for Keycloak at ${KC_BASE_URL}/realms/master ..." >&2
-for i in $(seq 1 120); do
+# booted droplet plus Keycloak's JVM warmup + realm import can take well
+# past 4 min — observed 14 min on a cold droplet 2026-05-21 even though
+# Caddy/Keycloak containers were both "Up" the whole time. 10 min gives
+# slack for that worst-case without masking a genuine boot failure (which
+# would either crash-loop the container or never reach the /realms/master
+# endpoint regardless of how long we wait).
+KC_WAIT_MAX="${KC_WAIT_MAX:-600}"
+echo "==> waiting for Keycloak at ${KC_BASE_URL}/realms/master (up to ${KC_WAIT_MAX}s) ..." >&2
+for i in $(seq 1 $((KC_WAIT_MAX / 2))); do
     code=$(curl -sk -o /dev/null -w '%{http_code}' "${KC_BASE_URL}/realms/master" || true)
-    if [ "${code}" = "200" ]; then echo "    ready (HTTP ${code} after ${i}s)" >&2; break; fi
-    if [ "${i}" = 120 ]; then
-        echo "error: Keycloak did not respond at ${KC_BASE_URL} after 240s" >&2
+    if [ "${code}" = "200" ]; then echo "    ready (HTTP ${code} after $((i * 2))s)" >&2; break; fi
+    if [ "${i}" = $((KC_WAIT_MAX / 2)) ]; then
+        echo "error: Keycloak did not respond at ${KC_BASE_URL} after ${KC_WAIT_MAX}s" >&2
         exit 1
     fi
     sleep 2

@@ -17,7 +17,21 @@ function loadMatrix(name: string): MatrixFile {
 }
 
 const validTargets: Target[] = ["cloud", "self-hosted"];
+// All provider IDs that can legitimately appear in a matrix cell. Note
+// github-app is a separate ID from github even though it talks to the
+// same platform — they exercise different auth code paths.
 const validProviders: ProviderName[] = [
+    "github",
+    "github-app",
+    "gitlab",
+    "bitbucket",
+    "azure-devops",
+];
+// Platform providers that fast.yml MUST cover at least once. github-app
+// is intentionally excluded — it's an auth-mode variant of github, not
+// a separate platform; running it is a release-gate concern, not a
+// platform-coverage one.
+const platformProviders: ProviderName[] = [
     "github",
     "gitlab",
     "bitbucket",
@@ -96,11 +110,11 @@ test("every cell in every matrix uses valid axes", () => {
     }
 });
 
-test("fast.yml has at least one cell per provider (covering all 4)", () => {
+test("fast.yml has at least one cell per platform provider (covering all 4)", () => {
     const m = loadMatrix("fast.yml");
     const providers = new Set(m.cells.map((c) => c.provider));
-    for (const p of validProviders) {
-        assert.ok(providers.has(p), `fast.yml missing provider: ${p}`);
+    for (const p of platformProviders) {
+        assert.ok(providers.has(p), `fast.yml missing platform provider: ${p}`);
     }
 });
 

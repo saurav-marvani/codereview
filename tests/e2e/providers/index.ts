@@ -2,12 +2,15 @@ import type { Provider, ProviderName } from "../lib/types.js";
 import { AzureDevOpsProvider } from "./azure-devops.js";
 import { BitbucketProvider } from "./bitbucket.js";
 import { GitHubProvider } from "./github.js";
+import { GitHubAppProvider } from "./github-app.js";
 import { GitLabProvider } from "./gitlab.js";
 
 export function makeProvider(name: ProviderName): Provider {
     switch (name) {
         case "github":
             return new GitHubProvider();
+        case "github-app":
+            return new GitHubAppProvider();
         case "gitlab":
             return new GitLabProvider();
         case "bitbucket":
@@ -24,6 +27,7 @@ export function makeProvider(name: ProviderName): Provider {
 export {
     AzureDevOpsProvider,
     BitbucketProvider,
+    GitHubAppProvider,
     GitHubProvider,
     GitLabProvider,
 };

@@ -18,6 +18,7 @@ const FIXTURE_BRANCHES: Record<
     { head: string; base: string }
 > = {
     github: { head: "feature/add-stats", base: "main" },
+    "github-app": { head: "feature/add-stats", base: "main" },
     gitlab: { head: "feature/add-stats", base: "main" },
     bitbucket: { head: "feature/add-stats", base: "main" },
     "azure-devops": { head: "feature/add-stats", base: "main" },

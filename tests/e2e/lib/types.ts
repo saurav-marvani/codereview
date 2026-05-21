@@ -1,6 +1,11 @@
 export type Target = "cloud" | "self-hosted";
 
-export type ProviderName = "github" | "gitlab" | "bitbucket" | "azure-devops";
+export type ProviderName =
+    | "github"
+    | "github-app"
+    | "gitlab"
+    | "bitbucket"
+    | "azure-devops";
 
 export type LicenseMode =
     | "free"

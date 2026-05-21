@@ -42,6 +42,13 @@ const FIXTURE_BRANCHES: Record<
         head: "refactor/use-map-storage",
         base: "main",
     },
+    // App-installed clone of tiny-url (same branches), instance-scoped
+    // via GH_APP_TEST_REPO so the App-bound repo is hit instead of the
+    // PAT-bound one.
+    "github-app": {
+        head: "refactor/use-map-storage",
+        base: "main",
+    },
 };
 
 export const codeReviewBasic: Scenario = {
@@ -50,7 +57,7 @@ export const codeReviewBasic: Scenario = {
     priority: "P0",
     appliesTo: {
         target: ["cloud", "self-hosted"],
-        provider: ["github", "gitlab", "bitbucket", "azure-devops"],
+        provider: ["github", "github-app", "gitlab", "bitbucket", "azure-devops"],
         license: ["paid", "trial", "license-paid"],
     },
     // Scenario budget must comfortably exceed the inner pollForReview

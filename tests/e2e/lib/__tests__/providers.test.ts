@@ -118,7 +118,11 @@ test("makeProvider throws on unknown provider name", () => {
     );
 });
 
-test("all 4 providers have distinct webhook paths", () => {
+test("all 4 platform providers have distinct webhook paths", () => {
+    // github-app is intentionally not in this set — it shares the
+    // /github/webhook path with github (same platform, different
+    // auth mode). The uniqueness invariant is per-platform, not
+    // per-provider.
     withEnv(
         {
             GH_TEST_TOKEN: "t", GH_TEST_REPO: "o/r",
@@ -134,6 +138,28 @@ test("all 4 providers have distinct webhook paths", () => {
                 makeProvider("azure-devops").webhookPath,
             ]);
             assert.equal(paths.size, 4, "webhook paths must be unique");
+        },
+    );
+});
+
+test("makeProvider github-app constructs and uses oauth + installation_id", () => {
+    withEnv(
+        {
+            GH_TEST_TOKEN: "gh-pat",
+            GH_APP_TEST_REPO: "kodus-e2e/tiny-url-app",
+            GH_APP_INSTALLATION_ID: "134164671",
+        },
+        () => {
+            const p = makeProvider("github-app");
+            assert.equal(p.name, "github-app");
+            assert.equal(p.integrationType, "GITHUB");
+            assert.equal(p.webhookPath, "/github/webhook");
+            assert.equal(p.authMode(), "oauth");
+            assert.equal(
+                p.authToken(),
+                "134164671",
+                "authToken returns the installation id — the backend reads it as `code` for the oauth flow",
+            );
         },
     );
 });

@@ -65,6 +65,16 @@ function parseArgs(): {
 // `requireEnv` calls in tests/e2e/providers/*.ts.
 const PROVIDER_REQUIRED_ENV: Record<string, string[]> = {
     github: ["GH_TEST_TOKEN", "GH_TEST_REPO"],
+    // GitHub App variant: shares GH_TEST_TOKEN with `github` (used for
+    // PR open / comment posting / webhook listing — those code paths
+    // still run as a user, not as the App). The App-specific bits are
+    // GH_APP_TEST_REPO (where the App is installed, scope-limited) and
+    // GH_APP_INSTALLATION_ID (the numeric id captured after install).
+    "github-app": [
+        "GH_TEST_TOKEN",
+        "GH_APP_TEST_REPO",
+        "GH_APP_INSTALLATION_ID",
+    ],
     gitlab: ["GL_TEST_TOKEN", "GL_TEST_REPO"],
     bitbucket: ["BB_TEST_USER", "BB_TEST_APP_PASSWORD", "BB_TEST_REPO"],
     "azure-devops": [
