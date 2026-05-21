@@ -374,7 +374,7 @@ export async function finishOnboarding(
         // side fix (validate-prerequisites should retry with backoff
         // when no automation is found).
         await new Promise((r) => setTimeout(r, 10_000));
-        await ensureAutomatedReviewActive(target, session);
+        await resetCodeReviewConfig(target, session);
         return;
     }
 
@@ -408,7 +408,7 @@ export async function finishOnboarding(
             // 10s buffer keeps a webhook fired immediately after this
             // call from being silently dropped by validate-prerequisites.
             await new Promise((r) => setTimeout(r, 10_000));
-            await ensureAutomatedReviewActive(target, session);
+            await resetCodeReviewConfig(target, session);
             return;
         }
         await new Promise((r) => setTimeout(r, 10_000));
@@ -419,18 +419,35 @@ export async function finishOnboarding(
     );
 }
 
-// Self-hosted tenants land with `code_review_config.configs.automatedReviewActive`
-// unset (null), which `validate-config.stage.ts:486` treats as falsy → every PR
-// the scenario opens is silently skipped (no comment posted, runner times out
-// blaming "no review activity"). Cloud QA tenants don't hit this because the
-// setup-tenants seeder configures the org explicitly during /setup; self-hosted
-// tenants we create via /auth/signup never run through that path.
+// Restores the tenant's code-review config to the canonical "auto-review
+// enabled" baseline. Called at two points:
 //
-// Pinning the value to `true` here makes the matrix runner's
-// finishOnboarding output a tenant whose first PR will actually get reviewed.
+//   1. At the end of `finishOnboarding` — handles fresh self-hosted tenants
+//      that signed up via /auth/signup, which land with
+//      `code_review_config.configs.automatedReviewActive` unset (null).
+//      `validate-config.stage.ts:486` treats null as falsy and silently
+//      skips every PR-opened review, so without this the very first PR a
+//      scenario opens times out blaming "no review activity".
+//
+//   2. At the start of any scenario that depends on auto-review being on
+//      (code-review-basic, kody-rules-create-and-apply, license-attribution,
+//      per-seat-license-toggle). Defense-in-depth: if a previous cell on
+//      the same tenant (matrix tenants are deterministic per provider) left
+//      `automatedReviewActive=false` behind — e.g. command-review's finally
+//      didn't run after a kill-9, or the runner aborted mid-restore — the
+//      next scenario explicitly resets state and isn't penalized for what
+//      its predecessor broke.
+//
+// Cloud QA tenants are seeded once by `setup-tenants.ts` and stay; we don't
+// recycle them per run. Self-hosted tenants live in our droplet and could
+// in theory be recycled, but for the same reason — they outlive a single
+// matrix run — they're treated the same way. The right invariant in both
+// targets is "each scenario asserts its preconditions explicitly", which is
+// what this helper makes cheap.
+//
 // Best-effort: if the API call fails the scenario will still surface the
-// downstream "no review" symptom, which is the existing behavior.
-async function ensureAutomatedReviewActive(
+// downstream "no review" symptom, which is the existing failure shape.
+export async function resetCodeReviewConfig(
     target: TargetContext,
     session: KodusSession,
 ): Promise<void> {
@@ -449,12 +466,12 @@ async function ensureAutomatedReviewActive(
         );
         if (resp.status < 200 || resp.status >= 300) {
             log.info(
-                `ensureAutomatedReviewActive: non-2xx response (${resp.status}); continuing — scenario will surface downstream review timeout if this didn't stick`,
+                `resetCodeReviewConfig: non-2xx response (${resp.status}); continuing — scenario will surface downstream review timeout if this didn't stick`,
             );
         }
     } catch (err) {
         log.info(
-            `ensureAutomatedReviewActive: ${
+            `resetCodeReviewConfig: ${
                 (err as Error).message
             } — continuing (best-effort)`,
         );
