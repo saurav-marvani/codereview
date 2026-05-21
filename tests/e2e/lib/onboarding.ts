@@ -99,11 +99,18 @@ export async function login(
     if (!organizationId) {
         throw new Error("JWT payload missing organizationId");
     }
+    // 30s envelope: under cloud QA load /team/ can hit the proxy
+    // read-timeout window and abort with "This operation was aborted"
+    // even though the underlying request would have completed in <1s.
+    // Observed 2026-05-21 on the full matrix run b4hvjc1wv: login
+    // succeeded but the next call (/team/) aborted at ~15s. Bumping
+    // to 30s removes the flake without masking real failures (QA's
+    // own gateway times out at 60s upstream).
     const teamsResp = await http<{ data: { uuid: string }[] }>(
         `${target.apiBaseUrl}/team/`,
         {
             headers: { Authorization: `Bearer ${accessToken}` },
-            timeoutMs: 15_000,
+            timeoutMs: 30_000,
         },
     );
     ensureOk(teamsResp, "onboarding:listTeams");
