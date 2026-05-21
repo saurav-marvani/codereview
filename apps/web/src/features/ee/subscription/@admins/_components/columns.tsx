@@ -269,7 +269,7 @@ export const columns: ColumnDef<MembersSetup>[] = [
                                 <SelectValue
                                     placeholder={
                                         row.original.userStatus ===
-                                        UserStatus.INACTIVE
+                                            UserStatus.INACTIVE
                                             ? "Inactive"
                                             : role
                                     }>
@@ -354,13 +354,13 @@ export const columns: ColumnDef<MembersSetup>[] = [
                 <div className="flex w-fit items-center gap-3">
                     {row.original.userStatus ===
                         UserStatus.AWAITING_APPROVAL && (
-                        <Button
-                            size="xs"
-                            variant="helper"
-                            className="pointer-events-none">
-                            Needs approval
-                        </Button>
-                    )}
+                            <Button
+                                size="xs"
+                                variant="helper"
+                                className="pointer-events-none">
+                                Needs approval
+                            </Button>
+                        )}
 
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -372,58 +372,58 @@ export const columns: ColumnDef<MembersSetup>[] = [
                         <DropdownMenuContent align="end">
                             {row.original.userStatus ===
                                 UserStatus.AWAITING_APPROVAL && (
-                                <>
-                                    <DropdownMenuItem
-                                        leftIcon={<CheckIcon />}
-                                        className="text-success"
-                                        disabled={!canEdit}
-                                        onClick={() => approveUserAction()}>
-                                        Approve
-                                    </DropdownMenuItem>
+                                    <>
+                                        <DropdownMenuItem
+                                            leftIcon={<CheckIcon />}
+                                            className="text-success"
+                                            disabled={!canEdit}
+                                            onClick={() => approveUserAction()}>
+                                            Approve
+                                        </DropdownMenuItem>
 
-                                    <DropdownMenuSeparator />
-                                </>
-                            )}
+                                        <DropdownMenuSeparator />
+                                    </>
+                                )}
 
                             <DropdownMenuItem
                                 leftIcon={<CopyIcon />}
                                 disabled={!canEdit}
-                                onClick={async () => {
+                                onSelect={() => {
                                     const inviteLink = `${window.location.origin}/invite/${row.original.userId}`;
                                     const copied =
-                                        await ClipboardHelpers.copyTextToClipboard(
+                                        ClipboardHelpers.copyTextToClipboard(
                                             inviteLink,
                                         );
 
                                     toast(
                                         copied
                                             ? {
-                                                  variant: "info",
-                                                  title: "Copied to clipboard the invite link",
-                                                  description: (
-                                                      <span className="text-text-secondary">
-                                                          for user with email{" "}
-                                                          <span className="text-text-primary">
-                                                              {
-                                                                  row.original
-                                                                      .email
-                                                              }
-                                                          </span>
-                                                      </span>
-                                                  ),
-                                              }
+                                                variant: "info",
+                                                title: "Copied to clipboard the invite link",
+                                                description: (
+                                                    <span className="text-text-secondary">
+                                                        for user with email{" "}
+                                                        <span className="text-text-primary">
+                                                            {
+                                                                row.original
+                                                                    .email
+                                                            }
+                                                        </span>
+                                                    </span>
+                                                ),
+                                            }
                                             : {
-                                                  variant: "danger",
-                                                  title: "Couldn't copy the invite link",
-                                                  description: (
-                                                      <span className="text-text-secondary">
-                                                          Copy it manually:{" "}
-                                                          <span className="text-text-primary">
-                                                              {inviteLink}
-                                                          </span>
-                                                      </span>
-                                                  ),
-                                              },
+                                                variant: "danger",
+                                                title: "Couldn't copy the invite link",
+                                                description: (
+                                                    <span className="text-text-secondary">
+                                                        Copy it manually:{" "}
+                                                        <span className="text-text-primary">
+                                                            {inviteLink}
+                                                        </span>
+                                                    </span>
+                                                ),
+                                            },
                                     );
                                 }}>
                                 Copy invite link

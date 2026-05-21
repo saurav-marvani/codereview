@@ -183,12 +183,10 @@ export const IssueDetailsRightSheet = ({
                             variant="helper"
                             data-disabled={undefined}
                             className="min-w-21 py-2"
-                            onClick={async () => {
-                                try {
-                                    await ClipboardHelpers.copyTextToClipboard(
-                                        window.location.toString(),
-                                    );
-                                } catch {}
+                            onClick={() => {
+                                ClipboardHelpers.copyTextToClipboard(
+                                    window.location.toString(),
+                                );
                             }}>
                             <ButtonWithFeedback.Feedback>
                                 <span className="text-success font-semibold">

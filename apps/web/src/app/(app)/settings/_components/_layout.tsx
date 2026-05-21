@@ -139,11 +139,6 @@ export const SettingsLayout = ({
         },
     );
 
-    console.log(
-        "configValue in layout",
-        liveShellQuery?.configValue ?? initialConfigValue,
-    );
-
     return (
         <SettingsLayoutShell
             teamId={effectiveTeamId}
@@ -174,10 +169,10 @@ function SettingsLayoutShell({
     const { repositoryId, pageName, directoryId } = useCodeReviewRouteParams();
     const globalConfigOverrideCount = configValue
         ? countConfigOverridesForRoutes(
-              configValue.configs,
-              routes.map((r) => r.href),
-              FormattedConfigLevel.GLOBAL,
-          )
+            configValue.configs,
+            routes.map((r) => r.href),
+            FormattedConfigLevel.GLOBAL,
+        )
         : 0;
     const globalCustomMessagesOverrideCount = useCustomMessagesOverrideCount({
         scopeRepositoryId: "global",
@@ -243,10 +238,10 @@ function SettingsLayoutShell({
         () =>
             configValue
                 ? resolveCodeReviewConfigForScope(
-                      configValue,
-                      repositoryId,
-                      directoryId,
-                  )
+                    configValue,
+                    repositoryId,
+                    directoryId,
+                )
                 : undefined,
         [configValue, directoryId, repositoryId],
     );
@@ -344,9 +339,9 @@ function SettingsLayoutShell({
                                                         ({ label, href }) => {
                                                             const active =
                                                                 repositoryId ===
-                                                                    "global" &&
+                                                                "global" &&
                                                                 pageName ===
-                                                                    href;
+                                                                href;
 
                                                             return (
                                                                 <SidebarMenuSubItem
