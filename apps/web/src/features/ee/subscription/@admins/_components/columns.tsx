@@ -309,6 +309,7 @@ export const columns: ColumnDef<MembersSetup>[] = [
         header: "Actions",
         meta: { align: "right" },
         cell: ({ row }) => {
+            const { userId } = useAuth();
             const canEdit = usePermission(
                 Action.Update,
                 ResourceType.UserSettings,
@@ -317,6 +318,7 @@ export const columns: ColumnDef<MembersSetup>[] = [
                 Action.Delete,
                 ResourceType.UserSettings,
             );
+            const isSelf = row.original.userId === userId;
 
             const approveUserAction = async () => {
                 try {
@@ -387,39 +389,65 @@ export const columns: ColumnDef<MembersSetup>[] = [
                                 leftIcon={<CopyIcon />}
                                 disabled={!canEdit}
                                 onClick={async () => {
-                                    await ClipboardHelpers.copyTextToClipboard(
-                                        `${window.location.origin}/invite/${row.original.userId}`,
-                                    );
+                                    const inviteLink = `${window.location.origin}/invite/${row.original.userId}`;
+                                    const copied =
+                                        await ClipboardHelpers.copyTextToClipboard(
+                                            inviteLink,
+                                        );
 
-                                    toast({
-                                        variant: "info",
-                                        title: "Copied to clipboard the invite link",
-                                        description: (
-                                            <span className="text-text-secondary">
-                                                for user with email{" "}
-                                                <span className="text-text-primary">
-                                                    {row.original.email}
-                                                </span>
-                                            </span>
-                                        ),
-                                    });
+                                    toast(
+                                        copied
+                                            ? {
+                                                  variant: "info",
+                                                  title: "Copied to clipboard the invite link",
+                                                  description: (
+                                                      <span className="text-text-secondary">
+                                                          for user with email{" "}
+                                                          <span className="text-text-primary">
+                                                              {
+                                                                  row.original
+                                                                      .email
+                                                              }
+                                                          </span>
+                                                      </span>
+                                                  ),
+                                              }
+                                            : {
+                                                  variant: "danger",
+                                                  title: "Couldn't copy the invite link",
+                                                  description: (
+                                                      <span className="text-text-secondary">
+                                                          Copy it manually:{" "}
+                                                          <span className="text-text-primary">
+                                                              {inviteLink}
+                                                          </span>
+                                                      </span>
+                                                  ),
+                                              },
+                                    );
                                 }}>
                                 Copy invite link
                             </DropdownMenuItem>
 
-                            <DropdownMenuSeparator />
+                            {!isSelf && (
+                                <>
+                                    <DropdownMenuSeparator />
 
-                            <DropdownMenuItem
-                                className="text-danger"
-                                leftIcon={<TrashIcon />}
-                                disabled={!canDelete}
-                                onClick={() =>
-                                    magicModal.show(() => (
-                                        <DeleteModal member={row.original} />
-                                    ))
-                                }>
-                                Delete
-                            </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        className="text-danger"
+                                        leftIcon={<TrashIcon />}
+                                        disabled={!canDelete}
+                                        onClick={() =>
+                                            magicModal.show(() => (
+                                                <DeleteModal
+                                                    member={row.original}
+                                                />
+                                            ))
+                                        }>
+                                        Delete
+                                    </DropdownMenuItem>
+                                </>
+                            )}
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </div>

@@ -1,5 +1,5 @@
 import { createLogger } from '@kodus/flow';
-import { Inject, Injectable } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 
 import { DeleteUserUseCase } from '@libs/identity/application/use-cases/user/delete.use-case';
@@ -41,6 +41,16 @@ export class DeleteTeamMembersUseCase implements IUseCase {
         removeAll: boolean = false,
     ): Promise<string[] | void> {
         const memberToRemove = await this.teamMembersService.findOne({ uuid });
+
+        // A user must not be able to remove their own account: it would
+        // orphan the org and, for a single-team user, cascade into
+        // deleting their own User entity via `deleteUserUseCase` below.
+        if (
+            memberToRemove?.user?.uuid &&
+            memberToRemove.user.uuid === this.request.user?.uuid
+        ) {
+            throw new ForbiddenException('You cannot remove your own account');
+        }
 
         const teamMembersRelated = await this.teamMembersService.findManyByUser(
             memberToRemove.user.uuid,

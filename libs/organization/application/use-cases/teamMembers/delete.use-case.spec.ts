@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 
@@ -150,5 +151,78 @@ describe('DeleteTeamMembersUseCase — org.member_removed emit', () => {
         expect(teamMembers.deleteMembers).toHaveBeenCalled();
         // Still cascaded to user delete (single-team removal).
         expect(deleteUser.execute).toHaveBeenCalledWith('user-1');
+    });
+});
+
+describe('DeleteTeamMembersUseCase — self-deletion guard', () => {
+    const buildMember = (memberUuid: string, userUuid: string) => ({
+        uuid: memberUuid,
+        user: {
+            uuid: userUuid,
+            name: 'Member',
+            email: `${userUuid}@acme.com`,
+        },
+        team: { uuid: 'team-1', name: 'Engineering' },
+        organization: { uuid: 'org-1', name: 'Acme Inc' },
+    });
+
+    const build = async (requestUserUuid: string) => {
+        const teamMembers = {
+            findOne: jest.fn(),
+            findManyByUser: jest.fn().mockResolvedValue([]),
+            countByUser: jest.fn().mockResolvedValue(1),
+            deleteMembers: jest.fn().mockResolvedValue(undefined),
+        };
+        const deleteUser = { execute: jest.fn().mockResolvedValue(undefined) };
+        const notify = { emit: jest.fn().mockResolvedValue(undefined) };
+
+        const module: TestingModule = await Test.createTestingModule({
+            providers: [
+                DeleteTeamMembersUseCase,
+                { provide: TEAM_MEMBERS_SERVICE_TOKEN, useValue: teamMembers },
+                { provide: DeleteUserUseCase, useValue: deleteUser },
+                { provide: NotificationService, useValue: notify },
+                {
+                    provide: REQUEST,
+                    useValue: {
+                        user: {
+                            uuid: requestUserUuid,
+                            email: `${requestUserUuid}@acme.com`,
+                            organization: { uuid: 'org-1', name: 'Acme Inc' },
+                        },
+                    },
+                },
+            ],
+        }).compile();
+
+        return {
+            useCase: module.get(DeleteTeamMembersUseCase),
+            teamMembers,
+            deleteUser,
+        };
+    };
+
+    it('throws and deletes nothing when a user removes their own account', async () => {
+        const { useCase, teamMembers, deleteUser } = await build('user-self');
+        teamMembers.findOne.mockResolvedValue(
+            buildMember('member-self', 'user-self'),
+        );
+
+        await expect(useCase.execute('member-self')).rejects.toBeInstanceOf(
+            ForbiddenException,
+        );
+
+        expect(teamMembers.deleteMembers).not.toHaveBeenCalled();
+        expect(deleteUser.execute).not.toHaveBeenCalled();
+    });
+
+    it('still removes a different member', async () => {
+        const { useCase, teamMembers } = await build('user-self');
+        const target = buildMember('member-2', 'user-2');
+        teamMembers.findOne.mockResolvedValue(target);
+
+        await useCase.execute('member-2');
+
+        expect(teamMembers.deleteMembers).toHaveBeenCalledWith([target]);
     });
 });
