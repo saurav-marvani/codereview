@@ -148,6 +148,7 @@ async function resolveTenantForCell(
     target: TargetContext,
     license: LicenseMode,
     provider: ProviderName,
+    runId: string,
 ): Promise<TenantCredentials | undefined> {
     if (target.target === "cloud") {
         // Preferred path (post-cloud:setup-tenants): match by
@@ -175,10 +176,28 @@ async function resolveTenantForCell(
         if (!email || !password) return undefined;
         return { email, password };
     }
-    // self-hosted: per-provider deterministic tenant. signUp is idempotent
-    // — if provision already seeded this email it returns immediately;
-    // otherwise it seeds the tenant on first use.
-    const email = `e2e-${provider}@kodus.local`;
+    // self-hosted: fresh tenant per matrix run. Deterministic per
+    // (runId, provider) so all cells/scenarios within ONE matrix run
+    // share state (cell 1 onboarding-webhook prepares config that
+    // cell 2 code-review-basic relies on), but a new run starts from
+    // a clean tenant — no carryover of stale code_review_config rows,
+    // command-review's automatedReviewActive=false leftover, or a
+    // team_automation that drifted out of sync after dozens of
+    // POST /parameters/create-or-update calls. Junior 2026-05-21:
+    // the deterministic `e2e-${provider}@kodus.local` email accumu-
+    // lated 25 rows of code_review_config from earlier debug runs and
+    // the latest row's `configs: { automatedReviewActive: false }`
+    // (left behind by command-review's finally restoration, which
+    // is a known no-op due to deepDifference stripping the default
+    // value) silently skipped the review pipeline on subsequent
+    // cells — fresh, uncluttered tenants dodge the whole class.
+    //
+    // SH_TENANT_EMAIL override remains for one-off manual runs where
+    // the caller deliberately wants a specific persistent tenant.
+    const explicitEmail = process.env.SH_TENANT_EMAIL;
+    const email =
+        explicitEmail ??
+        `e2e-${provider}-${runId.slice(0, 8)}@kodus.local`;
     const password =
         process.env.SH_TENANT_PASSWORD ??
         process.env.TEST_USER_PASSWORD ??
@@ -206,7 +225,12 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
             : envForTarget(cell.target);
         const tenant = opts.dryRun
             ? { email: "dry-run@kodus.test", password: "dry-run" }
-            : await resolveTenantForCell(target, cell.license, cell.provider);
+            : await resolveTenantForCell(
+                  target,
+                  cell.license,
+                  cell.provider,
+                  opts.runId,
+              );
 
         for (const scenario of opts.scenarios) {
             const cellLabel = `${scenario.id} × ${cell.target} × ${cell.provider} × ${cell.license}`;
