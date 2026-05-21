@@ -117,6 +117,19 @@ export interface Provider {
         pr: { number: number },
         opts: { sinceIso: string; triggerId?: string; timeoutSec?: number },
     ): Promise<ReviewSignal>;
+    // Phase-A poll for "Kody acknowledged the PR" — i.e. ANY comment
+    // carrying the `<!-- kody-codereview` marker has appeared on the
+    // PR (including the "Code Review Started!" placeholder that
+    // `pollForReview` deliberately filters out). Lets the scenario
+    // distinguish "review pipeline never woke up" (fail fast, ~60s)
+    // from "pipeline ran but LLM produced no findings" (the long
+    // 1500s budget). Optional because GitLab/Bitbucket/Azure aren't
+    // wired yet — code-review-basic only runs phase A when the
+    // provider implements this.
+    waitForPipelineStart?(
+        pr: { number: number },
+        opts: { sinceIso: string; timeoutSec: number },
+    ): Promise<{ startedAt: string; sample: string }>;
     postComment(prNumber: number, body: string): Promise<{ id: string }>;
     authMode(): "token" | "oauth" | "app-password";
     authToken(): string;

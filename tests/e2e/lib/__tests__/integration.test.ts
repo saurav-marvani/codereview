@@ -139,7 +139,25 @@ test("integration: code-review-basic runs end-to-end against mocked Kodus + GitH
             method: "GET",
             pathRegex: /^\/repos\/[^/]+\/[^/]+\/issues\/\d+\/comments/,
             handler: (_req, res) => {
-                json(res, 200, []);
+                // Phase-A heartbeat — Kody posts the "Code Review
+                // Started!" placeholder to issueComments on every PR
+                // it picks up. Carries the kody-codereview marker but
+                // is correctly classified as "started" by
+                // pollForReview's filter, so it won't double-count as
+                // a finding. The new code-review-basic scenario blocks
+                // on this until 60s before polling for actual review
+                // output; without it the positive-path test would
+                // time out in Phase A.
+                const startedAt = new Date(
+                    new Date(reviewSinceWindow.triggeredAt).getTime() + 200,
+                ).toISOString();
+                json(res, 200, [
+                    {
+                        id: 4004,
+                        body: "<!-- kody-codereview -->\n\nCode Review Started!",
+                        created_at: startedAt,
+                    },
+                ]);
             },
         },
         {

@@ -397,6 +397,45 @@ export class GitHubProvider extends BaseProvider {
         return result;
     }
 
+    // Phase-A signal for code-review-basic: returns as soon as ANY
+    // comment with the `<!-- kody-codereview` discriminator shows up
+    // on the PR. Includes the "Code Review Started!" placeholder
+    // that pollForReview drops — by design, since this phase only
+    // proves the worker dequeued the PR and Kody got far enough to
+    // post a heartbeat. Issue comments only (placeholder lives
+    // there); review-comments and reviews lag behind by definition.
+    async waitForPipelineStart(
+        pr: { number: number },
+        opts: { sinceIso: string; timeoutSec: number },
+    ): Promise<{ startedAt: string; sample: string }> {
+        const since = encodeURIComponent(opts.sinceIso);
+        const result = await pollUntil<{ startedAt: string; sample: string }>(
+            async () => {
+                const resp = await http<
+                    { id: number; body: string; created_at: string }[]
+                >(
+                    `${this.apiBase}/repos/${this.repoFullName}/issues/${pr.number}/comments?since=${since}`,
+                    { headers: this.headers() },
+                );
+                const hit = (resp.body ?? []).find((c) =>
+                    (c.body ?? "").includes("<!-- kody-codereview"),
+                );
+                if (!hit) return null;
+                return {
+                    startedAt: hit.created_at,
+                    sample: (hit.body ?? "").slice(0, 240),
+                };
+            },
+            { timeoutSec: opts.timeoutSec, intervalSec: 3 },
+        );
+        if (!result) {
+            throw new Error(
+                `[provider:github] No kody-codereview status comment on PR #${pr.number} within ${opts.timeoutSec}s — review pipeline likely never started (check droplet worker logs and the webhook delivery list).`,
+            );
+        }
+        return result;
+    }
+
     async postComment(
         prNumber: number,
         body: string,

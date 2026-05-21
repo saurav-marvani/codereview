@@ -17,12 +17,21 @@ const FIXTURE_BRANCHES: Record<
     { head: string; base: string } | undefined
 > = {
     github: {
-        // Refactor in the tiny-url fixture repo (kodus-e2e/tiny-url):
-        // swaps the in-memory store from Object.create(null) to Map. No
-        // behavior change, clean small diff — exercises the review
-        // pipeline end-to-end without giving the LLM anything controversial
-        // to flag. Set `GH_TEST_REPO=kodus-e2e/tiny-url` to use this.
-        head: "refactor/use-map-storage",
+        // Fixture branch deliberately introduces a missing null-check +
+        // misleading comment + unsafe `as string` cast on a redirect
+        // path (kodus-e2e/tiny-url). Any LLM that is paying attention
+        // flags at least one of: (1) the dropped 404 branch, (2) the
+        // "we trust resolveCode here" comment that is factually wrong,
+        // (3) the type assertion masking an undefined. Was previously
+        // `refactor/use-map-storage` — that fixture was intentionally
+        // clean ("no behavior change, exercises the pipeline without
+        // giving the LLM anything controversial to flag") which made
+        // the `findings > 0` assertion flaky against Kimi K2.6 on
+        // self-hosted: pipeline ran in 2.6s, found nothing to comment
+        // on, scenario timed out at 25min in silence. Cloud LLMs
+        // (GPT/Claude) happened to nitpick the refactor and pass, but
+        // that was luck, not design.
+        head: "bug/missing-null-check",
         base: "main",
     },
     // Placeholders for GitLab / Bitbucket / Azure DevOps — assume the
@@ -31,22 +40,22 @@ const FIXTURE_BRANCHES: Record<
     // (they only POST and don't care about the actual remote); won't work
     // against real providers until those mirrors exist.
     gitlab: {
-        head: "refactor/use-map-storage",
+        head: "bug/missing-null-check",
         base: "main",
     },
     bitbucket: {
-        head: "refactor/use-map-storage",
+        head: "bug/missing-null-check",
         base: "main",
     },
     "azure-devops": {
-        head: "refactor/use-map-storage",
+        head: "bug/missing-null-check",
         base: "main",
     },
     // App-installed clone of tiny-url (same branches), instance-scoped
     // via GH_APP_TEST_REPO so the App-bound repo is hit instead of the
     // PAT-bound one.
     "github-app": {
-        head: "refactor/use-map-storage",
+        head: "bug/missing-null-check",
         base: "main",
     },
 };
@@ -97,6 +106,30 @@ export const codeReviewBasic: Scenario = {
         });
 
         try {
+            // Two-phase wait. Phase A fails fast (~60s) if the pipeline
+            // never woke up — separates the "worker dequeued the PR
+            // and Kody posted a heartbeat" signal from the "LLM found
+            // the deliberate bugs" signal. The morning of 2026-05-21
+            // a run sat in silence for 25 min while the test runner
+            // assumed nothing happened — in reality the LLM had
+            // completed review in 2.6s and decided the clean fixture
+            // had nothing to flag. The new fixture (bug/missing-null-
+            // check) is no longer clean, but a future "LLM regression
+            // produces no findings" can still happen, and we'd rather
+            // surface that explicitly than silently fail at the 25min
+            // mark indistinguishable from "pipeline never ran".
+            //
+            // Phase A is github-only for now; other providers skip it
+            // until their waitForPipelineStart implementations land.
+            let pipelineStartedAt: string | undefined;
+            if (ctx.provider.waitForPipelineStart) {
+                const started = await ctx.provider.waitForPipelineStart(
+                    { number: pr.number },
+                    { sinceIso, timeoutSec: 60 },
+                );
+                pipelineStartedAt = started.startedAt;
+            }
+
             // 25 min — matches per-seat-license-toggle's phase-2 budget.
             // Bumped from 600s on 2026-05-20 after matrix run #3 showed
             // gitlab/bitbucket/azure-devops × license-paid consistently
@@ -121,10 +154,21 @@ export const codeReviewBasic: Scenario = {
             // uses (GitLab puts everything in issueComments because the API
             // has only notes; Bitbucket/Azure use reviewComments; GitHub
             // splits across all three).
+            // Distinguish "pipeline ran but produced 0 findings"
+            // (LLM regression, since the fixture is a deliberate bug)
+            // from "pipeline never ran" (worker / webhook / config
+            // problem). Phase A above already separates the second
+            // case; here we only get reached if Phase A passed (or
+            // the provider doesn't implement Phase A yet).
+            const phaseADetail = pipelineStartedAt
+                ? `pipeline ack at ${pipelineStartedAt}, then `
+                : "";
             ctx.assert(
                 review.reviewComments + review.issueComments + review.reviews >
                     0,
-                `No real review findings on PR/MR #${pr.number} within timeout (${reviewLatencySec}s)`,
+                pipelineStartedAt
+                    ? `Review pipeline ran (${phaseADetail}heartbeat seen) but produced 0 findings on PR/MR #${pr.number} within ${reviewLatencySec}s. The fixture branch '${fixture!.head}' has deliberate bugs (missing null check, misleading comment, unsafe type cast) — any decent LLM should flag at least one. Suspect: LLM quality regression for the configured model.`
+                    : `No real review findings on PR/MR #${pr.number} within timeout (${reviewLatencySec}s)`,
             );
 
             return {
@@ -132,6 +176,7 @@ export const codeReviewBasic: Scenario = {
                 prUrl: pr.url,
                 fixture,
                 reviewLatencySec,
+                pipelineStartedAt,
                 sinceIso,
                 review,
             };
