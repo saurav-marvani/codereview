@@ -92,13 +92,36 @@ function estimateDiffTokens(files: FileChange[]): number {
 }
 
 /**
+ * Total non-diff overhead in tokens: static (system prompt + tool schemas)
+ * plus dynamic (callGraph + coverage list + PR context). Reused by both
+ * estimatePromptTokens and the per-chunk budget calc so the split decision
+ * and chunk sizing can't drift — when they did, a ~2% prompt overflow
+ * still produced a chunker that packed every file into one chunk because
+ * the chunk budget subtracted only the static part.
+ */
+function estimateNonDiffOverheadTokens(input: {
+    changedFiles?: FileChange[];
+    callGraph?: string;
+    prTitle?: string;
+    prBody?: string;
+}): number {
+    const callGraphChars = (input.callGraph || '').length;
+    const prBodyChars = Math.min((input.prBody || '').length, 500);
+    const prContextChars =
+        300 + (input.prTitle || '').length + prBodyChars;
+    const coverageListChars = (input.changedFiles?.length || 0) * 80;
+    const totalChars =
+        callGraphChars +
+        prContextChars +
+        coverageListChars +
+        PROMPT_STATIC_OVERHEAD_CHARS;
+    return Math.ceil(totalChars / CHARS_PER_TOKEN);
+}
+
+/**
  * Estimate of the full input token count for the first LLM call:
  * diff content + callGraph + PR context + per-file coverage lines +
  * static overhead (system prompt + tool schemas).
- *
- * Matches what the model actually receives, unlike estimateDiffTokens
- * which only counted patches and consistently underestimated by ~100K
- * tokens on large PRs.
  */
 function estimatePromptTokens(input: {
     changedFiles?: FileChange[];
@@ -122,17 +145,8 @@ function estimatePromptTokens(input: {
         }
         return sum + diff.length;
     }, 0);
-    const callGraphChars = (input.callGraph || '').length;
-    const prContextChars =
-        300 + (input.prTitle || '').length + (input.prBody || '').length;
-    const coverageListChars = (input.changedFiles?.length || 0) * 80;
-    const totalChars =
-        diffChars +
-        callGraphChars +
-        prContextChars +
-        coverageListChars +
-        PROMPT_STATIC_OVERHEAD_CHARS;
-    return Math.ceil(totalChars / CHARS_PER_TOKEN);
+    const diffTokens = Math.ceil(diffChars / CHARS_PER_TOKEN);
+    return diffTokens + estimateNonDiffOverheadTokens(input);
 }
 
 function normalizeFilenameForTier(filename?: string): string {
@@ -609,13 +623,17 @@ export abstract class BaseCodeReviewAgentProvider {
             estimatedPromptTokens > promptBudget &&
             input.changedFiles.length > 1
         ) {
-            // Per-chunk diff budget: prompt budget minus the static
-            // overhead every chunk pays again (system + tool schemas +
-            // callGraph). Prevents chunks from individually blowing
-            // through the window once their own overhead is added back.
-            const overheadTokens = Math.ceil(
-                PROMPT_STATIC_OVERHEAD_CHARS / CHARS_PER_TOKEN,
-            );
+            // Per-chunk diff budget: prompt budget minus the FULL non-diff
+            // overhead every chunk pays again (static system prompt + tool
+            // schemas, callGraph, coverage list, PR context). Previously we
+            // only subtracted the static piece, so chunkDiffBudget was too
+            // generous: a PR whose diffs alone fit in the budget but whose
+            // total prompt overflowed by ~2% produced 1 chunk containing
+            // every file, tripping the recursion guard and killing the
+            // review. Aligning this with estimatePromptTokens (which uses
+            // the same helper for the split decision) keeps the two ends
+            // from drifting.
+            const overheadTokens = estimateNonDiffOverheadTokens(input);
             const chunkDiffBudget = Math.max(
                 promptBudget - overheadTokens,
                 Math.floor(contextWindow * 0.3),
