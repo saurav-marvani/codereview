@@ -6,7 +6,7 @@
 | --- | --- | --- | --- | --- |
 | `API_NODE_ENV` | – | enum(development,production,test) | ⚙️ Both | API node environment (drives feature toggles, logging, etc). |
 | `API_DATABASE_ENV` | – | enum(development,production,test) | ⚙️ Both | Database environment selector — affects SSL defaults. |
-| `API_DATABASE_DISABLE_SSL` | – | boolean | ⚙️ Both | When DATABASE_ENV=production, set this to 'true' to disable SSL (e.g. self-hosted docker). |
+| `API_DATABASE_DISABLE_SSL` | – | boolean | ⚙️ Both | When DATABASE_ENV=production, set this to 'true' to disable SSL. Self-hosted ships a local Postgres container with no SSL, so the installer default flips this to true. Cloud (AWS RDS, etc) keeps SSL on. Covers ALL data sources (default + analytics) — individual API_PG_DB_SSL only flipped the primary connection, which is why the api still crashed on the analytics connection in the past. |
 | `API_LOG_LEVEL` | – | enum(error,warn,info,debug) | ⚙️ Both | Log verbosity. Cloud runs at info; self-hosted defaults to error to keep disk usage and noise low for users without log aggregation. |
 | `API_LOG_PRETTY` | – | boolean | ⚙️ Both | Pretty-print logs (dev) vs JSON (prod). |
 | `API_CLOUD_MODE` | – | boolean | ☁️ Cloud | Cloud-only — billing + analytics. Self-hosted MUST keep false. |
@@ -82,6 +82,7 @@
 
 | Variable | Required | Type | Scope | Description |
 | --- | --- | --- | --- | --- |
+| `WORKER_ROLE` | ✅ | enum(code-review,analytics) | ⚙️ Both | Selects which workload this worker container handles. The kodus-worker image refuses to boot without this — and the queues it owns (workflow.jobs.*) are created on its first connection, so if the worker dies on boot the api/webhooks fail with QueueBind 404 on every webhook event. Self-hosted deployments only run the code-review role; analytics is a cloud worker. |
 | `WORKFLOW_QUEUE_WORKER_PREFETCH` | – | number | ⚙️ Both |  |
 | `WORKFLOW_QUEUE_PUBLISHER_PREFETCH` | – | number | ⚙️ Both |  |
 | `WORKFLOW_QUEUE_WEBHOOK_PREFETCH` | – | number | ⚙️ Both |  |
@@ -107,6 +108,7 @@
 | --- | --- | --- | --- | --- |
 | `API_OPEN_AI_API_KEY` | – | secret | ⚙️ Both | OpenAI API key. Required when API_LLM_PROVIDER_MODEL targets an OpenAI model. |
 | `API_OPENAI_FORCE_BASE_URL` | – | url | ⚙️ Both | OpenAI-compatible endpoint override (e.g. point to a local model proxy). |
+| `API_TRUST_JSON_SCHEMA_BASE_URLS` | – | string | ⚙️ Both | Comma-separated baseURL substrings trusted for native json_schema structured output on BYOK openai_compatible providers. A capability allowlist: when a BYOK baseURL contains one of these, the code review agent sends response_format=json_schema instead of the slower json_object fallback. Leave empty unless you run a non-vLLM but schema-capable proxy. |
 | `API_LLM_PROVIDER_MODEL` | – | string | ⚙️ Both | Force a specific model. "auto" = router picks per task. |
 | `API_ANTHROPIC_API_KEY` | – | secret | ☁️ Cloud |  |
 | `API_GOOGLE_AI_API_KEY` | – | secret | ☁️ Cloud | Optional secondary providers — appear commented in the installer template. |
@@ -176,12 +178,19 @@
 | `API_CRON_CHECK_IF_PR_SHOULD_BE_APPROVED` | – | cron | ⚙️ Both | Every 2 minutes. |
 | `API_CRON_WEEKLY_RECAP` | – | cron | ⚙️ Both | Friday at 09:00 UTC — weekly recap email. |
 
-## Email (Resend — https://resend.com)
+## Email (Resend — https://resend.com / SMTP)
 
 | Variable | Required | Type | Scope | Description |
 | --- | --- | --- | --- | --- |
-| `RESEND_API_KEY` | – | secret | ☁️ Cloud | Resend — Kodus-managed email sender. Cloud-only. |
+| `API_NOTIFICATION_EMAIL_PROVIDER` | – | enum(resend,smtp) | ⚙️ Both | Notifications email provider |
+| `RESEND_API_KEY` | – | secret | ⚙️ Both | Resend — Kodus-managed email sender. |
 | `API_USER_INVITE_BASE_URL` | – | url | ⚙️ Both |  |
+| `API_SMTP_HOST` | – | string | 🏠 Self-hosted | SMTP host |
+| `API_SMTP_PORT` | – | number | 🏠 Self-hosted | SMTP port |
+| `API_SMTP_SECURE` | – | boolean | 🏠 Self-hosted | SMTP secure mode |
+| `API_SMTP_USER` | – | string | 🏠 Self-hosted | SMTP user |
+| `API_SMTP_PASS` | – | secret | 🏠 Self-hosted | SMTP password |
+| `API_SMTP_FROM` | – | email | 🏠 Self-hosted | SMTP notifications sender email |
 
 ## AWS / S3
 
@@ -252,6 +261,7 @@
 | `GLOBAL_KODUS_SERVICE_BILLING` | – | string | ☁️ Cloud |  |
 | `WEB_HOSTNAME_BILLING` | – | string | ☁️ Cloud |  |
 | `WEB_PORT_BILLING` | – | port | ☁️ Cloud |  |
+| `API_BILLING_WEBHOOK_SECRET` | – | secret | ☁️ Cloud | Shared secret used to verify HMAC-SHA256 signatures on inbound notification webhooks from the billing service (e.g. payment-failed, trial-expiring). |
 
 ## Optional advanced config — documented in docs, not in default template
 
@@ -287,7 +297,7 @@
 | `WEB_ANALYTICS_SECRET` | – | secret | 🏢 ☁️ Cloud |  |
 | `WEB_PORT_ANALYTICS` | – | port | 🏢 ☁️ Cloud |  |
 | `API_MCP_SERVER_ENABLED` | – | boolean | ⚙️ Both | Enables the MCP integration in kodus-ai (calls into the MCP Manager service). When false, MCP-related code paths are skipped entirely. |
-| `API_KODUS_SERVICE_MCP_MANAGER` | – | url | ⚙️ Both | Address of the kodus-mcp-manager service (sibling container). kodus-ai calls this URL to provision MCP servers per organization. |
+| `API_KODUS_SERVICE_MCP_MANAGER` | – | url | ⚙️ Both | Address of the kodus-mcp-manager service (sibling container). kodus-ai calls this URL to provision MCP servers per organization. In docker-compose self-hosted installs, the worker and mcp-manager run in sibling containers — `localhost` inside the worker resolves to the worker itself, not to the mcp-manager, and pipeline stages that call `MCPManagerService.getConnections()` 400 with ECONNREFUSED. Always use the compose service name (`kodus-mcp-manager`) so the request reaches the right container. |
 | `API_KODUS_MCP_SERVER_URL` | – | url | ⚙️ Both | Public URL where MCP clients (e.g. Cursor/Claude Desktop) connect to consume MCP tools exposed by kodus-ai itself. |
 | `API_MCP_MANAGER_LOG_LEVEL` | – | enum(error,warn,info,debug) | 🏠 Self-hosted | Log verbosity for the MCP Manager container. |
 | `API_MCP_MANAGER_PORT` | – | port | 🏠 Self-hosted |  |

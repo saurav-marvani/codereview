@@ -7,6 +7,7 @@ import {
     UpdateQueryBuilder,
 } from 'typeorm';
 
+import { createLogger } from '@kodus/flow';
 import { ITeamAutomationRepository } from '@libs/automation/domain/teamAutomation/contracts/team-automation.repository';
 import { TeamAutomationEntity } from '@libs/automation/domain/teamAutomation/entities/team-automation.entity';
 import { ITeamAutomation } from '@libs/automation/domain/teamAutomation/interfaces/team-automation.interface';
@@ -21,6 +22,8 @@ import { TeamAutomationModel } from './schemas/teamAutomation.model';
 
 @Injectable()
 export class TeamAutomationRepository implements ITeamAutomationRepository {
+    private readonly logger = createLogger(TeamAutomationRepository.name);
+
     constructor(
         @InjectRepository(TeamAutomationModel)
         private readonly teamAutomationRepository: Repository<TeamAutomationModel>,
@@ -173,7 +176,12 @@ export class TeamAutomationRepository implements ITeamAutomationRepository {
                 TeamAutomationEntity,
             );
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Failed to find team automations',
+                context: TeamAutomationRepository.name,
+                error,
+            });
+            return [];
         }
     }
 }

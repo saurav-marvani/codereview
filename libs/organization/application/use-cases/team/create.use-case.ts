@@ -1,5 +1,4 @@
-import { ConflictException, Inject } from '@nestjs/common';
-import { REQUEST } from '@nestjs/core';
+import { ConflictException, Inject, Injectable } from '@nestjs/common';
 
 import { CreateOrUpdateParametersUseCase } from '../parameters/create-or-update-use-case';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
@@ -16,15 +15,11 @@ import {
 import { ParametersKey } from '@libs/core/domain/enums';
 import { TelemetryService } from '@libs/telemetry/application/services/telemetry.service';
 
+@Injectable()
 export class CreateTeamUseCase implements IUseCase {
     constructor(
         @Inject(TEAM_SERVICE_TOKEN)
         private readonly teamService: ITeamService,
-
-        @Inject(REQUEST)
-        private readonly request: Request & {
-            user: { organization: { uuid: string; name?: string }; uuid?: string };
-        },
 
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
         private readonly telemetry: TelemetryService,
@@ -33,9 +28,10 @@ export class CreateTeamUseCase implements IUseCase {
     public async execute(payload: {
         teamName: string;
         organizationId: string;
+        organizationName?: string;
+        actorUserId?: string;
     }): Promise<TeamEntity | undefined> {
-        const orgId =
-            this.request?.user?.organization?.uuid || payload.organizationId;
+        const orgId = payload.organizationId;
 
         const validStatuses = Object.values(STATUS).filter(
             (status) => status !== STATUS.REMOVED,
@@ -68,9 +64,8 @@ export class CreateTeamUseCase implements IUseCase {
                 name: team.name,
                 organizationId: team.organization?.uuid ?? orgId,
                 organizationName:
-                    team.organization?.name ??
-                    this.request?.user?.organization?.name,
-                actorUserId: this.request?.user?.uuid,
+                    team.organization?.name ?? payload.organizationName,
+                actorUserId: payload.actorUserId,
             });
         }
 

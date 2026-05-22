@@ -26,6 +26,9 @@ import { WaitForCliReviewJobUseCase } from './application/use-cases/wait-for-cli
 
 // Workflow
 import { CliReviewJobProcessorService } from './workflow/cli-review-job-processor.service';
+import { GitHubRateLimitGateService } from '@libs/platform/infrastructure/adapters/services/github/github-rate-limit-gate.service';
+import { RATE_LIMIT_GATE_SERVICE_TOKEN } from '@libs/core/workflow/domain/contracts/rate-limit-gate.service.contract';
+import { GithubModule } from '@libs/platform/modules/github.module';
 
 // Services
 import { CliInputConverter } from './infrastructure/converters/cli-input.converter';
@@ -112,6 +115,7 @@ import { OutboxMessageModel } from '@libs/core/workflow/infrastructure/repositor
         forwardRef(() => AutomationModule), // For tracking executions
         forwardRef(() => LicenseModule), // For license validation and auto-assign
         forwardRef(() => KodyRulesModule), // For loading kody rules in CLI review
+        forwardRef(() => GithubModule), // For GitHubRateLimitGateService dependency
     ],
     providers: [
         // Strategy
@@ -139,6 +143,12 @@ import { OutboxMessageModel } from '@libs/core/workflow/infrastructure/repositor
 
         // Workflow
         CliReviewJobProcessorService,
+        // GitHub rate-limit gate (shared instance)
+        GitHubRateLimitGateService,
+        {
+            provide: RATE_LIMIT_GATE_SERVICE_TOKEN,
+            useExisting: GitHubRateLimitGateService,
+        },
 
         // Workflow infra (local to avoid circular import with WorkflowModule)
         WorkflowJobRepository,

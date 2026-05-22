@@ -24,7 +24,8 @@ import {
 } from '@libs/identity/domain/user/contracts/user.service.contract';
 import { IUser } from '@libs/identity/domain/user/interfaces/user.interface';
 import { createLogger } from '@kodus/flow';
-import { EmailService } from '@libs/common/email/services/email.service';
+import { NotificationService } from '@libs/notifications/application/notification.service';
+import { NotificationEvent } from '@libs/notifications/domain/catalog/events';
 
 @Injectable()
 export class TeamMemberService implements ITeamMemberService {
@@ -37,7 +38,7 @@ export class TeamMemberService implements ITeamMemberService {
         @Inject(USER_SERVICE_TOKEN)
         private readonly usersService: IUsersService,
 
-        private readonly emailService: EmailService,
+        private readonly notificationService: NotificationService,
     ) {}
 
     findManyById(ids: string[]): Promise<TeamMemberEntity[]> {
@@ -491,12 +492,16 @@ export class TeamMemberService implements ITeamMemberService {
                 return;
             }
 
-            await this.emailService.sendInvite(
-                user,
-                senderEmail,
-                inviteLink,
-                this.logger,
-            );
+            await this.notificationService.emit({
+                event: NotificationEvent.TEAM_MEMBER_INVITED,
+                payload: {
+                    user,
+                    inviterEmail: senderEmail,
+                    inviteLink,
+                },
+                organizationId: organizationAndTeamData.organizationId,
+                recipients: { kind: 'user', userId: user.uuid },
+            });
         }
     }
 

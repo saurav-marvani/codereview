@@ -31,19 +31,24 @@ export const isBYOKSubscriptionPlan = (license: OrganizationLicense) => {
 };
 
 export const isEnterprisePlan = (license: OrganizationLicense): boolean => {
-    if (
-        license.subscriptionStatus === "self-hosted" ||
-        license.subscriptionStatus === "licensed-self-hosted"
-    ) {
-        return true;
+    // Mirror of `isEnterpriseTierAllowed` in
+    // `libs/ee/license/tier/enterprise-tier-policy.ts` — keep aligned.
+    // CE self-hosted (no key) is modeled here as
+    // `{ valid: true, subscriptionStatus: "self-hosted" }` and falls
+    // into the `default` branch.
+    if (!license.valid) return false;
+
+    switch (license.subscriptionStatus) {
+        case "active":
+        case "licensed-self-hosted": {
+            const plan = license.planType ?? "";
+            return plan.startsWith("enterprise_") || plan === "enterprise";
+        }
+        case "trial":
+            return true;
+        default:
+            return false;
     }
-    if (license.subscriptionStatus === "trial") {
-        return true;
-    }
-    if (license.subscriptionStatus !== "active") {
-        return false;
-    }
-    return license.planType?.startsWith("enterprise") ?? false;
 };
 
 export const shouldShowBYOKMissingKeyTopbar = (params: {

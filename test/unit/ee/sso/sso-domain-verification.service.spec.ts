@@ -35,8 +35,8 @@ const buildCacheService = () => {
     };
 };
 
-const buildEmailService = () => ({
-    sendDomainVerificationEmail: jest.fn(async () => undefined),
+const buildNotifcationService = () => ({
+    emit: jest.fn(async () => undefined),
 });
 
 const ORG = 'org-1';
@@ -44,15 +44,15 @@ const DOMAIN = 'acme.com';
 
 describe('SSODomainVerificationService.requestDomainVerification', () => {
     let cacheService: ReturnType<typeof buildCacheService>;
-    let emailService: ReturnType<typeof buildEmailService>;
+    let notificationService: ReturnType<typeof buildNotifcationService>;
     let service: SSODomainVerificationService;
 
     beforeEach(() => {
         cacheService = buildCacheService();
-        emailService = buildEmailService();
+        notificationService = buildNotifcationService();
         service = new SSODomainVerificationService(
             cacheService as any,
-            emailService as any,
+            notificationService as any,
         );
     });
 
@@ -76,13 +76,17 @@ describe('SSODomainVerificationService.requestDomainVerification', () => {
             });
 
             // Email actually went out.
-            expect(emailService.sendDomainVerificationEmail).toHaveBeenCalledTimes(1);
+            expect(notificationService.emit).toHaveBeenCalledTimes(1);
 
             // Cache holds a *token* (pending state), not yet a verified status record.
-            const tokenWrites = (cacheService.addToCache as jest.Mock).mock.calls
+            const tokenWrites = (
+                cacheService.addToCache as jest.Mock
+            ).mock.calls
                 .map((c) => c[0] as string)
                 .filter((k) => k.startsWith('sso:domain-verification:token:'));
-            const statusWrites = (cacheService.addToCache as jest.Mock).mock.calls
+            const statusWrites = (
+                cacheService.addToCache as jest.Mock
+            ).mock.calls
                 .map((c) => c[0] as string)
                 .filter((k) => k.startsWith('sso:domain-verification:status:'));
             expect(tokenWrites).toHaveLength(1);
@@ -99,7 +103,7 @@ describe('SSODomainVerificationService.requestDomainVerification', () => {
                 }),
             ).rejects.toBeInstanceOf(BadRequestException);
 
-            expect(emailService.sendDomainVerificationEmail).not.toHaveBeenCalled();
+            expect(notificationService.emit).not.toHaveBeenCalled();
         });
     });
 
@@ -123,11 +127,13 @@ describe('SSODomainVerificationService.requestDomainVerification', () => {
             });
 
             // No outbound email — the whole point of the self-hosted skip.
-            expect(emailService.sendDomainVerificationEmail).not.toHaveBeenCalled();
+            expect(notificationService.emit).not.toHaveBeenCalled();
 
             // Cache holds a *status* record (verified), not a pending token.
-            const statusWrite = (cacheService.addToCache as jest.Mock).mock.calls.find(
-                (c) => (c[0] as string).startsWith('sso:domain-verification:status:'),
+            const statusWrite = (
+                cacheService.addToCache as jest.Mock
+            ).mock.calls.find((c) =>
+                (c[0] as string).startsWith('sso:domain-verification:status:'),
             );
             expect(statusWrite).toBeDefined();
             const [, record] = statusWrite!;
@@ -160,7 +166,7 @@ describe('SSODomainVerificationService.requestDomainVerification', () => {
             });
 
             expect(result.sent).toBe(false);
-            expect(emailService.sendDomainVerificationEmail).not.toHaveBeenCalled();
+            expect(notificationService.emit).not.toHaveBeenCalled();
         });
 
         it('still rejects requests with a missing/invalid email (basic shape validation stays)', async () => {
@@ -182,7 +188,7 @@ describe('SSODomainVerificationService.requestDomainVerification', () => {
                 }),
             ).rejects.toBeInstanceOf(BadRequestException);
 
-            expect(emailService.sendDomainVerificationEmail).not.toHaveBeenCalled();
+            expect(notificationService.emit).not.toHaveBeenCalled();
         });
 
         it('still rejects requests with a missing domain (basic shape validation stays)', async () => {

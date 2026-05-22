@@ -247,4 +247,73 @@ describe('WebhookContextService', () => {
             );
         });
     });
+
+    describe('observability', () => {
+        it('logs a warning when a connected repository has no active code review automation', async () => {
+            const config = buildConfig('org-uuid', 'team-uuid');
+            integrationConfigServiceMock.findIntegrationConfigWithTeams.mockResolvedValue(
+                [config],
+            );
+            // Integration config exists, but no ACTIVE team automation — the
+            // silent-drop window (e.g. webhook right after onboarding).
+            teamAutomationServiceMock.find.mockResolvedValue([]);
+            const warnSpy = jest
+                .spyOn((service as any).logger, 'warn')
+                .mockImplementation(() => undefined);
+
+            const result = await service.getContext(PlatformType.GITHUB, '123');
+
+            expect(result).toBeNull();
+            expect(warnSpy).toHaveBeenCalledTimes(1);
+            expect(warnSpy.mock.calls[0][0]).toEqual(
+                expect.objectContaining({
+                    message: expect.stringContaining(
+                        'no team has an active code review automation',
+                    ),
+                    metadata: expect.objectContaining({
+                        repositoryId: '123',
+                        candidateTeamIds: ['team-uuid'],
+                    }),
+                }),
+            );
+        });
+
+        it('logs a warning when no code review automation is registered in the system', async () => {
+            const config = buildConfig('org-uuid', 'team-uuid');
+            integrationConfigServiceMock.findIntegrationConfigWithTeams.mockResolvedValue(
+                [config],
+            );
+            automationServiceMock.find.mockResolvedValue([]);
+            const warnSpy = jest
+                .spyOn((service as any).logger, 'warn')
+                .mockImplementation(() => undefined);
+
+            const result = await service.getContext(PlatformType.GITHUB, '123');
+
+            expect(result).toBeNull();
+            expect(warnSpy).toHaveBeenCalledTimes(1);
+            expect(warnSpy.mock.calls[0][0]).toEqual(
+                expect.objectContaining({
+                    message: expect.stringContaining(
+                        'no code review automation is registered',
+                    ),
+                }),
+            );
+        });
+
+        it('does not warn when an active automation context is resolved', async () => {
+            const config = buildConfig('org-uuid', 'team-uuid');
+            integrationConfigServiceMock.findIntegrationConfigWithTeams.mockResolvedValue(
+                [config],
+            );
+            const warnSpy = jest
+                .spyOn((service as any).logger, 'warn')
+                .mockImplementation(() => undefined);
+
+            const result = await service.getContext(PlatformType.GITHUB, '123');
+
+            expect(result).not.toBeNull();
+            expect(warnSpy).not.toHaveBeenCalled();
+        });
+    });
 });

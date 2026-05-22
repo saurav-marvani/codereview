@@ -54,15 +54,14 @@ export class GetCodeManagementMemberListUseCase implements IUseCase {
             // Cache miss or error, proceed with fetch
         }
 
-         const [platformMembers, prMembers] = await Promise.all([
-        this.fetchMembersFromCodeIntegration(organizationAndTeamData),
-        this.fetchMembersFromPullRequests(organizationAndTeamData),
-    ]);
-    const mergedMembers = this.normalizeMembers([
-        ...platformMembers,
-        ...prMembers,
-    ]);
-
+        const [platformMembers, prMembers] = await Promise.all([
+            this.fetchMembersFromCodeIntegration(organizationAndTeamData),
+            this.fetchMembersFromPullRequests(organizationAndTeamData),
+        ]);
+        const mergedMembers = this.normalizeMembers([
+            ...platformMembers,
+            ...prMembers,
+        ]);
 
         if (mergedMembers.length > 0) {
             await this.cacheService
@@ -163,7 +162,9 @@ export class GetCodeManagementMemberListUseCase implements IUseCase {
             }
         }
 
-        return Array.from(uniqueMembers.values());
+        return Array.from(uniqueMembers.values()).sort((a, b) =>
+            a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+        );
     }
 
     private normalizeMember(member: {

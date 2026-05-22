@@ -10,6 +10,9 @@ import { CreatePrLevelCommentsStage } from './stages/create-pr-level-comments.st
 import { FetchChangedFilesStage } from './stages/fetch-changed-files.stage';
 import { FileContextGateStage } from './stages/file-context-gate.stage';
 import { UpdateCommentsAndGenerateSummaryStage } from './stages/finish-comments.stage';
+import { NotificationModule } from '@libs/notifications/modules/notification.module';
+import { UserCoreModule } from '@libs/identity/modules/user-core.module';
+
 import { RequestChangesOrApproveStage } from './stages/finish-process-review.stage';
 import { GatherDocumentationContextStage } from './stages/gather-documentation-context.stage';
 import { InitialCommentStage } from './stages/initial-comment.stage';
@@ -37,10 +40,10 @@ import { DistributedLockService } from '@libs/core/workflow/infrastructure/distr
 import { DryRunCoreModule } from '@libs/dryRun/dry-run-core.module';
 import { FileReviewModule } from '@libs/ee/codeReview/fileReviewContextPreparation/fileReview.module';
 import { KodyFineTuningStage } from '@libs/ee/codeReview/stages/kody-fine-tuning.stage';
-import { CodeReviewPipelineStrategyEE } from '@libs/ee/codeReview/strategies/code-review-pipeline.strategy.ee';
 import { LicenseModule } from '@libs/ee/license/license.module';
 import { PermissionValidationModule } from '@libs/ee/shared/permission-validation.module';
 import { KodyFineTuningContextModule } from '@libs/kodyFineTuning/kodyFineTuningContext.module';
+import { OrganizationModule } from '@libs/organization/modules/organization.module';
 import { OrganizationParametersModule } from '@libs/organization/modules/organizationParameters.module';
 import { ParametersModule } from '@libs/organization/modules/parameters.module';
 import { GithubChecksService } from '@libs/platform/infrastructure/adapters/services/github/github-checks.service';
@@ -57,11 +60,13 @@ import { PullRequestsModule } from '../modules/pull-requests.module';
 import { PullRequestMessagesModule } from '../modules/pullRequestMessages.module';
 import { CodeReviewJobProcessorService } from '../workflow/code-review-job-processor.service';
 import { ByokConcurrencyGateService } from '../workflow/byok-concurrency-gate.service';
+import { GitHubRateLimitGateService } from '@libs/platform/infrastructure/adapters/services/github/github-rate-limit-gate.service';
+import { RATE_LIMIT_GATE_SERVICE_TOKEN } from '@libs/core/workflow/domain/contracts/rate-limit-gate.service.contract';
 import { ImplementationVerificationProcessor } from '../workflow/implementation-verification.processor';
 import { LOAD_EXTERNAL_CONTEXT_STAGE_TOKEN } from './stages/contracts/loadExternalContextStage.contract';
 import { ValidateSuggestionsStage } from './stages/validate-suggestions.stage';
 import { CodeReviewPipelineStrategy } from './strategy/code-review-pipeline.strategy';
-import { CodeReviewAgentPipelineStrategy } from './strategy/code-review-agent-pipeline.strategy';
+import { SelectReviewEngineStage } from './stages/select-review-engine.stage';
 
 // Sandbox (lease manager)
 import { SandboxModule } from '@libs/sandbox/modules/sandbox.module';
@@ -85,6 +90,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         forwardRef(() => PullRequestMessagesModule),
         forwardRef(() => PullRequestsModule),
         forwardRef(() => ParametersModule),
+        forwardRef(() => OrganizationModule),
         forwardRef(() => OrganizationParametersModule),
         forwardRef(() => AgentsModule),
         forwardRef(() => AIEngineModule),
@@ -99,17 +105,27 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         WorkflowCoreModule,
         DryRunCoreModule,
         SandboxModule,
+        NotificationModule,
+        UserCoreModule,
     ],
     providers: [
         // Strategy
-        CodeReviewPipelineStrategyEE,
         CodeReviewPipelineStrategy,
-        CodeReviewAgentPipelineStrategy,
 
         // Job Processor
         CodeReviewJobProcessorService,
         ByokConcurrencyGateService,
         DistributedLockService,
+        // GitHub rate-limit gate — pre-check before burning slot on a
+        // job whose installation bucket is already exhausted. Same
+        // instance shared via both the token (for processors that
+        // inject by abstraction) and the concrete class (for any
+        // direct consumer).
+        GitHubRateLimitGateService,
+        {
+            provide: RATE_LIMIT_GATE_SERVICE_TOKEN,
+            useExisting: GitHubRateLimitGateService,
+        },
 
         // Services
         CloneParamsResolverService,
@@ -118,6 +134,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         ValidateNewCommitsStage,
         ValidatePrerequisitesStage,
         ResolveConfigStage,
+        SelectReviewEngineStage,
         ValidateConfigStage,
         FetchChangedFilesStage,
         {
@@ -172,9 +189,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         CodeReviewPipelineObserver,
     ],
     exports: [
-        CodeReviewPipelineStrategyEE,
         CodeReviewPipelineStrategy,
-        CodeReviewAgentPipelineStrategy,
 
         CodeReviewJobProcessorService,
         CodeReviewPipelineObserver,

@@ -4,6 +4,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { environment } from '@libs/ee/configs/environment/environment';
 import {
+    FeatureEvaluationContext,
     IPostHogProvider,
     POSTHOG_PROVIDER_TOKEN,
 } from '@libs/telemetry/infrastructure/providers/posthog.provider';
@@ -21,7 +22,12 @@ export interface FeatureCheckContext {
     /** Distinct id used by PostHog (typically userId or orgId). */
     identifier: string;
     organizationAndTeamData: OrganizationAndTeamData;
-    repositoryId?: string;
+    /**
+     * Extra group keys routed to PostHog `groups`, beyond the always-set
+     * `organization`. One id per group type — callers loop to evaluate
+     * multiple values (e.g. one call per touched directory).
+     */
+    groups?: Record<string, string | undefined>;
     /**
      * The org's release track. Used in cloud to gate beta / alpha
      * features before the PostHog flag check. When omitted, defaults to
@@ -74,12 +80,15 @@ export class FeatureGateService {
             return true; // pass or compat-pass: catalog already gated us.
         }
 
+        const evaluationContext: FeatureEvaluationContext | undefined =
+            ctx.groups ? { groups: ctx.groups } : undefined;
+
         try {
             return await this.posthog.isFeatureEnabled(
                 feature,
                 ctx.identifier,
                 ctx.organizationAndTeamData,
-                ctx.repositoryId,
+                evaluationContext,
             );
         } catch (err) {
             this.logger.warn({

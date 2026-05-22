@@ -105,8 +105,10 @@ export function CuratedConnectPanel({
     const activeBaseURL = variant?.baseURL ?? model.defaults.baseURL;
     const activeApiKeyUrl = variant?.apiKeyUrl ?? model.apiKeyUrl;
 
+    const disabledVariants = new Set(["kimi-code"]);
+
     const handleVariantChange = (nextId: string) => {
-        if (!nextId || !model.variants) return;
+        if (!nextId || !model.variants || disabledVariants.has(nextId)) return;
         const next = model.variants.find((v) => v.id === nextId);
         if (!next || next.id === variant?.id) return;
         setVariant(next);
@@ -238,6 +240,7 @@ export function CuratedConnectPanel({
                             selectedId={variant?.id}
                             docsUrl={model.docsUrl}
                             onSelect={handleVariantChange}
+                            disabledVariantIds={new Set(["kimi-code"])}
                         />
                     )}
 
@@ -353,13 +356,16 @@ function VariantSelector({
     selectedId,
     docsUrl,
     onSelect,
+    disabledVariantIds,
 }: {
     variants: ModelVariant[];
     selectedId?: string;
     docsUrl?: string;
     onSelect: (id: string) => void;
+    disabledVariantIds?: Set<string>;
 }) {
     const selected = variants.find((v) => v.id === selectedId);
+    const isDisabledVariant = (id: string) => disabledVariantIds?.has(id);
 
     return (
         <div className="flex flex-col gap-2">
@@ -381,18 +387,27 @@ function VariantSelector({
             <ToggleGroup.Root
                 type="single"
                 value={selectedId}
-                onValueChange={onSelect}
+                onValueChange={(nextId) => {
+                    if (nextId && isDisabledVariant(nextId)) return;
+                    onSelect(nextId);
+                }}
                 className="bg-card-lv2 grid auto-cols-fr grid-flow-col gap-px overflow-hidden rounded-lg p-0.5">
                 {variants.map((v) => (
                     <ToggleGroup.Item
                         key={v.id}
                         value={v.id}
-                        className="text-text-secondary hover:text-text-primary data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:ring-primary/40 data-[state=on]:shadow-sm rounded-md px-3 py-2 text-xs font-medium transition-colors data-[state=on]:ring-1">
+                        disabled={isDisabledVariant(v.id)}
+                        className="text-text-secondary hover:text-text-primary data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:ring-primary/40 data-[state=on]:shadow-sm rounded-md px-3 py-2 text-xs font-medium transition-colors data-[disabled]:opacity-40 data-[disabled]:pointer-events-none data-[state=on]:ring-1">
                         {v.label}
+                        {isDisabledVariant(v.id) && (
+                            <span className="ml-1.5 text-xs">
+                                (Coming Soon)
+                            </span>
+                        )}
                     </ToggleGroup.Item>
                 ))}
             </ToggleGroup.Root>
-            {selected?.description && (
+            {selected?.description && !isDisabledVariant(selected.id) && (
                 <p className="text-text-tertiary text-xs text-pretty">
                     {selected.description}
                 </p>

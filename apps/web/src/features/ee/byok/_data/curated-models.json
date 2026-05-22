@@ -93,7 +93,7 @@
             "weaknesses": [],
             "apiKeyUrl": "https://platform.moonshot.ai/console/api-keys",
             "defaults": {
-                "temperature": 0,
+                "temperature": 1,
                 "maxOutputTokens": 16384,
                 "baseURL": "https://api.moonshot.ai/v1",
                 "reasoningEffort": "medium"

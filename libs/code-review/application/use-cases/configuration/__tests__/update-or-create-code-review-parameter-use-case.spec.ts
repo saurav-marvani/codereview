@@ -32,7 +32,6 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             {
                 emit: jest.fn(),
             } as any,
-            {} as any,
             {
                 ensure: jest.fn(),
             } as any,
@@ -123,7 +122,6 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             {
                 registerCodeReviewConfigLog: jest.fn(),
             } as any,
-            {} as any,
             authorizationService as any,
             {
                 detectAndSaveReferences: jest.fn(),
@@ -204,7 +202,6 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             {
                 emit: jest.fn(),
             } as any,
-            {} as any,
             {
                 ensure: jest.fn(),
             } as any,
@@ -285,7 +282,6 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             {
                 emit: jest.fn(),
             } as any,
-            {} as any,
             {
                 ensure: jest.fn(),
             } as any,
@@ -384,7 +380,6 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             {
                 emit: jest.fn(),
             } as any,
-            undefined as any,
             authorizationService as any,
             {
                 detectAndSaveReferences: jest.fn(),
@@ -465,7 +460,6 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             {
                 emit: jest.fn(),
             } as any,
-            {} as any,
             {
                 ensure: jest.fn(),
             } as any,
@@ -536,7 +530,6 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             {
                 emit: jest.fn(),
             } as any,
-            {} as any,
             {
                 ensure: jest.fn(),
             } as any,
@@ -624,7 +617,6 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             {
                 emit: jest.fn(),
             } as any,
-            {} as any,
             {
                 ensure: jest.fn(),
             } as any,
@@ -715,7 +707,6 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             {
                 emit: jest.fn(),
             } as any,
-            {} as any,
             {
                 ensure: jest.fn(),
             } as any,
@@ -800,7 +791,6 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             {
                 emit: jest.fn(),
             } as any,
-            {} as any,
             {
                 ensure: jest.fn(),
             } as any,
@@ -883,7 +873,6 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             {
                 emit: jest.fn(),
             } as any,
-            {} as any,
             {
                 ensure: jest.fn(),
             } as any,
@@ -974,7 +963,6 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             {
                 emit: jest.fn(),
             } as any,
-            {} as any,
             {
                 ensure: jest.fn(),
             } as any,
@@ -1058,7 +1046,6 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             {
                 emit: jest.fn(),
             } as any,
-            {} as any,
             {
                 ensure: jest.fn(),
             } as any,
@@ -1159,7 +1146,6 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             {
                 emit: jest.fn(),
             } as any,
-            {} as any,
             {
                 ensure: jest.fn(),
             } as any,
@@ -1239,7 +1225,6 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
                 ]),
             } as any,
             { emit: jest.fn() } as any,
-            {} as any,
             { ensure: jest.fn() } as any,
             { detectAndSaveReferences: jest.fn() } as any,
             { buildConfigKey: jest.fn().mockReturnValue('config-key') } as any,
@@ -1310,7 +1295,6 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
                 ]),
             } as any,
             { emit: jest.fn() } as any,
-            {} as any,
             { ensure: jest.fn() } as any,
             { detectAndSaveReferences: jest.fn() } as any,
             { buildConfigKey: jest.fn().mockReturnValue('config-key') } as any,

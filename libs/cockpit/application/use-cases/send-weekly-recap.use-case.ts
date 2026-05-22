@@ -2,8 +2,10 @@ import { createLogger } from '@kodus/flow';
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { EmailService } from '@libs/common/email/services/email.service';
+import { NotificationService } from '@libs/notifications/application/notification.service';
+import { NotificationEvent } from '@libs/notifications/domain/catalog/events';
 import { STATUS } from '@libs/core/infrastructure/config/types/database/status.type';
+import { WeeklyRecapEmailProps } from '@libs/common/email/templates/weekly-recap';
 import { Role } from '@libs/identity/domain/permissions/enums/permissions.enum';
 import {
     IUsersService,
@@ -40,7 +42,7 @@ export class SendWeeklyRecapUseCase {
         @Inject(ORGANIZATION_SERVICE_TOKEN)
         private readonly organizationService: IOrganizationService,
         private readonly productivity: CockpitDeveloperProductivityService,
-        private readonly emailService: EmailService,
+        private readonly notificationService: NotificationService,
         private readonly configService: ConfigService,
     ) {}
 
@@ -128,26 +130,30 @@ export class SendWeeklyRecapUseCase {
 
         let sent = 0;
         const failures: WeeklyRecapResult['failures'] = [];
-
-        // Chunk the fanout so a large org doesn't open hundreds of
-        // concurrent connections to Resend at once — that exhausts
-        // Node sockets and trips the API's per-second rate limit.
-        // 50 is well under Resend's default burst window and gives
-        // a clean upper bound on memory/socket pressure.
+        // Emit notifications per recipient via the notification engine.
+        // The dispatcher handles channel routing and delivery.
         const CHUNK_SIZE = 50;
         for (let i = 0; i < recipients.length; i += CHUNK_SIZE) {
             const chunk = recipients.slice(i, i + CHUNK_SIZE);
             const results = await Promise.allSettled(
                 chunk.map((r) =>
-                    this.emailService.sendWeeklyRecap(r, props, this.logger),
+                    this.notificationService.emit({
+                        event: NotificationEvent.WEEKLY_RECAP,
+                        payload: {
+                            recipient: { email: r.email, name: r.name },
+                            props,
+                        },
+                        organizationId,
+                        recipients: { kind: 'email', email: r.email },
+                    }),
                 ),
             );
 
             results.forEach((r, j) => {
                 const email = chunk[j].email;
-                if (r.status === 'fulfilled' && r.value) {
+                if (r.status === 'fulfilled') {
                     sent += 1;
-                } else if (r.status === 'rejected') {
+                } else {
                     failures.push({
                         email,
                         reason:
@@ -155,10 +161,6 @@ export class SendWeeklyRecapUseCase {
                                 ? r.reason.message
                                 : String(r.reason),
                     });
-                } else {
-                    // EmailService swallows errors and returns undefined on failure;
-                    // promote that to an explicit failure entry so callers know.
-                    failures.push({ email, reason: 'send returned undefined' });
                 }
             });
         }
@@ -205,10 +207,7 @@ export class SendWeeklyRecapUseCase {
                 CockpitDeveloperProductivityService['getCompanyDashboardInsights']
             >
         >,
-    ): Omit<
-        Parameters<EmailService['sendWeeklyRecap']>[1],
-        never
-    > {
+    ): Omit<WeeklyRecapEmailProps, 'devName'> {
         const reviewedPRs = dashboard.metrics.totalPRs;
         const kodySuggestions = dashboard.metrics.totalSuggestions;
         const criticalIssues = dashboard.metrics.criticalSuggestions;

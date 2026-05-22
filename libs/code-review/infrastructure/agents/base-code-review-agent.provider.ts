@@ -2,6 +2,7 @@ import { createLogger } from '@kodus/flow';
 import { PromptRunnerService } from '@kodus/kodus-common/llm';
 import { Injectable, Optional } from '@nestjs/common';
 import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
+import { ByokErrorCounter } from '@libs/notifications/application/byok-error-counter.service';
 
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import {
@@ -41,6 +42,15 @@ import {
 
 /** Rough token estimate: 1 token ≈ 4 characters */
 const CHARS_PER_TOKEN = 4;
+/**
+ * Hard cap on execute() → executeChunked() → execute() recursion. Set to
+ * 2 because the only legitimate recursion is one level deep (root review
+ * fans out into per-batch executes). Anything beyond that means the
+ * chunker couldn't reduce the file count and we'd loop forever — see
+ * executeChunked's fail-fast guard, which catches the same condition at
+ * its source. This guard remains as defense-in-depth.
+ */
+const MAX_RECURSION_DEPTH = 2;
 /**
  * Ceiling on the ESTIMATED full prompt (not just diffs) as a fraction of
  * the model context window. At 0.55 we reserve ~45% of the window for
@@ -359,6 +369,16 @@ export interface ReviewAgentInput {
     skipSynthesisRescue?: boolean;
     /** Categories allowed for this run when using a mixed/generalist reviewer. */
     requestedCategories?: Array<'bug' | 'security' | 'performance'>;
+    /** Parent (job-level) AbortSignal. Forwarded to runAgentLoop so the
+     *  outer router timeout cancels the LLM call instead of leaving it
+     *  running ghost in the background. */
+    parentSignal?: AbortSignal;
+    /** Internal: how many times executeChunked has re-entered execute()
+     *  for this review. Bounded to MAX_RECURSION_DEPTH by execute() to
+     *  prevent the historical execute() ↔ executeChunked() loop from
+     *  exhausting the worker heap. Always undefined at the public entry
+     *  point; populated by executeChunked when fanning out per-batch. */
+    recursionDepth?: number;
 }
 
 /**
@@ -401,6 +421,11 @@ export abstract class BaseCodeReviewAgentProvider {
          *  agent loop. Falsy when API_EXA_KEY is not configured. */
         @Optional()
         protected readonly documentationSearchService?: DocumentationSearchExaService,
+        /** Optional: when injected, wires BYOK LLM failures into the
+         *  notification engine so OWNER gets `byok.llm_errors_threshold`
+         *  after sustained errors. Falsy in the CLI/eval paths. */
+        @Optional()
+        protected readonly byokErrorCounter?: ByokErrorCounter,
     ) {}
 
     protected abstract getIdentity(): ReviewAgentIdentity;
@@ -444,6 +469,21 @@ export abstract class BaseCodeReviewAgentProvider {
             name: input.agentRuntimeName || baseIdentity.name,
         };
         const agentCategory = this.getCategoryLabel();
+
+        const recursionDepth = input.recursionDepth ?? 0;
+        if (recursionDepth >= MAX_RECURSION_DEPTH) {
+            this.agentLogger.error({
+                message: `[AGENT] ${identity.name} recursion limit reached (depth=${recursionDepth}); aborting to protect the worker heap`,
+                context: identity.name,
+                metadata: {
+                    prNumber: input.prNumber,
+                    recursionDepth,
+                    maxRecursionDepth: MAX_RECURSION_DEPTH,
+                    filesCount: input.changedFiles.length,
+                },
+            });
+            throw new Error('AGENT_RECURSION_LIMIT_EXCEEDED');
+        }
 
         // When this execute() call is one batch of a chunked review
         // (executeChunked has split a large PR by token budget), enrich
@@ -492,6 +532,7 @@ export abstract class BaseCodeReviewAgentProvider {
         const model = byokToVercelModel(
             byokConfig,
             'main',
+            {},
             input.defaultModelOverride,
         );
         const modelName = getModelName(
@@ -647,6 +688,7 @@ export abstract class BaseCodeReviewAgentProvider {
             // Secrets are passed via closure (not as tracing arg) so that
             // Langfuse span I/O never serialises API keys, tokens, or
             // NestJS service instances (which carry ConfigService with all env vars).
+            const byokErrorCounter = this.byokErrorCounter;
             const loopSecrets: AgentLoopSecrets = {
                 remoteCommands: input.remoteCommands,
                 byokConfig,
@@ -657,6 +699,14 @@ export abstract class BaseCodeReviewAgentProvider {
                     prNumber: input.prNumber,
                     byokConfig,
                 },
+                byokErrorReporter: byokErrorCounter
+                    ? (entry) => {
+                          // Fire-and-forget; ByokErrorCounter.record never
+                          // throws, but we still drop the promise so the
+                          // LLM call path returns immediately.
+                          void byokErrorCounter.record(entry);
+                      }
+                    : undefined,
             };
 
             const loopParams = {
@@ -695,6 +745,7 @@ export abstract class BaseCodeReviewAgentProvider {
                     ?.openrouterProviderOrder,
                 openrouterAllowFallbacks: (byokConfig?.main as any)
                     ?.openrouterAllowFallbacks,
+                parentSignal: input.parentSignal,
 
                 onStepFinish: (step: any) => {
                     stepCount++;
@@ -886,9 +937,17 @@ export abstract class BaseCodeReviewAgentProvider {
                 // Observability is best-effort
             }
 
-            // Map findings to CodeSuggestion format
-            const validFiles = new Set(
-                input.changedFiles.map((f) => normalizeRepoPath(f.filename)),
+            // Map findings to CodeSuggestion format.
+            // The map keys on the normalized path so we tolerate LLM-emitted
+            // variations (missing leading slash, backslashes), but the value
+            // preserves the provider's original filename so downstream calls
+            // (e.g. Azure threadContext.filePath) get the exact path the
+            // provider gave us.
+            const validFilesByNormalized = new Map<string, string>(
+                input.changedFiles.map((f) => [
+                    normalizeRepoPath(f.filename),
+                    f.filename,
+                ]),
             );
             const isKodyRules = this.getCategoryLabel() === 'kody_rules';
             const kodyRulesByUuid = new Map(
@@ -933,7 +992,7 @@ export abstract class BaseCodeReviewAgentProvider {
                         return false;
                     }
                     // PR-level kody_rules omit relevantFile by design.
-                    const kodyRulePathMatch = !s.relevantFile || validFiles.has(normalizeRepoPath(s.relevantFile));
+                    const kodyRulePathMatch = !s.relevantFile || validFilesByNormalized.has(normalizeRepoPath(s.relevantFile));
                     if (!kodyRulePathMatch) {
                         this.agentLogger.warn({
                             message: `@@PATH_MISMATCH@@ Dropping kody_rules suggestion — relevantFile not in changedFiles after normalization`,
@@ -942,7 +1001,7 @@ export abstract class BaseCodeReviewAgentProvider {
                                 prNumber: input.prNumber,
                                 relevantFile: s.relevantFile,
                                 normalizedRelevantFile: normalizeRepoPath(s.relevantFile),
-                                changedFiles: [...validFiles],
+                                changedFiles: [...validFilesByNormalized.values()],
                                 suggestionPreview: (s.oneSentenceSummary || s.suggestionContent || '').slice(0, 140),
                             },
                         });
@@ -950,7 +1009,7 @@ export abstract class BaseCodeReviewAgentProvider {
                     return kodyRulePathMatch;
                 }
 
-                const pathMatch = !!s.relevantFile && validFiles.has(normalizeRepoPath(s.relevantFile));
+                const pathMatch = !!s.relevantFile && validFilesByNormalized.has(normalizeRepoPath(s.relevantFile));
                 if (!pathMatch && s.relevantFile) {
                     this.agentLogger.warn({
                         message: `@@PATH_MISMATCH@@ Dropping suggestion — relevantFile not in changedFiles after normalization`,
@@ -959,7 +1018,7 @@ export abstract class BaseCodeReviewAgentProvider {
                             prNumber: input.prNumber,
                             relevantFile: s.relevantFile,
                             normalizedRelevantFile: normalizeRepoPath(s.relevantFile),
-                            changedFiles: [...validFiles],
+                            changedFiles: [...validFilesByNormalized.values()],
                             severity: s.severity,
                             suggestionPreview: (s.oneSentenceSummary || s.suggestionContent || '').slice(0, 140),
                         },
@@ -973,8 +1032,18 @@ export abstract class BaseCodeReviewAgentProvider {
                     ? kodyRulesByUuid.get(s.ruleUuid)
                     : undefined;
 
+                // Replace the LLM-emitted relevantFile with the provider's
+                // original filename so downstream comment posting uses the
+                // exact path shape the provider expects (e.g. Azure requires
+                // the leading slash it returns from its API).
+                const canonicalRelevantFile = s.relevantFile
+                    ? validFilesByNormalized.get(
+                          normalizeRepoPath(s.relevantFile),
+                      ) ?? s.relevantFile
+                    : s.relevantFile;
+
                 return {
-                    relevantFile: s.relevantFile,
+                    relevantFile: canonicalRelevantFile,
                     language: s.language || '',
                     suggestionContent: s.suggestionContent,
                     existingCode: s.existingCode || '',
@@ -1173,6 +1242,30 @@ export abstract class BaseCodeReviewAgentProvider {
         } = ctx;
         const chunks = chunkFilesByTokenBudget(input.changedFiles, diffBudget);
 
+        // Fail-fast on useless chunking: when chunkFilesByTokenBudget cannot
+        // reduce the file count (one chunk containing every input file), the
+        // prompt overhead — not the diff size — is what's blowing the budget.
+        // Recursing back into execute() with the same file set would just
+        // re-fire the same gate forever (the historical worker-OOM loop).
+        // Aborting here surfaces the real cause in the orchestrator's
+        // failures[] instead of silently exhausting the worker heap.
+        if (
+            chunks.length === 1 &&
+            chunks[0].length === input.changedFiles.length &&
+            input.changedFiles.length > 1
+        ) {
+            this.agentLogger.error({
+                message: `[AGENT] ${identity.name} chunking did not reduce file count (${input.changedFiles.length} files in 1 chunk); static prompt overhead exceeds budget on its own — aborting before recursion`,
+                context: identity.name,
+                metadata: {
+                    prNumber: input.prNumber,
+                    filesCount: input.changedFiles.length,
+                    diffBudget,
+                },
+            });
+            throw new Error('AGENT_PROMPT_OVERHEAD_EXCEEDS_BUDGET');
+        }
+
         this.agentLogger.log({
             message: `[AGENT] ${identity.name} PR#${input.prNumber}: reviewing ${input.changedFiles.length} files in ${chunks.length} batch(es)`,
             context: identity.name,
@@ -1196,7 +1289,12 @@ export abstract class BaseCodeReviewAgentProvider {
             const batchFiles = chunks[i];
             const batchFileSet = new Set(batchFiles.map((f) => f.filename));
             const batchIndex = i + 1;
-            const batchLabel = `${identity.name} batch ${batchIndex}/${batchTotal}`;
+            // Always use the unmodified getIdentity().name to build the label
+            // so recursive chunked runs do not accumulate
+            // " batch X/Y batch X/Y ..." suffixes in the agent name
+            // (logs grew unbounded — see the production smoking-gun trace
+            // captured in issue #1056).
+            const batchLabel = `${this.getIdentity().name} batch ${batchIndex}/${batchTotal}`;
             const batchStartedAt = Date.now();
 
             this.agentLogger.log({
@@ -1228,6 +1326,9 @@ export abstract class BaseCodeReviewAgentProvider {
                     // execute() can include it in their labels.
                     batchIndex,
                     batchTotal,
+                    // Increment the recursion counter so the depth guard in
+                    // execute() can short-circuit any unexpected re-entry.
+                    recursionDepth: (input.recursionDepth ?? 0) + 1,
                 };
 
                 const batchResult = await this.execute(batchInput);

@@ -30,7 +30,12 @@ export interface IPostHogProvider {
     ): void;
 
     groupIdentify(
-        groupType: 'organization' | 'team' | 'repository',
+        groupType:
+            | 'organization'
+            | 'team'
+            | 'repository'
+            | 'directory'
+            | 'repositoryDirectory',
         groupKey: string,
         properties?: Record<string, unknown>,
     ): void;
@@ -39,8 +44,20 @@ export interface IPostHogProvider {
         featureName: string,
         identifier: string,
         organizationAndTeamData: OrganizationAndTeamData,
-        repositoryId?: string,
+        evaluationContext?: FeatureEvaluationContext,
     ): Promise<boolean>;
+}
+
+/**
+ * Extra inputs PostHog uses to evaluate flag rules beyond the always-set
+ * `organization` group. Each key becomes a PostHog `groups` entry
+ * (one-id-per-type, the rollout boundary) — multi-id targeting is done
+ * by the caller looping and evaluating once per id. Kept as a generic
+ * bag so adding new group types (e.g. `user`) doesn't require changing
+ * the call-site signature.
+ */
+export interface FeatureEvaluationContext {
+    groups?: Record<string, string | undefined>;
 }
 
 @Injectable()
@@ -94,7 +111,12 @@ export class PostHogProvider implements IPostHogProvider {
     }
 
     groupIdentify(
-        groupType: 'organization' | 'team' | 'repository',
+        groupType:
+            | 'organization'
+            | 'team'
+            | 'repository'
+            | 'directory'
+            | 'repositoryDirectory',
         groupKey: string,
         properties: Record<string, unknown> = {},
     ): void {
@@ -107,23 +129,32 @@ export class PostHogProvider implements IPostHogProvider {
     }
 
     /**
-     * Evaluates a feature flag against PostHog with the org / repo group
-     * context. When no API key is configured (e.g. local dev or self-hosted
-     * without telemetry) returns `true` to preserve legacy permissive
-     * behavior — cloud-only callers should still gate via the catalog stage.
+     * Evaluates a feature flag against PostHog. The `organization` group
+     * is always set from `organizationAndTeamData.organizationId`; any
+     * extra keys in `evaluationContext.groups` are merged in as
+     * additional group keys. To target multiple values for the same
+     * group type (e.g. several directories), the caller loops and
+     * evaluates once per value. When no API key is configured (local
+     * dev or self-hosted without telemetry) returns `true` to preserve
+     * legacy permissive behavior — cloud-only callers should still gate
+     * via the catalog stage.
      */
     async isFeatureEnabled(
         featureName: string,
         identifier: string,
         organizationAndTeamData: OrganizationAndTeamData,
-        repositoryId?: string,
+        evaluationContext?: FeatureEvaluationContext,
     ): Promise<boolean> {
         if (!this.client) return true;
 
         const groups: Record<string, string> = {
             organization: organizationAndTeamData.organizationId,
         };
-        if (repositoryId) groups.repository = repositoryId;
+        for (const [key, value] of Object.entries(
+            evaluationContext?.groups ?? {},
+        )) {
+            if (value) groups[key] = value;
+        }
 
         try {
             const result = await this.client.isFeatureEnabled(

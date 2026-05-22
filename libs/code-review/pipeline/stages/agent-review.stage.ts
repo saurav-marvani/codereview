@@ -4,6 +4,10 @@ import { createLogger } from '@kodus/flow';
 import { Output, jsonSchema } from 'ai';
 import { Inject, Injectable } from '@nestjs/common';
 import { tracedGenerateText } from '@libs/code-review/infrastructure/agents/llm/agent-loop';
+import {
+    withStructuredOutputFallback,
+    NoStructuredFallbackModelError,
+} from '@libs/code-review/infrastructure/agents/llm/byok-to-vercel';
 import { buildKodyRuleLink } from '@libs/code-review/utils/build-kody-rule-link';
 import {
     buildLangfuseTelemetry,
@@ -40,6 +44,11 @@ import {
     DedupTraceSummary,
 } from '../context/code-review-pipeline.context';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
+import {
+    ReviewErrorCategory,
+    classifyLLMError,
+    getClassification,
+} from '@libs/code-review/infrastructure/agents/llm/error-classifier';
 
 /**
  * Extract valid line ranges from a unified diff patch.
@@ -430,6 +439,11 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     .isTrialMode
                     ? 'gemini-3-flash-preview'
                     : undefined,
+                // Forwarded from the workflow job timeout. The router builds
+                // an AbortController; here we pass it through so when the
+                // 1h45min budget fires, the agent-loop's local controller is
+                // aborted via parentSignal composition.
+                parentSignal: context.parentSignal,
             });
 
             const durationMs = Date.now() - startTime;
@@ -483,6 +497,67 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                             prNumber,
                         },
                     });
+                });
+            }
+
+            // Pick the best failure to surface to the user (used by the
+            // end-review comment to interpolate the reason). Severity-based
+            // bookkeeping already happened in the loop above — this only
+            // chooses *which* failure's classification gets attached to the
+            // context for the message. A critical agent with a mapped (non-
+            // UNKNOWN) classification wins; fall back to any critical, then
+            // any failure.
+            const failures = result.failures ?? [];
+            if (failures.length > 0) {
+                const reviewProvider =
+                    typeof context.codeReviewConfig?.byokConfig?.main
+                        ?.provider === 'string'
+                        ? (context.codeReviewConfig.byokConfig.main
+                              .provider as string)
+                        : undefined;
+                const classifyFailure = (f: (typeof failures)[number]) =>
+                    getClassification(f.error) ??
+                    classifyLLMError(f.error, reviewProvider);
+                const criticalFailures = failures.filter((f) =>
+                    CRITICAL_AGENTS.has(f.agentName),
+                );
+                const ranked = (
+                    criticalFailures.length > 0 ? criticalFailures : failures
+                ).slice();
+                ranked.sort((a, b) => {
+                    const aMapped =
+                        classifyFailure(a).category !==
+                        ReviewErrorCategory.UNKNOWN;
+                    const bMapped =
+                        classifyFailure(b).category !==
+                        ReviewErrorCategory.UNKNOWN;
+                    if (aMapped === bMapped) return 0;
+                    return aMapped ? -1 : 1;
+                });
+                const chosen = ranked[0];
+                const classification = classifyFailure(chosen);
+
+                context = this.updateContext(context, (draft) => {
+                    draft.lastReviewError = {
+                        category: classification.category,
+                        provider: classification.provider,
+                        friendlyMessage: classification.friendlyMessage,
+                        agentName: chosen.agentName,
+                        occurredAt: new Date(),
+                    };
+                });
+
+                this.logger.log({
+                    message: `[AGENT] Review failures: ${failures.length} (critical=${criticalFailures.length}, category=${classification.category})`,
+                    context: this.stageName,
+                    metadata: {
+                        prNumber,
+                        errorCategory: classification.category,
+                        provider: classification.provider,
+                        agentName: chosen.agentName,
+                        failureCount: failures.length,
+                        criticalCount: criticalFailures.length,
+                    },
                 });
             }
 
@@ -1137,44 +1212,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             };
         }
 
-        // Model resolution: Google AI key → BYOK via getInternalModel → skip dedup
+        // Model resolution: Google AI key → BYOK via withStructuredOutputFallback → skip dedup
         const googleKey =
             process.env.API_GOOGLE_AI_API_KEY ||
             process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-
-        let model: any;
-        if (googleKey) {
-            const { createGoogleGenerativeAI } = await import('@ai-sdk/google');
-            model = createGoogleGenerativeAI({ apiKey: googleKey })(
-                'gemini-3-flash-preview',
-            );
-        } else {
-            const { getInternalModel } = await import(
-                '@libs/code-review/infrastructure/agents/llm/byok-to-vercel'
-            );
-            model = getInternalModel(byokConfig);
-        }
-
-        if (!model) {
-            return {
-                suggestions,
-                trace: {
-                    status: 'failed-keep-all',
-                    totalClassifiedCount: suggestions.length,
-                    kodyRulesSkippedCount: 0,
-                    nonKodyInputCount: suggestions.length,
-                    nonKodyOutputCount: suggestions.length,
-                    finalOutputCount: suggestions.length,
-                    uniqueCount: suggestions.length,
-                    groupsCount: 0,
-                    removedCount: 0,
-                    errorMessage: 'No model available for dedup (no Google key and no BYOK)',
-                    unique: suggestions.map((suggestion) =>
-                        this.summarizeDedupSuggestion(suggestion),
-                    ),
-                },
-            };
-        }
 
         try {
             // Build summaries with file + lines for cross-file comparison
@@ -1185,7 +1226,8 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 )
                 .join('\n');
 
-            const dedupResult: any = await tracedGenerateText({
+            const runDedup = (model: any) =>
+                tracedGenerateText({
                 model: model as any,
                 experimental_telemetry: buildLangfuseTelemetry(
                     'dedup-suggestions',
@@ -1248,7 +1290,27 @@ IGNORE the category label (bug/security/performance) when deciding — two agent
 Prefer keeping the suggestion with the most detail or clearest fix as the representative.
 
 ${summaries}`,
-            });
+                });
+
+            let dedupResult: any;
+            if (googleKey) {
+                const { createGoogleGenerativeAI } = await import(
+                    '@ai-sdk/google'
+                );
+                const model = createGoogleGenerativeAI({ apiKey: googleKey })(
+                    'gemini-3-flash-preview',
+                );
+                dedupResult = await runDedup(model);
+            } else {
+                dedupResult = await withStructuredOutputFallback(
+                    {
+                        byokConfig,
+                        organizationId: telemetryMeta?.organizationId,
+                        label: 'dedup-suggestions',
+                    },
+                    runDedup,
+                );
+            }
 
             // Track token usage
             try {
@@ -1403,11 +1465,19 @@ ${summaries}`,
                 },
             };
         } catch (error) {
-            this.logger.warn({
-                message: `[DEDUP] PR#${prNumber}: Failed, keeping all ${suggestions.length} suggestions`,
-                context: this.stageName,
-                error,
-            });
+            const noModel = error instanceof NoStructuredFallbackModelError;
+            if (noModel) {
+                this.logger.warn({
+                    message: `[DEDUP] PR#${prNumber}: No model available for dedup (no Google key and no BYOK), keeping all ${suggestions.length} suggestions`,
+                    context: this.stageName,
+                });
+            } else {
+                this.logger.error({
+                    message: `[DEDUP] PR#${prNumber}: Failed, keeping all ${suggestions.length} suggestions`,
+                    context: this.stageName,
+                    error,
+                });
+            }
             return {
                 suggestions,
                 trace: {
@@ -1420,8 +1490,11 @@ ${summaries}`,
                     uniqueCount: suggestions.length,
                     groupsCount: 0,
                     removedCount: 0,
-                    errorMessage:
-                        error instanceof Error ? error.message : String(error),
+                    errorMessage: noModel
+                        ? 'No model available for dedup (no Google key and no BYOK)'
+                        : error instanceof Error
+                          ? error.message
+                          : String(error),
                     unique: suggestions.map((suggestion) =>
                         this.summarizeDedupSuggestion(suggestion),
                     ),

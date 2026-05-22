@@ -28,13 +28,17 @@ export class SSOLoginUseCase implements IUseCase {
             let user = await this.authService.validateUser({ email });
 
             if (!user) {
-                user = await this.signUpUseCase.execute({
-                    email,
-                    name:
-                        `${firstName || ''} ${lastName || ''}`.trim() || email,
-                    password: randomBytes(32).toString('base64').slice(0, 32),
-                    organizationId,
-                });
+                user = await this.signUpUseCase.execute(
+                    {
+                        email,
+                        name:
+                            `${firstName || ''} ${lastName || ''}`.trim() ||
+                            email,
+                        password: randomBytes(32).toString('base64').slice(0, 32),
+                        organizationId,
+                    },
+                    { preVerified: true },
+                );
             }
 
             const { accessToken, refreshToken } = await this.authService.login(

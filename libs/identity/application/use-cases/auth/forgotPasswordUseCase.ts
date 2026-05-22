@@ -6,12 +6,13 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 
-import { EmailService } from '@libs/common/email/services/email.service';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
 import {
     AUTH_SERVICE_TOKEN,
     IAuthService,
 } from '@libs/identity/domain/auth/contracts/auth.service.contracts';
+import { NotificationService } from '@libs/notifications/application/notification.service';
+import { NotificationEvent } from '@libs/notifications/domain/catalog/events';
 
 @Injectable()
 export class ForgotPasswordUseCase implements IUseCase {
@@ -19,7 +20,7 @@ export class ForgotPasswordUseCase implements IUseCase {
     constructor(
         @Inject(AUTH_SERVICE_TOKEN)
         private readonly authService: IAuthService,
-        private readonly emailService: EmailService,
+        private readonly notificationService: NotificationService,
     ) {}
 
     async execute(email: string) {
@@ -32,12 +33,16 @@ export class ForgotPasswordUseCase implements IUseCase {
                 user.uuid,
                 email,
             );
-            await this.emailService.sendForgotPasswordEmail(
-                user.email,
-                user.organization.name,
-                token,
-                this.logger,
-            );
+            await this.notificationService.emit({
+                event: NotificationEvent.AUTH_FORGOT_PASSWORD,
+                payload: {
+                    email: user.email,
+                    name: user.organization.name,
+                    token,
+                },
+                organizationId: user.organization.uuid,
+                recipients: { kind: 'user', userId: user.uuid },
+            });
             return { message: 'Reset link sent.' };
         } catch {
             throw new InternalServerErrorException(

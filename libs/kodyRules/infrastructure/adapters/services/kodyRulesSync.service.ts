@@ -653,6 +653,7 @@ export class KodyRulesSyncService {
                             organizationAndTeamData,
                             configValue: {},
                             repositoryId: repository.id,
+                            skipAuthorization: true,
                         },
                     );
                 } catch (paramError) {
@@ -921,6 +922,7 @@ export class KodyRulesSyncService {
                             organizationAndTeamData,
                             configValue: {},
                             repositoryId: repository.id,
+                            skipAuthorization: true,
                         },
                     );
                 } catch (paramError) {
@@ -1115,6 +1117,7 @@ export class KodyRulesSyncService {
                 organizationAndTeamData,
                 configValue: {},
                 repositoryId: repository.id,
+                skipAuthorization: true,
             });
         } catch (paramError) {
             this.logger.error({

@@ -29,6 +29,7 @@ import { SelfHostedBeaconModule } from '@libs/telemetry/modules/self-hosted-beac
 import { TelemetryModule } from '@libs/telemetry/modules/telemetry.module';
 import { FeatureGateModule } from '@libs/feature-gate/modules/feature-gate.module';
 import { SandboxModule } from '@libs/sandbox/modules/sandbox.module';
+import { NotificationModule } from '@libs/notifications/modules/notification.module';
 
 import { AnalyticsClassifierCron } from './cron/analytics-classifier.cron';
 import { AnalyticsIngestionCron } from './cron/analytics-ingestion.cron';
@@ -76,6 +77,7 @@ export class WorkerModule {
                     AutomationModule,
                     PlatformModule,
                     SandboxModule, // provides SANDBOX_LEASE_MANAGER_TOKEN for OutboxRelayService
+                    NotificationModule,
                 ],
                 providers: [
                     WorkerDrainService,

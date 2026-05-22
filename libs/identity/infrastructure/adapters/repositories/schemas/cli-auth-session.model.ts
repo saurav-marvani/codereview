@@ -13,6 +13,14 @@ export type CliAuthSessionStatus =
 
 @Entity('cli_auth_sessions')
 @Index('UQ_cli_auth_sessions_state', ['state'], { unique: true })
+@Index('UQ_cli_auth_sessions_device_code', ['deviceCode'], {
+    unique: true,
+    where: "device_code IS NOT NULL ",
+})
+@Index('UQ_cli_auth_sessions_user_code', ['userCode'], {
+    unique: true,
+    where: "user_code IS NOT NULL AND status = 'pending'",
+})
 @Index('IDX_cli_auth_sessions_status_expires', ['status', 'expiresAt'])
 export class CliAuthSessionModel extends CoreModel {
     @Column({ type: 'varchar', length: 64 })

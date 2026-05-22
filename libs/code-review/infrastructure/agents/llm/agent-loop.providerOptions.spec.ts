@@ -29,12 +29,12 @@ describe('buildReasoningProviderOptions', () => {
     });
 
     describe('Anthropic', () => {
-        it('uses adaptive thinking + outputConfig.effort for sonnet-4 family', () => {
+        it('uses adaptive thinking + effort for opus-4-7 (4.7+)', () => {
             expect(
                 buildReasoningProviderOptions(
                     BYOKProvider.ANTHROPIC,
                     'high',
-                    'claude-sonnet-4-5-20250929',
+                    'claude-opus-4-7',
                 ),
             ).toEqual({
                 anthropic: {
@@ -44,7 +44,39 @@ describe('buildReasoningProviderOptions', () => {
             });
         });
 
-        it('uses adaptive thinking for opus-4 family', () => {
+        it('uses adaptive thinking + effort for sonnet-4-6 (4.6+)', () => {
+            expect(
+                buildReasoningProviderOptions(
+                    BYOKProvider.ANTHROPIC,
+                    'medium',
+                    'claude-sonnet-4-6-20250929',
+                ),
+            ).toEqual({
+                anthropic: {
+                    thinking: { type: 'adaptive' },
+                    effort: 'medium',
+                },
+            });
+        });
+
+        it('falls back to budgetTokens for sonnet-4-5 (pre-4.6)', () => {
+            expect(
+                buildReasoningProviderOptions(
+                    BYOKProvider.ANTHROPIC,
+                    'high',
+                    'claude-sonnet-4-5-20250929',
+                ),
+            ).toEqual({
+                anthropic: {
+                    thinking: {
+                        type: 'enabled',
+                        budgetTokens: EFFORT_TO_BUDGET.high,
+                    },
+                },
+            });
+        });
+
+        it('falls back to budgetTokens for opus-4-1 (pre-4.6)', () => {
             expect(
                 buildReasoningProviderOptions(
                     BYOKProvider.ANTHROPIC,
@@ -53,8 +85,10 @@ describe('buildReasoningProviderOptions', () => {
                 ),
             ).toEqual({
                 anthropic: {
-                    thinking: { type: 'adaptive' },
-                    effort: 'medium',
+                    thinking: {
+                        type: 'enabled',
+                        budgetTokens: EFFORT_TO_BUDGET.medium,
+                    },
                 },
             });
         });

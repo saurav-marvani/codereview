@@ -1,6 +1,7 @@
 import { createLogger } from '@kodus/flow';
 import { Inject, Injectable } from '@nestjs/common';
 
+import { environment } from '@libs/ee/configs/environment';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
 import { STATUS } from '@libs/core/infrastructure/config/types/database/status.type';
 import { DuplicateRecordException } from '@libs/core/infrastructure/filters/duplicate-record.exception';
@@ -32,6 +33,10 @@ import { CreateProfileUseCase } from '../profile/create.use-case';
 import { CreateTeamUseCase } from '@libs/organization/application/use-cases/team/create.use-case';
 import { SignUpDTO } from '@libs/identity/dtos/create-user-organization.dto';
 
+export interface SignUpOptions {
+    preVerified?: boolean;
+}
+
 @Injectable()
 export class SignUpUseCase implements IUseCase {
     private readonly logger = createLogger(SignUpUseCase.name);
@@ -50,7 +55,10 @@ export class SignUpUseCase implements IUseCase {
         private readonly telemetry: TelemetryService,
     ) {}
 
-    public async execute(payload: SignUpDTO): Promise<Partial<IUser>> {
+    public async execute(
+        payload: SignUpDTO,
+        options?: SignUpOptions,
+    ): Promise<Partial<IUser>> {
         const { email, password, name, organizationId } = payload;
 
         this.logger.error({
@@ -65,11 +73,15 @@ export class SignUpUseCase implements IUseCase {
                 throw new DuplicateRecordException('User already exists');
             }
 
+            const status =
+                options?.preVerified || !environment.API_CLOUD_MODE
+                    ? STATUS.ACTIVE
+                    : STATUS.PENDING;
             const user: Omit<IUser, 'uuid'> = {
                 email,
                 password,
                 role: Role.CONTRIBUTOR,
-                status: STATUS.PENDING,
+                status,
                 organization: {
                     name: generateRandomOrgName(name),
                 },
@@ -119,6 +131,8 @@ export class SignUpUseCase implements IUseCase {
                 team = await this.createTeamUseCase.execute({
                     teamName: `${name} - team`,
                     organizationId: createdUser.organization.uuid,
+                    organizationName: createdUser.organization.name,
+                    actorUserId: createdUser.uuid,
                 });
 
                 if (!team) {
@@ -151,10 +165,7 @@ export class SignUpUseCase implements IUseCase {
                 throw new Error('Failed to create team member');
             }
 
-            void this.emailService.createContact(
-                { email, name },
-                this.logger,
-            );
+            void this.emailService.createContact({ email, name }, this.logger);
 
             void this.telemetry.userSignedUp({
                 userId: createdUser.uuid,

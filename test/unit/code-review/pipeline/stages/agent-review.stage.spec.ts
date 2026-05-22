@@ -337,6 +337,7 @@ describe('AgentReviewStage', () => {
                         durationMs: 1000,
                     },
                 ],
+                failures: [],
                 totalDurationMs: 1000,
             });
 

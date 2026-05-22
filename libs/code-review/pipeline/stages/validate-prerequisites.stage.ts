@@ -40,7 +40,20 @@ import {
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@libs/platformData/domain/pullRequests/contracts/pullRequests.service.contracts';
 import { Inject, Injectable } from '@nestjs/common';
+import { NotificationService } from '@libs/notifications/application/notification.service';
+import { NotificationRateLimiter } from '@libs/notifications/application/notification-rate-limiter.service';
+import { PrAuthorRecipientResolver } from '@libs/notifications/application/pr-author-recipient.resolver';
+import { NotificationEvent } from '@libs/notifications/domain/catalog/events';
+import { Role } from '@libs/identity/domain/permissions/enums/permissions.enum';
+import { STATUS } from '@libs/core/infrastructure/config/types/database/status.type';
+import {
+    IUsersService,
+    USER_SERVICE_TOKEN,
+} from '@libs/identity/domain/user/contracts/user.service.contract';
+
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
+
+const SKIPPED_NO_LICENSE_RATE_LIMIT_TTL_SECONDS = 24 * 60 * 60; // 24h
 
 const ERROR_TO_MESSAGE_TYPE: Record<
     ValidationErrorType,
@@ -76,6 +89,11 @@ export class ValidatePrerequisitesStage extends BasePipelineStage<CodeReviewPipe
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
         private readonly codeManagementService: CodeManagementService,
+        private readonly notificationService: NotificationService,
+        private readonly notificationRateLimiter: NotificationRateLimiter,
+        private readonly prAuthorRecipientResolver: PrAuthorRecipientResolver,
+        @Inject(USER_SERVICE_TOKEN)
+        private readonly usersService: IUsersService,
     ) {
         super();
     }
@@ -220,6 +238,7 @@ export class ValidatePrerequisitesStage extends BasePipelineStage<CodeReviewPipe
             }
 
             // Auto-assign failed - skip review with notification already handled
+            await this.notifySkippedNoLicense(context);
             return this.updateContext(context, (draft) => {
                 applyShowStatusFeedbackMetadata(draft);
                 draft.statusInfo = {
@@ -789,5 +808,67 @@ export class ValidatePrerequisitesStage extends BasePipelineStage<CodeReviewPipe
         }
 
         return { canProceed: true };
+    }
+
+    /**
+     * Notify the PR author once that their PR was skipped because the
+     * org has no active license. Rate-limited to one notification per
+     * (author, org) per 24h via the shared cache layer so a contributor
+     * opening dozens of PRs during an outage gets one notification, not
+     * dozens. Best-effort: failures are swallowed.
+     */
+    private async notifySkippedNoLicense(
+        context: CodeReviewPipelineContext,
+    ): Promise<void> {
+        try {
+            const { pullRequest, organizationAndTeamData, repository } =
+                context;
+            const author = pullRequest?.user as
+                | { email?: string; username?: string }
+                | undefined;
+
+            const recipient = await this.prAuthorRecipientResolver.resolve(
+                { email: author?.email, login: author?.username },
+                organizationAndTeamData.organizationId,
+            );
+            if (!recipient || recipient.kind !== 'user') return;
+
+            const rateLimitKey = `notif-rate:review_skipped_no_license:${recipient.userId}:${organizationAndTeamData.organizationId}`;
+            const allowed = await this.notificationRateLimiter.shouldEmit(
+                rateLimitKey,
+                SKIPPED_NO_LICENSE_RATE_LIMIT_TTL_SECONDS,
+            );
+            if (!allowed) return;
+
+            // Pick any active owner's email as the contact (best-effort).
+            const owners = await this.usersService.find(
+                {
+                    organization: {
+                        uuid: organizationAndTeamData.organizationId,
+                    },
+                    role: Role.OWNER,
+                },
+                [STATUS.ACTIVE],
+            );
+            const ownerContact = owners?.[0]?.email;
+
+            await this.notificationService.emit({
+                event: NotificationEvent.REVIEW_SKIPPED_NO_LICENSE,
+                payload: {
+                    prUrl: (pullRequest?.url as string) ?? '',
+                    repoName: repository?.name ?? '',
+                    ownerContact,
+                },
+                organizationId: organizationAndTeamData.organizationId,
+                recipients: recipient,
+            });
+        } catch (error) {
+            this.logger.error({
+                message:
+                    'Failed to emit review.skipped_no_license notification',
+                error: error instanceof Error ? error : new Error(String(error)),
+                context: this.stageName,
+            });
+        }
     }
 }

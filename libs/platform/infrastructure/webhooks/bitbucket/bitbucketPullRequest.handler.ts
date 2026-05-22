@@ -13,6 +13,7 @@ import {
 import { EnqueueAstGraphUpdateOnMergedUseCase } from '@libs/code-review/application/use-cases/enqueue-ast-graph-update-on-merged.use-case';
 import { EnqueueImplementationCheckUseCase } from '@libs/code-review/application/use-cases/enqueue-implementation-check.use-case';
 import {
+    isForceReviewCommand,
     isKodyMentionNonReview,
     isReviewCommand,
 } from '@libs/common/utils/codeManagement/codeCommentMarkers';
@@ -512,6 +513,7 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
             }
 
             const isStartCommand = isReviewCommand(comment.body);
+            const isForceCommand = isForceReviewCommand(comment.body);
 
             // Bitbucket-specific: Verify if the comment is a review marker (emoji or API generated)
             const emojiPattern = /(?:👍|👎)/u;
@@ -535,7 +537,7 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
                     payload: {
                         ...payload,
                         action: 'synchronize',
-                        origin: 'command',
+                        origin: isForceCommand ? 'command-force' : 'command',
                         triggerCommentId: comment?.id,
                     },
                 };

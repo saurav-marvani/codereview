@@ -22,6 +22,7 @@ import {
 } from '@libs/code-review/domain/contracts/RepositoryService.contract';
 import { AstGraphStatus } from '@libs/code-review/infrastructure/adapters/repositories/schemas/repository.model';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
+import { raceWithAbortSignal } from '@libs/core/workflow/infrastructure/abort-signal-race';
 
 interface AstGraphIncrementalJobPayload {
     repositoryId: string;
@@ -51,12 +52,16 @@ export class AstGraphIncrementalJobProcessor implements IJobProcessorService {
         private readonly repositoryService: IRepositoryService,
     ) {}
 
-    async process(jobId: string): Promise<void> {
+    async process(jobId: string, signal?: AbortSignal): Promise<void> {
         const jobStart = Date.now();
         const job = await this.jobRepository.findOne(jobId);
 
         if (!job) {
             throw new Error(`Job ${jobId} not found`);
+        }
+
+        if (signal?.aborted) {
+            throw new Error(`Job ${jobId} aborted before start`);
         }
 
         const payload = job.payload as unknown as AstGraphIncrementalJobPayload;
@@ -93,6 +98,8 @@ export class AstGraphIncrementalJobProcessor implements IJobProcessorService {
         let sandboxId: string | undefined;
 
         try {
+            // Race the incremental update against the parent's AbortSignal.
+            await raceWithAbortSignal((async () => {
             // 1. Resolve auth
             await this.updateJobStage(jobId, 'RESOLVING_AUTH');
             const authStart = Date.now();
@@ -201,6 +208,7 @@ export class AstGraphIncrementalJobProcessor implements IJobProcessorService {
                     durationMs: totalMs,
                 },
             });
+            })(), signal);
         } catch (error) {
             const totalMs = Date.now() - jobStart;
             const classification = this.classifyError(error);

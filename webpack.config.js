@@ -3,6 +3,7 @@ const path = require('path');
 const nodeExternals = require('webpack-node-externals');
 const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
 const { RunScriptWebpackPlugin } = require('run-script-webpack-plugin');
+const { sourceMapsEnabled } = require('process');
 
 const copyDir = (sourceDir, targetDir, options = {}) => {
     const { skip } = options;
@@ -68,14 +69,19 @@ class CopySkillsPlugin {
 }
 
 module.exports = function (options, webpack) {
-    const isWatchMode = Boolean(options.watch);
+    // Detect watch mode from BOTH the options field (set by `nest start
+    // --watch`) and the CLI argv (set by `nest build --watch`). Nest CLI
+    // doesn't populate options.watch in the build path, so we'd silently
+    // skip the dev plugin block if we relied on it alone.
+    const isWatchMode =
+        Boolean(options.watch) || process.argv.includes('--watch');
     const isNestCliStart = process.env.NEST_CLI_START === 'true';
     const isProduction = process.env.NODE_ENV === 'production';
     const debugPort = process.env.DEBUG_PORT || 9229;
     const debugBreak = process.env.DEBUG_BREAK === 'true';
     const inspectArg = debugBreak ? '--inspect-brk' : '--inspect';
     const devtool = isWatchMode
-        ? 'inline-source-map'
+        ? 'eval-source-map'
         : isProduction
           ? 'hidden-source-map'
           : 'source-map';
@@ -95,6 +101,12 @@ module.exports = function (options, webpack) {
         );
 
         if (!isNestCliStart) {
+            // `name` must match the webpack entrypoint name. Nest CLI's
+            // monorepo build sets the entrypoint name to the
+            // path-prefixed output filename (e.g. "apps/api/main.js"),
+            // NOT webpack's usual default of "main". options.output
+            // .filename happens to be that same string per-project,
+            // which makes this work for api/webhooks/worker uniformly.
             plugins.push(
                 new RunScriptWebpackPlugin({
                     name: options.output.filename,

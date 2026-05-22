@@ -3,16 +3,22 @@ import { normalizeRepoPath } from './coverage-ledger';
 /**
  * Reproduces the validFiles matching logic from base-code-review-agent.provider.ts:
  *
- *   const validFiles = new Set(
- *       input.changedFiles.map((f) => normalizeRepoPath(f.filename)),
+ *   const validFilesByNormalized = new Map(
+ *       input.changedFiles.map((f) => [normalizeRepoPath(f.filename), f.filename]),
  *   );
- *   return !!s.relevantFile && validFiles.has(normalizeRepoPath(s.relevantFile));
+ *   return !!s.relevantFile && validFilesByNormalized.has(normalizeRepoPath(s.relevantFile));
  *
- * Tests confirm that path normalization handles all 4 Git providers.
+ * Tests confirm that path normalization handles all 4 Git providers
+ * AND that the suggestion's relevantFile is canonicalized back to the
+ * provider's original path shape (so e.g. Azure keeps its leading slash).
  */
 
 function buildValidFilesSet(filenames: string[]): Set<string> {
     return new Set(filenames.map((f) => normalizeRepoPath(f)));
+}
+
+function buildValidFilesMap(filenames: string[]): Map<string, string> {
+    return new Map(filenames.map((f) => [normalizeRepoPath(f), f]));
 }
 
 function matchesSuggestion(
@@ -20,6 +26,14 @@ function matchesSuggestion(
     relevantFile: string | undefined,
 ): boolean {
     return !!relevantFile && validFiles.has(normalizeRepoPath(relevantFile));
+}
+
+function canonicalizeRelevantFile(
+    validFiles: Map<string, string>,
+    relevantFile: string | undefined,
+): string | undefined {
+    if (!relevantFile) return relevantFile;
+    return validFiles.get(normalizeRepoPath(relevantFile)) ?? relevantFile;
 }
 
 describe('validFiles path matching across Git providers', () => {
@@ -169,6 +183,70 @@ describe('validFiles path matching across Git providers', () => {
             expect(
                 matchesSuggestion(validFiles, 'gitlab-style/file.rb'),
             ).toBe(true);
+        });
+    });
+
+    describe('canonicalization back to provider path', () => {
+        it('restores Azure leading slash from LLM-emitted path', () => {
+            const validFiles = buildValidFilesMap([
+                '/Kodus.Api/Exceptions/ExceptionHandler.php',
+            ]);
+            expect(
+                canonicalizeRelevantFile(
+                    validFiles,
+                    'Kodus.Api/Exceptions/ExceptionHandler.php',
+                ),
+            ).toBe('/Kodus.Api/Exceptions/ExceptionHandler.php');
+        });
+
+        it('keeps GitHub-style path untouched', () => {
+            const validFiles = buildValidFilesMap([
+                'src/components/Button.tsx',
+            ]);
+            expect(
+                canonicalizeRelevantFile(
+                    validFiles,
+                    'src/components/Button.tsx',
+                ),
+            ).toBe('src/components/Button.tsx');
+        });
+
+        it('strips an extra leading slash from the LLM when provider had none', () => {
+            const validFiles = buildValidFilesMap([
+                'src/components/Button.tsx',
+            ]);
+            expect(
+                canonicalizeRelevantFile(
+                    validFiles,
+                    '/src/components/Button.tsx',
+                ),
+            ).toBe('src/components/Button.tsx');
+        });
+
+        it('normalizes backslashes back to the provider path', () => {
+            const validFiles = buildValidFilesMap([
+                'src/components/Button.tsx',
+            ]);
+            expect(
+                canonicalizeRelevantFile(
+                    validFiles,
+                    'src\\components\\Button.tsx',
+                ),
+            ).toBe('src/components/Button.tsx');
+        });
+
+        it('falls back to the LLM path when no provider match exists', () => {
+            const validFiles = buildValidFilesMap(['src/known.ts']);
+            expect(
+                canonicalizeRelevantFile(validFiles, 'src/unknown.ts'),
+            ).toBe('src/unknown.ts');
+        });
+
+        it('passes undefined through unchanged for PR-level kody_rules', () => {
+            const validFiles = buildValidFilesMap(['src/known.ts']);
+            expect(canonicalizeRelevantFile(validFiles, undefined)).toBe(
+                undefined,
+            );
         });
     });
 });

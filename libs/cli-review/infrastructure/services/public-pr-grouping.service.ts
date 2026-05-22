@@ -77,6 +77,7 @@ export class PublicPrGroupingService implements IPublicPrGroupingService {
             const model = byokToVercelModel(
                 undefined,
                 'main',
+                {},
                 GROUPING_MODEL,
             );
             const truncated = diff.length > MAX_DIFF_CHARS;

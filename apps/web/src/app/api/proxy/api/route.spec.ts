@@ -10,6 +10,11 @@ jest.mock("src/core/utils/helpers", () => ({
     pathToApiUrl: (p: string) => `http://upstream.internal:3001${p}`,
 }));
 
+const authMock = jest.fn();
+jest.mock("src/core/config/auth", () => ({
+    auth: () => authMock(),
+}));
+
 import { GET, POST, PATCH, PUT, DELETE } from "./[...path]/route";
 
 function mockReq(

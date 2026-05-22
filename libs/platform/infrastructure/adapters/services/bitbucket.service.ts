@@ -672,4 +672,18 @@ export class BitbucketService implements Omit<
         );
         return impl.isDraftPullRequest(params);
     }
+
+    async getRepositoryContentBatch(params: any) {
+        const impl = await this.getImplementation(
+            params.organizationAndTeamData,
+        );
+        return impl.getRepositoryContentBatch(params);
+    }
+
+    async getUsersByUsername(params: any) {
+        const impl = await this.getImplementation(
+            params.organizationAndTeamData,
+        );
+        return impl.getUsersByUsername(params);
+    }
 }

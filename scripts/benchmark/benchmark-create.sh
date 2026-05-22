@@ -3,21 +3,44 @@
 # Step 1: Create benchmark PRs
 #
 # Usage:
-#   ./benchmark-create.sh <name> [TOTAL_PRS]
+#   ./benchmark-create.sh <name> [TOTAL_PRS] [--platform=github|azure]
 #
 # Examples:
-#   ./benchmark-create.sh sonnet-v1 20
+#   ./benchmark-create.sh sonnet-v1 20                       # GitHub (default)
 #   ./benchmark-create.sh kimi-baseline 50
-#   ./benchmark-create.sh test-run        # default: 20 PRs
+#   ./benchmark-create.sh azure-run 5 --platform=azure       # Azure DevOps
+#
+# Platforms:
+#   github (default) — uses gh auth token + scripts/pr-creator/prs.json
+#   azure            — uses AZURE_DEVOPS_TOKEN + scripts/pr-creator/prs-azure.json
+#                      (generate it first with migrate-prs-to-azure.mjs)
 #
 set -euo pipefail
 
+# Parse optional --platform flag from any position
+PLATFORM="github"
+POS_ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --platform=*) PLATFORM="${arg#*=}" ;;
+    *)            POS_ARGS+=("$arg") ;;
+  esac
+done
+# Reset positional args (safe under set -u when POS_ARGS is empty)
+set -- ${POS_ARGS[@]+"${POS_ARGS[@]}"}
+
+if [ "$PLATFORM" != "github" ] && [ "$PLATFORM" != "azure" ]; then
+  echo "ERROR: --platform must be 'github' or 'azure' (got: '$PLATFORM')"
+  exit 1
+fi
+
 if [ -z "${1:-}" ]; then
-  echo "Usage: ./benchmark-create.sh <name> [TOTAL_PRS]"
+  echo "Usage: ./benchmark-create.sh <name> [TOTAL_PRS] [--platform=github|azure]"
   echo ""
   echo "Examples:"
-  echo "  ./benchmark-create.sh sonnet-v1 20"
+  echo "  ./benchmark-create.sh sonnet-v1 20                       # GitHub (default)"
   echo "  ./benchmark-create.sh kimi-baseline"
+  echo "  ./benchmark-create.sh azure-run 5 --platform=azure       # Azure DevOps"
   echo ""
   # List existing runs
   RUNS_DIR="$(cd "$(dirname "$0")" && pwd)/runs"
@@ -166,16 +189,39 @@ done
 # Pass TOTAL_PRS so we only bump the branches that will actually be used —
 # bumping every branch in prs.json fires synchronize webhooks on orphan PRs
 # from previous runs and triggers spurious reviews.
-if [ "${SKIP_BUMP_HEADS:-0}" != "1" ]; then
+#
+# Azure DevOps doesn't enforce the same cap, and bump-benchmark-heads.sh
+# is GitHub-API only, so we always skip on the azure path.
+if [ "$PLATFORM" = "azure" ]; then
+  echo "▸ Skipping HEAD bump (azure platform — N/A)"
+elif [ "${SKIP_BUMP_HEADS:-0}" != "1" ]; then
   TOTAL_PRS="$TOTAL_PRS" "$(cd "$(dirname "$0")" && pwd)/bump-benchmark-heads.sh"
 else
   echo "▸ Skipping HEAD bump (SKIP_BUMP_HEADS=1)"
 fi
 
 # Create PRs
-echo "▸ Creating $TOTAL_PRS PRs..."
+echo "▸ Creating $TOTAL_PRS PRs on $PLATFORM..."
 cd "$REPO_DIR/scripts/pr-creator"
-RESULT=$(GITHUB_TOKEN=$(gh auth token) TOTAL_PRS=$TOTAL_PRS node create-test-prs.mjs 2>&1)
+if [ "$PLATFORM" = "azure" ]; then
+  if [ -z "${AZURE_DEVOPS_TOKEN:-}" ]; then
+    echo "ERROR: AZURE_DEVOPS_TOKEN must be set for --platform=azure"
+    exit 1
+  fi
+  if [ ! -f "$REPO_DIR/scripts/pr-creator/prs-azure.json" ]; then
+    echo "ERROR: scripts/pr-creator/prs-azure.json not found."
+    echo "Generate it first:"
+    echo "  node scripts/benchmark/migrate-prs-to-azure.mjs \\"
+    echo "    --azure-org=<org> --azure-project=<project>"
+    exit 1
+  fi
+  RESULT=$(AZURE_DEVOPS_TOKEN="$AZURE_DEVOPS_TOKEN" \
+           PR_CONFIG=prs-azure.json \
+           TOTAL_PRS=$TOTAL_PRS \
+           node create-test-prs.mjs 2>&1)
+else
+  RESULT=$(GITHUB_TOKEN=$(gh auth token) TOTAL_PRS=$TOTAL_PRS node create-test-prs.mjs 2>&1)
+fi
 CREATED=$(printf '%s\n' "$RESULT" | sed -n 's/.*Total: \([0-9][0-9]*\).*/\1/p' | tail -n 1)
 echo "$RESULT" | grep "✅" || true
 echo "$RESULT" | grep "❌" || true

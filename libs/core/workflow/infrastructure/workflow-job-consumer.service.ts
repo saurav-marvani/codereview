@@ -24,6 +24,7 @@ import {
 } from '@libs/core/workflow/domain/contracts/inbox-message.repository.contract';
 import { InboxStatus } from './repositories/schemas/inbox-message.model';
 import { createRabbitMQErrorHandlerWithFallback } from '@libs/core/infrastructure/queue/rabbitmq-error.handler';
+import { runWithBoundedTimeout } from './run-with-bounded-timeout';
 import {
     ITaskProtectionService,
     TASK_PROTECTION_SERVICE_TOKEN,
@@ -480,13 +481,32 @@ export class WorkflowJobConsumer implements OnApplicationShutdown {
                         });
                     }
 
-                    // Release lock so message can be re-claimed on retry
-                    // Retry scheduling is handled by RabbitMQErrorHandler (single source of truth)
-                    await this.inboxRepository.releaseLock(
-                        messageId,
-                        consumerId,
-                        error.message,
-                    );
+                    // Release lock — bounded so a slow Mongo cannot keep the
+                    // AMQP message unacked. If it times out or fails, the
+                    // stale-claim reaper (claimTimeoutMinutes=150) reclaims it.
+                    // Retry scheduling for AMQP is handled by RabbitMQErrorHandler.
+                    try {
+                        await runWithBoundedTimeout(
+                            this.inboxRepository.releaseLock(
+                                messageId,
+                                consumerId,
+                                error.message,
+                            ),
+                            10_000,
+                            'inbox.releaseLock',
+                        );
+                    } catch (releaseErr) {
+                        this.logger.error({
+                            message:
+                                'releaseLock failed/timed out; deferring to stale-claim reaper',
+                            context: WorkflowJobConsumer.name,
+                            error: releaseErr,
+                            metadata: {
+                                messageId,
+                                jobId: unwrappedMessage.jobId,
+                            },
+                        });
+                    }
 
                     // Re-throw so RabbitMQErrorHandler can republish with delay
                     throw error;

@@ -13,6 +13,7 @@ import { CockpitDeveloperProductivityService } from '../infrastructure/services/
 import { CockpitHealthService } from '../infrastructure/services/cockpit-health.service';
 import { CockpitSourceResolver } from '../infrastructure/services/cockpit-source.resolver';
 import { CockpitValidationService } from '../infrastructure/services/cockpit-validation.service';
+import { NotificationModule } from '@libs/notifications/modules/notification.module';
 
 /**
  * Entry point for the in-process cockpit — replaces the external
@@ -27,6 +28,7 @@ import { CockpitValidationService } from '../infrastructure/services/cockpit-val
         EmailModule,
         forwardRef(() => UserModule),
         forwardRef(() => OrganizationModule),
+        forwardRef(() => NotificationModule),
     ],
     providers: [
         CockpitSourceResolver,

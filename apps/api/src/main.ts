@@ -1,3 +1,37 @@
+// Force stdout/stderr to be synchronous so logs aren't lost when the
+// process exits abruptly (unhandled rejection / sync throw in a module
+// constructor). Without this, Node line-buffers piped stdout and any
+// pending output is dropped on `process.exit(1)` — which is exactly
+// what we were seeing on ECS: bootstrap dies and CloudWatch never gets
+// the stack trace.
+if ((process.stdout as any)._handle?.setBlocking) {
+    (process.stdout as any)._handle.setBlocking(true);
+}
+if ((process.stderr as any)._handle?.setBlocking) {
+    (process.stderr as any)._handle.setBlocking(true);
+}
+
+// Catch errors thrown by module-side-effect imports (e.g. instrument.ts,
+// setupSentry, registerLangfuseStandalone, ApiModule eval) before any
+// other handler is installed. Default Node 22 behavior on unhandled
+// rejection is to exit with code 1 — fine, but we want the stack first.
+process.on('unhandledRejection', (reason) => {
+    // eslint-disable-next-line no-console
+    console.error(
+        '[BOOTSTRAP-EARLY] unhandledRejection before app handler installed:',
+        reason instanceof Error ? reason.stack || reason.message : reason,
+    );
+    process.exit(1);
+});
+process.on('uncaughtException', (err) => {
+    // eslint-disable-next-line no-console
+    console.error(
+        '[BOOTSTRAP-EARLY] uncaughtException before app handler installed:',
+        err?.stack || err?.message || err,
+    );
+    process.exit(1);
+});
+
 import './instrument';
 import 'source-map-support/register';
 import { environment } from '@libs/ee/configs/environment';
@@ -48,9 +82,18 @@ function handleNestJSWebpackHmr(app: INestApplication, module: any) {
 
 async function bootstrap() {
     process.env.COMPONENT_TYPE = 'api';
-    const app = await NestFactory.create<NestExpressApplication>(ApiModule, {
-        snapshot: true,
-    });
+    // eslint-disable-next-line no-console
+    console.log('[BOOTSTRAP] calling NestFactory.create...');
+    // NOTE: `snapshot: true` was removed here. That flag requires
+    // `@nestjs/devtools-integration` (not installed in this repo). It
+    // used to be a silent no-op, but after the @nestjs/core 11.1.19 →
+    // 11.1.21 bump it began to hang NestFactory.create() forever — no
+    // throw, no log — which on ECS surfaced as a 46s-silent container
+    // killed by the health check. Do not re-add without also adding
+    // the devtools package.
+    const app = await NestFactory.create<NestExpressApplication>(ApiModule);
+    // eslint-disable-next-line no-console
+    console.log('[BOOTSTRAP] NestFactory.create returned, wiring app...');
 
     const logger = app.get(LoggerWrapperService);
     app.useLogger(logger);
@@ -274,4 +317,15 @@ async function bootstrap() {
     }
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+    // Surface errors thrown by NestFactory.create() or any pre-try
+    // code path inside bootstrap(). Without this, an unhandled
+    // rejection causes Node to exit silently on some terminals and
+    // the actual stack never reaches CloudWatch.
+    // eslint-disable-next-line no-console
+    console.error(
+        '[BOOTSTRAP] bootstrap() rejected:',
+        err?.stack || err?.message || err,
+    );
+    process.exit(1);
+});

@@ -151,6 +151,7 @@ evals/investigation/evals/
 
 scripts/pr-creator/accounts.json
 scripts/pr-creator/prs.json
+scripts/pr-creator/prs-azure.json
 scripts/pr-creator/package-lock.json
 scripts/pr-creator/node_modules
 .spectral-report.json
@@ -199,3 +200,6 @@ parity-report.json
 
 # Playwright MCP session snapshots (DOM dumps, console logs, screenshots)
 .playwright-mcp/
+
+# IDE - Zed
+.zed/

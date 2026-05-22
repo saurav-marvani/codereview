@@ -41,6 +41,7 @@ import {
 } from '@libs/code-review/domain/contracts/CodeBaseConfigService.contract';
 import { CodeReviewVersion } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';
+import { toRequestUserContext } from '@libs/identity/domain/user/types/request-user-context.type';
 import {
     Action,
     ResourceType,
@@ -172,6 +173,7 @@ export class ParametersController {
                     organizationId,
                     teamId: body.organizationAndTeamData.teamId,
                 },
+                requestUser: toRequestUserContext(this.request?.user),
             } as any);
         }
 
@@ -286,6 +288,7 @@ export class ParametersController {
                 ...body.organizationAndTeamData,
                 organizationId,
             },
+            requestUser: toRequestUserContext(this.request?.user),
         });
     }
 

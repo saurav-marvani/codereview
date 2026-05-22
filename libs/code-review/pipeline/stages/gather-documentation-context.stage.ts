@@ -95,11 +95,36 @@ export class GatherDocumentationContextStage extends BasePipelineStage<CodeRevie
         try {
             // Single-sandbox-per-PR: reuse the lease-managed sandbox set up by
             // CreateSandboxStage (which runs earlier in the pipeline). When
-            // the sandbox isn't available (e.g. no E2B configured, or trial
-            // mode without auth) we fall back to manifest-only discovery via
-            // the package discovery service — same behavior as before, just
-            // without the redundant standalone sandbox creation.
+            // the sandbox isn't available, package discovery's fallback would
+            // be `buildManifestCandidatesForFile`, which walks every parent
+            // directory of every changed file × 9 manifest names and calls
+            // `getRepositoryContentFile` for each — typically 80-150 GitHub
+            // requests per PR that all 404 and consume nothing useful. On the
+            // 2026-05-13 rate-limit incident this single fallback was ~70%
+            // of QuintoAndar's GitHub quota waste. Skip the stage entirely
+            // when there's no sandbox; review continues without external
+            // documentation context (degraded but functional).
             const remoteCommands = context.sandboxHandle?.remoteCommands;
+
+            if (!remoteCommands) {
+                this.logger.log({
+                    message:
+                        'Skipping documentation discovery: no sandbox available (would trigger manifest-fan-out fallback)',
+                    context: this.stageName,
+                    metadata: {
+                        prNumber: context.pullRequest.number,
+                        repository: context.repository.name,
+                        organizationAndTeamData:
+                            context.organizationAndTeamData,
+                    },
+                });
+
+                return this.updateContext(context, (draft) => {
+                    draft.discoveredPackages = [];
+                    draft.documentationQueryPlanByFile = {};
+                    draft.documentationByFile = {};
+                });
+            }
 
             const discovery =
                 await this.packageDiscoveryService.discoverPackages(context, {

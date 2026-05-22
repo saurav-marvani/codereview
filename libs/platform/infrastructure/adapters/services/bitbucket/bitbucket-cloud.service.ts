@@ -5371,4 +5371,20 @@ export class BitbucketCloudService implements Omit<
             type: file?.type ?? 'blob',
         };
     }
+
+    async getRepositoryContentBatch(
+        _params: any,
+    ): Promise<Map<string, any> | null> {
+        // Not implemented for Bitbucket Cloud — callers fall back to
+        // per-file `getRepositoryContentFile`.
+        return null;
+    }
+
+    async getUsersByUsername(
+        _params: any,
+    ): Promise<Map<string, any> | null> {
+        // Not implemented for Bitbucket Cloud — callers fall back to
+        // per-user `getUserByUsername`.
+        return null;
+    }
 }

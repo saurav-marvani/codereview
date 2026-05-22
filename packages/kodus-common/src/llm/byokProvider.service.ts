@@ -82,9 +82,22 @@ export class BYOKProviderService {
             disableReasoning?: boolean;
         },
     ): BaseChatModel {
-        const { provider, apiKey, model, baseURL, disableReasoning } =
-            config.main;
+        const {
+            provider,
+            apiKey,
+            model,
+            baseURL,
+            disableReasoning,
+            reasoningEffort,
+        } = config.main;
         const adapter = getAdapter(provider);
+
+        // Map config.main.reasoningEffort to reasoningLevel if caller didn't provide one
+        const resolvedReasoningLevel =
+            options?.reasoningLevel ??
+            (reasoningEffort && reasoningEffort !== 'none'
+                ? reasoningEffort
+                : undefined);
 
         if (provider === BYOKProvider.OPENAI_COMPATIBLE && !baseURL) {
             throw new Error(
@@ -106,9 +119,12 @@ export class BYOKProviderService {
                 maxTokens: options?.maxTokens,
                 jsonMode: options?.jsonMode,
                 maxReasoningTokens: options?.maxReasoningTokens,
-                reasoningLevel: options?.reasoningLevel,
+                reasoningLevel: resolvedReasoningLevel,
                 // Use config.main.disableReasoning or options.disableReasoning
-                disableReasoning: disableReasoning ?? options?.disableReasoning,
+                disableReasoning:
+                    reasoningEffort === 'none' ||
+                    disableReasoning ||
+                    options?.disableReasoning,
                 callbacks: options?.callbacks as Callbacks,
             },
         });

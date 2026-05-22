@@ -3959,4 +3959,20 @@ export class ForgejoService implements Omit<
             return [];
         }
     }
+
+    async getRepositoryContentBatch(
+        _params: any,
+    ): Promise<Map<string, any> | null> {
+        // Not implemented for Forgejo — callers fall back to per-file
+        // `getRepositoryContentFile`.
+        return null;
+    }
+
+    async getUsersByUsername(
+        _params: any,
+    ): Promise<Map<string, any> | null> {
+        // Not implemented for Forgejo — callers fall back to per-user
+        // `getUserByUsername`.
+        return null;
+    }
 }

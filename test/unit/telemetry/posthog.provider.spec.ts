@@ -53,6 +53,7 @@ describe('PostHogProvider', () => {
         let captureSpy: jest.Mock;
         let identifySpy: jest.Mock;
         let groupIdentifySpy: jest.Mock;
+        let isFeatureEnabledSpy: jest.Mock;
         const configWithKey = () =>
             buildConfig({ API_POSTHOG_KEY: 'phc_test_key' });
 
@@ -60,12 +61,14 @@ describe('PostHogProvider', () => {
             captureSpy = jest.fn();
             identifySpy = jest.fn();
             groupIdentifySpy = jest.fn();
+            isFeatureEnabledSpy = jest.fn();
             MockedPostHog.mockImplementation(
                 () =>
                     ({
                         capture: captureSpy,
                         identify: identifySpy,
                         groupIdentify: groupIdentifySpy,
+                        isFeatureEnabled: isFeatureEnabledSpy,
                     }) as unknown as PostHog,
             );
         });
@@ -112,6 +115,135 @@ describe('PostHogProvider', () => {
                 groupType: 'team',
                 groupKey: 'team-1',
                 properties: { name: 'Engineering', organizationId: 'org-1' },
+            });
+        });
+
+        describe('isFeatureEnabled', () => {
+            const orgData = {
+                organizationId: 'org-1',
+                teamId: 'team-1',
+            };
+
+            it('sends only the organization group when no extra context is supplied', async () => {
+                isFeatureEnabledSpy.mockResolvedValue(true);
+                const provider = new PostHogProvider(configWithKey());
+
+                const result = await provider.isFeatureEnabled(
+                    'agent-review',
+                    'user-1',
+                    orgData,
+                );
+
+                expect(result).toBe(true);
+                expect(isFeatureEnabledSpy).toHaveBeenCalledWith(
+                    'agent-review',
+                    'user-1',
+                    { groups: { organization: 'org-1' } },
+                );
+            });
+
+            it('merges extra groups in alongside the auto-set organization', async () => {
+                isFeatureEnabledSpy.mockResolvedValue(true);
+                const provider = new PostHogProvider(configWithKey());
+
+                await provider.isFeatureEnabled(
+                    'agent-review',
+                    'user-1',
+                    orgData,
+                    {
+                        groups: {
+                            repository: 'repo-9',
+                            directory: 'dir-42',
+                        },
+                    },
+                );
+
+                expect(isFeatureEnabledSpy).toHaveBeenCalledWith(
+                    'agent-review',
+                    'user-1',
+                    {
+                        groups: {
+                            organization: 'org-1',
+                            repository: 'repo-9',
+                            directory: 'dir-42',
+                        },
+                    },
+                );
+            });
+
+            it('drops undefined string values from the groups bag', async () => {
+                isFeatureEnabledSpy.mockResolvedValue(true);
+                const provider = new PostHogProvider(configWithKey());
+
+                await provider.isFeatureEnabled(
+                    'agent-review',
+                    'user-1',
+                    orgData,
+                    { groups: { repository: undefined } },
+                );
+
+                expect(isFeatureEnabledSpy).toHaveBeenCalledWith(
+                    'agent-review',
+                    'user-1',
+                    { groups: { organization: 'org-1' } },
+                );
+            });
+
+            it('returns false when the SDK throws and swallows the error', async () => {
+                isFeatureEnabledSpy.mockRejectedValue(new Error('boom'));
+                const provider = new PostHogProvider(configWithKey());
+
+                const result = await provider.isFeatureEnabled(
+                    'agent-review',
+                    'user-1',
+                    orgData,
+                );
+
+                expect(result).toBe(false);
+                expect(mockLogger.warn).toHaveBeenCalledTimes(1);
+                expect(mockLogger.warn.mock.calls[0][0].message).toContain(
+                    'PostHog isFeatureEnabled threw',
+                );
+            });
+        });
+
+        describe('groupIdentify accepts directory group type', () => {
+            it('forwards a directory group identify call to the SDK', () => {
+                const provider = new PostHogProvider(configWithKey());
+
+                provider.groupIdentify('directory', 'dir-42', {
+                    path: 'apps/web/src',
+                });
+
+                expect(groupIdentifySpy).toHaveBeenCalledWith({
+                    groupType: 'directory',
+                    groupKey: 'dir-42',
+                    properties: { path: 'apps/web/src' },
+                });
+            });
+        });
+
+        describe('groupIdentify accepts repositoryDirectory group type', () => {
+            it('forwards the composite (repo, directory) group identify to the SDK', () => {
+                const provider = new PostHogProvider(configWithKey());
+
+                provider.groupIdentify(
+                    'repositoryDirectory',
+                    'repo-9:dir-42',
+                    {
+                        repositoryId: 'repo-9',
+                        directoryId: 'dir-42',
+                    },
+                );
+
+                expect(groupIdentifySpy).toHaveBeenCalledWith({
+                    groupType: 'repositoryDirectory',
+                    groupKey: 'repo-9:dir-42',
+                    properties: {
+                        repositoryId: 'repo-9',
+                        directoryId: 'dir-42',
+                    },
+                });
             });
         });
 

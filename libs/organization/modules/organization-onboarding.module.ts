@@ -8,6 +8,7 @@ import { ProfilesModule } from '@libs/identity/modules/profiles.module';
 import { AuthModule } from '@libs/identity/modules/auth.module';
 import { ParametersModule } from './parameters.module';
 import { JoinOrganizationUseCase } from '../application/use-cases/onboarding/join-organization.use-case';
+import { NotificationModule } from '@libs/notifications/modules/notification.module';
 
 @Module({
     imports: [
@@ -19,6 +20,7 @@ import { JoinOrganizationUseCase } from '../application/use-cases/onboarding/joi
         forwardRef(() => AuthModule),
         forwardRef(() => ParametersModule),
         EmailModule,
+        forwardRef(() => NotificationModule),
     ],
     providers: [JoinOrganizationUseCase],
     exports: [JoinOrganizationUseCase],

@@ -30,6 +30,7 @@ export class PublicPrAiSummaryService implements IPublicPrAiSummaryService {
             const model = byokToVercelModel(
                 undefined,
                 'main',
+                {},
                 SUMMARY_MODEL,
             );
 

@@ -115,6 +115,28 @@ export class PipelineExecutor<TContext extends PipelineContext> {
         }
 
         for (const stage of stages) {
+            // Per-stage opt-out: skipStages bypasses specific named stages
+            // without changing pipeline status. Checked before the SKIPPED
+            // fast-forward so a stage listed here is excluded from both
+            // execution and any jumpToStage match.
+            if (
+                context.statusInfo.skipStages?.includes(stage.stageName)
+            ) {
+                this.logger.log({
+                    message: `Skipping stage '${stage.stageName}' — listed in statusInfo.skipStages`,
+                    context: PipelineExecutor.name,
+                    serviceName: PipelineExecutor.name,
+                    metadata: {
+                        ...context?.pipelineMetadata,
+                        stage: stage.stageName,
+                        correlationId:
+                            (context as any)?.correlationId ?? null,
+                        status: context.statusInfo,
+                    },
+                });
+                continue;
+            }
+
             // Check if we need to handle skip/jump logic
             if (context.statusInfo.status === AutomationStatus.SKIPPED) {
                 const result = await this.handleSkipOrJump(
@@ -137,30 +159,34 @@ export class PipelineExecutor<TContext extends PipelineContext> {
 
             const start = Date.now();
 
-            await this.notifyObservers(
-                observers,
-                (obs) =>
-                    obs.onStageStart(
-                        stage.stageName,
-                        context,
-                        observersContext,
-                        {
-                            visibility: stage.visibility,
-                            label: stage.label,
-                        },
-                    ),
-                'onStageStart',
-            );
+            if (!stage.silent) {
+                await this.notifyObservers(
+                    observers,
+                    (obs) =>
+                        obs.onStageStart(
+                            stage.stageName,
+                            context,
+                            observersContext,
+                            {
+                                visibility: stage.visibility,
+                                label: stage.label,
+                            },
+                        ),
+                    'onStageStart',
+                );
+            }
 
             try {
                 context = await stage.execute(context);
 
-                await this.notifyStageCompletion(
-                    stage,
-                    context,
-                    observers,
-                    observersContext,
-                );
+                if (!stage.silent) {
+                    await this.notifyStageCompletion(
+                        stage,
+                        context,
+                        observers,
+                        observersContext,
+                    );
+                }
 
                 const stageDurationMs = Date.now() - start;
                 this.metricsCollector?.recordHistogram(
@@ -185,21 +211,23 @@ export class PipelineExecutor<TContext extends PipelineContext> {
             } catch (error) {
                 const parsedError = this.toError(error);
 
-                await this.notifyObservers(
-                    observers,
-                    (obs) =>
-                        obs.onStageError(
-                            stage.stageName,
-                            error,
-                            context,
-                            observersContext,
-                            {
-                                visibility: stage.visibility,
-                                label: stage.label,
-                            },
-                        ),
-                    'onStageError',
-                );
+                if (!stage.silent) {
+                    await this.notifyObservers(
+                        observers,
+                        (obs) =>
+                            obs.onStageError(
+                                stage.stageName,
+                                error,
+                                context,
+                                observersContext,
+                                {
+                                    visibility: stage.visibility,
+                                    label: stage.label,
+                                },
+                            ),
+                        'onStageError',
+                    );
+                }
 
                 this.metricsCollector?.recordCounter(
                     'pipeline_stage_errors_total',

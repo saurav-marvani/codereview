@@ -13,6 +13,10 @@ import {
     buildPrKey,
 } from '@libs/sandbox/domain/contracts/sandbox-lease-manager.contract';
 import { CreateSandboxParams } from '@libs/sandbox/domain/contracts/sandbox.provider';
+// Shared with libs/code-review/.../commentAnalysis.service.ts so the
+// read-side filter that drops Kody's own past comments stays in sync
+// with what every provider emitter actually writes.
+import { KODY_IDENTIFIERS } from '@libs/common/utils/kody-identifiers';
 
 import { PlatformResponsePolicyFactory } from './policies/platform-response.policy';
 
@@ -21,14 +25,6 @@ const KODY_COMMANDS = {
     BUSINESS_LOGIC_VALIDATION: '@kody -v business-logic',
     KODY_MENTION: '@kody',
     KODUS_MENTION: '@kodus',
-} as const;
-
-const KODY_IDENTIFIERS = {
-    LOGIN_KEYWORDS: ['kody', 'kodus'],
-    MARKDOWN_IDENTIFIERS: {
-        DEFAULT: 'kody-codereview',
-        BITBUCKET: 'kody|code-review',
-    },
 } as const;
 
 const ACKNOWLEDGMENT_MESSAGES = {

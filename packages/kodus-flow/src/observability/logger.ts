@@ -105,18 +105,22 @@ function getPinoLogger(): pino.Logger {
                     'req.headers["x-api-key"]',
                     'req.headers.cookie',
                     'res.headers["set-cookie"]',
-                    // got/axios HTTPError nested shapes — belt-and-suspenders
-                    // for paths that bypass the err serializer (e.g. when a
-                    // caller logs response/request directly in metadata).
-                    '*.headers.authorization',
-                    '*.headers.cookie',
-                    '*.headers["set-cookie"]',
-                    '*.*.headers.authorization',
-                    '*.*.headers.cookie',
-                    '*.*.headers["set-cookie"]',
-                    '*.*.*.headers.authorization',
-                    '*.*.*.headers.cookie',
-                    '*.*.*.headers["set-cookie"]',
+                    // Intermediate wildcards (`*.headers.X`, `*.*.headers.X`,
+                    // `*.*.*.headers.X`) were intentionally removed: they
+                    // crashed pino-redact whenever the log payload carried
+                    // an `undici` Response in its tree (issue #1105). The
+                    // wildcard traversal touches getter-defined properties
+                    // on Response (e.g. `.type`) whose internal state may
+                    // be invalid after the body is consumed or aborted,
+                    // raising a TypeError that escaped this logger.
+                    //
+                    // `deepSanitize` below (key-based, normalizes case +
+                    // punctuation) provides equivalent or stronger
+                    // redaction for `authorization` / `cookie` /
+                    // `set-cookie` / `x-api-key` / `proxy-authorization`
+                    // at arbitrary depth, so dropping the wildcards is
+                    // not a coverage loss — it removes redundant work
+                    // that was the actual crash site.
                 ],
                 censor: '[REDACTED]',
             },
@@ -326,6 +330,19 @@ function deepSanitize(obj: any, seen?: WeakSet<object>): any {
         return obj;
     }
 
+    if (
+        typeof (globalThis as any).Response === 'function' &&
+        obj instanceof (globalThis as any).Response
+    ) {
+        return '[Response]';
+    }
+    if (
+        typeof (globalThis as any).Request === 'function' &&
+        obj instanceof (globalThis as any).Request
+    ) {
+        return '[Request]';
+    }
+
     // Lazily create WeakSet only when we actually recurse into a nested object.
     const refs = seen ?? new WeakSet();
     if (refs.has(obj)) return '[Circular]';
@@ -394,31 +411,70 @@ export class SimpleLogger {
         const contextStr = this.extractContextInfo(context);
         const baseLogger = getPinoLogger();
 
-        // Standard logging to stdout (respects API_LOG_LEVEL)
+        // #1105: pino write must never propagate to the caller.
         if (baseLogger.isLevelEnabled(level)) {
-            const childLogger = baseLogger.child({
-                serviceName: effectiveServiceName,
-                context: contextStr,
-            });
+            try {
+                const childLogger = baseLogger.child({
+                    serviceName: effectiveServiceName,
+                    context: contextStr,
+                });
 
-            const logObject = this.buildLogObject(
-                effectiveServiceName,
-                metadata,
-                error,
-            );
+                const logObject = this.buildLogObject(
+                    effectiveServiceName,
+                    metadata,
+                    error,
+                );
 
-            if (error) {
-                childLogger[level]({ ...logObject, err: error }, message);
-            } else {
-                childLogger[level](logObject, message);
+                if (error) {
+                    childLogger[level]({ ...logObject, err: error }, message);
+                } else {
+                    childLogger[level](logObject, message);
+                }
+            } catch (loggerErr) {
+                try {
+                    const fallbackPayload: Record<string, unknown> = {
+                        level,
+                        message,
+                        serviceName: effectiveServiceName,
+                        context: contextStr,
+                        loggerFallback: true,
+                    };
+                    if (error) {
+                        fallbackPayload.errorName = (error as Error)?.name;
+                        fallbackPayload.errorMessage = (
+                            error as Error
+                        )?.message;
+                    }
+                    const loggerErrAsError = loggerErr as Error | undefined;
+                    fallbackPayload.loggerErrorName = loggerErrAsError?.name;
+                    fallbackPayload.loggerErrorMessage =
+                        loggerErrAsError?.message;
+                    // eslint-disable-next-line no-console
+                    console.error(JSON.stringify(fallbackPayload));
+                } catch {
+                    // eslint-disable-next-line no-console
+                    console.error(
+                        '[logger:fallback-failed] level=' +
+                            level +
+                            ' service=' +
+                            effectiveServiceName,
+                    );
+                }
             }
         }
 
-        // Processors run regardless of stdout log level
-        const safeProcessorMetadata = deepSanitize({
-            ...metadata,
-            component: effectiveServiceName,
-        });
+        let safeProcessorMetadata: Record<string, unknown> = {};
+        try {
+            safeProcessorMetadata = deepSanitize({
+                ...metadata,
+                component: effectiveServiceName,
+            });
+        } catch {
+            safeProcessorMetadata = {
+                component: effectiveServiceName,
+                sanitizationFailed: true,
+            };
+        }
         for (const processor of globalLogProcessors) {
             try {
                 if (typeof processor === 'function') {

@@ -39,10 +39,18 @@ export type ProxyHandlerOptions = {
      */
     proxyMountPath: string;
     /**
-     * Optional Bearer token resolver. The returned token replaces any
-     * Authorization header already on the incoming request.
+     * Optional Bearer token resolver. Return value semantics:
+     *   - string  → set `Authorization: Bearer <token>` (overrides any
+     *               header the browser sent).
+     *   - null    → delete the Authorization header before forwarding.
+     *   - undefined → leave whatever the browser sent untouched. Useful
+     *               for the /api proxy where regular fetches set their
+     *               own bearer and only EventSource needs server-side
+     *               injection.
      */
-    resolveBearerToken?: (req: NextRequest) => Promise<string | null>;
+    resolveBearerToken?: (
+        req: NextRequest,
+    ) => Promise<string | null | undefined>;
     /**
      * Deny a request when the joined path matches any of these prefixes
      * (case-insensitive). Matches are done against the upstream path
@@ -209,8 +217,12 @@ async function forward(
 
     if (options.resolveBearerToken) {
         const token = await options.resolveBearerToken(req);
-        if (token) headers.set("Authorization", `Bearer ${token}`);
-        else headers.delete("authorization");
+        if (typeof token === "string") {
+            headers.set("Authorization", `Bearer ${token}`);
+        } else if (token === null) {
+            headers.delete("authorization");
+        }
+        // undefined → leave the incoming Authorization header alone.
     }
 
     const init: RequestInit = {
@@ -222,6 +234,10 @@ async function forward(
         // URL — which is exactly the bug that broke SAML SSO
         // initiation after the runtime-config migration.
         redirect: "manual",
+        // Abort the upstream fetch when the browser disconnects.
+        // Without this, an SSE stream's upstream connection would leak
+        // because the proxy's `fetch` has no idea the client went away.
+        signal: req.signal,
     };
     if (req.method !== "GET" && req.method !== "HEAD") {
         init.body = req.body;

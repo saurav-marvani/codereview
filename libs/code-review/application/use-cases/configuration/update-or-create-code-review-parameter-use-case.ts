@@ -1,6 +1,5 @@
 import { CreateOrUpdateParametersUseCase } from '@libs/organization/application/use-cases/parameters/create-or-update-use-case';
 import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
-import { REQUEST } from '@nestjs/core';
 
 import { produce } from 'immer';
 import { v4 as uuidv4 } from 'uuid';
@@ -41,8 +40,8 @@ import {
     ConfigLevel,
 } from '@libs/core/infrastructure/config/types/general/codeReviewSettingsLog.type';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
-import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';
 import { AuditLogEvents } from '@libs/ee/codeReviewSettingsLog/events/audit-log.events';
+import { RequestUserContext } from '@libs/identity/domain/user/types/request-user-context.type';
 import {
     Action,
     ResourceType,
@@ -75,24 +74,14 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
     constructor(
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
-
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
-
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
-
         private readonly eventEmitter: EventEmitter2,
-
-        @Inject(REQUEST)
-        private readonly request: UserRequest,
-
         private readonly authorizationService: AuthorizationService,
-
         private readonly contextReferenceDetectionService: ContextReferenceDetectionService,
-
         @Inject(PROMPT_EXTERNAL_REFERENCE_MANAGER_SERVICE_TOKEN)
         private readonly promptReferenceManager: IPromptExternalReferenceManagerService,
-
         private readonly centralizedConfigPrService: CentralizedConfigPrService,
     ) {}
 
@@ -105,6 +94,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                 userEmail?: string;
             };
             skipAuthorization?: boolean;
+            requestUser?: RequestUserContext;
         },
     ): Promise<
         | ParametersEntity<ParametersKey.CODE_REVIEW_CONFIG>
@@ -120,7 +110,9 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             const resolvedPaths: string[] | undefined =
                 body.directoryPaths?.length > 0
                     ? body.directoryPaths
-                    : directoryPath && directoryPath !== '/' && directoryPath !== ''
+                    : directoryPath &&
+                        directoryPath !== '/' &&
+                        directoryPath !== ''
                       ? [directoryPath]
                       : undefined;
 
@@ -135,12 +127,12 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             if (!organizationAndTeamData.organizationId) {
                 organizationAndTeamData.organizationId =
                     body.actor?.organizationId ??
-                    this.request?.user?.organization?.uuid;
+                    body.requestUser?.organization?.uuid;
             }
 
             if (!body.skipAuthorization) {
                 await this.authorizationService.ensure({
-                    user: this.request?.user,
+                    user: body.requestUser,
                     action: Action.Create,
                     resource: ResourceType.CodeReviewSettings,
                     repoIds: [repositoryId],
@@ -225,15 +217,16 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 
                     existingGroup.folders = resolvedPaths.map((p) => {
                         const existing = existingFoldersByPath.get(p);
-                        return existing ?? {
-                            id: uuidv4(),
-                            name: p.split('/').pop() || '',
-                            path: p,
-                        };
+                        return (
+                            existing ?? {
+                                id: uuidv4(),
+                                name: p.split('/').pop() || '',
+                                path: p,
+                            }
+                        );
                     });
 
-                    existingGroup.name =
-                        existingGroup.folders[0]?.name ?? '';
+                    existingGroup.name = existingGroup.folders[0]?.name ?? '';
                 } else {
                     // Create mode: check for existing group with exact same paths
                     const existingGroup = targetRepo.directories.find(
@@ -310,9 +303,8 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                 }
 
                 // Find existing group that contains this path
-                const existingGroup = targetRepo.directories.find(
-                    (group) =>
-                        group.folders?.some((f) => f.path === directoryPath),
+                const existingGroup = targetRepo.directories.find((group) =>
+                    group.folders?.some((f) => f.path === directoryPath),
                 );
 
                 if (existingGroup) {
@@ -353,6 +345,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                 body.actor,
                 repositoryId,
                 directoryId,
+                body.requestUser,
             );
 
             if (
@@ -371,10 +364,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                     repositoryId: repositoryId!,
                     action,
                 };
-                this.eventEmitter.emit(
-                    IDE_RULES_SYNC_DISABLED_EVENT,
-                    event,
-                );
+                this.eventEmitter.emit(IDE_RULES_SYNC_DISABLED_EVENT, event);
             }
 
             return result;
@@ -505,6 +495,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         },
         repositoryId?: string,
         directoryId?: string,
+        requestUser?: RequestUserContext,
     ) {
         const resolver = new ConfigResolver(codeReviewConfigs);
 
@@ -605,6 +596,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             repository,
             directory,
             isCreation,
+            requestUser,
         });
 
         return true;
@@ -1032,6 +1024,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         repository?: RepositoryCodeReviewConfig;
         directory?: DirectoryCodeReviewConfig;
         isCreation?: boolean;
+        requestUser?: RequestUserContext;
     }) {
         const {
             organizationAndTeamData,
@@ -1046,9 +1039,9 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         try {
             const actor = options.actor ?? {
                 source: 'web',
-                organizationId: this.request?.user?.organization?.uuid,
-                userId: this.request?.user?.uuid,
-                userEmail: this.request?.user?.email,
+                organizationId: options.requestUser?.organization?.uuid,
+                userId: options.requestUser?.uuid,
+                userEmail: options.requestUser?.email,
             };
 
             if (!actor.organizationId || !actor.userId || !actor.userEmail) {

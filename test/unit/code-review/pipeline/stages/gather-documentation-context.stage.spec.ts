@@ -52,6 +52,13 @@ describe('GatherDocumentationContextStage', () => {
         pullRequest: { number: 7 },
         repository: { id: 'r1', name: 'repo' },
         organizationAndTeamData: { organizationId: 'o1', teamId: 't1' },
+        // `sandboxHandle.remoteCommands` present so the stage proceeds to
+        // discoverPackages instead of short-circuiting on the no-sandbox
+        // guard added after the 2026-05-13 rate-limit incident. Tests
+        // exercising the discovery flow assume a sandbox is available.
+        sandboxHandle: {
+            remoteCommands: { grep: jest.fn() },
+        },
         changedFiles: [
             {
                 filename: 'src/a.ts',
@@ -278,6 +285,27 @@ describe('GatherDocumentationContextStage', () => {
 
         expect(result).toBe(context);
         expect(discoveryService.discoverPackages).not.toHaveBeenCalled();
+    });
+
+    it('should skip discovery when sandbox is unavailable (avoids manifest-fan-out fallback)', async () => {
+        // Reproduce the 2026-05-13 condition: legacy engine runs without
+        // a sandbox handle, so falling into the discovery service would
+        // trigger `buildManifestCandidatesForFile` and burn ~100 GitHub
+        // requests per PR on manifests that don't exist. The stage must
+        // short-circuit to an empty result instead.
+        const context = {
+            ...baseContext,
+            sandboxHandle: undefined,
+        } as unknown as CodeReviewPipelineContext;
+
+        const result = await stage.execute(context);
+
+        expect(result.discoveredPackages).toEqual([]);
+        expect(result.documentationQueryPlanByFile).toEqual({});
+        expect(result.documentationByFile).toEqual({});
+        expect(discoveryService.discoverPackages).not.toHaveBeenCalled();
+        expect(plannerService.planDocumentationByFile).not.toHaveBeenCalled();
+        expect(searchService.searchByFilePlan).not.toHaveBeenCalled();
     });
 
     it('should skip when API_EXA_KEY is not configured', async () => {

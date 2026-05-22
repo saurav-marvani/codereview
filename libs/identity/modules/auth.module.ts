@@ -29,6 +29,7 @@ import { AuthRepository } from '../infrastructure/adapters/repositories/auth.rep
 import { AuthModel } from '../infrastructure/adapters/repositories/schemas/auth.model';
 import { ProfilesModule } from './profiles.module';
 import { UserModule } from './user.module';
+import { NotificationModule } from '@libs/notifications/modules/notification.module';
 
 @Module({
     imports: [
@@ -52,6 +53,7 @@ import { UserModule } from './user.module';
         PassportModule,
         TeamMembersModule,
         EmailModule,
+        forwardRef(() => NotificationModule),
     ],
     providers: [
         ...AuthUseCases,

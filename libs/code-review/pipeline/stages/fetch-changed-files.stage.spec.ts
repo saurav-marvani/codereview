@@ -108,9 +108,9 @@ describe('FetchChangedFilesStage', () => {
                 }));
 
         describe('legacy engine (default — useAgentEngine not set)', () => {
-            it('skips at 501 files with limit=500 in the message', async () => {
+            it('skips at 351 files with limit=350 in the message', async () => {
                 mockPullRequestManagerService.getChangedFilesMetadata.mockResolvedValue(
-                    buildFiles(501),
+                    buildFiles(351),
                 );
 
                 const result = await stage.execute(context);
@@ -121,13 +121,13 @@ describe('FetchChangedFilesStage', () => {
                 expect(result.statusInfo.message).toBe(
                     StageMessageHelper.skippedWithReason(
                         PipelineReasons.FILES.TOO_MANY,
-                        'Count: 501, Limit: 500',
+                        'Count: 351, Limit: 350',
                     ),
                 );
             });
 
-            it('accepts exactly 500 files (boundary)', async () => {
-                const files = buildFiles(500);
+            it('accepts exactly 350 files (boundary)', async () => {
+                const files = buildFiles(350);
                 mockPullRequestManagerService.getChangedFilesMetadata.mockResolvedValue(
                     files,
                 );
@@ -138,7 +138,7 @@ describe('FetchChangedFilesStage', () => {
                 const result = await stage.execute(context);
 
                 expect(result.statusInfo).toBeUndefined();
-                expect(result.changedFiles).toHaveLength(500);
+                expect(result.changedFiles).toHaveLength(350);
             });
         });
 
@@ -147,7 +147,7 @@ describe('FetchChangedFilesStage', () => {
                 context.pipelineMetadata = { useAgentEngine: true } as any;
             });
 
-            it('accepts 501 files (above the legacy 500 limit)', async () => {
+            it('accepts 501 files (above the legacy 350 limit)', async () => {
                 const files = buildFiles(501);
                 mockPullRequestManagerService.getChangedFilesMetadata.mockResolvedValue(
                     files,

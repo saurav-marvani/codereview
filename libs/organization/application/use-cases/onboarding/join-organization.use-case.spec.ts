@@ -35,8 +35,8 @@ describe('JoinOrganizationUseCase', () => {
         const parametersService = {
             deleteByTeamId: jest.fn(),
         };
-        const emailService = {
-            sendConfirmationEmail: jest.fn(),
+        const notificationService = {
+            emit: jest.fn(),
         };
 
         return {
@@ -47,7 +47,7 @@ describe('JoinOrganizationUseCase', () => {
             profileService,
             authService,
             parametersService,
-            emailService,
+            notificationService,
         };
     };
 
@@ -102,7 +102,7 @@ describe('JoinOrganizationUseCase', () => {
             deps.profileService as any,
             deps.authService as any,
             deps.parametersService as any,
-            deps.emailService as any,
+            deps.notificationService as any,
         );
         jest.spyOn(useCase, 'cleanUp').mockResolvedValue(undefined);
 
@@ -120,7 +120,7 @@ describe('JoinOrganizationUseCase', () => {
             },
         );
         expect(deps.authService.createEmailToken).not.toHaveBeenCalled();
-        expect(deps.emailService.sendConfirmationEmail).not.toHaveBeenCalled();
+        expect(deps.notificationService.emit).not.toHaveBeenCalled();
         expect(result).toEqual({ status: STATUS.ACTIVE });
     });
 
@@ -143,7 +143,7 @@ describe('JoinOrganizationUseCase', () => {
             deps.profileService as any,
             deps.authService as any,
             deps.parametersService as any,
-            deps.emailService as any,
+            deps.notificationService as any,
         );
         jest.spyOn(useCase, 'cleanUp').mockResolvedValue(undefined);
 
@@ -164,12 +164,20 @@ describe('JoinOrganizationUseCase', () => {
             'user-1',
             'dev@kodus.io',
         );
-        expect(deps.emailService.sendConfirmationEmail).toHaveBeenCalledWith(
-            'email-token',
-            'dev@kodus.io',
-            'Kodus Org',
-            { organizationId: 'org-new', teamId: team.uuid },
-        );
+        expect(deps.notificationService.emit).toHaveBeenCalledWith({
+            event: 'auth.email_confirmation',
+            payload: {
+                token: 'email-token',
+                email: 'dev@kodus.io',
+                organizationName: 'Kodus Org',
+                organizationAndTeamData: {
+                    organizationId: 'org-new',
+                    teamId: team.uuid,
+                },
+            },
+            organizationId: 'org-new',
+            recipients: { kind: 'user', userId: 'user-1' },
+        });
         expect(result).toEqual({ status: STATUS.PENDING_EMAIL });
     });
 });

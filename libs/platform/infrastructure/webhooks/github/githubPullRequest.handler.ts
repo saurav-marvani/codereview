@@ -3,6 +3,7 @@ import { EnqueueAstGraphUpdateOnMergedUseCase } from '@libs/code-review/applicat
 import { EnqueueImplementationCheckUseCase } from '@libs/code-review/application/use-cases/enqueue-implementation-check.use-case';
 import {
     hasReviewMarker,
+    isForceReviewCommand,
     isKodyMentionNonReview,
     isReviewCommand,
 } from '@libs/common/utils/codeManagement/codeCommentMarkers';
@@ -454,6 +455,7 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
             }
 
             const isStartCommand = isReviewCommand(comment.body);
+            const isForceCommand = isForceReviewCommand(comment.body);
             const hasMarker = hasReviewMarker(comment.body);
 
             const pullRequest = mappedPlatform.mapPullRequest({ payload });
@@ -564,7 +566,7 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
                         payload: {
                             ...payload,
                             action: 'synchronize',
-                            origin: 'command',
+                            origin: isForceCommand ? 'command-force' : 'command',
                             triggerCommentId: comment?.id,
                             pull_request:
                                 pullRequestData ||

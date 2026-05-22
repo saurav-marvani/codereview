@@ -12,6 +12,10 @@ import {
     PermissionValidationService,
     ValidationErrorType,
 } from '@libs/ee/shared/services/permissionValidation.service';
+import { NotificationService } from '@libs/notifications/application/notification.service';
+import { NotificationRateLimiter } from '@libs/notifications/application/notification-rate-limiter.service';
+import { PrAuthorRecipientResolver } from '@libs/notifications/application/pr-author-recipient.resolver';
+import { USER_SERVICE_TOKEN } from '@libs/identity/domain/user/contracts/user.service.contract';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 import { ValidatePrerequisitesStage } from './validate-prerequisites.stage';
 
@@ -130,6 +134,24 @@ describe('ValidatePrerequisitesStage', () => {
                 {
                     provide: CodeManagementService,
                     useValue: mockCodeManagementService,
+                },
+                {
+                    provide: NotificationService,
+                    useValue: { emit: jest.fn().mockResolvedValue(undefined) },
+                },
+                {
+                    provide: NotificationRateLimiter,
+                    useValue: {
+                        shouldEmit: jest.fn().mockResolvedValue(true),
+                    },
+                },
+                {
+                    provide: PrAuthorRecipientResolver,
+                    useValue: { resolve: jest.fn().mockResolvedValue(null) },
+                },
+                {
+                    provide: USER_SERVICE_TOKEN,
+                    useValue: { find: jest.fn().mockResolvedValue([]) },
                 },
             ],
         }).compile();

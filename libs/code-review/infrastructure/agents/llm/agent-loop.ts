@@ -1,7 +1,10 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 import {
     buildAgentTools,
     type DocumentationSearchAdapter,
 } from './agent-tools.factory';
+import { attachClassification, classifyLLMError } from './error-classifier';
 /**
  * Simple agent loop using Vercel AI SDK with native function calling.
  *
@@ -18,6 +21,51 @@ import {
     tool as defineTool,
     type LanguageModel,
 } from 'ai';
+
+/**
+ * Per-call BYOK error reporting context. Set once at `runAgentLoop`
+ * entry; read inside `throttledGenerateText` when a call fails. Using
+ * AsyncLocalStorage instead of plumbing the reporter through 9 call
+ * sites and 6 helper functions — propagation is implicit across the
+ * awaits inside the loop body.
+ */
+interface ByokErrorReportingContext {
+    reporter?: (input: {
+        organizationId?: string;
+        provider: string;
+        errorMessage: string;
+    }) => void;
+    organizationId?: string;
+    provider?: string;
+}
+const byokErrorContext =
+    new AsyncLocalStorage<ByokErrorReportingContext>();
+
+function reportByokError(err: unknown): void {
+    const ctx = byokErrorContext.getStore();
+
+    // Classify and attach the canonical category to the error object so
+    // downstream catch blocks (e.g. AgentReviewStage iterating
+    // result.failures) can read it via getClassification() without
+    // re-parsing provider-specific strings. Done before the reporter call
+    // so any logging sees the same classified info.
+    if (err && typeof err === 'object') {
+        attachClassification(err, classifyLLMError(err, ctx?.provider));
+    }
+
+    if (!ctx?.reporter || !ctx.provider) return;
+    try {
+        ctx.reporter({
+            organizationId: ctx.organizationId,
+            provider: ctx.provider,
+            errorMessage:
+                err instanceof Error ? err.message : String(err ?? 'unknown'),
+        });
+    } catch {
+        // Never let reporter failures surface — the LLM error is the
+        // signal the caller cares about.
+    }
+}
 
 // Wrap generateText with a hard timeout safety net.
 // Some BYOK providers (Synthetic, Z.AI) ignore AbortSignal and hang forever.
@@ -58,6 +106,14 @@ function throttledGenerateText<T>(params: {
     queueTimeoutMs?: number;
     fn: () => Promise<T>;
 }): Promise<T> {
+    const wrapped = async () => {
+        try {
+            return await params.fn();
+        } catch (err) {
+            reportByokError(err);
+            throw err;
+        }
+    };
     return runWithBYOKLimiter(
         {
             byokConfig: params.byokConfig,
@@ -66,7 +122,7 @@ function throttledGenerateText<T>(params: {
             abortSignal: params.abortSignal,
             queueTimeoutMs: params.queueTimeoutMs,
         },
-        params.fn,
+        wrapped,
         params.label ?? 'generateText',
     );
 }
@@ -78,6 +134,7 @@ import {
     buildLangfuseTelemetry as _buildLangfuseTelemetry,
     type LangfuseTelemetryMetadata,
 } from '@libs/core/log/langfuse';
+import { composeAbortSignal } from './parent-signal-compose';
 
 /**
  * Build provider-specific reasoning `providerOptions` for a generateText call.
@@ -239,6 +296,25 @@ import { createLogger } from '@kodus/flow';
 
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high';
 
+/**
+ * Wrap a system prompt string with Anthropic cache_control when the model
+ * is Claude-based. Returns the string unchanged for other providers.
+ */
+function withAnthropicCacheControl(
+    systemPrompt: string,
+    model: any,
+): string | { role: 'system'; content: string; providerOptions: Record<string, any> } {
+    const modelId: string = model?.modelId ?? '';
+    if (/claude|anthropic/i.test(modelId)) {
+        return {
+            role: 'system' as const,
+            content: systemPrompt,
+            providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } },
+        };
+    }
+    return systemPrompt;
+}
+
 export const EFFORT_TO_BUDGET: Record<ReasoningEffort, number> = {
     none: 0,
     low: 5_000,
@@ -274,13 +350,14 @@ export function buildReasoningProviderOptions(
 
     switch (provider) {
         case BYOKProvider.ANTHROPIC: {
-            // Newer models (Sonnet 4.6, Opus 4.6+) use adaptive thinking +
-            // effort parameter (low/medium/high). budget_tokens is deprecated.
-            // Older models (Sonnet 3.7, Opus 4.5) use enabled + budget_tokens.
+            // Models that support adaptive thinking (type: "adaptive" + effort):
+            //   - Opus 4.6+, Opus 4.7+, Sonnet 4.6+, Sonnet 4.7+, mythos
+            // Models that use enabled thinking (type: "enabled" + budget_tokens):
+            //   - Sonnet 4.5, Sonnet 4.0, Opus 4.0, Sonnet 3.7
             const isAdaptiveCapable =
                 modelName &&
-                (modelName.includes('sonnet-4') ||
-                    modelName.includes('opus-4') ||
+                (/claude-(opus|sonnet)-4-[6-9]/i.test(modelName) ||
+                    /claude-(opus|sonnet)-4-\d{2,}/i.test(modelName) ||
                     modelName.includes('mythos'));
 
             if (isAdaptiveCapable) {
@@ -363,6 +440,8 @@ import { FileChange } from '@libs/core/infrastructure/config/types/general/codeR
 import {
     getInternalModel,
     runWithBYOKLimiter,
+    withStructuredOutputFallback,
+    NoStructuredFallbackModelError,
     type BYOKLimiterRole,
 } from './byok-to-vercel';
 import { RemoteCommands } from '../../adapters/services/collectCrossFileContexts.service';
@@ -739,6 +818,10 @@ export interface AgentLoopInput {
      *  undefined; set to false to hard-fail if the pinned providers aren't
      *  available. */
     openrouterAllowFallbacks?: boolean;
+    /** Parent (job-level) AbortSignal. When it aborts, the local
+     *  AGENT_TIMEOUT_MS controller is aborted too, propagating cancellation
+     *  to the underlying generateText call (which respects abortSignal). */
+    parentSignal?: AbortSignal;
 }
 
 /**
@@ -773,6 +856,17 @@ export interface AgentLoopSecrets {
      * can also set it if they need bounded queue behavior.
      */
     byokQueueTimeoutMs?: number;
+    /**
+     * Optional sink for BYOK LLM failures. Called once per failed
+     * `generateText` call inside the loop; safe to omit. Used to drive
+     * the `byok.llm_errors_threshold` notification — caller wires it to
+     * `ByokErrorCounter.record`.
+     */
+    byokErrorReporter?: (input: {
+        organizationId?: string;
+        provider: string;
+        errorMessage: string;
+    }) => void;
 }
 
 export interface AgentLoopOutput {
@@ -878,6 +972,25 @@ export async function runAgentLoop(
     input: AgentLoopInput,
     secrets: AgentLoopSecrets,
 ): Promise<AgentLoopOutput> {
+    // Establish the BYOK error reporting context once at the top of the
+    // loop; all nested throttledGenerateText calls inherit it via ALS.
+    return byokErrorContext.run(
+        {
+            reporter: secrets.byokErrorReporter,
+            organizationId: input.telemetryMetadata?.organizationId,
+            provider:
+                typeof input.byokProvider === 'string'
+                    ? input.byokProvider
+                    : undefined,
+        },
+        () => runAgentLoopBody(input, secrets),
+    );
+}
+
+async function runAgentLoopBody(
+    input: AgentLoopInput,
+    secrets: AgentLoopSecrets,
+): Promise<AgentLoopOutput> {
     const tools = buildAgentTools(
         secrets.remoteCommands,
         secrets.gitHubToken,
@@ -921,6 +1034,21 @@ export async function runAgentLoop(
         abortController.abort();
     }, AGENT_TIMEOUT_MS);
 
+    // Compose job-level (parentSignal) into the local controller. When the
+    // outer router timeout (1h45min for code_review) fires, we abort the
+    // agent's generateText too instead of leaving an LLM call running ghost
+    // in the background.
+    const detachParentSignal = composeAbortSignal(
+        input.parentSignal,
+        abortController,
+        () =>
+            logger.warn({
+                message:
+                    '[AGENT-TIMEOUT] Parent (job) signal aborted, cancelling agent',
+                context: 'AgentLoop',
+            }),
+    );
+
     let result;
     try {
         result = await throttledGenerateText({
@@ -935,7 +1063,7 @@ export async function runAgentLoop(
                     ...({ __kodusHardTimeoutMs: AGENT_TIMEOUT_MS } as any),
                     model: input.model,
                     abortSignal: abortController.signal,
-                    system: input.systemPrompt,
+                    system: withAnthropicCacheControl(input.systemPrompt, input.model) as any,
                     prompt: input.userPrompt,
                     experimental_telemetry: _buildLangfuseTelemetry(
                         input.agentName ?? 'agent-loop',
@@ -1249,6 +1377,7 @@ export async function runAgentLoop(
                             totalCacheWriteTokens += u.cacheWriteTokens;
                             totalOutputTokens += u.outputTokens;
                             totalReasoningTokens += u.reasoningTokens;
+
                         }
 
                         input.onStepFinish?.(event);
@@ -1257,6 +1386,7 @@ export async function runAgentLoop(
         });
     } catch (error) {
         clearTimeout(timeoutHandle);
+        detachParentSignal();
         if (abortController.signal.aborted) {
             // Try to recover findings from the last text the model produced before timeout
             let findings: FindingsOutput | null = null;
@@ -1363,6 +1493,7 @@ export async function runAgentLoop(
         throw error;
     }
     clearTimeout(timeoutHandle);
+    detachParentSignal();
 
     // ─── Done-tool extraction ───────────────────────────────────────────
     // If the model called submitResult, extract findings directly from
@@ -1415,7 +1546,7 @@ export async function runAgentLoop(
                     generateText({
                         abortSignal: secondChanceSignal,
                         model: input.model,
-                        system: input.systemPrompt,
+                        system: withAnthropicCacheControl(input.systemPrompt, input.model) as any,
                         experimental_telemetry: _buildLangfuseTelemetry(
                             `${input.agentName ?? 'agent-loop'}-second-chance`,
                             input.telemetryMetadata,
@@ -3889,20 +4020,12 @@ async function structureVerificationDecisionWithFallbackModel(
         totalTokens: number;
     };
 } | null> {
+    const verifierFallbackSignal = timeoutSignal(LLM_CALL_TIMEOUT_MS);
     try {
-        const internalModel = getInternalModel(byokConfig);
-        const verifierFallbackSignal = timeoutSignal(LLM_CALL_TIMEOUT_MS);
-
-        if (!internalModel) {
-            logger.warn({
-                message:
-                    '[AGENT-VERIFY-FALLBACK] No internal model available for verifier fallback',
-                context: 'AgentLoop',
-            });
-            return null;
-        }
-
-        const result: any = await throttledGenerateText({
+        const result: any = await withStructuredOutputFallback(
+            { byokConfig, organizationId, label: 'verify-structure-fallback' },
+            (internalModel) =>
+                throttledGenerateText({
             byokConfig,
             organizationId,
             role: 'internal',
@@ -3953,7 +4076,8 @@ Return:
 - rationale
 - confidence (if present)`,
                 }),
-        });
+        }),
+        );
 
         const output: any = (result as any).object ?? (result as any).output;
         const coerceKeep = (value: unknown): boolean | null => {
@@ -4008,7 +4132,15 @@ Return:
             },
         };
     } catch (error) {
-        logger.warn({
+        if (error instanceof NoStructuredFallbackModelError) {
+            logger.warn({
+                message:
+                    '[AGENT-VERIFY-FALLBACK] No internal model available for verifier fallback',
+                context: 'AgentLoop',
+            });
+            return null;
+        }
+        logger.error({
             message: `[AGENT-VERIFY-FALLBACK] Failed to structure verifier output: ${error instanceof Error ? error.message : String(error)}`,
             context: 'AgentLoop',
         });
@@ -4167,19 +4299,12 @@ async function structureWithFallbackModel(
                 { type: 'null' as const },
             ],
         };
-        const internalModel = getInternalModel(byokConfig);
         const structureFallbackSignal = timeoutSignal(LLM_CALL_TIMEOUT_MS);
 
-        if (!internalModel) {
-            logger.warn({
-                message:
-                    '[AGENT-FALLBACK] No internal model available for fallback',
-                context: 'AgentLoop',
-            });
-            return null;
-        }
-
-        const result: any = await throttledGenerateText({
+        const result: any = await withStructuredOutputFallback(
+            { byokConfig, organizationId, label: 'review-structure-fallback' },
+            (internalModel) =>
+                throttledGenerateText({
             byokConfig,
             organizationId,
             role: 'internal',
@@ -4256,7 +4381,8 @@ ${reviewText}
 
 For each issue found, extract: relevantFile, language, label (bug/security/performance when present), suggestionContent (full description), existingCode, improvedCode, oneSentenceSummary, relevantLinesStart, relevantLinesEnd, severity (critical/high/medium/low).`,
                 }),
-        });
+        }),
+        );
 
         const rawOutput: any = (result as any).object ?? (result as any).output;
         const output = {
@@ -4319,6 +4445,14 @@ For each issue found, extract: relevantFile, language, label (bug/security/perfo
             },
         };
     } catch (error) {
+        if (error instanceof NoStructuredFallbackModelError) {
+            logger.warn({
+                message:
+                    '[AGENT-FALLBACK] No internal model available for fallback',
+                context: 'AgentLoop',
+            });
+            return null;
+        }
         logger.error({
             message: `[AGENT-FALLBACK] generateObject failed`,
             context: 'AgentLoop',

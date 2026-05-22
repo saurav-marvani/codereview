@@ -292,10 +292,29 @@ export class GitlabService implements Omit<
                 gitlabAuthDetail.authMode === AuthMode.OAUTH
                     ? gitlabAuthDetail.accessToken
                     : decrypt(gitlabAuthDetail.accessToken),
-            ...(gitlabAuthDetail.host && { host: gitlabAuthDetail.host }),
+            ...(gitlabAuthDetail.host && {
+                host: this.getGitlabWebBaseUrl(gitlabAuthDetail.host),
+            }),
             queryTimeout: 600000,
             camelize: false,
         });
+    }
+
+    private normalizeGitlabHost(host?: string): string | undefined {
+        if (!host?.trim()) {
+            return undefined;
+        }
+
+        const normalized = host.trim().replace(/\/+$/, '');
+        const withProtocol = /^https?:\/\//i.test(normalized)
+            ? normalized
+            : `https://${normalized}`;
+
+        return withProtocol;
+    }
+
+    private getGitlabWebBaseUrl(host?: string): string {
+        return this.normalizeGitlabHost(host) || 'https://gitlab.com';
     }
 
     async findRepositoryByName(params: {
@@ -791,12 +810,11 @@ export class GitlabService implements Omit<
 
     async authenticateWithToken(params: any): Promise<any> {
         try {
-            let host = 'https://gitlab.com/api/v4/user';
             const { token, host: hostParam } = params;
+            const normalizedHost = this.normalizeGitlabHost(hostParam);
+            const userApiUrl = `${this.getGitlabWebBaseUrl(hostParam)}/api/v4/user`;
 
-            host = hostParam ? `${hostParam}/api/v4/user` : host;
-
-            const testResponse = await axios.get(host, {
+            const testResponse = await axios.get(userApiUrl, {
                 headers: {
                     Authorization: `Bearer ${token}`,
                 },
@@ -810,7 +828,7 @@ export class GitlabService implements Omit<
             const authDetails = {
                 accessToken: encrypt(token),
                 authMode: params?.authMode || AuthMode.OAUTH,
-                host: hostParam ?? '',
+                host: normalizedHost ?? '',
             };
 
             const checkRepos = await this.checkRepositoryPermissions({
@@ -3123,12 +3141,11 @@ export class GitlabService implements Omit<
                 throw new Error('GitLab authentication details not found');
             }
 
-            const gitlabHost = gitlabAuthDetail.host || 'gitlab.com';
             const encodedPath = (params?.repository?.fullName || '')
                 .split('/')
                 .map(encodeURIComponent)
                 .join('/');
-            const fullGitlabUrl = `https://${gitlabHost}/${encodedPath}`;
+            const fullGitlabUrl = `${this.getGitlabWebBaseUrl(gitlabAuthDetail.host)}/${encodedPath}`;
 
             return {
                 organizationId: params.organizationAndTeamData.organizationId,
@@ -4687,5 +4704,21 @@ ${copyPrompt}
         }
 
         return copyPrompt;
+    }
+
+    async getRepositoryContentBatch(
+        _params: any,
+    ): Promise<Map<string, any> | null> {
+        // Not implemented for GitLab — callers fall back to per-file
+        // `getRepositoryContentFile`.
+        return null;
+    }
+
+    async getUsersByUsername(
+        _params: any,
+    ): Promise<Map<string, any> | null> {
+        // Not implemented for GitLab — callers fall back to per-user
+        // `getUserByUsername`.
+        return null;
     }
 }

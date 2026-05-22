@@ -37,6 +37,9 @@ import { InboxMessageModel } from '../../../workflow/infrastructure/repositories
 import { OutboxMessageModel } from '../../../workflow/infrastructure/repositories/schemas/outbox-message.model';
 import { WorkflowJobModel } from '../../../workflow/infrastructure/repositories/schemas/workflow-job.model';
 import { SSOTestSessionModel } from '@libs/ee/sso/repositories/ssoTestSession.model';
+import { NotificationDeliveryModel } from '../../../../notifications/infrastructure/repositories/schemas/notification-delivery.model';
+import { UserNotificationModel } from '../../../../notifications/infrastructure/repositories/schemas/user-notification.model';
+import { RoutingRuleModel } from '../../../../notifications/infrastructure/repositories/schemas/routing-rule.model';
 
 export const ENTITIES = [
     DryRunModel,
@@ -78,4 +81,7 @@ export const ENTITIES = [
     RepositoryModel,
     AstNodeModel,
     AstEdgeModel,
+    NotificationDeliveryModel,
+    UserNotificationModel,
+    RoutingRuleModel,
 ];

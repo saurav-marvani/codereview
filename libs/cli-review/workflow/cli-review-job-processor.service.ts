@@ -11,6 +11,13 @@ import { ErrorClassification } from '@libs/core/workflow/domain/enums/error-clas
 
 import { ExecuteCliReviewUseCase } from '@libs/cli-review/application/use-cases/execute-cli-review.use-case';
 import { CliReviewJobPayload } from './cli-review-job.types';
+import { raceWithAbortSignal } from '@libs/core/workflow/infrastructure/abort-signal-race';
+import {
+    IRateLimitGateService,
+    RATE_LIMIT_GATE_SERVICE_TOKEN,
+} from '@libs/core/workflow/domain/contracts/rate-limit-gate.service.contract';
+import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
+import { classifyGitHubError } from '@libs/core/workflow/domain/errors/classify-github-error';
 
 @Injectable()
 export class CliReviewJobProcessorService implements IJobProcessorService {
@@ -20,12 +27,18 @@ export class CliReviewJobProcessorService implements IJobProcessorService {
         @Inject(WORKFLOW_JOB_REPOSITORY_TOKEN)
         private readonly jobRepository: IWorkflowJobRepository,
         private readonly executeCliReviewUseCase: ExecuteCliReviewUseCase,
+        @Inject(RATE_LIMIT_GATE_SERVICE_TOKEN)
+        private readonly rateLimitGate: IRateLimitGateService,
     ) {}
 
-    async process(jobId: string): Promise<void> {
+    async process(jobId: string, signal?: AbortSignal): Promise<void> {
         const job = await this.jobRepository.findOne(jobId);
         if (!job) {
             throw new Error(`CLI review job ${jobId} not found`);
+        }
+
+        if (signal?.aborted) {
+            throw new Error(`Job ${jobId} aborted before start`);
         }
 
         const payload = job.payload as CliReviewJobPayload;
@@ -38,23 +51,40 @@ export class CliReviewJobProcessorService implements IJobProcessorService {
             );
         }
 
+        // Pre-check the GitHub rate-limit bucket. If exhausted, the gate
+        // throws RateLimitError(resetAt) and the consumer error handler
+        // republishes with a delay aligned to the bucket reset instead
+        // of burning the full router timeout. Non-GitHub platforms pass
+        // through silently inside the gate.
+        await this.rateLimitGate.check(
+            payload.organizationAndTeamData,
+            payload.gitContext?.inferredPlatform ?? PlatformType.GITHUB,
+        );
+
         await this.jobRepository.update(jobId, {
             status: JobStatus.PROCESSING,
             startedAt: new Date(),
         });
 
         try {
-            const result = await this.executeCliReviewUseCase.execute({
-                organizationAndTeamData: payload.organizationAndTeamData,
-                input: payload.input,
-                isTrialMode: payload.isTrialMode,
-                userEmail: payload.userEmail,
-                gitContext: payload.gitContext,
-                cliAuth: payload.cliAuth,
-            });
+            const result = await raceWithAbortSignal(
+                this.executeCliReviewUseCase.execute({
+                    organizationAndTeamData: payload.organizationAndTeamData,
+                    input: payload.input,
+                    isTrialMode: payload.isTrialMode,
+                    userEmail: payload.userEmail,
+                    gitContext: payload.gitContext,
+                    cliAuth: payload.cliAuth,
+                }),
+                signal,
+            );
 
             await this.markCompleted(jobId, result);
-        } catch (error) {
+        } catch (rawError) {
+            // Convert octokit 403/429 into RateLimitError so the
+            // consumer error handler can apply the smart delay aligned
+            // with the GitHub bucket reset.
+            const error = classifyGitHubError(rawError) as Error;
             this.logger.error({
                 message: `CLI review job ${jobId} failed`,
                 error,

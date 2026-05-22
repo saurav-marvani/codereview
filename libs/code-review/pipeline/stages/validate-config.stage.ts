@@ -183,8 +183,8 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         const cadenceType =
             config?.reviewCadence?.type || ReviewCadenceType.AUTOMATIC;
 
-        // Se é comando manual, sempre processa
-        if (context.origin === 'command') {
+        // Se é comando manual (regular ou --force), sempre processa
+        if (context.origin?.startsWith('command')) {
             const currentStatus = await this.getCurrentPRStatus(context);
 
             const automaticReviewStatus: AutomaticReviewStatus = {
@@ -472,7 +472,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         organizationAndTeamData: OrganizationAndTeamData,
         apiBaseBranch?: string,
     ): IStageValidationResult {
-        if (origin === 'command') {
+        if (origin?.startsWith('command')) {
             return { canProceed: true };
         }
 

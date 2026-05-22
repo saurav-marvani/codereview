@@ -7,13 +7,32 @@ import {
     BackoffOptions,
     calculateBackoffInterval,
 } from '@libs/common/utils/polling';
+import { isRateLimitError } from '@libs/core/workflow/domain/errors/rate-limit.error';
 
 /**
  * Backoff configuration for consumer retries.
  * Uses workflow queue config for base interval and max retries.
+ *
+ * Default lowered from 5 → 2 after the QuintoAndar incident: every retry
+ * burned ~9 min of webhook slot (or 1h45 min of code-review slot) under
+ * a saturated GitHub bucket, so 5 attempts cost up to 45 min per job for
+ * an error that would never succeed within that window. With the
+ * RATE_LIMITED-aware delay below, retries that DO happen now wait for
+ * the bucket to actually reset, so 2 attempts are enough.
  */
-const DEFAULT_MAX_RETRIES_CONSUMER = 5;
+const DEFAULT_MAX_RETRIES_CONSUMER = 2;
 const DEFAULT_RETRY_DELAY_MS = 1000;
+
+/**
+ * When the error carries `RATE_LIMITED` classification + `resetAt`, the
+ * handler computes the retry delay from the bucket reset instead of the
+ * generic backoff curve. We add a 5-minute safety buffer so the next
+ * attempt doesn't race the bucket refresh (clock skew, rounding on the
+ * GitHub side), and cap at 1 hour so a bogus future `resetAt` can't park
+ * the message for days.
+ */
+const RATE_LIMITED_SAFETY_BUFFER_MS = 5 * 60 * 1000;
+const RATE_LIMITED_MAX_DELAY_MS = 60 * 60 * 1000;
 
 /**
  * Handles RabbitMQ consumer errors with retry logic and DLQ support.
@@ -132,17 +151,10 @@ export class RabbitMQErrorHandler implements OnModuleInit {
         const nextRetryCount = retryCount + 1;
         headers[this.RETRY_COUNT_HEADER] = nextRetryCount;
 
-        // Use centralized backoff calculation
-        const backoffOptions: BackoffOptions = {
-            baseInterval: this.retryDelayMs,
-            maxInterval: Math.max(this.retryDelayMs, 30000),
-            jitterFactor: 0.1,
-            multiplier: 2,
-        };
-        const delayMs = calculateBackoffInterval(
-            nextRetryCount,
-            backoffOptions,
-        );
+        const delayMs = isRateLimitError(error)
+            ? this.computeRateLimitedDelay(error.resetAt)
+            : this.computeTransientDelay(nextRetryCount);
+
         headers['x-delay'] = delayMs;
 
         this.logger.warn({
@@ -212,6 +224,38 @@ export class RabbitMQErrorHandler implements OnModuleInit {
                 headers: headers,
             },
         );
+    }
+
+    /**
+     * Delay for transient errors — exponential backoff with jitter,
+     * capped at 30s. Same curve as before the rate-limit aware change.
+     */
+    private computeTransientDelay(nextRetryCount: number): number {
+        const backoffOptions: BackoffOptions = {
+            baseInterval: this.retryDelayMs,
+            maxInterval: Math.max(this.retryDelayMs, 30000),
+            jitterFactor: 0.1,
+            multiplier: 2,
+        };
+        return calculateBackoffInterval(nextRetryCount, backoffOptions);
+    }
+
+    /**
+     * Delay for RATE_LIMITED errors — wait until the bucket actually
+     * resets, with a safety buffer and a hard cap. See the module-level
+     * constants for rationale.
+     *
+     * Cases handled:
+     *   - resetAt in the past (already reset, clock skew): clip to 0 + buffer
+     *   - resetAt within the next ~hour (typical): waitMs + buffer
+     *   - resetAt very far in the future (bug/corruption): cap at 1h
+     */
+    private computeRateLimitedDelay(resetAt: Date): number {
+        const now = Date.now();
+        const resetMs = resetAt.getTime();
+        const rawWait = Math.max(0, resetMs - now);
+        const withBuffer = rawWait + RATE_LIMITED_SAFETY_BUFFER_MS;
+        return Math.min(withBuffer, RATE_LIMITED_MAX_DELAY_MS);
     }
 
     private getBaseExchange(exchange: string): string {

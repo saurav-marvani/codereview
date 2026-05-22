@@ -62,7 +62,16 @@ API_MG_DB_USERNAME=kodusdev                  # Nombre de usuario de la base de d
 API_MG_DB_PASSWORD=                          # Contraseña de la base de datos
 API_MG_DB_DATABASE=kodus                     # Nombre de la base de datos
 API_MG_DB_PRODUCTION_CONFIG=''               # Configuración adicional de producción
+
+# SSL — el contenedor local de Postgres no usa SSL. Este switch global
+# cubre TODAS las conexiones (default + analytics). Si queda false, la api
+# entra en un bucle de reintentos intentando conectarse con SSL.
+API_DATABASE_DISABLE_SSL=true                # desactiva SSL para el Postgres local
 ```
+
+<Tip>
+  `API_PG_DB_PASSWORD` y `API_MG_DB_PASSWORD` se generan automáticamente con `./scripts/install.sh` (vía `generate-secrets.sh`) si quedan vacíos. Solo defínelos manualmente si vas a apuntar el instalador a bases de datos externas.
+</Tip>
 
 ### Configuración de RabbitMQ
 
@@ -78,6 +87,21 @@ RABBITMQ_DEFAULT_PASS=kodus                  # Contraseña de RabbitMQ (cambiar 
 # Mantén la URI sincronizada con el usuario, contraseña y vhost de arriba
 API_RABBITMQ_URI=amqp://kodus:kodus@rabbitmq:5672/kodus-ai # URI de conexión a RabbitMQ
 API_RABBITMQ_ENABLED=true                    # RabbitMQ es obligatorio
+```
+
+### Configuración del worker
+
+El contenedor del worker necesita un rol para saber qué carga manejar.
+Self-hosted solo ejecuta el rol de revisión de código; el rol de analytics
+es exclusivo de cloud.
+
+<Warning>
+  Dejar `WORKER_ROLE` vacío hace que el worker falle al iniciar. Como es el worker quien crea las colas `workflow.jobs.*` en la primera conexión, la api y los webhooks luego fallan cada evento de webhook con `QueueBind 404`.
+</Warning>
+
+```env
+# Rol del worker — requerido. Self-hosted = code-review.
+WORKER_ROLE=code-review
 ```
 
 ### Configuración del proveedor Git

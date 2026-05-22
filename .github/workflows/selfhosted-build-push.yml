@@ -415,6 +415,54 @@ jobs:
             tag: ${{ needs.create-release.outputs.release_tag }}
         secrets: inherit
 
+    env-sync-installer:
+        name: Sync .env.example to kodus-installer
+        needs:
+            - create-release
+            - build-and-push
+        if: needs.build-and-push.result == 'success'
+        # Same cascading-events restriction as cli-release / changelog-
+        # publish: the selfhosted-X.Y.Z tag pushed by GITHUB_TOKEN above
+        # would not fire env-sync-release.yml's `push: tags` trigger.
+        # Invoke it explicitly so .env.example + schema-vars.sh in
+        # kodus-installer get regenerated for every self-hosted release.
+        uses: ./.github/workflows/env-sync-release.yml
+        with:
+            tag: ${{ needs.create-release.outputs.release_tag }}
+        secrets: inherit
+
+    trigger-installer-e2e:
+        name: Trigger self-hosted E2E in kodus-installer
+        needs:
+            - create-release
+            - build-and-push
+        if: needs.build-and-push.result == 'success'
+        runs-on: ubuntu-latest
+        # GITHUB_TOKEN only scopes to this repo, so a cross-repo PAT is
+        # needed to fire repository_dispatch into kodustech/kodus-installer.
+        # We reuse CROSS_REPO_PAT (already used by env-sync-release.yml to
+        # checkout + push + open PRs in the installer). It needs
+        # `Contents: Read and write` on kodus-installer — same permission
+        # env-sync already requires, so no new secret to manage.
+        steps:
+            - name: Fire repository_dispatch into kodus-installer
+              env:
+                  GH_TOKEN: ${{ secrets.CROSS_REPO_PAT }}
+                  RELEASE_TAG: ${{ needs.create-release.outputs.release_tag }}
+              run: |
+                  if [ -z "$GH_TOKEN" ]; then
+                      echo "::warning::CROSS_REPO_PAT is not set — skipping E2E dispatch."
+                      exit 0
+                  fi
+                  gh api \
+                      --method POST \
+                      "repos/kodustech/kodus-installer/dispatches" \
+                      -f event_type=selfhosted-image-published \
+                      -f client_payload[release_tag]="$RELEASE_TAG" \
+                      -f client_payload[image_tag]=latest \
+                      -f client_payload[source_run_url]="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  echo "::notice::Dispatched selfhosted-image-published to kodustech/kodus-installer for tag $RELEASE_TAG"
+
     notify-discord-failure:
         name: Notify Discord (failure only)
         needs:

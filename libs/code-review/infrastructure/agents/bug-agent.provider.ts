@@ -3,6 +3,7 @@ import { PromptRunnerService } from '@kodus/kodus-common/llm';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
+import { ByokErrorCounter } from '@libs/notifications/application/byok-error-counter.service';
 import {
     BaseCodeReviewAgentProvider,
     ReviewAgentIdentity,
@@ -17,12 +18,15 @@ export class BugAgentProvider extends BaseCodeReviewAgentProvider {
         observabilityService: ObservabilityService,
         @Optional()
         documentationSearchService?: DocumentationSearchExaService,
+        @Optional()
+        byokErrorCounter?: ByokErrorCounter,
     ) {
         super(
             promptRunnerService,
             permissionValidationService,
             observabilityService,
             documentationSearchService,
+            byokErrorCounter,
         );
     }
 
