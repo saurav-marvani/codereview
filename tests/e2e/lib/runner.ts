@@ -196,9 +196,20 @@ async function resolveTenantForCell(
     // SH_TENANT_EMAIL override remains for one-off manual runs where
     // the caller deliberately wants a specific persistent tenant.
     const explicitEmail = process.env.SH_TENANT_EMAIL;
+    // runId format is `2026-05-22T17-43-13-XXXZ-abcdef`. slice(0,8) =
+    // `2026-05-` collides for every run on the same calendar day,
+    // which silently reuses a tenant whose code_review_config got
+    // polluted by per-seat-toggle (`automatedReviewActive: false`) or
+    // kody-rules cleanup deletes in a previous matrix cycle — the
+    // review pipeline then short-circuits in ~1s with the job marked
+    // COMPLETED and zero `Code Review Started!` comment, which Phase
+    // A reports as "pipeline never started". slice(0,16) drops down
+    // to per-minute granularity, so two back-to-back runs in the same
+    // minute still collide intentionally (useful for reruns within
+    // 60s); cross-minute runs always get fresh tenants.
     const email =
         explicitEmail ??
-        `e2e-${provider}-${runId.slice(0, 8)}@kodus.local`;
+        `e2e-${provider}-${runId.slice(0, 16).replace(/[^a-z0-9-]/gi, "")}@kodus.local`;
     const password =
         process.env.SH_TENANT_PASSWORD ??
         process.env.TEST_USER_PASSWORD ??
