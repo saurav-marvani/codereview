@@ -62,7 +62,7 @@ if [ "${IGNORE_TLS}" = "1" ]; then
 fi
 
 env \
-    "${env_extra[@]}" \
+    "${env_extra[@]+"${env_extra[@]}"}" \
     SSO_E2E_API_URL="${API_URL}" \
     SSO_E2E_APP_URL="${APP_URL}" \
     SSO_E2E_BASE="${BASE}" \

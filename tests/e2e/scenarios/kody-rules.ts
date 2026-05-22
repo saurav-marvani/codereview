@@ -3,6 +3,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RunContext, Scenario } from "../lib/types.js";
 import { ensureOk, http } from "../lib/http.js";
+import { pollUntil } from "../providers/base.js";
 
 // Fixture branch pair per provider. Each fixture branch lives permanently in
 // the test repo and contains a file with deliberate TODO_REMOVE_ME markers
@@ -146,19 +147,31 @@ export const kodyRulesCreateAndApply: Scenario = {
             // suggestions came back for an obvious fixture (literal +
             // commented TODO_REMOVE_ME against a rule explicitly forbidding
             // it), the rule pipeline silently skipped — a real regression.
-            const suggestionsResp = await http<{ data?: unknown[] }>(
-                `${ctx.target.apiBaseUrl}/kody-rules/suggestions?ruleId=${encodeURIComponent(ruleId!)}`,
-                {
-                    headers: {
-                        Authorization: `Bearer ${session.accessToken}`,
+            //
+            // Why a poll instead of one-shot: pollForReview returns as soon
+            // as Kody posts the completion comment on the provider, but the
+            // pipeline persists `files.suggestions[].brokenKodyRulesIds`
+            // asynchronously after the comment is delivered. On bitbucket
+            // (where individual API calls are ~1.3s each) we observed the
+            // suggestion landing ~11s AFTER pollForReview returned, so a
+            // one-shot read raced and saw 0. 60s is plenty for any provider
+            // — fast ones return on the first attempt anyway.
+            const suggestionsCount = await pollUntil(async () => {
+                const resp = await http<{ data?: unknown[] }>(
+                    `${ctx.target.apiBaseUrl}/kody-rules/suggestions?ruleId=${encodeURIComponent(ruleId!)}`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${session.accessToken}`,
+                        },
+                        timeoutMs: 30_000,
                     },
-                    timeoutMs: 30_000,
-                },
-            );
-            ensureOk(suggestionsResp, "kody-rules:findSuggestionsByRule");
-            const suggestionsCount = Array.isArray(suggestionsResp.body.data)
-                ? suggestionsResp.body.data.length
-                : 0;
+                );
+                ensureOk(resp, "kody-rules:findSuggestionsByRule");
+                const count = Array.isArray(resp.body.data)
+                    ? resp.body.data.length
+                    : 0;
+                return count > 0 ? count : null;
+            }, { intervalSec: 3, timeoutSec: 60 }) ?? 0;
             ctx.assert(
                 suggestionsCount > 0,
                 `Rule ${ruleName} produced 0 suggestions even though the fixture branch contains explicit TODO_REMOVE_ME occurrences. Either the rule pipeline didn't run for this PR or it ignored the rule.`,

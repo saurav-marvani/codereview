@@ -34,12 +34,15 @@ export interface HttpResponse<T = unknown> {
     raw: string;
 }
 
-export async function http<T = unknown>(
+// Internal: one attempt of the actual fetch. Extracted so the retry
+// branch below can re-issue without duplicating the (mildly tedious)
+// AbortController + body-encoding + content-type ceremony.
+async function attempt<T>(
     url: string,
-    opts: HttpOptions = {},
+    opts: HttpOptions,
+    timeoutMs: number,
 ): Promise<HttpResponse<T>> {
     const controller = new AbortController();
-    const timeoutMs = opts.timeoutMs ?? 30_000;
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     const init: RequestInit = {
@@ -83,6 +86,49 @@ export async function http<T = unknown>(
         };
     } finally {
         clearTimeout(timer);
+    }
+}
+
+// Heuristic for "transport failed, retry might help" — distinct from
+// "server returned 5xx" (which the caller's `ensureOk` decides). We
+// only retry on errors thrown BEFORE we get an HTTP status: undici's
+// `TypeError: fetch failed`, plain network reset, AbortError fired by
+// our own timer (the request never completed). HTTP 5xx is excluded
+// here because the caller may legitimately want to surface it without
+// silent retry side effects (e.g. registration that's idempotent on
+// pure transport, but not on 5xx-after-partial-write).
+function isTransportError(err: unknown): boolean {
+    if (!(err instanceof Error)) return false;
+    const msg = err.message ?? "";
+    return (
+        err.name === "TypeError" && msg === "fetch failed"
+    ) || (
+        err.name === "AbortError"
+    ) || /ECONNRESET|EPIPE|ETIMEDOUT|socket hang up/i.test(msg);
+}
+
+export async function http<T = unknown>(
+    url: string,
+    opts: HttpOptions = {},
+): Promise<HttpResponse<T>> {
+    const timeoutMs = opts.timeoutMs ?? 30_000;
+    try {
+        return await attempt<T>(url, opts, timeoutMs);
+    } catch (err) {
+        if (!isTransportError(err)) {
+            throw err;
+        }
+        // One retry on transport failure. Concrete motivation: bitbucket
+        // finish-onboarding takes ~91s server-side (generateKodyRules
+        // makes ~72 sequential Bitbucket Cloud API calls, ~1.3s each)
+        // and the long-idle TCP connection occasionally resets between
+        // Mac and droplet before the 204 arrives, throwing
+        // `TypeError: fetch failed`. On retry the server-side work is
+        // cached (kody rules already generated) so the request returns
+        // in ~1.8s. See [TIMING:onboarding] in finish-onboarding.use-
+        // case.ts — confirmed 2026-05-22 fresh-tenant probe.
+        await new Promise((r) => setTimeout(r, 1_000));
+        return attempt<T>(url, opts, timeoutMs);
     }
 }
 

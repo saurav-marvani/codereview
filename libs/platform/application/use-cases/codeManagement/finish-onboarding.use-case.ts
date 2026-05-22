@@ -65,15 +65,47 @@ export class FinishOnboardingUseCase {
 
             const organizationId = this.request.user.organization.uuid;
 
+            // [TIMING:onboarding] Provider-comparative instrumentation —
+            // bitbucket finish-onboarding was observed at 70-112s on the
+            // 2026-05-22 self-hosted matrix vs. 1-4s for github/gitlab.
+            // We need a per-step breakdown to confirm whether the slow
+            // path is `generateKodyRulesUseCase` (LLM + provider PR
+            // fetch) or `syncSelectedReposKodyRulesUseCase` (provider
+            // tree read) or something else entirely. Logs land in the
+            // api container so a single tail can isolate the answer.
+            const __onboardingT0 = Date.now();
+            const __mark = (
+                label: string,
+                start: number,
+                extra: Record<string, unknown> = {},
+            ) => {
+                // console.log directly so the line survives whatever
+                // structured-logger level filtering the framework
+                // applies in production builds (which silently dropped
+                // the first attempt that used this.logger.log).
+                console.log(
+                    `[TIMING:onboarding] ${label} took ${Date.now() - start}ms`,
+                    JSON.stringify({
+                        teamId,
+                        step: label,
+                        durationMs: Date.now() - start,
+                        ...extra,
+                    }),
+                );
+            };
+
+            let __t = Date.now();
             platformConfig = await this.parametersService.findByKey(
                 ParametersKey.PLATFORM_CONFIGS,
                 { organizationId, teamId },
             );
+            __mark('findByKey:PLATFORM_CONFIGS', __t);
 
             if (!platformConfig || !platformConfig.configValue) {
                 throw new Error('Platform config not found');
             }
 
+            __t = Date.now();
             await this.createOrUpdateParametersUseCase.execute(
                 ParametersKey.PLATFORM_CONFIGS,
                 {
@@ -82,28 +114,39 @@ export class FinishOnboardingUseCase {
                 },
                 { organizationId, teamId },
             );
+            __mark('createOrUpdate:PLATFORM_CONFIGS', __t);
 
+            __t = Date.now();
             await this.generateKodyRulesUseCase.execute(
                 { teamId, months: 3 },
                 organizationId,
             );
+            __mark('generateKodyRules', __t);
 
             // enable all generated rules
+            __t = Date.now();
             const rules = await this.findKodyRulesUseCase.execute(
                 organizationId,
                 {},
             );
+            __mark('findKodyRules', __t, { ruleCount: rules?.length ?? 0 });
 
             if (rules && rules.length > 0) {
+                __t = Date.now();
                 const ruleIds = rules.map((rule) => rule.uuid);
                 await this.changeStatusKodyRulesUseCase.execute({
                     ruleIds,
                     status: KodyRulesStatus.ACTIVE,
                 });
+                __mark('changeStatusKodyRules', __t, { ruleCount: ruleIds.length });
             }
 
             // Trigger immediate Kody Rules sync from repo files for all selected repositories
+            __t = Date.now();
             await this.syncSelectedReposKodyRulesUseCase.execute({ teamId });
+            __mark('syncSelectedReposKodyRules', __t);
+
+            __mark('TOTAL', __onboardingT0);
 
             if (reviewPR) {
                 if (!pullNumber || !repositoryName || !repositoryId) {

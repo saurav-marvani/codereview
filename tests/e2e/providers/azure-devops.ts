@@ -208,6 +208,32 @@ export class AzureDevOpsProvider extends BaseProvider {
 
     async openPRFromBranches(args: OpenPRFromBranchesArgs): Promise<OpenedPR> {
         const repoId = await this.resolveRepoId();
+
+        // Azure DevOps refuses POST /pullrequests with HTTP 409 if there's
+        // already an active PR between the same (head, base) pair. Earlier
+        // matrix runs (or aborted scenarios) sometimes leave that PR open —
+        // the closePR finally block runs, but if the scenario crashed before
+        // openPRFromBranches returned, OR a parallel cell raced, the abandon
+        // never fired. Scan for any active PR on this pair and abandon it
+        // before retrying, so a stale leftover doesn't poison every
+        // subsequent run on this provider.
+        const existing = await http<{
+            value?: Array<{ pullRequestId: number }>;
+        }>(
+            `${this.apiBase}/_apis/git/repositories/${repoId}/pullrequests?searchCriteria.sourceRefName=${encodeURIComponent(`refs/heads/${args.head}`)}&searchCriteria.targetRefName=${encodeURIComponent(`refs/heads/${args.base}`)}&searchCriteria.status=active&api-version=${this.apiVersion}`,
+            { headers: this.headers() },
+        );
+        for (const pr of existing.body.value ?? []) {
+            await http(
+                `${this.apiBase}/_apis/git/repositories/${repoId}/pullrequests/${pr.pullRequestId}?api-version=${this.apiVersion}`,
+                {
+                    method: "PATCH",
+                    headers: this.headers(),
+                    body: { status: "abandoned" },
+                },
+            );
+        }
+
         const resp = await http<{
             pullRequestId: number;
             _links?: { web?: { href: string } };
