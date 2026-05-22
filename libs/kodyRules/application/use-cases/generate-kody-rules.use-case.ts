@@ -1,5 +1,6 @@
 import { createLogger } from '@kodus/flow';
 import { Inject, Injectable } from '@nestjs/common';
+import pLimit from 'p-limit';
 
 import { GenerateKodyRulesDTO } from '@libs/core/domain/dtos/generate-kody-rules.dto';
 
@@ -36,6 +37,15 @@ import { CreateOrUpdateKodyRulesUseCase } from './create-or-update.use-case';
 import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from './find-rules-in-organization-by-filter.use-case';
 import { SendRulesNotificationUseCase } from './send-rules-notification.use-case';
 import { CreateOrUpdateParametersUseCase } from '@libs/organization/application/use-cases/parameters/create-or-update-use-case';
+import { RepositoryCodeReviewConfig } from '@libs/core/infrastructure/config/types/general/codeReviewConfig.type';
+
+/**
+ * How many pull requests to fetch comments/reviews/files for in parallel.
+ * Each PR fans out into 3 provider API calls, so real outbound concurrency
+ * peaks at PR_FETCH_CONCURRENCY × 3 — kept modest so slower providers
+ * (Bitbucket Cloud) aren't hammered.
+ */
+export const PR_FETCH_CONCURRENCY = 5;
 
 @Injectable()
 export class GenerateKodyRulesUseCase {
@@ -155,45 +165,11 @@ export class GenerateKodyRulesUseCase {
                     continue;
                 }
 
-                const comments = [];
-
-                for (const pr of pullRequests) {
-                    const generalComments =
-                        await this.codeManagementService.getAllCommentsInPullRequest(
-                            {
-                                organizationAndTeamData,
-                                repository,
-                                prNumber: pr.pull_number,
-                            },
-                        );
-
-                    const reviewComments =
-                        await this.codeManagementService.getPullRequestReviewComment(
-                            {
-                                organizationAndTeamData,
-                                filters: {
-                                    repository,
-                                    pullRequestNumber: pr.pull_number,
-                                },
-                            },
-                        );
-
-                    const files =
-                        await this.codeManagementService.getFilesByPullRequestId(
-                            {
-                                organizationAndTeamData,
-                                repository,
-                                prNumber: pr.pull_number,
-                            },
-                        );
-
-                    comments.push({
-                        pr,
-                        generalComments,
-                        reviewComments,
-                        files,
-                    });
-                }
+                const comments = await this.fetchPullRequestComments(
+                    repository,
+                    pullRequests,
+                    organizationAndTeamData,
+                );
 
                 if (!comments || comments.length === 0) {
                     this.logger.log({
@@ -363,6 +339,127 @@ export class GenerateKodyRulesUseCase {
 
             throw error;
         }
+    }
+
+    /**
+     * Fetch comments, review comments and changed files for every pull
+     * request in a repository.
+     *
+     * The three per-PR calls are independent, and PRs are independent of
+     * each other, so they fan out instead of running fully sequentially.
+     * `p-limit` caps how many PRs are in flight so slower providers
+     * (Bitbucket Cloud) aren't hammered, and `Promise.allSettled` keeps a
+     * single flaky call from aborting the whole rule-generation run.
+     */
+    private async fetchPullRequestComments(
+        repository: Repositories | RepositoryCodeReviewConfig,
+        pullRequests: any[],
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<any[]> {
+        const limit = pLimit(PR_FETCH_CONCURRENCY);
+
+        const settled = await Promise.allSettled(
+            pullRequests.map((pr) =>
+                limit(() =>
+                    this.fetchSinglePullRequestComments(
+                        repository,
+                        pr,
+                        organizationAndTeamData,
+                    ),
+                ),
+            ),
+        );
+
+        const collected: any[] = [];
+        for (const result of settled) {
+            if (result.status === 'fulfilled') {
+                collected.push(result.value);
+            } else {
+                this.logger.warn({
+                    message:
+                        'Failed to collect comments for a pull request; skipping it',
+                    context: GenerateKodyRulesUseCase.name,
+                    error:
+                        result.reason instanceof Error
+                            ? result.reason
+                            : new Error(String(result.reason)),
+                    metadata: { repositoryId: repository?.id },
+                });
+            }
+        }
+
+        return collected;
+    }
+
+    private async fetchSinglePullRequestComments(
+        repository: Repositories | RepositoryCodeReviewConfig,
+        pr: any,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<any> {
+        const prNumber = pr.pull_number;
+
+        const [generalComments, reviewComments, files] =
+            await Promise.allSettled([
+                this.codeManagementService.getAllCommentsInPullRequest({
+                    organizationAndTeamData,
+                    repository,
+                    prNumber,
+                }),
+                this.codeManagementService.getPullRequestReviewComment({
+                    organizationAndTeamData,
+                    filters: { repository, pullRequestNumber: prNumber },
+                }),
+                this.codeManagementService.getFilesByPullRequestId({
+                    organizationAndTeamData,
+                    repository,
+                    prNumber,
+                }),
+            ]);
+
+        return {
+            pr,
+            generalComments: this.settledOrEmpty(
+                generalComments,
+                'comments',
+                repository,
+                prNumber,
+            ),
+            reviewComments: this.settledOrEmpty(
+                reviewComments,
+                'review comments',
+                repository,
+                prNumber,
+            ),
+            files: this.settledOrEmpty(files, 'files', repository, prNumber),
+        };
+    }
+
+    /**
+     * Unwrap a settled per-PR fetch: the value on success, or an empty
+     * list (plus a warning) on failure — so one bad call degrades that
+     * resource instead of failing the PR or the whole run.
+     */
+    private settledOrEmpty(
+        result: PromiseSettledResult<any>,
+        resource: string,
+        repository: Repositories | RepositoryCodeReviewConfig,
+        prNumber: number,
+    ): any {
+        if (result.status === 'fulfilled') {
+            return result.value;
+        }
+
+        this.logger.warn({
+            message: `Failed to fetch PR ${resource}; continuing without them`,
+            context: GenerateKodyRulesUseCase.name,
+            error:
+                result.reason instanceof Error
+                    ? result.reason
+                    : new Error(String(result.reason)),
+            metadata: { repositoryId: repository?.id, prNumber },
+        });
+
+        return [];
     }
 
     private async getRepositories(
