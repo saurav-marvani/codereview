@@ -20,7 +20,6 @@
         "env:check": "ts-node scripts/env/check-drift.ts && ts-node scripts/env/check-coverage.ts",
         "env:check:drift": "ts-node scripts/env/check-drift.ts",
         "env:check:coverage": "ts-node scripts/env/check-coverage.ts",
-        "env:validate": "varlock load --show-all",
         "env:audit": "ts-node scripts/env/build-slim-csv.ts",
         "feature-gate:snapshot": "ts-node scripts/feature-gate/generate-snapshot.ts",
         "feature-gate:snapshot:check": "ts-node scripts/feature-gate/generate-snapshot.ts --check",
@@ -413,7 +412,6 @@
         "tsconfig-paths-webpack-plugin": "^4.2.0",
         "typescript": "^6.0.3",
         "typescript-eslint": "^8.59.4",
-        "varlock": "^1.2.0",
         "webpack": "^5.106.2",
         "webpack-node-externals": "^3.0.0"
     },
