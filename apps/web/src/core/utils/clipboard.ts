@@ -1,58 +1,67 @@
-/**
- * Copy text to the clipboard.
- *
- * `navigator.clipboard` only exists in a *secure context* (HTTPS, or
- * `localhost`). Self-hosted instances are routinely served over plain
- * HTTP on an internal address, where the Clipboard API is absent — so we
- * fall back to the legacy `document.execCommand("copy")` path.
- *
- * @returns `true` when the copy succeeded, `false` otherwise. Callers
- * should surface failure to the user instead of assuming success.
- */
 export const ClipboardHelpers = {
-    copyTextToClipboard: async (text: string): Promise<boolean> => {
-        const clipboard = (globalThis as { navigator?: Navigator }).navigator
-            ?.clipboard;
-
-        if (clipboard?.writeText) {
-            try {
-                await clipboard.writeText(text);
-                return true;
-            } catch {
-                // Permission denied or insecure context — fall through.
-            }
+    copyTextToClipboard: (text: string): boolean => {
+        if (selectAndExec(text)) {
+            return true;
         }
 
-        return legacyCopy(text);
+        const clipboard = (globalThis as { navigator?: Navigator }).navigator
+            ?.clipboard;
+        if (clipboard?.writeText) {
+            void clipboard.writeText(text).catch(() => {});
+        }
+
+        return false;
     },
 };
 
-/**
- * Pre-Clipboard-API copy: drop the text into an off-screen <textarea>,
- * select it, and run `execCommand("copy")`. Works in insecure contexts.
- */
-function legacyCopy(text: string): boolean {
+function selectAndExec(text: string): boolean {
     const doc = (globalThis as { document?: Document }).document;
-    if (!doc?.body) {
+    const win = (globalThis as { getSelection?: () => Selection | null })
+        .getSelection
+        ? (globalThis as unknown as Window)
+        : null;
+
+    if (!doc?.body || !win) {
         return false;
     }
 
-    try {
-        const textarea = doc.createElement("textarea");
-        textarea.value = text;
-        textarea.setAttribute("readonly", "");
-        // Keep it out of view and avoid scroll/zoom jumps on mobile.
-        textarea.style.position = "fixed";
-        textarea.style.top = "0";
-        textarea.style.left = "0";
-        textarea.style.opacity = "0";
+    const div = doc.createElement('div');
+    div.textContent = text;
+    div.style.position = 'fixed';
+    div.style.left = '-9999px';
+    div.style.top = '0';
+    div.style.whiteSpace = 'pre';
+    doc.body.appendChild(div);
 
-        doc.body.appendChild(textarea);
-        textarea.select();
-        const ok = doc.execCommand("copy");
-        doc.body.removeChild(textarea);
-        return ok;
+    const selection = win.getSelection();
+    if (!selection) {
+        div.remove();
+        return false;
+    }
+
+    const previousRanges: Range[] = [];
+    for (let i = 0; i < selection.rangeCount; i++) {
+        previousRanges.push(selection.getRangeAt(i).cloneRange());
+    }
+
+    try {
+        selection.removeAllRanges();
+        const range = doc.createRange();
+        range.selectNodeContents(div);
+        selection.addRange(range);
+
+        if (selection.toString() !== text) {
+            return false;
+        }
+
+        return doc.execCommand('copy');
     } catch {
         return false;
+    } finally {
+        selection.removeAllRanges();
+        for (const r of previousRanges) {
+            selection.addRange(r);
+        }
+        div.remove();
     }
 }

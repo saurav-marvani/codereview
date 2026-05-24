@@ -588,4 +588,171 @@ describe('PullRequestsService — #1107 bulk file changes', () => {
             expect(patch.totalAdded).toBe(5);
         });
     });
+
+    /**
+     * Binary patch stripping — preserves source patches, strips binary.
+     *
+     * Two requirements meeting:
+     *   1. Source patches MUST be persisted so downstream consumers
+     *      reading from the DB can use them without a re-fetch
+     *      round-trip to the platform adapter.
+     *   2. Binary patches (PNG/PDF/etc.) MUST NOT be persisted — Azure
+     *      DevOps serializes binary adds as unified-diff TEXT (one `+`
+     *      line per byte → 1.3MB PNG = 1.3MB patch string). A handful
+     *      of those in one PR pushed the doc past Mongo's 16MB BSON
+     *      cap; subsequent bulkWrite chunks failed with "Resulting
+     *      document after update is larger than 16777216" and the
+     *      webhook handler hung 9min on partial state.
+     *
+     * Fix: at op-construction time in `handleExistingPullRequest`,
+     * `patch` for the `updateFile` op flows through
+     * `sanitizePatchForPersist(filename, patch)` — which preserves
+     * source-file patches and zeros out binary-extension patches
+     * (matched case-insensitive at end-of-filename so `src/png-utils.ts`
+     * isn't accidentally stripped).
+     *
+     * `addFile` op intentionally omits `patch` from its literal — locks
+     * down so a future refactor can't accidentally re-introduce it via
+     * a spread-from-source pattern.
+     */
+    describe('patch persistence — source preserved, binary stripped', () => {
+        it('updateFile op for a source file PRESERVES `patch` (useful for downstream DB reads)', async () => {
+            const existingFiles = [makeExistingFile('src/app.ts')];
+            const existingPR = { uuid: 'pr-uuid-1', files: existingFiles };
+            const sourcePatch = '@@ -1,3 +1,3 @@\n-old\n+new\n';
+            const changedFiles = [
+                makeChangedFile('src/app.ts', { patch: sourcePatch }),
+            ];
+
+            await callHandleExisting({ existingPR, changedFiles });
+
+            const [, , opsArg] =
+                pullRequestsRepository.bulkApplyFileChanges.mock.calls[0];
+            const updateOp = opsArg.find((op: any) => op.kind === 'updateFile');
+
+            // Source patches stay so downstream consumers (UI diff,
+            // re-review cache, etc.) get useful data without a fresh
+            // round-trip to the adapter.
+            expect(updateOp.data.patch).toBe(sourcePatch);
+            expect(updateOp.data).toMatchObject({
+                status: 'modified',
+                added: 10,
+                deleted: 4,
+                changes: 14,
+            });
+        });
+
+        it('updateFile op for a binary file ZEROES `patch` to dodge the 16MB BSON cap', async () => {
+            const existingFiles = [
+                makeExistingFile('docs/seer.png'),
+                makeExistingFile('assets/cover.jpg'),
+                makeExistingFile('design/spec.pdf'),
+                makeExistingFile('fonts/inter.woff2'),
+                makeExistingFile('video/demo.mp4'),
+            ];
+            const existingPR = { uuid: 'pr-uuid-mixed', files: existingFiles };
+            // Each one carries a 2MB "diff" — what Azure actually sends
+            // for an added binary file. Pre-fix these pushed the doc
+            // past 16MB; post-fix they're zeroed before reaching Mongo.
+            const huge = 'X'.repeat(2 * 1024 * 1024);
+            const changedFiles = existingFiles.map((f) =>
+                makeChangedFile(f.path, { patch: huge }),
+            );
+
+            await callHandleExisting({ existingPR, changedFiles });
+
+            const [, , opsArg] =
+                pullRequestsRepository.bulkApplyFileChanges.mock.calls[0];
+            const updateOps = opsArg.filter(
+                (op: any) => op.kind === 'updateFile',
+            );
+
+            expect(updateOps).toHaveLength(5);
+            for (const op of updateOps) {
+                expect(op.data.patch).toBe('');
+                expect(op.data).toMatchObject({ status: 'modified' });
+            }
+        });
+
+        it('is case-insensitive and only matches at end-of-filename (no false positives on substrings)', async () => {
+            const existingFiles = [
+                makeExistingFile('docs/HERO.PNG'),       // upper-case binary
+                makeExistingFile('design/Logo.Jpeg'),    // mixed-case binary
+                makeExistingFile('src/png-utils.ts'),    // "png" in name — MUST keep patch
+                makeExistingFile('docs/notpng.md'),      // ".md" — MUST keep patch
+            ];
+            const existingPR = { uuid: 'pr-uuid-case', files: existingFiles };
+            const huge = 'X'.repeat(1024 * 1024);
+            const changedFiles = existingFiles.map((f) =>
+                makeChangedFile(f.path, { patch: huge }),
+            );
+
+            await callHandleExisting({ existingPR, changedFiles });
+
+            const [, , opsArg] =
+                pullRequestsRepository.bulkApplyFileChanges.mock.calls[0];
+
+            const byFile = (path: string) =>
+                opsArg.find(
+                    (op: any) =>
+                        op.kind === 'updateFile' &&
+                        op.fileId === existingFiles.find((f) => f.path === path)?.id,
+                );
+
+            expect(byFile('docs/HERO.PNG').data.patch).toBe('');
+            expect(byFile('design/Logo.Jpeg').data.patch).toBe('');
+            expect(byFile('src/png-utils.ts').data.patch).toBe(huge);
+            expect(byFile('docs/notpng.md').data.patch).toBe(huge);
+        });
+
+        it('addFile op does NOT carry `patch` either (defense in depth — locks down today\'s behavior)', async () => {
+            const existingPR = { uuid: 'pr-uuid-fresh', files: [] };
+            const changedFiles = [
+                makeChangedFile('src/new.ts', {
+                    patch: '@@ -0,0 +1,5 @@\n+new code\n',
+                }),
+            ];
+
+            await callHandleExisting({ existingPR, changedFiles });
+
+            const [, , opsArg] =
+                pullRequestsRepository.bulkApplyFileChanges.mock.calls[0];
+            const addOp = opsArg.find((op: any) => op.kind === 'addFile');
+
+            expect(addOp).toBeDefined();
+            expect(addOp.file).not.toHaveProperty('patch');
+            expect(addOp.file).not.toHaveProperty('content');
+        });
+
+        it('keeps the realistic worst-case PR (100 files, 20% binary) under the BSON cap', async () => {
+            // Same shape as the production incident: many files, several
+            // of them binary-heavy. Pre-fix this serialized at ~40MB.
+            // Post-fix the binary ops drop to metadata-only, so total stays
+            // proportional to the source-file patches only (~10MB max).
+            const existingFiles = Array.from({ length: 100 }, (_, i) =>
+                makeExistingFile(
+                    i % 5 === 0 ? `assets/img-${i}.png` : `src/file-${i}.ts`,
+                ),
+            );
+            const existingPR = { uuid: 'pr-uuid-many', files: existingFiles };
+            const hugeBinary = 'X'.repeat(2 * 1024 * 1024); // 2MB per PNG
+            const smallSource = '@@ -1,2 +1,3 @@\n line\n-old\n+new\n';
+            const changedFiles = existingFiles.map((f, i) =>
+                makeChangedFile(f.path, {
+                    patch: i % 5 === 0 ? hugeBinary : smallSource,
+                }),
+            );
+
+            await callHandleExisting({ existingPR, changedFiles });
+
+            const [, , opsArg] =
+                pullRequestsRepository.bulkApplyFileChanges.mock.calls[0];
+            const serializedSize = JSON.stringify(opsArg).length;
+
+            // Source patches kept (80 × ~30B ≈ 2.4KB), binary stripped (20 × 0)
+            // + op envelope overhead. Should comfortably fit in <100KB total.
+            expect(serializedSize).toBeLessThan(100 * 1024);
+            expect(opsArg.length).toBe(100);
+        });
+    });
 });

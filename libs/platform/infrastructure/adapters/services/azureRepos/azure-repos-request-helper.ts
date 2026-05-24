@@ -595,12 +595,13 @@ export class AzureReposRequestHelper {
                 return data;
             }
         } catch (error) {
-            // Verificar se recebemos um erro 404 (arquivo não encontrado)
             if (error.response && error.response.status === 404) {
-                throw new Error(
-                    `Arquivo não encontrado: ${params.filePath} no commit ${params.commitId}`,
+                const wrapped: Error & { status?: number } = new Error(
+                    `File not found: ${params.filePath} at commit ${params.commitId}`,
                     { cause: error },
                 );
+                wrapped.status = 404;
+                throw wrapped;
             }
 
             // Verificar se é um erro de versão não encontrada
@@ -1024,27 +1025,23 @@ export class AzureReposRequestHelper {
     }
 
     mapAzureStatusToFileChangeStatus(status: string): FileChange['status'] {
-        switch (status.toLowerCase()) {
-            case 'add':
-            case 'added':
-                return 'added';
-            case 'edit':
-            case 'modified':
-                return 'modified';
-            case 'delete':
-            case 'removed':
-                return 'removed';
-            case 'rename':
-            case 'renamed':
-                return 'renamed';
-            case 'copy':
-            case 'copied':
-                return 'copied';
-            case 'unchanged':
-                return 'unchanged';
-            default:
-                return 'changed';
+        const tokens = new Set(
+            status.split(',').map((t) => t.trim().toLowerCase()),
+        );
+        if (tokens.has('delete') || tokens.has('removed')) return 'removed';
+        if (tokens.has('add') || tokens.has('added')) return 'added';
+        if (
+            tokens.has('rename') ||
+            tokens.has('renamed') ||
+            tokens.has('sourcerename') ||
+            tokens.has('targetrename')
+        ) {
+            return 'renamed';
         }
+        if (tokens.has('copy') || tokens.has('copied')) return 'copied';
+        if (tokens.has('edit') || tokens.has('modified')) return 'modified';
+        if (tokens.has('unchanged')) return 'unchanged';
+        return 'changed';
     }
 
     /**

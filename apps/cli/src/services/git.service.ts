@@ -386,7 +386,7 @@ class GitService {
                 const sha = (
                     await this.git.raw(['merge-base', 'HEAD', ref])
                 ).trim();
-                if (sha) return sha;
+                if (sha) {return sha;}
             } catch {
                 // Ref doesn't exist locally / no merge base — try next.
             }

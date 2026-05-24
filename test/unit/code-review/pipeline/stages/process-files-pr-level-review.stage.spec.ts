@@ -1,5 +1,5 @@
 import { ProcessFilesPrLevelReviewStage } from '@/code-review/pipeline/stages/process-files-pr-level-review.stage';
-import posthog, { FEATURE_FLAGS } from '@libs/common/utils/posthog';
+import posthog from '@libs/common/utils/posthog';
 
 jest.mock('@kodus/flow', () => ({
     createLogger: () => ({

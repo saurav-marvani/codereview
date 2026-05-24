@@ -2,6 +2,7 @@ import { createLogger } from '@kodus/flow';
 import { getMappedPlatform } from '@libs/common/utils/webhooks';
 import { IntegrationConfigKey, PlatformType } from '@libs/core/domain/enums';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
+import { with429Retry } from '@libs/core/infrastructure/http/rate-limit-retry';
 import {
     IIntegrationConfigService,
     INTEGRATION_CONFIG_SERVICE_TOKEN,
@@ -159,26 +160,44 @@ export class SavePullRequestUseCase {
                 let pullRequestCommits: any[] = [];
 
                 if (shouldFetchFromApi) {
-                    [changedFiles, pullRequestCommits] = await Promise.all([
-                        this.codeManagement.getFilesByPullRequestId(
-                            {
-                                organizationAndTeamData,
-                                prNumber: pullRequest?.number,
-                                repository,
-                            },
-                            platformType,
-                        ),
-                        this.codeManagement.getCommitsForPullRequestForCodeReview(
-                            {
-                                organizationAndTeamData,
-                                repository: {
-                                    id: repository.id,
-                                    name: repository.name,
+                    // Sequential + per-call 429 retry. Previously this was a
+                    // Promise.all of two parallel provider calls, which on
+                    // gitlab webhook bursts (post-2026-04-29 d51ece1a2) was
+                    // pinning the @gitbeaker retry budget — both calls would
+                    // race the same per-endpoint rate limit and 429 in
+                    // lockstep, causing webhook handler 500s and the review
+                    // pipeline never starting. Sequential cuts in-flight
+                    // calls from 2→1; with429Retry honours Retry-After and
+                    // recovers from transient bursts. The extra ~300ms of
+                    // wall time per webhook is below the human noise floor.
+                    changedFiles = await with429Retry(
+                        () =>
+                            this.codeManagement.getFilesByPullRequestId(
+                                {
+                                    organizationAndTeamData,
+                                    prNumber: pullRequest?.number,
+                                    repository,
                                 },
-                                prNumber: pullRequestWithUserData.number,
-                            },
-                        ),
-                    ]);
+                                platformType,
+                            ),
+                        { label: `saveSync:getFiles PR#${pullRequest?.number}` },
+                    );
+                    pullRequestCommits = await with429Retry(
+                        () =>
+                            this.codeManagement.getCommitsForPullRequestForCodeReview(
+                                {
+                                    organizationAndTeamData,
+                                    repository: {
+                                        id: repository.id,
+                                        name: repository.name,
+                                    },
+                                    prNumber: pullRequestWithUserData.number,
+                                },
+                            ),
+                        {
+                            label: `saveSync:getCommits PR#${pullRequestWithUserData.number}`,
+                        },
+                    );
                 } else {
                     // For non-critical events, try to get existing data from DB
                     const existingPR =

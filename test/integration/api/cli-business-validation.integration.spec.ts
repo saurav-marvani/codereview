@@ -24,8 +24,8 @@ import { EnqueueCliReviewUseCase } from '@libs/cli-review/application/use-cases/
 import { GetCliReviewJobStatusUseCase } from '@libs/cli-review/application/use-cases/get-cli-review-job-status.use-case';
 import { WaitForCliReviewJobUseCase } from '@libs/cli-review/application/use-cases/wait-for-cli-review-job.use-case';
 import { SubmitCliSessionCaptureUseCase } from '@libs/cli-review/application/use-cases/submit-cli-session-capture.use-case';
-import { AuthenticatedRateLimiterService } from '@libs/cli-review/infrastructure/services/authenticated-rate-limiter.service';
-import { TrialRateLimiterService } from '@libs/cli-review/infrastructure/services/trial-rate-limiter.service';
+import { AUTHENTICATED_RATE_LIMITER_SERVICE_TOKEN } from '@libs/cli-review/domain/contracts/authenticated-rate-limiter.service.contract';
+import { TRIAL_RATE_LIMITER_SERVICE_TOKEN } from '@libs/cli-review/domain/contracts/trial-rate-limiter.service.contract';
 import { AUTH_SERVICE_TOKEN } from '@libs/identity/domain/auth/contracts/auth.service.contracts';
 import { INTEGRATION_CONFIG_SERVICE_TOKEN } from '@libs/integrations/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { CLI_DEVICE_SERVICE_TOKEN } from '@libs/organization/domain/cli-device/contracts/cli-device.service.contract';
@@ -87,14 +87,14 @@ describe('CLI business-validation integration', () => {
                     useValue: { execute: jest.fn() },
                 },
                 {
-                    provide: TrialRateLimiterService,
+                    provide: TRIAL_RATE_LIMITER_SERVICE_TOKEN,
                     useValue: {
                         checkRateLimit: jest.fn(),
                         getRateLimitStatus: jest.fn(),
                     },
                 },
                 {
-                    provide: AuthenticatedRateLimiterService,
+                    provide: AUTHENTICATED_RATE_LIMITER_SERVICE_TOKEN,
                     useValue: mockRateLimiter,
                 },
                 {

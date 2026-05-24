@@ -325,11 +325,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 });
 
                 if (context.sandboxHandle?.run) {
-                    const repo =
-                        await this.repositoryService.findByExternalId(
-                            context.platformType,
-                            String(context.repository?.id || ''),
-                        );
+                    const repo = await this.repositoryService.findByExternalId(
+                        context.platformType,
+                        String(context.repository?.id || ''),
+                    );
 
                     this.logger.log({
                         message: `[AGENT] repo lookup: found=${!!repo}, astGraphStatus=${repo?.astGraphStatus ?? 'N/A'}, uuid=${repo?.uuid ?? 'N/A'}`,
@@ -472,8 +471,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     : 'partial';
                 context = this.updateContext(context, (draft) => {
                     draft.errors.push({
-                        pipelineId:
-                            context.pipelineMetadata?.pipelineId,
+                        pipelineId: context.pipelineMetadata?.pipelineId,
                         stage: this.stageName,
                         substage: `agent:${failure.agentName}`,
                         error: failure.error,
@@ -959,7 +957,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 // reached `CreateFileCommentsStage` and the fallback
                 // comments for those files silently disappeared from the
                 // review.
-                const discardedByFile = new Map<string, Partial<CodeSuggestion>[]>();
+                const discardedByFile = new Map<
+                    string,
+                    Partial<CodeSuggestion>[]
+                >();
                 for (const s of allDiscarded) {
                     const file = s.relevantFile || '';
                     if (!file) continue;
@@ -1215,50 +1216,50 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             const runDedup = (model: any) =>
                 tracedGenerateText({
-                model: model as any,
-                experimental_telemetry: buildLangfuseTelemetry(
-                    'dedup-suggestions',
-                    telemetryMeta,
-                ),
-                output: Output.object({
-                    schema: jsonSchema({
-                        type: 'object',
-                        properties: {
-                            groups: {
-                                type: 'array',
-                                description:
-                                    'Groups of suggestions. Each group has a representative and its duplicates.',
-                                items: {
-                                    type: 'object',
-                                    properties: {
-                                        keep: {
-                                            type: 'number',
-                                            description:
-                                                'Index of the best suggestion to keep as representative',
+                    model: model as any,
+                    experimental_telemetry: buildLangfuseTelemetry(
+                        'dedup-suggestions',
+                        telemetryMeta,
+                    ),
+                    output: Output.object({
+                        schema: jsonSchema({
+                            type: 'object',
+                            properties: {
+                                groups: {
+                                    type: 'array',
+                                    description:
+                                        'Groups of suggestions. Each group has a representative and its duplicates.',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            keep: {
+                                                type: 'number',
+                                                description:
+                                                    'Index of the best suggestion to keep as representative',
+                                            },
+                                            duplicates: {
+                                                type: 'array',
+                                                items: { type: 'number' },
+                                                description:
+                                                    'Indices of duplicate suggestions (same bug, same or different locations)',
+                                            },
                                         },
-                                        duplicates: {
-                                            type: 'array',
-                                            items: { type: 'number' },
-                                            description:
-                                                'Indices of duplicate suggestions (same bug, same or different locations)',
-                                        },
+                                        required: ['keep', 'duplicates'],
+                                        additionalProperties: false,
                                     },
-                                    required: ['keep', 'duplicates'],
-                                    additionalProperties: false,
+                                },
+                                unique: {
+                                    type: 'array',
+                                    items: { type: 'number' },
+                                    description:
+                                        'Indices of suggestions that have no duplicates',
                                 },
                             },
-                            unique: {
-                                type: 'array',
-                                items: { type: 'number' },
-                                description:
-                                    'Indices of suggestions that have no duplicates',
-                            },
-                        },
-                        required: ['groups', 'unique'],
-                        additionalProperties: false,
-                    }),
-                }) as any,
-                prompt: `You have ${suggestions.length} code review suggestions across multiple files in a PR. Identify duplicates and group them.
+                            required: ['groups', 'unique'],
+                            additionalProperties: false,
+                        }),
+                    }) as any,
+                    prompt: `You have ${suggestions.length} code review suggestions across multiple files in a PR. Identify duplicates and group them.
 
 BE CONSERVATIVE — when in doubt, do NOT group. Only group when you are highly confident they describe the exact same bug.
 
@@ -1281,9 +1282,8 @@ ${summaries}`,
 
             let dedupResult: any;
             if (googleKey) {
-                const { createGoogleGenerativeAI } = await import(
-                    '@ai-sdk/google'
-                );
+                const { createGoogleGenerativeAI } =
+                    await import('@ai-sdk/google');
                 const model = createGoogleGenerativeAI({ apiKey: googleKey })(
                     'gemini-3-flash-preview',
                 );

@@ -24,7 +24,6 @@
  * loses the race → test marked `FIX` passes.
  */
 import { WebhookProcessingJobProcessorService } from '@libs/automation/webhook-processing/webhook-processing-job.processor';
-import { WORKFLOW_JOB_REPOSITORY_TOKEN } from '@libs/core/workflow/domain/contracts/workflow-job.repository.contract';
 import { WorkflowType } from '@libs/core/workflow/domain/enums/workflow-type.enum';
 import { JobStatus } from '@libs/core/workflow/domain/enums/job-status.enum';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';

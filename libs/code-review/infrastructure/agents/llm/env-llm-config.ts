@@ -26,6 +26,13 @@ export interface EnvLLMDescriptor {
     baseUrl?: string;
     /** `API_VERTEX_AI_LOCATION` when provider resolves to Vertex. */
     vertexLocation?: string;
+    /**
+     * Parsed `API_LLM_TEMPERATURE_OVERRIDE`. Present iff the operator set
+     * an explicit numeric override. Surfaced so the dashboard can tell
+     * the admin "your env clamps every call to N" instead of leaving
+     * them guessing why every prompt ignores its hard-coded temperature.
+     */
+    temperatureOverride?: number;
 }
 
 const CLAUDE_MODEL_PATTERN = /^claude[-_]/i;
@@ -76,47 +83,61 @@ export function describeEnvLLMConfig(
     const isGemini = GEMINI_MODEL_PATTERN.test(envMode);
     const isClaude = CLAUDE_MODEL_PATTERN.test(envMode);
 
+    const temperatureOverrideRaw = env.API_LLM_TEMPERATURE_OVERRIDE;
+    const temperatureOverrideParsed =
+        temperatureOverrideRaw !== undefined && temperatureOverrideRaw !== ''
+            ? Number.parseFloat(temperatureOverrideRaw)
+            : Number.NaN;
+    const temperatureOverride = !Number.isNaN(temperatureOverrideParsed)
+        ? temperatureOverrideParsed
+        : undefined;
+
+    const baseDescriptor = (descriptor: EnvLLMDescriptor): EnvLLMDescriptor =>
+        temperatureOverride !== undefined
+            ? { ...descriptor, temperatureOverride }
+            : descriptor;
+
     if (isGemini && !viaProxy) {
         if (googleAiStudioKey) {
-            return {
+            return baseDescriptor({
                 configured: true,
                 model: envMode,
                 providerId: 'google_gemini',
-            };
+            });
         }
         if (vertexKey) {
             if (looksLikeBase64Json(vertexKey)) {
-                return {
+                return baseDescriptor({
                     configured: true,
                     model: envMode,
                     providerId: 'google_vertex',
                     vertexLocation: vertexLocation || 'us-central1',
-                };
+                });
             }
-            return {
+            return baseDescriptor({
                 configured: true,
                 model: envMode,
                 providerId: 'google_gemini',
-            };
+            });
         }
     }
 
     if (isClaude && openaiKey && !viaProxy) {
-        return {
+        return baseDescriptor({
             configured: true,
             model: envMode,
             providerId: 'anthropic',
             baseUrl: openaiBaseURL || undefined,
-        };
+        });
     }
 
     if (openaiKey) {
-        return {
+        return baseDescriptor({
             configured: true,
             model: envMode,
             providerId: 'openai_compatible',
             baseUrl: openaiBaseURL || 'https://api.openai.com/v1',
-        };
+        });
     }
 
     return { configured: false };

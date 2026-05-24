@@ -66,15 +66,47 @@ export class FinishOnboardingUseCase {
 
             const organizationId = this.request.user.organization.uuid;
 
+            // [TIMING:onboarding] Provider-comparative instrumentation —
+            // bitbucket finish-onboarding was observed at 70-112s on the
+            // 2026-05-22 self-hosted matrix vs. 1-4s for github/gitlab.
+            // We need a per-step breakdown to confirm whether the slow
+            // path is `generateKodyRulesUseCase` (LLM + provider PR
+            // fetch) or `syncSelectedReposKodyRulesUseCase` (provider
+            // tree read) or something else entirely. Logs land in the
+            // api container so a single tail can isolate the answer.
+            const __onboardingT0 = Date.now();
+            const __mark = (
+                label: string,
+                start: number,
+                extra: Record<string, unknown> = {},
+            ) => {
+                // console.log directly so the line survives whatever
+                // structured-logger level filtering the framework
+                // applies in production builds (which silently dropped
+                // the first attempt that used this.logger.log).
+                console.log(
+                    `[TIMING:onboarding] ${label} took ${Date.now() - start}ms`,
+                    JSON.stringify({
+                        teamId,
+                        step: label,
+                        durationMs: Date.now() - start,
+                        ...extra,
+                    }),
+                );
+            };
+
+            let __t = Date.now();
             platformConfig = await this.parametersService.findByKey(
                 ParametersKey.PLATFORM_CONFIGS,
                 { organizationId, teamId },
             );
+            __mark('findByKey:PLATFORM_CONFIGS', __t);
 
             if (!platformConfig || !platformConfig.configValue) {
                 throw new Error('Platform config not found');
             }
 
+            __t = Date.now();
             await this.createOrUpdateParametersUseCase.execute(
                 ParametersKey.PLATFORM_CONFIGS,
                 {
@@ -83,20 +115,36 @@ export class FinishOnboardingUseCase {
                 },
                 { organizationId, teamId },
             );
+            __mark('createOrUpdate:PLATFORM_CONFIGS', __t);
 
             // Rule generation makes dozens of provider API calls and can
-            // take tens of seconds (Bitbucket especially). Run it detached
-            // so onboarding completes immediately; the frontend polls
-            // `kodyLearningStatus` to know when rules are ready.
+            // take tens of seconds, and on Bitbucket Cloud the per-endpoint
+            // burst limits (x-envoy-ratelimited=true) blow past even
+            // sequential calls with exponential-backoff 429 retry inside a
+            // single HTTP request. The previous synchronous block here
+            // (await generateKodyRulesUseCase + findKodyRules + activate)
+            // surfaced as `finishOnboarding HTTP 500` on the 2026-05-23
+            // self-hosted matrix because GenerateKodyRulesUseCase exhausted
+            // its retries on Atlassian Edge throttling (and measured
+            // 70–112s on Bitbucket vs 1–4s for GitHub/GitLab on the
+            // 2026-05-22 run). The same work runs inside
+            // `generateKodyRulesInBackground` below, which already does
+            // generate → find → activate with retry-with-backoff wrapping
+            // the whole pipeline and owns the kodyLearningStatus lifecycle
+            // (GENERATING_RULES → ENABLED) so the frontend poll resolves
+            // regardless. Detaching it lets finishOnboarding return
+            // immediately instead of holding the HTTP request open for the
+            // duration of rule generation.
             setImmediate(() => {
-                void this.generateKodyRulesInBackground(
-                    organizationId,
-                    teamId,
-                );
+                void this.generateKodyRulesInBackground(organizationId, teamId);
             });
 
             // Trigger immediate Kody Rules sync from repo files for all selected repositories
+            __t = Date.now();
             await this.syncSelectedReposKodyRulesUseCase.execute({ teamId });
+            __mark('syncSelectedReposKodyRules', __t);
+
+            __mark('TOTAL', __onboardingT0);
 
             if (reviewPR) {
                 if (!pullNumber || !repositoryName || !repositoryId) {
@@ -235,9 +283,7 @@ export class FinishOnboardingUseCase {
                     'Kody rules generation failed after retries; onboarding already completed',
                 context: FinishOnboardingUseCase.name,
                 error:
-                    error instanceof Error
-                        ? error
-                        : new Error(String(error)),
+                    error instanceof Error ? error : new Error(String(error)),
                 metadata: { organizationId, teamId },
             });
         }

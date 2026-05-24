@@ -2,6 +2,7 @@ import { createLogger } from '@kodus/flow';
 import { Inject, Injectable } from '@nestjs/common';
 import pLimit from 'p-limit';
 
+import { with429Retry } from '@libs/core/infrastructure/http/rate-limit-retry';
 import { GenerateKodyRulesDTO } from '@libs/core/domain/dtos/generate-kody-rules.dto';
 
 import { CommentAnalysisService } from '@libs/code-review/infrastructure/adapters/services/commentAnalysis.service';
@@ -45,7 +46,20 @@ import { RepositoryCodeReviewConfig } from '@libs/core/infrastructure/config/typ
  * peaks at PR_FETCH_CONCURRENCY × 3 — kept modest so slower providers
  * (Bitbucket Cloud) aren't hammered.
  */
-export const PR_FETCH_CONCURRENCY = 5;
+// Each PR triggers 3 parallel provider calls inside
+// fetchSinglePullRequestComments (allSettled of getAllComments,
+// getReviewComments, getFiles). Peak in-flight requests = this value × 3.
+//
+// 2026-05-23 incident: with concurrency=5 the peak fan-out was 15
+// simultaneous Bitbucket Cloud calls, and finishOnboarding 500'd because
+// Atlassian Edge returned 429 ("x-envoy-ratelimited: true") on a fresh
+// onboarding into kodustech/tiny-url (38+ historical PRs). Cut to 2 so
+// peak fan-out is 6 — still fast enough on github/gitlab while staying
+// under the unpublished per-endpoint burst limit on bitbucket. Net cost
+// on a 30-PR repo with ~300ms per call: ~22s sequential-feel vs the
+// original ~9s — acceptable for an onboarding step that runs once and
+// is already detached via setImmediate for the background path.
+export const PR_FETCH_CONCURRENCY = 2;
 
 @Injectable()
 export class GenerateKodyRulesUseCase {
@@ -406,22 +420,48 @@ export class GenerateKodyRulesUseCase {
     ): Promise<any> {
         const prNumber = pr.pull_number;
 
+        // Wrap each provider call individually so a 429 on one (e.g.
+        // Atlassian Edge's per-endpoint burst limit on /pullrequests/X)
+        // doesn't doom the whole Promise.allSettled. The bitbucket SDK
+        // and @gitbeaker both throw on 429 without honouring Retry-After
+        // themselves — `with429Retry` parses the header (or backs off
+        // exponentially with jitter) and re-runs the single failing
+        // call up to 4 times. The outer pLimit(PR_FETCH_CONCURRENCY=2)
+        // keeps the cross-PR fan-out modest so the burst budget on
+        // slower providers (bitbucket) refills between retries.
         const [generalComments, reviewComments, files] =
             await Promise.allSettled([
-                this.codeManagementService.getAllCommentsInPullRequest({
-                    organizationAndTeamData,
-                    repository,
-                    prNumber,
-                }),
-                this.codeManagementService.getPullRequestReviewComment({
-                    organizationAndTeamData,
-                    filters: { repository, pullRequestNumber: prNumber },
-                }),
-                this.codeManagementService.getFilesByPullRequestId({
-                    organizationAndTeamData,
-                    repository,
-                    prNumber,
-                }),
+                with429Retry(
+                    () =>
+                        this.codeManagementService.getAllCommentsInPullRequest({
+                            organizationAndTeamData,
+                            repository,
+                            prNumber,
+                        }),
+                    { label: `genRules:getAllComments PR#${prNumber}` },
+                ),
+                with429Retry(
+                    () =>
+                        this.codeManagementService.getPullRequestReviewComment(
+                            {
+                                organizationAndTeamData,
+                                filters: {
+                                    repository,
+                                    pullRequestNumber: prNumber,
+                                },
+                            },
+                        ),
+                    { label: `genRules:getReviewComments PR#${prNumber}` },
+                ),
+                with429Retry(
+                    () =>
+                        this.codeManagementService.getFilesByPullRequestId({
+                            organizationAndTeamData,
+                            repository,
+                            prNumber,
+                        }),
+                    { label: `genRules:getFiles PR#${prNumber}` },
+                ),
             ]);
 
         return {

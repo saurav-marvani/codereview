@@ -41,12 +41,7 @@
 
 import 'dotenv/config';
 
-import {
-    generateText,
-    Output,
-    jsonSchema,
-    type LanguageModel,
-} from 'ai';
+import { generateText, Output, jsonSchema, type LanguageModel } from 'ai';
 
 import {
     byokToVercelModel,
@@ -504,7 +499,10 @@ async function probeRetryFallback(): Promise<{
                         code: 'invalid_response_format',
                     },
                 }),
-                { status: 400, headers: { 'content-type': 'application/json' } },
+                {
+                    status: 400,
+                    headers: { 'content-type': 'application/json' },
+                },
             );
         }
         // Second call: succeed.
@@ -645,8 +643,7 @@ async function probeNoFutileRetry(): Promise<{ ok: boolean; summary: string }> {
     const first = captured[0]?.body?.response_format;
     // Exactly one call, it was json_object (gate OFF), and the error
     // propagated instead of triggering a doomed retry.
-    const ok =
-        captured.length === 1 && first?.type === 'json_object' && threw;
+    const ok = captured.length === 1 && first?.type === 'json_object' && threw;
     return {
         ok,
         summary: `calls=${captured.length} (expect 1) first=${JSON.stringify(
@@ -693,12 +690,14 @@ async function probeCacheIsolation(): Promise<{
             return new Response(
                 JSON.stringify({
                     error: {
-                        message:
-                            'response_format json_schema is not supported',
+                        message: 'response_format json_schema is not supported',
                         type: 'invalid_request_error',
                     },
                 }),
-                { status: 400, headers: { 'content-type': 'application/json' } },
+                {
+                    status: 400,
+                    headers: { 'content-type': 'application/json' },
+                },
             );
         }
         return new Response(
@@ -710,11 +709,18 @@ async function probeCacheIsolation(): Promise<{
                 choices: [
                     {
                         index: 0,
-                        message: { role: 'assistant', content: '{"answer":"ok"}' },
+                        message: {
+                            role: 'assistant',
+                            content: '{"answer":"ok"}',
+                        },
                         finish_reason: 'stop',
                     },
                 ],
-                usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 },
+                usage: {
+                    prompt_tokens: 8,
+                    completion_tokens: 4,
+                    total_tokens: 12,
+                },
             }),
             { status: 200, headers: { 'content-type': 'application/json' } },
         );

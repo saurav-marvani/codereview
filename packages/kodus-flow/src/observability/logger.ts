@@ -316,12 +316,34 @@ function sanitizeString(value: string): string {
 }
 
 /**
+ * Hard cap on recursion depth for `deepSanitize`. The default V8 stack
+ * holds ~10k frames before throwing RangeError; we trim well below that
+ * because legitimate log payloads never need anywhere near this depth.
+ *
+ * Why this matters: an AxiosError carries the full Node HTTP agent chain
+ * (`err.request.agent.sockets[host][0]._httpMessage.agent.sockets...`),
+ * and in long-running workers under load that graph can reach
+ * thousands of levels. The WeakSet cycle guard below catches cycles but
+ * does NOT bound depth — so a non-cyclic but deeply-nested object would
+ * still overflow. In production this manifested as every per-file fetch
+ * failure on the AzureReposService falling back to the safety-net
+ * `console.error` path with `loggerErrorName: "RangeError"`, losing
+ * structured info AND burning CPU on the failed serialization attempts.
+ */
+const DEEP_SANITIZE_MAX_DEPTH = 24;
+
+/**
  * Deep-sanitizes an object, redacting sensitive keys at any depth.
  * Also strips URL-embedded credentials from string values.
  * Uses structural sharing: returns the original reference when nothing changed,
  * so clean metadata incurs zero allocation overhead.
+ *
+ * Depth-bounded: stops recursing past `DEEP_SANITIZE_MAX_DEPTH` and
+ * returns a `[Max-Depth]` marker. This is the difference between
+ * "lost log line" and "truncated-but-present log line" when something
+ * upstream hands us a Node HTTP agent / AxiosError graph.
  */
-function deepSanitize(obj: any, seen?: WeakSet<object>): any {
+function deepSanitize(obj: any, seen?: WeakSet<object>, depth = 0): any {
     if (obj === null || typeof obj !== 'object') {
         if (typeof obj === 'string') {
             const sanitized = sanitizeString(obj);
@@ -343,6 +365,10 @@ function deepSanitize(obj: any, seen?: WeakSet<object>): any {
         return '[Request]';
     }
 
+    if (depth >= DEEP_SANITIZE_MAX_DEPTH) {
+        return '[Max-Depth]';
+    }
+
     // Lazily create WeakSet only when we actually recurse into a nested object.
     const refs = seen ?? new WeakSet();
     if (refs.has(obj)) return '[Circular]';
@@ -352,7 +378,7 @@ function deepSanitize(obj: any, seen?: WeakSet<object>): any {
         let changed = false;
         const out: any[] = [];
         for (const item of obj) {
-            const sanitized = deepSanitize(item, refs);
+            const sanitized = deepSanitize(item, refs, depth + 1);
             out.push(sanitized);
             if (sanitized !== item) changed = true;
         }
@@ -367,7 +393,7 @@ function deepSanitize(obj: any, seen?: WeakSet<object>): any {
             out[key] = '[REDACTED]';
             changed = true;
         } else {
-            const val = deepSanitize(obj[key], refs);
+            const val = deepSanitize(obj[key], refs, depth + 1);
             out[key] = val;
             if (val !== obj[key]) changed = true;
         }

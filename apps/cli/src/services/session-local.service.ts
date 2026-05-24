@@ -105,7 +105,7 @@ export async function listStaleSessions(
 
     const stale: StaleSession[] = [];
     for (const result of results) {
-        if (result.status !== 'fulfilled') continue;
+        if (result.status !== 'fulfilled') {continue;}
         const ageMs = now - result.value.mtimeMs;
         if (ageMs > maxAgeMs) {
             stale.push({

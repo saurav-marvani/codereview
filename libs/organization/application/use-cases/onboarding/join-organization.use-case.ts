@@ -174,23 +174,22 @@ export class JoinOrganizationUseCase implements IUseCase {
                 });
             }
 
-            this.logger.log({
-                message: 'User joined organization',
-                context: JoinOrganizationUseCase.name,
-                serviceName: JoinOrganizationUseCase.name,
-                metadata: { userId, organizationId },
-            });
-
             await this.cleanUp(originalOrgId);
 
             return updatedUser.toObject();
         } catch (error) {
             this.logger.error({
-                message: 'Error joining organization',
+                message: `join_org step=error ${(error as Error)?.message}`,
                 error,
                 context: JoinOrganizationUseCase.name,
                 serviceName: JoinOrganizationUseCase.name,
-                metadata: { userId, organizationId },
+                metadata: {
+                    step: 'error',
+                    userId,
+                    organizationId,
+                    errorMessage: (error as Error)?.message,
+                    errorName: (error as Error)?.name,
+                },
             });
 
             throw error;

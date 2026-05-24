@@ -37,6 +37,8 @@ import { SessionEventModel } from './infrastructure/repositories/schemas/session
 import { SessionEventRepository } from './infrastructure/repositories/session-event.repository';
 import { AuthenticatedRateLimiterService } from './infrastructure/services/authenticated-rate-limiter.service';
 import { TrialRateLimiterService } from './infrastructure/services/trial-rate-limiter.service';
+import { TRIAL_RATE_LIMITER_SERVICE_TOKEN } from './domain/contracts/trial-rate-limiter.service.contract';
+import { AUTHENTICATED_RATE_LIMITER_SERVICE_TOKEN } from './domain/contracts/authenticated-rate-limiter.service.contract';
 
 // External dependencies
 import { AutomationModule } from '@libs/automation/modules/automation.module';
@@ -136,8 +138,16 @@ import { OutboxMessageModel } from '@libs/core/workflow/infrastructure/repositor
 
         // Services
         CliInputConverter,
-        TrialRateLimiterService,
-        AuthenticatedRateLimiterService,
+        // Rate limiters are injected by interface via DI tokens (see the
+        // domain contracts). Bind the token → concrete class here.
+        {
+            provide: TRIAL_RATE_LIMITER_SERVICE_TOKEN,
+            useClass: TrialRateLimiterService,
+        },
+        {
+            provide: AUTHENTICATED_RATE_LIMITER_SERVICE_TOKEN,
+            useClass: AuthenticatedRateLimiterService,
+        },
         CliSessionCaptureRepository,
         SessionEventRepository,
     ],
@@ -154,8 +164,8 @@ import { OutboxMessageModel } from '@libs/core/workflow/infrastructure/repositor
         ClassifySessionUseCase,
         CliReviewJobProcessorService,
         SessionEventRepository,
-        TrialRateLimiterService,
-        AuthenticatedRateLimiterService,
+        TRIAL_RATE_LIMITER_SERVICE_TOKEN,
+        AUTHENTICATED_RATE_LIMITER_SERVICE_TOKEN,
         SessionEventRepository,
         ClassifySessionUseCase,
         JOB_QUEUE_SERVICE_TOKEN,

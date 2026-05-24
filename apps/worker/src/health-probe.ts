@@ -194,7 +194,7 @@ export function startHealthProbe(opts: HealthProbeOptions): http.Server {
     });
 
     server.listen(port, '0.0.0.0', () => {
-        // eslint-disable-next-line no-console
+         
         console.log(
             `[Worker] Health probe listening on :${port}/health (checking ${requiredChannels.length} channels)`,
         );

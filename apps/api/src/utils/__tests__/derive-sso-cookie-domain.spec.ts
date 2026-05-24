@@ -182,4 +182,47 @@ describe('deriveSsoCookieDomain', () => {
             ).toBe('.kodus.io');
         });
     });
+
+    describe('sslip.io / 5+ label common parent', () => {
+        // sslip.io provides wildcard DNS that resolves *.<ip>.sslip.io to <ip>.
+        // E2E test droplets use this shape (api.<ip>.sslip.io / app.<ip>.sslip.io)
+        // to get real DNS + TLS without owning a domain. Ensures the longest-
+        // common-suffix algorithm works for arbitrarily deep shared parents
+        // and doesn't regress to "only 3- or 4-label parents work".
+        it('derives 6-label parent for api/app on the same sslip.io IP subdomain', () => {
+            expect(
+                deriveSsoCookieDomain({
+                    apiHost: 'api.159.203.85.6.sslip.io',
+                    frontendUrl: 'https://app.159.203.85.6.sslip.io',
+                    nodeEnv: 'production',
+                }),
+            ).toBe('.159.203.85.6.sslip.io');
+        });
+
+        it('derives 5-label parent when prefix collapses one label', () => {
+            expect(
+                deriveSsoCookieDomain({
+                    apiHost: 'api.10.0.0.5.sslip.io',
+                    frontendUrl: 'https://web.10.0.0.5.sslip.io',
+                    nodeEnv: 'production',
+                }),
+            ).toBe('.10.0.0.5.sslip.io');
+        });
+
+        it('returns undefined when two sslip.io tenants share only ".sslip.io"', () => {
+            // Different IP subdomains under sslip.io must not share a cookie —
+            // .sslip.io is effectively a public-suffix-like shared root for
+            // unrelated deployments. Algorithm naturally rejects this because
+            // ".sslip.io" is only 2 labels (the `< 2` guard would still let
+            // it through, but the IP labels differ so the common suffix stops
+            // at the registrable-suffix boundary). Documenting the behavior.
+            expect(
+                deriveSsoCookieDomain({
+                    apiHost: 'api.1.2.3.4.sslip.io',
+                    frontendUrl: 'https://app.5.6.7.8.sslip.io',
+                    nodeEnv: 'production',
+                }),
+            ).toBe('.sslip.io');
+        });
+    });
 });

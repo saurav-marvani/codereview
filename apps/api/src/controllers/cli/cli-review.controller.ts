@@ -4,10 +4,15 @@ import { GetCliReviewJobStatusUseCase } from '@libs/cli-review/application/use-c
 import { IngestSessionEventUseCase } from '@libs/cli-review/application/use-cases/ingest-session-event.use-case';
 import { SubmitCliSessionCaptureUseCase } from '@libs/cli-review/application/use-cases/submit-cli-session-capture.use-case';
 import { WaitForCliReviewJobUseCase } from '@libs/cli-review/application/use-cases/wait-for-cli-review-job.use-case';
-import { AuthenticatedRateLimiterService } from '@libs/cli-review/infrastructure/services/authenticated-rate-limiter.service';
-import { TrialRateLimiterService } from '@libs/cli-review/infrastructure/services/trial-rate-limiter.service';
+import {
+    AUTHENTICATED_RATE_LIMITER_SERVICE_TOKEN,
+    IAuthenticatedRateLimiterService,
+} from '@libs/cli-review/domain/contracts/authenticated-rate-limiter.service.contract';
+import {
+    ITrialRateLimiterService,
+    TRIAL_RATE_LIMITER_SERVICE_TOKEN,
+} from '@libs/cli-review/domain/contracts/trial-rate-limiter.service.contract';
 import { JobStatus } from '@libs/core/workflow/domain/enums/job-status.enum';
-import { CliReviewResponse } from '@libs/cli-review/domain/types/cli-review.types';
 import {
     ITeamCliKeyService,
     TEAM_CLI_KEY_SERVICE_TOKEN,
@@ -26,7 +31,6 @@ import {
     HttpException,
     HttpStatus,
     Inject,
-    NotFoundException,
     Param,
     Post,
     Query,
@@ -95,8 +99,10 @@ export class CliReviewController {
         private readonly waitForCliReviewJobUseCase: WaitForCliReviewJobUseCase,
         private readonly ingestSessionEventUseCase: IngestSessionEventUseCase,
         private readonly submitCliSessionCaptureUseCase: SubmitCliSessionCaptureUseCase,
-        private readonly trialRateLimiter: TrialRateLimiterService,
-        private readonly authenticatedRateLimiter: AuthenticatedRateLimiterService,
+        @Inject(TRIAL_RATE_LIMITER_SERVICE_TOKEN)
+        private readonly trialRateLimiter: ITrialRateLimiterService,
+        @Inject(AUTHENTICATED_RATE_LIMITER_SERVICE_TOKEN)
+        private readonly authenticatedRateLimiter: IAuthenticatedRateLimiterService,
         @Inject(TEAM_CLI_KEY_SERVICE_TOKEN)
         private readonly teamCliKeyService: ITeamCliKeyService,
         @Inject(TEAM_SERVICE_TOKEN)

@@ -29,6 +29,8 @@ export interface LLMConfigStatus {
         providerId?: EnvLLMProviderId;
         baseUrl?: string;
         vertexLocation?: string;
+        /** Parsed `API_LLM_TEMPERATURE_OVERRIDE`; only present when set. */
+        temperatureOverride?: number;
     };
 }
 
@@ -75,6 +77,11 @@ export class GetLLMConfigStatusUseCase implements IUseCase {
                   providerId: envDescriptor.providerId,
                   baseUrl: envDescriptor.baseUrl,
                   vertexLocation: envDescriptor.vertexLocation,
+                  // Surfaced so the dashboard can show "your env clamps
+                  // every LLM call to N" instead of leaving admins
+                  // guessing why hard-coded prompt temperatures are
+                  // ignored.
+                  temperatureOverride: envDescriptor.temperatureOverride,
               }
             : { configured: false };
 
