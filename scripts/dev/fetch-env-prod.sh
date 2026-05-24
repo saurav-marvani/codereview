@@ -142,6 +142,7 @@ KEYS=(
     "/prod/kodus-orchestrator/API_KODUS_MCP_SERVER_URL"
 
     "/prod/kodus-orchestrator/API_OPENROUTER_KEY"
+    "/prod/kodus-orchestrator/API_LLM_TEMPERATURE_OVERRIDE"
 
     "/prod/kodus-orchestrator/API_URL"
     "/prod/kodus-orchestrator/API_FRONTEND_URL"
