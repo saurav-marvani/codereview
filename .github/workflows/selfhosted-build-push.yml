@@ -1,20 +1,4 @@
-name: "Self-Hosted: Release, Build, Validate and Publish"
-
-# Self-hosted release pipeline with mandatory E2E validation before any
-# customer-visible tag is published.
-#
-# Flow:
-#   1) plan-release           — compute final version + RC version
-#   2) create-rc-tag          — push selfhosted-X.Y.Z-rc.<run> at the SHA
-#   3) build-and-push (RC)    — build images and push :X.Y.Z-rc.<run> ONLY
-#                                (no :X.Y.Z, no :latest yet)
-#   4) e2e-self-hosted-matrix — provider × license matrix against the RC
-#                                (workflow_call into e2e-self-hosted-matrix.yml)
-#   5) promote                — retag :rc → :X.Y.Z + :latest, push final
-#                                git tag, create GitHub Release
-#                                (workflow_call into selfhosted-promote.yml)
-#   6) cli-changes/cli-release — only fires after promote
-#   7) changelog-publish      — only fires after promote, on FINAL tag
+name: "Self-Hosted: Release, Build and Publish"
 
 on:
     workflow_dispatch:
@@ -30,131 +14,129 @@ on:
                     - major
                     - custom
             custom_version:
-                description: "Custom self-hosted version (e.g. 0.12.0 or selfhosted-0.12.0) - required if type is custom"
+                description: "Custom self-hosted version (e.g. 0.12.0 or selfhosted-0.12.0) -
+                    required if type is custom"
                 required: false
 
 jobs:
-    plan-release:
-        name: Plan release (compute version and RC version)
+    create-release:
+        name: Create Release and Tag
         runs-on: ubuntu-latest
         outputs:
-            release_version: ${{ steps.bump.outputs.release_version }}
             release_tag: ${{ steps.bump.outputs.release_tag }}
-            rc_version: ${{ steps.bump.outputs.rc_version }}
-            rc_tag: ${{ steps.bump.outputs.rc_tag }}
+            release_version: ${{ steps.bump.outputs.release_version }}
         permissions:
-            contents: read
+            contents: write
         steps:
             - name: Checkout Repository
               uses: actions/checkout@v6.0.2
               with:
                   fetch-depth: 0
 
-            - name: Get latest final tag
+            - name: Get Latest Release
               id: get_latest
               run: |
                   set -euo pipefail
+                  # Get latest self-hosted semver tag
                   LATEST_TAG=$(git tag --sort=-v:refname | awk '/^selfhosted-[0-9]+\.[0-9]+\.[0-9]+$/{print; exit}')
                   if [ -z "${LATEST_TAG}" ]; then
                     LATEST_TAG="selfhosted-0.0.0"
                   fi
-                  echo "Latest final self-hosted tag: $LATEST_TAG"
+                  echo "Latest self-hosted tag: $LATEST_TAG"
                   echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
 
-            - name: Bump version
+            - name: Bump Version
               id: bump
               run: |
                   set -euo pipefail
                   LATEST="${{ steps.get_latest.outputs.latest_tag }}"
                   if [[ ! "$LATEST" =~ ^selfhosted-[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                    echo "Invalid latest tag: $LATEST"; exit 1
+                    echo "Invalid latest tag format: $LATEST (expected selfhosted-MAJOR.MINOR.PATCH)"
+                    exit 1
                   fi
+
                   VERSION=${LATEST#selfhosted-}
+
                   IFS='.' read -r -a parts <<< "$VERSION"
-                  MAJOR=${parts[0]}; MINOR=${parts[1]}; PATCH=${parts[2]}
+                  MAJOR=${parts[0]}
+                  MINOR=${parts[1]}
+                  PATCH=${parts[2]}
+
                   TYPE="${{ github.event.inputs.version_type }}"
 
                   if [ "$TYPE" == "custom" ]; then
                     NEW_VERSION="${{ github.event.inputs.custom_version }}"
                     if [ -z "$NEW_VERSION" ]; then
-                      echo "custom_version is required when version_type=custom"; exit 1
+                      echo "custom_version is required when version_type=custom"
+                      exit 1
                     fi
+                    # Normalize accepted custom formats: selfhosted-x.y.z, vX.Y.Z or X.Y.Z
                     NEW_VERSION=${NEW_VERSION#selfhosted-}
                     NEW_VERSION=${NEW_VERSION#v}
                     if [[ ! "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                      echo "Invalid custom version: $NEW_VERSION (expected MAJOR.MINOR.PATCH)"; exit 1
+                      echo "Invalid custom version: $NEW_VERSION (expected MAJOR.MINOR.PATCH)"
+                      exit 1
                     fi
                   elif [ "$TYPE" == "major" ]; then
-                    MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0
+                    MAJOR=$((MAJOR + 1))
+                    MINOR=0
+                    PATCH=0
                     NEW_VERSION="$MAJOR.$MINOR.$PATCH"
                   elif [ "$TYPE" == "minor" ]; then
-                    MINOR=$((MINOR + 1)); PATCH=0
+                    MINOR=$((MINOR + 1))
+                    PATCH=0
                     NEW_VERSION="$MAJOR.$MINOR.$PATCH"
                   else
                     PATCH=$((PATCH + 1))
                     NEW_VERSION="$MAJOR.$MINOR.$PATCH"
                   fi
 
-                  RC_VERSION="${NEW_VERSION}-rc.${{ github.run_number }}"
                   RELEASE_TAG="selfhosted-${NEW_VERSION}"
-                  RC_TAG="selfhosted-${RC_VERSION}"
+                  echo "New self-hosted version: $NEW_VERSION"
+                  echo "New self-hosted tag: $RELEASE_TAG"
+                  echo "release_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+                  echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
 
-                  echo "Final version : $NEW_VERSION"
-                  echo "Final tag     : $RELEASE_TAG"
-                  echo "RC version    : $RC_VERSION"
-                  echo "RC tag        : $RC_TAG"
-
-                  {
-                    echo "release_version=$NEW_VERSION"
-                    echo "release_tag=$RELEASE_TAG"
-                    echo "rc_version=$RC_VERSION"
-                    echo "rc_tag=$RC_TAG"
-                  } >> $GITHUB_OUTPUT
-
-    create-rc-tag:
-        name: Create RC git tag at current SHA
-        needs: plan-release
-        runs-on: ubuntu-latest
-        permissions:
-            contents: write
-        outputs:
-            rc_sha: ${{ steps.tag.outputs.rc_sha }}
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v6.0.2
-
-            - name: Push RC tag
-              id: tag
+            - name: Ensure Git Tag Exists
               env:
-                  RC_TAG: ${{ needs.plan-release.outputs.rc_tag }}
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
                   set -euo pipefail
-                  if git ls-remote --exit-code --tags origin "refs/tags/${RC_TAG}" >/dev/null 2>&1; then
-                    echo "RC tag ${RC_TAG} already exists. Reusing."
-                  else
-                    git config user.name "GitHub Actions"
-                    git config user.email "actions@github.com"
-                    git tag "${RC_TAG}"
-                    git push origin "${RC_TAG}"
+                  TAG="${{ steps.bump.outputs.release_tag }}"
+                  if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" > /dev/null 2>&1; then
+                    echo "Tag ${TAG} already exists on origin. Skipping creation."
+                    exit 0
                   fi
-                  echo "rc_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+                  git config user.name "GitHub Actions"
+                  git config user.email "actions@github.com"
+                  git tag "${TAG}"
+                  git push origin "${TAG}"
+
+            - name: Create GitHub Release
+              uses: softprops/action-gh-release@v2.0.4
+              with:
+                  tag_name: ${{ steps.bump.outputs.release_tag }}
+                  name: "Self-Hosted Release ${{ steps.bump.outputs.release_version }}"
+                  generate_release_notes: true
+                  prerelease: false
 
     build-and-push:
-        name: Build and Push RC Docker Images
-        needs:
-            - plan-release
-            - create-rc-tag
+        name: Build and Push Docker Images
+        needs: create-release
         runs-on: ubuntu-latest
         environment: production
         permissions:
             contents: read
             packages: write
+            # Required by github/codeql-action/upload-sarif to publish
+            # Trivy findings to the repo's Security tab.
             security-events: write
         steps:
-            - name: Checkout RC tag
+            - name: Checkout Repository
               uses: actions/checkout@v6.0.2
               with:
-                  ref: ${{ needs.plan-release.outputs.rc_tag }}
+                  ref: ${{ needs.create-release.outputs.release_tag }}
 
             - name: Set up QEMU
               uses: docker/setup-qemu-action@v4.0.0
@@ -171,33 +153,51 @@ jobs:
                   username: ${{ github.actor }}
                   password: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Build and push RC images
+            - name: Build and Push Docker Images
               env:
-                  # IMPORTANT: only the RC tag is pushed here. The final
-                  # X.Y.Z tag and :latest are minted by selfhosted-promote.yml
-                  # after the matrix E2E passes — never by this job.
-                  RC_VERSION: ${{ needs.plan-release.outputs.rc_version }}
-                  RELEASE_VERSION_FINAL: ${{ needs.plan-release.outputs.release_version }}
-                  OWNER: ${{ github.repository_owner }}
-                  API_TAGS: ghcr.io/${{ github.repository_owner }}/kodus-ai-api:${{ needs.plan-release.outputs.rc_version }}
-                  WEBHOOKS_TAGS: ghcr.io/${{ github.repository_owner }}/kodus-ai-webhook:${{ needs.plan-release.outputs.rc_version }}
-                  WORKER_TAGS: ghcr.io/${{ github.repository_owner }}/kodus-ai-worker:${{ needs.plan-release.outputs.rc_version }}
-                  WEB_TAGS: ghcr.io/${{ github.repository_owner }}/kodus-ai-web:${{ needs.plan-release.outputs.rc_version }}
-                  MCP_MANAGER_TAGS: ghcr.io/${{ github.repository_owner }}/kodus-mcp-manager:${{ needs.plan-release.outputs.rc_version }}
+                  TAG: ${{ needs.create-release.outputs.release_version }}
+                  API_TAGS: ghcr.io/${{ github.repository_owner }}/kodus-ai-api:${{
+                      needs.create-release.outputs.release_version
+                      }},ghcr.io/${{ github.repository_owner
+                      }}/kodus-ai-api:latest
+                  WEBHOOKS_TAGS: ghcr.io/${{ github.repository_owner }}/kodus-ai-webhook:${{
+                      needs.create-release.outputs.release_version
+                      }},ghcr.io/${{ github.repository_owner
+                      }}/kodus-ai-webhook:latest
+                  WORKER_TAGS: ghcr.io/${{ github.repository_owner }}/kodus-ai-worker:${{
+                      needs.create-release.outputs.release_version
+                      }},ghcr.io/${{ github.repository_owner
+                      }}/kodus-ai-worker:latest
+                  WEB_TAGS: ghcr.io/${{ github.repository_owner }}/kodus-ai-web:${{
+                      needs.create-release.outputs.release_version
+                      }},ghcr.io/${{ github.repository_owner
+                      }}/kodus-ai-web:latest
+                  MCP_MANAGER_TAGS: ghcr.io/${{ github.repository_owner }}/kodus-mcp-manager:${{
+                      needs.create-release.outputs.release_version
+                      }},ghcr.io/${{ github.repository_owner
+                      }}/kodus-mcp-manager:latest
               run: |
                   set -euo pipefail
+
                   docker buildx bake -f docker-bake.hcl \
-                    --set base.args.RELEASE_VERSION=${RELEASE_VERSION_FINAL} \
+                    --set base.args.RELEASE_VERSION=${TAG} \
                     --set base.args.API_CLOUD_MODE=false \
                     --set base.cache-from=type=gha \
                     --set base.cache-to=type=gha,mode=max \
                     --set *.platform=linux/amd64,linux/arm64 \
                     --push
 
+            # ---- CVE scan -----------------------------------------------------
+            # Trivy scans each published image for CRITICAL/HIGH CVEs with a
+            # known fix available (`ignore-unfixed: true` skips noise from
+            # distro packages that have no patch yet). `exit-code: 0` makes
+            # findings advisory for now — flip to `1` once the current backlog
+            # is triaged so new criticals block the release.
             - name: Trivy scan — kodus-ai-api
               uses: aquasecurity/trivy-action@v0.36.0
               with:
-                  image-ref: ghcr.io/${{ github.repository_owner }}/kodus-ai-api:${{ needs.plan-release.outputs.rc_version }}
+                  image-ref: ghcr.io/${{ github.repository_owner }}/kodus-ai-api:${{
+                      needs.create-release.outputs.release_version }}
                   format: "sarif"
                   output: "trivy-api.sarif"
                   severity: "CRITICAL,HIGH"
@@ -207,7 +207,8 @@ jobs:
             - name: Trivy scan — kodus-ai-webhook
               uses: aquasecurity/trivy-action@v0.36.0
               with:
-                  image-ref: ghcr.io/${{ github.repository_owner }}/kodus-ai-webhook:${{ needs.plan-release.outputs.rc_version }}
+                  image-ref: ghcr.io/${{ github.repository_owner }}/kodus-ai-webhook:${{
+                      needs.create-release.outputs.release_version }}
                   format: "sarif"
                   output: "trivy-webhook.sarif"
                   severity: "CRITICAL,HIGH"
@@ -217,7 +218,8 @@ jobs:
             - name: Trivy scan — kodus-ai-worker
               uses: aquasecurity/trivy-action@v0.36.0
               with:
-                  image-ref: ghcr.io/${{ github.repository_owner }}/kodus-ai-worker:${{ needs.plan-release.outputs.rc_version }}
+                  image-ref: ghcr.io/${{ github.repository_owner }}/kodus-ai-worker:${{
+                      needs.create-release.outputs.release_version }}
                   format: "sarif"
                   output: "trivy-worker.sarif"
                   severity: "CRITICAL,HIGH"
@@ -227,7 +229,8 @@ jobs:
             - name: Trivy scan — kodus-ai-web
               uses: aquasecurity/trivy-action@v0.36.0
               with:
-                  image-ref: ghcr.io/${{ github.repository_owner }}/kodus-ai-web:${{ needs.plan-release.outputs.rc_version }}
+                  image-ref: ghcr.io/${{ github.repository_owner }}/kodus-ai-web:${{
+                      needs.create-release.outputs.release_version }}
                   format: "sarif"
                   output: "trivy-web.sarif"
                   severity: "CRITICAL,HIGH"
@@ -237,64 +240,61 @@ jobs:
             - name: Trivy scan — kodus-mcp-manager
               uses: aquasecurity/trivy-action@v0.36.0
               with:
-                  image-ref: ghcr.io/${{ github.repository_owner }}/kodus-mcp-manager:${{ needs.plan-release.outputs.rc_version }}
+                  image-ref: ghcr.io/${{ github.repository_owner }}/kodus-mcp-manager:${{
+                      needs.create-release.outputs.release_version }}
                   format: "sarif"
                   output: "trivy-mcp-manager.sarif"
                   severity: "CRITICAL,HIGH"
                   ignore-unfixed: true
                   exit-code: "0"
 
+            # CodeQL Action v4 rejects multiple SARIF runs sharing a
+            # category — one upload step per image with its own category.
             - name: Upload Trivy SARIF — api
               uses: github/codeql-action/upload-sarif@v4
-              with: { sarif_file: trivy-api.sarif, category: trivy-selfhosted-api }
+              with:
+                  sarif_file: trivy-api.sarif
+                  category: trivy-selfhosted-api
+
             - name: Upload Trivy SARIF — webhook
               uses: github/codeql-action/upload-sarif@v4
-              with: { sarif_file: trivy-webhook.sarif, category: trivy-selfhosted-webhook }
+              with:
+                  sarif_file: trivy-webhook.sarif
+                  category: trivy-selfhosted-webhook
+
             - name: Upload Trivy SARIF — worker
               uses: github/codeql-action/upload-sarif@v4
-              with: { sarif_file: trivy-worker.sarif, category: trivy-selfhosted-worker }
+              with:
+                  sarif_file: trivy-worker.sarif
+                  category: trivy-selfhosted-worker
+
             - name: Upload Trivy SARIF — web
               uses: github/codeql-action/upload-sarif@v4
-              with: { sarif_file: trivy-web.sarif, category: trivy-selfhosted-web }
+              with:
+                  sarif_file: trivy-web.sarif
+                  category: trivy-selfhosted-web
+
             - name: Upload Trivy SARIF — mcp-manager
               uses: github/codeql-action/upload-sarif@v4
-              with: { sarif_file: trivy-mcp-manager.sarif, category: trivy-selfhosted-mcp-manager }
-
-    e2e-matrix:
-        name: E2E matrix (provider × license)
-        needs:
-            - plan-release
-            - build-and-push
-        permissions:
-            contents: read
-            packages: read
-        uses: ./.github/workflows/e2e-self-hosted-matrix.yml
-        with:
-            image_tag: ${{ needs.plan-release.outputs.rc_tag }}
-            matrix_file: matrix/fast.yml
-        secrets: inherit
-
-    promote:
-        name: Promote RC to final
-        needs:
-            - plan-release
-            - e2e-matrix
-        permissions:
-            contents: write
-            packages: write
-        uses: ./.github/workflows/selfhosted-promote.yml
-        with:
-            rc_version: ${{ needs.plan-release.outputs.rc_version }}
-            release_version: ${{ needs.plan-release.outputs.release_version }}
-            release_tag: ${{ needs.plan-release.outputs.release_tag }}
-        secrets: inherit
+              with:
+                  sarif_file: trivy-mcp-manager.sarif
+                  category: trivy-selfhosted-mcp-manager
 
     cli-changes:
         name: Detect CLI changes since last release
         needs:
-            - plan-release
-            - promote
-        if: needs.promote.result == 'success'
+            - create-release
+            - build-and-push
+            # Serialize against `changelog-publish`, which may push a
+            # `docs(changelog)` commit to main. If both jobs raced, the
+            # loser would hit a non-fast-forward and either drop the
+            # changelog commit or abort the CLI release. Checking out
+            # main after `changelog-publish` finishes guarantees we
+            # bump on top of its commit when there is one.
+            - changelog-publish
+        # `always()` so a `changelog-publish` failure (e.g. Gemini
+        # outage) doesn't gate the independent CLI release path.
+        if: always() && needs.build-and-push.result == 'success'
         runs-on: ubuntu-latest
         permissions:
             contents: write
@@ -309,31 +309,46 @@ jobs:
                   ref: main
                   fetch-depth: 0
                   fetch-tags: true
+                  # Main is protected by a ruleset that requires PRs.
+                  # The default GITHUB_TOKEN cannot bypass it; only the
+                  # OrganizationAdmin actor can. RELEASE_BOT_TOKEN must
+                  # be a fine-grained PAT minted by an org admin with
+                  # `contents: write` on this repo — its bypass rights
+                  # are inherited from the underlying admin user.
                   token: ${{ secrets.RELEASE_BOT_TOKEN }}
 
             - name: Detect CLI changes
               id: detect
               env:
-                  RELEASE_TAG: ${{ needs.plan-release.outputs.release_tag }}
+                  RELEASE_TAG: ${{ needs.create-release.outputs.release_tag }}
               run: |
                   set -euo pipefail
+
                   LAST_TAG=$(git tag --sort=-v:refname | awk '/^cli-v[0-9]+\.[0-9]+\.[0-9]+$/{print; exit}')
                   if [ -z "$LAST_TAG" ]; then
+                      echo "No previous cli-v* tag — treating as first release."
                       CHANGED=1
                   else
+                      echo "Comparing $LAST_TAG..$RELEASE_TAG for apps/cli/ changes"
                       CHANGED=$(git diff --name-only "$LAST_TAG" "$RELEASE_TAG" -- apps/cli/ | wc -l | xargs)
                   fi
+                  echo "Changed file count: $CHANGED"
+
                   CURRENT_VERSION=$(node -p "require('./apps/cli/package.json').version")
+                  echo "Current apps/cli version: $CURRENT_VERSION"
+
                   if [ "$CHANGED" -gt 0 ]; then
                       IFS='.' read -ra PARTS <<< "$CURRENT_VERSION"
                       NEW_VERSION="${PARTS[0]}.${PARTS[1]}.$((PARTS[2] + 1))"
                       NEW_TAG="cli-v$NEW_VERSION"
+                      echo "CLI changes present — bumping $CURRENT_VERSION -> $NEW_VERSION ($NEW_TAG)"
                       {
                           echo "should_release=true"
                           echo "new_version=$NEW_VERSION"
                           echo "new_tag=$NEW_TAG"
                       } >> "$GITHUB_OUTPUT"
                   else
+                      echo "No CLI changes since $LAST_TAG; skipping CLI release."
                       echo "should_release=false" >> "$GITHUB_OUTPUT"
                   fi
 
@@ -344,6 +359,7 @@ jobs:
                   NEW_TAG: ${{ steps.detect.outputs.new_tag }}
               run: |
                   set -euo pipefail
+
                   node -e "
                       const fs = require('fs');
                       const path = './apps/cli/package.json';
@@ -351,10 +367,16 @@ jobs:
                       pkg.version = process.env.NEW_VERSION;
                       fs.writeFileSync(path, JSON.stringify(pkg, null, 4) + '\n');
                   "
+
                   git config user.name "kodus-release-bot"
                   git config user.email "actions@kodus.io"
                   git add apps/cli/package.json
                   git commit -m "chore(cli): bump version to $NEW_VERSION"
+                  # Push the bump commit and the tag separately so a
+                  # transient main divergence (rare, but possible if
+                  # someone merged between create-release and this job)
+                  # fails fast with a clear message instead of leaving an
+                  # orphan tag behind.
                   git push origin HEAD:main
                   git tag "$NEW_TAG"
                   git push origin "$NEW_TAG"
@@ -364,6 +386,10 @@ jobs:
         needs:
             - cli-changes
         if: needs.cli-changes.outputs.should_release == 'true'
+        # GITHUB_TOKEN pushes don't cascade into other workflows, so
+        # cli-release.yml's `push: tags` trigger would never fire for
+        # the tag we just pushed. Call it explicitly via workflow_call
+        # instead.
         permissions:
             contents: write
             id-token: write
@@ -373,52 +399,28 @@ jobs:
         secrets: inherit
 
     changelog-publish:
-        name: Publish changelog (final tag)
+        name: Publish changelog
         needs:
-            - plan-release
-            - promote
-        if: needs.promote.result == 'success'
+            - create-release
+            - build-and-push
+        if: needs.build-and-push.result == 'success'
+        # Same cascading-events restriction as cli-release: the
+        # selfhosted-X.Y.Z tag was pushed by GITHUB_TOKEN above, so the
+        # changelog-publish.yml `push: tags` trigger does not fire. Invoke
+        # the publish workflow directly.
         permissions:
             contents: write
         uses: ./.github/workflows/changelog-publish.yml
         with:
-            tag: ${{ needs.plan-release.outputs.release_tag }}
+            tag: ${{ needs.create-release.outputs.release_tag }}
         secrets: inherit
-
-    cleanup-rc-tag:
-        name: Cleanup RC tag on success
-        needs:
-            - plan-release
-            - promote
-        if: needs.promote.result == 'success'
-        runs-on: ubuntu-latest
-        permissions:
-            contents: write
-        steps:
-            - name: Delete RC git tag (now superseded by final tag)
-              env:
-                  RC_TAG: ${{ needs.plan-release.outputs.rc_tag }}
-              run: |
-                  set -euo pipefail
-                  # Keep RC images on GHCR for auditing — only delete the git tag.
-                  # Using GITHUB_TOKEN is fine here; deleting refs doesn't trip
-                  # the same protection as creating them.
-                  git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
-                  git ls-remote --exit-code --tags origin "refs/tags/${RC_TAG}" >/dev/null 2>&1 \
-                    && git push origin --delete "refs/tags/${RC_TAG}" \
-                    || echo "RC tag ${RC_TAG} already gone"
 
     env-sync-installer:
         name: Sync .env.example to kodus-installer
         needs:
-            - plan-release
-            - promote
-        permissions:
-            contents: read
-        # Gated on promote so we don't push env updates to the installer
-        # for an RC that never shipped. plan-release.outputs.release_tag
-        # is the final selfhosted-X.Y.Z (no -rc suffix).
-        if: needs.promote.result == 'success'
+            - create-release
+            - build-and-push
+        if: needs.build-and-push.result == 'success'
         # Same cascading-events restriction as cli-release / changelog-
         # publish: the selfhosted-X.Y.Z tag pushed by GITHUB_TOKEN above
         # would not fire env-sync-release.yml's `push: tags` trigger.
@@ -426,25 +428,16 @@ jobs:
         # kodus-installer get regenerated for every self-hosted release.
         uses: ./.github/workflows/env-sync-release.yml
         with:
-            tag: ${{ needs.plan-release.outputs.release_tag }}
+            tag: ${{ needs.create-release.outputs.release_tag }}
         secrets: inherit
 
     trigger-installer-e2e:
-        name: Trigger legacy self-hosted E2E in kodus-installer
+        name: Trigger self-hosted E2E in kodus-installer
         needs:
-            - plan-release
-            - promote
-        # Fires AFTER promote (final tag exists in GHCR). This is the
-        # legacy single-cell E2E in kodus-installer; the multi-provider
-        # matrix that gates promote lives at e2e-self-hosted-matrix.yml
-        # in this repo. Both run — the installer one is a redundant
-        # post-promote sanity check against the published :latest image.
-        if: needs.promote.result == 'success'
+            - create-release
+            - build-and-push
+        if: needs.build-and-push.result == 'success'
         runs-on: ubuntu-latest
-        # GITHUB_TOKEN isn't used here (we dispatch with CROSS_REPO_PAT),
-        # but declare an explicit empty perms block so the default
-        # write-all token scope doesn't leak in.
-        permissions: {}
         # GITHUB_TOKEN only scopes to this repo, so a cross-repo PAT is
         # needed to fire repository_dispatch into kodustech/kodus-installer.
         # We reuse CROSS_REPO_PAT (already used by env-sync-release.yml to
@@ -455,7 +448,7 @@ jobs:
             - name: Fire repository_dispatch into kodus-installer
               env:
                   GH_TOKEN: ${{ secrets.CROSS_REPO_PAT }}
-                  RELEASE_TAG: ${{ needs.plan-release.outputs.release_tag }}
+                  RELEASE_TAG: ${{ needs.create-release.outputs.release_tag }}
               run: |
                   if [ -z "$GH_TOKEN" ]; then
                       echo "::warning::CROSS_REPO_PAT is not set — skipping E2E dispatch."
@@ -473,33 +466,18 @@ jobs:
     notify-discord-failure:
         name: Notify Discord (failure only)
         needs:
-            - plan-release
+            - create-release
             - build-and-push
-            - e2e-matrix
-            - promote
-        if: always() && (
-            needs.build-and-push.result == 'failure' ||
-            needs.e2e-matrix.result == 'failure' ||
-            needs.promote.result == 'failure'
-            )
+        # Success notifications are owned by `changelog-publish` (rich
+        # release notes via Gemini). This job only fires the failure
+        # path so we still get a Discord ping when the build collapses
+        # before changelog-publish has a chance to run.
+        if: always() && needs.create-release.result == 'success' &&
+            needs.build-and-push.result != 'success'
         runs-on: ubuntu-latest
         environment: production
         permissions: {}
         steps:
-            - name: Compose failure context
-              id: ctx
-              run: |
-                  if [ "${{ needs.e2e-matrix.result }}" = "failure" ]; then
-                    echo "phase=E2E matrix" >> $GITHUB_OUTPUT
-                    echo "color=0xff8800" >> $GITHUB_OUTPUT
-                  elif [ "${{ needs.promote.result }}" = "failure" ]; then
-                    echo "phase=Promotion" >> $GITHUB_OUTPUT
-                    echo "color=0xff0000" >> $GITHUB_OUTPUT
-                  else
-                    echo "phase=Build" >> $GITHUB_OUTPUT
-                    echo "color=0xff0000" >> $GITHUB_OUTPUT
-                  fi
-
             - name: Check Discord webhook configuration
               id: discord-webhook
               run: |
@@ -507,15 +485,18 @@ jobs:
                     echo "configured=true" >> "$GITHUB_OUTPUT"
                   else
                     echo "configured=false" >> "$GITHUB_OUTPUT"
+                    echo "DISCORD_WEBHOOK_SELFHOSTED is not configured for the production environment."
                   fi
 
-            - name: Notify Discord on failure
+            - name: Notify Discord on Failure
               if: steps.discord-webhook.outputs.configured == 'true'
               uses: sarisia/actions-status-discord@v1.16.0
               with:
                   webhook: ${{ secrets.DISCORD_WEBHOOK_SELFHOSTED }}
-                  content: ":x: Self-hosted release `${{ needs.plan-release.outputs.rc_tag }}` failed at: **${{ steps.ctx.outputs.phase }}**. Customer-visible tag `${{ needs.plan-release.outputs.release_tag }}` was NOT created."
-                  title: "Self-Hosted Release Failed (${{ steps.ctx.outputs.phase }})"
-                  description: "RC `${{ needs.plan-release.outputs.rc_tag }}` did not complete. The release process is gated — no customer impact, but check the workflow logs to unblock."
+                  content: ":x: Failed to publish self-hosted release `${{
+                      needs.create-release.outputs.release_tag }}`."
+                  title: "Self-Hosted Release Failed"
+                  description: "The self-hosted release workflow did not complete successfully.
+                      Check the workflow logs for details."
                   username: "GitHub Actions"
-                  color: ${{ steps.ctx.outputs.color }}
+                  color: 0xff0000
