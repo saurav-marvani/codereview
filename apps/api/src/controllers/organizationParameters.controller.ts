@@ -8,7 +8,10 @@ import {
     CheckPolicies,
     PolicyGuard,
 } from '@libs/identity/infrastructure/adapters/services/permissions/policy.guard';
-import { checkPermissions } from '@libs/identity/infrastructure/adapters/services/permissions/policy.handlers';
+import {
+    checkAnyPermission,
+    checkPermissions,
+} from '@libs/identity/infrastructure/adapters/services/permissions/policy.handlers';
 import { IgnoreBotsUseCase } from '@libs/organization/application/use-cases/organizationParameters/ignore-bots.use-case';
 import { CreateOrUpdateOrganizationParametersUseCase } from '@libs/organization/application/use-cases/organizationParameters/create-or-update.use-case';
 import { FindByKeyOrganizationParametersUseCase } from '@libs/organization/application/use-cases/organizationParameters/find-by-key.use-case';
@@ -283,10 +286,19 @@ export class OrganizationParametersController {
     @Get('/llm-config/status')
     @UseGuards(PolicyGuard)
     @CheckPolicies(
-        checkPermissions({
-            action: Action.Read,
-            resource: ResourceType.OrganizationSettings,
-        }),
+        // Non-sensitive descriptor (never the API key). Code review settings
+        // editors need the BYOK provider/model to render the model selector,
+        // so allow either organization-settings or code-review-settings read.
+        checkAnyPermission([
+            {
+                action: Action.Read,
+                resource: ResourceType.OrganizationSettings,
+            },
+            {
+                action: Action.Read,
+                resource: ResourceType.CodeReviewSettings,
+            },
+        ]),
     )
     @ApiOperation({
         summary: 'Get LLM provider configuration status',

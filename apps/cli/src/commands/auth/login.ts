@@ -197,8 +197,8 @@ async function runLegacyLogin(
 function canOpenBrowser(): boolean {
     // Heuristics: a real interactive terminal with no SSH session typically
     // means a developer machine where opening the browser works.
-    if (process.env.SSH_CONNECTION || process.env.SSH_CLIENT) return false;
-    if (process.env.CI) return false;
-    if (!process.stdout.isTTY) return false;
+    if (process.env.SSH_CONNECTION || process.env.SSH_CLIENT) {return false;}
+    if (process.env.CI) {return false;}
+    if (!process.stdout.isTTY) {return false;}
     return true;
 }

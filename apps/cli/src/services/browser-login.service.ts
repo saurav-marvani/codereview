@@ -236,7 +236,7 @@ function timeout<T>(
     return {
         promise,
         cancel: () => {
-            if (timer) clearTimeout(timer);
+            if (timer) {clearTimeout(timer);}
         },
     };
 }

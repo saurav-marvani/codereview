@@ -259,7 +259,7 @@ describe('PullRequestHandlerService — FILE_CONTENT_CONCURRENCY=100 saturation'
         expect(b).toBeDefined();
 
         // Print results so the test output makes the failure mode obvious:
-        // eslint-disable-next-line no-console
+         
         console.log(
             `[stress] regime A (concurrency=100): peak=${a.peak} rateLimited=${a.rateLimited} elapsed=${a.elapsed}ms\n` +
                 `[stress] regime B (concurrency=20):  peak=${b.peak} rateLimited=${b.rateLimited} elapsed=${b.elapsed}ms`,

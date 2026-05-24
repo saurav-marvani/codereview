@@ -16,7 +16,7 @@ if ((process.stderr as any)._handle?.setBlocking) {
 // other handler is installed. Default Node 22 behavior on unhandled
 // rejection is to exit with code 1 — fine, but we want the stack first.
 process.on('unhandledRejection', (reason) => {
-    // eslint-disable-next-line no-console
+     
     console.error(
         '[BOOTSTRAP-EARLY] unhandledRejection before app handler installed:',
         reason instanceof Error ? reason.stack || reason.message : reason,
@@ -24,7 +24,7 @@ process.on('unhandledRejection', (reason) => {
     process.exit(1);
 });
 process.on('uncaughtException', (err) => {
-    // eslint-disable-next-line no-console
+     
     console.error(
         '[BOOTSTRAP-EARLY] uncaughtException before app handler installed:',
         err?.stack || err?.message || err,
@@ -82,7 +82,7 @@ function handleNestJSWebpackHmr(app: INestApplication, module: any) {
 
 async function bootstrap() {
     process.env.COMPONENT_TYPE = 'api';
-    // eslint-disable-next-line no-console
+     
     console.log('[BOOTSTRAP] calling NestFactory.create...');
     // NOTE: `snapshot: true` was removed here. That flag requires
     // `@nestjs/devtools-integration` (not installed in this repo). It
@@ -92,7 +92,7 @@ async function bootstrap() {
     // killed by the health check. Do not re-add without also adding
     // the devtools package.
     const app = await NestFactory.create<NestExpressApplication>(ApiModule);
-    // eslint-disable-next-line no-console
+     
     console.log('[BOOTSTRAP] NestFactory.create returned, wiring app...');
 
     const logger = app.get(LoggerWrapperService);
@@ -322,7 +322,7 @@ bootstrap().catch((err) => {
     // code path inside bootstrap(). Without this, an unhandled
     // rejection causes Node to exit silently on some terminals and
     // the actual stack never reaches CloudWatch.
-    // eslint-disable-next-line no-console
+     
     console.error(
         '[BOOTSTRAP] bootstrap() rejected:',
         err?.stack || err?.message || err,

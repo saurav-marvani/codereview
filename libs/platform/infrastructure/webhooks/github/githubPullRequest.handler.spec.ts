@@ -2,7 +2,6 @@ import { EnqueueImplementationCheckUseCase } from '@libs/code-review/application
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { EnqueueCodeReviewJobUseCase } from '@libs/core/workflow/application/use-cases/enqueue-code-review-job.use-case';
 import {
-    IOutboxMessageRepository,
     OUTBOX_MESSAGE_REPOSITORY_TOKEN,
 } from '@libs/core/workflow/domain/contracts/outbox-message.repository.contract';
 import { GenerateIssuesFromPrClosedUseCase } from '@libs/issues/application/use-cases/generate-issues-from-pr-closed.use-case';

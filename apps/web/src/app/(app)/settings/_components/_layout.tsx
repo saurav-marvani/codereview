@@ -49,9 +49,11 @@ import {
 import { resolveCodeReviewConfigForScope } from "./code-review-config-scope";
 import {
     AutomationCodeReviewConfigProvider,
+    CodeReviewModelDataProvider,
     DefaultCodeReviewConfigProvider,
     PlatformConfigProvider,
     ScopedCodeReviewConfigProvider,
+    type CodeReviewModelData,
 } from "./context";
 import { PerRepository } from "./per-repository/repository";
 import {
@@ -87,6 +89,7 @@ type SettingsLayoutProps = React.PropsWithChildren<{
     initialConfigValue: FormattedGlobalCodeReviewConfig;
     initialDefaultConfig: InitialDefaultConfig;
     initialPlatformConfig: InitialPlatformConfig;
+    initialModelData: CodeReviewModelData;
 }>;
 
 export const SettingsLayout = ({
@@ -95,6 +98,7 @@ export const SettingsLayout = ({
     initialConfigValue,
     initialDefaultConfig,
     initialPlatformConfig,
+    initialModelData,
 }: SettingsLayoutProps) => {
     const { teamId } = useSelectedTeamId();
     const effectiveTeamId = teamId ?? initialTeamId;
@@ -139,20 +143,17 @@ export const SettingsLayout = ({
         },
     );
 
-    console.log(
-        "configValue in layout",
-        liveShellQuery?.configValue ?? initialConfigValue,
-    );
-
     return (
-        <SettingsLayoutShell
-            teamId={effectiveTeamId}
-            configValue={liveShellQuery?.configValue ?? initialConfigValue}
-            defaultConfig={defaultConfig ?? initialDefaultConfig}
-            platformConfig={platformConfig ?? initialPlatformConfig}
-            isMCPAvailable={isMCPAvailable}>
-            {children}
-        </SettingsLayoutShell>
+        <CodeReviewModelDataProvider value={initialModelData}>
+            <SettingsLayoutShell
+                teamId={effectiveTeamId}
+                configValue={liveShellQuery?.configValue ?? initialConfigValue}
+                defaultConfig={defaultConfig ?? initialDefaultConfig}
+                platformConfig={platformConfig ?? initialPlatformConfig}
+                isMCPAvailable={isMCPAvailable}>
+                {children}
+            </SettingsLayoutShell>
+        </CodeReviewModelDataProvider>
     );
 };
 
@@ -174,10 +175,10 @@ function SettingsLayoutShell({
     const { repositoryId, pageName, directoryId } = useCodeReviewRouteParams();
     const globalConfigOverrideCount = configValue
         ? countConfigOverridesForRoutes(
-              configValue.configs,
-              routes.map((r) => r.href),
-              FormattedConfigLevel.GLOBAL,
-          )
+            configValue.configs,
+            routes.map((r) => r.href),
+            FormattedConfigLevel.GLOBAL,
+        )
         : 0;
     const globalCustomMessagesOverrideCount = useCustomMessagesOverrideCount({
         scopeRepositoryId: "global",
@@ -243,10 +244,10 @@ function SettingsLayoutShell({
         () =>
             configValue
                 ? resolveCodeReviewConfigForScope(
-                      configValue,
-                      repositoryId,
-                      directoryId,
-                  )
+                    configValue,
+                    repositoryId,
+                    directoryId,
+                )
                 : undefined,
         [configValue, directoryId, repositoryId],
     );
@@ -344,9 +345,9 @@ function SettingsLayoutShell({
                                                         ({ label, href }) => {
                                                             const active =
                                                                 repositoryId ===
-                                                                    "global" &&
+                                                                "global" &&
                                                                 pageName ===
-                                                                    href;
+                                                                href;
 
                                                             return (
                                                                 <SidebarMenuSubItem

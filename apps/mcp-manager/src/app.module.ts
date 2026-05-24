@@ -8,7 +8,6 @@ import { McpModule } from './modules/mcp/mcp.module';
 import { getTypeOrmConfig } from './config/typeorm.config';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { HealthController } from './health/health.controller';
-import { IntegrationsModule } from './modules/integrations/integrations.module';
 
 @Module({
     imports: [

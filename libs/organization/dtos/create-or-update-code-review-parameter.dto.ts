@@ -442,6 +442,14 @@ class CodeReviewConfigWithoutLLMProviderDto {
     @IsOptional()
     @IsBoolean()
     enableCommittableSuggestions?: boolean;
+
+    /**
+     * BYOK main-model override for code reviews. Empty string '' means
+     * "inherit" (directory -> repository -> the BYOK-settings main model).
+     */
+    @IsOptional()
+    @IsString()
+    byokModel?: string;
 }
 
 export class CreateOrUpdateCodeReviewParameterDto {

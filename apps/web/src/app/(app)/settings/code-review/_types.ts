@@ -124,6 +124,9 @@ export type CodeReviewGlobalConfig = {
         };
     };
     enableCommittableSuggestions: boolean;
+    /** BYOK main-model override for code reviews. '' = inherit
+     *  (directory -> repository -> the main model set in BYOK settings). */
+    byokModel?: string;
 };
 
 export type CodeReviewBaseConfig = {

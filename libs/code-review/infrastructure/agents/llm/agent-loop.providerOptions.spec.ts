@@ -336,7 +336,7 @@ describe('buildLangfuseTelemetry', () => {
 
     it('returns isEnabled=false when LANGFUSE_TRACING is not true', () => {
         delete process.env.LANGFUSE_TRACING;
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+         
         const { buildLangfuseTelemetry } = require('@libs/core/log/langfuse');
         const result = buildLangfuseTelemetry('my-run');
         expect(result.isEnabled).toBe(false);
@@ -348,7 +348,7 @@ describe('buildLangfuseTelemetry', () => {
         process.env.LANGFUSE_PUBLIC_KEY = 'pk-test';
         process.env.LANGFUSE_SECRET_KEY = 'sk-test';
         jest.resetModules();
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+         
         const { buildLangfuseTelemetry } = require('@libs/core/log/langfuse');
         const result = buildLangfuseTelemetry('my-run', {
             organizationId: 'org-1',
@@ -365,7 +365,7 @@ describe('buildLangfuseTelemetry', () => {
     });
 
     it('omits metadata key when no metadata object is passed', () => {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+         
         const { buildLangfuseTelemetry } = require('@libs/core/log/langfuse');
         const result = buildLangfuseTelemetry('my-run');
         expect(result.metadata).toBeUndefined();

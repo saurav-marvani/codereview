@@ -1318,4 +1318,131 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             centralizedConfigPrServiceMock.createMutationPullRequestIfEnabled,
         ).not.toHaveBeenCalled();
     });
+
+    it('stores byokModel override in the repository delta', async () => {
+        const createOrUpdateParametersUseCase = {
+            execute: jest.fn().mockResolvedValue(true),
+        };
+
+        const useCase = new UpdateOrCreateCodeReviewParameterUseCase(
+            {
+                findByKey: jest.fn().mockResolvedValue({
+                    configValue: {
+                        id: 'global',
+                        name: 'Global',
+                        isSelected: true,
+                        configs: {},
+                        repositories: [
+                            {
+                                id: 'repo-1',
+                                name: 'alpha',
+                                isSelected: false,
+                                configs: {},
+                                directories: [],
+                            },
+                        ],
+                    },
+                }),
+            } as any,
+            createOrUpdateParametersUseCase as any,
+            {
+                findIntegrationConfigFormatted: jest.fn().mockResolvedValue([
+                    { id: 'repo-1', name: 'alpha', directories: [] },
+                ]),
+            } as any,
+            { emit: jest.fn() } as any,
+            { ensure: jest.fn() } as any,
+            { detectAndSaveReferences: jest.fn() } as any,
+            { buildConfigKey: jest.fn().mockReturnValue('config-key') } as any,
+            buildCentralizedConfigPrServiceMock() as any,
+        );
+
+        await useCase.execute({
+            actor: {
+                source: 'sync',
+                organizationId: 'org-1',
+                userId: 'kody',
+                userEmail: 'kody@kodus.io',
+            },
+            configValue: { byokModel: 'gpt-5-mini' },
+            organizationAndTeamData: {
+                organizationId: 'org-1',
+                teamId: 'team-1',
+            },
+            repositoryId: 'repo-1',
+            skipAuthorization: true,
+        } as any);
+
+        const updatedConfig =
+            createOrUpdateParametersUseCase.execute.mock.calls[0][1];
+        const repository = updatedConfig.repositories.find(
+            (repo: any) => repo.id === 'repo-1',
+        );
+
+        expect(repository.configs.byokModel).toBe('gpt-5-mini');
+    });
+
+    it('removes a reverted byokModel override from the repository delta', async () => {
+        const createOrUpdateParametersUseCase = {
+            execute: jest.fn().mockResolvedValue(true),
+        };
+
+        const useCase = new UpdateOrCreateCodeReviewParameterUseCase(
+            {
+                findByKey: jest.fn().mockResolvedValue({
+                    configValue: {
+                        id: 'global',
+                        name: 'Global',
+                        isSelected: true,
+                        configs: {},
+                        repositories: [
+                            {
+                                id: 'repo-1',
+                                name: 'alpha',
+                                isSelected: true,
+                                configs: { byokModel: 'gpt-4' },
+                                directories: [],
+                            },
+                        ],
+                    },
+                }),
+            } as any,
+            createOrUpdateParametersUseCase as any,
+            {
+                findIntegrationConfigFormatted: jest.fn().mockResolvedValue([
+                    { id: 'repo-1', name: 'alpha', directories: [] },
+                ]),
+            } as any,
+            { emit: jest.fn() } as any,
+            { ensure: jest.fn() } as any,
+            { detectAndSaveReferences: jest.fn() } as any,
+            { buildConfigKey: jest.fn().mockReturnValue('config-key') } as any,
+            buildCentralizedConfigPrServiceMock() as any,
+        );
+
+        await useCase.execute({
+            actor: {
+                source: 'sync',
+                organizationId: 'org-1',
+                userId: 'kody',
+                userEmail: 'kody@kodus.io',
+            },
+            // '' is the "inherit" sentinel — saving it should drop the override.
+            configValue: { byokModel: '' },
+            organizationAndTeamData: {
+                organizationId: 'org-1',
+                teamId: 'team-1',
+            },
+            repositoryId: 'repo-1',
+            skipAuthorization: true,
+        } as any);
+
+        const updatedConfig =
+            createOrUpdateParametersUseCase.execute.mock.calls[0][1];
+        const repository = updatedConfig.repositories.find(
+            (repo: any) => repo.id === 'repo-1',
+        );
+
+        expect(repository.configs.byokModel).toBeUndefined();
+    });
 });

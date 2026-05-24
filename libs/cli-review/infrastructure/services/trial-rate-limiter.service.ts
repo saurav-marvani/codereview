@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { createLogger } from '@kodus/flow';
 import { CacheService } from '@libs/core/cache/cache.service';
-import type { ITrialRateLimiterService } from '@libs/cli-review/domain/contracts/trial-rate-limiter.service.contract';
+import {
+    ITrialRateLimiterService,
+    RateLimitResult,
+} from '@libs/cli-review/domain/contracts/trial-rate-limiter.service.contract';
 
-export interface RateLimitResult {
-    allowed: boolean;
-    remaining: number;
-    resetAt?: Date;
-}
+// Re-export so existing importers of the result type from this module
+// keep working after it moved to the domain contract.
+export type { RateLimitResult };
 
 /**
  * Service for rate limiting trial CLI reviews

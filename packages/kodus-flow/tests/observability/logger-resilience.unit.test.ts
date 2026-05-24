@@ -312,3 +312,183 @@ describe('SimpleLogger — never propagates pino failures (issue #1105)', () => 
         expect(payloads).toEqual([]);
     });
 });
+
+// ---------------------------------------------------------------------------
+// AxiosError shape — circular references in config/request/response
+// ---------------------------------------------------------------------------
+
+/**
+ * Production incident (self-hosted, Discourse PR with ~200 files):
+ * the AzureReposService catch path passed the raw AxiosError to
+ * `this.logger.error({ error })`. Pino's stdSerializer.err walks
+ * `cause`, `config`, `request`, `response` — all of which loop back
+ * into each other on the AxiosError shape. That walk overflowed the
+ * stack BEFORE deepSanitize (which has its own WeakSet anti-cycle
+ * guard) had a chance to flatten the object.
+ *
+ * Symptom in the log stream: every per-file failure produced a
+ * `loggerFallback: true` line with `loggerErrorName: "RangeError"
+ * / loggerErrorMessage: "Maximum call stack size exceeded"`. The
+ * worker didn't crash (the fallback caught it), but:
+ *   1. Lost the structured error context — only message+name made
+ *      it to the log, no stack/code/status.
+ *   2. Burned CPU per file: pino attempts → throws RangeError →
+ *      caught → JSON.stringify of fallback payload. Multiplied by
+ *      200 files, this contributed to the worker spending most of
+ *      its event-loop time in synchronous serialization instead of
+ *      progressing the review.
+ *
+ * The fix protects `stdSerializers.err` with a try/catch and falls
+ * back to `deepSanitize(err)` directly when the stdSerializer
+ * recurses past the stack limit. `deepSanitize` is cycle-safe.
+ */
+describe('SimpleLogger — AxiosError-shape with circular references', () => {
+    let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+        consoleErrorSpy = vi
+            .spyOn(console, 'error')
+            .mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        consoleErrorSpy.mockRestore();
+    });
+
+    function findFallbackPayloads(
+        spy: ReturnType<typeof vi.spyOn>,
+        serviceName: string,
+    ): Array<Record<string, unknown>> {
+        const out: Array<Record<string, unknown>> = [];
+        for (const call of spy.mock.calls) {
+            const arg = call[0];
+            if (typeof arg !== 'string') continue;
+            if (!arg.startsWith('{')) continue;
+            try {
+                const parsed = JSON.parse(arg) as Record<string, unknown>;
+                if (
+                    parsed.loggerFallback === true &&
+                    parsed.serviceName === serviceName
+                ) {
+                    out.push(parsed);
+                }
+            } catch {
+                /* not JSON, skip */
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Reproduces the actual shape that overflowed the stack in
+     * production. Pino's `stdSerializers.err` was NOT the culprit
+     * (pino 10+ caps recursion in its standard serializers). The
+     * overflow happened later in `deepSanitize`, which walks the
+     * full object graph without a depth bound.
+     *
+     * In Node, an AxiosError carries the full HTTP agent chain:
+     *   err.request.agent.sockets[host] = [socket]
+     *   socket._httpMessage = req
+     *   socket.parser.socket = socket   // self
+     *   socket._handle.owner = socket   // common in libuv-backed handles
+     * Real-world depth can easily reach the V8 default stack limit
+     * (~10k frames). The cycles ARE handled by deepSanitize's WeakSet,
+     * but the depth itself is not — and that's what kills it.
+     *
+     * To force the bug deterministically without relying on Node
+     * internals, this builds a chain N levels deep (default 15k).
+     */
+    function makeDeepError(depth = 15000) {
+        const err: any = new Error('timeout of 60000ms exceeded');
+        err.name = 'AxiosError';
+        err.code = 'ECONNABORTED';
+        err.isAxiosError = true;
+
+        let cursor: any = {};
+        const root = cursor;
+        for (let i = 0; i < depth; i++) {
+            cursor.nested = {};
+            cursor = cursor.nested;
+        }
+        // The deep chain hangs off `config` so it gets walked by both
+        // pino.stdSerializers.err AND deepSanitize.
+        err.config = {
+            url: 'https://dev.azure.com/.../items',
+            chain: root,
+        };
+        return err;
+    }
+
+    it('does not throw when an AxiosError with circular refs is passed', () => {
+        const logger = createLogger('test-axios-no-throw');
+        const axiosErr = makeDeepError();
+
+        expect(() =>
+            logger.error({
+                message: 'Failed to get original file content',
+                context: 'test-context',
+                error: axiosErr,
+                metadata: {
+                    filePath: '/public/javascripts/ace/mode-typescript.js',
+                    baseCommitId: 'abc123',
+                },
+            }),
+        ).not.toThrow();
+    });
+
+    /**
+     * Anti-regression for the production hang: even though the
+     * outer try/catch caught the RangeError, the fact that EVERY
+     * AxiosError landed in the fallback meant we lost structured
+     * info. After the fix, AxiosErrors must serialize cleanly
+     * through the normal pino path (deepSanitize handles the
+     * cycle), so `loggerFallback: true` should NOT appear.
+     */
+    it('does NOT emit a fallback marker for an AxiosError-shape with circular refs', () => {
+        const logger = createLogger('test-axios-no-fallback');
+        const axiosErr = makeDeepError();
+
+        logger.error({
+            message: 'Failed to get original file content',
+            context: 'test-context',
+            error: axiosErr,
+            metadata: {
+                filePath: '/spec/components/topic_view_spec.rb',
+                baseCommitId: 'abc123',
+                targetCommitId: 'def456',
+            },
+        });
+
+        const payloads = findFallbackPayloads(
+            consoleErrorSpy,
+            'test-axios-no-fallback',
+        );
+        // Pre-fix: this array would have 1+ entries with
+        // loggerErrorName="RangeError". Post-fix: zero entries,
+        // meaning pino + deepSanitize handled the AxiosError without
+        // triggering the safety-net try/catch in handleLog.
+        expect(payloads).toEqual([]);
+    });
+
+    it('survives a batch of 50 AxiosErrors without any falling back', () => {
+        // Mirrors the production load: 50 failed file fetches logged
+        // in rapid succession. Pre-fix, all 50 would fall back AND
+        // each one would burn CPU on the failed pino attempt + the
+        // fallback JSON encode.
+        const logger = createLogger('test-axios-batch');
+        for (let i = 0; i < 50; i++) {
+            logger.error({
+                message: `Failed to get file content #${i}`,
+                context: 'test-context',
+                error: makeDeepError(`timeout on file ${i}`),
+                metadata: { filePath: `/file-${i}.ts` },
+            });
+        }
+
+        const payloads = findFallbackPayloads(
+            consoleErrorSpy,
+            'test-axios-batch',
+        );
+        expect(payloads).toEqual([]);
+    });
+});

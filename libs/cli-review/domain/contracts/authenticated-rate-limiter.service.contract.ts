@@ -1,9 +1,20 @@
-import type { AuthenticatedRateLimitResult } from '@libs/cli-review/infrastructure/services/authenticated-rate-limiter.service';
-
 export const AUTHENTICATED_RATE_LIMITER_SERVICE_TOKEN = Symbol.for(
-    'AUTHENTICATED_RATE_LIMITER_SERVICE_TOKEN',
+    'AuthenticatedRateLimiterService',
 );
 
+export interface AuthenticatedRateLimitResult {
+    allowed: boolean;
+    remaining: number;
+    resetAt?: Date;
+}
+
+/**
+ * Rate limiting for authenticated CLI reviews, keyed by team id.
+ * Implemented by the cache-backed AuthenticatedRateLimiterService in the
+ * infrastructure layer; consumers inject via
+ * AUTHENTICATED_RATE_LIMITER_SERVICE_TOKEN and depend on this interface,
+ * not the concrete class.
+ */
 export interface IAuthenticatedRateLimiterService {
     checkRateLimit(teamId: string): Promise<AuthenticatedRateLimitResult>;
 }

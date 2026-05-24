@@ -82,7 +82,7 @@ export default function ChooseWorkspacePage() {
 
             await refreshAccessTokens();
 
-            router.push("/");
+            window.location.href = "/";
         } catch (error) {
             console.error("Failed to update user:", error);
         } finally {

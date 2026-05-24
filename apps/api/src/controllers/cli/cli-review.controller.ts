@@ -22,7 +22,6 @@ import {
     GITHUB_PUBLIC_PR_SERVICE_TOKEN,
 } from '@libs/cli-review/domain/contracts/github-public-pr.service.contract';
 import { JobStatus } from '@libs/core/workflow/domain/enums/job-status.enum';
-import { CliReviewResponse } from '@libs/cli-review/domain/types/cli-review.types';
 import {
     ITeamCliKeyService,
     TEAM_CLI_KEY_SERVICE_TOKEN,

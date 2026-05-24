@@ -52,6 +52,22 @@ export class PullRequestsService implements IPullRequestsService {
      */
     private static readonly MAX_FILES_PER_SAVE = 5000;
 
+    private static readonly BINARY_PATCH_EXT =
+        /\.(png|jpe?g|gif|svg|webp|ico|bmp|tiff?|pdf|zip|tar|gz|tgz|bz2|7z|rar|woff2?|ttf|otf|eot|mp4|mov|webm|mp3|wav|flac|ogg|psd|ai|sketch|fig|class|jar|exe|dll|so|dylib|wasm)$/i;
+
+    private static sanitizePatchForPersist(
+        filename: string | undefined,
+        patch: string | undefined,
+    ): string {
+        if (!patch) {
+            return '';
+        }
+        if (filename && PullRequestsService.BINARY_PATCH_EXT.test(filename)) {
+            return '';
+        }
+        return patch;
+    }
+
     constructor(
         @Inject(PULL_REQUESTS_REPOSITORY_TOKEN)
         private readonly pullRequestsRepository: IPullRequestsRepository,
@@ -1105,28 +1121,23 @@ export class PullRequestsService implements IPullRequestsService {
                     unusedSuggestions,
                 ).map((s) => ({
                     ...s,
-                    id:
-                        s.id ||
-                        this.pullRequestsRepository.newSubDocumentId(),
+                    id: s.id || this.pullRequestsRepository.newSubDocumentId(),
                 }));
 
                 const existing = existingByPath.get(filename);
 
                 if (existing) {
-                    // `reviewMode` / `codeReviewModelUsed` are
-                    // pipeline-owned config — the webhook payload
-                    // doesn't carry them and the repo's
-                    // `sanitizeCodeReviewConfigData` drops empty
-                    // values, so passing them through here is safe.
                     const fileFields = {
-                        patch: file.patch ?? '',
+                        patch: PullRequestsService.sanitizePatchForPersist(
+                            filename,
+                            file.patch,
+                        ),
                         status: file.status ?? '',
                         added: file.additions ?? 0,
                         deleted: file.deletions ?? 0,
                         changes: file.changes ?? 0,
                         reviewMode: file.reviewMode ?? '',
-                        codeReviewModelUsed:
-                            file.codeReviewModelUsed ?? '',
+                        codeReviewModelUsed: file.codeReviewModelUsed ?? '',
                         updatedAt: new Date().toISOString(),
                     };
 

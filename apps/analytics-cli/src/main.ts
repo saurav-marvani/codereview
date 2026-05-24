@@ -183,7 +183,7 @@ async function main() {
 }
 
 main().catch((err) => {
-    // eslint-disable-next-line no-console
+     
     console.error('backfill crashed:', err);
     process.exit(1);
 });

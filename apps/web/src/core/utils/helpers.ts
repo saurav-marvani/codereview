@@ -211,6 +211,10 @@ export const codeReviewConfigRemovePropertiesNotInType = (
         "runOnDraft",
         "codeReviewVersion",
         "enableCommittableSuggestions",
+        // BYOK main-model override. Without it here the stripper would
+        // silently drop the field and the backend would never persist the
+        // selected model.
+        "byokModel",
         // New v2 prompt overrides for categories/severity customization
         "v2PromptOverrides",
     ];

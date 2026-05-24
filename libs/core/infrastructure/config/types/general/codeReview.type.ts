@@ -332,6 +332,12 @@ export type CodeReviewConfig = {
     runOnDraft?: boolean;
     codeReviewVersion?: CodeReviewVersion;
     byokConfig?: BYOKConfig;
+    /**
+     * Optional override for the BYOK *main* model used to run code reviews.
+     * Empty string '' means "inherit": directory -> repository -> the main
+     * model defined in the BYOK settings page.
+     */
+    byokModel?: string;
     /** @deprecated Reflection/verify was removed — it hurt recall more than it helped precision. */
     enableReflection?: boolean;
     /**

@@ -1,6 +1,6 @@
 {
     "name": "@kodus/flow",
-    "version": "0.1.54",
+    "version": "0.1.55",
     "description": "Kodus Flow - Framework para orquestração de agentes de IA",
     "main": "./dist/index.js",
     "module": "./dist/index.js",
@@ -86,12 +86,12 @@
         "@opentelemetry/api": "^1.9.1",
         "@types/ajv": "^1.0.4",
         "@types/events": "^3.0.3",
-        "@types/node": "^25.9.0",
+        "@types/node": "^25.9.1",
         "@types/uuid": "^11.0.0",
-        "@typescript-eslint/eslint-plugin": "^8.59.3",
-        "@typescript-eslint/parser": "^8.59.3",
-        "@vitest/coverage-v8": "^4.1.6",
-        "@vitest/ui": "^4.1.6",
+        "@typescript-eslint/eslint-plugin": "^8.59.4",
+        "@typescript-eslint/parser": "^8.59.4",
+        "@vitest/coverage-v8": "^4.1.7",
+        "@vitest/ui": "^4.1.7",
         "concurrently": "^9.2.1",
         "eslint": "^10.4.0",
         "eslint-config-prettier": "^10.1.8",
@@ -104,10 +104,10 @@
         "tsconfig-paths": "^4.2.0",
         "tsup": "^8.5.1",
         "typescript": "^6.0.3",
-        "typescript-eslint": "^8.59.3",
-        "vite": "^8.0.13",
+        "typescript-eslint": "^8.59.4",
+        "vite": "^8.0.14",
         "vite-tsconfig-paths": "^6.1.1",
-        "vitest": "^4.1.6"
+        "vitest": "^4.1.7"
     },
     "peerDependencies": {
         "@opentelemetry/api": "^1.9.1"

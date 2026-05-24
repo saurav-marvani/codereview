@@ -36,7 +36,6 @@ import {
 import { createBusinessRulesBlueprint } from './blueprint';
 import {
     buildMcpConnectionFailureFeedback,
-    buildRequiredMcpFeedback,
 } from './required-mcp-feedback';
 import {
     BusinessRulesContext,

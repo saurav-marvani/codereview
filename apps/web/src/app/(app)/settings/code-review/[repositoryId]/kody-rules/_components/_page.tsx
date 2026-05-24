@@ -103,6 +103,43 @@ const KodyRulesPageContent = () => {
     const config = useFullCodeReviewConfig();
     const pathname = usePathname();
     const router = useRouter();
+
+    // While rule generation runs in the background (kicked off detached by
+    // finish-onboarding), poll the server so the page flips to the real
+    // rules as soon as they are ready. Give up after a few minutes so a
+    // crashed run doesn't spin forever — the KodyLearning cron regenerates
+    // stuck teams, and the user can still refresh manually.
+    const isGeneratingRules =
+        platformConfig.kodyLearningStatus ===
+        KodyLearningStatus.GENERATING_RULES;
+    const [ruleGenerationPollTimedOut, setRuleGenerationPollTimedOut] =
+        useState(false);
+
+    useEffect(() => {
+        if (!isGeneratingRules || ruleGenerationPollTimedOut) {
+            return;
+        }
+
+        const POLL_INTERVAL_MS = 5_000;
+        const GIVE_UP_MS = 5 * 60 * 1000;
+        const startedAt = Date.now();
+        let timer: ReturnType<typeof setTimeout>;
+
+        const tick = () => {
+            if (Date.now() - startedAt >= GIVE_UP_MS) {
+                setRuleGenerationPollTimedOut(true);
+                return;
+            }
+            // Re-pull server data; once generation finishes,
+            // kodyLearningStatus flips to ENABLED and this effect stops.
+            router.refresh();
+            timer = setTimeout(tick, POLL_INTERVAL_MS);
+        };
+
+        timer = setTimeout(tick, POLL_INTERVAL_MS);
+        return () => clearTimeout(timer);
+    }, [isGeneratingRules, ruleGenerationPollTimedOut, router]);
+
     const searchParams = useSearchParams();
     const { repositoryId, directoryId } = useCodeReviewRouteParams();
     const queryClient = useQueryClient();
@@ -810,7 +847,8 @@ const KodyRulesPageContent = () => {
 
     if (
         platformConfig.kodyLearningStatus ===
-        KodyLearningStatus.GENERATING_CONFIG
+            KodyLearningStatus.GENERATING_CONFIG ||
+        (isGeneratingRules && !ruleGenerationPollTimedOut)
     ) {
         return <GeneratingConfig />;
     }

@@ -20,6 +20,7 @@ ignorePaths:
 ignoredTitleKeywords: []
 baseBranches: []
 enableCommittableSuggestions: true
+byokModel: '' # BYOK main model, empty = inherit, (directory -> repository -> the main model set in BYOK settings)
 
 # review categories
 codeReviewVersion: 'v2' # legacy | v2

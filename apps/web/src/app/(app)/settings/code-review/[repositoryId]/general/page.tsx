@@ -33,6 +33,7 @@ import {
 } from "../../../_hooks";
 import { AutomatedReviewActive } from "./_components/automated-review-active";
 import { BaseBranches } from "./_components/base-branches";
+import { BYOKModelSelectorSection } from "./_components/byok-model-selector";
 import { CentralizedConfigModal } from "./_components/centralized-config-modal";
 import { EnableCommittableSuggestions } from "./_components/enable-committable-suggestions";
 import { IgnorePaths } from "./_components/ignore-paths";
@@ -202,6 +203,13 @@ export default function General() {
                 <div data-field-name="automatedReviewActive">
                     <AutomatedReviewActive />
                 </div>
+
+                {repositoryId !== "global" && (
+                    <div data-field-name="byokModel">
+                        <BYOKModelSelectorSection />
+                    </div>
+                )}
+
                 <div data-field-name="kodusConfigFileOverridesWebPreferences">
                     <KodusConfigFileOverridesWebPreferences />
                 </div>

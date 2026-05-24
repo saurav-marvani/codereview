@@ -85,7 +85,20 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 );
 
             context = this.updateContext(context, (draft) => {
-                draft.codeReviewConfig.byokConfig = byokConfig?.configValue;
+                const resolved = byokConfig?.configValue;
+                draft.codeReviewConfig.byokConfig = resolved;
+
+                // The merged code review config can override which BYOK *main*
+                // model runs the review (directory -> repository -> BYOK
+                // settings). An empty/absent value means "inherit", so the
+                // BYOK-settings main model is left in place.
+                const overrideModel = draft.codeReviewConfig.byokModel?.trim();
+                if (resolved?.main && overrideModel) {
+                    draft.codeReviewConfig.byokConfig = {
+                        ...resolved,
+                        main: { ...resolved.main, model: overrideModel },
+                    };
+                }
             });
 
             const cadenceResult = await this.evaluateReviewCadence(context);

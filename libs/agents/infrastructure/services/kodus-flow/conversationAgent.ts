@@ -22,6 +22,10 @@ import { ObservabilityService } from '@libs/core/log/observability.service';
 import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service';
 import { SandboxInstance } from '@libs/sandbox/domain/contracts/sandbox.provider';
 import { BaseAgentProvider } from './base-agent.provider';
+import {
+    CONVERSATION_FALLBACK_MESSAGE,
+    normalizeConversationResponse,
+} from './conversation-response.util';
 import { buildNativeToolConfigs } from './native-tools.factory';
 
 @Injectable()
@@ -247,9 +251,24 @@ export class ConversationAgentProvider extends BaseAgentProvider {
                 },
             });
 
-            return typeof result.result === 'string'
-                ? result.result
-                : JSON.stringify(result.result);
+            const response = normalizeConversationResponse(result.result);
+
+            if (response === null) {
+                this.logger.warn({
+                    message: 'Conversation agent produced no usable response',
+                    context: ConversationAgentProvider.name,
+                    serviceName: ConversationAgentProvider.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        thread,
+                        rawResult: result.result,
+                        rawResultType: typeof result.result,
+                    },
+                });
+                return CONVERSATION_FALLBACK_MESSAGE;
+            }
+
+            return response;
         } catch (error) {
             this.logger.error({
                 message: 'Error during conversation agent execution',

@@ -207,6 +207,67 @@ function makeSmallInput(): ReviewAgentInput {
 }
 
 /**
+ * Marginal-overflow scenario. Diffs sum to ~93k tokens, comfortably under
+ * the legacy chunkDiffBudget of 94.5k (which only subtracted the static
+ * overhead) so the chunker packed every file into ONE chunk and the
+ * recursion guard killed the review. With the fix the chunk budget also
+ * subtracts the dynamic overhead (callGraph + coverage list + PR
+ * context), drops to ~92k, and the chunker correctly produces two chunks.
+ *
+ * Numbers: 3 files × 124_000 chars (≈31k tokens each) + 10_000-char
+ * callGraph. estimatePromptTokens ≈ 111k tokens (> promptBudget 110k →
+ * gate fires).
+ */
+function makeMarginalOverflowInput(): ReviewAgentInput {
+    return {
+        ...BASE_INPUT_FIELDS,
+        changedFiles: [
+            makeFile('src/a.ts', 124_000),
+            makeFile('src/b.ts', 124_000),
+            makeFile('src/c.ts', 124_000),
+        ],
+        callGraph: 'x'.repeat(10_000),
+    } as ReviewAgentInput;
+}
+
+/**
+ * Real-world replay using the exact numbers captured in the prod
+ * observability trace that surfaced this bug:
+ *   - 77 changed files (post aggressive filter; we use 'deep' mode here
+ *     to skip that branch and feed the chunker the same shape directly)
+ *   - average diff per file 4_800 chars (~1_200 tokens)
+ *   - callGraph 10_938 chars (~2_734 tokens)
+ *   - contextWindow 200_000, promptBudget 110_000
+ *
+ * Expected accounting (post-fix):
+ *   diff total          ≈ 92_400 tokens
+ *   + static overhead   = 15_500
+ *   + callGraph         = 2_734
+ *   + coverage list     = 1_540  (77 × 80 / 4)
+ *   + PR context        =    25  (post user-tweak with MIN(500))
+ *   ────────────────────────────
+ *   estimatedPrompt     ≈ 112_200 tokens  > 110_000 → gate fires
+ *
+ *   chunkDiffBudget OLD = 110_000 − 15_500 = 94_500
+ *     → 92_400 ≤ 94_500 → 1 chunk → guard throws (the bug)
+ *   chunkDiffBudget NEW = 110_000 − 19_800 = 90_200
+ *     → 92_400 > 90_200 → 2+ chunks → review proceeds (the fix)
+ */
+function makeProdReplayInput(): ReviewAgentInput {
+    const FILES = 77;
+    const CHARS_PER_FILE = 4_800;
+    const CALLGRAPH_CHARS = 10_938;
+    const files = Array.from({ length: FILES }, (_, i) =>
+        makeFile(`src/file_${i}.ts`, CHARS_PER_FILE),
+    );
+    return {
+        ...BASE_INPUT_FIELDS,
+        changedFiles: files,
+        callGraph: 'x'.repeat(CALLGRAPH_CHARS),
+    } as ReviewAgentInput;
+}
+
+/**
  * Wrap agent.execute() with a counter + hard cap so a runaway recursion
  * cannot hang the test runner. The cap throw is caught by executeChunked's
  * per-batch try/catch and absorbed into an empty result — exactly what
@@ -310,6 +371,37 @@ describe('BaseCodeReviewAgentProvider — recursion bug + proposed fixes', () =>
             const result = await agent.execute(makeSmallInput());
             expect(result).toBeDefined();
             expect(getCount()).toBe(1);
+        });
+    });
+
+    describe('Marginal-overflow scenario — dynamic overhead pushes prompt 2% over budget', () => {
+        it('splits diffs that fit under the static-only budget but overflow the full prompt — no false-positive guard trip', async () => {
+            const { getCount } = setupExecuteSpy(agent);
+            const result = await agent.execute(makeMarginalOverflowInput());
+            // 2 chunks → root + 2 per-batch executes = 3 calls.
+            // Pre-fix this returned 1 chunk and threw
+            // AGENT_PROMPT_OVERHEAD_EXCEEDS_BUDGET on the second pass.
+            expect(result).toBeDefined();
+            expect(getCount()).toBeGreaterThanOrEqual(3);
+        });
+
+        it('does NOT throw AGENT_PROMPT_OVERHEAD_EXCEEDS_BUDGET on the marginal scenario', async () => {
+            setupExecuteSpy(agent);
+            await expect(
+                agent.execute(makeMarginalOverflowInput()),
+            ).resolves.toBeDefined();
+        });
+
+        // Higher-fidelity regression test using the exact numbers from
+        // the prod incident trace (77 files × ~4_800 chars, 10_938-char
+        // callGraph). Verifies the fix against the real shape, not just
+        // a constructed minimal case.
+        it('replays prod trace shape — 77 files + 10_938-char callGraph + 200k window → split, not abort', async () => {
+            const { getCount } = setupExecuteSpy(agent);
+            const result = await agent.execute(makeProdReplayInput());
+            expect(result).toBeDefined();
+            // Root execute + at least 2 batch executes
+            expect(getCount()).toBeGreaterThanOrEqual(3);
         });
     });
 });

@@ -1,4 +1,4 @@
-import { IsArray, IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsArray, IsString, IsNotEmpty } from 'class-validator';
 
 export class GetAvailableToolsDto {
     @IsString()

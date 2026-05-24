@@ -126,6 +126,18 @@ export const getLLMConfigStatus = async (): Promise<LLMConfigStatus> => {
     );
 };
 
+export type LLMProviderModel = { id: string; name: string };
+
+export const getLLMProviderModels = async (
+    provider: string,
+): Promise<LLMProviderModel[]> => {
+    const response = await authorizedFetch<{ models: LLMProviderModel[] }>(
+        ORGANIZATION_PARAMETERS_PATHS.GET_PROVIDER_MODELS_LIST,
+        { cache: "no-store", params: { provider } },
+    );
+    return response?.models ?? [];
+};
+
 export const getOrganizationParameterByKey = async <
     T extends { configValue: unknown },
 >(

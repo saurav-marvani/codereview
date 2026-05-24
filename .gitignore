@@ -3,6 +3,11 @@
 apps/*/dist
 /node_modules
 
+# selfhosted dev VM state (scripts/selfhosted/*.sh)
+.kodus-dev/
+# direnv config (optional, written by 'yarn selfhosted:setup')
+.envrc
+
 # TypeScript compiled files (should NOT be in src/ or packages/)
 # These should only exist in dist/ directories
 *.d.ts
@@ -34,8 +39,15 @@ e2b-sandbox/config.json
 _*
 !apps/web/src/**/_*
 !libs/common/email/templates/_*
+!scripts/selfhosted/_common.sh
 !test/__mocks__/
 !**/__tests__/
+!scripts/selfhosted/_*.sh
+
+# Playwright failure / debug dumps
+tests/e2e/playwright/failure-*.html
+tests/e2e/playwright/failure-*.png
+tests/e2e/playwright/stripe-*.png
 # Mintlify _snippets/ folder (docs/_snippets, mcp-manager/src/.../*) — those
 # are real source, not scratch files matched by _*.
 !docs/_snippets/
@@ -154,6 +166,8 @@ scripts/pr-creator/prs.json
 scripts/pr-creator/prs-azure.json
 scripts/pr-creator/package-lock.json
 scripts/pr-creator/node_modules
+tests/e2e/playwright/package-lock.json
+tests/e2e/playwright/node_modules
 .spectral-report.json
 docs/openapi.postman_environment.json
 docs/openapi.newman.json

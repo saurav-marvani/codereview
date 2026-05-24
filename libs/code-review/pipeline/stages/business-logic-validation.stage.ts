@@ -139,6 +139,8 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
                     organizationAndTeamData: context.organizationAndTeamData,
                     prepareContext,
                     thread,
+                    // Per-repo/directory model override resolved by ValidateConfigStage.
+                    byokModel: context.codeReviewConfig?.byokModel,
                 });
 
             const result = await Promise.race([agentPromise, timeoutPromise]);

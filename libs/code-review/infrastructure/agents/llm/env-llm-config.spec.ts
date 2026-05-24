@@ -115,4 +115,44 @@ describe('describeEnvLLMConfig', () => {
             providerId: 'google_gemini',
         });
     });
+
+    it('surfaces API_LLM_TEMPERATURE_OVERRIDE when set to a number', () => {
+        const result = describeEnvLLMConfig({
+            API_LLM_PROVIDER_MODEL: 'kimi-k2.6',
+            API_OPEN_AI_API_KEY: 'sk-moonshot',
+            API_OPENAI_FORCE_BASE_URL: 'https://api.moonshot.ai/v1',
+            API_LLM_TEMPERATURE_OVERRIDE: '1',
+        } as any);
+        expect(result.configured).toBe(true);
+        expect(result.temperatureOverride).toBe(1);
+    });
+
+    it('parses fractional temperature overrides', () => {
+        const result = describeEnvLLMConfig({
+            API_LLM_PROVIDER_MODEL: 'gpt-4o',
+            API_OPEN_AI_API_KEY: 'sk-test',
+            API_LLM_TEMPERATURE_OVERRIDE: '0.5',
+        } as any);
+        expect(result.temperatureOverride).toBe(0.5);
+    });
+
+    it('omits temperatureOverride when the env var is empty', () => {
+        const result = describeEnvLLMConfig({
+            API_LLM_PROVIDER_MODEL: 'gpt-4o',
+            API_OPEN_AI_API_KEY: 'sk-test',
+            API_LLM_TEMPERATURE_OVERRIDE: '',
+        } as any);
+        expect(result.configured).toBe(true);
+        expect(result.temperatureOverride).toBeUndefined();
+    });
+
+    it('omits temperatureOverride when the env var is non-numeric', () => {
+        const result = describeEnvLLMConfig({
+            API_LLM_PROVIDER_MODEL: 'gpt-4o',
+            API_OPEN_AI_API_KEY: 'sk-test',
+            API_LLM_TEMPERATURE_OVERRIDE: 'not-a-number',
+        } as any);
+        expect(result.configured).toBe(true);
+        expect(result.temperatureOverride).toBeUndefined();
+    });
 });

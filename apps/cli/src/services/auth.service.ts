@@ -234,7 +234,7 @@ interface DecodedJwtClaims {
 function decodeJwtClaims(token: string): DecodedJwtClaims {
     try {
         const parts = token.split('.');
-        if (parts.length !== 3) return {};
+        if (parts.length !== 3) {return {};}
         const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
         const expiresIn =
             typeof payload.exp === 'number'
