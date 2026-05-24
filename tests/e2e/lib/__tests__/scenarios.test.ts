@@ -101,7 +101,7 @@ test("code-review-basic applies to paid/trial/license-paid but not free/license-
     assert.ok(!s.appliesTo.license.includes("license-free"));
 });
 
-test("license-attribution applies to every known license mode", () => {
+test("license-attribution applies to every reviewable license mode except self-hosted license-free", () => {
     const s = allScenarios["license-attribution"];
     assert.ok(s.appliesTo.license);
     for (const m of [
@@ -110,10 +110,18 @@ test("license-attribution applies to every known license mode", () => {
         "paid",
         "community-byok",
         "license-paid",
-        "license-free",
     ] as const) {
         assert.ok(s.appliesTo.license.includes(m), `missing license: ${m}`);
     }
+    // self-hosted `license-free` is intentionally excluded: an absent or
+    // invalid self-hosted license drops to Community Edition (reviews fire,
+    // no notice), so the scenario's "no review + trial/BYOK notice"
+    // assertion is structurally unprovable there. The blocked-tier mechanic
+    // is covered on cloud `free` instead.
+    assert.ok(
+        !s.appliesTo.license.includes("license-free"),
+        "license-free must NOT be in scope (notice unreachable on self-hosted)",
+    );
 });
 
 test("upgrade-n-1-to-n only applies to self-hosted", () => {

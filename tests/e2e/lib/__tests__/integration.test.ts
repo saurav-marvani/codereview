@@ -89,6 +89,17 @@ test("integration: code-review-basic runs end-to-end against mocked Kodus + GitH
     // so the repo-metadata route doesn't swallow deeper paths.
     const ghServer = await startMockServer([
         {
+            // List open PRs — used by the matrix cleanup preflight and by
+            // openPRFromBranches' closeOpenPRsBetween dedup. Real GitHub
+            // returns 200 with a (possibly empty) array; model that so the
+            // provider doesn't try to iterate a 404 error body. (Must come
+            // before the POST /pulls route — the query string makes this a
+            // distinct path, but keeping list-before-create is clearer.)
+            method: "GET",
+            pathRegex: /^\/repos\/[^/]+\/[^/]+\/pulls\?/,
+            handler: (_req, res) => json(res, 200, []),
+        },
+        {
             // Scenario opens a fresh PR via openPRFromBranches.
             method: "POST",
             pathRegex: /^\/repos\/[^/]+\/[^/]+\/pulls$/,

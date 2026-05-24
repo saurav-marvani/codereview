@@ -242,10 +242,17 @@ test("integration license: self-hosted license-paid expects review but none arri
     );
 });
 
-test("integration license: self-hosted license-free expects no review and gets license-block notice → passes", async () => {
+// Blocked-tier mechanic (no real review + a "trial ended / BYOK" notice)
+// is validated on CLOUD `free` — the only tier+target where Kody actually
+// emits that notice. It used to be tested on self-hosted `license-free`,
+// but that combination was removed from license-attribution.appliesTo:
+// on self-hosted, an invalid/absent license drops to Community Edition
+// (reviews fire, no notice) — SelfHostedLicenseService never produces the
+// BYOK/trial notice, so the assertion was structurally unprovable there.
+test("integration license: cloud free expects no review and gets license-block notice → passes", async () => {
     const r = await runLicenseScenario({
-        target: "self-hosted",
-        license: "license-free",
+        target: "cloud",
+        license: "free",
         kodyResponds: false,
     });
     assert.equal(r.status, "passed", `expected passed, got ${r.status}: ${r.errorMessage}`);
@@ -261,10 +268,10 @@ test("integration license: self-hosted license-free expects no review and gets l
     );
 });
 
-test("integration license: self-hosted license-free expects no review but Kody answers → fails (entitlement leak)", async () => {
+test("integration license: cloud free expects no review but Kody answers → fails (entitlement leak)", async () => {
     const r = await runLicenseScenario({
-        target: "self-hosted",
-        license: "license-free",
+        target: "cloud",
+        license: "free",
         kodyResponds: true,
     });
     assert.equal(
@@ -273,18 +280,9 @@ test("integration license: self-hosted license-free expects no review but Kody a
         `expected failed (free leaked review), got ${r.status}`,
     );
     assert.ok(
-        r.errorMessage?.includes("Expected NO real review for license=license-free"),
+        r.errorMessage?.includes("Expected NO real review for license=free"),
         `error should mention free-with-review; got: ${r.errorMessage}`,
     );
-});
-
-test("integration license: cloud free expects no review and gets none → passes", async () => {
-    const r = await runLicenseScenario({
-        target: "cloud",
-        license: "free",
-        kodyResponds: false,
-    });
-    assert.equal(r.status, "passed", `expected passed, got ${r.status}: ${r.errorMessage}`);
 });
 
 test("integration license: cloud paid expects review and gets it → passes", async () => {
