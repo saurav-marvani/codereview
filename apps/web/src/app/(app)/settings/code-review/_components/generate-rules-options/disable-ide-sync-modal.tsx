@@ -47,6 +47,19 @@ export const DisableIdeSyncModal = ({ counts }: Props) => {
                         should happen to{" "}
                         {counts.active === 1 ? "it" : "them"}?
                     </DialogDescription>
+                    {counts.pinned > 0 && (
+                        // Pinned rules are skipped by pause/delete — the next
+                        // PR-driven sync would re-import them anyway. Telling
+                        // the user up front avoids the "I deleted these and
+                        // they came back" confusion.
+                        <DialogDescription className="text-warning">
+                            <strong>{counts.pinned}</strong> of{" "}
+                            {counts.active === 1 ? "it" : "them"}{" "}
+                            {counts.pinned === 1 ? "is" : "are"} pinned via{" "}
+                            <code className="text-xs">@kody-sync</code> and
+                            will keep syncing regardless of your choice.
+                        </DialogDescription>
+                    )}
                 </DialogHeader>
 
                 <fieldset className="text-sm flex flex-col gap-3 mt-2">

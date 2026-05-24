@@ -2575,6 +2575,15 @@ export class KodyRulesSyncService {
      * whose CURRENT status is in `onlyFromStatus` (e.g. `pause` should only
      * touch ACTIVE rules; `resume` should only touch PAUSED rules).
      *
+     * `excludePinned` (default `true`) skips rules whose source file carries
+     * an `@kody-sync` marker (`pinnedSync === true`). The bulk pause/delete
+     * actions intentionally leave those alone — the next PR-driven sync
+     * would re-import them as ACTIVE anyway, and the chip already excludes
+     * them, so the two surfaces must agree. Set to `false` to force a
+     * sweep of every IDE-synced rule including pinned (no current caller
+     * does this; the option exists so future callers don't silently get
+     * the pinned-skip behaviour without knowing).
+     *
      * Returns the count of rules whose status was changed.
      */
     private async transitionIdeSyncRulesStatus(params: {
@@ -2582,12 +2591,14 @@ export class KodyRulesSyncService {
         repositoryId: string;
         targetStatus: KodyRulesStatus;
         onlyFromStatus?: KodyRulesStatus[];
+        excludePinned?: boolean;
     }): Promise<number> {
         const {
             organizationAndTeamData,
             repositoryId,
             targetStatus,
             onlyFromStatus,
+            excludePinned = true,
         } = params;
         const entity = await this.kodyRulesService.findByOrganizationId(
             organizationAndTeamData.organizationId,
@@ -2601,6 +2612,7 @@ export class KodyRulesSyncService {
         const ideSyncRules = entity.rules.filter((r: any) => {
             if (r?.repositoryId !== repositoryId) return false;
             if (!isIdeRuleSource(r?.sourcePath)) return false;
+            if (excludePinned && r?.pinnedSync === true) return false;
             if (onlyFromStatus && !onlyFromStatus.includes(r?.status)) {
                 return false;
             }
@@ -2704,13 +2716,25 @@ export class KodyRulesSyncService {
     /**
      * Count IDE-synced rules per status for a repository — drives the
      * toggle-off modal copy ("you have N rules currently auto-synced").
+     *
+     * `pinned` counts ACTIVE+PAUSED rules whose source file carries
+     * `@kody-sync` — those won't be touched by pause/delete bulk actions
+     * (the next sync would re-import them anyway). The UI uses this to
+     * tell the user "we'll preserve M pinned rules" so the result of
+     * the action isn't surprising. DELETED-pinned isn't counted because
+     * those won't matter to the user's pending decision.
      */
     async countIdeSyncRulesForRepository(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryId: string;
-    }): Promise<{ active: number; paused: number; deleted: number }> {
+    }): Promise<{
+        active: number;
+        paused: number;
+        deleted: number;
+        pinned: number;
+    }> {
         const { organizationAndTeamData, repositoryId } = params;
-        const counts = { active: 0, paused: 0, deleted: 0 };
+        const counts = { active: 0, paused: 0, deleted: 0, pinned: 0 };
         const entity = await this.kodyRulesService.findByOrganizationId(
             organizationAndTeamData.organizationId,
         );
@@ -2723,6 +2747,13 @@ export class KodyRulesSyncService {
             else if (r?.status === KodyRulesStatus.PAUSED) counts.paused += 1;
             else if (r?.status === KodyRulesStatus.DELETED) {
                 counts.deleted += 1;
+            }
+            if (
+                r?.pinnedSync === true &&
+                (r?.status === KodyRulesStatus.ACTIVE ||
+                    r?.status === KodyRulesStatus.PAUSED)
+            ) {
+                counts.pinned += 1;
             }
         }
         return counts;

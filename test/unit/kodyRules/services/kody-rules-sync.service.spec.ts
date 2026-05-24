@@ -458,12 +458,20 @@ describe('KodyRulesSyncService — Bug: orphaned rules after IDE sync toggle-off
         }
     });
 
-    it('countIdeSyncRulesForRepository tallies active/paused/deleted IDE-synced rules', async () => {
+    it('countIdeSyncRulesForRepository tallies active/paused/deleted IDE-synced rules and surfaces pinned separately', async () => {
         const { service } = buildServiceForCleanup([
             { uuid: 'a1', repositoryId: 'repo-1', sourcePath: '.cursorrules', status: 'active' },
             { uuid: 'a2', repositoryId: 'repo-1', sourcePath: 'CLAUDE.md', status: 'active' },
             { uuid: 'p1', repositoryId: 'repo-1', sourcePath: '.cursorrules', status: 'paused' },
             { uuid: 'd1', repositoryId: 'repo-1', sourcePath: '.cursorrules', status: 'deleted' },
+            // Pinned rules — counted toward both status (active/paused) AND the
+            // `pinned` total, so the UI can warn the user that bulk actions
+            // won't touch them.
+            { uuid: 'pin1', repositoryId: 'repo-1', sourcePath: '.cursorrules', status: 'active', pinnedSync: true },
+            { uuid: 'pin2', repositoryId: 'repo-1', sourcePath: 'CLAUDE.md', status: 'paused', pinnedSync: true },
+            // Pinned but DELETED — NOT counted in `pinned` (irrelevant to a
+            // pending pause/delete decision).
+            { uuid: 'pinDel', repositoryId: 'repo-1', sourcePath: '.cursorrules', status: 'deleted', pinnedSync: true },
             // NOT counted: Onboard rule (sourcePath outside RULE_FILE_PATTERNS)
             { uuid: 'o1', repositoryId: 'repo-1', sourcePath: 'package.json', status: 'active' },
             // NOT counted: rule from another repo
@@ -475,7 +483,53 @@ describe('KodyRulesSyncService — Bug: orphaned rules after IDE sync toggle-off
             repositoryId: 'repo-1',
         });
 
-        expect(counts).toEqual({ active: 2, paused: 1, deleted: 1 });
+        expect(counts).toEqual({ active: 3, paused: 2, deleted: 2, pinned: 2 });
+    });
+
+    it('purgeAllIdeSyncRulesForRepository skips pinnedSync rules (their next sync would resurrect them)', async () => {
+        // BUG: previously the bulk purge would soft-delete pinned IDE rules
+        // even though the very next PR-driven sync would re-import them as
+        // ACTIVE via the `@kody-sync` force-sync path. The user saw rules
+        // they had explicitly asked to delete come back without explanation.
+        // The chip already excludes pinned from the "orphan" count, so the
+        // bulk action must match for the two surfaces to agree.
+        const { service, kodyRulesService } = buildServiceForCleanup([
+            { uuid: 'rule-pinned', repositoryId: 'repo-1', sourcePath: '.cursorrules', status: 'active', pinnedSync: true },
+            { uuid: 'rule-orphan', repositoryId: 'repo-1', sourcePath: '.cursorrules', status: 'active' },
+        ]);
+
+        await (service as any).purgeAllIdeSyncRulesForRepository({
+            organizationAndTeamData,
+            repositoryId: 'repo-1',
+        });
+
+        expect(kodyRulesService.createOrUpdate).toHaveBeenCalledTimes(1);
+        expect(kodyRulesService.createOrUpdate).toHaveBeenCalledWith(
+            organizationAndTeamData,
+            expect.objectContaining({ uuid: 'rule-orphan', status: 'deleted' }),
+            expect.any(Object),
+        );
+    });
+
+    it('pauseAllIdeSyncRulesForRepository skips pinnedSync rules', async () => {
+        // Same reasoning as purge: pause would just be undone by the next
+        // sync's `status: ACTIVE` write coming from the force-sync flow.
+        const { service, kodyRulesService } = buildServiceForCleanup([
+            { uuid: 'rule-pinned', repositoryId: 'repo-1', sourcePath: '.cursorrules', status: 'active', pinnedSync: true },
+            { uuid: 'rule-active', repositoryId: 'repo-1', sourcePath: '.cursorrules', status: 'active' },
+        ]);
+
+        await (service as any).pauseAllIdeSyncRulesForRepository({
+            organizationAndTeamData,
+            repositoryId: 'repo-1',
+        });
+
+        expect(kodyRulesService.createOrUpdate).toHaveBeenCalledTimes(1);
+        expect(kodyRulesService.createOrUpdate).toHaveBeenCalledWith(
+            organizationAndTeamData,
+            expect.objectContaining({ uuid: 'rule-active', status: 'paused' }),
+            expect.any(Object),
+        );
     });
 
     it('does not touch Onboard-origin rules (sourcePath outside RULE_FILE_PATTERNS) during purge', async () => {

@@ -26,7 +26,12 @@ export class ManageImportedKodyRulesUseCase {
         action: ManageImportedRulesAction;
     }): Promise<{
         action: ManageImportedRulesAction;
-        counts: { active: number; paused: number; deleted: number };
+        counts: {
+            active: number;
+            paused: number;
+            deleted: number;
+            pinned: number;
+        };
     }> {
         const { organizationAndTeamData, repositoryId, action } = params;
 
