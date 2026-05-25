@@ -154,6 +154,51 @@ function normalizeFilenameForTier(filename?: string): string {
     return filename.replace(/^\/+/, '').replace(/\\/g, '/').trim();
 }
 
+// Bounded Levenshtein distance — returns early once it exceeds `max`.
+// Used to recover a kody_rules ruleUuid the LLM corrupted while echoing
+// it (LLMs occasionally drop/transpose a character in a 36-char UUID).
+function boundedEditDistance(a: string, b: string, max: number): number {
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+        const curr = [i];
+        let rowMin = i;
+        for (let j = 1; j <= b.length; j++) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+            const v = Math.min(
+                prev[j] + 1,
+                curr[j - 1] + 1,
+                prev[j - 1] + cost,
+            );
+            curr.push(v);
+            if (v < rowMin) rowMin = v;
+        }
+        if (rowMin > max) return max + 1; // whole row already over budget
+        prev = curr;
+    }
+    return prev[b.length];
+}
+
+// Recover the intended rule when the LLM-emitted `ruleUuid` is not an
+// exact key but is within a tiny edit distance of EXACTLY ONE known rule.
+// UUIDs don't collide within distance 2, and the per-PR rule set is small,
+// so a unique near-match is an unambiguous recovery; ambiguity (0 or >1
+// matches) returns null so the caller drops the suggestion. See #1170.
+export function recoverRuleUuid(
+    emitted: string,
+    knownUuids: Iterable<string>,
+): string | null {
+    const MAX_DISTANCE = 2;
+    let match: string | null = null;
+    for (const known of knownUuids) {
+        if (boundedEditDistance(emitted, known, MAX_DISTANCE) <= MAX_DISTANCE) {
+            if (match) return null; // more than one near-match → ambiguous
+            match = known;
+        }
+    }
+    return match;
+}
+
 function estimateHunkHeaderChars(diff: string): number {
     if (!diff) return 0;
     let hunkCount = 0;
@@ -978,17 +1023,38 @@ export abstract class BaseCodeReviewAgentProvider {
                         });
                         return false;
                     }
-                    if (!kodyRulesByUuid.has(ruleUuid)) {
-                        this.agentLogger.warn({
-                            message: `[AGENT] Dropping kody_rules suggestion with unknown ruleUuid=${ruleUuid}: "${(s.oneSentenceSummary || s.suggestionContent).slice(0, 140)}"`,
-                            context: this.getIdentity().name,
-                            metadata: {
-                                prNumber: input.prNumber,
-                                ruleUuid,
-                                knownRuleCount: kodyRulesByUuid.size,
-                            },
-                        });
-                        return false;
+                    let resolvedRuleUuid = ruleUuid;
+                    if (!kodyRulesByUuid.has(resolvedRuleUuid)) {
+                        // LLMs occasionally corrupt a character when echoing
+                        // the 36-char UUID (observed: a dropped digit), which
+                        // would discard an otherwise-correct finding. Recover
+                        // only when it maps unambiguously to one known rule.
+                        const recovered = recoverRuleUuid(
+                            resolvedRuleUuid,
+                            kodyRulesByUuid.keys(),
+                        );
+                        if (recovered) {
+                            this.agentLogger.warn({
+                                message: `[AGENT] Recovered corrupted kody_rules ruleUuid=${resolvedRuleUuid} → ${recovered} (LLM UUID echo drift)`,
+                                context: this.getIdentity().name,
+                                metadata: { prNumber: input.prNumber },
+                            });
+                            // Normalize so downstream rule-link rendering uses
+                            // the real UUID.
+                            resolvedRuleUuid = recovered;
+                            s.ruleUuid = recovered;
+                        } else {
+                            this.agentLogger.warn({
+                                message: `[AGENT] Dropping kody_rules suggestion with unknown ruleUuid=${resolvedRuleUuid}: "${(s.oneSentenceSummary || s.suggestionContent).slice(0, 140)}"`,
+                                context: this.getIdentity().name,
+                                metadata: {
+                                    prNumber: input.prNumber,
+                                    ruleUuid: resolvedRuleUuid,
+                                    knownRuleCount: kodyRulesByUuid.size,
+                                },
+                            });
+                            return false;
+                        }
                     }
                     // PR-level kody_rules omit relevantFile by design.
                     const kodyRulePathMatch = !s.relevantFile || validFilesByNormalized.has(normalizeRepoPath(s.relevantFile));
