@@ -134,7 +134,12 @@ export class AstGraphBuildJobProcessor implements IJobProcessorService {
             this.logger.log({
                 message: `[AST-GRAPH-JOB] Auth resolved for ${repoLabel} (${Date.now() - authStart}ms)`,
                 context: AstGraphBuildJobProcessor.name,
-                metadata: { jobId, hasToken: !!cloneParams.auth?.token },
+                metadata: {
+                    jobId,
+                    platform: payload.platform,
+                    hasToken: !!cloneParams.auth?.token,
+                    hasUsername: !!cloneParams.auth?.username,
+                },
             });
 
             // 2. Create sandbox + clone

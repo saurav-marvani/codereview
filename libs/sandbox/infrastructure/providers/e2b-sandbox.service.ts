@@ -581,14 +581,24 @@ export class E2BSandboxService implements ISandboxProvider {
         switch (platform) {
             case PlatformType.GITHUB:
                 return `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
-            case PlatformType.BITBUCKET:
-                // Bitbucket App Passwords require the actual username, not x-access-token
-                if (!username) {
+            case PlatformType.BITBUCKET: {
+                // Bitbucket git-over-HTTPS auth differs from the REST API.
+                // Atlassian API tokens (ATATT…, the scheme that replaces app
+                // passwords) authenticate to git ONLY with the literal
+                // username `x-bitbucket-api-token-auth` — the REST API accepts
+                // <email>:<token>, but git rejects that pair (→ "could not
+                // read Username"). Classic app passwords keep using the
+                // Bitbucket account username. See #1168.
+                const gitUsername = token.startsWith('ATATT')
+                    ? 'x-bitbucket-api-token-auth'
+                    : username;
+                if (!gitUsername) {
                     throw new Error(
-                        'Bitbucket authentication requires a username, but it was not provided.',
+                        'Bitbucket authentication requires a username (app password) or an Atlassian API token, but neither was provided.',
                     );
                 }
-                return `Authorization: Basic ${Buffer.from(`${username}:${token}`).toString('base64')}`;
+                return `Authorization: Basic ${Buffer.from(`${gitUsername}:${token}`).toString('base64')}`;
+            }
             case PlatformType.GITLAB:
             case PlatformType.AZURE_REPOS:
                 return `Authorization: Basic ${Buffer.from(`oauth2:${token}`).toString('base64')}`;
