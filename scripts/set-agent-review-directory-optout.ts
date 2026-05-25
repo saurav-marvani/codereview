@@ -33,18 +33,21 @@ const ORG_ID = '';
 const FLAG_KEY = 'agent-review';
 const GROUP_TYPE = 'repositoryDirectory';
 /**
- * Separator joining repositoryId + directoryId into the composite group
- * key. Must match `REPOSITORY_DIRECTORY_KEY_SEPARATOR` in
+ * Separator + sentinel joining repositoryId + directoryId into the
+ * composite group key. Must match the constants in
  * `libs/code-review/pipeline/utils/repository-directory-key.ts` —
- * the pipeline gate builds the same key when probing the flag.
+ * the pipeline gate builds the same keys when probing the flag.
  */
 const REPOSITORY_DIRECTORY_KEY_SEPARATOR = ':';
+/** Sentinel meaning "any directory in this repo" — repo-wide opt-out. */
+const REPOSITORY_WIDE_DIRECTORY_SENTINEL = '*';
 /** Flip to true to actually PATCH the flag. Default is dry-run. */
 const APPLY = true;
 // ────────────────────────────────────────────────────────────────────
 
 interface RepositoryDirectoryPair {
     repositoryId: string;
+    /** Directory id, or `*` for a repo-wide opt-out. */
     directoryId: string;
     /** `${repositoryId}:${directoryId}` — what we send to PostHog. */
     compositeKey: string;
@@ -115,25 +118,33 @@ async function fetchRepositoryDirectoryPairsForOrg(
         [organizationId],
     );
 
-    // Each row's configValue is a CodeReviewParameter JSON. We pair the
-    // outer repository.id with each inner folder.id (DirectoryFolder.id —
-    // one per configured path). The composite is what the pipeline gate
-    // passes as the `repositoryDirectory` PostHog group key.
+    // Each row's configValue is a CodeReviewParameter JSON. For every
+    // repository we emit BOTH:
+    //   - `${repoId}:*` (the repo-wide sentinel) so the gate's
+    //     always-first repo-wide probe will deny the whole repo, AND
+    //   - `${repoId}:${folder.id}` for each inner folder.id
+    //     (DirectoryFolder.id — one per configured path).
+    // The composites are what the pipeline gate passes as the
+    // `repositoryDirectory` PostHog group key. Net effect: every org
+    // passed to this script is fully opted out of agent mode across
+    // every repo, regardless of which directory a PR touches.
     const pairs = new Map<string, RepositoryDirectoryPair>();
+    const emit = (repositoryId: string, directoryId: string): void => {
+        const compositeKey = `${repositoryId}${REPOSITORY_DIRECTORY_KEY_SEPARATOR}${directoryId}`;
+        pairs.set(compositeKey, { repositoryId, directoryId, compositeKey });
+    };
+
     for (const row of result.rows) {
         const repositories = row.configValue?.repositories ?? [];
         for (const repo of repositories) {
             const repositoryId = repo?.id;
             if (!repositoryId) continue;
+
+            emit(repositoryId, REPOSITORY_WIDE_DIRECTORY_SENTINEL);
+
             for (const group of repo.directories ?? []) {
                 for (const folder of group?.folders ?? []) {
-                    if (!folder?.id) continue;
-                    const compositeKey = `${repositoryId}${REPOSITORY_DIRECTORY_KEY_SEPARATOR}${folder.id}`;
-                    pairs.set(compositeKey, {
-                        repositoryId,
-                        directoryId: folder.id,
-                        compositeKey,
-                    });
+                    if (folder?.id) emit(repositoryId, folder.id);
                 }
             }
         }

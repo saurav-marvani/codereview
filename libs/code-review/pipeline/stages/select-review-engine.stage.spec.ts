@@ -20,6 +20,8 @@ jest.mock('@kodus/flow', () => ({
 const EE = [...EE_BRANCH_STAGE_NAMES].sort();
 const AGENT = [...AGENT_BRANCH_STAGE_NAMES].sort();
 
+const REPO_WIDE_KEY = 'repo-9:*';
+
 const makeContext = (
     overrides: Partial<CodeReviewPipelineContext> = {},
 ): CodeReviewPipelineContext =>
@@ -94,44 +96,99 @@ describe('SelectReviewEngineStage', () => {
         });
     });
 
-    describe('default (no touched directories)', () => {
-        it('selects agent mode when there are no configured directoryFolders', async () => {
-            const ctx = makeContext({
-                codeReviewConfig: { directoryFolders: [] } as any,
-            });
-
-            const result = await stage.execute(ctx);
-
-            expect(featureGate.isEnabled).not.toHaveBeenCalled();
-            expect(result.pipelineMetadata?.useAgentEngine).toBe(true);
-            expect([...(result.statusInfo.skipStages ?? [])].sort()).toEqual(
-                EE,
-            );
+    it('selects agent mode and does NOT probe when the context has no repositoryId', async () => {
+        const ctx = makeContext({
+            repository: { name: 'orphan' } as any,
         });
 
-        it('selects agent mode when no changed file falls in any configured folder', async () => {
-            const ctx = makeContext({
-                preliminaryFiles: [{ filename: 'docs/readme.md' }] as any,
-            });
+        const result = await stage.execute(ctx);
 
-            const result = await stage.execute(ctx);
-
-            expect(featureGate.isEnabled).not.toHaveBeenCalled();
-            expect(result.pipelineMetadata?.useAgentEngine).toBe(true);
-        });
+        expect(featureGate.isEnabled).not.toHaveBeenCalled();
+        expect(result.pipelineMetadata?.useAgentEngine).toBe(true);
     });
 
-    describe('per-directory check (any-opt-out)', () => {
-        it('evaluates the flag once per touched directory using the repositoryDirectory composite key', async () => {
+    describe('repo-wide probe (always first)', () => {
+        it('probes ${repoId}:* before any per-directory key', async () => {
             featureGate.isEnabled.mockResolvedValue(true);
 
             await stage.execute(makeContext());
 
-            expect(featureGate.isEnabled).toHaveBeenCalledTimes(2);
+            const firstCallKey =
+                featureGate.isEnabled.mock.calls[0][1].groups
+                    .repositoryDirectory;
+            expect(firstCallKey).toBe(REPO_WIDE_KEY);
+        });
+
+        it('drops to EE on a repo-wide denial without running per-directory probes', async () => {
+            featureGate.isEnabled.mockResolvedValueOnce(false); // repo-wide denies
+
+            const result = await stage.execute(makeContext());
+
+            expect(featureGate.isEnabled).toHaveBeenCalledTimes(1);
+            expect(result.pipelineMetadata?.useAgentEngine).toBe(false);
+            expect([...(result.statusInfo.skipStages ?? [])].sort()).toEqual(
+                AGENT,
+            );
+        });
+
+        it('probes repo-wide even when the repo has no directoryFolders configured', async () => {
+            const ctx = makeContext({
+                codeReviewConfig: { directoryFolders: [] } as any,
+            });
+            featureGate.isEnabled.mockResolvedValueOnce(false);
+
+            const result = await stage.execute(ctx);
+
+            expect(featureGate.isEnabled).toHaveBeenCalledTimes(1);
+            expect(featureGate.isEnabled).toHaveBeenCalledWith(
+                FEATURE_KEYS.agentReview,
+                expect.objectContaining({
+                    groups: { repositoryDirectory: REPO_WIDE_KEY },
+                }),
+            );
+            expect(result.pipelineMetadata?.useAgentEngine).toBe(false);
+        });
+
+        it('still selects agent mode when repo-wide allows and there are no touched directories', async () => {
+            const ctx = makeContext({
+                preliminaryFiles: [{ filename: 'docs/readme.md' }] as any,
+            });
+            featureGate.isEnabled.mockResolvedValue(true);
+
+            const result = await stage.execute(ctx);
+
+            expect(featureGate.isEnabled).toHaveBeenCalledTimes(1);
+            expect(result.pipelineMetadata?.useAgentEngine).toBe(true);
+        });
+
+        it('continues to per-directory probes when the repo-wide probe THROWS (fail-open)', async () => {
+            featureGate.isEnabled
+                .mockRejectedValueOnce(new Error('PostHog 5xx')) // repo-wide
+                .mockResolvedValueOnce(true) // dir-web
+                .mockResolvedValueOnce(false); // dir-core denies
+
+            const result = await stage.execute(makeContext());
+
+            expect(featureGate.isEnabled).toHaveBeenCalledTimes(3);
+            expect(result.pipelineMetadata?.useAgentEngine).toBe(false);
+        });
+    });
+
+    describe('per-directory check (any-opt-out)', () => {
+        it('probes one key per touched directory after the repo-wide check passes', async () => {
+            featureGate.isEnabled.mockResolvedValue(true);
+
+            await stage.execute(makeContext());
+
+            expect(featureGate.isEnabled).toHaveBeenCalledTimes(3);
             const keys = featureGate.isEnabled.mock.calls
                 .map((c) => c[1].groups.repositoryDirectory)
                 .sort();
-            expect(keys).toEqual(['repo-9:dir-core', 'repo-9:dir-web']);
+            expect(keys).toEqual([
+                'repo-9:*',
+                'repo-9:dir-core',
+                'repo-9:dir-web',
+            ]);
         });
 
         it('passes ONLY the repositoryDirectory group — no repository-only or directory-only groups', async () => {
@@ -146,18 +203,7 @@ describe('SelectReviewEngineStage', () => {
             }
         });
 
-        it('selects agent mode and does NOT probe when the context has no repositoryId', async () => {
-            const ctx = makeContext({
-                repository: { name: 'orphan' } as any,
-            });
-
-            const result = await stage.execute(ctx);
-
-            expect(featureGate.isEnabled).not.toHaveBeenCalled();
-            expect(result.pipelineMetadata?.useAgentEngine).toBe(true);
-        });
-
-        it('selects agent mode when every touched directory is enabled', async () => {
+        it('selects agent mode when every probe (repo-wide + per-directory) allows', async () => {
             featureGate.isEnabled.mockResolvedValue(true);
 
             const result = await stage.execute(makeContext());
@@ -170,8 +216,9 @@ describe('SelectReviewEngineStage', () => {
 
         it('drops to EE mode when ANY touched directory denies', async () => {
             featureGate.isEnabled
-                .mockResolvedValueOnce(true)
-                .mockResolvedValueOnce(false);
+                .mockResolvedValueOnce(true) // repo-wide
+                .mockResolvedValueOnce(true) // first directory
+                .mockResolvedValueOnce(false); // second directory denies
 
             const result = await stage.execute(makeContext());
 
@@ -181,33 +228,26 @@ describe('SelectReviewEngineStage', () => {
             );
         });
 
-        it('short-circuits the loop on the first denial', async () => {
-            featureGate.isEnabled.mockResolvedValueOnce(false);
+        it('short-circuits the directory loop on the first denial', async () => {
+            featureGate.isEnabled
+                .mockResolvedValueOnce(true) // repo-wide
+                .mockResolvedValueOnce(false); // first directory denies
 
             await stage.execute(makeContext());
 
-            expect(featureGate.isEnabled).toHaveBeenCalledTimes(1);
-        });
-
-        it('treats a directory probe failure as not-opted-out (continues the loop instead of forcing EE)', async () => {
-            featureGate.isEnabled
-                .mockRejectedValueOnce(new Error('PostHog 5xx'))
-                .mockResolvedValueOnce(true);
-
-            const result = await stage.execute(makeContext());
-
             expect(featureGate.isEnabled).toHaveBeenCalledTimes(2);
-            expect(result.pipelineMetadata?.useAgentEngine).toBe(true);
         });
 
-        it('still drops to EE when a later directory denies after an earlier probe failed', async () => {
+        it('treats a directory probe failure as not-opted-out (keeps checking the rest)', async () => {
             featureGate.isEnabled
-                .mockRejectedValueOnce(new Error('PostHog 5xx'))
-                .mockResolvedValueOnce(false);
+                .mockResolvedValueOnce(true) // repo-wide
+                .mockRejectedValueOnce(new Error('PostHog 5xx')) // first dir
+                .mockResolvedValueOnce(true); // second dir
 
             const result = await stage.execute(makeContext());
 
-            expect(result.pipelineMetadata?.useAgentEngine).toBe(false);
+            expect(featureGate.isEnabled).toHaveBeenCalledTimes(3);
+            expect(result.pipelineMetadata?.useAgentEngine).toBe(true);
         });
 
         it('falls back to teamId as identifier when organizationId is missing and skips getReleaseTrack', async () => {

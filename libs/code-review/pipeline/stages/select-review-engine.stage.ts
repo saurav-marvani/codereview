@@ -15,26 +15,36 @@ import {
     AGENT_BRANCH_STAGE_NAMES,
     EE_BRANCH_STAGE_NAMES,
 } from '../strategy/engine-branches.const';
-import { buildRepositoryDirectoryKey } from '../utils/repository-directory-key';
+import {
+    buildRepositoryDirectoryKey,
+    buildRepositoryWideKey,
+} from '../utils/repository-directory-key';
 import { resolveTouchedDirectoryIds } from '../utils/resolve-touched-directories';
 
 /**
  * Picks which engine handles this PR — agent mode or EE mode. The
  * unified pipeline contains both branches; this gate calls
  * `skipStages([...])` to bypass whichever branch lost. Default is agent
- * mode; the `agent-review` flag is consulted per touched directory and
- * any denial drops the PR to EE mode (any-opt-out).
+ * mode; the `agent-review` flag is consulted and any denial drops the
+ * PR to EE mode (any-opt-out).
  *
- * The flag is keyed on the `repositoryDirectory` group in PostHog — a
- * composite of `${repositoryId}:${directoryId}` so the same directory
- * id appearing in two repos can be opted out independently. Evaluations
- * pass exactly that one group; nothing repo-only or directory-only.
+ * The flag is keyed on the `repositoryDirectory` group in PostHog. Two
+ * shapes of composite key are probed:
+ *   - `${repositoryId}:*` — repo-wide opt-out (always probed once per PR).
+ *   - `${repositoryId}:${directoryId}` — per-touched-directory opt-out.
+ *
+ * Repo-wide takes precedence: a denial there short-circuits before the
+ * per-directory loop runs. This covers repos with no directories
+ * configured (no per-dir keys exist for them; the repo-wide key is the
+ * only way to opt them out) AND lets you opt out a whole repo even
+ * when it has directories configured (just add `${repo}:*` to the
+ * flag's list).
  *
  * Decision precedence:
  *   1. `API_AGENT_REVIEW_ENABLED` env override → agent (admin escape).
- *   2. For each touched directory, evaluate the flag with the composite
- *      group key; the first denial drops the PR to EE.
- *   3. No touched directories or all allow → agent.
+ *   2. Probe `${repositoryId}:*`. Denial → EE.
+ *   3. Probe each touched directory's composite. First denial → EE.
+ *   4. Anything else → agent.
  *
  * Marked silent so the UI/timeline never shows this internal decision.
  * Runs right after `ResolveConfigStage` (so `preliminaryFiles` and
@@ -94,24 +104,14 @@ export class SelectReviewEngineStage extends BasePipelineStage<CodeReviewPipelin
             return true;
         }
 
-        const folders = context.codeReviewConfig?.directoryFolders ?? [];
-        const paths = (context.preliminaryFiles ?? []).map(
-            (file) => file.filename,
-        );
-        const touchedDirectoryIds = resolveTouchedDirectoryIds(paths, folders);
-
-        if (touchedDirectoryIds.length === 0) {
-            return true;
-        }
-
         const repositoryId = context.repository?.id;
         if (!repositoryId) {
-            // Composite key needs both ids. Without a repositoryId we
-            // can't build the group key, so the gate is a no-op and
-            // the default (agent) stands.
+            // Composite key needs the repositoryId. Without it we can't
+            // build any group key, so the gate is a no-op and the
+            // default (agent) stands.
             this.logger.warn({
                 message:
-                    '[ENGINE-SELECT] no repository id on context — skipping directory opt-out probes',
+                    '[ENGINE-SELECT] no repository id on context — skipping opt-out probes',
                 context: this.stageName,
             });
             return true;
@@ -123,6 +123,54 @@ export class SelectReviewEngineStage extends BasePipelineStage<CodeReviewPipelin
         const releaseTrack = orgId
             ? await this.organizationService.getReleaseTrack(orgId)
             : undefined;
+
+        // Step 1: probe the repo-wide opt-out (`${repoId}:*`). Covers
+        // repos with no directories configured AND lets you opt out a
+        // whole repo even when it has directories. A denial here
+        // short-circuits before the per-directory loop runs.
+        const repoWideKey = buildRepositoryWideKey(repositoryId);
+        try {
+            const repoWideEnabled = await this.featureGate.isEnabled(
+                FEATURE_KEYS.agentReview,
+                {
+                    identifier,
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    releaseTrack,
+                    groups: { repositoryDirectory: repoWideKey },
+                },
+            );
+            if (!repoWideEnabled) {
+                this.logger.log({
+                    message: `[ENGINE-SELECT] ${repoWideKey} opted out — dropping to EE mode`,
+                    context: this.stageName,
+                    metadata: { repositoryDirectory: repoWideKey, repositoryId },
+                });
+                return false;
+            }
+        } catch (err) {
+            // Probe failure for the repo-wide key: treat as not-opted-out
+            // and continue to the per-directory loop. Same fail-open
+            // semantic as below.
+            this.logger.warn({
+                message:
+                    '[ENGINE-SELECT] repo-wide probe failed — continuing to per-directory probes',
+                context: this.stageName,
+                metadata: {
+                    repositoryDirectory: repoWideKey,
+                    repositoryId,
+                    error: err instanceof Error ? err.message : String(err),
+                },
+            });
+        }
+
+        // Step 2: probe each touched directory. Repos with no
+        // directoryFolders or PRs that touch none → this loop is empty
+        // and the function returns true (agent mode).
+        const folders = context.codeReviewConfig?.directoryFolders ?? [];
+        const paths = (context.preliminaryFiles ?? []).map(
+            (file) => file.filename,
+        );
+        const touchedDirectoryIds = resolveTouchedDirectoryIds(paths, folders);
 
         for (const directoryId of touchedDirectoryIds) {
             const repositoryDirectory = buildRepositoryDirectoryKey(
