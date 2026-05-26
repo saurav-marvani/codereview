@@ -55,6 +55,10 @@ const TEST_CARD = "4242424242424242";
 const TEST_EXPIRY = "1234"; // MM/YY → 12/34
 const TEST_CVC = "123";
 const TEST_ZIP = "12345";
+// Stripe Checkout started requiring a phone number when the "Save my
+// information / Link" opt-in is on (observed 2026-05-26: submit silently
+// blocked with a red phone field, page never left checkout.stripe.com).
+const TEST_PHONE = "2015550123";
 
 const log = (...a) => console.log("[stripe-billing]", ...a);
 const pass = (sub, msg) => console.log(`[stripe-billing] PASS sub-flow-${sub}: ${msg}`);
@@ -169,6 +173,24 @@ async function completeStripeCheckout(page) {
         await email.fill("kodus-e2e@kodus.io");
     }
 
+    // Opt OUT of Link "Save my information for faster checkout". When it's on,
+    // Stripe (a) requires a phone number and (b) pops a Link VerificationModal
+    // that intercepts the Subscribe click and stalls the submit (observed
+    // 2026-05-26: sub-flow-1 stuck on the required phone field; sub-flow-2
+    // timed out clicking submit behind a VerificationModal). Unchecking it
+    // removes both. Best-effort across Stripe's shifting markup.
+    const linkOptIn = page
+        .locator(
+            'input#enableStripePass, input[name="enableStripePass"], input[type="checkbox"][aria-label*="Save my information" i]',
+        )
+        .first();
+    if (
+        (await linkOptIn.count()) &&
+        (await linkOptIn.isChecked().catch(() => false))
+    ) {
+        await linkOptIn.uncheck({ force: true }).catch(() => {});
+    }
+
     // Hosted Checkout exposes the card fields with stable IDs at the
     // top level of the document (not in an iframe). Using ID selectors
     // dodges the getByLabel ambiguity with the brand SVG that also
@@ -189,6 +211,17 @@ async function completeStripeCheckout(page) {
     const zip = page.locator('input[autocomplete="postal-code"], input#billingPostalCode').first();
     if (await zip.count()) {
         await zip.fill(TEST_ZIP);
+    }
+    // Phone is now required when the Link "save my information" opt-in is on.
+    // Fill it if present so the Subscribe submit isn't blocked by inline
+    // validation (the field shows a red border and the page never redirects).
+    const phone = page
+        .locator(
+            'input#phoneNumber, input[name="phoneNumber"], input[autocomplete="tel"], input[type="tel"]',
+        )
+        .first();
+    if (await phone.count()) {
+        await phone.fill(TEST_PHONE);
     }
 
     log(`submitting…`);
