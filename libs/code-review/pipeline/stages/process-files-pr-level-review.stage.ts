@@ -334,8 +334,9 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
         }
 
         const prBody = context.pullRequest.body ?? '';
+        const signalSources = this.buildSignalSources(context);
         const prBodyHash = this.computePrBodyHash(prBody);
-        const signals = this.detectSignals(prBody);
+        const signals = this.detectSignals(signalSources, prBody);
 
         try {
             const prepareContext = {
@@ -431,7 +432,8 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
         }
 
         const prBody = context.pullRequest?.body ?? '';
-        if (!this.hasBusinessSignals(prBody)) {
+        const signalSources = this.buildSignalSources(context);
+        if (!this.hasBusinessSignals(signalSources)) {
             return false;
         }
 
@@ -445,6 +447,18 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
         return true;
     }
 
+    /**
+     * Build the combined text surface (body + title + branch name) used for
+     * ticket-key and task-link detection — mirrors the v4 stage so this
+     * legacy path stays in sync.
+     */
+    private buildSignalSources(context: CodeReviewPipelineContext): string {
+        const body = context.pullRequest?.body ?? '';
+        const title = context.pullRequest?.title ?? '';
+        const branch = context.pullRequest?.head?.ref ?? '';
+        return [body, title, branch].filter(Boolean).join(' ');
+    }
+
     private hasBusinessSignals(body: string): boolean {
         return (
             this.detectTicketKeys(body).length > 0 ||
@@ -452,17 +466,26 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
         );
     }
 
-    private detectSignals(body: string): Record<string, string[]> {
+    /**
+     * Ticket keys and task URLs may legitimately come from the PR title or
+     * branch name. Requirement keywords (`when`, `then`, ...) stay scoped to
+     * the body — they double as common English words that would false-positive
+     * on titles like "Fix crash when user clicks save".
+     */
+    private detectSignals(
+        combined: string,
+        body: string,
+    ): Record<string, string[]> {
         return {
-            ticketKeys: this.detectTicketKeys(body),
-            taskLinks: this.detectTaskLinks(body),
+            ticketKeys: this.detectTicketKeys(combined),
+            taskLinks: this.detectTaskLinks(combined),
             requirementKeywords: this.detectRequirementKeywords(body),
         };
     }
 
     private detectTicketKeys(body: string): string[] {
-        const matches = body.match(/[A-Z]{2,}-\d+/g);
-        return matches ?? [];
+        const matches = body.match(/[A-Za-z]{2,}-\d+/g) ?? [];
+        return Array.from(new Set(matches.map((m) => m.toUpperCase())));
     }
 
     private detectTaskLinks(body: string): string[] {

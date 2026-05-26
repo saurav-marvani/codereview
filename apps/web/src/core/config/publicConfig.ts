@@ -22,6 +22,7 @@ export type PublicConfig = {
     tokenDocsGitlab: string;
     tokenDocsBitbucket: string;
     tokenDocsAzureRepos: string;
+    tokenDocsForgejo: string;
     ruleFilesDocs: string;
     releaseVersion: string;
     // Distinguishes "development" / "production" / "self-hosted" so

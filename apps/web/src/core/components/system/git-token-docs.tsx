@@ -5,7 +5,12 @@ import { HelpCircle } from "lucide-react";
 
 import { useConfig } from "@providers/ConfigProvider";
 
-type Provider = "github" | "gitlab" | "bitbucket" | "azure_repos";
+type Provider =
+    | "github"
+    | "gitlab"
+    | "bitbucket"
+    | "azure_repos"
+    | "forgejo";
 
 // Build the provider → docs URL map from PublicConfig. Was previously a
 // module-level const reading process.env at import time (inlined into the
@@ -18,6 +23,7 @@ export function useTokenDocs(): Record<Provider, string> {
         gitlab: cfg.tokenDocsGitlab,
         bitbucket: cfg.tokenDocsBitbucket,
         azure_repos: cfg.tokenDocsAzureRepos,
+        forgejo: cfg.tokenDocsForgejo,
     };
 }
 

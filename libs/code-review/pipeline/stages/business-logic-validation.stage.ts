@@ -107,9 +107,11 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
             });
         }
 
-        const prBody = context.pullRequest.body ?? '';
+        const prBody = context.pullRequest?.body ?? '';
+        const signalSources = this.buildSignalSources(context);
+
         const prBodyHash = this.computePrBodyHash(prBody);
-        const signals = this.detectSignals(prBody);
+        const signals = this.detectSignals(signalSources, prBody);
 
         try {
             const prepareContext = {
@@ -167,8 +169,7 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
                     draft.businessLogicOutcome = {
                         kind: 'skipped',
                         reason: 'no_task_mcp',
-                        message:
-                            'Skipped: no task-management MCP connected.',
+                        message: 'Skipped: no task-management MCP connected.',
                     };
                 });
             }
@@ -337,7 +338,8 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
             };
         }
 
-        const connectedMcps = await this.getConnectedTaskManagementMcps(context);
+        const connectedMcps =
+            await this.getConnectedTaskManagementMcps(context);
 
         if (connectedMcps.length === 0) {
             return {
@@ -348,11 +350,13 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
         }
 
         const prBody = context.pullRequest?.body ?? '';
-        if (!this.hasRelevantBusinessSignals(prBody, connectedMcps)) {
+        const signalSources = this.buildSignalSources(context);
+
+        if (!this.hasRelevantBusinessSignals(signalSources, connectedMcps)) {
             return {
                 reason: 'no_signals',
                 message:
-                    'Skipped: no ticket key or task link matching a connected MCP found in the PR description.',
+                    'Skipped: no ticket key or task link matching a connected MCP found in the PR description, title or branch name.',
             };
         }
 
@@ -370,17 +374,32 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
         return null;
     }
 
-    private hasBusinessSignals(body: string): boolean {
-        return (
-            this.detectTicketKeys(body).length > 0 ||
-            this.detectTaskLinks(body).length > 0
-        );
+    /**
+     * Build the combined text surface (body + title + branch name) used for
+     * ticket-key and task-link detection. GitLab / GitHub already render
+     * ticket references found in the title as hot-links, so requiring them in
+     * the body would skip validation in the most common real-world case.
+     */
+    private buildSignalSources(context: CodeReviewPipelineContext): string {
+        const body = context.pullRequest?.body ?? '';
+        const title = context.pullRequest?.title ?? '';
+        const branch = context.pullRequest?.head?.ref ?? '';
+        return [body, title, branch].filter(Boolean).join(' ');
     }
 
-    private detectSignals(body: string): Record<string, string[]> {
+    /**
+     * Ticket keys and task URLs may legitimately come from the PR title or
+     * branch name. Requirement keywords (`when`, `then`, ...) stay scoped to
+     * the body — they double as common English words that would false-positive
+     * on titles like "Fix crash when user clicks save".
+     */
+    private detectSignals(
+        combined: string,
+        body: string,
+    ): Record<string, string[]> {
         return {
-            ticketKeys: this.detectTicketKeys(body),
-            taskLinks: this.detectTaskLinks(body),
+            ticketKeys: this.detectTicketKeys(combined),
+            taskLinks: this.detectTaskLinks(combined),
             requirementKeywords: this.detectRequirementKeywords(body),
         };
     }
@@ -409,15 +428,19 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
                 const aliases = [conn.appName, conn.provider]
                     .map((v) =>
                         typeof v === 'string'
-                            ? v.trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
+                            ? v
+                                  .trim()
+                                  .toLowerCase()
+                                  .replace(/[^a-z0-9]+/g, '')
                             : '',
                     )
                     .filter(Boolean);
 
                 for (const alias of aliases) {
-                    const hint = BusinessLogicValidationStage.TASK_MANAGEMENT_HINTS.find(
-                        (h) => alias.includes(h) || h.includes(alias),
-                    );
+                    const hint =
+                        BusinessLogicValidationStage.TASK_MANAGEMENT_HINTS.find(
+                            (h) => alias.includes(h) || h.includes(alias),
+                        );
                     if (hint && !matched.includes(hint)) {
                         matched.push(hint);
                     }
@@ -473,8 +496,8 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
     }
 
     private detectTicketKeys(body: string): string[] {
-        const matches = body.match(/[A-Z]{2,}-\d+/g);
-        return matches ?? [];
+        const matches = body.match(/[A-Za-z]{2,}-\d+/g) ?? [];
+        return Array.from(new Set(matches.map((m) => m.toUpperCase())));
     }
 
     private detectTaskLinks(body: string): string[] {
@@ -587,7 +610,10 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
             // into logs and UI status messages.
             const trimmed = line
                 .replace(/^\s*#{1,6}\s*/, '')
-                .replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}]\s*/u, '')
+                .replace(
+                    /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]\s*/u,
+                    '',
+                )
                 .replace(/\s*[:：]\s*$/, '')
                 .trim();
             if (trimmed) {

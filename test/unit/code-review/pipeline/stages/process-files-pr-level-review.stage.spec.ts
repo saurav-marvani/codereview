@@ -227,4 +227,141 @@ Encontrei contexto suficiente da task, mas nao consegui carregar o diff da pull 
 
         expect(result.businessLogicResults).toEqual([]);
     });
+
+    describe('signal sources beyond the PR body', () => {
+        const ctx = (overrides: Record<string, unknown>) => ({
+            organizationAndTeamData: {
+                organizationId: 'org-1',
+                teamId: 'team-1',
+            },
+            codeReviewConfig: { reviewOptions: { business_logic: true } },
+            repository: { id: 'repo-1', name: 'repo-name' },
+            platformType: 'github',
+            pullRequest: {
+                number: 42,
+                body: '',
+                title: '',
+                head: { ref: '' },
+                base: { ref: 'main' },
+            },
+            changedFiles: [],
+            pipelineMetadata: {},
+            errors: [],
+            ...overrides,
+        });
+
+        it('triggers when the ticket key is only in the PR title', async () => {
+            const context = ctx({
+                pullRequest: {
+                    number: 42,
+                    body: 'No identifier here',
+                    title: '[DL-2773] Add print working mode',
+                    head: { ref: 'feature/print-mode' },
+                    base: { ref: 'main' },
+                },
+            });
+
+            const shouldRun = await (
+                stage as any
+            ).shouldRunBusinessLogicValidation(context);
+
+            expect(shouldRun).toBe(true);
+        });
+
+        it('triggers when the ticket key is only in the branch (lowercase)', async () => {
+            const context = ctx({
+                pullRequest: {
+                    number: 42,
+                    body: 'No identifier here',
+                    title: 'Print working mode',
+                    head: { ref: 'feat/dl-2773-print-mode' },
+                    base: { ref: 'main' },
+                },
+            });
+
+            const shouldRun = await (
+                stage as any
+            ).shouldRunBusinessLogicValidation(context);
+
+            expect(shouldRun).toBe(true);
+        });
+
+        it('passes title-derived ticket keys to the agent', async () => {
+            businessRulesValidationAgentProvider.execute.mockResolvedValue(
+                '## Business Rules Validation\n\nStatus: no gaps',
+            );
+
+            const context = ctx({
+                pullRequest: {
+                    number: 42,
+                    body: '',
+                    title: '[DL-2773] Add print working mode',
+                    head: { ref: 'feature/print-mode' },
+                    base: { ref: 'main' },
+                },
+            });
+
+            await (stage as any).runBusinessLogicValidation(context);
+
+            expect(
+                businessRulesValidationAgentProvider.execute,
+            ).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    prepareContext: expect.objectContaining({
+                        businessSignals: expect.objectContaining({
+                            ticketKeys: ['DL-2773'],
+                        }),
+                    }),
+                }),
+            );
+        });
+
+        it('passes branch-derived ticket keys (lowercase) to the agent, uppercased and deduped', async () => {
+            businessRulesValidationAgentProvider.execute.mockResolvedValue(
+                '## Business Rules Validation\n\nStatus: no gaps',
+            );
+
+            const context = ctx({
+                pullRequest: {
+                    number: 42,
+                    body: 'Implements DL-2773',
+                    title: '[DL-2773] Add print working mode',
+                    head: { ref: 'feat/dl-2773-print-mode' },
+                    base: { ref: 'main' },
+                },
+            });
+
+            await (stage as any).runBusinessLogicValidation(context);
+
+            const call =
+                businessRulesValidationAgentProvider.execute.mock.calls[0][0];
+            expect(call.prepareContext.businessSignals.ticketKeys).toEqual([
+                'DL-2773',
+            ]);
+        });
+
+        it('does not flag requirement keywords that appear only in the title', async () => {
+            businessRulesValidationAgentProvider.execute.mockResolvedValue(
+                '## Business Rules Validation\n\nStatus: no gaps',
+            );
+
+            const context = ctx({
+                pullRequest: {
+                    number: 42,
+                    body: 'Implements DL-2773 — refactor logging only.',
+                    title: 'Fix crash when user clicks save',
+                    head: { ref: 'feat/dl-2773-fix' },
+                    base: { ref: 'main' },
+                },
+            });
+
+            await (stage as any).runBusinessLogicValidation(context);
+
+            const call =
+                businessRulesValidationAgentProvider.execute.mock.calls[0][0];
+            expect(
+                call.prepareContext.businessSignals.requirementKeywords,
+            ).toEqual([]);
+        });
+    });
 });

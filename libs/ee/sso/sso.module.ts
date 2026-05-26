@@ -1,6 +1,7 @@
 import { EmailModule } from '@libs/common/email/email.module';
 import { LicenseModule } from '@libs/ee/license/license.module';
 import { AuthModule } from '@libs/identity/modules/auth.module';
+import { UserCoreModule } from '@libs/identity/modules/user-core.module';
 import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SSO_CONFIG_REPOSITORY_TOKEN } from './domain/contracts/ssoConfig.repository.contract';
@@ -22,6 +23,7 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
     imports: [
         TypeOrmModule.forFeature([SSOConfigModel, SSOTestSessionModel]),
         AuthModule,
+        UserCoreModule,
         EmailModule,
         LicenseModule,
         forwardRef(() => NotificationModule),

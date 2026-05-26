@@ -62,6 +62,7 @@ export default function RootLayout({ children }: React.PropsWithChildren) {
         tokenDocsGitlab: process.env.WEB_TOKEN_DOCS_GITLAB ?? "",
         tokenDocsBitbucket: process.env.WEB_TOKEN_DOCS_BITBUCKET ?? "",
         tokenDocsAzureRepos: process.env.WEB_TOKEN_DOCS_AZUREREPOS ?? "",
+        tokenDocsForgejo: process.env.WEB_TOKEN_DOCS_FORGEJO ?? "",
         ruleFilesDocs: process.env.WEB_RULE_FILES_DOCS ?? "",
         releaseVersion: process.env.RELEASE_VERSION ?? "",
         nodeEnv: process.env.WEB_NODE_ENV ?? "",
