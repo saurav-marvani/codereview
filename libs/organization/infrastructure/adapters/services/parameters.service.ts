@@ -74,6 +74,20 @@ export class ParametersService implements IParametersService {
         );
     }
 
+    createNewActiveVersion<K extends ParametersKey>(
+        configKey: K,
+        teamId: string,
+        configValue: IParameters<K>['configValue'],
+        nextVersion: number,
+    ): Promise<ParametersEntity<K> | undefined> {
+        return this.parametersRepository.createNewActiveVersion(
+            configKey,
+            teamId,
+            configValue,
+            nextVersion,
+        );
+    }
+
     async createOrUpdateConfig<K extends ParametersKey>(
         parametersKey: K,
         configValue: ParametersEntity<K>['configValue'],
@@ -122,7 +136,9 @@ export class ParametersService implements IParametersService {
                 version,
             );
         } catch (err) {
-            throw new BadRequestException(err);
+            throw new BadRequestException('Failed to save parameters', {
+                cause: err,
+            });
         }
     }
 
