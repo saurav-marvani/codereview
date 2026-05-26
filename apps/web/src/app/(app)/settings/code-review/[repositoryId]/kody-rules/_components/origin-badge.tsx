@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge } from "@components/ui/badge";
-import { AlertTriangle, Pin } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import {
     inferRuleOrigin,
     type InferredRuleOrigin,
@@ -97,7 +97,13 @@ export const OriginBadge = ({ rule, syncEnabledForRepo }: OriginBadgeProps) => {
     const sourceSuffix = rule.sourcePath ? " (" + rule.sourcePath + ")" : "";
 
     return (
-        <>
+        // Single inline-flex group so origin + maintenance behave as ONE
+        // item inside the card header's `flex-wrap` container: when space
+        // runs out they wrap together (maintenance stays glued under its
+        // origin) instead of the maintenance chip breaking onto its own
+        // line, orphaned from the Auto-sync badge it qualifies. The inner
+        // gap is tighter than the header's `gap-2` to read as a unit.
+        <span className="inline-flex flex-wrap items-center gap-1.5">
             <Badge
                 active
                 size="xs"
@@ -117,10 +123,6 @@ export const OriginBadge = ({ rule, syncEnabledForRepo }: OriginBadgeProps) => {
                         sourceSuffix
                     }
                     className="bg-card-lv2 text-text-secondary ring-card-lv3 min-h-auto px-2.5 py-1 ring-1 [--button-foreground:var(--color-text-secondary)]">
-                    <Pin
-                        className="-ml-0.5 mr-1 size-3 -rotate-45"
-                        aria-hidden
-                    />
                     @kody-sync
                 </Badge>
             )}
@@ -141,6 +143,6 @@ export const OriginBadge = ({ rule, syncEnabledForRepo }: OriginBadgeProps) => {
                     Orphan
                 </Badge>
             )}
-        </>
+        </span>
     );
 };
