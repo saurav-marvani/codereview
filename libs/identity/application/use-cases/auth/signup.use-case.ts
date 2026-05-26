@@ -158,7 +158,7 @@ export class SignUpUseCase implements IUseCase {
                 teamRole: isOwner
                     ? TeamMemberRole.TEAM_LEADER
                     : TeamMemberRole.MEMBER,
-                status: isOwner,
+                status: isOwner || !!options?.preVerified,
             });
 
             if (!member) {

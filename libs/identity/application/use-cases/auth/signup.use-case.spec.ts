@@ -129,4 +129,53 @@ describe('SignUpUseCase — user status when joining an existing org', () => {
             expect(registered.role).toBe(Role.OWNER);
         });
     });
+
+    describe('team_member membership status (P3 regression)', () => {
+        // The `team_member.status` flag controls whether the member shows up
+        // in the Workspace members list. It must be active for owners and for
+        // trusted provisioning (SSO/preVerified), and must stay inactive for a
+        // plain non-owner join — regardless of cloud mode. Guards the
+        // `status: isOwner || !!options?.preVerified` rule against regression.
+        const membershipStatusFromCreate = (
+            deps: ReturnType<typeof buildDeps>,
+        ) => deps.teamMembersService.create.mock.calls[0][0].status;
+
+        it('SSO provisioning (preVerified, non-owner) → membership ACTIVE — even in cloud', async () => {
+            environment.API_CLOUD_MODE = true;
+            const deps = buildDeps();
+            await buildUseCase(deps).execute(
+                {
+                    email: 'sso@acme.com',
+                    name: 'SSO User',
+                    password: 'x',
+                    organizationId: 'org-1',
+                } as any,
+                { preVerified: true },
+            );
+            expect(membershipStatusFromCreate(deps)).toBe(true);
+        });
+
+        it('plain non-owner join (no preVerified) → membership INACTIVE — unchanged', async () => {
+            environment.API_CLOUD_MODE = true;
+            const deps = buildDeps();
+            await buildUseCase(deps).execute({
+                email: 'invitee@acme.com',
+                name: 'Invitee',
+                password: 'x',
+                organizationId: 'org-1',
+            } as any);
+            expect(membershipStatusFromCreate(deps)).toBe(false);
+        });
+
+        it('owner self-signup → membership ACTIVE', async () => {
+            const deps = buildDeps();
+            deps.organizationService.findOne.mockResolvedValue(null);
+            await buildUseCase(deps).execute({
+                email: 'owner@acme.com',
+                name: 'Owner',
+                password: 'x',
+            } as any);
+            expect(membershipStatusFromCreate(deps)).toBe(true);
+        });
+    });
 });
