@@ -194,6 +194,31 @@ describe('SavePullRequestUseCase', () => {
                 ).not.toHaveBeenCalled();
             });
 
+            it('should fetch from API when Forgejo action is "synchronized"', async () => {
+                const params = {
+                    payload: {
+                        action: 'synchronized',
+                        pull_request: mockPullRequest,
+                        repository: mockRepository,
+                        sender: { id: 'user-1' },
+                    },
+                    platformType: PlatformType.FORGEJO,
+                    event: 'pull_request',
+                };
+
+                await useCase.execute(params);
+
+                expect(
+                    mockCodeManagementService.getFilesByPullRequestId,
+                ).toHaveBeenCalled();
+                expect(
+                    mockCodeManagementService.getCommitsForPullRequestForCodeReview,
+                ).toHaveBeenCalled();
+                expect(
+                    mockPullRequestsRepository.findByNumberAndRepositoryId,
+                ).not.toHaveBeenCalled();
+            });
+
             it('should fetch from API when action is "ready_for_review"', async () => {
                 const params = {
                     payload: {
