@@ -1082,6 +1082,50 @@ export class GithubService
         });
     }
 
+    private async getSuspendedStatusBatch(
+        octokit: Octokit,
+        logins: string[],
+        batchSize: number = 100,
+    ): Promise<Map<string, boolean>> {
+        if (logins.length === 0) return new Map();
+
+        const statusMap = new Map<string, boolean>();
+        let aliasCounter = 0;
+
+        for (let i = 0; i < logins.length; i += batchSize) {
+            const batch = logins.slice(i, i + batchSize);
+
+            const aliasFields = batch.map((login) => {
+                const alias = `u${aliasCounter++}`;
+                const safeLogin = login.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                return `${alias}: user(login: "${safeLogin}") { suspendedAt }`;
+            });
+
+            const query = `query { ${aliasFields.join('\n')} }`;
+
+            try {
+                const response = await octokit.graphql(query) as Record<string, { suspendedAt: string | null } | null>;
+
+                batch.forEach((login, idx) => {
+                    const alias = `u${aliasCounter - batch.length + idx}`;
+                    const userData = response[alias];
+                    statusMap.set(login, userData?.suspendedAt === null);
+                });
+            } catch (error) {
+                this.logger.error({
+                    message: 'GraphQL batch query failed for suspended status',
+                    context: GithubService.name,
+                    error,
+                    metadata: { batch: batch.join(', ') },
+                });
+
+                batch.forEach((login) => statusMap.set(login, true));
+            }
+        }
+
+        return statusMap;
+    }
+
     async getListMembers(
         params: any,
     ): Promise<{ name: string; id: string | number; type?: string }[]> {
@@ -1089,13 +1133,19 @@ export class GithubService
             params.organizationAndTeamData,
         );
 
-        return members?.map((user) => {
-            return {
+        if (!members || members.length === 0) return [];
+
+        const octokit = await this.instanceOctokit(params.organizationAndTeamData);
+        const logins = members.map((user) => user.login);
+        const activeMap = await this.getSuspendedStatusBatch(octokit, logins);
+
+        return members
+            .filter((user) => activeMap.get(user.login) ?? true)
+            .map((user) => ({
                 name: user.login,
                 id: user.id,
                 type: user?.type === 'Bot' ? 'bot' : 'user',
-            };
-        });
+            }));
     }
 
     /**
