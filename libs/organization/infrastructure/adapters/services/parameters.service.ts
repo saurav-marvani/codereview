@@ -107,40 +107,19 @@ export class ParametersService implements IParametersService {
                       );
             }
 
-            if (existingParameters) {
-                const disabled =
-                    await this.disableExistingParameters(existingParameters);
-
-                if (!disabled) {
-                    throw new Error(
-                        'Error disabling existing code review config parameters',
-                    );
-                }
-            }
-
-            return this.createNewParameters(
+            // Atomic deactivate-then-insert for the versioned code review
+            // config. Replaces the previous three-step find/update/insert,
+            // which had no transaction boundary and was the source of the
+            // "two active versions for the same team" production bug.
+            return this.parametersRepository.createNewActiveVersion(
                 parametersKey,
-                configValue,
                 teamId,
+                configValue,
                 version,
             );
         } catch (err) {
             throw new BadRequestException(err);
         }
-    }
-
-    private async disableExistingParameters<K extends ParametersKey>(
-        existingParameters: ParametersEntity<K>,
-    ): Promise<boolean> {
-        await this.update(
-            {
-                uuid: existingParameters.uuid,
-            },
-            {
-                active: false,
-            },
-        );
-        return true;
     }
 
     private async updateExistingParameters<K extends ParametersKey>(
