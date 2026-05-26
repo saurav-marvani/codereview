@@ -1034,6 +1034,11 @@ const KodyRulesPageContent = () => {
                                                 onToggle: toggleSelection,
                                                 isEligible: isBulkEligible,
                                             }}
+                                            syncEnabledForRepo={
+                                                isGlobalView
+                                                    ? undefined
+                                                    : ideRulesSyncEnabledForRepo
+                                            }
                                         />
                                     );
                                 }

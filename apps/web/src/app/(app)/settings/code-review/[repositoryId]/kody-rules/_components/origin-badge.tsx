@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge } from "@components/ui/badge";
-import { Pin } from "lucide-react";
+import { AlertTriangle, Pin } from "lucide-react";
 import {
     inferRuleOrigin,
     type InferredRuleOrigin,
@@ -49,6 +49,14 @@ type OriginBadgeProps = {
         origin?: string | null;
         pinnedSync?: boolean | null;
     };
+    /**
+     * The repo's `ideRulesSyncEnabled` toggle. The maintenance badge
+     * (`@kody-sync` vs `Orphan`) is only meaningful — and only rendered —
+     * for Auto-sync rules when this is explicitly `false`. With the toggle
+     * on (or in global view, where it's left `undefined`) every IDE rule
+     * syncs, so the distinction would be noise and nothing extra is shown.
+     */
+    syncEnabledForRepo?: boolean;
 };
 
 // Static visual badge that names the rule's origin (Auto-sync / Onboard /
@@ -58,39 +66,81 @@ type OriginBadgeProps = {
 // rendered as a native `title` attribute instead — no Radix slot, no
 // composed refs, zero risk of infinite update.
 //
-// Auto-sync rules whose source file carries an `@kody-sync` marker
-// (`pinnedSync=true`) render a Pin icon inside the badge and the
-// tooltip names the override — so the user can tell at a glance that
-// the rule keeps being synced even with the repo's auto-sync toggle off,
-// and that it won't appear in the orphan chip.
-export const OriginBadge = ({ rule }: OriginBadgeProps) => {
+// Two separate axes, two separate badges (they used to be conflated):
+//
+//   1. ORIGIN — where the rule came from. Always shown: Auto-sync /
+//      Onboard / Kody-generated / Library (manual hides). Purely identity.
+//
+//   2. MAINTENANCE — only for Auto-sync rules, and only once the repo's
+//      auto-sync toggle is OFF (`syncEnabledForRepo === false`), because
+//      that's the only time the distinction matters:
+//        • file still tagged `@kody-sync` (`pinnedSync`) → kept in sync →
+//          discreet neutral `@kody-sync` chip (healthy, low emphasis).
+//        • no marker → nobody maintains it → amber `Orphan` chip (the
+//          actionable state; mirrors the orphan chip at the top of the
+//          list). With the toggle ON every IDE rule syncs, so neither chip
+//          renders.
+export const OriginBadge = ({ rule, syncEnabledForRepo }: OriginBadgeProps) => {
     const origin = inferRuleOrigin(rule);
     if (origin === "manual") return null;
 
-    const isPinned = origin === "Auto-sync" && rule.pinnedSync === true;
+    const isAutoSync = origin === "Auto-sync";
+    // Maintenance only matters for IDE-synced rules once auto-sync is off.
+    const showMaintenance = isAutoSync && syncEnabledForRepo === false;
+    const isPinned = rule.pinnedSync === true;
 
-    const tooltip = isPinned
-        ? "Pinned via @kody-sync — kept in sync even with auto-sync off" +
-          (rule.sourcePath ? " (" + rule.sourcePath + ")" : "")
-        : origin === "Auto-sync" && rule.sourcePath
-          ? "Imported from " + rule.sourcePath
-          : ORIGIN_TOOLTIPS[origin];
+    const originTooltip =
+        isAutoSync && rule.sourcePath
+            ? "Imported from " + rule.sourcePath
+            : ORIGIN_TOOLTIPS[origin];
+
+    const sourceSuffix = rule.sourcePath ? " (" + rule.sourcePath + ")" : "";
 
     return (
-        <Badge
-            active
-            size="xs"
-            title={tooltip}
-            className={
-                "min-h-auto px-2.5 py-1 ring-1 " + ORIGIN_CLASSES[origin]
-            }>
-            {isPinned && (
-                <Pin
-                    className="-ml-0.5 mr-1 size-3 -rotate-45"
-                    aria-hidden
-                />
+        <>
+            <Badge
+                active
+                size="xs"
+                title={originTooltip}
+                className={
+                    "min-h-auto px-2.5 py-1 ring-1 " + ORIGIN_CLASSES[origin]
+                }>
+                {origin}
+            </Badge>
+
+            {showMaintenance && isPinned && (
+                <Badge
+                    active
+                    size="xs"
+                    title={
+                        "Kept in sync via @kody-sync even with auto-sync off" +
+                        sourceSuffix
+                    }
+                    className="bg-card-lv2 text-text-secondary ring-card-lv3 min-h-auto px-2.5 py-1 ring-1 [--button-foreground:var(--color-text-secondary)]">
+                    <Pin
+                        className="-ml-0.5 mr-1 size-3 -rotate-45"
+                        aria-hidden
+                    />
+                    @kody-sync
+                </Badge>
             )}
-            {origin}
-        </Badge>
+
+            {showMaintenance && !isPinned && (
+                <Badge
+                    active
+                    size="xs"
+                    title={
+                        "Auto-sync is off and this file has no @kody-sync marker — no longer maintained" +
+                        sourceSuffix
+                    }
+                    className="bg-warning/10 text-warning ring-warning/40 min-h-auto px-2.5 py-1 ring-1 [--button-foreground:var(--color-warning)]">
+                    <AlertTriangle
+                        className="-ml-0.5 mr-1 size-3"
+                        aria-hidden
+                    />
+                    Orphan
+                </Badge>
+            )}
+        </>
     );
 };
