@@ -1614,7 +1614,9 @@ export class ChatWithKodyFromGitUseCase {
             case PlatformType.GITLAB:
                 return allComments.filter(
                     (reply) =>
-                        (reply.in_reply_to_id === comment.in_reply_to_id ||
+                        ((reply.in_reply_to_id !== undefined &&
+                            reply.in_reply_to_id ===
+                                comment.in_reply_to_id) ||
                             reply.discussionId === comment.discussionId) &&
                         !this.isKodyComment(reply, platformType),
                 );
