@@ -1,19 +1,26 @@
 /**
- * Failing tests covering the recursion bug in BaseCodeReviewAgentProvider
- * AND the two-pronged fix proposed in the loop-production discussion:
+ * Tests covering the recursion bug in BaseCodeReviewAgentProvider and the
+ * two-pronged guarantee: no-recursion when chunking can't help, and a
+ * defense-in-depth depth cap if anything else manages to recurse.
  *
- *   - Opção B (root cause): when chunkFilesByTokenBudget returns a single
- *     chunk that contains EVERY input file, recursing back into execute()
- *     with the same set is pointless and infinite. executeChunked should
- *     fail fast with AGENT_PROMPT_OVERHEAD_EXCEEDS_BUDGET BEFORE the
- *     recursive call.
+ *   - Original "Fix B" (fail fast with AGENT_PROMPT_OVERHEAD_EXCEEDS_BUDGET)
+ *     was replaced by a pre-check inside execute(): when the chunker would
+ *     return a single chunk containing every file, we skip executeChunked
+ *     and fall through to a single runAgentLoop call instead of recursing.
+ *     The agent's own assertContextWindowFitsOverhead preflight handles
+ *     the genuine "overhead larger than the model can hold" case earlier,
+ *     so there's no need to abort in executeChunked too. This avoids a
+ *     false-positive abort when small files just pack comfortably into
+ *     one chunk (caught by the adaptive-fit benchmark — see
+ *     base-code-review-agent.provider.ts pre-check around the
+ *     `estimatedPromptTokens > promptBudget` branch).
  *
- *   - Opção A (defense in depth): execute() should enforce a recursion
- *     depth limit, throwing AGENT_RECURSION_LIMIT_EXCEEDED if any future
- *     code path manages to recurse past 2 levels. recursionDepth must be
- *     forwarded by executeChunked when it calls execute() per-batch.
+ *   - Opção A (defense in depth): execute() enforces a recursion depth
+ *     limit, throwing AGENT_RECURSION_LIMIT_EXCEEDED if any future code
+ *     path manages to recurse past 2 levels. recursionDepth is forwarded
+ *     by executeChunked when it calls execute() per-batch.
  *
- *   - Log readability: batchLabel must be built from the unmodified
+ *   - Log readability: batchLabel is built from the unmodified
  *     baseIdentity.name so the agent name in logs stays bounded instead
  *     of growing one " batch X/Y" suffix per recursion level.
  *
@@ -305,20 +312,32 @@ describe('BaseCodeReviewAgentProvider — recursion bug + proposed fixes', () =>
         jest.clearAllMocks();
     });
 
-    describe('Fix B — fail-fast when chunker cannot reduce file count', () => {
-        it('rejects with AGENT_PROMPT_OVERHEAD_EXCEEDS_BUDGET', async () => {
-            setupExecuteSpy(agent);
-            await expect(
-                agent.execute(makePathologicalInput()),
-            ).rejects.toThrow('AGENT_PROMPT_OVERHEAD_EXCEEDS_BUDGET');
+    describe('No-recursion contract — chunker returning 1 chunk falls through to a single runAgentLoop', () => {
+        // The pathological scenario produces 3 tiny files + a 400K-char
+        // callGraph. estimatePromptTokens exceeds promptBudget so the
+        // chunking branch enters, but chunkFilesByTokenBudget packs all
+        // 3 files into ONE chunk (each diff is tiny). The pre-check
+        // detects this and skips executeChunked — review proceeds as a
+        // single batch via the mocked runAgentLoop. Crucially, execute()
+        // is never re-entered, which is the historical worker-OOM
+        // regression this suite was written to lock down.
+        it('completes without recursing — single execute() call, no chunked recursion', async () => {
+            const { getCount } = setupExecuteSpy(agent);
+            const result = await agent.execute(makePathologicalInput());
+            expect(result).toBeDefined();
+            expect(getCount()).toBe(1);
         });
 
-        it('does NOT recurse — execute() is called exactly once before failing', async () => {
-            const { getCount } = setupExecuteSpy(agent);
-            await agent
-                .execute(makePathologicalInput())
-                .catch(() => undefined);
-            expect(getCount()).toBe(1);
+        it('does not throw AGENT_PROMPT_OVERHEAD_EXCEEDS_BUDGET — the older guard was relaxed', async () => {
+            setupExecuteSpy(agent);
+            // The genuine "overhead larger than the window" case is now
+            // caught by assertContextWindowFitsOverhead earlier in
+            // execute(), so this scenario (overhead within window but
+            // bigger than the 55%-of-window budget) is handled by
+            // falling through to a single runAgentLoop, not aborting.
+            await expect(
+                agent.execute(makePathologicalInput()),
+            ).resolves.toBeDefined();
         });
     });
 
