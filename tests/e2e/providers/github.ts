@@ -179,6 +179,30 @@ export class GitHubProvider extends BaseProvider {
     }
 
     async openPRFromBranches(args: OpenPRFromBranchesArgs): Promise<OpenedPR> {
+        // GitHub's git data endpoints (create-commit / create-ref) intermittently
+        // return HTTP 500 under no fault of ours. http() only retries transport
+        // failures, not 5xx statuses, so a single hiccup would silently cost us
+        // a benchmark review. Retry the whole sequence on 5xx — each attempt
+        // mints a fresh uid/branch, so a half-applied ref from a "500 but it
+        // actually worked" never collides (422) on the next try.
+        let lastErr: unknown;
+        for (let attempt = 0; attempt < 4; attempt++) {
+            try {
+                return await this.openPRFromBranchesOnce(args);
+            } catch (err) {
+                lastErr = err;
+                if (!/HTTP 5\d\d/.test((err as Error).message) || attempt === 3) {
+                    throw err;
+                }
+                await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+            }
+        }
+        throw lastErr;
+    }
+
+    private async openPRFromBranchesOnce(
+        args: OpenPRFromBranchesArgs,
+    ): Promise<OpenedPR> {
         // Open the PR from a UNIQUE throwaway branch carrying a fresh empty
         // commit on top of the fixture tip — never from the shared fixture
         // branch. GitHub caps a repo at 100 PRs sharing a head_sha, so opening
