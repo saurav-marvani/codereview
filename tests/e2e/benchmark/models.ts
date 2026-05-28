@@ -66,14 +66,28 @@ function resolveKeyEnv(provider: string, baseURL?: string): string {
             return "BYOK_GOOGLE_API_KEY";
         case "openai_compatible": {
             const u = baseURL ?? "";
-            if (u.includes("moonshot") || u.includes("kimi.com")) {
+            // Match by parsed HOSTNAME (exact or subdomain), never substring —
+            // a substring check (u.includes("kimi.com")) would also match a
+            // hostile host like "kimi.com.evil.com" or ".../kimi.com" (CodeQL:
+            // incomplete URL substring sanitization).
+            let host: string;
+            try {
+                host = new URL(u).hostname.toLowerCase();
+            } catch {
+                throw new Error(
+                    `openai_compatible model with invalid baseURL "${u}" — add a key mapping in resolveKeyEnv`,
+                );
+            }
+            const hostIn = (...domains: string[]) =>
+                domains.some((d) => host === d || host.endsWith(`.${d}`));
+            if (hostIn("moonshot.ai", "moonshot.cn", "kimi.com")) {
                 return "BYOK_MOONSHOT_API_KEY";
             }
-            if (u.includes("z.ai") || u.includes("bigmodel")) {
+            if (hostIn("z.ai", "bigmodel.cn")) {
                 return "BYOK_ZHIPU_API_KEY";
             }
             throw new Error(
-                `openai_compatible model with unrecognized baseURL "${u}" — add a key mapping in resolveKeyEnv`,
+                `openai_compatible model with unrecognized baseURL "${u}" (host ${host}) — add a key mapping in resolveKeyEnv`,
             );
         }
         default:
