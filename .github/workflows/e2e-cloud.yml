@@ -14,6 +14,9 @@ permissions:
 # Trigger:
 #   - workflow_call from qa-build-push-and-pr-green.yml after the GitOps PR
 #     merges and the QA cloud rolls out the new image.
+#   - schedule nightly 05:17 UTC — catch-all for drift, provider regressions,
+#     and flaky cells that don't reproduce per-deploy. Independent of merges,
+#     so a quiet day still gets one signal.
 #   - workflow_dispatch for manual runs.
 
 on:
@@ -29,6 +32,10 @@ on:
                 required: false
                 default: matrix/fast.yml
                 type: string
+    schedule:
+        # 05:17 UTC = ~02:17 BRT. Off-peak; offset from the benchmark cron
+        # (which lives at 04:17 UTC) so they don't share the GH runner spike.
+        - cron: "17 5 * * *"
     workflow_dispatch:
         inputs:
             image_tag:

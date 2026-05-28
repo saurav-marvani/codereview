@@ -263,3 +263,30 @@ jobs:
                       ```bash
                       atlantis apply -p aws-qa-app-services-ecs-ec2
                       ```
+
+    # ---- E2E matrix on QA cloud ---------------------------------------
+    # Fires AFTER the GitOps PR is opened + (auto-)applied. The matrix
+    # tests the QA cloud URL as a tenant, not the freshly-built image
+    # directly — so atlantis must finish first. cancel-in-progress on the
+    # called workflow collapses a rajada de merges into a single run, and
+    # the nightly cron there is the catch-all so a quiet day still gets
+    # one signal.
+    #
+    # NOTE: this fires AS SOON AS the infra PR is opened, but the actual
+    # rollout depends on the auto-apply label + atlantis run in the infra
+    # repo. There's a small race where the matrix may hit the previous
+    # image. In practice the matrix takes longer than the rollout, so by
+    # the time the cells reach review-trigger steps the new image is live.
+    # If that ever becomes a flake source, gate this on a separate
+    # `workflow_run` event from the infra repo instead.
+    e2e-cloud:
+        name: E2E matrix on QA cloud
+        needs: build_push_and_open_pr
+        if: needs.build_push_and_open_pr.result == 'success'
+        permissions:
+            contents: read
+        uses: ./.github/workflows/e2e-cloud.yml
+        with:
+            image_tag: ${{ github.event.inputs.image_tag || github.sha }}
+            matrix_file: matrix/fast.yml
+        secrets: inherit
