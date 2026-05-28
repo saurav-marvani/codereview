@@ -16,6 +16,9 @@ on:
             - main
         # Filter so unrelated kodus-ai changes don't trigger a redeploy.
         # Anything that affects the mcp-manager image must be listed here.
+        # tsconfig.migrations.json is DB-migrations-only and never reaches
+        # the mcp-manager runtime — removed to stop migration PRs from
+        # over-triggering an unnecessary redeploy.
         paths:
             - 'apps/mcp-manager/**'
             - 'docker/Dockerfile'
@@ -24,7 +27,6 @@ on:
             - 'yarn.lock'
             - 'tsconfig.json'
             - 'tsconfig.build.json'
-            - 'tsconfig.migrations.json'
             - 'nest-cli.json'
             - '.github/workflows/qa-mcp-manager-deploy.yml'
     workflow_dispatch:
