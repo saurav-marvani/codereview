@@ -84,6 +84,7 @@ import {
     PULL_REQUESTS_REPOSITORY_TOKEN,
 } from '@libs/platformData/domain/pullRequests/contracts/pullRequests.repository';
 import { KodyRulesValidationService } from './kody-rules-validation.service';
+import { buildKodyRuleAppLink } from '../utils/build-rule-link';
 
 @Injectable()
 export class KodyRulesService implements IKodyRulesService {
@@ -1790,33 +1791,12 @@ Analyze the suggestions and recommend the most relevant rules.`;
         teamId?: string,
         status?: KodyRulesStatus,
     ): string {
-        const baseUrl = (process.env.API_USER_INVITE_BASE_URL || '').replace(
-            /\/$/,
-            '',
-        );
-
-        if (!baseUrl) {
-            return '';
-        }
-
-        const scope =
-            repositoryId && repositoryId !== 'global' ? repositoryId : 'global';
-
-        const memoryUrl = new URL(baseUrl);
-
-        if (status === KodyRulesStatus.PENDING || !ruleId) {
-            memoryUrl.pathname = `/settings/code-review/${scope}/kody-rules`;
-            memoryUrl.searchParams.set('tab', 'memories');
-            return memoryUrl.toString();
-        }
-
-        memoryUrl.pathname = `/settings/code-review/${scope}/kody-rules/${ruleId}`;
-        memoryUrl.searchParams.set('tab', 'memories');
-
-        if (teamId) {
-            memoryUrl.searchParams.set('teamId', teamId);
-        }
-
-        return memoryUrl.toString();
+        return buildKodyRuleAppLink({
+            repositoryId,
+            ruleId,
+            teamId,
+            status,
+            tab: 'memories',
+        });
     }
 }
