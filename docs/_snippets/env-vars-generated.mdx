@@ -141,6 +141,7 @@
 | `GLOBAL_GITLAB_REDIRECT_URL` | – | url | ☁️ Cloud |  |
 | `API_GITLAB_CODE_MANAGEMENT_WEBHOOK` | – | url | ⚙️ Both |  |
 | `GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK` | – | url | ⚙️ Both |  |
+| `BITBUCKET_RATE_GATE_MIN_INTERVAL_MS` | – | number | ⚙️ Both (opt-in) | Minimum interval (ms) between Bitbucket API calls per worker instance. In-memory rate gate to keep us under Bitbucket's per-minute throttle. Note: this is per-replica — with N workers the effective rate is N× whatever you set here. 400ms is safe for typical multi-replica setups; raise it if a customer's Bitbucket instance throttles aggressively. |
 | `GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK` | – | url | ⚙️ Both |  |
 | `API_FORGEJO_CODE_MANAGEMENT_WEBHOOK` | – | url | ⚙️ Both |  |
 | `CODE_MANAGEMENT_SECRET` | ✅ | secret | ⚙️ Both | Shared secret used to sign internal webhook calls. |
