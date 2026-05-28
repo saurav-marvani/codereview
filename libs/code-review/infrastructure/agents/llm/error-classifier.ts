@@ -1,3 +1,8 @@
+import {
+    AgentContextWindowTooSmallError,
+    AgentPromptTooLargeError,
+} from './errors';
+
 /**
  * Canonical categories for LLM/provider errors surfaced during a code review.
  *
@@ -90,7 +95,15 @@ export function classifyLLMError(
         provider,
         rawMessage,
         httpStatus,
-        friendlyMessage: buildFriendlyMessage(category, provider),
+        // Context-overflow gets a richer, actionable message when the
+        // underlying error is one of our typed adaptive-fit errors —
+        // we have the exact numbers (model, window, measured overhead)
+        // and can hand the admin concrete next steps. For raw provider
+        // 400s without a typed error, the generic fallback applies.
+        friendlyMessage:
+            category === ReviewErrorCategory.CONTEXT_OVERFLOW
+                ? buildContextOverflowMessage(err, provider)
+                : buildFriendlyMessage(category, provider),
     };
 }
 
@@ -235,10 +248,77 @@ function buildFriendlyMessage(
         case ReviewErrorCategory.MODEL_NOT_FOUND:
             return `The configured model is not available on the provider${providerLabel}. Verify the model name in your settings.`;
         case ReviewErrorCategory.CONTEXT_OVERFLOW:
+            // Generic fallback only — typed AgentContextWindowTooSmallError /
+            // AgentPromptTooLargeError go through buildContextOverflowMessage
+            // with the specific numbers and actionable options.
             return `The PR exceeded the maximum context size accepted by the model${providerLabel}.`;
         case ReviewErrorCategory.TRANSIENT:
             return `Transient error reaching the provider${providerLabel}. Try again.`;
         default:
             return `Unexpected error while running the code review${providerLabel}.`;
     }
+}
+
+/**
+ * Mirrors the list shown as preset cards in the BYOK settings page
+ * (`apps/web/src/features/ee/byok/_data/curated-models.json`,
+ *  `tier: "recommended"` entries). All have ≥32K context, which clears
+ * the threshold where the adaptive-fit `compact` profile reliably runs
+ * a full-fidelity review.
+ *
+ * If a model is added/removed/renamed in the curated list, update this
+ * note so the error message stays aligned with what the user actually
+ * sees in their settings.
+ */
+const RECOMMENDED_MODELS_FOR_ERROR =
+    'Claude Sonnet 4.6, Claude Opus 4.7, Gemini 3.1 Pro, GPT-5.4, Kimi K2.6 Coding, or GLM 5.1';
+
+/**
+ * Build an actionable user-facing message for CONTEXT_OVERFLOW errors.
+ * When we have the typed error class, we surface the exact numbers and
+ * three concrete options (switch model, split PR, raise BYOK limit).
+ * For raw provider errors (no typed wrapper), we still surface the
+ * recommended-model + split-PR options but omit the BYOK-limit option
+ * since we don't have the specific window to compare against.
+ *
+ * Rendered into the GitHub PR comment via the `withErrors` template's
+ * `{{errorMessage}}` placeholder. GitHub-flavored Markdown is honored.
+ */
+function buildContextOverflowMessage(err: unknown, provider?: string): string {
+    const providerLabel = provider ? ` (${provider})` : '';
+
+    if (err instanceof AgentContextWindowTooSmallError) {
+        const window = err.contextWindow.toLocaleString('en-US');
+        return [
+            `This PR is too large for the configured model. \`${err.modelName}\` has a context window of ${window} tokens, but this review needs at least ${err.overheadTokens.toLocaleString('en-US')} tokens of context.`,
+            '',
+            '**To resolve, choose one:**',
+            `- **Switch to a recommended model**: pick one of Kodus's recommended models in your BYOK settings (${RECOMMENDED_MODELS_FOR_ERROR}).`,
+            `- **Split the PR into smaller ones**: file count drives prompt overhead.`,
+            `- **Raise \`byokConfig.main.maxInputTokens\`**: only if your deployed model genuinely supports more than the ${window} tokens our lookup reports (e.g. self-hosted vLLM or Ollama with a custom limit).`,
+        ].join('\n');
+    }
+
+    if (err instanceof AgentPromptTooLargeError) {
+        const window = err.contextWindowTokens.toLocaleString('en-US');
+        return [
+            `This PR is too large for the configured model. \`${err.modelName}\` has a context window of ${window} tokens, but the assembled prompt would need ${err.estimatedTokens.toLocaleString('en-US')} tokens.`,
+            '',
+            '**To resolve, choose one:**',
+            `- **Switch to a recommended model**: pick one of Kodus's recommended models in your BYOK settings (${RECOMMENDED_MODELS_FOR_ERROR}).`,
+            `- **Split the PR into smaller ones**: file count drives prompt overhead.`,
+            `- **Raise \`byokConfig.main.maxInputTokens\`**: only if your deployed model genuinely supports more than the ${window} tokens our lookup reports (e.g. self-hosted vLLM or Ollama with a custom limit).`,
+        ].join('\n');
+    }
+
+    // Raw provider error (e.g. a 400 from the upstream with a context-length
+    // message) — we don't have the specific window numbers, so we drop the
+    // BYOK-limit option (which only makes sense when the user can compare).
+    return [
+        `This PR exceeded the maximum context size accepted by the configured model${providerLabel}.`,
+        '',
+        '**To resolve, choose one:**',
+        `- **Switch to a recommended model**: pick one of Kodus's recommended models in your BYOK settings (${RECOMMENDED_MODELS_FOR_ERROR}).`,
+        `- **Split the PR into smaller ones**: file count drives prompt overhead.`,
+    ].join('\n');
 }
