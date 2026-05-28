@@ -13,12 +13,14 @@ name: "Benchmark: tier-0 model code review"
 # Triggers (locked spec 2026-05-28):
 #   - pull_request on engine paths → LIGHT run (kimi-k2-6, 5 PRs, ~$1, ~10min).
 #     Fast regression signal on engine changes. Notify-only, no PR gate.
-#   - push to main on engine paths → FULL run (5 models, no Opus by default;
-#     5 PRs each = 25 reviews, ~$17, ~40min). Notify-only.
-#   - workflow_dispatch → manual: pin one model (only_model) or include Opus
-#     in the full run (include_opus).
+#   - push to main on engine paths → FULL run (5 models, 5 PRs each = 25
+#     reviews, ~$17, ~40min). Notify-only.
+#   - workflow_dispatch → manual: pin one model (only_model).
 # NOT scheduled: nightly cron deliberately omitted — full FULL run only when
 # the engine actually changes, to keep cost bounded.
+# Opus is dropped at the driver level (tests/e2e/benchmark/run.ts
+# DEFAULT_EXCLUDED) — ~$23/run extra and not worth the CI spend. Run
+# ad-hoc via dispatch with only_model="opus-4-7" if you ever need it.
 #
 # Required secrets (add in repo settings — only GH_TEST_TOKEN exists today):
 #   GH_TEST_TOKEN            PAT that can see + write the kodus-e2e/* bench repos
@@ -37,15 +39,10 @@ on:
     workflow_dispatch:
         inputs:
             only_model:
-                description: "Restrict to one model slug (e.g. sonnet-4-6); blank = use default scope"
+                description: "Restrict to one model slug (e.g. sonnet-4-6, or opus-4-7 to run the otherwise-excluded model)"
                 required: false
                 default: ""
                 type: string
-            include_opus:
-                description: "Include Opus in the FULL run (heavy + expensive; off by default)"
-                required: false
-                default: false
-                type: boolean
     pull_request:
         paths:
             # Engine paths — anything that can change review OUTPUT QUALITY.
@@ -102,13 +99,11 @@ jobs:
               working-directory: tests/e2e
               run: npm install --no-audit --no-fund
 
-            - name: Decide scope (PR=light, push main=full minus Opus, dispatch=manual)
+            - name: Decide scope (PR=light, push main=full, dispatch=manual)
               id: scope
               run: |
                   set -euo pipefail
-                  # Manual dispatch can override either dimension.
                   ONLY_MODEL_INPUT="${{ github.event.inputs.only_model }}"
-                  INCLUDE_OPUS_INPUT="${{ github.event.inputs.include_opus }}"
 
                   if [ "${{ github.event_name }}" = "pull_request" ]; then
                       # LIGHT: ONE cheap model that also exercises the
@@ -116,21 +111,19 @@ jobs:
                       # likely to break on integration quirks. Override with
                       # repo var BENCH_LIGHT_MODEL if needed.
                       MODEL="${{ vars.BENCH_LIGHT_MODEL || 'kimi-k2-6' }}"
-                      echo "only_model=$MODEL"     >> "$GITHUB_OUTPUT"
-                      echo "include_opus=false"    >> "$GITHUB_OUTPUT"
+                      echo "only_model=$MODEL" >> "$GITHUB_OUTPUT"
                       echo "Light run (PR on engine paths): $MODEL"
                   elif [ "${{ github.event_name }}" = "push" ]; then
-                      # FULL on merge — locked spec: 5 models, Opus EXCLUDED
-                      # by default ($17 vs $40). Opus joins only via manual
-                      # dispatch with include_opus=true.
-                      echo "only_model="           >> "$GITHUB_OUTPUT"
-                      echo "include_opus=false"    >> "$GITHUB_OUTPUT"
-                      echo "Full run (engine merged to main): 5 models, no Opus"
+                      # FULL on merge: all recommended models EXCEPT the ones
+                      # excluded at the driver level (Opus, see models.ts
+                      # BENCH_EXCLUDED_MODELS) — 5 models, ~$17.
+                      echo "only_model=" >> "$GITHUB_OUTPUT"
+                      echo "Full run (engine merged to main): 5 models (Opus excluded by driver)"
                   else
-                      # workflow_dispatch
-                      echo "only_model=$ONLY_MODEL_INPUT"        >> "$GITHUB_OUTPUT"
-                      echo "include_opus=$INCLUDE_OPUS_INPUT"    >> "$GITHUB_OUTPUT"
-                      echo "Manual dispatch: only_model='$ONLY_MODEL_INPUT' include_opus=$INCLUDE_OPUS_INPUT"
+                      # workflow_dispatch — pass through whatever was given,
+                      # including "opus-4-7" to opt into the otherwise-excluded model.
+                      echo "only_model=$ONLY_MODEL_INPUT" >> "$GITHUB_OUTPUT"
+                      echo "Manual dispatch: only_model='$ONLY_MODEL_INPUT'"
                   fi
 
             - name: Run benchmark (mechanical gate — fails if any review fails)
@@ -138,10 +131,6 @@ jobs:
               env:
                   CLOUD_WEB_BASE_URL: ${{ vars.CLOUD_QA_WEB_URL || 'https://qa.web.kodus.io' }}
                   BENCH_ONLY_MODEL: ${{ steps.scope.outputs.only_model }}
-                  # When 'false', the driver excludes Opus from the FULL run
-                  # (5-model preset). When 'true', Opus joins (6-model).
-                  # Driver-side (tests/e2e/benchmark/run.ts) reads this var.
-                  BENCH_INCLUDE_OPUS: ${{ steps.scope.outputs.include_opus }}
                   BENCH_TENANT_EMAIL: ${{ secrets.BENCH_TENANT_EMAIL }}
                   BENCH_TENANT_PASSWORD: ${{ secrets.BENCH_TENANT_PASSWORD }}
                   GH_TEST_TOKEN: ${{ secrets.GH_TEST_TOKEN }}
