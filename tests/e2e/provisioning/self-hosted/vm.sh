@@ -347,6 +347,14 @@ env_set API_GITHUB_CODE_MANAGEMENT_WEBHOOK "$SERVER_TUNNEL_URL/github/webhook"
 env_set API_GITLAB_CODE_MANAGEMENT_WEBHOOK "$SERVER_TUNNEL_URL/gitlab/webhook"
 env_set GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK "$SERVER_TUNNEL_URL/bitbucket/webhook"
 env_set GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK "$SERVER_TUNNEL_URL/azure-repos/webhook"
+# Bitbucket Cloud rate-limits aggressively. finish-onboarding alone fires
+# ~72 sequential Bitbucket API calls (kody-rule generation); without a
+# throttle the burst exhausts the account's budget and the very next call
+# (the runner opening a PR) gets HTTP 429, which cascades into 400 "Error
+# authenticating PAT" on every following scenario. This is the same gate
+# prod runs (default 400ms in .env.schema); 800ms gives the shared test
+# account extra headroom since the runner ALSO hits Bitbucket directly.
+env_set BITBUCKET_RATE_GATE_MIN_INTERVAL_MS "800"
 env_set API_PG_DB_PASSWORD "\$(openssl rand -hex 16)"
 env_set API_MG_DB_PASSWORD "\$(openssl rand -hex 16)"
 env_set API_DATABASE_DISABLE_SSL "true"
