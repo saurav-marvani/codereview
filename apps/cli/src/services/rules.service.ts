@@ -8,8 +8,8 @@ import type {
     ViewKodyRulesRequest,
 } from '../types/rules.js';
 import { CommandError } from '../utils/command-errors.js';
+import { resolveTeamKeyAccess } from '../utils/team-key-auth.js';
 import { api } from './api/index.js';
-import { authService } from './auth.service.js';
 
 export type UpdateKodyRuleInput = {
     ruleId: string;
@@ -24,11 +24,14 @@ const VALID_SEVERITIES: KodyRuleSeverity[] = [
 
 const VALID_SCOPES: KodyRuleScope[] = ['pull request', 'file'];
 
+const RULES_AUTH_MESSAGE =
+    'Kody Rules commands require team-key auth. Run: kodus auth team-key --key <your-key>.\nGet your key from: https://app.kodus.io/organization/cli-keys';
+
 class RulesService {
     async createRule(
         input: CreateKodyRuleRequest,
     ): Promise<KodyRuleMutationResult> {
-        const accessToken = await authService.getValidToken();
+        const { teamKey } = await resolveTeamKeyAccess(RULES_AUTH_MESSAGE);
         const payload: CreateKodyRuleRequest = {
             title: this.requireText(input.title, 'title'),
             rule: this.requireText(input.rule, 'rule'),
@@ -39,13 +42,13 @@ class RulesService {
             path: this.normalizeOptionalText(input.path) || '**/*',
         };
 
-        return api.rules.createRule(accessToken, payload);
+        return api.rules.createRule(teamKey, payload);
     }
 
     async updateRule(
         input: UpdateKodyRuleInput,
     ): Promise<KodyRuleMutationResult> {
-        const accessToken = await authService.getValidToken();
+        const { teamKey } = await resolveTeamKeyAccess(RULES_AUTH_MESSAGE);
         const ruleId = this.requireText(input.ruleId, 'rule-id');
         let hasRuleChanges = false;
 
@@ -92,17 +95,17 @@ class RulesService {
             );
         }
 
-        return api.rules.updateRule(accessToken, ruleId, payload);
+        return api.rules.updateRule(teamKey, ruleId, payload);
     }
 
     async viewRules(input: ViewKodyRulesRequest = {}): Promise<KodyRule[]> {
-        const accessToken = await authService.getValidToken();
+        const { teamKey } = await resolveTeamKeyAccess(RULES_AUTH_MESSAGE);
         const query: ViewKodyRulesRequest = {
             repositoryId: this.normalizeOptionalText(input.repositoryId),
             ruleId: this.normalizeOptionalText(input.ruleId),
         };
 
-        return api.rules.viewRules(accessToken, query);
+        return api.rules.viewRules(teamKey, query);
     }
 
     private normalizeSeverity(value: string): KodyRuleSeverity {

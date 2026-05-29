@@ -101,26 +101,37 @@ async function getDecisionHooksStatus(
     return configured.length > 0 ? configured.join(', ') : 'not configured';
 }
 
+export async function statusAction(): Promise<void> {
+    const [authMode, repository, skills] = await Promise.all([
+        getAuthModeSummary(),
+        getRepositoryStatus(),
+        listBundledSkills(),
+    ]);
+
+    const [hookStatus, decisionsStatus] = await Promise.all([
+        getPrePushHookStatus(repository.root),
+        getDecisionHooksStatus(repository.root),
+    ]);
+
+    // Team-key auth is separate from (and mutually exclusive with) a logged-in
+    // session, but rules and config-write commands only work with a team key.
+    // Surface it explicitly so "Auth: logged in" doesn't read as "fully set up".
+    const teamKeyStatus =
+        authMode.mode === 'team-key'
+            ? chalk.green('configured')
+            : `${chalk.yellow('not configured')} ${chalk.dim('(required for: rules, config writes)')}`;
+
+    cliInfo(chalk.bold('Kodus Status'));
+    cliInfo('');
+    cliInfo(`${chalk.dim('Version:')} ${pkg.version}`);
+    cliInfo(`${chalk.dim('Auth:')} ${authMode.label}`);
+    cliInfo(`${chalk.dim('Team key:')} ${teamKeyStatus}`);
+    cliInfo(`${chalk.dim('Repository:')} ${repository.label}`);
+    cliInfo(`${chalk.dim('Pre-push hook:')} ${hookStatus}`);
+    cliInfo(`${chalk.dim('Decision hooks:')} ${decisionsStatus}`);
+    cliInfo(`${chalk.dim('Bundled skills:')} ${skills.length}`);
+}
+
 export const statusCommand = new Command('status')
     .description('Show consolidated Kodus status')
-    .action(async () => {
-        const [authMode, repository, skills] = await Promise.all([
-            getAuthModeSummary().then((summary) => summary.label),
-            getRepositoryStatus(),
-            listBundledSkills(),
-        ]);
-
-        const [hookStatus, decisionsStatus] = await Promise.all([
-            getPrePushHookStatus(repository.root),
-            getDecisionHooksStatus(repository.root),
-        ]);
-
-        cliInfo(chalk.bold('Kodus Status'));
-        cliInfo('');
-        cliInfo(`${chalk.dim('Version:')} ${pkg.version}`);
-        cliInfo(`${chalk.dim('Auth:')} ${authMode}`);
-        cliInfo(`${chalk.dim('Repository:')} ${repository.label}`);
-        cliInfo(`${chalk.dim('Pre-push hook:')} ${hookStatus}`);
-        cliInfo(`${chalk.dim('Decision hooks:')} ${decisionsStatus}`);
-        cliInfo(`${chalk.dim('Bundled skills:')} ${skills.length}`);
-    });
+    .action(statusAction);

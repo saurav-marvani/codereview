@@ -10,24 +10,40 @@ vi.mock('../api/index.js', () => ({
     },
 }));
 
-vi.mock('../auth.service.js', () => ({
-    authService: {
-        getValidToken: vi.fn(),
-    },
+vi.mock('../../utils/team-key-auth.js', () => ({
+    resolveTeamKeyAccess: vi.fn(),
 }));
 
 import { CommandError } from '../../utils/command-errors.js';
+import { resolveTeamKeyAccess } from '../../utils/team-key-auth.js';
 import { api } from '../api/index.js';
-import { authService } from '../auth.service.js';
 import { rulesService } from '../rules.service.js';
 
 const mockRulesApi = vi.mocked(api.rules);
-const mockAuthService = vi.mocked(authService);
+const mockResolveTeamKeyAccess = vi.mocked(resolveTeamKeyAccess);
 
 describe('rulesService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mockAuthService.getValidToken.mockResolvedValue('kodus_team_key');
+        mockResolveTeamKeyAccess.mockResolvedValue({ teamKey: 'kodus_team_key' });
+    });
+
+    it('requires team-key auth on create', async () => {
+        mockResolveTeamKeyAccess.mockRejectedValue(
+            new CommandError(
+                'AUTH_REQUIRED',
+                'Kody Rules commands require team-key auth.',
+            ),
+        );
+
+        await expect(
+            rulesService.createRule({ title: 'Rule', rule: 'Desc' }),
+        ).rejects.toEqual(
+            expect.objectContaining<Partial<CommandError>>({
+                code: 'AUTH_REQUIRED',
+            }),
+        );
+        expect(mockRulesApi.createRule).not.toHaveBeenCalled();
     });
 
     it('applies severity and scope defaults on create', async () => {
