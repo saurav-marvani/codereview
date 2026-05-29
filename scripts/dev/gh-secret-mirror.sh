@@ -63,11 +63,12 @@ fi
 # ── value sourcing helpers ───────────────────────────────────────────────
 
 src_kodus_config() {
-    # Whatever key exported from ~/.kodus-dev/config — also handle GH↔config name mapping
-    case "$1" in
-        SH_LICENSE_KEY_PAID) eval "printf '%s' \"\${SH_LICENSE_KEY:-}\"" ;;
-        *)                   eval "printf '%s' \"\${$1:-}\"" ;;
-    esac
+    # Whatever key exported from ~/.kodus-dev/config — also handle GH↔config name mapping.
+    # Bash indirect expansion (${!var}) avoids eval — important because $1 ultimately
+    # traces back to --only user input.
+    local key="$1"
+    [ "$key" = "SH_LICENSE_KEY_PAID" ] && key="SH_LICENSE_KEY"
+    printf '%s' "${!key:-}"
 }
 
 src_aws_credentials() {
