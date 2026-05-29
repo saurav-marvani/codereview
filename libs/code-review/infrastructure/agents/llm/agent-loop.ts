@@ -831,6 +831,40 @@ function extractDoneToolResult<T>(result: any): T | null {
     return null;
 }
 
+/**
+ * Validate and sanitize a done-tool result against the FindingsOutput schema.
+ * Returns null if the result is null or fails validation, ensuring downstream
+ * code never receives a FindingsOutput with missing `suggestions`.
+ */
+export function sanitizeFindingsResult(
+    raw: FindingsOutput | null,
+): FindingsOutput | null {
+    if (!raw) return null;
+    const parsed = _findingsSchema.safeParse(raw);
+    if (parsed.success) return parsed.data;
+    logger.warn({
+        message:
+            '[DONE-TOOL] FindingsOutput failed Zod validation, falling back to text parsing',
+        context: 'AgentLoop',
+        metadata: {
+            zodErrors: parsed.error.issues.map(
+                (i) => `${i.path.join('.')}: ${i.message}`,
+            ),
+            rawKeys: Object.keys(raw),
+            hasSuggestions: Array.isArray((raw as any).suggestions),
+        },
+    });
+    // Attempt partial recovery: if suggestions is an array, keep it;
+    // otherwise fall back to text parsing (return null).
+    if (Array.isArray((raw as any).suggestions)) {
+        return {
+            reasoning: (raw as any).reasoning ?? '',
+            suggestions: (raw as any).suggestions,
+        };
+    }
+    return null;
+}
+
 export interface AgentLoopInput {
     model: LanguageModel;
     systemPrompt: string;
@@ -1590,7 +1624,7 @@ async function runAgentLoopBody(
     // the validated tool args — no text parsing needed.
     const doneToolFindings = isSelfContained
         ? null
-        : extractDoneToolResult<FindingsOutput>(result);
+        : sanitizeFindingsResult(extractDoneToolResult<FindingsOutput>(result));
 
     if (doneToolFindings) {
         logger.log({
@@ -1771,6 +1805,12 @@ async function runAgentLoopBody(
             suggestions: [],
         };
         source = 'empty';
+    }
+
+    // Defensive: ensure suggestions is always an array even when a
+    // malformed done-tool or fallback produced a FindingsOutput without it.
+    if (!Array.isArray(findings.suggestions)) {
+        findings = { ...findings, suggestions: [] };
     }
 
     // Fast mode: skip heavy post-processing passes to keep latency low.
@@ -2372,7 +2412,7 @@ Investigate the remaining changed files now.
 
         // Extract from done tool first, fall back to text
         const doneResult =
-            extractDoneToolResult<FindingsOutput>(recoveryResult);
+            sanitizeFindingsResult(extractDoneToolResult<FindingsOutput>(recoveryResult));
         if (doneResult) {
             recoveryText = JSON.stringify(doneResult);
         } else {
@@ -2635,7 +2675,7 @@ Instructions:
 
         // Extract from done tool first, fall back to text
         const doneResult =
-            extractDoneToolResult<FindingsOutput>(secondChanceResult);
+            sanitizeFindingsResult(extractDoneToolResult<FindingsOutput>(secondChanceResult));
         if (doneResult) {
             secondChanceText = JSON.stringify(doneResult);
         } else {
@@ -2712,8 +2752,10 @@ async function runSynthesisRescuePass(params: {
     let totalOutputTokens = initialTotalOutputTokens;
     let totalReasoningTokens = initialTotalReasoningTokens;
 
-    const currentFindingsSummary = findings.suggestions.length
-        ? findings.suggestions
+    const safeSuggestions = findings.suggestions ?? [];
+
+    const currentFindingsSummary = safeSuggestions.length
+        ? safeSuggestions
               .map((suggestion, index) =>
                   [
                       `${index + 1}. ${suggestion.relevantFile}`,
@@ -2855,11 +2897,11 @@ Return ONLY JSON:
         totalReasoningTokens += usage.reasoningTokens;
 
         logger.log({
-            message: `[AGENT-SYNTHESIS-RESCUE] before=${findings.suggestions.length} added=${extraFindings?.suggestions.length ?? 0}`,
+            message: `[AGENT-SYNTHESIS-RESCUE] before=${safeSuggestions.length} added=${extraFindings?.suggestions?.length ?? 0}`,
             context: 'AgentLoop',
             metadata: {
-                currentFindings: findings.suggestions.length,
-                addedFindings: extraFindings?.suggestions.length ?? 0,
+                currentFindings: safeSuggestions.length,
+                addedFindings: extraFindings?.suggestions?.length ?? 0,
                 inspectedFiles: inspectedFilesSummary
                     .split('\n')
                     .filter(Boolean).length,
@@ -2892,12 +2934,15 @@ Return ONLY JSON:
     }
 }
 
-function mergeFindings(
+export function mergeFindings(
     base: FindingsOutput,
     extra: FindingsOutput,
 ): FindingsOutput {
+    const baseSuggestions = base.suggestions ?? [];
+    const extraSuggestions = extra.suggestions ?? [];
+
     const seen = new Set(
-        base.suggestions.map((suggestion) =>
+        baseSuggestions.map((suggestion) =>
             [
                 suggestion.relevantFile,
                 suggestion.relevantLinesStart ?? '',
@@ -2907,7 +2952,7 @@ function mergeFindings(
         ),
     );
 
-    const additionalSuggestions = extra.suggestions.filter((suggestion) => {
+    const additionalSuggestions = extraSuggestions.filter((suggestion) => {
         const key = [
             suggestion.relevantFile,
             suggestion.relevantLinesStart ?? '',
@@ -2924,7 +2969,7 @@ function mergeFindings(
         reasoning: [base.reasoning, extra.reasoning]
             .filter(Boolean)
             .join('\n\n'),
-        suggestions: [...base.suggestions, ...additionalSuggestions],
+        suggestions: [...baseSuggestions, ...additionalSuggestions],
     };
 }
 
