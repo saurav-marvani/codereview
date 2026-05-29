@@ -427,5 +427,11 @@ export SH_TENANT_PASSWORD="$TEST_USER_PASSWORD"
 export TEST_USER_EMAIL TEST_USER_PASSWORD
 export TEST_TIMEOUT_REVIEW
 
-ok "Exec matrix runner: ./node_modules/.bin/tsx cli/run-matrix.ts $MATRIX_FILE --target self-hosted"
-exec ./node_modules/.bin/tsx cli/run-matrix.ts "$MATRIX_FILE" --target self-hosted
+# --skip-missing-tokens: drop (not fail) scenarios whose prerequisites are
+# absent. In CI the per-seat-license-toggle scenario needs a seats=1 license
+# JWT at ~/.kodus-dev/license-seats1.jwt that only exists on a dev laptop —
+# without the flag it crashes with ENOENT and reds the whole cell. The
+# matrix YAML already documents this scenario as "skipped automatically when
+# SH_LICENSE_KEY_PATH isn't available"; the flag is what makes that true.
+ok "Exec matrix runner: ./node_modules/.bin/tsx cli/run-matrix.ts $MATRIX_FILE --target self-hosted --skip-missing-tokens"
+exec ./node_modules/.bin/tsx cli/run-matrix.ts "$MATRIX_FILE" --target self-hosted --skip-missing-tokens
