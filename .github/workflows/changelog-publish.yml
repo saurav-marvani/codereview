@@ -109,7 +109,14 @@ jobs:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
                   GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3-flash-preview' }}
+                  # Routing: prefer the canonical #releases webhook; fall
+                  # back to the historical SH-specific one; finally to the
+                  # legacy general webhook. publish-changelog.ts picks the
+                  # first that's set. Same fallback shape used by every
+                  # other workflow that notifies Discord.
+                  DISCORD_WEBHOOK_RELEASES: ${{ secrets.DISCORD_WEBHOOK_RELEASES }}
                   DISCORD_WEBHOOK_SELFHOSTED: ${{ secrets.DISCORD_WEBHOOK_SELFHOSTED }}
+                  DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
                   RELEASE_TAG: ${{ needs.validate.outputs.tag }}
               run: |
                   yarn ts-node scripts/feature-gate/publish-changelog.ts \
