@@ -145,11 +145,26 @@ There is no human gate inside the hotfix run. The matrix is the only quality gat
 A Repository Ruleset named **`release-freeze`** (id `17004627`) lives in repo
 settings, default state `enforcement=disabled`. The Friday release flips it
 to `active` at the start and back to `disabled` at the end. While active,
-PR merges to `main` are blocked.
+the ruleset requires every PR to `main` to have a green
+**`release-freeze-eligible`** status check.
+
+That status check is posted by `.github/workflows/release-freeze-check.yml`
+based on the PR title's Conventional Commits type:
+
+| PR title prefix | Status | Can merge during freeze? |
+|---|---|---|
+| `chore:` `ci:` `docs:` `build:` `test:` `style:` | ✓ success | Yes — exempt (not user-facing, no runtime impact) |
+| `feat:` `fix:` `perf:` `refactor:` | ✗ failure | No — touches runtime, wait for unfreeze or admin bypass |
+| Anything else | ✗ failure | Fix the title (also caught by `pr-title-check.yml`) |
+
+Why `refactor` is blocked: although the convention treats it as "hidden from
+changelog", a refactor in `libs/code-review/` etc. can still change runtime
+behaviour. Conservative default; admin can bypass if truly safe.
 
 **Bypass**: any repo Admin (currently malinosqui, Wellington01, sartorijr92,
-jairo-litman) can click **"Bypass and merge"** on the PR when truly needed.
-The bypass is logged in repo Insights → Rule insights.
+jairo-litman) can click **"Bypass and merge"** on any PR — including
+`feat`/`fix`/`perf`/`refactor` PRs they judge safe to land mid-release. The
+bypass is logged in repo Insights → Rule insights.
 
 **Failsafe** (if the runner dies mid-release with the freeze still active):
 
