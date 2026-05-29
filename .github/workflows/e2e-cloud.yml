@@ -138,8 +138,8 @@ jobs:
               uses: ./.github/actions/discord-notify
               with:
                   # Per-channel secret with fallback to the general webhook so
-                  # nothing goes silent if DISCORD_WEBHOOK_QA isn't created yet.
-                  webhook: ${{ secrets.DISCORD_WEBHOOK_QA || secrets.DISCORD_WEBHOOK }}
+                  # nothing goes silent if DISCORD_WEBHOOK_INTERNAL isn't created yet.
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
                   status: failure
                   title: "❌ E2E cloud matrix failed"
                   description: |

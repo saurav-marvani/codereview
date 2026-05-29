@@ -127,7 +127,7 @@ jobs:
               if: always()
               uses: sarisia/actions-status-discord@v1.13.0
               with:
-                  webhook: ${{ secrets.DISCORD_WEBHOOK }}
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
                   status: ${{ job.status }}
                   content: ":clap: Build successful!"
                   title: "Deploy QA: kodus-mcp-manager"

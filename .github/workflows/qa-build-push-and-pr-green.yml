@@ -306,7 +306,7 @@ jobs:
             - uses: actions/checkout@v6.0.2
             - uses: ./.github/actions/discord-notify
               with:
-                  webhook: ${{ secrets.DISCORD_WEBHOOK_QA || secrets.DISCORD_WEBHOOK }}
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
                   status: failure
                   title: "❌ QA backend build/deploy failed"
                   description: |

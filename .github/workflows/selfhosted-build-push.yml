@@ -607,7 +607,7 @@ jobs:
               if: steps.discord-webhook.outputs.configured == 'true'
               uses: sarisia/actions-status-discord@v1.16.0
               with:
-                  webhook: ${{ secrets.DISCORD_WEBHOOK_SELFHOSTED }}
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK_SELFHOSTED || secrets.DISCORD_WEBHOOK }}
                   content: ":x: Self-hosted release `${{ needs.plan-release.outputs.rc_tag }}` failed at: **${{ steps.ctx.outputs.phase }}**. Customer-visible tag `${{ needs.plan-release.outputs.release_tag }}` was NOT created."
                   title: "Self-Hosted Release Failed (${{ steps.ctx.outputs.phase }})"
                   description: "RC `${{ needs.plan-release.outputs.rc_tag }}` did not complete. The release process is gated — no customer impact, but check the workflow logs to unblock."

@@ -28,13 +28,14 @@
  *   GEMINI_API_KEY                Google AI API key for headline copy
  *                                 (or API_GOOGLE_AI_API_KEY — script
  *                                 picks whichever is set).
- *   DISCORD_WEBHOOK_RELEASES      canonical #releases announcement
- *                                 channel. Falls back to
- *                                 DISCORD_WEBHOOK_SELFHOSTED (the
- *                                 historical SH-specific channel), then
- *                                 to DISCORD_WEBHOOK (legacy general).
- *                                 Same fallback pattern every workflow
- *                                 that notifies Discord uses.
+ *   DISCORD_WEBHOOK_COMMUNITY     customer-facing #releases
+ *                                 channel in the Kodus community
+ *                                 Discord. Falls back to
+ *                                 DISCORD_WEBHOOK_SELFHOSTED (historical
+ *                                 channel that received this content
+ *                                 before) and DISCORD_WEBHOOK (legacy
+ *                                 general). The script picks the first
+ *                                 that's set.
  *
  * Usage:
  *   yarn feature-gate:changelog --tag <release-tag>
@@ -917,18 +918,18 @@ async function postDiscord(
     // shell argument can wrap and embed a literal newline, which breaks
     // Discord auth without an obvious error.
     const candidates: Array<[string, string]> = [
-        ['DISCORD_WEBHOOK_RELEASES', process.env.DISCORD_WEBHOOK_RELEASES ?? ''],
+        ['DISCORD_WEBHOOK_COMMUNITY', process.env.DISCORD_WEBHOOK_COMMUNITY ?? ''],
         ['DISCORD_WEBHOOK_SELFHOSTED', process.env.DISCORD_WEBHOOK_SELFHOSTED ?? ''],
         ['DISCORD_WEBHOOK', process.env.DISCORD_WEBHOOK ?? ''],
     ];
     const picked = candidates.find(([, v]) => v.replace(/\s/g, '') !== '');
     const rawWebhook = picked ? picked[1] : '';
-    const sourceName = picked ? picked[0] : 'DISCORD_WEBHOOK_RELEASES';
+    const sourceName = picked ? picked[0] : 'DISCORD_WEBHOOK_COMMUNITY';
     const webhook = rawWebhook.replace(/\s/g, '');
 
     if (!webhook) {
         console.warn(
-            `No Discord webhook configured (tried DISCORD_WEBHOOK_RELEASES, DISCORD_WEBHOOK_SELFHOSTED, DISCORD_WEBHOOK), skipping post for ${tag}.`,
+            `No Discord webhook configured (tried DISCORD_WEBHOOK_COMMUNITY, DISCORD_WEBHOOK_SELFHOSTED, DISCORD_WEBHOOK), skipping post for ${tag}.`,
         );
         return;
     }

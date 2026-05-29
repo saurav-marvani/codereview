@@ -206,33 +206,41 @@ them — adding a scenario to fast.yml automatically reaches CI.
 
 ## Discord notifications
 
-Three channels, picked so noisy CI alerts don't drown release news and so
-each audience can mute the others.
+Two channels, one private, one public.
 
-| Webhook secret | Discord channel | What goes there | When |
+| Webhook secret | Channel | Audience | What goes there |
 |---|---|---|---|
-| `DISCORD_WEBHOOK_RELEASES` | #releases | Cloud prod deploy (backend / web / mcp), SH release success notes, changelog publish | always (success + failure) |
-| `DISCORD_WEBHOOK_SELFHOSTED` | (existing) | Self-hosted release pipeline failures inside `selfhosted-build-push.yml` | failure only |
-| `DISCORD_WEBHOOK_QA` | #qa-ci | QA backend build/deploy failures, `e2e-cloud` (per-deploy + nightly) failures, `e2e-self-hosted-matrix` ad-hoc failures, eventually `tests.yml` PR failures | failure only |
-| `DISCORD_WEBHOOK_BENCH` | #benchmark | `code-review-model-benchmark.yml` failures | failure only |
-| `DISCORD_WEBHOOK` (legacy) | (existing) | Fallback for any of the above when the per-channel secret isn't configured yet, plus the workflows still using it inline (`tests.yml`, `web-qa-deploy`, etc.) | as before |
+| `DISCORD_WEBHOOK_INTERNAL` | private (team only) | Devs + founders | Everything operational: CI/PR test failures, QA deploys (backend/web/mcp), `e2e-cloud` per-deploy + nightly failures, `e2e-self-hosted-matrix` failures, model benchmark failures, SH release pipeline failures, cloud prod deploy success + failure |
+| `DISCORD_WEBHOOK_COMMUNITY` | public (Kodus community) | Customers, prospects | Only the changelog published per self-hosted release — cloud + SH ship the same image, so one announcement covers both audiences |
 
-**Graceful fallback**: every workflow notifies via the composite action
-[`.github/actions/discord-notify/`](../.github/actions/discord-notify/action.yml)
-with `webhook: ${{ secrets.DISCORD_WEBHOOK_<channel> || secrets.DISCORD_WEBHOOK }}`.
-That means a missing per-channel secret routes to the legacy general
-channel instead of going silent. You can create the per-channel webhooks
-in Discord at your pace and add them as repo secrets when ready — nothing
-breaks before that.
+The split is sharp because the audiences don't overlap: customers don't
+need to know QA was flaky, and devs don't need a separate copy of the
+release notes.
 
-**Setup to fully activate**: in Discord create one webhook per channel,
-copy each URL, then:
+**Graceful fallback chain**:
+
+| Use case | Webhook resolution |
+|---|---|
+| Composite action `discord-notify` (most workflows) | `DISCORD_WEBHOOK_INTERNAL ?? DISCORD_WEBHOOK` |
+| `selfhosted-build-push.yml notify-discord-failure` | `DISCORD_WEBHOOK_INTERNAL ?? DISCORD_WEBHOOK_SELFHOSTED ?? DISCORD_WEBHOOK` |
+| `publish-changelog.ts` (community announcement) | `DISCORD_WEBHOOK_COMMUNITY ?? DISCORD_WEBHOOK_SELFHOSTED ?? DISCORD_WEBHOOK` |
+
+Until you create the two new secrets, every notification routes to the
+historical `DISCORD_WEBHOOK_SELFHOSTED` / `DISCORD_WEBHOOK` channels — so
+nothing goes silent. When you create `DISCORD_WEBHOOK_INTERNAL` and
+`DISCORD_WEBHOOK_COMMUNITY`, routing shifts automatically.
+
+**Setup to fully activate**: in Discord, create webhooks for each
+channel, then:
 
 ```bash
-gh secret set DISCORD_WEBHOOK_RELEASES -R kodustech/kodus-ai --body '<url>'
-gh secret set DISCORD_WEBHOOK_QA       -R kodustech/kodus-ai --body '<url>'
-gh secret set DISCORD_WEBHOOK_BENCH    -R kodustech/kodus-ai --body '<url>'
+gh secret set DISCORD_WEBHOOK_INTERNAL  -R kodustech/kodus-ai --body '<url for team channel>'
+gh secret set DISCORD_WEBHOOK_COMMUNITY -R kodustech/kodus-ai --body '<url for community channel>'
 ```
+
+After that, `DISCORD_WEBHOOK` and `DISCORD_WEBHOOK_SELFHOSTED` are
+deprecated — kept as fallbacks during transition but no new workflows
+should reference them.
 
 ## Troubleshooting
 

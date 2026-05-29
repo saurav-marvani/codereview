@@ -158,7 +158,7 @@ jobs:
               if: success()
               uses: sarisia/actions-status-discord@v1.16.0
               with:
-                  webhook: ${{ secrets.DISCORD_WEBHOOK }}
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
                   content: ":tada: Docker image `${{ env.RELEASE_VERSION }}` was built and pushed
                       to Amazon ECR."
                   title: "Build and Push: kodus-web (Cloud)"
@@ -169,7 +169,7 @@ jobs:
               if: failure()
               uses: sarisia/actions-status-discord@v1.16.0
               with:
-                  webhook: ${{ secrets.DISCORD_WEBHOOK }}
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
                   content: ":x: Failed to build or push Docker image `${{ env.RELEASE_VERSION }}`
                       to Amazon ECR. Check logs for details."
                   title: "Build and Push: kodus-web (Cloud)"

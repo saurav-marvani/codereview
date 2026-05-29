@@ -105,7 +105,7 @@ jobs:
               if: success()
               uses: sarisia/actions-status-discord@v1.13.0
               with:
-                  webhook: ${{ secrets.DISCORD_WEBHOOK }}
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
                   status: ${{ job.status }}
                   content: ':tada: Deploy realizado com sucesso com a imagem `${{ env.IMAGE_TAG }}`!'
                   title: 'Deploy Prod:'

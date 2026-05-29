@@ -230,7 +230,7 @@ jobs:
                   # ad-hoc via dispatch. Either way, QA channel — the release
                   # workflow's own notify-discord-failure covers the release
                   # case with full context.
-                  webhook: ${{ secrets.DISCORD_WEBHOOK_QA || secrets.DISCORD_WEBHOOK }}
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
                   status: failure
                   title: "❌ E2E self-hosted matrix failed"
                   description: |

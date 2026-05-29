@@ -308,7 +308,7 @@ jobs:
             - name: Notify Discord (Deploy PR Created)
               if: success() && steps.create_pr.outputs.pull-request-number
               env:
-                  DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_RELEASES || secrets.DISCORD_WEBHOOK }}
+                  DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
               run: |
                   if [ -n "$DISCORD_WEBHOOK" ]; then
                     curl -H "Content-Type: application/json" -X POST "$DISCORD_WEBHOOK" -d '{
@@ -330,7 +330,7 @@ jobs:
             - name: Notify Discord (Deploy Failed)
               if: failure()
               env:
-                  DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_RELEASES || secrets.DISCORD_WEBHOOK }}
+                  DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
               run: |
                   if [ -n "$DISCORD_WEBHOOK" ]; then
                     curl -H "Content-Type: application/json" -X POST "$DISCORD_WEBHOOK" -d '{
