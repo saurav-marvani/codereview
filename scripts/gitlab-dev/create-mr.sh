@@ -138,10 +138,10 @@ EXISTING_MR=$(api "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/merge_requests?so
     | python3 -c "import json,sys; d=json.load(sys.stdin); print(d[0]['web_url'] if d else '', end='')")
 
 if [ -z "${EXISTING_MR}" ]; then
-    MR_BODY=$(python3 <<'EOF'
+    MR_BODY=$(python3 - "${FEATURE_BRANCH}" <<'EOF'
 import json
 print(json.dumps({
-    "source_branch": "feat/discount-codes",
+    "source_branch": sys.argv[1],
     "target_branch": "main",
     "title": "feat(orders): apply discount codes at checkout",
     "description": (

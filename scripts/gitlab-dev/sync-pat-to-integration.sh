@@ -32,12 +32,13 @@ PAT="$(cat "${PAT_FILE}")"
 # an extra dep on the host.
 IV_HEX="$(openssl rand -hex 16)"
 CIPHER_HEX="$(printf '%s' "${PAT}" | openssl enc -aes-256-cbc -K "${CRYPTO_KEY}" -iv "${IV_HEX}" 2>/dev/null | xxd -p | tr -d '\n')"
-ENCRYPTED="${IV_HEX}:${CIPHER_HEX}"
 
-if [ -z "${ENCRYPTED}" ]; then
+if [ -z "${CIPHER_HEX}" ]; then
     echo "error: encryption helper returned empty." >&2
     exit 1
 fi
+
+ENCRYPTED="${IV_HEX}:${CIPHER_HEX}"
 
 echo "==> updating auth_integration accessToken for GITLAB"
 docker exec -i db_postgres psql -U kodusdev -d kodus_db <<SQL
