@@ -75,7 +75,11 @@ jobs:
         needs: validate
         if: needs.validate.outputs.should_publish == 'true'
         runs-on: ubuntu-latest
-        environment: production
+        # Uses `ci` env (no reviewer) — scoped access to RELEASE_BOT_TOKEN
+        # without the human-approval friction that `production` would
+        # add. The image-publishing gate lives at `promote` in
+        # selfhosted-build-push.yml, not here.
+        environment: ci
         steps:
             - name: Checkout (full history for tag-range diff)
               uses: actions/checkout@v6.0.2

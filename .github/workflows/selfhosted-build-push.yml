@@ -81,6 +81,7 @@ jobs:
         # "freeze" — exactly what we want for the weekly train.
         if: ${{ inputs.hotfix != true }}
         runs-on: ubuntu-latest
+        environment: ci
         permissions:
             contents: read
         steps:
@@ -386,6 +387,7 @@ jobs:
             - promote
         if: needs.promote.result == 'success'
         runs-on: ubuntu-latest
+        environment: ci
         permissions:
             contents: write
         outputs:
@@ -531,6 +533,7 @@ jobs:
         # post-promote sanity check against the published :latest image.
         if: needs.promote.result == 'success'
         runs-on: ubuntu-latest
+        environment: ci
         # GITHUB_TOKEN isn't used here (we dispatch with CROSS_REPO_PAT),
         # but declare an explicit empty perms block so the default
         # write-all token scope doesn't leak in.
@@ -588,6 +591,7 @@ jobs:
             - cleanup-rc-tag
         if: ${{ always() && needs.freeze-main.result == 'success' }}
         runs-on: ubuntu-latest
+        environment: ci
         permissions:
             contents: read
         steps:

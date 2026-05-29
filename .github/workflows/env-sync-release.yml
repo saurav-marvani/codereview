@@ -38,6 +38,7 @@ on:
 jobs:
     sync-installer:
         runs-on: ubuntu-latest
+        environment: ci
         steps:
             - name: Checkout kodus-ai
               uses: actions/checkout@v4
