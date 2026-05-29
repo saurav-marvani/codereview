@@ -25,6 +25,7 @@ import {
     PullRequestState,
 } from '@libs/core/domain/enums';
 import {
+    CommentResult,
     Repository,
     ReviewComment,
 } from '@libs/core/infrastructure/config/types/general/codeReview.type';
@@ -95,7 +96,6 @@ export class GitlabService implements Omit<
     | 'getAuthenticationOAuthToken'
     | 'getCommitsByReleaseMode'
     | 'getDataForCalculateDeployFrequency'
-    | 'requestChangesPullRequest'
 > {
     private readonly logger = createLogger(GitlabService.name);
 
@@ -3358,6 +3358,89 @@ export class GitlabService implements Omit<
             });
             return null;
         }
+    }
+
+    async requestChangesPullRequest(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        prNumber: number;
+        repository: { id: string; name: string };
+        criticalComments: CommentResult[];
+    }) {
+        try {
+            const {
+                organizationAndTeamData,
+                prNumber,
+                repository,
+                criticalComments,
+            } = params;
+
+            const gitlabAuthDetail = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            // Unapprove MR if previously approved
+            // On GitLab CE this may fail with 403 (Premium-only feature)
+            try {
+                await gitlabAPI.MergeRequestApprovals.unapprove(
+                    repository.id,
+                    prNumber,
+                );
+            } catch (unapproveError) {
+                this.logger.warn({
+                    message: `Could not unapprove MR #${prNumber} (may require GitLab Premium)`,
+                    context: GitlabService.name,
+                    serviceName: 'GitlabService requestChangesPullRequest',
+                    error: unapproveError,
+                    metadata: params,
+                });
+            }
+
+            const listOfCriticalIssues = this.getListOfCriticalIssues(
+                criticalComments,
+            );
+
+            const requestChangeBodyTitle =
+                '# Found critical issues please review the requested changes';
+
+            const formattedBody =
+                `${requestChangeBodyTitle}\n\n${listOfCriticalIssues}`.trim();
+
+            await gitlabAPI.MergeRequestDiscussions.create(
+                repository.id,
+                prNumber,
+                formattedBody,
+            );
+
+            this.logger.log({
+                message: `Requested changes on MR #${prNumber} with ${criticalComments.length} critical issues`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService requestChangesPullRequest',
+                metadata: params,
+            });
+        } catch (error) {
+            this.logger.error({
+                message: `Error requesting changes on MR #${params.prNumber}`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService requestChangesPullRequest',
+                error: error,
+                metadata: params,
+            });
+            throw error;
+        }
+    }
+
+    private getListOfCriticalIssues(
+        criticalComments: CommentResult[],
+    ): string {
+        return criticalComments
+            .map((comment) => {
+                const summary =
+                    comment.comment?.suggestion?.oneSentenceSummary ?? '';
+                return `- ${summary}`;
+            })
+            .join('\n');
     }
 
     async getAllCommentsInPullRequest(params: {
