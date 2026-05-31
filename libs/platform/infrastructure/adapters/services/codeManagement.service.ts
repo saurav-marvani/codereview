@@ -120,6 +120,10 @@ export class CodeManagementService implements ICodeManagementService {
             );
         }
 
+        if (!type) {
+            return null;
+        }
+
         const codeManagementService =
             this.platformIntegrationFactory.getCodeManagementService(type);
 
@@ -142,6 +146,10 @@ export class CodeManagementService implements ICodeManagementService {
             type = await this.getTypeIntegration(
                 extractOrganizationAndTeamData(params),
             );
+        }
+
+        if (!type) {
+            return false;
         }
 
         const codeManagementService =
@@ -201,6 +209,10 @@ export class CodeManagementService implements ICodeManagementService {
             type = await this.getTypeIntegration(
                 extractOrganizationAndTeamData(params),
             );
+        }
+
+        if (!type) {
+            return [];
         }
 
         const codeManagementService =
@@ -374,6 +386,10 @@ export class CodeManagementService implements ICodeManagementService {
             );
         }
 
+        if (!type) {
+            return [];
+        }
+
         const codeManagementService =
             this.platformIntegrationFactory.getCodeManagementService(type);
 
@@ -403,6 +419,11 @@ export class CodeManagementService implements ICodeManagementService {
             organizationAndTeamData: OrganizationAndTeamData;
             repository: { name: string; id: string };
             prNumber: number;
+            // Optional — when present, providers that implement caching
+            // (currently GitHub) key their cache entry by it. Other
+            // providers ignore it. Should be the head sha of the PR ref
+            // so the cache invalidates when new commits are pushed.
+            headSha?: string;
         },
         type?: PlatformType,
     ) {
@@ -474,6 +495,46 @@ export class CodeManagementService implements ICodeManagementService {
         return codeManagementService.getRepositoryContentFile(params);
     }
 
+    async getRepositoryContentBatch(
+        params: {
+            organizationAndTeamData: OrganizationAndTeamData;
+            repository: { name: string; id: any };
+            files: Array<{ filename: string; sha?: string }>;
+            pullRequest?: any;
+        },
+        type?: PlatformType,
+    ): Promise<Map<string, any> | null> {
+        if (!type) {
+            type = await this.getTypeIntegration(
+                extractOrganizationAndTeamData(params),
+            );
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.getRepositoryContentBatch(params);
+    }
+
+    async getUsersByUsername(
+        params: {
+            organizationAndTeamData: OrganizationAndTeamData;
+            usernames: string[];
+        },
+        type?: PlatformType,
+    ): Promise<Map<string, any> | null> {
+        if (!type) {
+            type = await this.getTypeIntegration(
+                extractOrganizationAndTeamData(params),
+            );
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.getUsersByUsername(params);
+    }
+
     async getPullRequestByNumber(
         params: {
             organizationAndTeamData: OrganizationAndTeamData;
@@ -524,6 +585,8 @@ export class CodeManagementService implements ICodeManagementService {
             organizationAndTeamData: OrganizationAndTeamData;
             repository: { name: string; id: string };
             prNumber: number;
+            // Same pattern as getFilesByPullRequestId — optional cache key.
+            headSha?: string;
         },
         type?: PlatformType,
     ) {
@@ -990,6 +1053,28 @@ export class CodeManagementService implements ICodeManagementService {
             this.platformIntegrationFactory.getCodeManagementService(type);
 
         return codeManagementService.getUserById(params);
+    }
+
+    async resolveMrAuthorFromWebhookPayload(
+        params: {
+            payload: any;
+            organizationAndTeamData: OrganizationAndTeamData;
+        },
+        type?: PlatformType,
+    ): Promise<any | null> {
+        if (!type) {
+            type = await this.getTypeIntegration(
+                extractOrganizationAndTeamData(params),
+            );
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return (
+            codeManagementService.resolveMrAuthorFromWebhookPayload?.(params) ??
+            null
+        );
     }
 
     async getCurrentUser(

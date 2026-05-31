@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createTwoFilesPatch } from 'diff';
+import pLimit from 'p-limit';
 import { v4 } from 'uuid';
 
 import {
@@ -106,6 +107,14 @@ export class AzureReposService implements Omit<
     | 'getUserById'
 > {
     private readonly logger = createLogger(AzureReposService.name);
+
+    /**
+     * Cap on concurrent `getFileContent` calls during PR file enrichment.
+     * Matches `PullRequestHandlerService.FILE_CONTENT_CONCURRENCY` so the
+     * full review pipeline applies the same back-pressure to Azure DevOps,
+     * regardless of which entry point fired the fetch.
+     */
+    private static readonly FILE_CONTENT_CONCURRENCY = 30;
 
     constructor(
         @Inject(INTEGRATION_SERVICE_TOKEN)
@@ -1650,7 +1659,14 @@ export class AzureReposService implements Omit<
                 },
             );
 
-            return pr;
+            if (!pr) {
+                return null;
+            }
+
+            return {
+                ...pr,
+                body: pr.description ?? '',
+            };
         } catch (error) {
             this.logger.error({
                 message: 'Error to get pull request by number',
@@ -3414,30 +3430,73 @@ export class AzureReposService implements Omit<
                 },
             });
 
-            // 4. Process each change entry to generate the diff using our specific base and target commits
-            const fileDiffPromises = changeEntries
-                .filter((change) => change.item?.path || change?.originalPath) // Ensure item and path exist
-                .map((change) => {
-                    const filePath = change.item?.path || change?.originalPath;
-                    // Pass the globally determined base/target and the specific change type
-                    return this._generateFileDiffForAzure({
-                        orgName,
-                        token,
-                        projectId,
-                        repositoryId: repository.id,
-                        filePath,
-                        baseCommitId, // Base commit of the target branch
-                        targetCommitId, // Source commit of the PR
-                        changeType: change.changeType,
-                    });
-                });
-
-            const enrichedFilesResults = await Promise.all(fileDiffPromises);
-
-            // Filter out any null results where diff generation failed
-            const successfulFiles = enrichedFilesResults.filter(
-                (file): file is NonNullable<typeof file> => file !== null,
+            const validEntries = changeEntries.filter(
+                (change) => change.item?.path || change?.originalPath,
             );
+
+            const limit = pLimit(AzureReposService.FILE_CONTENT_CONCURRENCY);
+
+            const settled = await Promise.allSettled(
+                validEntries.map((change) =>
+                    limit(() =>
+                        this._generateFileDiffForAzure({
+                            orgName,
+                            token,
+                            projectId,
+                            repositoryId: repository.id,
+                            filePath: change.item?.path || change?.originalPath,
+                            baseCommitId,
+                            targetCommitId,
+                            changeType: change.changeType,
+                        }),
+                    ),
+                ),
+            );
+
+            const successfulFiles: Array<
+                NonNullable<
+                    Awaited<
+                        ReturnType<
+                            AzureReposService['_generateFileDiffForAzure']
+                        >
+                    >
+                >
+            > = [];
+            const failedFiles: Array<{ filePath: string; reason: string }> = [];
+
+            settled.forEach((result, idx) => {
+                const filePath =
+                    validEntries[idx].item?.path ||
+                    validEntries[idx]?.originalPath;
+                if (result.status === 'fulfilled') {
+                    if (result.value !== null) {
+                        successfulFiles.push(result.value);
+                    }
+                    // `value === null` means `_generateFileDiffForAzure`
+                    // swallowed its own error and already logged it — no
+                    // need to double-count here.
+                } else {
+                    failedFiles.push({
+                        filePath,
+                        reason: result.reason?.message ?? String(result.reason),
+                    });
+                }
+            });
+
+            if (failedFiles.length > 0) {
+                // Structured visibility instead of silent loss. Capped sample
+                // so a 200-file blast doesn't blow up the log payload.
+                this.logger.warn({
+                    message: `Diff fetch incomplete for PR #${prNumber}: ${failedFiles.length}/${validEntries.length} files failed`,
+                    context: this.getFilesByPullRequestId.name,
+                    metadata: {
+                        prNumber,
+                        failedCount: failedFiles.length,
+                        totalCount: validEntries.length,
+                        failedSample: failedFiles.slice(0, 10),
+                    },
+                });
+            }
 
             this.logger.log({
                 message: `Successfully generated diffs for ${successfulFiles.length} files for PR #${prNumber}`,
@@ -3637,7 +3696,11 @@ export class AzureReposService implements Omit<
                 message: `Error generating diff for file "${filePath}" between commits "${baseCommitId}" and "${targetCommitId}"`,
                 context: this._generateFileDiffForAzure.name,
                 error: error,
-                metadata: { filePath, baseCommitId, targetCommitId },
+                metadata: {
+                    filePath,
+                    baseCommitId,
+                    targetCommitId,
+                },
             });
             return null; // Return null to indicate failure for this specific file
         }
@@ -3971,6 +4034,21 @@ export class AzureReposService implements Omit<
         return `\`\`\`${language}\n${code}\n\`\`\``;
     }
 
+    private dedentCode(code: string): string {
+        const lines = code.split('\n');
+        const indents = lines
+            .filter((line) => line.trim().length > 0)
+            .map((line) => line.match(/^[ \t]*/)?.[0].length ?? 0);
+        if (indents.length === 0) return code;
+        const minIndent = Math.min(...indents);
+        if (minIndent === 0) return code;
+        return lines
+            .map((line) =>
+                line.length >= minIndent ? line.slice(minIndent) : line,
+            )
+            .join('\n');
+    }
+
     private formatSub(text: string) {
         return `<sub>${text}</sub>\n\n`;
     }
@@ -4023,7 +4101,7 @@ ${copyPrompt}
         const codeBlock = lineComment?.body?.improvedCode
             ? this.formatCodeBlock(
                   repository?.language?.toLowerCase(),
-                  lineComment?.body?.improvedCode,
+                  this.dedentCode(lineComment?.body?.improvedCode),
               )
             : '';
         const suggestionContent = lineComment?.body?.suggestionContent || '';
@@ -5087,5 +5165,19 @@ ${copyPrompt}
             });
             return null;
         }
+    }
+
+    async getRepositoryContentBatch(
+        _params: any,
+    ): Promise<Map<string, any> | null> {
+        // Not implemented for Azure Repos — callers fall back to
+        // per-file `getRepositoryContentFile`.
+        return null;
+    }
+
+    async getUsersByUsername(_params: any): Promise<Map<string, any> | null> {
+        // Not implemented for Azure Repos — callers fall back to
+        // per-user `getUserByUsername`.
+        return null;
     }
 }

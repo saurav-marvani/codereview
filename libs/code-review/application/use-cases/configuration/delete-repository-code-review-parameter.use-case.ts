@@ -120,7 +120,16 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
                 | ParametersEntity<ParametersKey.CODE_REVIEW_CONFIG>
                 | boolean;
 
-            if (repositoryId && directoryId) {
+            if (repositoryId && directoryId && body.folderId) {
+                result = await this.removeFolderFromGroup(
+                    organizationAndTeamData,
+                    codeReviewConfig,
+                    repositoryId,
+                    directoryId,
+                    body.folderId,
+                    body.actor,
+                );
+            } else if (repositoryId && directoryId) {
                 result = await this.deleteDirectoryConfig(
                     organizationAndTeamData,
                     codeReviewConfig,
@@ -196,9 +205,9 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
             centralizedConfigPrService: this.centralizedConfigPrService,
             organizationAndTeamData,
             repositoryId,
-            directoryPath: directory?.path,
+            directoryPath: directory?.folders?.[0]?.path,
             configFileContent: null,
-            title: `Remove Kodus config for ${repository.name}${directory ? ` (${directory.path})` : ''}`,
+            title: `Remove Kodus config for ${repository.name}${directory ? ` (${directory.folders?.[0]?.path ?? ''})` : ''}`,
             description:
                 'This pull request proposes removing a code review scope configuration from centralized config.',
             commitMessage: `remove code review config for ${repository.name}`,
@@ -450,9 +459,88 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
         await this.handleDirectorySideEffects(
             organizationAndTeamData,
             repository,
-            directoryToRemove,
+            {
+                id: directoryToRemove.id,
+                path: directoryToRemove.folders?.[0]?.path,
+            },
             actor,
         );
+
+        return updated;
+    }
+
+    private async removeFolderFromGroup(
+        organizationAndTeamData: OrganizationAndTeamData,
+        currentConfig: CodeReviewParameter,
+        repositoryId: string,
+        directoryId: string,
+        folderId: string,
+        actor?: {
+            source?: 'cli' | 'web' | 'sync';
+            organizationId?: string;
+            userId?: string;
+            userEmail?: string;
+        },
+    ) {
+        const repositoryIndex = currentConfig.repositories.findIndex(
+            (repo) => repo.id === repositoryId,
+        );
+        if (repositoryIndex === -1) {
+            throw new Error('Repository not found in configuration');
+        }
+
+        const repository = currentConfig.repositories[repositoryIndex];
+        const groupIndex = repository.directories?.findIndex(
+            (dir) => dir.id === directoryId,
+        );
+
+        if (groupIndex === undefined || groupIndex === -1) {
+            throw new Error('Directory group not found in configuration');
+        }
+
+        const group = repository.directories[groupIndex];
+
+        // If group has only 1 folder, delete the entire group
+        if (!group.folders || group.folders.length <= 1) {
+            return this.deleteDirectoryConfig(
+                organizationAndTeamData,
+                currentConfig,
+                repositoryId,
+                directoryId,
+                actor,
+            );
+        }
+
+        const folderIndex = group.folders.findIndex((f) => f.id === folderId);
+        if (folderIndex === -1) {
+            throw new Error('Folder not found in directory group');
+        }
+
+        const updatedConfig = produce(currentConfig, (draft) => {
+            const draftGroup =
+                draft.repositories[repositoryIndex].directories[groupIndex];
+            draftGroup.folders.splice(folderIndex, 1);
+            // Update group name to first remaining folder
+            draftGroup.name = draftGroup.folders[0]?.name ?? '';
+        });
+
+        const updated = await this.createOrUpdateParametersUseCase.execute(
+            ParametersKey.CODE_REVIEW_CONFIG,
+            updatedConfig,
+            organizationAndTeamData,
+        );
+
+        this.logger.log({
+            message:
+                'Folder removed from directory group successfully',
+            context: DeleteRepositoryCodeReviewParameterUseCase.name,
+            metadata: {
+                repositoryId,
+                directoryId,
+                folderId,
+                organizationAndTeamData,
+            },
+        });
 
         return updated;
     }
@@ -498,7 +586,7 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
     private async handleDirectorySideEffects(
         orgData: OrganizationAndTeamData,
         repository: { id: string; name: string },
-        directory: { id: string; path: string },
+        directory: { id: string; path?: string },
         actor?: {
             source?: 'cli' | 'web' | 'sync';
             organizationId?: string;

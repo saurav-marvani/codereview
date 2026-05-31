@@ -25,11 +25,11 @@ import { PullRequestMessagesModule } from '@libs/code-review/modules/pullRequest
         forwardRef(() => IntegrationConfigModule),
         forwardRef(() => IntegrationModule),
         forwardRef(() => OrganizationParametersModule),
-        PermissionsModule,
         forwardRef(() => McpCoreModule),
-        forwardRef(() => AIEngineModule), // Added
+        forwardRef(() => AIEngineModule),
         forwardRef(() => CentralizedConfigModule),
         forwardRef(() => PullRequestMessagesModule),
+        PermissionsModule,
     ],
     providers: [
         CreateOrUpdateParametersUseCase,

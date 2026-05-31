@@ -265,4 +265,12 @@ export class CreateKodyRuleDto {
             'User id/email/system identifier that resolved the request',
     })
     resolvedBy?: string;
+
+    @IsOptional()
+    @IsBoolean()
+    @ApiPropertyOptional({
+        description:
+            'True when the source file currently carries an `@kody-sync` marker — the per-file override that keeps the rule in sync even with `ideRulesSyncEnabled=false`. Set by the sync service, recomputed on every sync.',
+    })
+    pinnedSync?: boolean;
 }

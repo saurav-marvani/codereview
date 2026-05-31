@@ -28,20 +28,24 @@ export class GetCodeManagementMemberListUseCase implements IUseCase {
         },
     ) {}
 
-    public async execute(teamId?: string): Promise<{ name: string; id: string | number }[]> {
+    public async execute(
+        teamId?: string,
+    ): Promise<{ name: string; id: string | number }[]> {
         const organizationAndTeamData: OrganizationAndTeamData = {
             organizationId: this.request.user.organization.uuid,
             teamId,
         };
 
-        const cacheKey = teamId !== undefined
-            ? `org_members_${organizationAndTeamData.organizationId}_${teamId}`
-            : `org_members_${organizationAndTeamData.organizationId}`;
+        const cacheKey =
+            teamId !== undefined
+                ? `org_members_${organizationAndTeamData.organizationId}_${teamId}`
+                : `org_members_${organizationAndTeamData.organizationId}`;
 
         try {
-            const cached = await this.cacheService.getFromCache<
-                { name: string; id: string | number }[]
-            >(cacheKey);
+            const cached =
+                await this.cacheService.getFromCache<
+                    { name: string; id: string | number }[]
+                >(cacheKey);
 
             if (cached?.length > 0) {
                 return cached;
@@ -50,44 +54,36 @@ export class GetCodeManagementMemberListUseCase implements IUseCase {
             // Cache miss or error, proceed with fetch
         }
 
-        const platformMembers = await this.fetchMembersFromCodeIntegration(
-            organizationAndTeamData,
-        );
+        const [platformMembers, prMembers] = await Promise.all([
+            this.fetchMembersFromCodeIntegration(organizationAndTeamData),
+            this.fetchMembersFromPullRequests(organizationAndTeamData),
+        ]);
+        const mergedMembers = this.normalizeMembers([
+            ...platformMembers,
+            ...prMembers,
+        ]);
 
-        if (platformMembers.length > 0) {
+        if (mergedMembers.length > 0) {
             await this.cacheService
                 .addToCache(
                     cacheKey,
-                    platformMembers,
-                    GetCodeManagementMemberListUseCase.CACHE_TTL,
-                )
-                .catch(() => {});
-            return platformMembers;
-        }
-
-        const prMembers =
-            await this.fetchMembersFromPullRequests(organizationAndTeamData);
-
-        if (prMembers.length > 0) {
-            await this.cacheService
-                .addToCache(
-                    cacheKey,
-                    prMembers,
+                    mergedMembers,
                     GetCodeManagementMemberListUseCase.CACHE_TTL,
                 )
                 .catch(() => {});
         }
 
-        return prMembers;
+        return mergedMembers;
     }
 
-    public async refreshMembers(teamId?: string): Promise<
-        { name: string; id: string | number }[]
-    > {
+    public async refreshMembers(
+        teamId?: string,
+    ): Promise<{ name: string; id: string | number }[]> {
         const organizationId = this.request.user.organization.uuid;
-        const cacheKey = teamId !== undefined
-            ? `org_members_${organizationId}_${teamId}`
-            : `org_members_${organizationId}`;
+        const cacheKey =
+            teamId !== undefined
+                ? `org_members_${organizationId}_${teamId}`
+                : `org_members_${organizationId}`;
 
         await this.cacheService.removeFromCache(cacheKey);
 
@@ -166,7 +162,9 @@ export class GetCodeManagementMemberListUseCase implements IUseCase {
             }
         }
 
-        return Array.from(uniqueMembers.values());
+        return Array.from(uniqueMembers.values()).sort((a, b) =>
+            a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+        );
     }
 
     private normalizeMember(member: {

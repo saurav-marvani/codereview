@@ -15,6 +15,7 @@ import {
 } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { CommentResult } from '@libs/core/infrastructure/config/types/general/codeReview.type';
+import { ConfigLevel } from '@libs/core/infrastructure/config/types/general/pullRequestMessages.type';
 
 export interface PlaceholderContext {
     changedFiles?: FileChange[];
@@ -51,6 +52,7 @@ export class MessageTemplateProcessor {
                 );
             },
         );
+        this.handlers.set('reviewScope', this.generateReviewScope);
     }
 
     /**
@@ -230,7 +232,9 @@ ${reviewOptionsMarkdown}
     private generateReviewCadenceInfo = (
         context: PlaceholderContext,
     ): string => {
-        if (!context.codeReviewConfig?.reviewCadence) return '';
+        if (!context.codeReviewConfig?.reviewCadence) {
+            return '';
+        }
 
         const language =
             context.codeReviewConfig?.languageResultPrompt ??
@@ -240,11 +244,13 @@ ${reviewOptionsMarkdown}
             TranslationsCategory.ReviewCadenceInfo,
         );
 
-        if (!translation) return '';
+        if (!translation) {
+            return '';
+        }
 
         const cadenceType = context.codeReviewConfig.reviewCadence.type;
-        let statusText = '';
-        let description = '';
+        let statusText: string;
+        let description: string;
 
         switch (cadenceType) {
             case ReviewCadenceType.AUTOMATIC:
@@ -280,6 +286,43 @@ ${reviewOptionsMarkdown}
         }
 
         return `**${statusText}**: ${description}`;
+    };
+
+    /**
+     * Generate the review scope information
+     * @requires context.codeReviewConfig - Review configuration (configLevel, directoryFolders)
+     * @param context PlaceholderContext
+     * @returns Markdown describing which configuration scope was used for this review
+     */
+    private generateReviewScope = (context: PlaceholderContext): string => {
+        const configLevel = context.codeReviewConfig?.configLevel;
+
+        if (!configLevel || configLevel === ConfigLevel.GLOBAL) {
+            return 'This PR was reviewed using **global** configuration.';
+        }
+
+        if (configLevel === ConfigLevel.REPOSITORY) {
+            return 'This PR was reviewed using **repository** configuration.';
+        }
+
+        if (configLevel === ConfigLevel.DIRECTORY) {
+            const folders = context.codeReviewConfig?.directoryFolders;
+
+            if (!folders?.length) {
+                return 'This PR was reviewed using **directory** configuration.';
+            }
+
+            const primaryPath = folders[0].path;
+            const remaining = folders.length - 1;
+
+            if (remaining === 0) {
+                return `This PR was reviewed using directory configuration (\`${primaryPath}\`).`;
+            }
+
+            return `This PR was reviewed using directory configuration (\`${primaryPath}\` and ${remaining} other${remaining > 1 ? 's' : ''}).`;
+        }
+
+        return '';
     };
 
     private getTranslation(language?: string) {

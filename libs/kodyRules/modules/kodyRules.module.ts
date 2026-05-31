@@ -1,6 +1,7 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 
+import { EmailModule } from '@libs/common/email/email.module';
 import { CodebaseModule } from '@libs/code-review/modules/codebase.module';
 import { ContextReferenceModule } from '@libs/code-review/modules/contextReference.module';
 import { PromptsModule } from '@libs/code-review/modules/prompts.module';
@@ -37,7 +38,9 @@ import { GenerateKodyRulesUseCase } from '../application/use-cases/generate-kody
 import { GetInheritedRulesKodyRulesUseCase } from '../application/use-cases/get-inherited-kody-rules.use-case';
 import { GetRulesLimitStatusUseCase } from '../application/use-cases/get-rules-limit-status.use-case';
 import { ImportFastKodyRulesUseCase } from '../application/use-cases/import-fast-kody-rules.use-case';
+import { ManageImportedKodyRulesUseCase } from '../application/use-cases/manage-imported-kody-rules.use-case';
 import { ResyncRulesFromIdeUseCase } from '../application/use-cases/resync-rules-from-ide.use-case';
+import { ValidateRuleFileReferencesUseCase } from '../application/use-cases/validate-rule-file-references.use-case';
 import { RemoveRuleLikeUseCase } from '../application/use-cases/rule-like/remove-rule-like.use-case';
 import { SetRuleLikeUseCase } from '../application/use-cases/rule-like/set-rule-like.use-case';
 import { SendRulesNotificationUseCase } from '../application/use-cases/send-rules-notification.use-case';
@@ -58,6 +61,7 @@ import { McpCoreModule } from '@libs/mcp-server/mcp-core.module';
 import { KodyRulesSyncListener } from '../infrastructure/adapters/listeners/kody-rules-sync.listener';
 import { CodeReviewConfigurationModule } from '@libs/code-review/modules/code-review-configuration.module';
 import { CentralizedConfigModule } from '@libs/centralized-config/modules/centralized-config.module';
+import { NotificationModule } from '@libs/notifications/modules/notification.module';
 
 @Module({
     imports: [
@@ -85,6 +89,8 @@ import { CentralizedConfigModule } from '@libs/centralized-config/modules/centra
         forwardRef(() => McpCoreModule),
         forwardRef(() => CodeReviewConfigurationModule),
         forwardRef(() => CentralizedConfigModule),
+        EmailModule,
+        forwardRef(() => NotificationModule),
     ],
     providers: [
         {
@@ -119,11 +125,13 @@ import { CentralizedConfigModule } from '@libs/centralized-config/modules/centra
         GetRulesLimitStatusUseCase,
         ImportFastKodyRulesUseCase,
         ResyncRulesFromIdeUseCase,
+        ValidateRuleFileReferencesUseCase,
         RemoveRuleLikeUseCase,
         SetRuleLikeUseCase,
         KodyRulesSyncListener,
         FindRecommendedKodyRulesUseCase, // Added
         ConvertPendingUpdatesToMemoriesUseCase,
+        ManageImportedKodyRulesUseCase,
     ],
     exports: [
         KODY_RULES_REPOSITORY_TOKEN,
@@ -152,10 +160,12 @@ import { CentralizedConfigModule } from '@libs/centralized-config/modules/centra
         GetRulesLimitStatusUseCase,
         ImportFastKodyRulesUseCase,
         ResyncRulesFromIdeUseCase,
+        ValidateRuleFileReferencesUseCase,
         RemoveRuleLikeUseCase,
         SetRuleLikeUseCase,
         FindRecommendedKodyRulesUseCase, // Added
         ConvertPendingUpdatesToMemoriesUseCase,
+        ManageImportedKodyRulesUseCase,
     ],
 })
 export class KodyRulesModule {}

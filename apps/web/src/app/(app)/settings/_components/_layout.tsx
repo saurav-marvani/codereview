@@ -36,7 +36,6 @@ import {
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
 import type { CustomMessageConfig } from "@services/pull-request-messages/types";
-import { FEATURE_FLAGS } from "src/core/config/feature-flags";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { safeArray } from "src/core/utils/safe-array";
 
@@ -50,10 +49,11 @@ import {
 import { resolveCodeReviewConfigForScope } from "./code-review-config-scope";
 import {
     AutomationCodeReviewConfigProvider,
+    CodeReviewModelDataProvider,
     DefaultCodeReviewConfigProvider,
     PlatformConfigProvider,
     ScopedCodeReviewConfigProvider,
-    useFeatureFlags,
+    type CodeReviewModelData,
 } from "./context";
 import { PerRepository } from "./per-repository/repository";
 import {
@@ -64,15 +64,14 @@ import {
 const routes = [
     { label: "General", href: "general" },
     { label: "Review Categories", href: "review-categories" },
+    { label: "Review Filters", href: "suggestion-control" },
     { label: "Custom Prompts", href: "custom-prompts" },
-    { label: "Suggestion Control", href: "suggestion-control" },
     { label: "PR Summary", href: "pr-summary" },
     { label: "Kody Rules", href: "kody-rules" },
     { label: "Custom Messages", href: "custom-messages" },
 ] satisfies Array<{
     label: string;
     href: string;
-    featureFlag?: keyof typeof FEATURE_FLAGS;
 }>;
 
 type InitialPlatformConfig = {
@@ -90,6 +89,7 @@ type SettingsLayoutProps = React.PropsWithChildren<{
     initialConfigValue: FormattedGlobalCodeReviewConfig;
     initialDefaultConfig: InitialDefaultConfig;
     initialPlatformConfig: InitialPlatformConfig;
+    initialModelData: CodeReviewModelData;
 }>;
 
 export const SettingsLayout = ({
@@ -98,6 +98,7 @@ export const SettingsLayout = ({
     initialConfigValue,
     initialDefaultConfig,
     initialPlatformConfig,
+    initialModelData,
 }: SettingsLayoutProps) => {
     const { teamId } = useSelectedTeamId();
     const effectiveTeamId = teamId ?? initialTeamId;
@@ -142,20 +143,17 @@ export const SettingsLayout = ({
         },
     );
 
-    console.log(
-        "configValue in layout",
-        liveShellQuery?.configValue ?? initialConfigValue,
-    );
-
     return (
-        <SettingsLayoutShell
-            teamId={effectiveTeamId}
-            configValue={liveShellQuery?.configValue ?? initialConfigValue}
-            defaultConfig={defaultConfig ?? initialDefaultConfig}
-            platformConfig={platformConfig ?? initialPlatformConfig}
-            isMCPAvailable={isMCPAvailable}>
-            {children}
-        </SettingsLayoutShell>
+        <CodeReviewModelDataProvider value={initialModelData}>
+            <SettingsLayoutShell
+                teamId={effectiveTeamId}
+                configValue={liveShellQuery?.configValue ?? initialConfigValue}
+                defaultConfig={defaultConfig ?? initialDefaultConfig}
+                platformConfig={platformConfig ?? initialPlatformConfig}
+                isMCPAvailable={isMCPAvailable}>
+                {children}
+            </SettingsLayoutShell>
+        </CodeReviewModelDataProvider>
     );
 };
 
@@ -175,13 +173,12 @@ function SettingsLayoutShell({
 }>) {
     const pathname = usePathname();
     const { repositoryId, pageName, directoryId } = useCodeReviewRouteParams();
-    const featureFlags = useFeatureFlags();
     const globalConfigOverrideCount = configValue
         ? countConfigOverridesForRoutes(
-              configValue.configs,
-              routes.map((r) => r.href),
-              FormattedConfigLevel.GLOBAL,
-          )
+            configValue.configs,
+            routes.map((r) => r.href),
+            FormattedConfigLevel.GLOBAL,
+        )
         : 0;
     const globalCustomMessagesOverrideCount = useCustomMessagesOverrideCount({
         scopeRepositoryId: "global",
@@ -239,15 +236,7 @@ function SettingsLayoutShell({
         return nextRoutes;
     }, [canReadGitSettings, canReadBilling, canReadPlugins, isMCPAvailable]);
 
-    const settingsRoutes = useMemo(
-        () =>
-            routes.filter(
-                (route) =>
-                    !route.featureFlag ||
-                    featureFlags?.[route.featureFlag] === true,
-            ),
-        [featureFlags],
-    );
+    const settingsRoutes = routes;
 
     const isShellLoading = !configValue;
 
@@ -255,10 +244,10 @@ function SettingsLayoutShell({
         () =>
             configValue
                 ? resolveCodeReviewConfigForScope(
-                      configValue,
-                      repositoryId,
-                      directoryId,
-                  )
+                    configValue,
+                    repositoryId,
+                    directoryId,
+                )
                 : undefined,
         [configValue, directoryId, repositoryId],
     );
@@ -356,9 +345,9 @@ function SettingsLayoutShell({
                                                         ({ label, href }) => {
                                                             const active =
                                                                 repositoryId ===
-                                                                    "global" &&
+                                                                "global" &&
                                                                 pageName ===
-                                                                    href;
+                                                                href;
 
                                                             return (
                                                                 <SidebarMenuSubItem

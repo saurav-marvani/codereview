@@ -4,10 +4,7 @@ import { useState } from "react";
 import { Button } from "@components/ui/button";
 import { Page } from "@components/ui/page";
 import { toast } from "@components/ui/toaster/use-toast";
-import {
-    createOrUpdateParameter,
-    getGenerateKodusConfigFile,
-} from "@services/parameters/fetch";
+import { createOrUpdateParameter } from "@services/parameters/fetch";
 import { useOptionalParameterQuery } from "@services/parameters/hooks";
 import {
     KodyLearningStatus,
@@ -16,12 +13,7 @@ import {
 } from "@services/parameters/types";
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
-import {
-    DownloadIcon,
-    RotateCcwIcon,
-    SaveIcon,
-    Settings2Icon,
-} from "lucide-react";
+import { RotateCcwIcon, SaveIcon, Settings2Icon } from "lucide-react";
 import { FormProvider, useFormContext } from "react-hook-form";
 import { AsyncBoundary } from "src/core/components/async-boundary";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
@@ -34,18 +26,15 @@ import { CodeReviewSaveButton } from "../../_components/save-button";
 import { useCodeReviewSettingsMutation } from "../../_hooks/use-code-review-settings-mutation";
 import { FormattedConfigLevel, type CodeReviewFormType } from "../../_types";
 import { getCentralizedPrToastPayload } from "../../_utils/centralized-pr-feedback";
-import {
-    useFeatureFlags,
-    usePlatformConfig,
-} from "../../../_components/context";
+import { usePlatformConfig } from "../../../_components/context";
 import {
     useCodeReviewRouteParams,
     useCurrentConfigLevel,
 } from "../../../_hooks";
 import { AutomatedReviewActive } from "./_components/automated-review-active";
 import { BaseBranches } from "./_components/base-branches";
+import { BYOKModelSelectorSection } from "./_components/byok-model-selector";
 import { CentralizedConfigModal } from "./_components/centralized-config-modal";
-import { CrossfileDependenciesAnalysis } from "./_components/crossfile-dependencies-analysis";
 import { EnableCommittableSuggestions } from "./_components/enable-committable-suggestions";
 import { IgnorePaths } from "./_components/ignore-paths";
 import { IgnoredTitleKeywords } from "./_components/ignored-title-keywords";
@@ -58,7 +47,6 @@ import { ShowStatusFeedback } from "./_components/show-status-feedback";
 
 export default function General() {
     const platformConfig = usePlatformConfig();
-    const { centralizedConfigParameter } = useFeatureFlags();
     const form = useFormContext<CodeReviewFormType>();
     const { teamId } = useSelectedTeamId();
     const { repositoryId, directoryId } = useCodeReviewRouteParams();
@@ -96,50 +84,6 @@ export default function General() {
     const isGlobalGeneralView =
         repositoryId === "global" &&
         currentLevel === FormattedConfigLevel.GLOBAL;
-
-    const downloadFileText =
-        currentLevel === FormattedConfigLevel.GLOBAL
-            ? "default"
-            : currentLevel === FormattedConfigLevel.REPOSITORY
-              ? "repository"
-              : "directory";
-
-    const handleFileDownload = async () => {
-        try {
-            const downloadFile = await getGenerateKodusConfigFile(
-                teamId,
-                repositoryId,
-                directoryId,
-            );
-
-            const blob = new Blob([downloadFile], { type: "text/yaml" });
-            const url = window.URL.createObjectURL(blob);
-
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = "kodus-config.yml";
-
-            document.body.appendChild(a);
-            a.click();
-
-            a.remove();
-            window.URL.revokeObjectURL(url);
-
-            toast({
-                description: "File downloaded",
-                variant: "success",
-            });
-        } catch (error) {
-            console.error("Error saving settings:", error);
-
-            toast({
-                title: "Error",
-                description:
-                    "An error occurred while generating the yml file. Please try again.",
-                variant: "danger",
-            });
-        }
-    };
 
     const handleSubmit = form.handleSubmit(async (formData) => {
         const { language, ...config } = formData;
@@ -219,7 +163,7 @@ export default function General() {
             <Page.Header>
                 <Page.Title>General settings</Page.Title>
                 <Page.HeaderActions>
-                    {centralizedConfigParameter && isGlobalGeneralView && (
+                    {isGlobalGeneralView && (
                         <Button
                             size="md"
                             leftIcon={<Settings2Icon />}
@@ -227,17 +171,6 @@ export default function General() {
                             variant="secondary"
                             disabled={!canEdit}>
                             Configure centralized config
-                        </Button>
-                    )}
-
-                    {!centralizedConfigParameter && (
-                        <Button
-                            size="md"
-                            leftIcon={<DownloadIcon />}
-                            onClick={async () => await handleFileDownload()}
-                            variant="secondary"
-                            loading={formIsSubmitting}>
-                            Download {downloadFileText} YML configuration file
                         </Button>
                     )}
 
@@ -270,6 +203,13 @@ export default function General() {
                 <div data-field-name="automatedReviewActive">
                     <AutomatedReviewActive />
                 </div>
+
+                {repositoryId !== "global" && (
+                    <div data-field-name="byokModel">
+                        <BYOKModelSelectorSection />
+                    </div>
+                )}
+
                 <div data-field-name="kodusConfigFileOverridesWebPreferences">
                     <KodusConfigFileOverridesWebPreferences />
                 </div>
@@ -292,11 +232,6 @@ export default function General() {
                         <EnableCommittableSuggestions />
                     </div>
                 </AsyncBoundary>
-                <AsyncBoundary errorVariant="minimal">
-                    <div data-field-name="crossFileDependenciesAnalysis">
-                        <CrossfileDependenciesAnalysis />
-                    </div>
-                </AsyncBoundary>
                 <div data-field-name="ignorePaths">
                     <IgnorePaths />
                 </div>
@@ -315,7 +250,7 @@ export default function General() {
                     </div>
                 )}
 
-                {centralizedConfigParameter && isGlobalGeneralView && (
+                {isGlobalGeneralView && (
                     <CentralizedConfigModal
                         open={isCentralizedModalOpen}
                         onOpenChange={setIsCentralizedModalOpen}

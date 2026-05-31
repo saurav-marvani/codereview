@@ -18,7 +18,6 @@ import {
     ApiTags,
 } from '@nestjs/swagger';
 import { Response } from 'express';
-import archiver from 'archiver';
 import { finished } from 'stream/promises';
 
 import { Public } from '@libs/identity/infrastructure/adapters/services/auth/public.decorator';
@@ -345,6 +344,7 @@ export class CliCentralizedConfigController {
                 'attachment; filename=centralized-config.zip',
         });
 
+        const { default: archiver } = await import('archiver');
         const archive = archiver('zip', { zlib: { level: 9 } });
         archive.on('error', (err) => {
             response.destroy(err);

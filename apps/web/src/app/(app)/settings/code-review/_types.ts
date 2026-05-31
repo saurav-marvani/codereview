@@ -92,8 +92,12 @@ export type CodeReviewGlobalConfig = {
     kodyRulesGeneratorEnabled?: boolean;
     llmGeneratedMemoriesRequireApproval?: boolean;
     runOnDraft: boolean;
-    codeReviewVersion?: "legacy" | "v2";
+    codeReviewVersion?: "legacy" | "v2" | "v3-agent";
     ideRulesSyncEnabled: boolean;
+    /** Only consulted on a true→false transition of `ideRulesSyncEnabled`.
+     *  Picks what happens to the rules previously imported from IDE files.
+     *  Default on the backend is `keep` (least destructive) when omitted. */
+    ideSyncDisableAction?: "keep" | "pause" | "delete";
     v2PromptOverrides?: {
         categories?: {
             descriptions?: {
@@ -110,12 +114,19 @@ export type CodeReviewGlobalConfig = {
                 low?: string;
             };
         };
+        level?: {
+            critical?: string;
+            issue?: string;
+            warning?: string;
+        };
         generation?: {
             main?: string;
         };
     };
     enableCommittableSuggestions: boolean;
-    crossFileDependenciesAnalysis: boolean;
+    /** BYOK main-model override for code reviews. '' = inherit
+     *  (directory -> repository -> the main model set in BYOK settings). */
+    byokModel?: string;
 };
 
 export type CodeReviewBaseConfig = {
@@ -125,8 +136,14 @@ export type CodeReviewBaseConfig = {
     configs: CodeReviewGlobalConfig;
 };
 
-export type CodeReviewDirectoryConfig = CodeReviewBaseConfig & {
+export type DirectoryFolder = {
+    id: string;
+    name: string;
     path: string;
+};
+
+export type CodeReviewDirectoryConfig = CodeReviewBaseConfig & {
+    folders: DirectoryFolder[];
 };
 
 export type CodeReviewRepositoryConfig = CodeReviewBaseConfig & {

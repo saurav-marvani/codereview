@@ -1,5 +1,6 @@
 import { createLogger } from '@kodus/flow';
-import { forwardRef, Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { CentralizedConfigSyncUseCase } from '@libs/centralized-config/application/use-cases/centralized-config-sync.use-case';
 import * as yaml from 'js-yaml';
 
@@ -72,10 +73,15 @@ export class CentralizedConfigPrService {
         private readonly integrationConfigService: IIntegrationConfigService,
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: IKodyRulesService,
+        private readonly moduleRef: ModuleRef,
         private readonly codeManagementService: CodeManagementService,
-        @Inject(forwardRef(() => CentralizedConfigSyncUseCase))
-        private readonly centralizedConfigSyncUseCase: CentralizedConfigSyncUseCase,
     ) {}
+
+    private async getSyncUseCase(): Promise<CentralizedConfigSyncUseCase> {
+        return this.moduleRef.resolve(CentralizedConfigSyncUseCase, undefined, {
+            strict: false,
+        });
+    }
 
     async handleTrackedPullRequestClose(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -898,7 +904,8 @@ export class CentralizedConfigPrService {
         pullRequestNumber: number;
     }): Promise<void> {
         try {
-            await this.centralizedConfigSyncUseCase.execute({
+            const syncUseCase = await this.getSyncUseCase();
+            await syncUseCase.execute({
                 organizationAndTeamData: params.organizationAndTeamData,
                 repository: params.repository,
             });

@@ -26,6 +26,7 @@ import { useKodyRulesLimits } from "@services/kodyRules/hooks";
 import {
     KodyRulesOrigin,
     KodyRulesStatus,
+    resolveKodyRuleDisplaySeverity,
     type KodyRule,
     type LibraryRule,
 } from "@services/kodyRules/types";
@@ -110,7 +111,9 @@ export const KodyRuleLibraryItemModal = ({
             const newRule: KodyRule = {
                 title: rule.title,
                 rule: rule.rule,
-                severity: rule.severity.toLowerCase() as KodyRule["severity"],
+                severity: resolveKodyRuleDisplaySeverity(
+                    rule,
+                ) as KodyRule["severity"],
                 path: "",
                 examples: rule.examples,
                 origin: KodyRulesOrigin.LIBRARY,
@@ -125,7 +128,7 @@ export const KodyRuleLibraryItemModal = ({
                 const directory = repository?.directories?.find(
                     (d) => d.id === directoryId,
                 );
-                newRule.path = `${directory?.path.slice(1)}/**`;
+                newRule.path = `${(directory?.folders?.[0]?.path ?? '').slice(1)}/**`;
             }
 
             const addedKodyRules = await addKodyRuleToRepositories({
@@ -166,8 +169,8 @@ export const KodyRuleLibraryItemModal = ({
                                 (d) => d.id === rule.directoryId,
                             );
 
-                            const directoryFullPath = directory?.path
-                                ? `${repository?.name}${directory.path}`
+                            const directoryFullPath = directory?.folders?.[0]?.path
+                                ? `${repository?.name}${directory.folders[0].path}`
                                 : undefined;
 
                             return (
@@ -260,11 +263,7 @@ export const KodyRuleLibraryItemModal = ({
                         {rule.title}
 
                         <IssueSeverityLevelBadge
-                            severity={
-                                rule.severity.toLowerCase() as Lowercase<
-                                    typeof rule.severity
-                                >
-                            }
+                            severity={resolveKodyRuleDisplaySeverity(rule)}
                         />
                     </DialogTitle>
 

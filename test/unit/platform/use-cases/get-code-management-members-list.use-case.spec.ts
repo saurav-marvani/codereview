@@ -87,12 +87,16 @@ describe('GetCodeManagementMemberListUseCase', () => {
             expect(mockCacheService.getFromCache).toHaveBeenCalledWith(
                 'org_members_org-uuid-123',
             );
-            expect(mockCodeManagementService.getListMembers).not.toHaveBeenCalled();
+            expect(
+                mockCodeManagementService.getListMembers,
+            ).not.toHaveBeenCalled();
         });
 
         it('should not treat cached empty array as a hit', async () => {
             mockCacheService.getFromCache.mockResolvedValue([]);
-            mockCodeManagementService.getListMembers.mockResolvedValue(mockMembers);
+            mockCodeManagementService.getListMembers.mockResolvedValue(
+                mockMembers,
+            );
 
             const result = await useCase.execute();
 
@@ -102,7 +106,9 @@ describe('GetCodeManagementMemberListUseCase', () => {
 
         it('should fetch from code integration on cache miss', async () => {
             mockCacheService.getFromCache.mockResolvedValue(null);
-            mockCodeManagementService.getListMembers.mockResolvedValue(mockMembers);
+            mockCodeManagementService.getListMembers.mockResolvedValue(
+                mockMembers,
+            );
 
             const result = await useCase.execute();
 
@@ -112,7 +118,9 @@ describe('GetCodeManagementMemberListUseCase', () => {
 
         it('should populate cache after fetching from code integration', async () => {
             mockCacheService.getFromCache.mockResolvedValue(null);
-            mockCodeManagementService.getListMembers.mockResolvedValue(mockMembers);
+            mockCodeManagementService.getListMembers.mockResolvedValue(
+                mockMembers,
+            );
 
             await useCase.execute();
 
@@ -127,7 +135,9 @@ describe('GetCodeManagementMemberListUseCase', () => {
             mockCacheService.getFromCache.mockRejectedValue(
                 new Error('Redis down'),
             );
-            mockCodeManagementService.getListMembers.mockResolvedValue(mockMembers);
+            mockCodeManagementService.getListMembers.mockResolvedValue(
+                mockMembers,
+            );
 
             const result = await useCase.execute();
 
@@ -136,7 +146,9 @@ describe('GetCodeManagementMemberListUseCase', () => {
 
         it('should not fail when addToCache throws', async () => {
             mockCacheService.getFromCache.mockResolvedValue(null);
-            mockCodeManagementService.getListMembers.mockResolvedValue(mockMembers);
+            mockCodeManagementService.getListMembers.mockResolvedValue(
+                mockMembers,
+            );
             mockCacheService.addToCache.mockRejectedValue(
                 new Error('Redis down'),
             );

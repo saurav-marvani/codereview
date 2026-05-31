@@ -4,9 +4,7 @@ import {
     SubscriptionStatus,
     type ILicenseService,
 } from '@libs/ee/license/interfaces/license.interface';
-import {
-    type IPermissionsService,
-} from '@libs/identity/domain/permissions/contracts/permissions.service.contract';
+import { type IPermissionsService } from '@libs/identity/domain/permissions/contracts/permissions.service.contract';
 import {
     Action,
     ResourceType,

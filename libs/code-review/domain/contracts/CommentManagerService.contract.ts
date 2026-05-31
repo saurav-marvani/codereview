@@ -54,6 +54,7 @@ export interface ICommentManagerService {
         isCommitRun?: boolean,
         prPreview?: boolean,
         externalPromptContext?: any,
+        platformType?: PlatformType,
     ): Promise<string>;
 
     updateOverallComment(
@@ -68,6 +69,9 @@ export interface ICommentManagerService {
         threadId?: number,
         finalCommentBody?: string,
         dryRun?: CodeReviewPipelineContext['dryRun'],
+        reviewFailed?: boolean,
+        reviewErrorMessage?: string,
+        reviewHasPartialErrors?: boolean,
     ): Promise<void>;
 
     updateSummarizationInPR(
@@ -142,5 +146,8 @@ export interface ICommentManagerService {
         pullRequestMessagesConfig?: IPullRequestMessages,
         dryRun?: CodeReviewPipelineContext['dryRun'],
         prLevelCommentResults?: Array<CommentResult>,
+        reviewFailed?: boolean,
+        reviewErrorMessage?: string,
+        reviewHasPartialErrors?: boolean,
     ): Promise<void>;
 }

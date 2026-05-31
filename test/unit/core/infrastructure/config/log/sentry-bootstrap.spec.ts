@@ -1,4 +1,3 @@
-
 jest.mock('@sentry/nestjs', () => ({
     init: jest.fn(),
     isInitialized: jest.fn().mockReturnValue(false),

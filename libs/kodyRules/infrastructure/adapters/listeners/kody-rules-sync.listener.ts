@@ -8,6 +8,10 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { PullRequestClosedEvent } from '@libs/core/domain/events/pull-request-closed.event';
 import { KodyRulesSyncService } from '../services/kodyRulesSync.service';
 import { createLogger } from '@kodus/flow';
+import {
+    IDE_RULES_SYNC_DISABLED_EVENT,
+    IdeRulesSyncDisabledEvent,
+} from '@libs/kodyRules/domain/events/ide-rules-sync.events';
 
 @Injectable()
 export class KodyRulesSyncListener {
@@ -78,6 +82,54 @@ export class KodyRulesSyncListener {
             pullRequestNumber: event.pullRequestNumber,
             files: event.files,
         });
+    }
+
+    @OnEvent(IDE_RULES_SYNC_DISABLED_EVENT)
+    async handleIdeRulesSyncDisabled(
+        event: IdeRulesSyncDisabledEvent,
+    ): Promise<void> {
+        if (!event?.repositoryId) {
+            this.logger.warn({
+                message:
+                    'Received ide-rules-sync.disabled event without repositoryId, skipping',
+                context: KodyRulesSyncListener.name,
+                metadata: { event },
+            });
+            return;
+        }
+
+        // Action defaults to 'keep' (least destructive) when missing — matches
+        // the use-case behaviour for callers that don't pass it explicitly.
+        const action = event.action ?? 'keep';
+
+        this.logger.log({
+            message: `Handling ide-rules-sync.disabled event with action=${action}`,
+            context: KodyRulesSyncListener.name,
+            metadata: {
+                repositoryId: event.repositoryId,
+                organizationAndTeamData: event.organizationAndTeamData,
+                action,
+            },
+        });
+
+        switch (action) {
+            case 'keep':
+                // No-op: the user only stopped automatic re-imports. Rules
+                // stay ACTIVE.
+                return;
+            case 'pause':
+                await this.kodyRulesSyncService.pauseAllIdeSyncRulesForRepository({
+                    organizationAndTeamData: event.organizationAndTeamData,
+                    repositoryId: event.repositoryId,
+                });
+                return;
+            case 'delete':
+                await this.kodyRulesSyncService.purgeAllIdeSyncRulesForRepository({
+                    organizationAndTeamData: event.organizationAndTeamData,
+                    repositoryId: event.repositoryId,
+                });
+                return;
+        }
     }
 
     private async isCentralizedConfigRepo(

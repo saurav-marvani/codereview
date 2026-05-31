@@ -37,12 +37,12 @@ export const DeleteRepoConfigModal = ({
     repository: Pick<CodeReviewRepositoryConfig, "id" | "name" | "isSelected">;
     directory?: Pick<
         NonNullable<CodeReviewRepositoryConfig["directories"]>[number],
-        "id" | "name" | "path"
+        "id" | "name" | "folders"
     >;
 }) => {
     const { teamId } = useSelectedTeamId();
     const [enabled, setEnabled] = useState(false);
-    const { resetQueries } = useReactQueryInvalidateQueries();
+    const { invalidateQueries } = useReactQueryInvalidateQueries();
 
     useTimeout(() => {
         setEnabled(true);
@@ -71,7 +71,7 @@ export const DeleteRepoConfigModal = ({
             await updateCodeReviewParameterRepositories(teamId);
 
             await Promise.all([
-                resetQueries({
+                invalidateQueries({
                     queryKey: generateQueryKey(PARAMETERS_PATHS.GET_BY_KEY, {
                         params: {
                             key: ParametersConfigKey.CODE_REVIEW_CONFIG,
@@ -79,7 +79,7 @@ export const DeleteRepoConfigModal = ({
                         },
                     }),
                 }),
-                resetQueries({
+                invalidateQueries({
                     queryKey: generateQueryKey(
                         PARAMETERS_PATHS.GET_CODE_REVIEW_PARAMETER,
                         {
@@ -121,7 +121,7 @@ export const DeleteRepoConfigModal = ({
                         Delete{" "}
                         <strong className="text-danger">
                             {repository.name}
-                            {directory?.path}
+                            {directory?.folders?.[0]?.path}
                         </strong>{" "}
                         configuration?
                     </DialogTitle>

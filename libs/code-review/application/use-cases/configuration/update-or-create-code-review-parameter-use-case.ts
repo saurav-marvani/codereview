@@ -1,6 +1,5 @@
 import { CreateOrUpdateParametersUseCase } from '@libs/organization/application/use-cases/parameters/create-or-update-use-case';
 import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
-import { REQUEST } from '@nestjs/core';
 
 import { produce } from 'immer';
 import { v4 as uuidv4 } from 'uuid';
@@ -41,8 +40,8 @@ import {
     ConfigLevel,
 } from '@libs/core/infrastructure/config/types/general/codeReviewSettingsLog.type';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
-import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';
 import { AuditLogEvents } from '@libs/ee/codeReviewSettingsLog/events/audit-log.events';
+import { RequestUserContext } from '@libs/identity/domain/user/types/request-user-context.type';
 import {
     Action,
     ResourceType,
@@ -60,6 +59,11 @@ import { ParametersEntity } from '@libs/organization/domain/parameters/entities/
 import { CreateOrUpdateCodeReviewParameterDto } from '@libs/organization/dtos/create-or-update-code-review-parameter.dto';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { buildKodusConfigCentralizedMutationRequest } from '@libs/centralized-config/utils/kodus-config-centralized-pr.builder';
+import {
+    IDE_RULES_SYNC_DISABLED_EVENT,
+    IdeRulesSyncDisabledEvent,
+    IdeSyncDisableAction,
+} from '@libs/kodyRules/domain/events/ide-rules-sync.events';
 
 @Injectable()
 export class UpdateOrCreateCodeReviewParameterUseCase {
@@ -70,24 +74,14 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
     constructor(
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
-
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
-
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
-
         private readonly eventEmitter: EventEmitter2,
-
-        @Inject(REQUEST)
-        private readonly request: UserRequest,
-
         private readonly authorizationService: AuthorizationService,
-
         private readonly contextReferenceDetectionService: ContextReferenceDetectionService,
-
         @Inject(PROMPT_EXTERNAL_REFERENCE_MANAGER_SERVICE_TOKEN)
         private readonly promptReferenceManager: IPromptExternalReferenceManagerService,
-
         private readonly centralizedConfigPrService: CentralizedConfigPrService,
     ) {}
 
@@ -100,6 +94,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                 userEmail?: string;
             };
             skipAuthorization?: boolean;
+            requestUser?: RequestUserContext;
         },
     ): Promise<
         | ParametersEntity<ParametersKey.CODE_REVIEW_CONFIG>
@@ -111,6 +106,20 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             let directoryPath = body.directoryPath;
             let directoryId = body.directoryId;
 
+            // Resolve directoryPaths: prefer array, fallback to single path
+            const resolvedPaths: string[] | undefined =
+                body.directoryPaths?.length > 0
+                    ? body.directoryPaths
+                    : directoryPath &&
+                        directoryPath !== '/' &&
+                        directoryPath !== ''
+                      ? [directoryPath]
+                      : undefined;
+
+            if (resolvedPaths) {
+                directoryPath = undefined; // handled via resolvedPaths
+            }
+
             if (directoryPath === '/' || directoryPath === '') {
                 directoryPath = undefined;
             }
@@ -118,12 +127,12 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             if (!organizationAndTeamData.organizationId) {
                 organizationAndTeamData.organizationId =
                     body.actor?.organizationId ??
-                    this.request?.user?.organization?.uuid;
+                    body.requestUser?.organization?.uuid;
             }
 
             if (!body.skipAuthorization) {
                 await this.authorizationService.ensure({
-                    user: this.request?.user,
+                    user: body.requestUser,
                     action: Action.Create,
                     resource: ResourceType.CodeReviewSettings,
                     repoIds: [repositoryId],
@@ -151,7 +160,123 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 
             this.mergeRepositories(codeReviewConfigs, filteredRepositoryInfo);
 
-            if (directoryPath) {
+            if (resolvedPaths) {
+                if (!repositoryId) {
+                    throw new Error(
+                        'Repository ID is required when directory paths are provided',
+                    );
+                }
+
+                const repoIndex = codeReviewConfigs.repositories.findIndex(
+                    (r) => r.id === repositoryId,
+                );
+
+                if (repoIndex === -1) {
+                    throw new Error('Repository configuration not found');
+                }
+
+                const targetRepo = codeReviewConfigs.repositories[repoIndex];
+                if (!targetRepo.directories) {
+                    targetRepo.directories = [];
+                }
+
+                if (directoryId) {
+                    // Edit mode: update folders of an existing group
+                    const existingGroup = targetRepo.directories.find(
+                        (g) => g.id === directoryId,
+                    );
+
+                    if (!existingGroup) {
+                        throw new Error(
+                            'Directory group not found for editing',
+                        );
+                    }
+
+                    // Ensure no path is already used in a DIFFERENT group
+                    const otherUsedPaths = new Set<string>();
+                    for (const group of targetRepo.directories) {
+                        if (group.id !== directoryId) {
+                            for (const f of group.folders || []) {
+                                otherUsedPaths.add(f.path);
+                            }
+                        }
+                    }
+
+                    for (const path of resolvedPaths) {
+                        if (otherUsedPaths.has(path)) {
+                            throw new Error(
+                                `Path "${path}" is already covered by another directory group`,
+                            );
+                        }
+                    }
+
+                    // Keep existing folder IDs for paths that haven't changed
+                    const existingFoldersByPath = new Map(
+                        (existingGroup.folders || []).map((f) => [f.path, f]),
+                    );
+
+                    existingGroup.folders = resolvedPaths.map((p) => {
+                        const existing = existingFoldersByPath.get(p);
+                        return (
+                            existing ?? {
+                                id: uuidv4(),
+                                name: p.split('/').pop() || '',
+                                path: p,
+                            }
+                        );
+                    });
+
+                    existingGroup.name = existingGroup.folders[0]?.name ?? '';
+                } else {
+                    // Create mode: check for existing group with exact same paths
+                    const existingGroup = targetRepo.directories.find(
+                        (group) =>
+                            group.folders &&
+                            resolvedPaths.every((p) =>
+                                group.folders.some((f) => f.path === p),
+                            ),
+                    );
+
+                    if (existingGroup) {
+                        directoryId = existingGroup.id;
+                    } else {
+                        // Ensure no path is already used in another group
+                        const usedPaths = new Set<string>();
+                        for (const group of targetRepo.directories) {
+                            for (const f of group.folders || []) {
+                                usedPaths.add(f.path);
+                            }
+                        }
+
+                        for (const path of resolvedPaths) {
+                            if (usedPaths.has(path)) {
+                                throw new Error(
+                                    `Path "${path}" is already covered by another directory group`,
+                                );
+                            }
+                        }
+
+                        const firstName =
+                            resolvedPaths[0].split('/').pop() || '';
+
+                        const newGroup: DirectoryCodeReviewConfig = {
+                            id: uuidv4(),
+                            name: firstName,
+                            isSelected: true,
+                            configs: {},
+                            folders: resolvedPaths.map((p) => ({
+                                id: uuidv4(),
+                                name: p.split('/').pop() || '',
+                                path: p,
+                            })),
+                        };
+
+                        targetRepo.directories.push(newGroup);
+                        directoryId = newGroup.id;
+                    }
+                }
+            } else if (directoryPath) {
+                // Legacy single-path support (CLI, sync)
                 if (directoryId) {
                     throw new Error(
                         'Directory ID should not be provided when directory path is provided',
@@ -177,28 +302,41 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                     targetRepo.directories = [];
                 }
 
-                const existingDirectory = targetRepo.directories.find(
-                    (d) => d.path === directoryPath,
+                // Find existing group that contains this path
+                const existingGroup = targetRepo.directories.find((group) =>
+                    group.folders?.some((f) => f.path === directoryPath),
                 );
 
-                if (existingDirectory) {
-                    directoryId = existingDirectory.id;
+                if (existingGroup) {
+                    directoryId = existingGroup.id;
                 } else {
                     const segments = directoryPath.split('/');
                     const name = segments[segments.length - 1];
 
-                    const newDirectory: DirectoryCodeReviewConfig = {
+                    const newGroup: DirectoryCodeReviewConfig = {
                         id: uuidv4(),
                         name,
-                        path: directoryPath,
                         isSelected: true,
                         configs: {},
+                        folders: [
+                            {
+                                id: uuidv4(),
+                                name,
+                                path: directoryPath,
+                            },
+                        ],
                     };
 
-                    targetRepo.directories.push(newDirectory);
-                    directoryId = newDirectory.id;
+                    targetRepo.directories.push(newGroup);
+                    directoryId = newGroup.id;
                 }
             }
+
+            const previousIdeSyncEnabled =
+                !!repositoryId &&
+                codeReviewConfigs?.repositories?.find(
+                    (r) => r.id === repositoryId,
+                )?.configs?.ideRulesSyncEnabled === true;
 
             const result = await this.handleConfigUpdate(
                 organizationAndTeamData,
@@ -207,7 +345,27 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                 body.actor,
                 repositoryId,
                 directoryId,
+                body.requestUser,
             );
+
+            if (
+                previousIdeSyncEnabled &&
+                (configValue as any)?.ideRulesSyncEnabled === false
+            ) {
+                // The action picked in the toggle-off modal in the web UI.
+                // Defaulting to 'keep' here is deliberate: any caller that
+                // doesn't pass an explicit action gets the least destructive
+                // option, which avoids the silent-deletion regression.
+                const action: IdeSyncDisableAction =
+                    (configValue as any)?.ideSyncDisableAction ?? 'keep';
+
+                const event: IdeRulesSyncDisabledEvent = {
+                    organizationAndTeamData,
+                    repositoryId: repositoryId!,
+                    action,
+                };
+                this.eventEmitter.emit(IDE_RULES_SYNC_DISABLED_EVENT, event);
+            }
 
             return result;
         } catch (error) {
@@ -279,7 +437,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             newDelta: updatedConfigValue,
         });
 
-        if (centralizedPr) {
+        if (centralizedPr?.mode === 'centralized-pr') {
             return centralizedPr;
         }
 
@@ -337,6 +495,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         },
         repositoryId?: string,
         directoryId?: string,
+        requestUser?: RequestUserContext,
     ) {
         const resolver = new ConfigResolver(codeReviewConfigs);
 
@@ -399,7 +558,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                   newDelta,
               });
 
-        if (centralizedPr) {
+        if (centralizedPr?.mode === 'centralized-pr') {
             return centralizedPr;
         }
 
@@ -437,6 +596,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             repository,
             directory,
             isCreation,
+            requestUser,
         });
 
         return true;
@@ -457,6 +617,16 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         directory?: DirectoryCodeReviewConfig;
     }): Promise<CentralizedPrMetadata | null> {
         if (params.actor?.source === 'sync') {
+            return null;
+        }
+
+        // Check if centralized config is actually enabled before proceeding.
+        const centralizedRepository =
+            await this.centralizedConfigPrService?.getCentralizedRepositoryIfEnabled(
+                params.organizationAndTeamData,
+            );
+
+        if (!centralizedRepository) {
             return null;
         }
 
@@ -854,6 +1024,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         repository?: RepositoryCodeReviewConfig;
         directory?: DirectoryCodeReviewConfig;
         isCreation?: boolean;
+        requestUser?: RequestUserContext;
     }) {
         const {
             organizationAndTeamData,
@@ -868,9 +1039,9 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         try {
             const actor = options.actor ?? {
                 source: 'web',
-                organizationId: this.request?.user?.organization?.uuid,
-                userId: this.request?.user?.uuid,
-                userEmail: this.request?.user?.email,
+                organizationId: options.requestUser?.organization?.uuid,
+                userId: options.requestUser?.uuid,
+                userEmail: options.requestUser?.email,
             };
 
             if (!actor.organizationId || !actor.userId || !actor.userEmail) {

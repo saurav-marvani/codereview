@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { v4 as uuidv4 } from 'uuid';
 
 import { createLogger } from '@kodus/flow';
+import { fitPRDescription } from '@libs/code-review/utils/fit-pr-description';
 import { hasKodyMarker } from '@libs/common/utils/codeManagement/codeCommentMarkers';
 import { getCodeReviewBadge } from '@libs/common/utils/codeManagement/codeReviewBadge';
 import { getLabelShield } from '@libs/common/utils/codeManagement/labels';
@@ -1855,6 +1856,7 @@ export class ForgejoService implements Omit<
         return this.getFilesByPullRequestId(params);
     }
 
+
     async isDraftPullRequest(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: Partial<Repository>;
@@ -2072,7 +2074,13 @@ export class ForgejoService implements Omit<
                 },
             );
 
-            return commits.map((c) => this.transformCommit(c));
+            return commits
+                .map((c) => this.transformCommit(c))
+                .sort(
+                    (a, b) =>
+                        new Date(a?.commit?.author?.date || '').getTime() -
+                        new Date(b?.commit?.author?.date || '').getTime(),
+                );
         } catch (error) {
             this.logger.error({
                 message: 'Error getting commits for PR',
@@ -2560,7 +2568,12 @@ export class ForgejoService implements Omit<
 
             const client = this.createForgejoClient(authDetail);
 
-            const description = params.summary ?? params.body;
+            // Truncate at the adapter boundary so the per-platform limit
+            // is enforced consistently — see fit-pr-description.ts.
+            const description = fitPRDescription(
+                params.summary ?? params.body ?? '',
+                PlatformType.FORGEJO,
+            );
 
             const result = await repoEditPullRequest({
                 client,
@@ -3951,5 +3964,21 @@ export class ForgejoService implements Omit<
             });
             return [];
         }
+    }
+
+    async getRepositoryContentBatch(
+        _params: any,
+    ): Promise<Map<string, any> | null> {
+        // Not implemented for Forgejo — callers fall back to per-file
+        // `getRepositoryContentFile`.
+        return null;
+    }
+
+    async getUsersByUsername(
+        _params: any,
+    ): Promise<Map<string, any> | null> {
+        // Not implemented for Forgejo — callers fall back to per-user
+        // `getUserByUsername`.
+        return null;
     }
 }

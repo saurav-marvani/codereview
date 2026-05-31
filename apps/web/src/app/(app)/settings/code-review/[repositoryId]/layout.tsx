@@ -17,6 +17,10 @@ import {
     shouldHydrateCodeReviewForm,
 } from "../_utils/settings-shell";
 import {
+    findFirstDirtyFieldOutsidePromptOverrides,
+    shouldBlockCodeReviewLayoutNavigation,
+} from "./_utils/layout-dirty-state";
+import {
     useCodeReviewConfig,
     useDefaultCodeReviewConfig,
 } from "../../_components/context";
@@ -77,7 +81,6 @@ export default function Layout(props: React.PropsWithChildren) {
         disabled: !canEdit,
     });
     const {
-        isDirty: formIsDirty,
         isSubmitting: formIsSubmitting,
         dirtyFields,
     } = form.formState;
@@ -96,79 +99,8 @@ export default function Layout(props: React.PropsWithChildren) {
         hydratedStateKeyRef.current = hydrationKey;
     }, [form, hydrationKey, initialFormValues]);
 
-    const sharedFormIsDirty = useCallback(() => {
-        const check = (
-            value: Record<string, unknown>,
-            excludeKeys?: string[],
-        ): boolean => {
-            for (const key of Object.keys(value)) {
-                if (excludeKeys?.includes(key)) {
-                    continue;
-                }
-
-                const fieldValue = value[key];
-                if (
-                    typeof fieldValue === "object" &&
-                    fieldValue !== null &&
-                    !Array.isArray(fieldValue)
-                ) {
-                    if (check(fieldValue as Record<string, unknown>)) {
-                        return true;
-                    }
-                    continue;
-                }
-
-                if (fieldValue === true) {
-                    return true;
-                }
-            }
-
-            return false;
-        };
-
-        return check(dirtyFields as Record<string, unknown>, [
-            "v2PromptOverrides",
-        ]);
-    }, [dirtyFields]);
-
     const scrollToDirtyField = useCallback(() => {
-        const findFirstDirtyKey = (
-            value: Record<string, unknown>,
-            prefix = "",
-            excludeKeys?: string[],
-        ): string | null => {
-            for (const key of Object.keys(value)) {
-                if (excludeKeys?.includes(key)) {
-                    continue;
-                }
-
-                const path = prefix ? `${prefix}.${key}` : key;
-                const fieldValue = value[key];
-
-                if (
-                    typeof fieldValue === "object" &&
-                    fieldValue !== null &&
-                    !Array.isArray(fieldValue)
-                ) {
-                    const found = findFirstDirtyKey(
-                        fieldValue as Record<string, unknown>,
-                        path,
-                    );
-                    if (found) {
-                        return found;
-                    }
-                    continue;
-                }
-
-                if (fieldValue === true) {
-                    return path;
-                }
-            }
-
-            return null;
-        };
-
-        const dirtyKey = findFirstDirtyKey(
+        const dirtyKey = findFirstDirtyFieldOutsidePromptOverrides(
             dirtyFields as Record<string, unknown>,
             "",
             ["v2PromptOverrides"],
@@ -232,7 +164,10 @@ export default function Layout(props: React.PropsWithChildren) {
 
     useUnsavedChangesGuard({
         id: "code-review-settings",
-        isDirty: sharedFormIsDirty() || formIsSubmitting || formIsDirty,
+        isDirty: shouldBlockCodeReviewLayoutNavigation({
+            dirtyFields: dirtyFields as Record<string, unknown>,
+            formIsSubmitting,
+        }),
         onBlock: scrollToDirtyField,
     });
 

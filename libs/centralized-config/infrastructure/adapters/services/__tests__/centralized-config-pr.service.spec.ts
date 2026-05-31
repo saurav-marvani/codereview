@@ -80,12 +80,19 @@ describe('CentralizedConfigPrService', () => {
             }),
         };
 
+        // ModuleRef mock that resolves CentralizedConfigSyncUseCase lazily.
+        const moduleRef = {
+            resolve: jest
+                .fn()
+                .mockResolvedValue(centralizedConfigSyncUseCase),
+        };
+
         const service = new CentralizedConfigPrService(
             parametersService as any,
             integrationConfigService as any,
             kodyRulesService as any,
+            moduleRef as any,
             codeManagementService as any,
-            centralizedConfigSyncUseCase as any,
         );
 
         return {

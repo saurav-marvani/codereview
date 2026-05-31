@@ -16,7 +16,8 @@ import { RotateCcwIcon, SaveIcon } from "lucide-react";
 import { PageBoundary } from "src/core/components/page-boundary";
 import { useUnsavedChangesGuard } from "src/core/hooks/use-unsaved-changes-guard";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
-import { pathToApiUrl, unformatConfig } from "src/core/utils/helpers";
+import { unformatConfig } from "src/core/utils/helpers";
+import { apiProxyPath } from "src/core/utils/api-proxy";
 
 import { CodeReviewPagesBreadcrumb } from "../../_components/breadcrumb";
 import { CentralizedConfigReadOnlyAlert } from "../../_components/centralized-config-readonly-alert";
@@ -101,7 +102,7 @@ function CustomMessagesContent() {
             await queryClient.invalidateQueries({
                 predicate: (query) =>
                     (query.queryKey[0] as string)?.startsWith(
-                        pathToApiUrl("/pull-request-messages"),
+                        apiProxyPath("/pull-request-messages"),
                     ),
             });
 

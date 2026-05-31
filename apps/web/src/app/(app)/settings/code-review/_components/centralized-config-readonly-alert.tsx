@@ -10,12 +10,10 @@ import {
 import { AlertCircleIcon } from "lucide-react";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 
-import { useFeatureFlags } from "../../_components/context";
 import { useCodeReviewRouteParams } from "../../_hooks";
 
 export function CentralizedConfigReadOnlyAlert() {
     const { teamId } = useSelectedTeamId();
-    const { centralizedConfigParameter } = useFeatureFlags();
     const { pageName } = useCodeReviewRouteParams();
 
     const centralizedConfig = useOptionalParameterQuery<CentralizedConfigValue>(
@@ -41,7 +39,6 @@ export function CentralizedConfigReadOnlyAlert() {
         centralizedConfig.data?.configValue?.activePullRequest?.prUrl;
 
     const showCentralizedAlert =
-        centralizedConfigParameter === true &&
         centralizedConfig.data?.configValue?.enabled === true;
 
     if (!showCentralizedAlert) return null;

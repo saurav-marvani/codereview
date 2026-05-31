@@ -86,6 +86,12 @@ export const useCodeReviewSettingsMutation = (params: {
     };
 
     const invalidateRelatedQueries = () => {
+        // Use "all" instead of "inactive" so the active query refetches
+        // from the backend after save. The backend's formatLevel() computes
+        // overriddenValue/overriddenLevel correctly — the optimistic cache
+        // update from syncFormattedConfigSnapshot lacks those fields,
+        // causing override indicators to show incorrect markers until the
+        // page is manually reloaded.
         void queryClient.invalidateQueries({
             queryKey: generateQueryKey(PARAMETERS_PATHS.GET_BY_KEY, {
                 params: {
@@ -93,7 +99,7 @@ export const useCodeReviewSettingsMutation = (params: {
                     teamId,
                 },
             }),
-            refetchType: "inactive",
+            refetchType: "all",
         });
         void queryClient.invalidateQueries({
             queryKey: generateQueryKey(
@@ -102,7 +108,7 @@ export const useCodeReviewSettingsMutation = (params: {
                     params: { teamId },
                 },
             ),
-            refetchType: "inactive",
+            refetchType: "all",
         });
     };
 
@@ -131,7 +137,6 @@ export const useCodeReviewSettingsMutation = (params: {
             return { centralizedPr: result };
         }
 
-        syncFormattedConfigSnapshot(prepared.savedFormData);
         form.reset(prepared.savedFormData);
         invalidateRelatedQueries();
 

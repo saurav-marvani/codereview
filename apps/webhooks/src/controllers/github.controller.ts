@@ -25,6 +25,7 @@ export class GithubController {
             'pull_request',
             'issue_comment',
             'pull_request_review_comment',
+            'push',
         ];
         if (!supportedEvents.includes(event)) {
             return res

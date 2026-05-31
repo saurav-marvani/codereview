@@ -491,7 +491,12 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                     new Set<string>();
 
                 const staleDirectories = (repository.directories ?? []).filter(
-                    (directory) => !desiredDirectoryPaths.has(directory.path),
+                    (directory) => {
+                        const primaryPath =
+                            directory.folders?.[0]?.path ??
+                            (directory as any).path;
+                        return !primaryPath || !desiredDirectoryPaths.has(primaryPath);
+                    },
                 );
 
                 for (const staleDirectory of staleDirectories) {

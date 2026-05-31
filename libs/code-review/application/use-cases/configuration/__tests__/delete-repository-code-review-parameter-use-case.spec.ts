@@ -156,12 +156,18 @@ describe('DeleteRepositoryCodeReviewParameterUseCase', () => {
                                 directories: [
                                     {
                                         id: 'dir-1',
-                                        path: 'src/api',
                                         name: 'api',
                                         isSelected: true,
                                         configs: {
                                             automatedReviewActive: true,
                                         },
+                                        folders: [
+                                            {
+                                                id: 'folder-1',
+                                                name: 'api',
+                                                path: 'src/api',
+                                            },
+                                        ],
                                     },
                                 ],
                             },
@@ -369,10 +375,16 @@ describe('DeleteRepositoryCodeReviewParameterUseCase', () => {
                                 directories: [
                                     {
                                         id: 'dir-1',
-                                        path: 'src/api',
                                         name: 'api',
                                         isSelected: true,
                                         configs: {},
+                                        folders: [
+                                            {
+                                                id: 'folder-1',
+                                                name: 'api',
+                                                path: 'src/api',
+                                            },
+                                        ],
                                     },
                                 ],
                             },

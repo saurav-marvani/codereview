@@ -14,12 +14,12 @@ import {
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
 import { RefreshCwIcon } from "lucide-react";
-import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { Switch } from "src/core/components/ui/switch";
+import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { useSubscriptionStatus } from "src/features/ee/subscription/_hooks/use-subscription-status";
 
-import { refreshOrganizationMembers } from "../../_services/billing/fetch";
 import { TableFilterContext } from "../../_providers/table-filter-context";
+import { refreshOrganizationMembers } from "../../_services/billing/fetch";
 import { columns, type LicenseTableRow } from "./columns";
 
 export const LicensesPageClient = ({

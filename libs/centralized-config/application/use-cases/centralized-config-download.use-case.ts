@@ -174,7 +174,7 @@ export class CentralizedConfigDownloadUseCase {
                                 );
 
                             const dirPath = this.normalizeDirectoryPath(
-                                dir.path,
+                                dir.folders?.[0]?.path ?? (dir as any).path,
                             );
 
                             if (!dirPath) {
@@ -320,7 +320,9 @@ export class CentralizedConfigDownloadUseCase {
             for (const dir of repo.directories ?? []) {
                 directoriesById.set(
                     String(dir.id),
-                    this.normalizeDirectoryPath(dir.path),
+                    this.normalizeDirectoryPath(
+                        dir.folders?.[0]?.path ?? (dir as any).path,
+                    ),
                 );
             }
 
@@ -527,18 +529,23 @@ export class CentralizedConfigDownloadUseCase {
                     messagesByScope.set(repoScopeKey, repoDiff);
                 }
 
+                const getPath = (dir: any): string =>
+                    dir.folders?.[0]?.path ?? dir.path ?? '';
+
                 const directories = [...(repo.directories ?? [])]
                     .filter((dir) => Boolean(dir?.id))
                     .sort(
                         (a, b) =>
-                            this.getDirectoryDepth(a.path) -
-                            this.getDirectoryDepth(b.path),
+                            this.getDirectoryDepth(getPath(a)) -
+                            this.getDirectoryDepth(getPath(b)),
                     );
 
                 const resolvedByPath = new Map<string, CustomMessagesConfig>();
 
                 for (const dir of directories) {
-                    const directoryPath = this.normalizeDirectoryPath(dir.path);
+                    const directoryPath = this.normalizeDirectoryPath(
+                        getPath(dir),
+                    );
                     const parentResolved =
                         this.findNearestParentCustomMessages(
                             directoryPath,

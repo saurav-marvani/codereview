@@ -40,13 +40,36 @@ import {
     KODY_RULES_SERVICE_TOKEN,
 } from '@libs/kodyRules/domain/contracts/kodyRules.service.contract';
 import { KodyRulesValidationService } from '@libs/ee/kodyRules/service/kody-rules-validation.service';
+import { CodeReviewPipelineObserver } from '@libs/code-review/infrastructure/observers/code-review-pipeline.observer';
 
 interface GitContext {
     remote?: string;
     branch?: string;
     commitSha?: string;
+    /**
+     * Merge-base between HEAD and the upstream default branch on the user's
+     * machine (git merge-base HEAD origin/main). Used by the sandbox stage
+     * to checkout a commit that exists on the remote and apply the local
+     * diff on top — works when the branch isn't pushed yet.
+     */
+    mergeBaseSha?: string;
+    /**
+     * Optional GitHub personal access token. Only meaningful in trial mode
+     * (anonymous users have no stored credentials, so without this we can
+     * only clone public repos). Held in memory for the pipeline run only —
+     * never persisted to dataExecution / logs.
+     */
+    githubPat?: string;
     inferredPlatform?: PlatformType;
     cliVersion?: string;
+}
+
+interface ExecuteCliReviewAuthContext {
+    mode: 'team-key' | 'personal';
+    teamKeyId?: string;
+    teamKeyName?: string;
+    userId?: string;
+    userEmail?: string;
 }
 
 interface ExecuteCliReviewInput {
@@ -55,6 +78,7 @@ interface ExecuteCliReviewInput {
     isTrialMode?: boolean;
     userEmail?: string;
     gitContext?: GitContext;
+    cliAuth?: ExecuteCliReviewAuthContext;
 }
 
 /**
@@ -77,6 +101,7 @@ export class ExecuteCliReviewUseCase implements IUseCase {
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: IKodyRulesService,
         private readonly kodyRulesValidationService: KodyRulesValidationService,
+        private readonly pipelineObserver: CodeReviewPipelineObserver,
     ) {}
 
     async execute(params: ExecuteCliReviewInput): Promise<CliReviewResponse> {
@@ -86,12 +111,15 @@ export class ExecuteCliReviewUseCase implements IUseCase {
             isTrialMode = false,
             userEmail,
             gitContext,
+            cliAuth,
         } = params;
         const correlationId = IdGenerator.correlationId();
         const startTime = Date.now();
         let execution: IAutomationExecution | null = null;
 
         try {
+            const isFastMode = input.config?.fast === true;
+
             this.logger.log({
                 message: 'Starting CLI review',
                 context: ExecuteCliReviewUseCase.name,
@@ -100,18 +128,24 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                     teamId: organizationAndTeamData.teamId,
                     correlationId,
                     isTrialMode,
-                    isFastMode: input.config?.fast,
+                    isFastMode,
                     filesCount: input.config?.files?.length || 0,
                 },
             });
 
-            // 1. Create automation execution for tracking
-            execution = await this.createAutomationExecution(
-                organizationAndTeamData,
-                correlationId,
-                userEmail,
-                gitContext,
-            );
+            // 1. Create automation execution for tracking (skipped in trial
+            //    mode — trial requests have teamId='trial' which is not a
+            //    valid UUID and would fail the team_automations lookup with
+            //    QueryFailedError: invalid input syntax for type uuid).
+            execution = isTrialMode
+                ? null
+                : await this.createAutomationExecution(
+                      organizationAndTeamData,
+                      correlationId,
+                      userEmail,
+                      gitContext,
+                      cliAuth,
+                  );
 
             // 2. Convert CLI input to FileChange[]
             const changedFiles = this.converter.convertToFileChanges(input);
@@ -151,16 +185,23 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                   );
 
             // 4. Create pipeline context
+            //    When --fast is set, force the CLI-specific fast review mode
+            //    on the resolved config so the agent orchestrator uses the
+            //    capped step budget and skips heavy passes.
+            const effectiveConfig = isFastMode
+                ? { ...codeReviewConfig, reviewMode: 'fast' as const }
+                : codeReviewConfig;
+
             const context: CliReviewPipelineContext = {
                 // CLI-specific fields
-                isFastMode: input.config?.fast || !input.config?.files,
+                isFastMode,
                 isTrialMode,
                 startTime,
                 correlationId,
 
                 // Required by CodeReviewPipelineContext (dummy values for CLI)
                 organizationAndTeamData,
-                codeReviewConfig,
+                codeReviewConfig: effectiveConfig,
                 changedFiles,
                 validSuggestions: [],
                 discardedSuggestions: [],
@@ -207,24 +248,37 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                           remote: gitContext.remote,
                           branch: gitContext.branch,
                           commitSha: gitContext.commitSha,
+                          mergeBaseSha: gitContext.mergeBaseSha,
+                          // PAT propagated to sandbox only — NEVER persisted
+                          // (see updateAutomationExecution / dataExecution.git).
+                          githubPat: gitContext.githubPat,
                           inferredPlatform: gitContext.inferredPlatform,
                       }
                     : undefined,
 
-                // Pipeline metadata
+                // Raw diff for the sandbox stage to `git apply` on top of the
+                // merge-base SHA — recreates branches not yet pushed and
+                // uncommitted working-tree changes inside the sandbox.
+                cliRawDiff: input.diff,
+
+                // Pipeline metadata — populate lastExecution with the real
+                // AutomationExecution uuid so the pipeline observer uses
+                // that (a valid uuid) instead of falling back to
+                // `correlationId`, which for CLI is a `corr_xxx` string
+                // and breaks uuid-typed queries.
                 pipelineVersion: '1.0',
                 errors: [] as PipelineError[],
                 statusInfo: {
                     status: AutomationStatus.IN_PROGRESS,
                 },
+                pipelineMetadata: execution?.uuid
+                    ? {
+                          lastExecution: {
+                              uuid: execution.uuid,
+                          },
+                      }
+                    : undefined,
 
-                // Analysis tasks metadata
-                tasks: {
-                    astAnalysis: {
-                        taskId: correlationId,
-                        status: 'TASK_STATUS_COMPLETED' as any,
-                    },
-                },
             };
 
             // 5. Execute pipeline
@@ -237,6 +291,9 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                 context,
                 stages,
                 pipelineName,
+                undefined,
+                undefined,
+                [this.pipelineObserver],
             );
 
             // 6. Return formatted response
@@ -376,7 +433,9 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                 config: {
                     ...normalizedConfig,
                     languageResultPrompt:
-                        (normalizedConfig as any).languageResultPrompt || {},
+                        typeof (normalizedConfig as any).languageResultPrompt === 'string'
+                            ? (normalizedConfig as any).languageResultPrompt
+                            : 'en-US',
                     kodyRules: standardRules,
                     kodyMemoryRules: memoryRules,
                 } as any as CodeReviewConfig,
@@ -531,7 +590,7 @@ export class ExecuteCliReviewUseCase implements IUseCase {
             ...defaults,
             automatedReviewActive: true,
             pullRequestApprovalActive: false,
-            languageResultPrompt: {},
+            languageResultPrompt: 'en-US',
         } as any as CodeReviewConfig;
 
         // Force Gemini Flash for trial users (cost optimization)
@@ -550,6 +609,7 @@ export class ExecuteCliReviewUseCase implements IUseCase {
         correlationId: string,
         userEmail?: string,
         gitContext?: GitContext,
+        cliAuth?: ExecuteCliReviewAuthContext,
     ): Promise<IAutomationExecution | null> {
         try {
             const teamAutomations = await this.teamAutomationService.find({
@@ -573,10 +633,23 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                               remote: gitContext.remote,
                               branch: gitContext.branch,
                               commitSha: gitContext.commitSha,
+                              mergeBaseSha: gitContext.mergeBaseSha,
                               inferredPlatform: gitContext.inferredPlatform,
                           }
                         : undefined,
                     cliVersion: gitContext?.cliVersion,
+                    // Auth provenance: identifies the CLI key (by id+name) or
+                    // the logged-in user. Never includes the secret material —
+                    // the team key/JWT itself is gone by the time we get here.
+                    cliAuth: cliAuth
+                        ? {
+                              mode: cliAuth.mode,
+                              teamKeyId: cliAuth.teamKeyId,
+                              teamKeyName: cliAuth.teamKeyName,
+                              userId: cliAuth.userId,
+                              userEmail: cliAuth.userEmail,
+                          }
+                        : undefined,
                 },
             });
         } catch (error) {

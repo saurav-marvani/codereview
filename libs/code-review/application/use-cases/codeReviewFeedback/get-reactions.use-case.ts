@@ -74,8 +74,7 @@ export class GetReactionsUseCase implements IUseCase {
                             comment?.threadId ??
                             comment?.notes?.[0]?.id ??
                             comment?.id;
-                        const suggestion =
-                            suggestionsByCommentId.get(threadId);
+                        const suggestion = suggestionsByCommentId.get(threadId);
 
                         if (!suggestion) {
                             return false;
@@ -118,10 +117,9 @@ export class GetReactionsUseCase implements IUseCase {
 
                 return reactionsInComments
                     .map((reaction) => {
-                        const suggestion =
-                            reactionCommentIdToSuggestion.get(
-                                reaction.comment.id,
-                            );
+                        const suggestion = reactionCommentIdToSuggestion.get(
+                            reaction.comment.id,
+                        );
                         if (!suggestion) {
                             return null;
                         }
@@ -157,8 +155,7 @@ export class GetReactionsUseCase implements IUseCase {
                     context: GetReactionsUseCase.name,
                     error,
                     metadata: {
-                        organizationId:
-                            organizationAndTeamData.organizationId,
+                        organizationId: organizationAndTeamData.organizationId,
                         prNumber: pr.number,
                         repository: pr?.repository?.name,
                         suggestionsCount: pr.suggestions?.length || 0,

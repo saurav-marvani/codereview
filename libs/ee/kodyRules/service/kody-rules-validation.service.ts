@@ -347,6 +347,27 @@ export class KodyRulesValidationService {
                 return false;
             }
 
+            // Cross-directory leak guard. The historical default for a
+            // rule's `inheritance.include` is `[]`, which the matcher
+            // below reads as "inherit everywhere" — and so a rule
+            // scoped to one directory would silently apply in every
+            // sibling directory of the same repo (reported by
+            // quintoandar/backend-services on rule b207a89c).
+            //
+            // A directory-scoped rule (`rule.directoryId` set) must NOT
+            // leak into a different directory unless that directory is
+            // explicitly in `include`. Repo-level and global rules
+            // (`rule.directoryId` undefined) keep their original
+            // semantics and continue to match across all contexts.
+            if (
+                directoryId &&
+                rule.directoryId &&
+                rule.directoryId !== directoryId &&
+                !include.includes(directoryId)
+            ) {
+                return false;
+            }
+
             // Check if the current directory or repository is excluded or included
             const isExcluded =
                 useExclude &&

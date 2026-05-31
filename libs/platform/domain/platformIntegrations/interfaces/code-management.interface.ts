@@ -125,6 +125,20 @@ export interface ICodeManagementService extends ICommonPlatformIntegrationServic
     createReviewComment(params: any): Promise<any | null>;
     createCommentInPullRequest(params): Promise<any[] | null>;
     getRepositoryContentFile(params: any): Promise<any | null>;
+
+    /**
+     * Batch-fetch file contents in a single round-trip. Implementations
+     * that support it (GitHub via GraphQL aliasing) return a Map keyed
+     * by filename. Adapters without a batch capability return `null` —
+     * callers fall back to per-file `getRepositoryContentFile`.
+     */
+    getRepositoryContentBatch(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { name: string; id: any };
+        files: Array<{ filename: string; sha?: string }>;
+        pullRequest?: any;
+    }): Promise<Map<string, any> | null>;
+
     getPullRequestByNumber(params: any): Promise<any | null>;
 
     getCommitsForPullRequestForCodeReview(params: any): Promise<any[] | null>;
@@ -178,6 +192,18 @@ export interface ICodeManagementService extends ICommonPlatformIntegrationServic
         username: string;
     }): Promise<any>;
 
+    /**
+     * Batch-fetch user data by login in a single round-trip. Pre-warms
+     * the cache used by `getUserByUsername`. Implementations that
+     * support it (GitHub via GraphQL aliasing) return a Map keyed by
+     * normalized login. Adapters without a batch capability return
+     * `null` — callers fall back to per-user `getUserByUsername`.
+     */
+    getUsersByUsername(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        usernames: string[];
+    }): Promise<Map<string, any> | null>;
+
     getUserByEmailOrName(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         email?: string;
@@ -187,6 +213,16 @@ export interface ICodeManagementService extends ICommonPlatformIntegrationServic
     getUserById(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         userId: string;
+    }): Promise<any | null>;
+
+    /**
+     * Resolves the real PR/MR author from a webhook payload when the payload
+     * itself does not carry an enriched author object. Currently only GitLab
+     * needs this — other providers expose the author directly in `mapUsers`.
+     */
+    resolveMrAuthorFromWebhookPayload?(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        payload: any;
     }): Promise<any | null>;
 
     getCurrentUser(params: {
