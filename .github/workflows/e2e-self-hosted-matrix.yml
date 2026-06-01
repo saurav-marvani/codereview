@@ -183,12 +183,13 @@ jobs:
                   SH_LICENSE_KEY_SEATS1: ${{ secrets.SH_LICENSE_KEY_SEATS1 }}
 
                   # LLM provider — vm.sh expects these to write to the VM's .env.
-                  # Team default: Moonshot Kimi K2.6 (reusing BYOK_MOONSHOT_API_KEY
-                  # since that's the key we already pay for and that maps to the
-                  # API_OPEN_AI_API_KEY slot per scripts/selfhosted/op-references.md).
-                  API_OPEN_AI_API_KEY: ${{ secrets.BYOK_MOONSHOT_API_KEY }}
-                  API_OPENAI_FORCE_BASE_URL: https://api.moonshot.ai/v1
-                  API_LLM_PROVIDER_MODEL: kimi-k2.6
+                  # OpenAI gpt-5.4-mini: light/fast (Kimi via Moonshot was too
+                  # slow and flaked on 429s). Native OpenAI endpoint, so NO
+                  # FORCE_BASE_URL override. Same model the cloud BYOK seed
+                  # configures (setup-tenants configureByok), so cloud and
+                  # self-hosted run the identical model — one variable to debug.
+                  API_OPEN_AI_API_KEY: ${{ secrets.BYOK_OPENAI_API_KEY }}
+                  API_LLM_PROVIDER_MODEL: gpt-5.4-mini
 
                   TARGET_FILTER_PROVIDER: ${{ matrix.cell.provider }}
               run: |
