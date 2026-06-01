@@ -49,12 +49,27 @@ export class GetSpendLimitConfigUseCase {
             models,
             config?.modelPricing,
         );
+        // Resolve again against the catalog only, so each model carries its
+        // catalog rates even when a manual override is currently active —
+        // the UI uses these to revert an override back to catalog pricing.
+        const catalogResolved = await this.pricingResolver.resolveMany(models);
+        const catalogByModel = new Map(
+            catalogResolved.map((r) => [r.model, r]),
+        );
+
+        const modelsWithCatalog = resolved.map((r) => {
+            const catalog = catalogByModel.get(r.model);
+            return {
+                ...r,
+                catalogRates: catalog?.priced ? catalog.rates : undefined,
+            };
+        });
 
         return {
             enabled: config?.enabled ?? false,
             monthlyLimitUsd: config?.monthlyLimitUsd ?? 0,
             modelPricing: config?.modelPricing ?? {},
-            models: resolved,
+            models: modelsWithCatalog,
             priceable: resolved.every((r) => r.priced),
         };
     }

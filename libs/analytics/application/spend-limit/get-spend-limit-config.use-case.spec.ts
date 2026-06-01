@@ -59,6 +59,48 @@ describe('GetSpendLimitConfigUseCase', () => {
         expect(result.models).toHaveLength(2);
     });
 
+    it('attaches catalog rates (from a catalog-only resolve) for reverting overrides', async () => {
+        getOrgByokModels.execute.mockResolvedValue(["custom"]);
+        const catalogRates = {
+            input: { default: 2e-6 },
+            output: { default: 12e-6 },
+            cacheRead: { default: 0 },
+            cacheWrite: { default: 0 },
+        };
+        pricingResolver.resolveMany
+            // 1st call: with the org's overrides — "custom" is a manual price.
+            .mockResolvedValueOnce([
+                {
+                    model: "custom",
+                    source: "manual",
+                    priced: true,
+                    rates: {
+                        input: { default: 5e-6 },
+                        output: { default: 9e-6 },
+                        cacheRead: { default: 0 },
+                        cacheWrite: { default: 0 },
+                    },
+                },
+            ])
+            // 2nd call: catalog only — "custom" resolves to its catalog price.
+            .mockResolvedValueOnce([
+                { model: "custom", source: "catalog", priced: true, rates: catalogRates },
+            ]);
+
+        const result = await useCase.execute(ORG);
+
+        expect(result.models[0].source).toBe("manual");
+        expect(result.models[0].catalogRates).toEqual(catalogRates);
+        expect(pricingResolver.resolveMany).toHaveBeenNthCalledWith(
+            1,
+            ["custom"],
+            undefined,
+        );
+        expect(pricingResolver.resolveMany).toHaveBeenNthCalledWith(2, [
+            "custom",
+        ]);
+    });
+
     it('flags priceable=false when any model has no price', async () => {
         getOrgByokModels.execute.mockResolvedValue(['gpt-x', 'mystery']);
         pricingResolver.resolveMany.mockResolvedValue([

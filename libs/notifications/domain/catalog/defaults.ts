@@ -277,6 +277,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
     billing: 'Billing',
     review: 'Code Review',
     byok: 'BYOK',
+    spend_limit: 'Spend Limit',
 };
 
 /**

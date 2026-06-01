@@ -42,4 +42,11 @@ export interface ResolvedModelPricing {
     source: PricingSource;
     priced: boolean;
     rates: ModelTokenRates;
+    /**
+     * The catalog's rates for this model, independent of any active manual
+     * override — present only when the catalog can price it. Lets the config
+     * UI offer "revert to catalog" and show the catalog values. Populated by
+     * GetSpendLimitConfigUseCase, not the resolver.
+     */
+    catalogRates?: ModelTokenRates;
 }
