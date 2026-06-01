@@ -349,8 +349,8 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
                         login: (creds) => login(target, creds),
                         registerIntegration: (session) =>
                             registerIntegration(target, provider, session),
-                        registerRepo: (session) =>
-                            registerRepo(target, provider, session),
+                        registerRepo: (session, repoOpts) =>
+                            registerRepo(target, provider, session, repoOpts),
                         finishOnboarding: (session, repo) =>
                             finishOnboarding(target, session, repo),
                     },

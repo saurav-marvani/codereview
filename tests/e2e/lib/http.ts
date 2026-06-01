@@ -11,6 +11,9 @@
 // surface, but well above the worst-case real onboarding latency we've
 // measured.
 import { Agent, setGlobalDispatcher } from "undici";
+import { logger } from "./log.js";
+
+const log = logger("http");
 
 const TEN_MINUTES_MS = 10 * 60 * 1000;
 setGlobalDispatcher(
@@ -107,29 +110,85 @@ function isTransportError(err: unknown): boolean {
     ) || /ECONNRESET|EPIPE|ETIMEDOUT|socket hang up/i.test(msg);
 }
 
+// Transport-error retry budget. A freshly-provisioned self-hosted droplet
+// can take several seconds AFTER the `api up` healthcheck before undici can
+// actually open a keep-alive socket to :3001 — the NestJS app finishes
+// wiring routes, the kernel finishes accepting on the published port, and
+// the first cross-host connection sometimes resets. We observed (2026-05-29,
+// bitbucket cell) ALL 6 scenarios fail with `fetch failed` in a 9s window
+// while a sibling github cell on its own droplet passed — pure transport
+// flakiness, not an app or test bug. A single 1s retry didn't cover it.
+//
+// Exponential backoff (1s, 2s, 4s, 8s, 16s → ~31s total) absorbs that
+// window without masking real failures: a 4xx/5xx is NOT a transport error
+// and throws immediately via ensureOk downstream, so a genuinely-broken
+// endpoint still fails fast. Only `fetch failed` / ECONNRESET / AbortError
+// get retried.
+const TRANSPORT_RETRIES = 5;
+
+// HTTP 429 retry budget. Bitbucket Cloud rate-limits the shared test account
+// hard: the runner's pollForReview loop (one list-comments call every 10s for
+// up to 10min) plus the review worker's own Bitbucket calls overrun the
+// per-account quota and Bitbucket returns 429 with a Retry-After header. A
+// single 429 also cascades — the next scenario's PAT re-validation goes
+// through Kodus to Bitbucket and comes back as 400 "Error authenticating".
+// Honouring Retry-After here makes the whole thing deterministic: we wait
+// exactly as long as Bitbucket asks (capped) and retry, so no rate-limit
+// blip ever surfaces as a test failure. Applies to every provider but only
+// Bitbucket realistically hits it.
+const RATE_LIMIT_RETRIES = 6;
+const RETRY_AFTER_CAP_MS = 60_000;
+
+function retryAfterMs(resp: HttpResponse<unknown>, attempt: number): number {
+    const header = resp.headers.get("retry-after");
+    if (header) {
+        const secs = Number(header);
+        if (Number.isFinite(secs) && secs >= 0) {
+            return Math.min(secs * 1_000, RETRY_AFTER_CAP_MS);
+        }
+    }
+    // No/!numeric header → exponential backoff 2s,4s,8s… capped.
+    return Math.min(2_000 * 2 ** attempt, RETRY_AFTER_CAP_MS);
+}
+
 export async function http<T = unknown>(
     url: string,
     opts: HttpOptions = {},
 ): Promise<HttpResponse<T>> {
     const timeoutMs = opts.timeoutMs ?? 30_000;
-    try {
-        return await attempt<T>(url, opts, timeoutMs);
-    } catch (err) {
-        if (!isTransportError(err)) {
-            throw err;
+    let lastErr: unknown;
+    let rateLimitHits = 0;
+    for (let i = 0; i <= TRANSPORT_RETRIES; i++) {
+        try {
+            const resp = await attempt<T>(url, opts, timeoutMs);
+            // 429 isn't an exception — it's a valid response we choose to
+            // retry. Don't count it against the transport budget.
+            if (resp.status === 429 && rateLimitHits < RATE_LIMIT_RETRIES) {
+                const delay = retryAfterMs(resp, rateLimitHits);
+                rateLimitHits++;
+                log.info(
+                    `[http] 429 on ${opts.method ?? "GET"} ${url} (rate-limit ${rateLimitHits}/${RATE_LIMIT_RETRIES}) — waiting ${delay}ms`,
+                );
+                await new Promise((r) => setTimeout(r, delay));
+                i--; // this loop turn didn't consume a transport retry
+                continue;
+            }
+            return resp;
+        } catch (err) {
+            if (!isTransportError(err)) {
+                throw err;
+            }
+            lastErr = err;
+            if (i === TRANSPORT_RETRIES) break;
+            // 1s, 2s, 4s, 8s, 16s
+            const delay = 1_000 * 2 ** i;
+            log.info(
+                `[http] transport error on ${opts.method ?? "GET"} ${url} (attempt ${i + 1}/${TRANSPORT_RETRIES + 1}) — retrying in ${delay}ms`,
+            );
+            await new Promise((r) => setTimeout(r, delay));
         }
-        // One retry on transport failure. Concrete motivation: bitbucket
-        // finish-onboarding takes ~91s server-side (generateKodyRules
-        // makes ~72 sequential Bitbucket Cloud API calls, ~1.3s each)
-        // and the long-idle TCP connection occasionally resets between
-        // Mac and droplet before the 204 arrives, throwing
-        // `TypeError: fetch failed`. On retry the server-side work is
-        // cached (kody rules already generated) so the request returns
-        // in ~1.8s. See [TIMING:onboarding] in finish-onboarding.use-
-        // case.ts — confirmed 2026-05-22 fresh-tenant probe.
-        await new Promise((r) => setTimeout(r, 1_000));
-        return attempt<T>(url, opts, timeoutMs);
     }
+    throw lastErr;
 }
 
 export function ensureOk<T>(

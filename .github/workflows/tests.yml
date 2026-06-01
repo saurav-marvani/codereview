@@ -143,15 +143,18 @@ jobs:
                         body: message,
                       });
 
-            - name: Notify Discord on Deploy Failure
+            - name: Notify Discord on test failure
               if: failure() && github.event.pull_request.head.repo.full_name ==
                   github.repository && env.DISCORD_WEBHOOK != ''
-              uses: sarisia/actions-status-discord@v1.13.0
+              uses: sarisia/actions-status-discord@v1.16.0
               env:
-                  DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+                  DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
               with:
                   webhook: ${{ env.DISCORD_WEBHOOK }}
-                  status: ${{ job.status }}
-                  content: "❌ failing tests for PR: ${{ github.event.pull_request.title }} Author:
-                      @${{ github.event.pull_request.user.login }}"
+                  status: failure
+                  title: "❌ PR tests failing"
+                  description: |
+                      PR: [#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }}) — ${{ github.event.pull_request.title }}
+                      Author: @${{ github.event.pull_request.user.login }}
+                      Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
                   username: GitHub Actions

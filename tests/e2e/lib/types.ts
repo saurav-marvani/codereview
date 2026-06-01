@@ -194,7 +194,10 @@ export interface RunContext {
     kodus: {
         login: (creds: TenantCredentials) => Promise<KodusSession>;
         registerIntegration: (session: KodusSession) => Promise<void>;
-        registerRepo: (session: KodusSession) => Promise<ProviderRepoRef>;
+        registerRepo: (
+            session: KodusSession,
+            opts?: { forceRecreate?: boolean },
+        ) => Promise<ProviderRepoRef>;
         finishOnboarding: (
             session: KodusSession,
             repo: ProviderRepoRef,

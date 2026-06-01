@@ -3221,6 +3221,13 @@ export class BitbucketCloudService implements Omit<
         process.env.BITBUCKET_RATE_GATE_MIN_INTERVAL_MS ?? 400,
     );
 
+    // How many Retry-After-honoured waits rawFetch performs on a 429 before
+    // giving up and surfacing it. 4 covers transient per-endpoint bursts
+    // without hanging a request indefinitely on a genuinely throttled account.
+    private static readonly RATE_GATE_429_MAX_RETRIES = Number(
+        process.env.BITBUCKET_RATE_GATE_429_MAX_RETRIES ?? 4,
+    );
+
     private safeFetch(url: string, options: any): Promise<any> {
         // Gate every Bitbucket HTTP call through a single-slot, spaced
         // queue keyed by the app-password (carried in the Authorization
@@ -3244,51 +3251,76 @@ export class BitbucketCloudService implements Omit<
         );
     }
 
-    private rawFetch(
+    private async rawFetch(
         url: string,
         options: any,
         gateKey: string,
     ): Promise<any> {
-        // Bounded timeout via AbortController — the Bitbucket SDK itself
-        // does not expose a timeout option, so without this a single
-        // unresponsive Bitbucket API call can hang the worker for the
-        // entire drain window. 30s covers the 99p of real calls.
-        const controller = new AbortController();
-        const timer = setTimeout(
-            () => controller.abort(),
-            INTEGRATION_REQUEST_TIMEOUT_MS,
-        );
+        // Retry 429 in-place. EVERY Bitbucket SDK call funnels through here
+        // (instanceBitbucketApi sets request.fetch = safeFetch → rawFetch),
+        // and almost none of the ~46 call sites wrap themselves in
+        // with429Retry. Bitbucket Cloud rate-limits hard (per-endpoint burst
+        // ceilings well below its 1000/hr budget), so on a busy account a
+        // single 429 on getDefaultBranch / getLanguageRepository /
+        // getRepositoryContentFile used to propagate straight up and break
+        // the code review (and onboarding). Retrying here — honouring
+        // Retry-After, after the gate park — fixes every call site at once:
+        // a transient 429 becomes a short wait instead of a failed review.
+        // Only a sustained 429 (still limited after RATE_GATE_429_MAX_RETRIES
+        // honoured waits) surfaces the 429 to the caller.
+        for (let attempt = 0; ; attempt++) {
+            // Per-attempt timeout: the Bitbucket SDK exposes no timeout, so
+            // without this one unresponsive call hangs the worker for the
+            // whole drain window. 30s covers the 99p of real calls.
+            const controller = new AbortController();
+            const timer = setTimeout(
+                () => controller.abort(),
+                INTEGRATION_REQUEST_TIMEOUT_MS,
+            );
 
-        return fetch(url, { ...options, signal: controller.signal })
-            .then((response) => {
-                // Park the whole key proactively on 429 so sibling calls
-                // wait out the server cooldown instead of re-colliding.
-                // The current call still returns the 429 to the SDK; the
-                // higher-level with429Retry decides whether to retry, and
-                // its next attempt re-enters the gate and blocks on the
-                // park window set here.
-                if (response.status === 429) {
-                    parkRateGate(
-                        gateKey,
-                        Date.now() +
-                            this.parseRetryAfterMs(
-                                response.headers.get('retry-after'),
-                            ),
-                    );
-                }
-                if (!response.headers.get('content-type')) {
-                    const patchedHeaders = new Headers(response.headers);
-                    patchedHeaders.set('content-type', 'text/plain');
+            let response: Response;
+            try {
+                response = await fetch(url, {
+                    ...options,
+                    signal: controller.signal,
+                });
+            } finally {
+                clearTimeout(timer);
+            }
 
-                    return new Response(response.body, {
-                        status: response.status,
-                        statusText: response.statusText,
-                        headers: patchedHeaders,
+            if (response.status === 429) {
+                // Park the whole key so sibling calls wait out the cooldown
+                // instead of re-colliding, then wait it out ourselves and
+                // retry. parseRetryAfterMs falls back to a conservative
+                // cooldown when Bitbucket omits the header (it often does on
+                // per-endpoint burst 429s).
+                const waitMs = this.parseRetryAfterMs(
+                    response.headers.get('retry-after'),
+                );
+                parkRateGate(gateKey, Date.now() + waitMs);
+                if (attempt < BitbucketCloudService.RATE_GATE_429_MAX_RETRIES) {
+                    this.logger.warn({
+                        message: `Bitbucket 429 — waiting ${waitMs}ms then retrying (attempt ${attempt + 1}/${BitbucketCloudService.RATE_GATE_429_MAX_RETRIES})`,
+                        context: BitbucketCloudService.name,
+                        metadata: { url, gateKey },
                     });
+                    await new Promise((r) => setTimeout(r, waitMs));
+                    continue;
                 }
-                return response;
-            })
-            .finally(() => clearTimeout(timer));
+                // Exhausted: fall through and return the 429 to the caller.
+            }
+
+            if (!response.headers.get('content-type')) {
+                const patchedHeaders = new Headers(response.headers);
+                patchedHeaders.set('content-type', 'text/plain');
+                return new Response(response.body, {
+                    status: response.status,
+                    statusText: response.statusText,
+                    headers: patchedHeaders,
+                });
+            }
+            return response;
+        }
     }
 
     // Parses a Retry-After header (delta-seconds or HTTP-date) into a

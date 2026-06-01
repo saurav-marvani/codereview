@@ -246,20 +246,32 @@ function targetForCloud(): TargetContext {
 //                          (`/organization-parameters/create-or-update`
 //                          with key=byok_config). Gate allows reviews
 //                          using the org's own LLM key; 10-rule limit.
-//   - `trial` / `paid`  → activate the trial billing record via
-//                          `POST /api/proxy/billing/trial`. Real
-//                          paid would need Stripe Checkout but for
-//                          the matrix's gate-allows assertion trial
-//                          is sufficient. TODO: hook up the Stripe
-//                          flow when we need to differentiate paid-
-//                          specific limits.
+//   - `trial`           → activate the trial billing record via
+//                          `POST /api/proxy/billing/trial` (byok:false).
+//                          Status=trial, valid while the 14-day window is
+//                          open; exercises the trial-period gate.
+//   - `paid`            → exercised as BYOK (we deliberately do NOT test
+//                          the platform-managed LLM path). Same three-step
+//                          dance as community-byok → ends ACTIVE/free_byok,
+//                          which never expires. The real Stripe checkout
+//                          (free→paid ACTIVE via Stripe) lives in the
+//                          dedicated stripe-checkout scenario, not here.
 async function ensureLicenseTier(
     target: TargetContext,
     session: KodusSession,
     tenant: TenantSpec,
 ): Promise<boolean> {
     if (tenant.license === "free") return true;
-    if (tenant.license === "community-byok") {
+    // `paid` is exercised as a BYOK tenant (decision: we don't test the
+    // platform-managed LLM path). It takes the SAME three-step BYOK dance
+    // as community-byok, which is what makes it robust in CI: the final
+    // /migrate-to-free flips the row to planType=free_byok AND
+    // subscriptionStatus=ACTIVE — so it NEVER expires. The old `paid`
+    // path (/billing/trial byok:false) created a 14-day TRIAL row that
+    // createTrialLicense refuses to renew (throws "já existe"), so a
+    // once-seeded tenant silently rotted to validate-org-license:false
+    // ~14 days later. ACTIVE/free_byok has no such clock.
+    if (tenant.license === "community-byok" || tenant.license === "paid") {
         // The cloud gate (libs/ee/shared/services/permissionValidation
         // .service.ts) requires `validation.valid===true` AND
         // `planType` containing "byok" AND a stored BYOK config. The
@@ -268,6 +280,7 @@ async function ensureLicenseTier(
         //   1. POST /billing/trial         → creates the license row
         //   2. configure BYOK in org params
         //   3. POST /billing/migrate-to-free → flips planType to free_byok
+        //      (and subscriptionStatus to ACTIVE → no trial expiry)
         // /migrate-to-free fails with "Licença não encontrada" if step 1
         // didn't run first — the endpoint mutates an existing row.
         const trial = await http(
@@ -294,7 +307,7 @@ async function ensureLicenseTier(
                 ));
         if (!trialOk) {
             console.log(
-                `  [warn] community-byok: trial step returned HTTP ${trial.status}: ${trial.raw.slice(0, 200)}`,
+                `  [warn] ${tenant.license}: trial step returned HTTP ${trial.status}: ${trial.raw.slice(0, 200)}`,
             );
             return false;
         }
@@ -325,7 +338,7 @@ async function ensureLicenseTier(
             return true;
         }
         console.log(
-            `  [warn] community-byok: migrate-to-free returned HTTP ${migrate.status}: ${migrate.raw.slice(0, 200)}`,
+            `  [warn] ${tenant.license}: migrate-to-free returned HTTP ${migrate.status}: ${migrate.raw.slice(0, 200)}`,
         );
         return false;
     }
@@ -387,7 +400,7 @@ async function configureByok(
     const provider = process.env.API_LLM_PROVIDER ?? "openai";
     const baseURL =
         process.env.API_OPENAI_FORCE_BASE_URL ?? "https://api.openai.com/v1";
-    const model = process.env.API_LLM_PROVIDER_MODEL ?? "kimi-k2.6";
+    const model = process.env.API_LLM_PROVIDER_MODEL ?? "gpt-5.4-mini";
 
     const resp = await http(
         `${target.apiBaseUrl}/organization-parameters/create-or-update`,

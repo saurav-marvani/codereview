@@ -1,0 +1,168 @@
+name: "Benchmark: tier-0 model code review"
+
+# Per-model code-review benchmark against the QA cloud. For each recommended
+# model in the BYOK catalog (curated-models.json, tier="recommended") it points
+# ONE QA benchmark tenant's BYOK at the model and opens the fixed 5-PR set on the
+# shared kodus-e2e benchmark repos, waiting for Kody to review each.
+#
+# Gate (mechanical): `benchmark:models` exits non-zero if any review fails to
+# complete — that is the pass/fail. The precision/recall scorecard
+# (`benchmark:scorecard`, judged by Sonnet vs golden_comments) is uploaded as an
+# ARTIFACT for regression tracking against main — it is NOT a gate.
+#
+# Triggers (locked spec 2026-05-28, revised 2026-05-28):
+#   - push to main on engine paths → FULL run (5 models, 5 PRs each = 25
+#     reviews, ~$17, ~40min). Notify-only.
+#   - workflow_dispatch → manual: pin one model (only_model).
+# NO pull_request trigger: the benchmark drives reviews on qa.web.kodus.io,
+# which runs main's image — a PR-time LIGHT run would benchmark MAIN's
+# engine quality (not the PR's), defeating the purpose. The right signal
+# at PR-time is the kody rule "engine sem benchmark" reminding the dev to
+# update the dataset; the FULL run after merge measures the actual change.
+# NO nightly cron: full FULL run only when the engine actually changes,
+# to keep cost bounded. Opus is dropped at the driver level
+# (tests/e2e/benchmark/run.ts DEFAULT_EXCLUDED) — ~$23/run extra and not
+# worth the CI spend. Run ad-hoc via dispatch with only_model="opus-4-7"
+# if you ever need it.
+#
+# Required secrets (add in repo settings — only GH_TEST_TOKEN exists today):
+#   GH_TEST_TOKEN            PAT that can see + write the kodus-e2e/* bench repos
+#   BYOK_ANTHROPIC_API_KEY   Claude (sonnet-4-6, opus-4-7)
+#   BYOK_OPENAI_API_KEY      gpt-5.4
+#   BYOK_GOOGLE_API_KEY      gemini-3.1-pro
+#   BYOK_MOONSHOT_API_KEY    kimi-k2.6 (openai_compatible)
+#   BYOK_ZHIPU_API_KEY       glm-5.1 (openai_compatible)
+#   ANTHROPIC_API_KEY        the scorecard judge (Sonnet)
+# Optional: BENCH_TENANT_EMAIL / BENCH_TENANT_PASSWORD for a dedicated tenant.
+
+permissions:
+    contents: read
+
+on:
+    workflow_dispatch:
+        inputs:
+            only_model:
+                description: "Restrict to one model slug (e.g. sonnet-4-6, or opus-4-7 to run the otherwise-excluded model)"
+                required: false
+                default: ""
+                type: string
+    push:
+        branches: [main]
+        paths:
+            # Engine paths — anything that can change review OUTPUT quality.
+            # Stages/agents/prompts/rules/sandbox/BYOK + the model catalog.
+            - "libs/code-review/**"
+            - "libs/ee/codeBase/**"
+            - "libs/ee/codeReview/**"
+            - "libs/ee/kodyRules/**"
+            - "libs/kodyRules/**"
+            - "libs/sandbox/**"
+            - "libs/core/infrastructure/services/tokenTracking/**"
+            - "apps/web/src/features/ee/byok/_data/curated-models.json"
+            - "tests/e2e/benchmark/**"
+            - "scripts/benchmark/tier0-bench-prs.json"
+
+concurrency:
+    # Single benchmark tenant + shared repos → never run two at once.
+    # cancel-in-progress: rapid successive engine merges collapse into one
+    # full run instead of queueing $17×N jobs. The latest commit's result is
+    # what matters; intermediate runs would just spend money.
+    group: code-review-model-benchmark
+    cancel-in-progress: true
+
+jobs:
+    benchmark:
+        name: tier-0 model benchmark
+        runs-on: ubuntu-latest
+        # 6 models x 5 PRs, each review polled up to 25 min. Full runs are long;
+        # GitHub's job ceiling is 6h. PR (light) runs are ~1 model.
+        timeout-minutes: 350
+        steps:
+            - name: Checkout monorepo
+              uses: actions/checkout@v6.0.2
+
+            - name: Setup Node
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "22"
+
+            - name: Install e2e deps
+              working-directory: tests/e2e
+              run: npm install --no-audit --no-fund
+
+            - name: Decide scope (push main = full, dispatch = manual override)
+              id: scope
+              run: |
+                  set -euo pipefail
+                  ONLY_MODEL_INPUT="${{ github.event.inputs.only_model }}"
+
+                  if [ "${{ github.event_name }}" = "push" ]; then
+                      # FULL on merge: all recommended models EXCEPT the ones
+                      # excluded at the driver level (Opus, see run.ts
+                      # DEFAULT_EXCLUDED) — 5 models, ~$17.
+                      echo "only_model=" >> "$GITHUB_OUTPUT"
+                      echo "Full run (engine merged to main): 5 models (Opus excluded by driver)"
+                  else
+                      # workflow_dispatch — pass through whatever was given,
+                      # including "opus-4-7" to opt into the otherwise-excluded model.
+                      echo "only_model=$ONLY_MODEL_INPUT" >> "$GITHUB_OUTPUT"
+                      echo "Manual dispatch: only_model='$ONLY_MODEL_INPUT'"
+                  fi
+
+            - name: Run benchmark (mechanical gate — fails if any review fails)
+              working-directory: tests/e2e
+              env:
+                  CLOUD_WEB_BASE_URL: ${{ vars.CLOUD_QA_WEB_URL || 'https://qa.web.kodus.io' }}
+                  BENCH_ONLY_MODEL: ${{ steps.scope.outputs.only_model }}
+                  BENCH_TENANT_EMAIL: ${{ secrets.BENCH_TENANT_EMAIL }}
+                  BENCH_TENANT_PASSWORD: ${{ secrets.BENCH_TENANT_PASSWORD }}
+                  GH_TEST_TOKEN: ${{ secrets.GH_TEST_TOKEN }}
+                  BYOK_ANTHROPIC_API_KEY: ${{ secrets.BYOK_ANTHROPIC_API_KEY }}
+                  BYOK_OPENAI_API_KEY: ${{ secrets.BYOK_OPENAI_API_KEY }}
+                  BYOK_GOOGLE_API_KEY: ${{ secrets.BYOK_GOOGLE_API_KEY }}
+                  BYOK_MOONSHOT_API_KEY: ${{ secrets.BYOK_MOONSHOT_API_KEY }}
+                  BYOK_ZHIPU_API_KEY: ${{ secrets.BYOK_ZHIPU_API_KEY }}
+              run: npm run benchmark:models
+
+            - name: Re-collect settled findings (repair late-posted findings)
+              if: always()
+              working-directory: tests/e2e
+              env:
+                  GH_TEST_TOKEN: ${{ secrets.GH_TEST_TOKEN }}
+              run: npm run benchmark:recollect || echo "recollect step failed (non-gating)"
+
+            - name: Scorecard (artifact, not a gate)
+              if: always()
+              working-directory: tests/e2e
+              env:
+                  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+              # Never fail the job on the quality scorecard — the gate is the
+              # mechanical "all reviews completed" step above.
+              run: npm run benchmark:scorecard || echo "scorecard step failed (non-gating)"
+
+            - name: Upload results + scorecard
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: tier0-benchmark-${{ github.run_id }}
+                  path: |
+                      tests/e2e/benchmark/results.json
+                      tests/e2e/benchmark/scorecard.json
+                  if-no-files-found: warn
+                  retention-days: 30
+
+            - name: Notify Discord on failure
+              if: failure()
+              uses: ./.github/actions/discord-notify
+              with:
+                  # Bench has its own audience (model quality watchers, not
+                  # infra). Falls back to general so missing channel doesn't
+                  # silence regressions.
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
+                  status: failure
+                  title: "❌ Model code-review benchmark failed"
+                  description: |
+                      Engine code merged to main but the per-model benchmark didn't complete.
+                      Scope: ${{ steps.scope.outputs.only_model != '' && format('only_model={0}', steps.scope.outputs.only_model) || 'FULL (5 models)' }}
+                      Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+                      Trigger: ${{ github.event_name }}

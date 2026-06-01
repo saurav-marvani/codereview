@@ -122,11 +122,55 @@ export async function login(
     return { accessToken, organizationId, teamId };
 }
 
+// The cloud tenants are PERSISTENT (Stripe ties each license tier to a real
+// account, so we can't sign up a fresh one per run like self-hosted does).
+// Over time a tenant accumulates code-management integrations from earlier
+// runs of OTHER providers on the same org — we observed e2e-paid-gh stacked
+// with GITLAB → BITBUCKET → AZURE_REPOS → GITHUB. Kodus's getTypeIntegration
+// resolves by CATEGORY (not platform), picking the FIRST code-management
+// integration, so the stale gitlab/bitbucket one wins and the github review
+// never fires (0 webhook, no review) — deterministically, every run.
+//
+// Before registering our integration, drop any code-management integration
+// whose platform differs from the one we're about to connect. delete-
+// integration removes one at a time (the category's current first), so loop
+// until the active platform is ours or there's nothing left. Self-hosted
+// uses a fresh tenant, so this is a no-op there (at most our own platform).
+async function clearConflictingIntegrations(
+    target: TargetContext,
+    provider: Provider,
+    session: KodusSession,
+): Promise<void> {
+    const wanted = provider.integrationType.toUpperCase();
+    for (let i = 0; i < 8; i++) {
+        const resp = await http<{ data?: Array<{ platformName?: string; category?: string }> }>(
+            `${target.apiBaseUrl}/integration/connections?teamId=${encodeURIComponent(session.teamId)}`,
+            { headers: { Authorization: `Bearer ${session.accessToken}` }, timeoutMs: 15_000 },
+        );
+        const active = (resp.body?.data ?? []).find(
+            (c) => (c.category ?? "CODE_MANAGEMENT") === "CODE_MANAGEMENT",
+        );
+        const platform = (active?.platformName ?? "").toUpperCase();
+        if (!platform || platform === wanted) return; // clean or already ours
+        log.info(`Dropping stale ${platform} integration before connecting ${wanted}`);
+        await http(
+            `${target.apiBaseUrl}/code-management/delete-integration?teamId=${encodeURIComponent(session.teamId)}`,
+            { method: "DELETE", headers: { Authorization: `Bearer ${session.accessToken}` }, timeoutMs: 20_000 },
+        );
+        await new Promise((r) => setTimeout(r, 1_500));
+    }
+}
+
 export async function registerIntegration(
     target: TargetContext,
     provider: Provider,
     session: KodusSession,
 ): Promise<void> {
+    // Cloud only: persistent tenants accumulate cross-provider integrations
+    // that hijack getTypeIntegration. Self-hosted's fresh tenant never does.
+    if (target.target === "cloud") {
+        await clearConflictingIntegrations(target, provider, session);
+    }
     log.info(`Registering ${provider.integrationType} integration`);
     const extras = provider.authExtraFields?.() ?? {};
     // OAuth path (GitHub App today): the backend expects `code` =
@@ -168,12 +212,47 @@ export async function registerIntegration(
     }
 }
 
+// Within a single matrix run a tenant's repo only needs to be registered
+// ONCE. Re-POSTing /code-management/repositories on every scenario makes
+// Kodus delete+recreate that repo's GitHub webhook each time (see
+// github.service.ts createPullRequestWebhook: it lists → deletes → creates
+// the hook with the same URL). That recreate opens a brief blind spot: a
+// PR opened right then fires its `opened` event at the about-to-be-deleted
+// hook, and GitHub never redelivers it to the new one — so the review
+// never starts and the scenario times out waiting for a heartbeat that can
+// no longer come. Caching the registration per (target, provider, org,
+// repo) means only the FIRST scenario per tenant pays the webhook churn;
+// every later scenario reuses the stable hook. (The first scenario's lone
+// churn completes before it opens its PR, so the new hook is already live.)
+const registeredRepoCache = new Map<string, ProviderRepoRef>();
+
 export async function registerRepo(
     target: TargetContext,
     provider: Provider,
     session: KodusSession,
+    opts?: { forceRecreate?: boolean },
 ): Promise<ProviderRepoRef> {
     const repoRef = await provider.repoRef();
+    // Key on apiBaseUrl (not target.target) so each hermetic mock server
+    // — every integration test spins a fresh one on a unique localhost
+    // port — gets its own cache slot and never reuses a prior test's
+    // registration. Real runs share one apiBaseUrl, where organizationId
+    // disambiguates tenants.
+    const cacheKey = `${target.apiBaseUrl}:${provider.name}:${session.organizationId}:${repoRef.full_name}`;
+    // forceRecreate bypasses the cache: onboarding-webhook-registration
+    // deletes the repo's webhook on purpose and then asserts registerRepo
+    // recreated it, so it MUST hit the real POST (the cache exists exactly
+    // to skip that POST's webhook churn, which would otherwise leave the
+    // just-deleted hook gone and fail that scenario's assertion).
+    const cached = opts?.forceRecreate
+        ? undefined
+        : registeredRepoCache.get(cacheKey);
+    if (cached) {
+        log.info(
+            `Repo ${cached.full_name} already registered this run — reusing (skips webhook-churning re-POST)`,
+        );
+        return cached;
+    }
     log.info(`Looking up ${repoRef.full_name} in available repos`);
     const listResp = await http<{
         data: Array<{
@@ -280,6 +359,7 @@ export async function registerRepo(
         full_name: found.full_name ?? repoRef.full_name,
     };
     log.ok(`Repo ${normalized.full_name} registered`);
+    registeredRepoCache.set(cacheKey, normalized);
     return normalized;
 }
 

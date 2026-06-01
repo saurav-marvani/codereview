@@ -336,10 +336,28 @@ env_set IMAGE_TAG "$IMAGE_TAG"
 env_set WEB_HOSTNAME_API "kodus-api"
 env_set WEB_PORT_API "3001"
 env_set NEXTAUTH_URL "http://$SERVER_IP:3000"
+# Webhook URL env var names are INCONSISTENT across providers in the app:
+# github/gitlab read API_*_CODE_MANAGEMENT_WEBHOOK, but bitbucket and azure
+# read GLOBAL_*_CODE_MANAGEMENT_WEBHOOK (see github.service getGithubWebhookUrl
+# / gitlab.service vs bitbucket-cloud.service:3114 / azureRepos.service:3911,
+# and .env.schema). Setting the API_ name for all four left bitbucket+azure
+# with an empty webhook URL → 0 hooks registered → the review pipeline never
+# fires → "0 findings" timeouts. Set each provider's ACTUAL name.
 env_set API_GITHUB_CODE_MANAGEMENT_WEBHOOK "$SERVER_TUNNEL_URL/github/webhook"
 env_set API_GITLAB_CODE_MANAGEMENT_WEBHOOK "$SERVER_TUNNEL_URL/gitlab/webhook"
-env_set API_BITBUCKET_CODE_MANAGEMENT_WEBHOOK "$SERVER_TUNNEL_URL/bitbucket/webhook"
-env_set API_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK "$SERVER_TUNNEL_URL/azure-repos/webhook"
+env_set GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK "$SERVER_TUNNEL_URL/bitbucket/webhook"
+env_set GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK "$SERVER_TUNNEL_URL/azure-repos/webhook"
+# Bitbucket Cloud rate-limits per-endpoint at ~16-60 req/min. The prod
+# default (400ms ≈ 150/min) and even 800ms (≈75/min) sit ABOVE that ceiling,
+# so under the e2e load — 6 scenarios each re-onboarding (~72 calls to
+# generate kody rules) + the runner's own calls, all on ONE shared test
+# account — the worker's Bitbucket calls (getDefaultBranch, getLanguage-
+# Repository, …) start returning 429 "Rate limit exceeded", which surfaces
+# as NO_REPOSITORIES / 400 on the next scenario. Confirmed in worker logs
+# 2026-05-30. 2500ms ≈ 24/min keeps every call inside the ceiling — slower
+# but deterministic. ONLY the test droplet runs this hot; prod keeps the
+# 400ms default (real installs don't re-onboard one account in a loop).
+env_set BITBUCKET_RATE_GATE_MIN_INTERVAL_MS "2500"
 env_set API_PG_DB_PASSWORD "\$(openssl rand -hex 16)"
 env_set API_MG_DB_PASSWORD "\$(openssl rand -hex 16)"
 env_set API_DATABASE_DISABLE_SSL "true"
@@ -427,5 +445,32 @@ export SH_TENANT_PASSWORD="$TEST_USER_PASSWORD"
 export TEST_USER_EMAIL TEST_USER_PASSWORD
 export TEST_TIMEOUT_REVIEW
 
-ok "Exec matrix runner: ./node_modules/.bin/tsx cli/run-matrix.ts $MATRIX_FILE --target self-hosted"
-exec ./node_modules/.bin/tsx cli/run-matrix.ts "$MATRIX_FILE" --target self-hosted
+# --skip-missing-tokens: drop (not fail) scenarios whose prerequisites are
+# absent. In CI the per-seat-license-toggle scenario needs a seats=1 license
+# JWT at ~/.kodus-dev/license-seats1.jwt that only exists on a dev laptop —
+# without the flag it crashes with ENOENT and reds the whole cell. The
+# matrix YAML already documents this scenario as "skipped automatically when
+# SH_LICENSE_KEY_PATH isn't available"; the flag is what makes that true.
+ok "Run matrix runner: ./node_modules/.bin/tsx cli/run-matrix.ts $MATRIX_FILE --target self-hosted --skip-missing-tokens"
+# NOT `exec`: exec would replace this shell and bypass the EXIT trap, so a
+# scenario failure would (a) leave the droplet alive forever — no teardown —
+# and (b) discard the on-VM logs. Run normally, capture the stack logs into
+# the evidence tree (uploaded as the cell artifact), then exit so `cleanup`
+# tears the droplet down.
+set +e
+./node_modules/.bin/tsx cli/run-matrix.ts "$MATRIX_FILE" --target self-hosted --skip-missing-tokens
+RUN_EXIT=$?
+set -e
+
+# Dump the API + review-worker logs from the droplet into evidence/. The SSH
+# key is ephemeral (discarded with the runner), so this is the only chance to
+# see WHY a scenario failed on the server side — e.g. whether the kody-rules
+# agent actually received the rule. Best-effort: never fail the run on this.
+PROV="${TARGET_FILTER_PROVIDER:-unknown}"
+mkdir -p "$E2E_ROOT/evidence"
+ssh_vm "cd /opt/kodus-installer && docker compose logs api worker webhooks --tail 2000 --no-color" \
+    > "$E2E_ROOT/evidence/droplet-logs-${PROV}.txt" 2>&1 \
+    && ok "Captured droplet logs → evidence/droplet-logs-${PROV}.txt" \
+    || warn "Could not capture droplet logs"
+
+exit "$RUN_EXIT"

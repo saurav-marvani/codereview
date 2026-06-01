@@ -119,6 +119,38 @@ test("integration: code-review-basic runs end-to-end against mocked Kodus + GitH
                 json(res, 200, {});
             },
         },
+        // openPRFromBranches opens each PR from a UNIQUE throwaway branch
+        // (empty commit on the fixture tip) to dodge GitHub's 100-PRs-per-
+        // head_sha cap — mock the git dance. ref/heads patterns use `.+`
+        // because branch names carry slashes (feature/add-stats).
+        {
+            method: "GET",
+            pathRegex: /^\/repos\/[^/]+\/[^/]+\/git\/ref\/heads\/.+$/,
+            handler: (_req, res) =>
+                json(res, 200, { object: { sha: "fixturetip0000000000000000000000000000000" } }),
+        },
+        {
+            method: "GET",
+            pathRegex: /^\/repos\/[^/]+\/[^/]+\/git\/commits\/[^/]+$/,
+            handler: (_req, res) =>
+                json(res, 200, { tree: { sha: "fixturetree000000000000000000000000000000" } }),
+        },
+        {
+            method: "POST",
+            pathRegex: /^\/repos\/[^/]+\/[^/]+\/git\/commits$/,
+            handler: (_req, res) =>
+                json(res, 201, { sha: "throwaway00000000000000000000000000000000" }),
+        },
+        {
+            method: "POST",
+            pathRegex: /^\/repos\/[^/]+\/[^/]+\/git\/refs$/,
+            handler: (_req, res) => json(res, 201, {}),
+        },
+        {
+            method: "DELETE",
+            pathRegex: /^\/repos\/[^/]+\/[^/]+\/git\/refs\/heads\/.+$/,
+            handler: (_req, res) => json(res, 204, {}),
+        },
         {
             method: "POST",
             pathRegex: /^\/repos\/[^/]+\/[^/]+\/issues\/\d+\/comments$/,

@@ -128,6 +128,7 @@ KEYS=(
     "/prod/kodus-orchestrator/API_NOVITA_AI_API_KEY"
 
     "/prod/kodus-orchestrator/GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK"
+    "/prod/kodus-orchestrator/BITBUCKET_RATE_GATE_MIN_INTERVAL_MS"
 
     "/prod/kodus-orchestrator/CODE_MANAGEMENT_SECRET"
     "/prod/kodus-orchestrator/CODE_MANAGEMENT_WEBHOOK_TOKEN"
