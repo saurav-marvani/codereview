@@ -125,6 +125,14 @@ test("integration: GitLab — runner drives MR review through provider abstracti
                     json(res, 200, { id: 12345 }),
             },
             {
+                // openPRFromBranches now creates a UNIQUE throwaway branch
+                // first (POST repository/branches?branch=&ref=) before the
+                // MR, to dodge per-head limits — mock it as success.
+                method: "POST",
+                pathRegex: /^\/api\/v4\/projects\/\d+\/repository\/branches(?:\?|$)/,
+                handler: (_req, res) => json(res, 201, { name: "e2e/throwaway" }),
+            },
+            {
                 // openPRFromBranches → creates a new MR
                 method: "POST",
                 pathRegex: /^\/api\/v4\/projects\/\d+\/merge_requests$/,
@@ -141,6 +149,12 @@ test("integration: GitLab — runner drives MR review through provider abstracti
                 method: "PUT",
                 pathRegex: /^\/api\/v4\/projects\/\d+\/merge_requests\/\d+$/,
                 handler: (_req, res) => json(res, 200, { state: "closed" }),
+            },
+            {
+                // closePR cleanup: DELETE the throwaway branch
+                method: "DELETE",
+                pathRegex: /^\/api\/v4\/projects\/\d+\/repository\/branches\/.+$/,
+                handler: (_req, res) => json(res, 204, {}),
             },
             {
                 method: "POST",
@@ -365,6 +379,22 @@ test("integration: Azure DevOps — runner drives PR review through provider abs
             REPO_FULL_NAME: `${ORG}/${PROJECT}/${REPO}`,
         },
         providerRoutes: [
+            {
+                // openPRFromBranches/closePR resolveHead: GET refs?filter=heads/{branch}
+                // → { value: [{ objectId }] }. Must precede the repo catch-all
+                // below (which only matches the bare repository id).
+                method: "GET",
+                pathRegex: /^\/[^/]+\/[^/]+\/_apis\/git\/repositories\/[^/]+\/refs(?:\?|$)/,
+                handler: (_req, res) =>
+                    json(res, 200, { value: [{ objectId: "azfixturetip000000000000000000000000000000" }] }),
+            },
+            {
+                // createBranch (and closePR branch delete) both POST to refs.
+                method: "POST",
+                pathRegex: /^\/[^/]+\/[^/]+\/_apis\/git\/repositories\/[^/]+\/refs(?:\?|$)/,
+                handler: (_req, res) =>
+                    json(res, 200, { value: [{ success: true }] }),
+            },
             {
                 method: "GET",
                 pathRegex: /^\/[^/]+\/[^/]+\/_apis\/git\/repositories\/[^/?]+(?:\?|$)/,

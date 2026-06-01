@@ -58,6 +58,44 @@ async function runLicenseScenario(opts: RunOpts): Promise<{
             pathRegex: /^\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/,
             handler: (_req, res) => json(res, 200, {}),
         },
+        // openPRFromBranches now opens each PR from a UNIQUE throwaway
+        // branch (empty commit on the fixture tip) to dodge GitHub's
+        // 100-PRs-per-head_sha cap. That adds a git dance the mock must
+        // answer; the branch name carries a slash (feature/add-stats), so
+        // the ref/heads patterns use `.+` not `[^/]+`.
+        {
+            // resolveHead: GET git/ref/heads/{branch} → { object: { sha } }
+            method: "GET",
+            pathRegex: /^\/repos\/[^/]+\/[^/]+\/git\/ref\/heads\/.+$/,
+            handler: (_req, res) =>
+                json(res, 200, { object: { sha: "fixturetip0000000000000000000000000000000" } }),
+        },
+        {
+            // resolveTree: GET git/commits/{sha} → { tree: { sha } }
+            method: "GET",
+            pathRegex: /^\/repos\/[^/]+\/[^/]+\/git\/commits\/[^/]+$/,
+            handler: (_req, res) =>
+                json(res, 200, { tree: { sha: "fixturetree000000000000000000000000000000" } }),
+        },
+        {
+            // create empty commit: POST git/commits → { sha }
+            method: "POST",
+            pathRegex: /^\/repos\/[^/]+\/[^/]+\/git\/commits$/,
+            handler: (_req, res) =>
+                json(res, 201, { sha: "throwaway00000000000000000000000000000000" }),
+        },
+        {
+            // create throwaway branch ref: POST git/refs
+            method: "POST",
+            pathRegex: /^\/repos\/[^/]+\/[^/]+\/git\/refs$/,
+            handler: (_req, res) => json(res, 201, {}),
+        },
+        {
+            // closePR cleanup: DELETE git/refs/heads/{branch}
+            method: "DELETE",
+            pathRegex: /^\/repos\/[^/]+\/[^/]+\/git\/refs\/heads\/.+$/,
+            handler: (_req, res) => json(res, 204, {}),
+        },
         {
             method: "GET",
             pathRegex: /^\/repos\/[^/]+\/[^/]+\/pulls\/\d+\/comments/,
