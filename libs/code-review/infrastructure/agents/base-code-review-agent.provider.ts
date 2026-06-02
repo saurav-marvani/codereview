@@ -28,10 +28,7 @@ import {
     type VerificationTraceSummary,
     type AgentAnomalySummary,
 } from './llm/agent-loop';
-import {
-    propagateAttributes,
-    startActiveObservation,
-} from '@langfuse/tracing';
+import { propagateAttributes, startActiveObservation } from '@langfuse/tracing';
 import { shouldTrace } from '@libs/core/log/langfuse';
 import {
     CoverageSummary,
@@ -107,8 +104,7 @@ function estimateNonDiffOverheadTokens(input: {
 }): number {
     const callGraphChars = (input.callGraph || '').length;
     const prBodyChars = Math.min((input.prBody || '').length, 500);
-    const prContextChars =
-        300 + (input.prTitle || '').length + prBodyChars;
+    const prContextChars = 300 + (input.prTitle || '').length + prBodyChars;
     const coverageListChars = (input.changedFiles?.length || 0) * 80;
     const totalChars =
         callGraphChars +
@@ -817,7 +813,7 @@ export abstract class BaseCodeReviewAgentProvider {
                     {
                         traceName: identity.name,
                         sessionId: input.prNumber
-                            ? String(input.prNumber)
+                            ? `${orgId ?? 'org'}:${input.repositoryId ?? 'repo'}:${input.prNumber}`
                             : undefined,
                         userId: orgId,
                         metadata: traceMetadata,
@@ -829,10 +825,8 @@ export abstract class BaseCodeReviewAgentProvider {
                                 // Strip redundant `patch` from changedFiles —
                                 // `patchWithLinesStr` already carries the same content
                                 // with line numbers added.
-                                const {
-                                    changedFiles,
-                                    ...restParams
-                                } = loopParams as any;
+                                const { changedFiles, ...restParams } =
+                                    loopParams as any;
                                 const safeInput = {
                                     ...restParams,
                                     ...(changedFiles && {
@@ -1010,7 +1004,11 @@ export abstract class BaseCodeReviewAgentProvider {
                         return false;
                     }
                     // PR-level kody_rules omit relevantFile by design.
-                    const kodyRulePathMatch = !s.relevantFile || validFilesByNormalized.has(normalizeRepoPath(s.relevantFile));
+                    const kodyRulePathMatch =
+                        !s.relevantFile ||
+                        validFilesByNormalized.has(
+                            normalizeRepoPath(s.relevantFile),
+                        );
                     if (!kodyRulePathMatch) {
                         this.agentLogger.warn({
                             message: `@@PATH_MISMATCH@@ Dropping kody_rules suggestion — relevantFile not in changedFiles after normalization`,
@@ -1018,16 +1016,28 @@ export abstract class BaseCodeReviewAgentProvider {
                             metadata: {
                                 prNumber: input.prNumber,
                                 relevantFile: s.relevantFile,
-                                normalizedRelevantFile: normalizeRepoPath(s.relevantFile),
-                                changedFiles: [...validFilesByNormalized.values()],
-                                suggestionPreview: (s.oneSentenceSummary || s.suggestionContent || '').slice(0, 140),
+                                normalizedRelevantFile: normalizeRepoPath(
+                                    s.relevantFile,
+                                ),
+                                changedFiles: [
+                                    ...validFilesByNormalized.values(),
+                                ],
+                                suggestionPreview: (
+                                    s.oneSentenceSummary ||
+                                    s.suggestionContent ||
+                                    ''
+                                ).slice(0, 140),
                             },
                         });
                     }
                     return kodyRulePathMatch;
                 }
 
-                const pathMatch = !!s.relevantFile && validFilesByNormalized.has(normalizeRepoPath(s.relevantFile));
+                const pathMatch =
+                    !!s.relevantFile &&
+                    validFilesByNormalized.has(
+                        normalizeRepoPath(s.relevantFile),
+                    );
                 if (!pathMatch && s.relevantFile) {
                     this.agentLogger.warn({
                         message: `@@PATH_MISMATCH@@ Dropping suggestion — relevantFile not in changedFiles after normalization`,
@@ -1035,10 +1045,16 @@ export abstract class BaseCodeReviewAgentProvider {
                         metadata: {
                             prNumber: input.prNumber,
                             relevantFile: s.relevantFile,
-                            normalizedRelevantFile: normalizeRepoPath(s.relevantFile),
+                            normalizedRelevantFile: normalizeRepoPath(
+                                s.relevantFile,
+                            ),
                             changedFiles: [...validFilesByNormalized.values()],
                             severity: s.severity,
-                            suggestionPreview: (s.oneSentenceSummary || s.suggestionContent || '').slice(0, 140),
+                            suggestionPreview: (
+                                s.oneSentenceSummary ||
+                                s.suggestionContent ||
+                                ''
+                            ).slice(0, 140),
                         },
                     });
                 }
@@ -1055,9 +1071,9 @@ export abstract class BaseCodeReviewAgentProvider {
                 // exact path shape the provider expects (e.g. Azure requires
                 // the leading slash it returns from its API).
                 const canonicalRelevantFile = s.relevantFile
-                    ? validFilesByNormalized.get(
+                    ? (validFilesByNormalized.get(
                           normalizeRepoPath(s.relevantFile),
-                      ) ?? s.relevantFile
+                      ) ?? s.relevantFile)
                     : s.relevantFile;
 
                 return {
