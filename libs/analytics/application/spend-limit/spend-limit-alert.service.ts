@@ -45,8 +45,10 @@ export class SpendLimitAlertService {
             finalNoticeSent: config.finalNoticeSent?.[periodKey],
         });
 
-        for (const percentage of decision.thresholdsToAlert) {
-            await this.notifications.emit({
+        // Fan the alerts out together: one flaky emit shouldn't stop the
+        // others (they're independent outbox writes, order doesn't matter).
+        const emits = decision.thresholdsToAlert.map((percentage) =>
+            this.notifications.emit({
                 event: NotificationEvent.SPEND_LIMIT_THRESHOLD_REACHED,
                 organizationId,
                 payload: {
@@ -55,20 +57,24 @@ export class SpendLimitAlertService {
                     spentUsd: evaluation.spentUsd,
                     periodKey,
                 },
-            });
-        }
+            }),
+        );
 
         if (decision.sendFinalNotice) {
-            await this.notifications.emit({
-                event: NotificationEvent.SPEND_LIMIT_EXCEEDED_FINAL,
-                organizationId,
-                payload: {
-                    monthlyLimitUsd: config.monthlyLimitUsd,
-                    spentUsd: evaluation.spentUsd,
-                    periodKey,
-                },
-            });
+            emits.push(
+                this.notifications.emit({
+                    event: NotificationEvent.SPEND_LIMIT_EXCEEDED_FINAL,
+                    organizationId,
+                    payload: {
+                        monthlyLimitUsd: config.monthlyLimitUsd,
+                        spentUsd: evaluation.spentUsd,
+                        periodKey,
+                    },
+                }),
+            );
         }
+
+        await Promise.allSettled(emits);
 
         if (decision.changed) {
             await this.configService.saveConfig(organizationAndTeamData, {
