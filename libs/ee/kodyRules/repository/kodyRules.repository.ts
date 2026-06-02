@@ -341,11 +341,7 @@ export class KodyRulesRepository implements IKodyRulesRepository {
         };
 
         if (directoryId) {
-            // Se directoryId for fornecido, atualizar apenas rules desse diretório
             filter['rules.directoryId'] = directoryId;
-        } else {
-            // Se não for fornecido, atualizar apenas rules do repositório (directoryId null)
-            filter['rules.directoryId'] = null;
         }
 
         const updated = await this.kodyRulesModel
@@ -364,8 +360,8 @@ export class KodyRulesRepository implements IKodyRulesRepository {
                             'elem.repositoryId': repositoryId,
                             ...(directoryId
                                 ? { 'elem.directoryId': directoryId }
-                                : { 'elem.directoryId': null }),
-                            'elem.status': KodyRulesStatus.ACTIVE,
+                                : {}),
+                            'elem.status': { $ne: KodyRulesStatus.DELETED },
                         },
                     ],
                 },
