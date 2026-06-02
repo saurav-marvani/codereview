@@ -178,6 +178,16 @@ export interface Provider {
 export interface TenantCredentials {
     email: string;
     password: string;
+    // Optional per-tenant fixture repo (cloud only). When set, the
+    // provider for this cell targets THIS repo instead of the
+    // env-resolved per-target default. Required for cloud GitHub PAT
+    // tenants, where each license tier is a separate Kodus org: sharing
+    // one repo across orgs makes the webhook→org resolution ambiguous
+    // (it picks the first org by updatedAt DESC), so the test's own org
+    // isn't reliably the one that reviews its PR. One repo per tenant
+    // restores the 1 org : 1 repo invariant the other providers already
+    // have. `owner/name` form, e.g. `kodus-e2e/tiny-url-cloud-paid`.
+    repoFullName?: string;
 }
 
 export interface KodusSession {
