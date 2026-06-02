@@ -72,7 +72,7 @@ function loadPRs(): BenchPR[] {
 // QA tenants; override via env for a one-off. signUp is idempotent (409-OK),
 // so first run creates it and later runs reuse it.
 async function getSession(): Promise<KodusSession> {
-    const email = process.env.BENCH_TENANT_EMAIL ?? "e2e-bench-tier0@kodus.io";
+    const email = process.env.BENCH_TENANT_EMAIL ?? "e2e-bench-p2-tier0@kodus.io";
     const password =
         process.env.BENCH_TENANT_PASSWORD ??
         process.env.TEST_USER_PASSWORD ??
@@ -354,7 +354,12 @@ async function runModelIsolated(
     model: BenchModel,
     prs: BenchPR[],
 ): Promise<ModelOutcome> {
-    const email = `e2e-bench-${model.slug}@kodus.io`;
+    // `p2` namespace = fresh accounts created with the current
+    // BENCH_TENANT_PASSWORD. The legacy `e2e-bench-<slug>` accounts were
+    // seeded with a password nobody recorded (no recoverable mailbox →
+    // unrecoverable), so reusing them would 401. Fresh accounts dodge that
+    // entirely and are created idempotently on first run.
+    const email = `e2e-bench-p2-${model.slug}@kodus.io`;
     const password = benchPassword();
     await signUp(QA, { email, password }).catch(() => {});
     const session = await login(QA, { email, password });
@@ -399,9 +404,24 @@ async function main() {
         ? models.filter((m) => m.slug === onlyModel)
         : models.filter((m) => includeAll || !DEFAULT_EXCLUDED.has(m.slug));
 
-    // Parallel (per-model tenant+repos) when the isolated repos exist, unless
-    // BENCH_PARALLEL=0 forces the shared sequential path.
-    const parallel = process.env.BENCH_PARALLEL !== "0" && (await isolatedReposReady(selected, prs));
+    // Parallel (per-model tenant + isolated repos) is the canonical topology:
+    // each model owns its repos so models never collide on a shared repo's
+    // single-owner webhook (the same 1 org : 1 repo invariant the cloud matrix
+    // now enforces). It requires the isolated repos to exist
+    // (provision-repos.ts). We do NOT silently fall back to the shared
+    // sequential tenant when they're missing — that funnels every model through
+    // one repo + one tenant and masks a real provisioning gap. Fail loud.
+    // BENCH_PARALLEL=0 is the explicit local-debug escape hatch.
+    const forceSequential = process.env.BENCH_PARALLEL === "0";
+    const reposReady = await isolatedReposReady(selected, prs);
+    if (!forceSequential && !reposReady) {
+        throw new Error(
+            "Parallel benchmark requires the isolated per-model repos (kodus-e2e/<base>-<slug>). " +
+                "Provision them first:  GH_TEST_TOKEN=$(gh auth token) tsx benchmark/provision-repos.ts  " +
+                "(or set BENCH_PARALLEL=0 for the shared sequential tenant — local debug only).",
+        );
+    }
+    const parallel = !forceSequential;
     log.info(`Benchmark: ${selected.length} model(s) × ${prs.length} PRs on QA (${QA.webBaseUrl}) — ${parallel ? "PARALLEL (isolated tenant+repos)" : "sequential (shared tenant)"}`);
 
     const allResults: unknown[] = [];

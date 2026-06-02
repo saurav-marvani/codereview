@@ -1,0 +1,59 @@
+name: "Benchmark: provision isolated repos"
+
+# Provisions the per-model isolated benchmark repos (kodus-e2e/<base>-<slug>)
+# that the PARALLEL benchmark topology needs (1 org : 1 repo, so models never
+# collide on a shared repo's single-owner webhook). Runs on a GitHub runner
+# rather than a laptop because it git-clones ~3.5 GB of source fixtures and
+# force-pushes the head+base branch of each PR into every per-model copy —
+# datacenter bandwidth, transient disk. Idempotent: a copy whose branches
+# already match the source is skipped, so re-running after an interruption is
+# safe.
+#
+# Run this once (and after adding a model or a benchmark PR) before the
+# benchmark itself — `benchmark/run.ts` now hard-fails instead of silently
+# falling back to the shared single-tenant path when the isolated repos are
+# missing.
+
+on:
+    workflow_dispatch:
+        inputs:
+            only_model:
+                description: "Provision a single model's 5 repos (slug). Empty = all recommended models."
+                required: false
+                default: ""
+
+# Mutates the kodus-e2e org's repo set — never two provisioners at once.
+concurrency:
+    group: benchmark-provision-repos
+    cancel-in-progress: false
+
+permissions:
+    contents: read
+
+jobs:
+    provision:
+        name: provision isolated benchmark repos
+        runs-on: ubuntu-latest
+        # ~30 repos × (clone-mirror + 2-branch force-push) of large OSS fixtures.
+        timeout-minutes: 120
+        steps:
+            - name: Checkout monorepo
+              uses: actions/checkout@v6.0.2
+
+            - name: Setup Node
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "22"
+
+            - name: Install e2e deps
+              working-directory: tests/e2e
+              run: npm install --no-audit --no-fund
+
+            - name: Provision isolated repos
+              working-directory: tests/e2e
+              env:
+                  # PAT with repo create + push rights in the kodus-e2e org
+                  # (same token the benchmark/matrix use).
+                  GH_TEST_TOKEN: ${{ secrets.GH_TEST_TOKEN }}
+                  BENCH_ONLY_MODEL: ${{ github.event.inputs.only_model }}
+              run: npm run benchmark:provision
