@@ -102,6 +102,39 @@ jobs:
                   COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.env.HOME+'/.kodus-dev/cloud-tenants.json','utf8')).length)")
                   echo "Seeded $COUNT cloud tenants"
 
+            - name: Wait for QA backend to be healthy (avoid deploy-race 403s)
+              env:
+                  TARGET_WEB_URL: ${{ vars.CLOUD_QA_WEB_URL || 'https://qa.web.kodus.io' }}
+              run: |
+                  set -uo pipefail
+                  BASE="${TARGET_WEB_URL%/}/api/proxy/api"
+                  # Chained right after the QA GitOps deploy, the backend can still
+                  # be rolling out: the gateway then answers every request with an
+                  # nginx "403 Forbidden" (or 5xx / connection-refused), and the
+                  # matrix reports 40+ confusing `onboarding:login HTTP 403` cell
+                  # failures. Probe the auth layer with a throwaway bad-cred login
+                  # until it responds at the APP level (a real 400/401 for bad
+                  # creds) instead of the gateway, so the run starts against a
+                  # ready backend. A healthy QA passes on the first attempt.
+                  echo "Probing $BASE/auth/login for app-level readiness…"
+                  for i in $(seq 1 60); do
+                      code=$(curl -sS -o /dev/null -w '%{http_code}' \
+                          -X POST "$BASE/auth/login" \
+                          -H 'Content-Type: application/json' \
+                          -d '{"email":"readiness-probe@invalid.kodus","password":"x"}' \
+                          2>/dev/null || echo 000)
+                      case "$code" in
+                          200|201|400|401|404|422)
+                              echo "QA auth healthy (bad-cred login → HTTP $code) after $i attempt(s)."
+                              exit 0 ;;
+                          *)
+                              echo "attempt $i/60: HTTP $code (gateway/rollout) — waiting 10s…"
+                              sleep 10 ;;
+                      esac
+                  done
+                  echo "::error::QA backend never reached app-level readiness in ~10min — aborting before the matrix to avoid deploy-race false failures."
+                  exit 1
+
             - name: Run cloud matrix
               env:
                   # target.sh expects TARGET_BASE_URL + TARGET_WEB_URL.
