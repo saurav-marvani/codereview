@@ -50,6 +50,14 @@ scenarios:
     # RBAC authorization matrix (also in fast.yml). Signs up a throwaway org,
     # provisions one user per role, asserts 200/403 across API endpoints.
     - rbac-authorization
+    # RBAC frontend route guard (also in fast.yml): per role, next-auth HTTP
+    # sign-in + asserts the middleware /forbidden redirects per the route
+    # manifest.
+    - rbac-frontend-routes
+    # RBAC UI render (real browser, full-only like stripe-billing): drives
+    # Chromium per role and asserts the Token Usage menu item + /token-usage
+    # screen actually RENDER, and denied roles get a rendered /forbidden page.
+    - rbac-ui-render
 
 cells:
     # ---------- self-hosted (mirrors fast.yml) ----------
