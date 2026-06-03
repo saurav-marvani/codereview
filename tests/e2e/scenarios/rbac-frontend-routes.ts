@@ -92,7 +92,11 @@ async function nextAuthLogin(
     });
     absorb(jar, cbRes);
 
-    if (!jar.has("authjs.session-token")) {
+    // Auth.js v5 prefixes the cookie with __Secure- on https origins.
+    if (
+        !jar.has("authjs.session-token") &&
+        !jar.has("__Secure-authjs.session-token")
+    ) {
         throw new Error(
             `next-auth login for ${email} did not yield a session (HTTP ${cbRes.status})`,
         );

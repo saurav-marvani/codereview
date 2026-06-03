@@ -34,13 +34,27 @@ export const rbacUiRender: Scenario = {
         provider: ["github"],
         license: ["trial", "paid", "license-paid"],
     },
-    // 4 roles × (menu check + 5 route renders) in a real browser.
-    timeoutSec: 900,
+    // Full onboarding (finishOnboarding polls up to 300s) + 4 roles ×
+    // (menu check + 4 route renders) in a real browser.
+    timeoutSec: 1200,
     async run(ctx: RunContext) {
         ctx.assert(existsSync(SPEC), `Playwright spec not found at ${SPEC}`);
 
-        const { sessions } = await setupRbacOrg(ctx);
+        const { sessions, ownerEmail } = await setupRbacOrg(ctx);
         const roles = sessions.map((s) => ({ role: s.role, email: s.email }));
+
+        // The (app) layout redirects ANY page to /setup until the team is
+        // ACTIVE and platform_configs.finishOnboard is true — so the
+        // allow-side render assertions need a fully onboarded org, not just
+        // the signed-up one setupRbacOrg returns. Onboard it as the owner
+        // (same flow code-review-basic uses).
+        const ownerSession = await ctx.kodus.login({
+            email: ownerEmail,
+            password: RBAC_PASSWORD,
+        });
+        await ctx.kodus.registerIntegration(ownerSession);
+        const repo = await ctx.kodus.registerRepo(ownerSession);
+        await ctx.kodus.finishOnboarding(ownerSession, repo);
 
         const code = await new Promise<number>((done) => {
             const child = spawn("node", ["rbac-ui-render.mjs"], {

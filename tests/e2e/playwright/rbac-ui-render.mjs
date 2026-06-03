@@ -4,9 +4,8 @@
 // that the UI renders. This drives a real Chromium per role and asserts on the
 // rendered DOM — the "Token Usage" menu item appears only for allowed roles,
 // and each route in ROUTE_CHECKS (token-usage, pull-requests, git settings,
-// activity logs, cockpit) actually renders for allowed roles while denied
-// roles land on a rendered /forbidden page. Records a video + screenshots per
-// role × route.
+// cockpit) actually renders for allowed roles while denied roles land on a
+// rendered /forbidden page. Records a video + screenshots per role × route.
 //
 // Auth without the brittle sign-in form: we mint a next-auth session over HTTP
 // (validated flow) and inject the cookies straight into the browser context.
@@ -51,12 +50,11 @@ const ROUTE_CHECKS = [
         marker: "git settings",
         allowed: () => true,
     },
-    {
-        // Contributor read visibility (new): activity logs.
-        path: "/user-logs",
-        marker: "user activity logs",
-        allowed: () => true,
-    },
+    // NOTE: /user-logs is deliberately NOT here — the page is feature-gated
+    // (EE activity-logs) and redirects to /settings when the feature is off,
+    // so its render is environment-dependent, not role-dependent. The Logs
+    // RBAC grant is covered by rbac-authorization (API) and
+    // rbac-frontend-routes (middleware manifest).
     {
         // Cockpit stays admin-only — contributor/billing must hit /forbidden.
         path: "/cockpit",
