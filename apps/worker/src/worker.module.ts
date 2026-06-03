@@ -41,8 +41,9 @@ import { WorkerHealthGuardService } from './worker-health-guard.service';
 
 /**
  * Worker boots code-review OR analytics — never both. See
- * `./worker-role.ts` for the contract. Cloud and self-hosted run both
- * replicas so the topology is identical across environments.
+ * `./worker-role.ts` for the contract. Self-hosted telemetry is wired to the
+ * code-review role because that is the mandatory worker in every deployment;
+ * analytics is optional for community installs.
  */
 @Module({})
 export class WorkerModule {
@@ -78,6 +79,7 @@ export class WorkerModule {
                     PlatformModule,
                     SandboxModule, // provides SANDBOX_LEASE_MANAGER_TOKEN for OutboxRelayService
                     NotificationModule,
+                    SelfHostedBeaconModule,
                 ],
                 providers: [
                     WorkerDrainService,
@@ -86,6 +88,7 @@ export class WorkerModule {
                     ErrorRateMonitorService,
                     ReviewResponseMonitorService,
                     WebhookFailureMonitorService,
+                    SelfHostedBeaconCron,
                     LangfuseShutdownProvider,
                 ] satisfies Provider[],
             };
@@ -122,7 +125,6 @@ export class WorkerModule {
                 // and CockpitModule doesn't re-export that token.
                 CockpitModule,
                 OrganizationModule,
-                SelfHostedBeaconModule,
             ],
             providers: [
                 WorkerDrainService,
@@ -130,7 +132,6 @@ export class WorkerModule {
                 AnalyticsIngestionCron,
                 AnalyticsClassifierCron,
                 WeeklyRecapCron,
-                SelfHostedBeaconCron,
                 LangfuseShutdownProvider,
             ] satisfies Provider[],
         };

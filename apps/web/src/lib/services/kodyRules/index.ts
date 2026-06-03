@@ -43,4 +43,5 @@ export const KODY_RULES_PATHS = {
     ),
     MANAGE_IMPORTED_KODY_RULES: pathToApiUrl("/kody-rules/imported/manage"),
     COUNT_IMPORTED_KODY_RULES: pathToApiUrl("/kody-rules/imported/count"),
+    COUNTS_BY_REPOSITORY: pathToApiUrl("/kody-rules/counts-by-repository"),
 } as const;

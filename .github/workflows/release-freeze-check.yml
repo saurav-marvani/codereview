@@ -17,8 +17,15 @@ name: Release freeze eligibility
 #         blocked even though it's hidden from changelog, because it can
 #         change behavior in libs/code-review etc.
 #
-# When the freeze ruleset is disabled (most of the time), this status is
-# still posted but is not required for merge — so it's a no-op cost.
+# When the freeze ruleset is disabled (most of the time) this check posts
+# `success` and stays quiet — it does NOT red-flag every feat/fix PR
+# year-round, which was pure noise (a permanent ❌ trains everyone to
+# ignore the check, so the one week it matters nobody looks). The
+# ineligible verdict is only computed while the freeze is actually
+# active. Enforcement stays race-free because the release workflow's
+# freeze-on step re-posts this status on all open PRs the moment it
+# enables the ruleset, so a PR that was quietly `success` off-freeze gets
+# re-evaluated to `failure` when the freeze turns on.
 #
 # Bypass: repo admins can still "Bypass and merge" any PR while the
 # freeze is active; this check only changes the default path.
@@ -41,8 +48,30 @@ jobs:
                   REPO: ${{ github.repository }}
                   SHA: ${{ github.event.pull_request.head.sha }}
                   TITLE: ${{ github.event.pull_request.title }}
+                  # Set to "true" by the release workflow's freeze-on step and
+                  # back to "false"/unset by unfreeze. GITHUB_TOKEN cannot read
+                  # rulesets (no such permission scope), so this repo variable
+                  # is the freeze signal the check can see without a PAT.
+                  FREEZE_ACTIVE: ${{ vars.RELEASE_FREEZE_ACTIVE }}
               run: |
                   set -euo pipefail
+
+                  # Off-freeze (the common case) post success and stay quiet:
+                  # an ineligible verdict only matters while the freeze is on.
+                  # Without this the check red-flagged every feat/fix PR all
+                  # year — noise that trains everyone to ignore it. The freeze
+                  # workflow re-posts the real verdict on open PRs the moment it
+                  # flips the variable on, so enforcement is not weakened.
+                  if [ "${FREEZE_ACTIVE:-false}" != "true" ]; then
+                      gh api -X POST "repos/${REPO}/statuses/${SHA}" \
+                          -f state="success" \
+                          -f context="release-freeze-eligible" \
+                          -f description="release-freeze not active — advisory only" \
+                          -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+                          >/dev/null
+                      echo "::notice::release-freeze not active → posted success (no noise)"
+                      exit 0
+                  fi
 
                   # Match the Conventional Commits prefix at the very start
                   # of the title — same shape pr-title-check.yml enforces.

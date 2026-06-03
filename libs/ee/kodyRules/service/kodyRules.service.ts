@@ -215,6 +215,28 @@ export class KodyRulesService implements IKodyRulesService {
     }
 
     /**
+     * Per-(repo, directory) rule counts for an organization, computed in a
+     * single aggregation. Counts ACTIVE + PAUSED — the pool the user sees
+     * in the list (mirrors `useKodyRulesCount` on the web). Drives the per
+     * repository/directory count badges without fetching each repo's full
+     * rules array (and running enrichment) once per card.
+     */
+    async countRulesByRepository(
+        organizationId: string,
+    ): Promise<
+        Array<{
+            repositoryId: string;
+            directoryId: string | null;
+            count: number;
+        }>
+    > {
+        return this.kodyRulesRepository.countRulesByRepository(organizationId, [
+            KodyRulesStatus.ACTIVE,
+            KodyRulesStatus.PAUSED,
+        ]);
+    }
+
+    /**
      * Busca rules específicas por organização, repositório e diretório
      * Versão simplificada que filtra in-memory
      */
@@ -276,13 +298,23 @@ export class KodyRulesService implements IKodyRulesService {
             organizationAndTeamData.organizationId,
         );
 
+        // The new rule only consumes plan quota if it lands ACTIVE — quota
+        // counts ACTIVE only (see the gate in the existing-doc branch and
+        // getRulesLimitStatus). A rule created paused/pending doesn't count.
+        const newRuleCountsTowardQuota =
+            (kodyRule?.status ?? KodyRulesStatus.ACTIVE) ===
+            KodyRulesStatus.ACTIVE;
+
         // If no rules exist for the organization
         if (!existing) {
             if (kodyRule.uuid) {
                 throw new NotFoundException('Rule not found');
             }
 
-            await this.ensureFreePlanLimit(organizationAndTeamData, 1);
+            await this.ensureFreePlanLimit(
+                organizationAndTeamData,
+                newRuleCountsTowardQuota ? 1 : 0,
+            );
 
             const newRule: IKodyRule = {
                 uuid: v4(),
@@ -343,12 +375,19 @@ export class KodyRulesService implements IKodyRulesService {
 
         // If there is no UUID, it is a new rule
         if (!kodyRule.uuid) {
+            // Count ACTIVE only, matching the `/limits` endpoint
+            // (getRulesLimitStatus → countRules(ACTIVE)). Counting
+            // `!== DELETED` also counts PAUSED/PENDING rules the UI never
+            // shows against the quota, so the UI says "add away" while this
+            // gate rejects. Paused/pending rules aren't enforced and don't
+            // consume plan quota. The +1 is conditional: a rule created
+            // already paused/pending doesn't add to the active count.
             const activeRulesCount = (existing.rules ?? []).filter(
-                (r) => r.status !== KodyRulesStatus.DELETED,
+                (r) => r.status === KodyRulesStatus.ACTIVE,
             ).length;
             await this.ensureFreePlanLimit(
                 organizationAndTeamData,
-                activeRulesCount + 1,
+                activeRulesCount + (newRuleCountsTowardQuota ? 1 : 0),
             );
 
             const newRule: IKodyRule = {
@@ -415,9 +454,17 @@ export class KodyRulesService implements IKodyRulesService {
             throw new NotFoundException('Rule not found');
         }
 
+        // Normalize severity on the way in (create/addRule already do this);
+        // otherwise an update could persist a mixed-case severity that only
+        // looks consistent because find() lower-cases on read.
+        const mergedSeverity = (
+            kodyRule.severity ?? existingRule.severity
+        )?.toLowerCase();
+
         const updatedRule = {
             ...existingRule,
             ...kodyRule,
+            ...(mergedSeverity ? { severity: mergedSeverity } : {}),
             updatedAt: new Date(),
         };
 
@@ -540,9 +587,17 @@ export class KodyRulesService implements IKodyRulesService {
             throw new NotFoundException('Rule not found');
         }
 
+        // Normalize severity on the way in (create/addRule already do this);
+        // otherwise an update could persist a mixed-case severity that only
+        // looks consistent because find() lower-cases on read.
+        const mergedSeverity = (
+            kodyRule.severity ?? existingRule.severity
+        )?.toLowerCase();
+
         const updatedRule = {
             ...existingRule,
             ...kodyRule,
+            ...(mergedSeverity ? { severity: mergedSeverity } : {}),
             updatedAt: new Date(),
         };
 

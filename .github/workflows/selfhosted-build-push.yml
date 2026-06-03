@@ -99,7 +99,48 @@ jobs:
                   CURRENT=$(gh api "repos/${REPO}/rulesets/${RULESET_ID}")
                   echo "$CURRENT" | jq '.enforcement="active"' > /tmp/ruleset.json
                   gh api --method PUT "repos/${REPO}/rulesets/${RULESET_ID}" --input /tmp/ruleset.json | jq '{name, enforcement}'
+                  # Signal the freeze to release-freeze-check.yml, which can't
+                  # read rulesets with GITHUB_TOKEN and gates on this variable.
+                  gh variable set RELEASE_FREEZE_ACTIVE --body "true" -R "$REPO"
                   echo "::notice::main is now frozen — no PRs can merge until unfreeze-main runs."
+
+            - name: Re-evaluate freeze eligibility on open PRs
+              env:
+                  GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+                  REPO: ${{ github.repository }}
+              run: |
+                  set -euo pipefail
+                  # release-freeze-check.yml posts `success` while the freeze is
+                  # OFF (to stay quiet). Now that we just turned it ON, re-post
+                  # the real verdict on every open PR so ineligible ones
+                  # (feat/fix/perf/refactor) flip to `failure` immediately —
+                  # the check itself only re-runs on PR events, and flipping a
+                  # ruleset is not one, so without this an already-open
+                  # ineligible PR would keep its stale `success` and slip
+                  # through the freeze.
+                  gh pr list -R "$REPO" --state open --limit 200 \
+                      --json title,headRefOid \
+                      --jq '.[] | "\(.headRefOid)\t\(.title)"' > /tmp/open-prs.tsv || true
+                  while IFS=$'\t' read -r SHA TITLE; do
+                      [ -z "$SHA" ] && continue
+                      TYPE=$(printf '%s' "$TITLE" | grep -oE '^(feat|fix|perf|refactor|docs|style|test|chore|ci|build)' || true)
+                      case "$TYPE" in
+                          chore|ci|docs|build|test|style)
+                              STATE=success
+                              DESC="$TYPE: PR exempt from release-freeze (not user-facing, no runtime impact)"
+                              ;;
+                          *)
+                              STATE=failure
+                              DESC="${TYPE:-unknown}: PR blocked while release-freeze is active (touches runtime). Admins can Bypass and merge."
+                              ;;
+                      esac
+                      gh api -X POST "repos/${REPO}/statuses/${SHA}" \
+                          -f state="$STATE" \
+                          -f context="release-freeze-eligible" \
+                          -f description="$DESC" >/dev/null || true
+                      echo "  PR sha=${SHA:0:7} type=${TYPE:-?} -> $STATE"
+                  done < /tmp/open-prs.tsv
+                  echo "::notice::Re-posted release-freeze-eligible on all open PRs (freeze ON)"
 
     plan-release:
         name: Plan release (compute version and RC version)
@@ -606,7 +647,32 @@ jobs:
                   CURRENT=$(gh api "repos/${REPO}/rulesets/${RULESET_ID}")
                   echo "$CURRENT" | jq '.enforcement="disabled"' > /tmp/ruleset.json
                   gh api --method PUT "repos/${REPO}/rulesets/${RULESET_ID}" --input /tmp/ruleset.json | jq '{name, enforcement}'
+                  # Clear the freeze signal read by release-freeze-check.yml.
+                  gh variable set RELEASE_FREEZE_ACTIVE --body "false" -R "$REPO"
                   echo "::notice::main is unfrozen — PRs can merge again."
+
+            - name: Clear freeze-eligibility red on open PRs
+              env:
+                  GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+                  REPO: ${{ github.repository }}
+              run: |
+                  set -euo pipefail
+                  # Symmetric to the freeze-on re-post: now that the freeze is
+                  # OFF, flip every open PR's release-freeze-eligible back to
+                  # `success` so no stale ❌ lingers (it's already advisory once
+                  # the ruleset is disabled, but a leftover red is exactly the
+                  # noise this whole change removes). New events would clear it
+                  # anyway; this just does it immediately.
+                  gh pr list -R "$REPO" --state open --limit 200 \
+                      --json headRefOid --jq '.[].headRefOid' > /tmp/open-shas.txt || true
+                  while read -r SHA; do
+                      [ -z "$SHA" ] && continue
+                      gh api -X POST "repos/${REPO}/statuses/${SHA}" \
+                          -f state="success" \
+                          -f context="release-freeze-eligible" \
+                          -f description="release-freeze not active — advisory only" >/dev/null || true
+                  done < /tmp/open-shas.txt
+                  echo "::notice::Cleared release-freeze-eligible to success on all open PRs (freeze OFF)"
 
     notify-discord-failure:
         name: Notify Discord (failure only)

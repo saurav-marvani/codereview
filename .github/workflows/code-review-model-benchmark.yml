@@ -132,13 +132,21 @@ jobs:
               run: npm run benchmark:recollect || echo "recollect step failed (non-gating)"
 
             - name: Scorecard (artifact, not a gate)
+              id: scorecard
               if: always()
               working-directory: tests/e2e
               env:
                   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
               # Never fail the job on the quality scorecard — the gate is the
-              # mechanical "all reviews completed" step above.
-              run: npm run benchmark:scorecard || echo "scorecard step failed (non-gating)"
+              # mechanical "all reviews completed" step above. Capture the printed
+              # table into a step output so the success notification can post it.
+              run: |
+                  npm run benchmark:scorecard 2>&1 | tee /tmp/scorecard.txt || echo "scorecard step failed (non-gating)"
+                  {
+                      echo 'table<<SCORECARD_EOF'
+                      grep -vE '^> |^npm |^$' /tmp/scorecard.txt | tail -n 40 || echo '(scorecard unavailable)'
+                      echo 'SCORECARD_EOF'
+                  } >> "$GITHUB_OUTPUT"
 
             - name: Upload results + scorecard
               if: always()
@@ -166,3 +174,17 @@ jobs:
                       Scope: ${{ steps.scope.outputs.only_model != '' && format('only_model={0}', steps.scope.outputs.only_model) || 'FULL (5 models)' }}
                       Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
                       Trigger: ${{ github.event_name }}
+
+            - name: Notify Discord on success (scorecard)
+              if: success()
+              uses: ./.github/actions/discord-notify
+              with:
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
+                  status: success
+                  title: "✅ Model code-review benchmark — scorecard"
+                  description: |
+                      Scope: ${{ steps.scope.outputs.only_model != '' && format('only_model={0}', steps.scope.outputs.only_model) || 'FULL (5 models)' }}
+                      ```
+                      ${{ steps.scorecard.outputs.table }}
+                      ```
+                      Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

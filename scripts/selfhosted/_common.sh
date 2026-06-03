@@ -188,5 +188,7 @@ ssh_to() {
         -o UserKnownHostsFile=/dev/null \
         -o LogLevel=ERROR \
         -o ConnectTimeout=10 \
+        -o ServerAliveInterval=30 \
+        -o ServerAliveCountMax=3 \
         "root@$ip" "$@"
 }

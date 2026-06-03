@@ -65,45 +65,52 @@ interface TenantSpec {
     name: string;
     license: TenantLicense;
     provider: ProviderName;
-    repoFullName: string;
+    // Dedicated cloud fixture repo for this tenant. REQUIRED for GitHub
+    // PAT tenants and honoured only there (makeProvider forwards it to
+    // the GitHub provider via repoOverride; the other providers resolve
+    // their cloud repo from env). Optional for the rest.
+    repoFullName?: string;
 }
 
 // Tenant registry. Names can only contain letters / spaces / hyphens /
 // apostrophes (Kodus validates `^[A-Za-z\s\-']+$` server-side), so no
 // digits in the visible name.
 //
-// Repos are shared across tiers of the same provider — license tier is
-// per-org on cloud (Stripe-driven), so each tier needs its own
-// organization, but webhooks from a single repo can be disambiguated
-// by Kodus per integration (App installation id for GitHub, OAuth/PAT
-// integration uuid for GitLab/Bitbucket/Azure). One downside: the
-// `generateKodyRulesUseCase` step at finish-onboarding reads the
-// repo's PR history regardless of which org is onboarding, so the
-// rules generated for tier B can be shaped by traffic from tier A —
-// acceptable for the QA matrix where the license-attribution and
-// per-seat gates are the real signal; revisit if a scenario needs
-// strictly isolated rule histories.
+// GitHub PAT tenants get ONE REPO EACH (1 org : 1 repo). License tier is
+// per-org on cloud (Stripe-driven), so every tier is a distinct Kodus
+// org. The PAT webhook is a bare `/github/webhook` with no per-org
+// discriminator, and the backend resolves repo→org by picking the first
+// IntegrationConfig ordered by updatedAt DESC (webhook-context.service
+// .getContext / save.use-case). So if several orgs share one repo, a
+// PR's review fires for whichever org most recently touched its repo
+// config — NOT reliably the org under test — and the scenario times out
+// waiting for a review that landed on someone else (or got silently
+// dropped). Giving each tenant its own repo removes the ambiguity
+// entirely, matching what GitLab/Bitbucket/Azure already get for free
+// (one org per repo on cloud). github-app is already isolated on its
+// App-bound repo. Provision the repos with scripts/e2e/provision-cloud-
+// github-repos.sh before the first seed.
 const TENANTS: TenantSpec[] = [
     {
         email: "e2e-paid-gh@kodus.io",
         name: "Smoke Paid GitHub",
         license: "paid",
         provider: "github",
-        repoFullName: "kodus-e2e/tiny-url",
+        repoFullName: "kodus-e2e/tiny-url-cloud-paid",
     },
     {
         email: "e2e-free-gh@kodus.io",
         name: "Smoke Free GitHub",
         license: "free",
         provider: "github",
-        repoFullName: "kodus-e2e/tiny-url",
+        repoFullName: "kodus-e2e/tiny-url-cloud-free",
     },
     {
         email: "e2e-trial-gh@kodus.io",
         name: "Smoke Trial GitHub",
         license: "trial",
         provider: "github",
-        repoFullName: "kodus-e2e/tiny-url",
+        repoFullName: "kodus-e2e/tiny-url-cloud-trial",
     },
     {
         email: "e2e-paid-gl@kodus.io",
@@ -134,7 +141,7 @@ const TENANTS: TenantSpec[] = [
         name: "Smoke Community BYOK GitHub",
         license: "community-byok",
         provider: "github",
-        repoFullName: "kodus-e2e/tiny-url",
+        repoFullName: "kodus-e2e/tiny-url-cloud-community",
     },
     {
         // Stripe billing scenario — sub-flow #1 (free → paid via
@@ -149,7 +156,7 @@ const TENANTS: TenantSpec[] = [
         name: "Stripe Checkout Free GitHub",
         license: "free",
         provider: "github",
-        repoFullName: "kodus-e2e/tiny-url",
+        repoFullName: "kodus-e2e/tiny-url-cloud-stripe-free",
     },
     {
         // Stripe billing scenario — sub-flow #2 (trial → paid via
@@ -161,7 +168,7 @@ const TENANTS: TenantSpec[] = [
         name: "Stripe Checkout Trial GitHub",
         license: "trial",
         provider: "github",
-        repoFullName: "kodus-e2e/tiny-url",
+        repoFullName: "kodus-e2e/tiny-url-cloud-stripe-trial",
     },
     {
         // GitHub App (OAuth installation) variant. Needs a DEDICATED
@@ -183,6 +190,38 @@ const TENANTS: TenantSpec[] = [
         repoFullName: "kodus-e2e/tiny-url-app",
     },
 ];
+
+// Fail-fast invariant: every GitHub PAT tenant MUST have its own repo,
+// and no two may share one. This is the whole point of the 1 org : 1
+// repo fix — a regression here (a new github tenant pointed at a sibling's
+// repo, or left without `repoFullName`) silently reintroduces the
+// webhook fan-out collision. Catch it at load time, loudly, instead of
+// as a flaky "review never started" three matrix runs later.
+function validateGithubRepoIsolation(tenants: TenantSpec[]): void {
+    const seen = new Map<string, string>();
+    const problems: string[] = [];
+    for (const t of tenants) {
+        if (t.provider !== "github") continue; // github-app + others are already isolated
+        if (!t.repoFullName) {
+            problems.push(`${t.email}: github tenant has no dedicated repoFullName`);
+            continue;
+        }
+        const prior = seen.get(t.repoFullName);
+        if (prior) {
+            problems.push(
+                `${t.repoFullName} is shared by ${prior} and ${t.email} — github tenants must not share a repo`,
+            );
+        } else {
+            seen.set(t.repoFullName, t.email);
+        }
+    }
+    if (problems.length) {
+        throw new Error(
+            `[cloud-setup] github repo-isolation invariant violated:\n  - ${problems.join("\n  - ")}`,
+        );
+    }
+}
+validateGithubRepoIsolation(TENANTS);
 
 interface SavedTenant extends TenantSpec {
     password: string;
@@ -435,18 +474,23 @@ async function connectProvider(
     repoRegistered: boolean;
     onboardingFinished: boolean;
 }> {
-    // Provider PATs + repo addressing come from the same env vars the
-    // self-hosted matrix uses (GH_TEST_TOKEN / GH_TEST_REPO / GL_*,
-    // BB_*, AZ_TEST_ORG/PROJECT/REPO). All cloud tenants point at the
-    // same fixture repos as self-hosted — there's nothing per-tenant
-    // to override here. The earlier attempt to overwrite e.g.
-    // `AZ_TEST_REPO` with the full `<org>/<project>/<repo>` path broke
-    // the Azure provider because it composes the URL from the three
-    // separate env pieces and the merged string isn't a valid repo
-    // name. Leave env alone.
-    // Cloud tenant seeding uses the cloud-target repo so onboarding registers
-    // the same `*-cloud` fixture repo the cloud cells open PRs against.
-    const provider = makeProvider(tenant.provider, "cloud");
+    // Provider PATs come from the same env vars the self-hosted matrix
+    // uses (GH_TEST_TOKEN / GL_*, BB_*, AZ_TEST_ORG/PROJECT/REPO).
+    //
+    // Repo addressing: GitHub PAT tenants pin their OWN repo via
+    // `tenant.repoFullName` (1 org : 1 repo — see the registry comment),
+    // forwarded as makeProvider's repoOverride. The other providers
+    // ignore the override and resolve their cloud repo from env
+    // (GL_TEST_REPO_CLOUD etc.) — they're already 1 org : 1 repo on
+    // cloud. NB: an earlier attempt to overwrite `AZ_TEST_REPO` with the
+    // full `<org>/<project>/<repo>` path broke Azure (it composes the URL
+    // from three separate env pieces), which is exactly why the override
+    // is scoped to GitHub only and the others keep reading env.
+    const provider = makeProvider(
+        tenant.provider,
+        "cloud",
+        tenant.repoFullName,
+    );
     await registerIntegration(target, provider, session);
     // Wait for /code-management/auth-integration's async post-processing
     // to land before /repositories queries depend on it. The UI flow

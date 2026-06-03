@@ -92,36 +92,36 @@ const severityOptions: {
     textColor: string;
     borderColor: string;
 }[] = [
-    {
-        value: "low",
-        label: "Low",
-        description: "Minor improvements and low-risk issues",
-        textColor: "text-info",
-        borderColor: "border-info",
-    },
-    {
-        value: "medium",
-        label: "Medium",
-        description: "Recommended fixes that improve correctness or quality",
-        textColor: "text-alert",
-        borderColor: "border-alert",
-    },
-    {
-        value: "high",
-        label: "High",
-        description: "Important problems that should be fixed in the PR",
-        textColor: "text-warning",
-        borderColor: "border-warning",
-    },
-    {
-        value: "critical",
-        label: "Critical",
-        description:
-            "Severe bugs, security vulnerabilities, or data loss risks",
-        textColor: "text-danger",
-        borderColor: "border-danger",
-    },
-];
+        {
+            value: "low",
+            label: "Low",
+            description: "Minor improvements and low-risk issues",
+            textColor: "text-info",
+            borderColor: "border-info",
+        },
+        {
+            value: "medium",
+            label: "Medium",
+            description: "Recommended fixes that improve correctness or quality",
+            textColor: "text-alert",
+            borderColor: "border-alert",
+        },
+        {
+            value: "high",
+            label: "High",
+            description: "Important problems that should be fixed in the PR",
+            textColor: "text-warning",
+            borderColor: "border-warning",
+        },
+        {
+            value: "critical",
+            label: "Critical",
+            description:
+                "Severe bugs, security vulnerabilities, or data loss risks",
+            textColor: "text-danger",
+            borderColor: "border-danger",
+        },
+    ];
 
 const severitySliderOptions = {
     low: { label: "Low", value: 0 },
@@ -190,7 +190,7 @@ const getKodyRulePathWithoutDirectoryPath = ({
 }: {
     rule: KodyRule;
     directory: FormattedDirectoryCodeReviewConfig;
-}) => rule.path.replace(getDirectoryPathForReplace(directory), "");
+}) => (rule.path ?? "").replace(getDirectoryPathForReplace(directory), "");
 
 const DEFAULT_PATH_FOR_DIRECTORIES = "**";
 
@@ -382,9 +382,9 @@ export const KodyRuleAddOrUpdateItemModal = ({
                 initialScope === "pull-request"
                     ? ""
                     : rule
-                      ? !directory
-                          ? rule.path
-                          : (() => {
+                        ? !directory
+                            ? rule.path
+                            : (() => {
                                 const pathWithoutDirectory =
                                     getKodyRulePathWithoutDirectoryPath({
                                         directory,
@@ -395,9 +395,9 @@ export const KodyRuleAddOrUpdateItemModal = ({
                                     DEFAULT_PATH_FOR_DIRECTORIES
                                 );
                             })()
-                      : directory
-                        ? DEFAULT_PATH_FOR_DIRECTORIES
-                        : "",
+                        : directory
+                            ? DEFAULT_PATH_FOR_DIRECTORIES
+                            : "",
             rule: rule?.rule ?? "",
             title: rule?.title ?? "",
             severity: rule ? resolveKodyRuleDisplaySeverity(rule) : "high",
@@ -870,7 +870,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
                                                                     className={cn(
                                                                         "h-auto flex-1 items-start px-4 py-4",
                                                                         isSelected &&
-                                                                            "ring-primary-light ring-2",
+                                                                        "ring-primary-light ring-2",
                                                                     )}>
                                                                     <div className="flex w-full items-start justify-between gap-3">
                                                                         <div className="flex items-start gap-3">
@@ -1025,15 +1025,15 @@ export const KodyRuleAddOrUpdateItemModal = ({
                                                     error={fieldState.error}
                                                     className={cn(
                                                         directory &&
-                                                            !isInherited &&
-                                                            watchScope ===
-                                                                "file" &&
-                                                            "rounded-l-none",
+                                                        !isInherited &&
+                                                        watchScope ===
+                                                        "file" &&
+                                                        "rounded-l-none",
                                                     )}
                                                     disabled={
                                                         field.disabled ||
                                                         watchScope ===
-                                                            "pull-request"
+                                                        "pull-request"
                                                     }
                                                     onChange={(e) =>
                                                         field.onChange(
@@ -1185,13 +1185,13 @@ export const KodyRuleAddOrUpdateItemModal = ({
                                                             <div className="flex flex-col gap-3">
                                                                 <span className="text-text-primary text-xs font-medium">
                                                                     {watchScope ===
-                                                                    "file"
+                                                                        "file"
                                                                         ? "File context"
                                                                         : "PR context"}
                                                                 </span>
                                                                 <div className="flex flex-wrap gap-1.5">
                                                                     {(watchScope ===
-                                                                    "file"
+                                                                        "file"
                                                                         ? FILE_CONTEXT_VARIABLES
                                                                         : PR_CONTEXT_VARIABLES
                                                                     ).map(
@@ -1358,7 +1358,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
                                                     value={
                                                         severitySliderOptions[
                                                             field.value ??
-                                                                "high"
+                                                            "high"
                                                         ]?.value ?? 2
                                                     }
                                                     disabled={field.disabled}

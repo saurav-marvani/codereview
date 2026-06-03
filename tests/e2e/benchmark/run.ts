@@ -72,10 +72,14 @@ function loadPRs(): BenchPR[] {
 // QA tenants; override via env for a one-off. signUp is idempotent (409-OK),
 // so first run creates it and later runs reuse it.
 async function getSession(): Promise<KodusSession> {
-    const email = process.env.BENCH_TENANT_EMAIL ?? "e2e-bench-tier0@kodus.io";
+    // `||` (not `??`) so an EMPTY string falls through to the default too.
+    // CI passes `${{ secrets.X }}` which is "" when the secret is unset, and
+    // "" is not null/undefined → `??` would keep it → empty creds → 401. An
+    // empty email/password is never valid here, so `||` is strictly safer.
+    const email = process.env.BENCH_TENANT_EMAIL || "e2e-bench-tier0@kodus.io";
     const password =
-        process.env.BENCH_TENANT_PASSWORD ??
-        process.env.TEST_USER_PASSWORD ??
+        process.env.BENCH_TENANT_PASSWORD ||
+        process.env.TEST_USER_PASSWORD ||
         "E2eBench!a1b2c3d4";
     await signUp(QA, { email, password }).catch(() => {});
     return login(QA, { email, password });
@@ -344,7 +348,7 @@ async function runModelShared(
 }
 
 const benchPassword = () =>
-    process.env.BENCH_TENANT_PASSWORD ?? process.env.TEST_USER_PASSWORD ?? "E2eBench!a1b2c3d4";
+    process.env.BENCH_TENANT_PASSWORD || process.env.TEST_USER_PASSWORD || "E2eBench!a1b2c3d4";
 
 // PARALLEL mode: each model gets its OWN tenant + its OWN copy of the fixture
 // repos (kodus-e2e/<base>-<slug>), so no BYOK clobber and no shared-repo webhook

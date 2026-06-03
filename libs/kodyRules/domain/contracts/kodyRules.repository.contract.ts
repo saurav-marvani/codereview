@@ -31,6 +31,23 @@ export interface IKodyRulesRepository {
         status?: KodyRulesStatus,
     ): Promise<number>;
 
+    /**
+     * Counts rules per (repositoryId, directoryId) for an organization in a
+     * single aggregation. Replaces fetching every repo's full rules array
+     * client-side just to read a `.length` per card. `directoryId` is null
+     * for repository-level rules.
+     */
+    countRulesByRepository(
+        organizationId: string,
+        statuses: KodyRulesStatus[],
+    ): Promise<
+        Array<{
+            repositoryId: string;
+            directoryId: string | null;
+            count: number;
+        }>
+    >;
+
     update(
         uuid: string,
         updateData: Partial<IKodyRules>,

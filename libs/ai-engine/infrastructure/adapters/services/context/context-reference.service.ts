@@ -175,6 +175,10 @@ export class ContextReferenceService implements IContextReferenceService {
         return this.repository.findById(uuid);
     }
 
+    async findByIds(uuids: string[]): Promise<ContextReferenceEntity[]> {
+        return this.repository.findByIds(uuids);
+    }
+
     async update(
         filter: Partial<IContextReference>,
         data: Partial<IContextReference>,

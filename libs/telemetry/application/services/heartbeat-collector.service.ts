@@ -66,8 +66,16 @@ export interface HeartbeatMetrics {
     };
 }
 
+export const HEARTBEAT_COLLECTOR_SERVICE_TOKEN = Symbol.for(
+    'HeartbeatCollectorService',
+);
+
+export interface IHeartbeatCollectorService {
+    collect(input: { firstSeenAt: Date }): Promise<HeartbeatMetrics>;
+}
+
 @Injectable()
-export class HeartbeatCollectorService {
+export class HeartbeatCollectorService implements IHeartbeatCollectorService {
     private readonly logger = createLogger(HeartbeatCollectorService.name);
 
     constructor(

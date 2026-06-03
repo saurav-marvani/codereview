@@ -64,6 +64,25 @@ describe('KodyRulesValidationService', () => {
 
             expect(result).toBe(false);
         });
+
+        it('allows exactly MAX_KODY_RULES (10) at the boundary', async () => {
+            // The ceiling is inclusive (`<= 10`): the 10th rule is allowed,
+            // only the 11th is rejected. Pins the off-by-one boundary.
+            shouldLimitResourcesMock.mockResolvedValue(true);
+
+            expect(
+                await service.validateRulesLimit(
+                    { organizationId: 'org-1' } as any,
+                    service.MAX_KODY_RULES,
+                ),
+            ).toBe(true);
+            expect(
+                await service.validateRulesLimit(
+                    { organizationId: 'org-1' } as any,
+                    service.MAX_KODY_RULES + 1,
+                ),
+            ).toBe(false);
+        });
     });
 
     describe('filterKodyRules', () => {

@@ -12,6 +12,7 @@ import { FindLibraryKodyRulesBucketsUseCase } from '@libs/kodyRules/application/
 import { FindLibraryKodyRulesWithFeedbackUseCase } from '@libs/kodyRules/application/use-cases/find-library-kody-rules-with-feedback.use-case';
 import { FindLibraryKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/find-library-kody-rules.use-case';
 import { FindRecommendedKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/find-recommended-kody-rules.use-case';
+import { CountRulesByRepositoryUseCase } from '@libs/kodyRules/application/use-cases/count-rules-by-repository.use-case';
 import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/find-rules-in-organization-by-filter.use-case';
 import { FindSuggestionsByRuleUseCase } from '@libs/kodyRules/application/use-cases/find-suggestions-by-rule.use-case';
 import { GenerateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/generate-kody-rules.use-case';
@@ -118,6 +119,7 @@ export class KodyRulesController {
         private readonly importFastKodyRulesUseCase: ImportFastKodyRulesUseCase,
         private readonly convertPendingUpdatesToMemoriesUseCase: ConvertPendingUpdatesToMemoriesUseCase,
         private readonly manageImportedKodyRulesUseCase: ManageImportedKodyRulesUseCase,
+        private readonly countRulesByRepositoryUseCase: CountRulesByRepositoryUseCase,
         @Inject(REQUEST)
         private readonly request: UserRequest,
     ) {}
@@ -187,6 +189,28 @@ export class KodyRulesController {
     @ApiOkResponse({ type: KodyRulesLimitResponseDto })
     public async getRulesLimitStatus() {
         return this.getRulesLimitStatusUseCase.execute();
+    }
+
+    @ApiBearerAuth('jwt')
+    @Get('/counts-by-repository')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.KodyRules,
+        }),
+    )
+    @ApiOperation({
+        summary: 'Count rules per repository/directory',
+        description:
+            'Returns ACTIVE+PAUSED rule counts grouped by (repositoryId, ' +
+            'directoryId) for the org in a single aggregation. Drives the ' +
+            'per-repository/directory count badges without fetching each ' +
+            "repo's full rules array per card.",
+    })
+    @ApiOkResponse({ type: ApiArrayResponseDto })
+    public async countRulesByRepository() {
+        return this.countRulesByRepositoryUseCase.execute();
     }
 
     @ApiBearerAuth('jwt')

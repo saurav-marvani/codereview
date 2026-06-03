@@ -112,9 +112,13 @@ export const KodyRuleItem = ({
 
     return (
         <Card>
-            <CardHeader className="flex-row items-start justify-between gap-10">
-                <div className="-mb-2 flex flex-col gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
+            <CardHeader className="flex-row items-start justify-between gap-4">
+                <div className="-mb-2 flex min-w-0 flex-1 flex-col gap-2">
+                    <Heading variant="h3" className="text-base">
+                        {rule.title}
+                    </Heading>
+
+                    <div className="flex flex-wrap items-center gap-1.5">
                         {selection?.eligible && (
                             <input
                                 type="checkbox"
@@ -233,10 +237,6 @@ export const KodyRuleItem = ({
                             </Tooltip>
                         )}
                     </div>
-
-                    <Heading variant="h3" className="text-base">
-                        {rule.title}
-                    </Heading>
                 </div>
 
                 <div className="flex items-center gap-2">

@@ -1,10 +1,18 @@
 import { useMemo } from "react";
-import { useFetch, useSuspenseFetch } from "src/core/utils/reactQuery";
+import {
+    useFetch,
+    useSuspenseFetch,
+    useSuspenseFetchMany,
+} from "src/core/utils/reactQuery";
 import { useSubscriptionStatus } from "src/features/ee/subscription/_hooks/use-subscription-status";
+
+import {
+    resolveRepoCount,
+    type KodyRuleRepositoryCount,
+} from "src/core/utils/kody-rules/repo-count";
 
 import { KODY_RULES_PATHS } from ".";
 import {
-    KodyRulesStatus,
     type KodyRule,
     type KodyRulesType,
     type KodyRuleWithInheritanceDetails,
@@ -100,31 +108,66 @@ export const useSuspenseGetInheritedKodyRules = (params: {
     }>(KODY_RULES_PATHS.GET_INHERITED_RULES, { params });
 };
 
+type InheritedKodyRules = {
+    globalRules: KodyRuleWithInheritanceDetails[];
+    repoRules: KodyRuleWithInheritanceDetails[];
+    directoryRules: KodyRuleWithInheritanceDetails[];
+};
+
+/**
+ * Loads the two heavy data sets the Kody Rules page needs — the scope's own
+ * rules and the inherited rules — IN PARALLEL.
+ *
+ * Calling `useSuspenseKodyRulesByRepositoryId` and
+ * `useSuspenseGetInheritedKodyRules` back-to-back waterfalls: the component
+ * suspends on the first, so the inherited request only starts once the scope
+ * request resolves. This fires both at once (wall-clock = slowest of the two).
+ * The query keys match the single-fetch hooks, so the cache is shared.
+ */
+export const useSuspenseKodyRulesPageData = (params: {
+    teamId: string;
+    repositoryId: string;
+    directoryId?: string;
+}) => {
+    const { teamId, repositoryId, directoryId } = params;
+
+    const [scopeRules, inherited] = useSuspenseFetchMany<
+        [Array<KodyRule>, InheritedKodyRules]
+    >([
+        {
+            url: KODY_RULES_PATHS.FIND_BY_ORGANIZATION_ID_AND_FILTER,
+            params: { params: { repositoryId, directoryId } },
+        },
+        {
+            url: KODY_RULES_PATHS.GET_INHERITED_RULES,
+            params: { params: { teamId, repositoryId, directoryId } },
+        },
+    ]);
+
+    return { scopeRules, inherited };
+};
+
 export const useKodyRulesCount = (
     repositoryId: string,
     directoryId?: string,
     enabled = true,
 ) => {
-    const { data } = useFetch<Array<KodyRule>>(
-        KODY_RULES_PATHS.FIND_BY_ORGANIZATION_ID_AND_FILTER,
-        { params: { repositoryId, directoryId } },
+    // One shared aggregated request for the whole org. The query key carries
+    // no per-repo params, so every repository/directory count badge on the
+    // settings page de-dupes to a SINGLE request via the React Query cache.
+    // Previously each card fetched its repo's full rules array (and ran
+    // context-reference enrichment server-side) just to read a length — N
+    // heavy requests for N cards. The backend returns ACTIVE+PAUSED counts,
+    // matching the pool the user sees in the list.
+    const { data } = useFetch<Array<KodyRuleRepositoryCount>>(
+        KODY_RULES_PATHS.COUNTS_BY_REPOSITORY,
+        undefined,
         enabled,
         { staleTime: 60_000 },
     );
 
-    return useMemo(() => {
-        if (!data) return 0;
-
-        // Count anything that actually shows up in the user's list:
-        // ACTIVE and PAUSED (rules that are visible, just enforced or
-        // paused respectively). Mirrors the same `status !== DELETED &&
-        // status !== APPLIED` filter the backend listing endpoint
-        // applies, so the sidebar count stays consistent with what the
-        // Kody Rules page renders.
-        return data.filter(
-            (rule) =>
-                rule.status === KodyRulesStatus.ACTIVE ||
-                rule.status === KodyRulesStatus.PAUSED,
-        ).length;
-    }, [data]);
+    return useMemo(
+        () => resolveRepoCount(data, repositoryId, directoryId),
+        [data, repositoryId, directoryId],
+    );
 };

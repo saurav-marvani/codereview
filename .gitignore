@@ -152,6 +152,7 @@ skills-lock.json
 evals/promptfoo/results/
 evals/promptfoo-safeguard/results/
 scripts/benchmark/results/
+scripts/benchmark/node_modules/
 scripts/benchmark/*-trace-metrics.json
 evals/investigation/evals/
 
@@ -217,3 +218,6 @@ parity-report.json
 
 # IDE - Zed
 .zed/
+
+opus-diagnosis-ptbr/
+scripts/benchmark/node_modules/

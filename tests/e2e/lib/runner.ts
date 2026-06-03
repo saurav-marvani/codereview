@@ -154,6 +154,11 @@ interface CloudTenantEntry {
     provider: ProviderName;
     organizationId?: string;
     teamId?: string;
+    // Per-tenant fixture repo persisted by setup-tenants. Drives the
+    // provider's repo for this cell so each cloud GitHub tenant runs on
+    // its own repo (1 org : 1 repo). Absent for providers that don't
+    // need isolation → falls back to the env-resolved per-target repo.
+    repoFullName?: string;
 }
 
 function readCloudTenantsFile(): CloudTenantEntry[] {
@@ -183,7 +188,12 @@ async function resolveTenantForCell(
         const match = entries.find(
             (e) => e.provider === provider && e.license === license,
         );
-        if (match) return { email: match.email, password: match.password };
+        if (match)
+            return {
+                email: match.email,
+                password: match.password,
+                repoFullName: match.repoFullName,
+            };
 
         // Legacy fallback: per-license env vars (CLOUD_TENANT_PAID_EMAIL
         // etc.). Kept so a one-off run can drive a hand-seeded tenant
@@ -257,33 +267,60 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
     // or webhook bursts on auto-closed orphans across all providers.
     // Cleaning up here makes every run start from a known-clean
     // state regardless of how the previous one ended. Deduped on
-    // provider so 4 cells × 1 provider only hit the upstream API
-    // once. `opts.dryRun` short-circuits (no upstream calls).
+    // (provider, repo): cloud GitHub tenants each own a SEPARATE repo
+    // (1 org : 1 repo), so a stale [e2e] PR can hide on a sibling
+    // tenant's repo and 409 its next run — visit every distinct repo,
+    // not just every provider. `opts.dryRun` short-circuits.
     if (!opts.dryRun) {
-        const uniqueProviders = Array.from(
-            new Set(
-                opts.cells
-                    .filter((c) => c.target === opts.target)
-                    .map((c) => c.provider),
-            ),
-        );
-        for (const providerName of uniqueProviders) {
+        // Index the cloud tenants by (provider, license) once so the
+        // per-cell repo lookup below is an O(1) Map.get instead of a
+        // .find() scan inside the loop.
+        const repoByProviderLicense = new Map<string, string | undefined>();
+        if (opts.target === "cloud") {
+            for (const e of readCloudTenantsFile()) {
+                repoByProviderLicense.set(
+                    `${e.provider}::${e.license}`,
+                    e.repoFullName,
+                );
+            }
+        }
+        const fixtures = new Map<
+            string,
+            { provider: ProviderName; repo?: string }
+        >();
+        for (const c of opts.cells) {
+            if (c.target !== opts.target) continue;
+            const repo =
+                opts.target === "cloud"
+                    ? repoByProviderLicense.get(`${c.provider}::${c.license}`)
+                    : undefined;
+            fixtures.set(`${c.provider}::${repo ?? "default"}`, {
+                provider: c.provider,
+                repo,
+            });
+        }
+        for (const { provider: providerName, repo } of fixtures.values()) {
+            const label = `${providerName}${repo ? ` (${repo})` : ""}`;
             try {
-                const provider = makeProvider(providerName, opts.target);
+                const provider = makeProvider(
+                    providerName,
+                    opts.target,
+                    repo,
+                );
                 const { closed } = await provider.cleanupStaleE2EArtifacts();
                 if (closed > 0) {
                     log.info(
-                        `[cleanup] ${providerName}: abandoned ${closed} stale [e2e]-prefixed PR(s) from prior runs`,
+                        `[cleanup] ${label}: abandoned ${closed} stale [e2e]-prefixed PR(s) from prior runs`,
                     );
                 }
             } catch (err) {
                 // Best-effort. Don't poison the entire matrix run just
-                // because cleanup couldn't list PRs on one provider —
+                // because cleanup couldn't list PRs on one fixture —
                 // the per-scenario open path still throws its own
                 // specific error if a stale PR ends up blocking it,
                 // and that error is what the operator sees.
                 log.info(
-                    `[cleanup] ${providerName}: skipped (${err instanceof Error ? err.message : String(err)})`,
+                    `[cleanup] ${label}: skipped (${err instanceof Error ? err.message : String(err)})`,
                 );
             }
         }
@@ -333,7 +370,11 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
             log.info(`RUN   ${cellLabel}`);
             const t0 = Date.now();
             try {
-                const provider = makeProvider(cell.provider, cell.target);
+                const provider = makeProvider(
+                    cell.provider,
+                    cell.target,
+                    tenant?.repoFullName,
+                );
                 const scenarioArtifactDir = join(
                     artifactDir,
                     `${scenario.id}-${cell.target}-${cell.provider}-${cell.license}`,
