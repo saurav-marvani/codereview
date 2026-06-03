@@ -88,8 +88,23 @@ export async function createThrowawayRepo(
 
     const tmp = mkdtempSync(join(tmpdir(), "e2e-mirror-"));
     try {
-        const src = `https://x-access-token:${token()}@github.com/${baseRepo}.git`;
-        const dst = `https://x-access-token:${token()}@github.com/${full}.git`;
+        // Token deliberately NOT in the URL (and not in argv at all): run()
+        // builds its error message from cmd+args, so an embedded credential
+        // would land in plaintext in the test runner's logs on any git
+        // failure (withRetry then prints it again). Inject the auth header
+        // through git's env-based config instead — same mechanism
+        // actions/checkout uses — which keeps both argv and error messages
+        // secret-free. (A `-c http.extraHeader=Basic <base64>` arg would
+        // only obfuscate: base64 decodes straight back to the token.)
+        const src = `https://github.com/${baseRepo}.git`;
+        const dst = `https://github.com/${full}.git`;
+        const gitEnv = {
+            GIT_CONFIG_COUNT: "1",
+            GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader",
+            GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(
+                `x-access-token:${token()}`,
+            ).toString("base64")}`,
+        };
         // Transient local socket errors ("Recv failure: Can't assign
         // requested address") have been observed on the very first push to a
         // just-created repo — retry the network steps instead of leaking a
@@ -97,6 +112,7 @@ export async function createThrowawayRepo(
         await withRetry("clone base", () =>
             run("git", ["clone", "--quiet", "--bare", src, "base.git"], {
                 cwd: tmp,
+                env: gitEnv,
                 capture: true,
             }),
         );
@@ -105,13 +121,14 @@ export async function createThrowawayRepo(
         await withRetry("push branches", () =>
             run("git", ["push", "--quiet", dst, "refs/heads/*:refs/heads/*"], {
                 cwd: join(tmp, "base.git"),
+                env: gitEnv,
                 capture: true,
             }),
         );
         await run(
             "git",
             ["push", "--quiet", dst, "refs/tags/*:refs/tags/*"],
-            { cwd: join(tmp, "base.git"), capture: true },
+            { cwd: join(tmp, "base.git"), env: gitEnv, capture: true },
         ).catch(() => undefined); // tags are optional fixture content
     } catch (err) {
         // Mirror failed after the repo was created — delete it (best-effort)
