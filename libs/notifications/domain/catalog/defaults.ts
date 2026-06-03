@@ -45,6 +45,15 @@ export interface EventDefaults {
      * declared — set explicitly for actionable critical events.
      */
     readonly actionLabel?: string;
+    /**
+     * The role(s) this event is actually delivered to, for events that fan
+     * out purely by role (their emitter uses `kind: 'role'` recipients).
+     * Drives the settings UI so it only offers per-role routing for roles
+     * that can receive the event. Omit for events directed at a specific
+     * user/email, or whose audience can be any role (e.g. a PR author) — the
+     * UI shows all roles for those.
+     */
+    readonly audienceRoles?: readonly Role[];
 }
 
 export const EVENT_DEFAULTS: Readonly<
@@ -179,6 +188,7 @@ export const EVENT_DEFAULTS: Readonly<
         icon: 'credit-card',
         pageSeverity: true,
         actionLabel: 'Update payment',
+        audienceRoles: [Role.OWNER, Role.BILLING_MANAGER],
     },
     [NotificationEvent.BILLING_TRIAL_EXPIRING]: {
         criticality: Criticality.TRANSACTIONAL,
@@ -190,6 +200,7 @@ export const EVENT_DEFAULTS: Readonly<
         ]),
         icon: 'credit-card',
         actionLabel: 'Upgrade plan',
+        audienceRoles: [Role.OWNER, Role.BILLING_MANAGER],
     },
 
     // ── BYOK ───────────────────────────────────────────────────
@@ -204,6 +215,34 @@ export const EVENT_DEFAULTS: Readonly<
         ]),
         icon: 'shield-alert',
         pageSeverity: true,
+        audienceRoles: [Role.OWNER],
+    },
+
+    // ── Spend limit ────────────────────────────────────────────
+
+    [NotificationEvent.SPEND_LIMIT_THRESHOLD_REACHED]: {
+        criticality: Criticality.INFORMATIONAL,
+        category: 'spend_limit',
+        label: 'Monthly Spend Limit Threshold Reached',
+        defaultChannels: new Set([
+            NotificationChannel.EMAIL,
+            NotificationChannel.IN_APP,
+        ]),
+        icon: 'credit-card',
+        audienceRoles: [Role.OWNER],
+    },
+
+    [NotificationEvent.SPEND_LIMIT_EXCEEDED_FINAL]: {
+        criticality: Criticality.CRITICAL,
+        category: 'spend_limit',
+        label: 'Monthly Spend Limit Exceeded',
+        defaultChannels: new Set([
+            NotificationChannel.EMAIL,
+            NotificationChannel.IN_APP,
+        ]),
+        icon: 'credit-card',
+        pageSeverity: true,
+        audienceRoles: [Role.OWNER],
     },
 
     // ── Kody Rules (file reference validation) ────────────────
@@ -256,6 +295,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
     billing: 'Billing',
     review: 'Code Review',
     byok: 'BYOK',
+    spend_limit: 'Spend Limit',
 };
 
 /**

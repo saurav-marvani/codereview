@@ -92,7 +92,16 @@ async function nextAuthLogin(
     });
     absorb(jar, cbRes);
 
-    if (!jar.has("authjs.session-token")) {
+    // Auth.js v5 names the session cookie `authjs.session-token` over HTTP but
+    // prefixes it `__Secure-authjs.session-token` over HTTPS (QA cloud), and
+    // chunks it (`…-token.0`, `.1`) once the JWT grows past the 4KB cookie
+    // limit. Match by substring — the same shape the proxy uses
+    // (create-proxy-handler.ts) — so the check survives all three variants
+    // instead of only the bare HTTP name.
+    const hasSession = [...jar.keys()].some((k) =>
+        k.includes("authjs.session-token"),
+    );
+    if (!hasSession) {
         throw new Error(
             `next-auth login for ${email} did not yield a session (HTTP ${cbRes.status})`,
         );

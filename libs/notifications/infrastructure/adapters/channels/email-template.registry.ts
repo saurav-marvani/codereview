@@ -4,6 +4,12 @@ import { EmailFrom } from '@libs/common/email/from';
 import ByokErrorsThresholdEmail, {
     byokErrorsThresholdEmailMeta,
 } from '@libs/common/email/templates/byok-errors-threshold';
+import SpendLimitThresholdEmail, {
+    spendLimitThresholdEmailMeta,
+} from '@libs/common/email/templates/spend-limit-threshold';
+import SpendLimitExceededEmail, {
+    spendLimitExceededEmailMeta,
+} from '@libs/common/email/templates/spend-limit-exceeded';
 import ConfirmationEmail, {
     confirmationEmailMeta,
 } from '@libs/common/email/templates/confirmation';
@@ -291,6 +297,36 @@ export const EMAIL_TEMPLATE_REGISTRY: Partial<
                 windowStartLabel: labelFormat(windowStart),
                 windowEndLabel: labelFormat(windowEnd),
                 sampleError,
+            }),
+        };
+    },
+
+    [NotificationEvent.SPEND_LIMIT_THRESHOLD_REACHED]: (metadata) => {
+        const percentage = (metadata.percentage as number) ?? 0;
+        const usd = (value: unknown) => {
+            const n = typeof value === 'number' ? value : Number(value);
+            return Number.isFinite(n) ? `$${n.toLocaleString('en-US')}` : '$0';
+        };
+        return {
+            ...spendLimitThresholdEmailMeta({ percentage }),
+            react: SpendLimitThresholdEmail({
+                percentage,
+                limitLabel: usd(metadata.monthlyLimitUsd),
+                spentLabel: usd(metadata.spentUsd),
+            }),
+        };
+    },
+
+    [NotificationEvent.SPEND_LIMIT_EXCEEDED_FINAL]: (metadata) => {
+        const usd = (value: unknown) => {
+            const n = typeof value === 'number' ? value : Number(value);
+            return Number.isFinite(n) ? `$${n.toLocaleString('en-US')}` : '$0';
+        };
+        return {
+            ...spendLimitExceededEmailMeta(),
+            react: SpendLimitExceededEmail({
+                limitLabel: usd(metadata.monthlyLimitUsd),
+                spentLabel: usd(metadata.spentUsd),
             }),
         };
     },

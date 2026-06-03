@@ -14,6 +14,7 @@ import { Chart } from "./chart";
 import { CostCards } from "./cost-cards";
 import { Filters } from "./filters";
 import { NoData } from "./no-data";
+import { SpendLimitProgress } from "./spend-limit-progress";
 import { SummaryCards } from "./summary-cards";
 
 type UsageForCost = {
@@ -237,6 +238,9 @@ export const TokenUsagePageClient = ({
                 xAccessor={xAccessor}
                 pricing={filteredPricing}
             />
+
+            {/* Month-to-date spend vs the configured BYOK limit */}
+            <SpendLimitProgress />
 
             {/* Chart */}
             <Card className="h-[420px] p-5">

@@ -119,7 +119,8 @@ yarn e2e:matrix matrix/full.yml
 | `TARGET_BASE_URL` | URL of the API to test against | Always |
 | `TARGET_WEB_URL` | URL of the dashboard | Always |
 | `TARGET_TUNNEL_URL` | Public tunnel URL for webhooks (self-hosted only) | `target=self-hosted` |
-| `GH_TEST_TOKEN` | GitHub PAT, `repo` + `admin:repo_hook` | `provider=github` |
+| `GH_TEST_TOKEN` | GitHub PAT, `repo` + `admin:repo_hook`. Must be a token whose FIRST org is `kodus-e2e` (a fine-grained PAT with resource owner `kodus-e2e`, Repository access = All repositories) — the Kodus integration binds to `orgs[0]` (github.service.ts), so a personal token whose first org is `kodustech` binds the wrong org. | `provider=github` |
+| `GH_REPO_ADMIN_TOKEN` | Token with org Administration on `kodus-e2e` (create + delete repos). Used ONLY by `trial-managed-review` to mint/delete its throwaway repo per run; everything else stays on `GH_TEST_TOKEN`. Falls back to `GH_TEST_TOKEN` if unset (a single fully-privileged token also works). | `scenario=trial-managed-review` |
 | `GH_TEST_REPO` | GitHub test repo `owner/repo` | `provider=github` |
 | `GL_TEST_TOKEN` | GitLab PAT, `api` + `write_repository` | `provider=gitlab` |
 | `GL_TEST_REPO` | GitLab project path | `provider=gitlab` |

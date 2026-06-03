@@ -239,6 +239,103 @@ describe('NotificationDispatcherService', () => {
         });
     });
 
+    describe('audience-driven events (audienceRoles)', () => {
+        // SPEND_LIMIT_THRESHOLD_REACHED → audienceRoles [OWNER], informational.
+        const SPEND_THRESHOLD =
+            NotificationEvent.SPEND_LIMIT_THRESHOLD_REACHED;
+        // SPEND_LIMIT_EXCEEDED_FINAL → audienceRoles [OWNER], critical.
+        const SPEND_EXCEEDED = NotificationEvent.SPEND_LIMIT_EXCEEDED_FINAL;
+
+        const thresholdPayload = {
+            percentage: 75,
+            monthlyLimitUsd: 1000,
+            spentUsd: 760,
+            periodKey: '2026-06',
+        };
+
+        it('delivers to default audience roles only — others are off', async () => {
+            const t = makeDispatcher();
+            t.usersService.find.mockResolvedValueOnce([
+                { uuid: 'owner-1', email: 'o@a.com', role: 'owner' } as any,
+                { uuid: 'c-1', email: 'c@a.com', role: 'contributor' } as any,
+            ]);
+
+            await t.dispatcher.dispatch(
+                baseMessage({
+                    event: SPEND_THRESHOLD,
+                    payload: thresholdPayload,
+                    recipients: [{ kind: 'role', role: Role.OWNER }],
+                }),
+            );
+
+            // Owner gets both default channels; the contributor gets nothing.
+            expect(t.emailAdapter.deliver).toHaveBeenCalledTimes(1);
+            expect(t.inAppAdapter.deliver).toHaveBeenCalledTimes(1);
+            expect(t.emailAdapter.deliver.mock.calls[0][0].userEmail).toBe(
+                'o@a.com',
+            );
+            // Audience is resolved from all org members, not the emit recipients.
+            expect(t.usersService.find).toHaveBeenCalledWith(
+                { organization: { uuid: 'org-1' } },
+                expect.anything(),
+            );
+        });
+
+        it('opts a non-audience role in via an explicit routing rule', async () => {
+            const t = makeDispatcher();
+            t.usersService.find.mockResolvedValueOnce([
+                { uuid: 'owner-1', email: 'o@a.com', role: 'owner' } as any,
+                { uuid: 'c-1', email: 'c@a.com', role: 'contributor' } as any,
+            ]);
+            t.routingRuleRepo.findByOrganization.mockResolvedValueOnce([
+                {
+                    event: SPEND_THRESHOLD,
+                    role: 'contributor',
+                    channels: { email: true, in_app: false },
+                } as any,
+            ]);
+
+            await t.dispatcher.dispatch(
+                baseMessage({
+                    event: SPEND_THRESHOLD,
+                    payload: thresholdPayload,
+                    recipients: [{ kind: 'role', role: Role.OWNER }],
+                }),
+            );
+
+            // Owner: email + in_app (default). Contributor: email only (opt-in).
+            expect(t.emailAdapter.deliver).toHaveBeenCalledTimes(2);
+            expect(t.inAppAdapter.deliver).toHaveBeenCalledTimes(1);
+        });
+
+        it('CRITICAL locks all channels for audience roles, leaves others off', async () => {
+            const t = makeDispatcher();
+            t.usersService.find.mockResolvedValueOnce([
+                { uuid: 'owner-1', email: 'o@a.com', role: 'owner' } as any,
+                { uuid: 'c-1', email: 'c@a.com', role: 'contributor' } as any,
+            ]);
+
+            await t.dispatcher.dispatch(
+                baseMessage({
+                    event: SPEND_EXCEEDED,
+                    payload: {
+                        monthlyLimitUsd: 1000,
+                        spentUsd: 1200,
+                        periodKey: '2026-06',
+                    },
+                    recipients: [{ kind: 'role', role: Role.OWNER }],
+                }),
+            );
+
+            // Owner (audience, critical) → all active channels; contributor off.
+            expect(t.emailAdapter.deliver).toHaveBeenCalledTimes(1);
+            expect(t.inAppAdapter.deliver).toHaveBeenCalledTimes(1);
+            expect(t.emailAdapter.deliver.mock.calls[0][0].userEmail).toBe(
+                'o@a.com',
+            );
+        });
+    });
+
     describe('dispatchToRecipient — channel resolution', () => {
         it('SYSTEM events use catalog defaultChannels verbatim', async () => {
             const t = makeDispatcher();

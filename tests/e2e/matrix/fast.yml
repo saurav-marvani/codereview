@@ -25,6 +25,17 @@ scenarios:
     - command-review
     - kody-rules-create-and-apply
     - license-attribution
+    # Trial coverage (cloud × github × trial, one cell each). Both sign up a
+    # FRESH org per run so the 14-day trial window never lapses — the standing
+    # trial tenant expired every ~2 weeks and broke the old `trial` cells on
+    # the review scenarios.
+    #   * trial-entitlement-gate: API-level, fails in seconds with a precise
+    #     billing-level message (validate-org-license = valid + 'trial').
+    #   * trial-managed-review: the REAL thing — throwaway repo (exclusive
+    #     webhook route) + PR + managed-LLM review. The only cell exercising
+    #     Kodus-managed keys; every other review cell is BYOK.
+    - trial-entitlement-gate
+    - trial-managed-review
     # Per-seat gate: appliesTo restricts to self-hosted × github × license-paid
     # (one cell). Skipped automatically when SH_LICENSE_KEY_PATH (default
     # ~/.kodus-dev/license-seats1.jwt) isn't available — see run-matrix.ts.

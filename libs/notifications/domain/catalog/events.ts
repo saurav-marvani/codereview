@@ -42,6 +42,10 @@ export enum NotificationEvent {
     // ── BYOK ───────────────────────────────────────────────────
     BYOK_LLM_ERRORS_THRESHOLD = 'byok.llm_errors_threshold',
 
+    // ── Spend limit ────────────────────────────────────────────
+    SPEND_LIMIT_THRESHOLD_REACHED = 'spend_limit.threshold_reached',
+    SPEND_LIMIT_EXCEEDED_FINAL = 'spend_limit.exceeded_final',
+
     // ── Kody Rules (continued) ─────────────────────────────────
     RULE_FILE_REFERENCES_INVALID = 'rule.file_references_invalid',
 
@@ -173,6 +177,23 @@ export interface NotificationPayloadMap {
         windowStart: string;
         windowEnd: string;
         sampleError: string;
+    };
+
+    // ── Spend limit ────────────────────────────────────────────
+
+    [NotificationEvent.SPEND_LIMIT_THRESHOLD_REACHED]: {
+        /** Threshold crossed: 50, 75, 90, or 100. */
+        percentage: number;
+        monthlyLimitUsd: number;
+        spentUsd: number;
+        /** Calendar month the spend covers — YYYY-MM in UTC. */
+        periodKey: string;
+    };
+
+    [NotificationEvent.SPEND_LIMIT_EXCEEDED_FINAL]: {
+        monthlyLimitUsd: number;
+        spentUsd: number;
+        periodKey: string;
     };
 
     // ── Kody Rules (file reference validation) ────────────────

@@ -72,6 +72,17 @@ type FormValues = {
 const toFormKey = (event: string) => event.replaceAll(".", "__");
 const fromFormKey = (key: string) => key.replaceAll("__", ".");
 
+/**
+ * A role is part of an event's default audience when the event doesn't
+ * restrict its audience (any role can receive it), the role is one of the
+ * declared `audienceRoles`, or it's the wildcard "All Roles" row (which seeds
+ * the audience defaults). Non-audience roles start off and are opt-in.
+ */
+const isAudienceRole = (ev: EventDef, roleValue: string) =>
+    roleValue === "*" ||
+    !ev.audienceRoles ||
+    ev.audienceRoles.includes(roleValue);
+
 const buildDefaults = (
     rules: RoutingRule[],
     configurableEvents: EventDef[],
@@ -89,18 +100,19 @@ const buildDefaults = (
         const roleEntry: EventMap = {};
         for (const ev of configurableEvents) {
             const eventRules = byEvent[ev.event] ?? {};
-            // Lookup order:
-            //   1. Role-specific stored rule
-            //   2. Wildcard ('*') stored rule
-            //   3. Catalog default (the same fallback the dispatcher uses
-            //      at runtime when no rule exists).
+            // Lookup order, mirroring the dispatcher's runtime resolution:
+            //   1. Role-specific stored rule wins.
+            //   2. For an audience role: the wildcard ('*') rule, else the
+            //      catalog default.
+            //   3. For a non-audience role with no rule: off (opt-in).
             const source =
                 eventRules[role.value] ??
-                eventRules["*"] ??
-                ev.defaultChannels;
+                (isAudienceRole(ev, role.value)
+                    ? (eventRules["*"] ?? ev.defaultChannels)
+                    : undefined);
             const channelValues: ChannelMap = {};
             for (const ch of channels) {
-                channelValues[ch.value] = source[ch.value] ?? false;
+                channelValues[ch.value] = source?.[ch.value] ?? false;
             }
             roleEntry[toFormKey(ev.event)] = channelValues;
         }
@@ -494,6 +506,9 @@ function EventRow({
     criticalityLabels: Record<EventCriticality, string>;
 }) {
     const isCritical = event.criticality === "critical";
+    // Critical channels are locked-on only for the default audience roles;
+    // a role an admin opts in is freely configurable.
+    const locked = isCritical && isAudienceRole(event, role);
     const badgeLabel =
         criticalityLabels[event.criticality] ?? event.criticality;
     const badgeClass = CRITICALITY_BADGE_CLASS[event.criticality];
@@ -520,7 +535,7 @@ function EventRow({
 
             {channels.map((ch) => (
                 <div key={ch.value} className="flex justify-center">
-                    {isCritical ? (
+                    {locked ? (
                         <LockedChannelIndicator />
                     ) : (
                         <ChannelToggle

@@ -99,6 +99,7 @@ function missingEnvFor(provider: string): string[] {
 interface ScenarioRequirement {
     files?: string[]; // absolute paths; presence required
     envOrFiles?: Array<{ env: string; defaultFile: string }>; // satisfied if either present
+    env?: string[]; // env vars whose non-empty presence is required
 }
 
 function resolveHome(p: string): string {
@@ -116,6 +117,14 @@ const SCENARIO_REQUIRED: Record<string, ScenarioRequirement> = {
             },
         ],
     },
+    // Mints a throwaway repo per run, which needs org Administration on
+    // kodus-e2e (create + delete). The regular fine-grained GH_TEST_TOKEN
+    // lacks that by design, so without the admin token the scenario would
+    // 403 at repo creation — skip it instead. In CI the token is the QA
+    // environment secret GH_REPO_ADMIN_TOKEN; set it locally to opt in.
+    "trial-managed-review": {
+        env: ["GH_REPO_ADMIN_TOKEN"],
+    },
 };
 
 function missingScenarioRequirements(scenarioId: string): string[] {
@@ -131,6 +140,9 @@ function missingScenarioRequirements(scenarioId: string): string[] {
         if (!existsSync(path)) {
             missing.push(`${env} (or file ${defaultFile})`);
         }
+    }
+    for (const env of req.env ?? []) {
+        if (!process.env[env]) missing.push(`env:${env}`);
     }
     return missing;
 }

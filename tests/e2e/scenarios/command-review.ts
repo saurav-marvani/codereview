@@ -27,7 +27,11 @@ export const commandReview: Scenario = {
     appliesTo: {
         target: ["cloud", "self-hosted"],
         provider: ["github", "github-app", "gitlab", "bitbucket", "azure-devops"],
-        license: ["paid", "trial", "license-paid"],
+        // `trial` dropped here for the same reason as code-review-basic: a
+        // standing trial expires after 14 days. Trial is covered by the
+        // fresh-org scenarios `trial-entitlement-gate` + `trial-managed-review`;
+        // `paid` covers the command review path.
+        license: ["paid", "license-paid"],
     },
     // Same envelope as code-review-basic: needs room for onboarding +
     // disable-auto-review setup + open PR + post-comment +

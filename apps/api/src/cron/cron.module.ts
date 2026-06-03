@@ -14,10 +14,13 @@ import { PlatformModule } from '@libs/platform/modules/platform.module';
 import { forwardRef, Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 
+import { SpendLimitModule } from '@libs/analytics/modules/spend-limit.module';
+
 import { CheckIfPRCanBeApprovedCronProvider } from './CheckIfPRCanBeApproved.cron';
 import { ClassifyOrphanedSessionsCronProvider } from './classifyOrphanedSessions.cron';
 import { CodeReviewFeedbackCronProvider } from './codeReviewFeedback.cron';
 import { KodyLearningCronProvider } from './kodyLearning.cron';
+import { SpendLimitAlertCronProvider } from './spendLimitAlert.cron';
 import { SSOTestSessionCleanupCronProvider } from './ssoTestSessionCleanup.cron';
 import { SSOModule } from '@libs/ee/sso/sso.module';
 
@@ -37,6 +40,7 @@ import { SSOModule } from '@libs/ee/sso/sso.module';
         IntegrationConfigModule,
         forwardRef(() => CliReviewModule),
         forwardRef(() => SSOModule),
+        SpendLimitModule,
     ],
     providers: [
         CheckIfPRCanBeApprovedCronProvider,
@@ -44,6 +48,7 @@ import { SSOModule } from '@libs/ee/sso/sso.module';
         CodeReviewFeedbackCronProvider,
         KodyLearningCronProvider,
         SSOTestSessionCleanupCronProvider,
+        SpendLimitAlertCronProvider,
         DistributedLockService,
     ],
 })

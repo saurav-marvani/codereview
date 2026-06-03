@@ -10,7 +10,8 @@ import {
 } from '@libs/identity/domain/user/contracts/user.service.contract';
 
 import { NotificationEvent } from '../domain/catalog/events';
-import { EVENT_DEFAULTS } from '../domain/catalog/defaults';
+import { EVENT_DEFAULTS, ROLE_WILDCARD } from '../domain/catalog/defaults';
+import { IRoutingRule } from '../domain/interfaces/routing-rule.interface';
 import {
     Criticality,
     DeliveryStatus,
@@ -106,10 +107,19 @@ export class NotificationDispatcherService {
             return;
         }
 
-        const recipients = await this.resolveRecipients(
-            message,
-            organizationId,
-        );
+        // Preload the org's routing rules once so per-recipient channel
+        // resolution is in-memory (no N queries during fanout).
+        const rules =
+            await this.routingRuleRepo.findByOrganization(organizationId);
+
+        // Role-fanout events (those declaring `audienceRoles`) derive their
+        // audience from configuration: the default roles are on, and an admin
+        // can opt other roles in. So we fan out to every org member and let
+        // per-role channel resolution gate who actually receives. Everything
+        // else uses the explicit recipients the emitter chose.
+        const recipients = defaults.audienceRoles
+            ? await this.resolveAllOrgMembers(organizationId)
+            : await this.resolveRecipients(message, organizationId);
 
         // Per-recipient try/catch so a thrown error (DB outage, adapter
         // bug) for one recipient does not abort the loop and bubble up
@@ -125,6 +135,7 @@ export class NotificationDispatcherService {
                     payload,
                     organizationId,
                     correlationId,
+                    rules,
                 );
             } catch (error) {
                 this.logger.error({
@@ -154,27 +165,14 @@ export class NotificationDispatcherService {
         payload: Record<string, unknown>,
         organizationId: string,
         correlationId: string,
+        rules: IRoutingRule[],
     ): Promise<void> {
-        // System events use the catalog defaults verbatim (admins cannot
-        // configure routing rules for them — see RoutingRuleService).
-        // Critical events fan out across every active channel regardless
-        // of stored configuration. Everything else respects the
-        // per-role / wildcard / catalog-default chain.
-        let enabledChannels: NotificationChannel[];
-        if (defaults.criticality === Criticality.SYSTEM) {
-            enabledChannels = [...defaults.defaultChannels].filter((ch) =>
-                ACTIVE_CHANNELS.has(ch),
-            );
-        } else if (defaults.criticality === Criticality.CRITICAL) {
-            enabledChannels = [...ACTIVE_CHANNELS];
-        } else {
-            enabledChannels = await this.resolveChannels(
-                organizationId,
-                event,
-                recipient.role,
-                defaults,
-            );
-        }
+        let enabledChannels = this.resolveEnabledChannels(
+            rules,
+            event,
+            recipient.role,
+            defaults,
+        );
 
         // Per-recipient channel override: when the originating
         // NotificationRecipient declared `channels`, intersect with the
@@ -705,41 +703,72 @@ export class NotificationDispatcherService {
     }
 
     /**
-     * Resolution priority for (event, role) channels:
-     *   1. Per-role override row    (org, event, role)   — wins if present
-     *   2. All Roles ('*') row      (org, event, '*')    — wins if present
-     *   3. Catalog defaults         EVENT_DEFAULTS[event].defaultChannels
+     * The channels a (event, role) pair is delivered on, resolved in-memory
+     * from the preloaded org rules:
      *
-     * The repository handles steps 1–2; this method handles step 3.
-     * In all cases the result is intersected with ACTIVE_CHANNELS so
-     * channels that exist in config but aren't built (slack, discord,
-     * webhook) are dropped.
+     *   - SYSTEM events: catalog defaults, role-independent (non-configurable).
+     *   - A specific (event, role) row always wins.
+     *   - Otherwise the role's *default* depends on whether it's a declared
+     *     audience role for the event:
+     *       · audience role  → CRITICAL ⇒ all active channels (locked);
+     *                          else the '*' row, else catalog defaults.
+     *       · non-audience   → off (empty) unless an admin added a specific
+     *                          row opting it in.
+     *
+     * Events without `audienceRoles` treat every role as an audience role, so
+     * their behaviour is unchanged (specific → '*' → defaults; CRITICAL ⇒ all).
+     * Everything is intersected with ACTIVE_CHANNELS.
      */
-    private async resolveChannels(
-        organizationId: string,
+    private resolveEnabledChannels(
+        rules: IRoutingRule[],
         event: string,
         role: string,
         defaults: (typeof EVENT_DEFAULTS)[NotificationEvent],
-    ): Promise<NotificationChannel[]> {
-        const rule = await this.routingRuleRepo.resolve(
-            organizationId,
-            event,
-            role,
-        );
-
-        if (rule) {
-            return Object.entries(rule.channels)
-                .filter(
-                    ([ch, enabled]) =>
-                        enabled &&
-                        ACTIVE_CHANNELS.has(ch as NotificationChannel),
-                )
-                .map(([ch]) => ch as NotificationChannel);
+    ): NotificationChannel[] {
+        if (defaults.criticality === Criticality.SYSTEM) {
+            return [...defaults.defaultChannels].filter((ch) =>
+                ACTIVE_CHANNELS.has(ch),
+            );
         }
 
-        return [...defaults.defaultChannels].filter((ch) =>
-            ACTIVE_CHANNELS.has(ch),
+        const isAudienceRole =
+            !defaults.audienceRoles ||
+            (defaults.audienceRoles as readonly string[]).includes(role);
+
+        if (defaults.criticality === Criticality.CRITICAL && isAudienceRole) {
+            return [...ACTIVE_CHANNELS];
+        }
+
+        const specific = rules.find(
+            (r) => r.event === event && r.role === role,
         );
+        if (specific) return this.activeEnabledChannels(specific.channels);
+
+        if (isAudienceRole) {
+            const wildcard = rules.find(
+                (r) => r.event === event && r.role === ROLE_WILDCARD,
+            );
+            if (wildcard) {
+                return this.activeEnabledChannels(wildcard.channels);
+            }
+            return [...defaults.defaultChannels].filter((ch) =>
+                ACTIVE_CHANNELS.has(ch),
+            );
+        }
+
+        // Non-audience role with no explicit opt-in row: off.
+        return [];
+    }
+
+    private activeEnabledChannels(
+        channels: Record<string, boolean>,
+    ): NotificationChannel[] {
+        return Object.entries(channels)
+            .filter(
+                ([ch, enabled]) =>
+                    enabled && ACTIVE_CHANNELS.has(ch as NotificationChannel),
+            )
+            .map(([ch]) => ch as NotificationChannel);
     }
 
     /**

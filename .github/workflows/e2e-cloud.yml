@@ -63,6 +63,12 @@ jobs:
     cloud-matrix:
         name: cloud matrix (${{ inputs.matrix_file || 'matrix/fast.yml' }})
         runs-on: ubuntu-latest
+        # QA environment: where the QA-scoped secrets live (GH_REPO_ADMIN_TOKEN
+        # for trial-managed-review's throwaway repos; CLOUD_TENANTS_JSON also
+        # has a copy here). Branch policy allows `main` only — fine, every real
+        # trigger (qa-build workflow_call, nightly schedule, dispatch) runs
+        # from main. Repo-level secrets keep resolving as before.
+        environment: QA
         # fast.yml = ~30-45 min, full.yml = ~75-120 min. Cap with
         # generous headroom; cell-level timeouts inside the runner stop
         # individual flakes from eating the whole budget.
@@ -105,9 +111,49 @@ jobs:
             - name: Wait for QA backend to be healthy (avoid deploy-race 403s)
               env:
                   TARGET_WEB_URL: ${{ vars.CLOUD_QA_WEB_URL || 'https://qa.web.kodus.io' }}
+                  # The image tag GitOps is deploying for THIS run. When set we
+                  # poll the backend's /health `version` until it reports this
+                  # tag — otherwise the matrix races the rollout and tests the
+                  # PREVIOUS build (e.g. a brand-new endpoint 404s even though
+                  # the code is on main). See the deploy-lag class of failures.
+                  EXPECTED_VERSION: ${{ inputs.image_tag }}
               run: |
                   set -uo pipefail
                   BASE="${TARGET_WEB_URL%/}/api/proxy/api"
+
+                  # --- Phase 0: version gate (best-effort) ----------------------
+                  # Health (@Public, @Controller('health')) returns the running
+                  # build's RELEASE_VERSION. If we know the tag we just deployed,
+                  # wait until the live version matches it so the matrix runs the
+                  # build under test, not the one it replaced. This is BEST-EFFORT:
+                  # if the version is 'unknown' (RELEASE_VERSION unset) or never
+                  # converges, we WARN and fall through to the app-readiness probe
+                  # rather than fail — never trade deploy-lag for a new false-fail.
+                  if [ -n "${EXPECTED_VERSION:-}" ]; then
+                      SHORT="${EXPECTED_VERSION:0:7}"
+                      echo "Waiting for QA /health version to report '$EXPECTED_VERSION' (short '$SHORT')…"
+                      matched=""
+                      for i in $(seq 1 60); do
+                          ver=$(curl -sS "$BASE/health" 2>/dev/null \
+                              | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).version||'')}catch{console.log('')}})" \
+                              2>/dev/null || echo "")
+                          case "$ver" in
+                              "" |unknown)
+                                  echo "attempt $i/60: version='${ver:-<none>}' (health not reporting a build yet) — waiting 10s…" ; sleep 10 ;;
+                              *"$EXPECTED_VERSION"*|*"$SHORT"*)
+                                  echo "QA is running the expected build (version=$ver) after $i attempt(s)." ; matched=1 ; break ;;
+                              *)
+                                  echo "attempt $i/60: version=$ver (still the prior build) — waiting 10s…" ; sleep 10 ;;
+                          esac
+                      done
+                      if [ -z "$matched" ]; then
+                          echo "::warning::QA /health never reported expected version '$EXPECTED_VERSION' within ~10min — proceeding on app-readiness only (deploy-lag false failures possible)."
+                      fi
+                  else
+                      echo "No image_tag input — skipping version gate, app-readiness probe only."
+                  fi
+
+                  # --- Phase 1: app-level readiness (hard gate) ----------------
                   # Chained right after the QA GitOps deploy, the backend can still
                   # be rolling out: the gateway then answers every request with an
                   # nginx "403 Forbidden" (or 5xx / connection-refused), and the
@@ -152,6 +198,11 @@ jobs:
                   GH_TEST_REPO: ${{ secrets.GH_TEST_REPO }}
                   GH_TEST_REPO_CLOUD: ${{ secrets.GH_TEST_REPO_CLOUD }}
                   GH_TEST_PR_NUMBER: ${{ secrets.GH_TEST_PR_NUMBER }}
+                  # Org-Administration token (QA environment secret) used ONLY
+                  # by trial-managed-review to create/delete its throwaway repo
+                  # per run. Absent → that scenario is SKIPPED, not failed
+                  # (SCENARIO_REQUIRED in run-matrix.ts).
+                  GH_REPO_ADMIN_TOKEN: ${{ secrets.GH_REPO_ADMIN_TOKEN }}
 
                   GL_TEST_TOKEN: ${{ secrets.GL_TEST_TOKEN }}
                   GL_TEST_REPO: ${{ secrets.GL_TEST_REPO }}

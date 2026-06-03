@@ -141,6 +141,16 @@ export const IN_APP_TEMPLATE_REGISTRY: Partial<
         body: `Your ${m.provider ?? 'BYOK'} model returned ${m.errorCount ?? 0} errors in the recent window. Reviews may be impacted. Latest error: ${m.sampleError ?? 'n/a'}.`,
     }),
 
+    [NotificationEvent.SPEND_LIMIT_THRESHOLD_REACHED]: (m) => ({
+        title: `BYOK spend at ${m.percentage ?? 0}% of your monthly limit`,
+        body: `Your BYOK model spend this month is $${m.spentUsd ?? 0} of your $${m.monthlyLimitUsd ?? 0} limit (${m.percentage ?? 0}%). This is an alert only — reviews keep running. Set a hard cap with your model provider to actually stop spend.`,
+    }),
+
+    [NotificationEvent.SPEND_LIMIT_EXCEEDED_FINAL]: (m) => ({
+        title: 'BYOK monthly spend limit exceeded',
+        body: `Your BYOK spend ($${m.spentUsd ?? 0}) has passed your $${m.monthlyLimitUsd ?? 0} monthly limit. We won't notify you again this month. Reviews continue to run — set a hard cap with your model provider if you need to stop spend.`,
+    }),
+
     [NotificationEvent.RULE_FILE_REFERENCES_INVALID]: (m) => {
         const count = m.invalidCount as number | undefined;
         const repo = m.repoName ?? 'a repository';

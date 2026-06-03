@@ -31,6 +31,12 @@ export interface NotificationConfigEvent {
     icon?: string;
     pageSeverity?: boolean;
     actionLabel?: string;
+    /**
+     * Roles this event actually reaches (role-fanout events only). When set,
+     * the settings UI should offer per-role routing for these roles only.
+     * Absent = directed at a specific user/email or any role — show all.
+     */
+    audienceRoles?: string[];
 }
 
 export interface NotificationConfig {
@@ -103,6 +109,9 @@ export class RoutingRuleService {
                         ? defaults.pageSeverity
                         : undefined,
                 actionLabel: defaults.actionLabel,
+                audienceRoles: defaults.audienceRoles
+                    ? [...defaults.audienceRoles]
+                    : undefined,
             };
         });
 
@@ -161,8 +170,19 @@ export class RoutingRuleService {
             // Skip channel checks for deletes — the row is going away.
             if (rule.delete) continue;
 
-            // Critical events: cannot disable any active channel.
-            if (eventDefaults.criticality === Criticality.CRITICAL) {
+            // Critical events: the default-audience roles (and the All Roles
+            // row that seeds their defaults) must keep every active channel —
+            // they can't be muted. Roles an admin opts in *outside*
+            // audienceRoles are freely configurable, since they're additive.
+            const locksAllChannels =
+                eventDefaults.criticality === Criticality.CRITICAL &&
+                (rule.role === ROLE_WILDCARD ||
+                    !eventDefaults.audienceRoles ||
+                    (
+                        eventDefaults.audienceRoles as readonly string[]
+                    ).includes(rule.role));
+
+            if (locksAllChannels) {
                 const disabledChannels = Object.entries(rule.channels)
                     .filter(
                         ([ch, enabled]) =>
@@ -173,7 +193,7 @@ export class RoutingRuleService {
 
                 if (disabledChannels.length > 0) {
                     throw new BadRequestException(
-                        `Cannot disable channels [${disabledChannels.join(', ')}] for critical event "${rule.event}". Critical notifications must be delivered on all active channels.`,
+                        `Cannot disable channels [${disabledChannels.join(', ')}] for critical event "${rule.event}". Critical notifications must reach the default roles on all active channels.`,
                     );
                 }
             }
