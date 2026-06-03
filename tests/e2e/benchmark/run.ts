@@ -332,7 +332,14 @@ async function reviewOnePR(model: BenchModel, pr: BenchPR): Promise<{ ok: boolea
         if (outcome !== "completed") {
             retried = true;
             log.info(`${model.slug} ${repoShort}: review ${outcome} — retrying once via @kody review (PR #${opened.number})`);
-            const retryAt = Date.now();
+            // GitHub comment `created_at` is second-precision, so `sinceMs` needs
+            // the same -5s padding `openedAt` uses or a banner posted in the same
+            // second would be filtered out (its timestamp truncates to .000 <
+            // sinceMs) and the poll would hang the full cap. But padding back 5s
+            // would also re-match the FIRST attempt's failure banner — so first
+            // sleep 5s to push it outside the window, then pad.
+            await sleep(5_000);
+            const retryAt = Date.now() - 5_000;
             await provider.postComment(opened.number, "@kody review").catch(() => {});
             outcome = await waitForReviewOutcome(pr.repo, opened.number, retryAt);
         }
