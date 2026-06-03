@@ -18,7 +18,9 @@ import {
     ghClosePR,
     ghDeleteFile,
     ghGetPRState,
+    ghListOpenPRs,
     ghMergeChange,
+    ghMergePRNumber,
     ghPutFile,
 } from "../lib/gh-contents.js";
 import type { KodusSession, RunContext, Scenario, TargetContext } from "../lib/types.js";
@@ -43,9 +45,13 @@ import type { KodusSession, RunContext, Scenario, TargetContext } from "../lib/t
 //   6. Auto-sync on merge: a change landed through a real merged PR — with NO
 //      manual sync call — propagates via the pull-request.closed listener
 //      (the production trigger path).
-//   7. init(syncOption=pr): Kodus opens the initialization PR with the
+//   7. PENDING mutation flow: while centralized is ON, creating a rule via
+//      the API must NOT land directly — Kodus opens a PR on the source repo
+//      and only the merge makes it active; deletion mirrors it
+//      (create→PR→merge→active, delete→PR→merge→gone).
+//   8. init(syncOption=pr): Kodus opens the initialization PR with the
 //      current settings; the scenario asserts it exists and closes it.
-//   8. disable → status(off).
+//   9. disable → status(off).
 //
 // FULLY ISOLATED: signs up its own throwaway org (enabling centralized config
 // makes a tenant's review config read-only and writes org-global config — a
@@ -55,9 +61,8 @@ import type { KodusSession, RunContext, Scenario, TargetContext } from "../lib/t
 // GH_TEST_TOKEN PAT can WRITE to (it seeds/updates/deletes files and merges
 // PRs there). Skips cleanly when unset.
 //
-// Out of scope (deliberate): review-time effect of synced rules (that is
-// kody-rules-create-and-apply's job and needs a full LLM review round), and
-// the PENDING_ADD/EDIT/DELETE UI-edit lifecycle (needs web-UI driving).
+// Out of scope (deliberate): review-time effect of synced rules — that is
+// kody-rules-create-and-apply's job and needs a full LLM review round.
 // ---------------------------------------------------------------------------
 
 const PASSWORD = "E2eCentralized!2026x";
@@ -110,20 +115,37 @@ function memoryYml(title: string, marker: string): string {
 // carrying BOTH a title and a status, so assertions can distinguish "active"
 // from "soft-deleted but still serialized" without pinning the exact response
 // nesting (same approach as kody-rules.ts findRuleStatusById).
-function collectRuleStatuses(
+function collectRuleEntries(
     node: unknown,
-    out: Array<{ title: string; status: string }> = [],
-): Array<{ title: string; status: string }> {
+    out: Array<{
+        title: string;
+        status: string;
+        uuid?: string;
+        centralizedStatus?: string;
+    }> = [],
+): Array<{
+    title: string;
+    status: string;
+    uuid?: string;
+    centralizedStatus?: string;
+}> {
     if (Array.isArray(node)) {
-        for (const item of node) collectRuleStatuses(item, out);
+        for (const item of node) collectRuleEntries(item, out);
         return out;
     }
     if (node && typeof node === "object") {
         const obj = node as Record<string, unknown>;
         if (typeof obj.title === "string" && typeof obj.status === "string") {
-            out.push({ title: obj.title, status: obj.status });
+            const cc = obj.centralizedConfig as { status?: unknown } | undefined;
+            out.push({
+                title: obj.title,
+                status: obj.status,
+                uuid: typeof obj.uuid === "string" ? obj.uuid : undefined,
+                centralizedStatus:
+                    typeof cc?.status === "string" ? cc.status : undefined,
+            });
         }
-        for (const v of Object.values(obj)) collectRuleStatuses(v, out);
+        for (const v of Object.values(obj)) collectRuleEntries(v, out);
     }
     return out;
 }
@@ -158,7 +180,7 @@ async function fetchRules(
 
 function activeTitles(rulesBody: unknown): Set<string> {
     return new Set(
-        collectRuleStatuses(rulesBody)
+        collectRuleEntries(rulesBody)
             .filter((r) => r.status === "active")
             .map((r) => r.title),
     );
@@ -278,7 +300,17 @@ export const centralizedConfigSync: Scenario = {
 
             // --------------------------------------------------------------
             // Phase 2 — seed state v1 (all scopes + rules + memory), sync #1.
+            // Pre-flight: close any open PR left by a previous run that died
+            // mid-phase (the pending-flow PR detection below relies on "the
+            // newest open PR is ours").
             // --------------------------------------------------------------
+            for (const stale of await ghListOpenPRs(sourceRepoFullName!)) {
+                try {
+                    await ghClosePR(sourceRepoFullName!, stale.number);
+                } catch {
+                    /* best effort */
+                }
+            }
             await ghPutFile(sourceRepoFullName!, FILES.global, configYml(G1), `e2e ${uniq}: seed global config`);
             await ghPutFile(sourceRepoFullName!, FILES.repo, configYml(R1), `e2e ${uniq}: seed repo-scope config`);
             await ghPutFile(sourceRepoFullName!, FILES.dir, configYml(D1), `e2e ${uniq}: seed dir-scope config`);
@@ -412,7 +444,125 @@ export const centralizedConfigSync: Scenario = {
             );
 
             // --------------------------------------------------------------
-            // Phase 6 — init(syncOption=pr): disable, re-init in PR mode,
+            // Phase 6 — PENDING flow: while centralized is ON, a rule
+            // mutation via the API must NOT land directly — Kodus opens a PR
+            // on the source repo and parks the rule as pending; merging the
+            // PR is what makes it active (and deletion mirrors it).
+            // --------------------------------------------------------------
+            const pendingTitle = `e2e-pending-rule-${uniq}`;
+            const createResp = await http(
+                `${ctx.target.apiBaseUrl}/kody-rules/create-or-update`,
+                {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${session.accessToken}` },
+                    body: {
+                        teamId: session.teamId,
+                        repositoryId: String(sourceRepo.id),
+                        type: "standard",
+                        title: pendingTitle,
+                        rule: `E2E pending-flow rule (${uniq}): created via API while centralized config is enabled; must arrive through a merged PR, never directly.`,
+                        severity: "medium",
+                        origin: "user",
+                        path: "",
+                    },
+                    timeoutMs: 60_000,
+                },
+            );
+            ctx.assert(
+                createResp.status >= 200 && createResp.status < 300,
+                `create-or-update (pending flow) failed: HTTP ${createResp.status} ${createResp.raw.slice(0, 200)}`,
+            );
+            // The rule must be parked as pending_add (its lifecycle `status`
+            // flips to active immediately — the review-exclusion gate keys
+            // off centralizedConfig.status, observed live on QA)…
+            const rulesAfterCreate = await fetchRules(ctx.target, session);
+            const createdEntry = collectRuleEntries(rulesAfterCreate).find(
+                (r) => r.title === pendingTitle,
+            );
+            ctx.assert(
+                createdEntry?.centralizedStatus === "pending_add",
+                `Pending flow broken: rule "${pendingTitle}" should carry centralizedConfig.status=pending_add right after creation, got ${JSON.stringify(createdEntry)}`,
+            );
+            // …and a PR must exist on the source repo carrying it.
+            const mutationPr = await pollUntil<{ number: number }>(
+                async () => {
+                    const open = await ghListOpenPRs(sourceRepoFullName!);
+                    return open[0] ?? null;
+                },
+                { intervalSec: 3, timeoutSec: 45 },
+            );
+            ctx.assert(
+                mutationPr,
+                `Pending flow broken: no PR was opened on ${sourceRepoFullName} for the rule mutation within 45s`,
+            );
+            evidence.pendingCreatePr = mutationPr!.number;
+            await ghMergePRNumber(sourceRepoFullName!, mutationPr!.number);
+            const pendingSynced = await pollUntil<boolean>(
+                async () => {
+                    const rules = await fetchRules(ctx.target, session);
+                    const entry = collectRuleEntries(rules).find(
+                        (r) => r.title === pendingTitle,
+                    );
+                    return entry?.centralizedStatus === "synced" &&
+                        entry.status === "active"
+                        ? true
+                        : null;
+                },
+                { intervalSec: 5, timeoutSec: 240 },
+            );
+            ctx.assert(
+                pendingSynced,
+                `Pending flow broken: rule "${pendingTitle}" did not transition to centralizedStatus=synced within 240s of merging its PR #${mutationPr!.number}`,
+            );
+
+            // Deletion mirrors it: API delete → PR → merge → rule gone.
+            const ruleUuid = collectRuleEntries(
+                await fetchRules(ctx.target, session),
+            ).find((r) => r.title === pendingTitle)?.uuid;
+            ctx.assert(
+                ruleUuid,
+                `Could not resolve uuid for "${pendingTitle}" after it became active`,
+            );
+            const delResp = await http(
+                `${ctx.target.apiBaseUrl}/kody-rules/delete-rule-in-organization-by-id?ruleId=${encodeURIComponent(ruleUuid!)}&teamId=${encodeURIComponent(session.teamId)}`,
+                {
+                    method: "DELETE",
+                    headers: { Authorization: `Bearer ${session.accessToken}` },
+                    timeoutMs: 60_000,
+                },
+            );
+            ctx.assert(
+                delResp.status >= 200 && delResp.status < 300,
+                `delete (pending flow) failed: HTTP ${delResp.status} ${delResp.raw.slice(0, 200)}`,
+            );
+            const deletePr = await pollUntil<{ number: number }>(
+                async () => {
+                    const open = await ghListOpenPRs(sourceRepoFullName!);
+                    return open[0] ?? null;
+                },
+                { intervalSec: 3, timeoutSec: 45 },
+            );
+            ctx.assert(
+                deletePr,
+                `Pending-delete flow broken: no PR opened on ${sourceRepoFullName} for the rule deletion within 45s`,
+            );
+            evidence.pendingDeletePr = deletePr!.number;
+            await ghMergePRNumber(sourceRepoFullName!, deletePr!.number);
+            const pendingGone = await pollUntil<boolean>(
+                async () => {
+                    const rules = await fetchRules(ctx.target, session);
+                    return !activeTitles(rules).has(pendingTitle) ? true : null;
+                },
+                { intervalSec: 5, timeoutSec: 240 },
+            );
+            ctx.assert(
+                pendingGone,
+                `Pending-delete flow broken: rule "${pendingTitle}" still ACTIVE 240s after merging its deletion PR #${deletePr!.number}`,
+            );
+            evidence.pendingFlow = "create→PR→merge→active, delete→PR→merge→gone";
+
+            // --------------------------------------------------------------
+            // Phase 7 — init(syncOption=pr): disable, re-init in PR mode,
             // assert Kodus opened the initialization PR, close it.
             // --------------------------------------------------------------
             const disable1 = await disable(ctx.target, teamKey);
@@ -441,7 +591,7 @@ export const centralizedConfigSync: Scenario = {
             evidence.initPr = initPr.prUrl;
 
             // --------------------------------------------------------------
-            // Phase 7 — disable → off.
+            // Phase 8 — disable → off.
             // --------------------------------------------------------------
             const disable2 = await disable(ctx.target, teamKey);
             ctx.assert(disable2.success, `final disable failed: ${JSON.stringify(disable2)}`);

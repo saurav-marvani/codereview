@@ -175,6 +175,44 @@ export async function ghClosePR(repo: string, prNumber: number): Promise<void> {
     ensureOk(resp, `gh:closePR #${prNumber}`);
 }
 
+// Newest-first list of open PRs. Used to locate the PR Kodus itself opened
+// (PENDING rule-mutation flow / init-pr) without depending on its branch
+// naming convention.
+export async function ghListOpenPRs(
+    repo: string,
+): Promise<Array<{ number: number; title: string; head: string }>> {
+    const resp = await http<
+        Array<{ number: number; title: string; head: { ref: string } }>
+    >(`${API}/repos/${repo}/pulls?state=open&sort=created&direction=desc`, {
+        headers: headers(),
+        timeoutMs: 20_000,
+    });
+    ensureOk(resp, "gh:listOpenPRs");
+    return resp.body.map((p) => ({
+        number: p.number,
+        title: p.title,
+        head: p.head.ref,
+    }));
+}
+
+// Merge an EXISTING PR by number (ghMergeChange merges only the PR it
+// created). Used to land the PRs Kodus opens for pending rule mutations.
+export async function ghMergePRNumber(
+    repo: string,
+    prNumber: number,
+): Promise<void> {
+    const resp = await http(
+        `${API}/repos/${repo}/pulls/${prNumber}/merge`,
+        {
+            method: "PUT",
+            headers: headers(),
+            body: { merge_method: "squash" },
+            timeoutMs: 30_000,
+        },
+    );
+    ensureOk(resp, `gh:mergePR #${prNumber}`);
+}
+
 export async function ghGetPRState(
     repo: string,
     prNumber: number,
