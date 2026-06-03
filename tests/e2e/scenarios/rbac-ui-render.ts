@@ -34,7 +34,8 @@ export const rbacUiRender: Scenario = {
         provider: ["github"],
         license: ["trial", "paid", "license-paid"],
     },
-    timeoutSec: 600,
+    // 4 roles × (menu check + 5 route renders) in a real browser.
+    timeoutSec: 900,
     async run(ctx: RunContext) {
         ctx.assert(existsSync(SPEC), `Playwright spec not found at ${SPEC}`);
 

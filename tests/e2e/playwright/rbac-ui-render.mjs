@@ -3,8 +3,10 @@
 // The HTTP route-guard e2e proves *authorization* (200 vs /forbidden) but NOT
 // that the UI renders. This drives a real Chromium per role and asserts on the
 // rendered DOM — the "Token Usage" menu item appears only for allowed roles,
-// the /token-usage screen actually renders for them, and denied roles land on
-// a rendered /forbidden page. Records a video + screenshots per role.
+// and each route in ROUTE_CHECKS (token-usage, pull-requests, git settings,
+// activity logs, cockpit) actually renders for allowed roles while denied
+// roles land on a rendered /forbidden page. Records a video + screenshots per
+// role × route.
 //
 // Auth without the brittle sign-in form: we mint a next-auth session over HTTP
 // (validated flow) and inject the cookies straight into the browser context.
@@ -26,6 +28,42 @@ mkdirSync(OUT_DIR, { recursive: true });
 
 // TokenUsage is the #1229 case: every role except contributor may see/open it.
 const tokenUsageAllowed = (role) => role !== "contributor";
+
+// Route-render matrix. `allowed` mirrors ROLE_POLICIES (role-policies.ts);
+// `marker` is page text that proves the screen actually rendered (not just a
+// 200). `marker: null` = only assert allow-side is NOT /forbidden (cockpit's
+// body is data-dependent charts, no stable heading).
+const ROUTE_CHECKS = [
+    {
+        path: "/token-usage",
+        marker: "token usage",
+        allowed: tokenUsageAllowed,
+    },
+    {
+        // Contributor read visibility (new): PRs on assigned repos.
+        path: "/pull-requests",
+        marker: "pull requests",
+        allowed: (role) => role !== "billing_manager",
+    },
+    {
+        // Contributor read visibility (new): git settings.
+        path: "/settings/git",
+        marker: "git settings",
+        allowed: () => true,
+    },
+    {
+        // Contributor read visibility (new): activity logs.
+        path: "/user-logs",
+        marker: "user activity logs",
+        allowed: () => true,
+    },
+    {
+        // Cockpit stays admin-only — contributor/billing must hit /forbidden.
+        path: "/cockpit",
+        marker: null,
+        allowed: (role) => role === "owner" || role === "repo_admin",
+    },
+];
 
 const log = (m) => console.log(`[rbac-ui] ${m}`);
 const failures = [];
@@ -136,29 +174,33 @@ for (const { role, email } of ROLES) {
             log(`WARN ${role}: user menu did not open (headless) — menu-item check skipped`);
         }
 
-        // ---- 2) Route render: open /token-usage, assert what renders ----
-        await page.goto(`${WEB}/token-usage`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-        await page.waitForTimeout(1500);
-        const url = page.url();
-        const bodyText = (await page.locator("body").innerText().catch(() => "")).toLowerCase();
-        await page.screenshot({ path: `${OUT_DIR}/${role}-token-usage.png`, fullPage: true });
+        // ---- 2) Route render: open each route, assert render vs /forbidden ----
+        for (const { path, marker, allowed } of ROUTE_CHECKS) {
+            const want = allowed(role);
+            await page.goto(`${WEB}${path}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+            await page.waitForTimeout(1500);
+            const url = page.url();
+            const bodyText = (await page.locator("body").innerText().catch(() => "")).toLowerCase();
+            const slug = path.replace(/^\//, "").replace(/\//g, "-");
+            await page.screenshot({ path: `${OUT_DIR}/${role}-${slug}.png`, fullPage: true });
 
-        if (wantItem) {
-            const onForbidden = /\/forbidden\b/.test(url);
-            const renderedTitle = bodyText.includes("token usage");
-            if (onForbidden || !renderedTitle) {
-                failures.push(
-                    `${role}: /token-usage should RENDER (got url=${url}, hasTitle=${renderedTitle})`,
-                );
+            if (want) {
+                const onForbidden = /\/forbidden\b/.test(url);
+                const renderedTitle = marker ? bodyText.includes(marker) : true;
+                if (onForbidden || !renderedTitle) {
+                    failures.push(
+                        `${role}: ${path} should RENDER (got url=${url}, hasMarker=${renderedTitle})`,
+                    );
+                } else {
+                    log(`OK  ${role} ${path} rendered${marker ? " (marker visible)" : ""}`);
+                }
             } else {
-                log(`OK  ${role} /token-usage rendered (title visible)`);
-            }
-        } else {
-            const onForbidden = /\/forbidden\b/.test(url) || bodyText.includes("access denied");
-            if (!onForbidden) {
-                failures.push(`${role}: /token-usage should be FORBIDDEN (got url=${url})`);
-            } else {
-                log(`OK  ${role} /token-usage blocked → forbidden page rendered`);
+                const onForbidden = /\/forbidden\b/.test(url) || bodyText.includes("access denied");
+                if (!onForbidden) {
+                    failures.push(`${role}: ${path} should be FORBIDDEN (got url=${url})`);
+                } else {
+                    log(`OK  ${role} ${path} blocked → forbidden page rendered`);
+                }
             }
         }
     } catch (e) {

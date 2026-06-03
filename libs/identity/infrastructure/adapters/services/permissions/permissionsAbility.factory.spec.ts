@@ -56,14 +56,15 @@ describe('PermissionsAbilityFactory', () => {
         expect(ability.can(Action.Read, ResourceType.Cockpit)).toBe(false);
     });
 
-    it('CONTRIBUTOR: read cli-review/issues/code-review, but NOT PRs, token usage, or edit', async () => {
+    it('CONTRIBUTOR: read cli-review/issues/code-review/PRs, but NOT cockpit, token usage, or edit', async () => {
         const ability = await buildFor(Role.CONTRIBUTOR);
         expect(ability.can(Action.Read, ResourceType.CliReview)).toBe(true);
         expect(ability.can(Action.Read, ResourceType.Issues)).toBe(true);
         expect(ability.can(Action.Read, ResourceType.CodeReviewSettings)).toBe(
             true,
         );
-        expect(ability.can(Action.Read, ResourceType.PullRequests)).toBe(false);
+        expect(ability.can(Action.Read, ResourceType.PullRequests)).toBe(true);
+        expect(ability.can(Action.Read, ResourceType.Cockpit)).toBe(false);
         expect(ability.can(Action.Read, ResourceType.TokenUsage)).toBe(false);
         expect(ability.can(Action.Update, ResourceType.CodeReviewSettings)).toBe(
             false,

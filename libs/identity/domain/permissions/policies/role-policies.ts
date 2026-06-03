@@ -91,6 +91,13 @@ const contributor: PolicyRule[] = [
     { action: Action.Read, resource: ResourceType.IssuesSettings, scope: 'org' },
     // CLI reviews — own (assigned repos).
     { action: Action.Read, resource: ResourceType.CliReview, scope: 'repo' },
+
+    // Read-only visibility across the product, mirroring Repo Admin's read
+    // grants — except Cockpit and Token Usage, which stay admin-only.
+    { action: Action.Read, resource: ResourceType.PullRequests, scope: 'repo' },
+    { action: Action.Read, resource: ResourceType.Logs, scope: 'repo', global: true },
+    { action: Action.Read, resource: ResourceType.GitSettings, scope: 'org' },
+    { action: Action.Read, resource: ResourceType.PluginSettings, scope: 'org' },
 ];
 
 export const ROLE_POLICIES: Record<Role, PolicyRule[]> = {
