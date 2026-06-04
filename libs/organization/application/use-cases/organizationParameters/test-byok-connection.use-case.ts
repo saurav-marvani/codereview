@@ -1,4 +1,7 @@
-import { BYOKProvider } from '@kodus/kodus-common/llm';
+import {
+    anthropicCompatibleRootURL,
+    BYOKProvider,
+} from '@kodus/kodus-common/llm';
 import { ProviderService } from '@libs/core/infrastructure/services/providers/provider.service';
 import { createLogger } from '@kodus/flow';
 import { BadRequestException, Injectable } from '@nestjs/common';
@@ -189,6 +192,24 @@ export class TestByokConnectionUseCase {
             );
         }
 
+        // Anthropic-compatible: probe the real /v1/messages endpoint with a
+        // 1-token request instead of /v1/models. Some vendors gate the two
+        // differently — Kimi Code's models list is open while chat is
+        // restricted — so a models-list probe can report "connection OK"
+        // for a key whose actual reviews would fail.
+        if (byokProvider === BYOKProvider.ANTHROPIC_COMPATIBLE) {
+            if (!baseURL?.trim()) {
+                throw new BadRequestException(
+                    'baseURL is required for anthropic_compatible',
+                );
+            }
+            return await this.testAnthropicCompatible(
+                apiKey,
+                baseURL,
+                input.model,
+            );
+        }
+
         const { url, headers } = this.buildProbeRequest(byokProvider, apiKey, baseURL);
 
         // SSRF guard: only openai_compatible consumes a user-provided
@@ -213,6 +234,61 @@ export class TestByokConnectionUseCase {
         } catch (err) {
             const latencyMs = Date.now() - start;
             return this.normalizeError(err, latencyMs);
+        }
+    }
+
+    /**
+     * Validate an Anthropic-compatible endpoint (Kimi Code, Z.ai, DeepSeek)
+     * by sending a minimal 1-token /v1/messages request — the same call the
+     * real review path makes. Falls back to GET /v1/models when no model is
+     * provided, accepting the weaker signal.
+     */
+    private async testAnthropicCompatible(
+        apiKey: string,
+        baseURL: string,
+        model?: string,
+    ): Promise<TestByokResult> {
+        const root = anthropicCompatibleRootURL(baseURL);
+
+        // SSRF guard: user-provided base URL, same rules as openai_compatible.
+        await assertSafeOpenAICompatibleUrl(root);
+
+        const headers = {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'Content-Type': 'application/json',
+        };
+
+        const start = Date.now();
+        try {
+            if (model?.trim()) {
+                await axios.post(
+                    `${root}/v1/messages`,
+                    {
+                        model: model.trim(),
+                        max_tokens: 1,
+                        messages: [{ role: 'user', content: 'ping' }],
+                    },
+                    {
+                        headers,
+                        timeout: TEST_TIMEOUT_MS,
+                        maxRedirects: 0,
+                    },
+                );
+            } else {
+                await axios.get(`${root}/v1/models`, {
+                    headers,
+                    timeout: TEST_TIMEOUT_MS,
+                    maxRedirects: 0,
+                });
+            }
+            return {
+                ok: true,
+                code: 'ok',
+                latencyMs: Date.now() - start,
+            };
+        } catch (err) {
+            return this.normalizeError(err, Date.now() - start);
         }
     }
 

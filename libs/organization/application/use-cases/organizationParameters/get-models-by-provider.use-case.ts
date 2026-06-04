@@ -102,6 +102,15 @@ export class GetModelsByProviderUseCase {
             case BYOKProvider.AMAZON_BEDROCK:
                 return this.getBedrockModels();
 
+            case BYOKProvider.ANTHROPIC_COMPATIBLE:
+                // Listing needs the user's baseURL + key, which aren't
+                // available here; the frontend forces free-form model input
+                // for baseURL-requiring providers, so this is never called
+                // in the normal flow.
+                throw new BadRequestException(
+                    'Model listing is not available for anthropic_compatible — enter the model ID manually.',
+                );
+
             default:
                 throw new BadRequestException(
                     `Unsupported provider: ${provider}`,

@@ -89,7 +89,7 @@ export function CuratedConnectPanel({
         mode: "onChange",
         resolver: zodResolver(connectSchema),
         defaultValues: {
-            provider: model.provider,
+            provider: variant?.provider ?? model.provider,
             model: model.id,
             apiKey: "",
             baseURL: initialBaseURL,
@@ -105,13 +105,17 @@ export function CuratedConnectPanel({
     const activeBaseURL = variant?.baseURL ?? model.defaults.baseURL;
     const activeApiKeyUrl = variant?.apiKeyUrl ?? model.apiKeyUrl;
 
-    const disabledVariants = new Set(["kimi-code"]);
+    const disabledVariants = new Set<string>([]);
 
     const handleVariantChange = (nextId: string) => {
         if (!nextId || !model.variants || disabledVariants.has(nextId)) return;
         const next = model.variants.find((v) => v.id === nextId);
         if (!next || next.id === variant?.id) return;
         setVariant(next);
+        form.setValue("provider", next.provider ?? model.provider, {
+            shouldValidate: true,
+            shouldDirty: true,
+        });
         form.setValue("baseURL", next.baseURL, {
             shouldValidate: true,
             shouldDirty: true,
