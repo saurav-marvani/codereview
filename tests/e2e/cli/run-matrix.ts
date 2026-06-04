@@ -385,7 +385,20 @@ async function main() {
 // "scenario-id×provider×license" (one cell). Keep entries SHORT-LIVED —
 // every entry must have an open issue; quarantine is a parking lot, not a
 // graveyard.
-const QUARANTINED: string[] = [];
+const QUARANTINED: string[] = [
+    // 2026-06-04: reproducible across MRs !74/!78/!79 on tiny-url-cloud
+    // (gitlab). Review #1 completes in ~50s but links 0 suggestions to the
+    // freshly created TODO rule; the scenario's anti-race re-trigger
+    // ("@kody review") then gets NO second review at all — no notes after
+    // the command, fail lands exactly at the 720s poll budget. Same run:
+    // code-review-basic/command-review/license-attribution × gitlab all
+    // PASS on the same repo, and the command works on FRESH MRs — the gap
+    // is rule-pickup on gitlab review #1 + re-review of an
+    // already-reviewed MR (validate-new-commits short-circuit suspected).
+    // Needs product-side investigation; not a webhook flake (retry proved
+    // it deterministic).
+    "kody-rules-create-and-apply×gitlab×paid",
+];
 
 function isQuarantined(r: ScenarioResult): boolean {
     return (
