@@ -2843,9 +2843,29 @@ export class ForgejoService implements Omit<
     }
 
     private formatPromptForLLM(lineComment: any): string {
-        const prompt = lineComment?.body?.oneLineSummary;
-        if (!prompt) return '';
-        return `\n<details>\n<summary>Prompt for AI</summary>\n\n\`${prompt}\`\n</details>\n`;
+        let copyPrompt = '';
+        if (lineComment?.suggestion?.llmPrompt) {
+            if (lineComment.path) {
+                copyPrompt += `File ${lineComment.path}:\n\n`;
+            }
+
+            if (lineComment.start_line && lineComment.line) {
+                copyPrompt += `Line ${lineComment.start_line} to ${lineComment.line}:\n\n`;
+            } else if (lineComment.line) {
+                copyPrompt += `Line ${lineComment.line}:\n\n`;
+            }
+
+            copyPrompt += lineComment?.suggestion?.llmPrompt;
+
+            if (lineComment?.body?.improvedCode) {
+                copyPrompt +=
+                    '\n\nSuggested Code:\n\n' + lineComment?.body?.improvedCode;
+            }
+
+            copyPrompt = `\n<details>\n<summary>Prompt for LLM</summary>\n\n\`\`\`\n${copyPrompt}\n\`\`\`\n</details>\n`;
+        }
+
+        return copyPrompt;
     }
 
     async formatReviewCommentBody(params: {
