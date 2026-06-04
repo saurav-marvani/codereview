@@ -57,6 +57,11 @@ jobs:
                   path: kodus-installer
                   token: ${{ secrets.CROSS_REPO_PAT }}
 
+            - uses: pnpm/action-setup@v4
+              with:
+                  # checkout vive em kodus-ai/ — sem package.json na raiz do
+                  # workspace, o action-setup não resolve o packageManager
+                  version: 10.34.1
             - uses: actions/setup-node@v4
               with:
                   node-version: 22
