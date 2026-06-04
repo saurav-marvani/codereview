@@ -109,6 +109,7 @@ jobs:
                   echo "Seeded $COUNT cloud tenants"
 
             - name: Wait for QA backend to be healthy (avoid deploy-race 403s)
+              id: readiness
               env:
                   TARGET_WEB_URL: ${{ vars.CLOUD_QA_WEB_URL || 'https://qa.web.kodus.io' }}
                   # The image tag GitOps is deploying for THIS run. When set we
@@ -182,6 +183,7 @@ jobs:
                   exit 1
 
             - name: Run cloud matrix
+              id: matrix
               env:
                   # target.sh expects TARGET_BASE_URL + TARGET_WEB_URL.
                   # vars.CLOUD_QA_* canonicalise the URLs; the matrix
@@ -239,16 +241,78 @@ jobs:
                   if-no-files-found: warn
                   retention-days: 30
 
-            - name: Notify Discord on failure
-              if: failure()
+            # Build the human-readable digest from the matrix's notify.json
+            # (written next to result.json) so Discord shows REAL numbers
+            # ("69/70 passed — 1 failed: …") instead of a binary "failed"
+            # that reads like the whole release gate collapsed.
+            - name: Build notification digest
+              id: digest
+              if: always()
+              run: |
+                  set -uo pipefail
+                  f=$(find tests/e2e/evidence -name notify.json -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2- || true)
+                  if [ -z "$f" ]; then
+                      echo "found=false" >> "$GITHUB_OUTPUT"
+                      exit 0
+                  fi
+                  echo "found=true" >> "$GITHUB_OUTPUT"
+                  NOTIFY_JSON="$f" node - <<'__JS__'
+                  const fs = require("fs");
+                  const n = JSON.parse(fs.readFileSync(process.env.NOTIFY_JSON, "utf8"));
+                  const fmt = (l) => l.map((x) => `• \`${x.cell}\`\n  ${x.error}`).join("\n");
+                  const out = [];
+                  out.push(`headline=${n.passed}/${n.total} passed (failed=${n.failed}, skipped=${n.skipped})`);
+                  out.push(`gating_count=${n.gatingFailures.length}`);
+                  out.push(`advisory_count=${n.advisoryFailures.length}`);
+                  out.push(`retried_count=${n.retriedCells.length}`);
+                  const body = [];
+                  if (n.gatingFailures.length) body.push(`**P0 failures (gating):**\n${fmt(n.gatingFailures)}`);
+                  if (n.advisoryFailures.length) body.push(`**Advisory (non-gating):**\n${fmt(n.advisoryFailures)}`);
+                  if (n.retriedCells.length) body.push(`Recovered on retry: ${n.retriedCells.map((c) => `\`${c}\``).join(", ")}`);
+                  // GITHUB_OUTPUT multiline
+                  out.push("details<<__EOF__");
+                  out.push(body.join("\n") || "—");
+                  out.push("__EOF__");
+                  fs.appendFileSync(process.env.GITHUB_OUTPUT, out.join("\n") + "\n");
+                  __JS__
+
+            # Case 1 — infra: QA never became reachable; the matrix NEVER RAN.
+            # Distinct wording so nobody reads it as "the tests broke".
+            - name: Notify Discord — QA unreachable (infra, matrix did not run)
+              if: failure() && steps.readiness.outcome == 'failure'
               uses: ./.github/actions/discord-notify
               with:
-                  # Per-channel secret with fallback to the general webhook so
-                  # nothing goes silent if DISCORD_WEBHOOK_INTERNAL isn't created yet.
                   webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
                   status: failure
-                  title: "❌ E2E cloud matrix failed"
+                  title: "🔌 E2E: QA unreachable — matrix did NOT run"
                   description: |
-                      `${{ inputs.matrix_file || 'matrix/fast.yml' }}` failed against QA cloud (${{ vars.CLOUD_QA_WEB_URL || 'https://qa.web.kodus.io' }}).
+                      The readiness gate could not reach QA (${{ vars.CLOUD_QA_WEB_URL || 'https://qa.web.kodus.io' }}) at the app level — this is an INFRA condition (deploy still rolling out, or WAF blocking the runner IP), not a test failure. No scenario was executed.
                       Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
                       Trigger: ${{ github.event_name }}${{ github.event_name == 'schedule' && ' (nightly catch-all)' || '' }}
+
+            # Case 2 — the matrix ran and a P0 (gating) failure happened.
+            - name: Notify Discord — gating failures
+              if: failure() && steps.matrix.outcome == 'failure'
+              uses: ./.github/actions/discord-notify
+              with:
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
+                  status: failure
+                  title: "❌ E2E cloud matrix: ${{ steps.digest.outputs.headline || 'failed (no digest)' }}"
+                  description: |
+                      ${{ steps.digest.outputs.details || 'No notify.json produced — see the run log.' }}
+                      Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+                      Trigger: ${{ github.event_name }}${{ github.event_name == 'schedule' && ' (nightly catch-all)' || '' }}
+
+            # Case 3 — run is GREEN but advisory (P1/P2/quarantined) cells
+            # failed: warn without crying wolf.
+            - name: Notify Discord — advisory failures on a green run
+              if: success() && steps.digest.outputs.advisory_count != '0' && steps.digest.outputs.advisory_count != ''
+              uses: ./.github/actions/discord-notify
+              with:
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
+                  status: cancelled
+                  title: "⚠️ E2E cloud matrix GREEN with advisories: ${{ steps.digest.outputs.headline }}"
+                  description: |
+                      All P0 gates passed. Non-gating failures to keep an eye on:
+                      ${{ steps.digest.outputs.details }}
+                      Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

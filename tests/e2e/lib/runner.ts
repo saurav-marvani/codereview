@@ -251,6 +251,27 @@ async function resolveTenantForCell(
     return { email, password };
 }
 
+// Failure shapes worth ONE automatic retry: ABSENCE (something expected
+// never arrived — lost webhook, review that never materialized, pipeline
+// that never woke) and NETWORK/INFRA noise. These are the flake classes
+// observed in practice (e.g. kody-rules × gitlab "No review activity on
+// PR … within timeout" while the same repo passed 3 other scenarios in
+// the same run). Deterministic mismatches — "expected deny, got allow",
+// "Kody posted one", wrong subscriptionStatus — deliberately do NOT
+// match: re-running cannot change a wrong value, it only burns an LLM
+// review and 10 minutes.
+const TRANSIENT_FAILURE_PATTERNS: RegExp[] = [
+    /\btimed?\s?-?out\b|timeout/i,
+    /within \d+\s*s/i,
+    /after \d+\s*s/i,
+    /no review activity|none arrived|never arrived|never (reached|registered|woke|started)|did not (arrive|appear|start)/i,
+    /HTTP 5\d\d|HTTP 429|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|socket hang ?up|network error|Recv failure|operation was aborted/i,
+];
+
+export function isTransientFailure(message: string): boolean {
+    return TRANSIENT_FAILURE_PATTERNS.some((re) => re.test(message ?? ""));
+}
+
 export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
     const startedAt = new Date().toISOString();
     const results: ScenarioResult[] = [];
@@ -368,84 +389,118 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
             }
 
             log.info(`RUN   ${cellLabel}`);
-            const t0 = Date.now();
-            try {
-                const provider = makeProvider(
-                    cell.provider,
-                    cell.target,
-                    tenant?.repoFullName,
-                );
-                const scenarioArtifactDir = join(
-                    artifactDir,
-                    `${scenario.id}-${cell.target}-${cell.provider}-${cell.license}`,
-                );
-                mkdirSync(scenarioArtifactDir, { recursive: true });
 
-                const evidence = await scenario.run({
-                    target,
-                    provider,
-                    license: cell.license,
-                    tenant,
-                    kodus: {
-                        login: (creds) => login(target, creds),
-                        registerIntegration: (session) =>
-                            registerIntegration(target, provider, session),
-                        registerRepo: (session, repoOpts) =>
-                            registerRepo(target, provider, session, repoOpts),
-                        finishOnboarding: (session, repo) =>
-                            finishOnboarding(target, session, repo),
-                    },
-                    assert: (cond, msg) => {
-                        if (!cond) throw new Error(`Assertion failed: ${msg}`);
-                    },
-                    skip: (reason: string): never => {
-                        throw new ScenarioSkipError(reason);
-                    },
-                    artifactDir: scenarioArtifactDir,
-                    runId: opts.runId,
-                });
-
-                const duration = Date.now() - t0;
-                log.ok(`PASS  ${cellLabel}  (${(duration / 1000).toFixed(1)}s)`);
-                results.push(
-                    makeResult(scenario, cell, "passed", duration, evidence),
-                );
-            } catch (err) {
-                const duration = Date.now() - t0;
-                const e = err as Error;
-                // ctx.skip() surfaces here as a recognized sentinel.
-                // Mark the cell as skipped (not failed) so the bottom-
-                // line summary stays accurate and the matrix run as a
-                // whole isn't dragged into "failed" by a precondition
-                // gap (e.g. upgrade-n-1-to-n outside the upgrade flow).
-                // Identity check by .name to survive bundlers that
-                // drop the prototype chain.
-                if (
-                    e instanceof ScenarioSkipError ||
-                    e?.name === "ScenarioSkipError"
-                ) {
-                    log.info(`SKIP  ${cellLabel}  (${e.message})`);
-                    results.push(
-                        makeResult(scenario, cell, "skipped", duration, {
-                            skipReason: e.message,
-                        }),
+            // One automatic retry for TRANSIENT failure shapes (lost
+            // webhook, provider hiccup, network) — see isTransientFailure.
+            // Deterministic assertion mismatches ("expected deny, got
+            // allow", "Kody posted one") never retry: re-running can't
+            // change a wrong value, only waste an LLM review.
+            let failFastHit = false;
+            let retriedAfter: string | undefined;
+            for (let attempt = 1; attempt <= 2; attempt++) {
+                const t0 = Date.now();
+                try {
+                    const provider = makeProvider(
+                        cell.provider,
+                        cell.target,
+                        tenant?.repoFullName,
                     );
-                    continue;
+                    const scenarioArtifactDir = join(
+                        artifactDir,
+                        `${scenario.id}-${cell.target}-${cell.provider}-${cell.license}`,
+                    );
+                    mkdirSync(scenarioArtifactDir, { recursive: true });
+
+                    const evidence = await scenario.run({
+                        target,
+                        provider,
+                        license: cell.license,
+                        tenant,
+                        kodus: {
+                            login: (creds) => login(target, creds),
+                            registerIntegration: (session) =>
+                                registerIntegration(target, provider, session),
+                            registerRepo: (session, repoOpts) =>
+                                registerRepo(target, provider, session, repoOpts),
+                            finishOnboarding: (session, repo) =>
+                                finishOnboarding(target, session, repo),
+                        },
+                        assert: (cond, msg) => {
+                            if (!cond) throw new Error(`Assertion failed: ${msg}`);
+                        },
+                        skip: (reason: string): never => {
+                            throw new ScenarioSkipError(reason);
+                        },
+                        artifactDir: scenarioArtifactDir,
+                        runId: opts.runId,
+                    });
+
+                    const duration = Date.now() - t0;
+                    log.ok(
+                        `PASS  ${cellLabel}  (${(duration / 1000).toFixed(1)}s)${retriedAfter ? " [on retry]" : ""}`,
+                    );
+                    results.push(
+                        makeResult(
+                            scenario,
+                            cell,
+                            "passed",
+                            duration,
+                            retriedAfter
+                                ? { ...evidence, retriedAfter }
+                                : evidence,
+                        ),
+                    );
+                    break;
+                } catch (err) {
+                    const duration = Date.now() - t0;
+                    const e = err as Error;
+                    // ctx.skip() surfaces here as a recognized sentinel.
+                    // Mark the cell as skipped (not failed) so the bottom-
+                    // line summary stays accurate and the matrix run as a
+                    // whole isn't dragged into "failed" by a precondition
+                    // gap (e.g. upgrade-n-1-to-n outside the upgrade flow).
+                    // Identity check by .name to survive bundlers that
+                    // drop the prototype chain.
+                    if (
+                        e instanceof ScenarioSkipError ||
+                        e?.name === "ScenarioSkipError"
+                    ) {
+                        log.info(`SKIP  ${cellLabel}  (${e.message})`);
+                        results.push(
+                            makeResult(scenario, cell, "skipped", duration, {
+                                skipReason: e.message,
+                            }),
+                        );
+                        break;
+                    }
+                    if (
+                        attempt === 1 &&
+                        !opts.failFast &&
+                        isTransientFailure(e.message)
+                    ) {
+                        retriedAfter = e.message;
+                        log.info(
+                            `RETRY ${cellLabel}: transient failure shape, re-running once (${e.message.slice(0, 160)})`,
+                        );
+                        continue;
+                    }
+                    log.err(`FAIL  ${cellLabel}: ${e.message}`);
+                    results.push(
+                        makeResult(
+                            scenario,
+                            cell,
+                            "failed",
+                            duration,
+                            retriedAfter ? { retriedAfter } : {},
+                            e.message,
+                            e.stack,
+                        ),
+                    );
+                    if (opts.failFast) failFastHit = true;
+                    break;
                 }
-                log.err(`FAIL  ${cellLabel}: ${e.message}`);
-                results.push(
-                    makeResult(
-                        scenario,
-                        cell,
-                        "failed",
-                        duration,
-                        {},
-                        e.message,
-                        e.stack,
-                    ),
-                );
-                if (opts.failFast) break;
             }
+            if (failFastHit) break;
         }
     }
 
