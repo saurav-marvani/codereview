@@ -11,7 +11,13 @@ export async function applyWafBypass(ctx) {
     await ctx.route(
         (url) => /^qa\.([a-z0-9-]+\.)*kodus\.io$/i.test(url.hostname),
         (route) =>
-            route.continue({
+            // fallback(), not continue(): this is a pure header-modifier, so
+            // it must hand the request to the rest of the routing chain
+            // instead of terminating it — otherwise any other route() a
+            // scenario registers (API mocks, analytics/image blocking) is
+            // silently skipped for qa.* requests. When no other handler
+            // exists, Playwright performs the request as usual.
+            route.fallback({
                 headers: {
                     ...route.request().headers(),
                     "x-kodus-e2e": secret,

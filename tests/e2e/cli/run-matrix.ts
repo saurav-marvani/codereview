@@ -322,7 +322,8 @@ async function main() {
     const gating = failedResults.filter(
         (r) => priorityOf(r.scenarioId) === "P0" && !isQuarantined(r),
     );
-    const advisory = failedResults.filter((r) => !gating.includes(r));
+    const gatingSet = new Set(gating);
+    const advisory = failedResults.filter((r) => !gatingSet.has(r));
 
     for (const r of advisory) {
         const why = isQuarantined(r)
