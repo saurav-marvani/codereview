@@ -1,15 +1,13 @@
 #!/bin/sh
 set -eu
 
-# Point yarn at a named-volume cache instead of the default
-# /usr/local/share/.cache/yarn — that path lives in the container's
-# writable layer, so every install bloated each container by ~4GB
-# (worse: it cached @next/swc binaries for every platform, including
-# Windows/macOS, that the Linux backend never runs). The volume is
-# declared in docker-compose.dev.yml and shared across services so a
-# single install populates the cache once.
-export YARN_CACHE_FOLDER=/yarn-cache
-mkdir -p "$YARN_CACHE_FOLDER"
+# Point pnpm at a named-volume store instead of a path inside the
+# container's writable layer, so installs don't bloat each container.
+# The volume is declared in docker-compose.dev.yml and shared across
+# services so a single install populates the store once (pnpm's
+# content-addressable store is safe under concurrent access).
+export npm_config_store_dir=/pnpm-store
+mkdir -p "$npm_config_store_dir"
 
 echo "▶ dev-entrypoint: starting (NODE_ENV=${NODE_ENV:-})"
 
@@ -32,7 +30,7 @@ sed -e "s/__CLOUD_MODE__/${CLOUD_MODE}/g" \
     libs/ee/configs/environment/environment.template.ts > libs/ee/configs/environment/environment.ts
 
 # Fingerprint of dependency manifests used to detect stale node_modules volume.
-DEPS_FINGERPRINT=$(node -e "const fs=require('fs'); const crypto=require('crypto'); const h=crypto.createHash('sha256'); h.update(fs.readFileSync('package.json')); h.update('\\n'); h.update(fs.readFileSync('yarn.lock')); process.stdout.write(h.digest('hex'));")
+DEPS_FINGERPRINT=$(node -e "const fs=require('fs'); const crypto=require('crypto'); const h=crypto.createHash('sha256'); h.update(fs.readFileSync('package.json')); h.update('\\n'); h.update(fs.readFileSync('pnpm-lock.yaml')); process.stdout.write(h.digest('hex'));")
 DEPS_STAMP_FILE="node_modules/.deps-fingerprint"
 DEPS_LOCK_DIR="node_modules/.deps-install.lock"
 
@@ -75,8 +73,8 @@ install_deps() {
     mkdir -p node_modules
   fi
 
-  echo "▶ Installing deps (yarn --frozen-lockfile)…"
-  yarn install --frozen-lockfile
+  echo "▶ Installing deps (pnpm install --frozen-lockfile)…"
+  pnpm install --frozen-lockfile
   mkdir -p node_modules
   printf "%s" "$DEPS_FINGERPRINT" > "$DEPS_STAMP_FILE"
 

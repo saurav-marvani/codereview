@@ -3,7 +3,7 @@
  * current .env.schema while preserving as much of the user's data as
  * possible.
  *
- *   yarn env:reconcile [--source <path>] [--output <path>]
+ *   pnpm run env:reconcile [--source <path>] [--output <path>]
  *
  * Default source:  ./.env  (the one running the app right now)
  * Default output:  ./.env.reconciled  (review before replacing .env)
@@ -191,7 +191,7 @@ function main(): void {
     console.log(`Dropped:     ${dropped.length} (kept as a commented audit block)`);
     console.log();
     console.log(`Next: diff .env ${output}  →  if good, mv ${output} .env`);
-    console.log(`Then: yarn env:pull   (once the 1P vault is populated)`);
+    console.log(`Then: pnpm run env:pull   (once the 1P vault is populated)`);
 }
 
 type Resolved =

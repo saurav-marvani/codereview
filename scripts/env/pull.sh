@@ -2,9 +2,9 @@
 # Materialize .env from .env.template by resolving 1Password refs (op://...).
 #
 # Usage:
-#   yarn env:pull              # writes ./.env, backing up any existing file
-#   yarn env:pull --force      # overwrites without backup
-#   yarn env:pull --check      # validates auth + template; writes nothing
+#   pnpm run env:pull              # writes ./.env, backing up any existing file
+#   pnpm run env:pull --force      # overwrites without backup
+#   pnpm run env:pull --check      # validates auth + template; writes nothing
 #
 # Requirements:
 #   - 1Password CLI (`op`) installed and signed in
@@ -70,13 +70,13 @@ Either:
   - Or your account doesn't have access to the "$VAULT" vault. Ask an
     admin to add you.
 
-Then re-run: yarn env:pull
+Then re-run: pnpm run env:pull
 EOF
     exit 1
 fi
 
 if [[ ! -f "$TEMPLATE" ]]; then
-    echo "error: $TEMPLATE not found. Run \`yarn env:apply\` to regenerate it from .env.schema." >&2
+    echo "error: $TEMPLATE not found. Run \`pnpm run env:apply\` to regenerate it from .env.schema." >&2
     exit 1
 fi
 
@@ -137,7 +137,7 @@ Fix the vault item to be single-line with escaped newlines:
     op item edit "$OFFENDER" --vault "$VAULT" "password=-"
 
 The app un-escapes \\n at read time (see github.service.ts). Then re-run
-\`yarn env:pull\`. The malformed .env was NOT written.
+\`pnpm run env:pull\`. The malformed .env was NOT written.
 EOF
     exit 1
 fi

@@ -13,8 +13,8 @@ import { sign } from 'jsonwebtoken';
  * the UI — parity runs, curl probing, etc.
  *
  * Usage:
- *   yarn analytics:mint-dev-jwt --email you@kodus.io
- *   yarn analytics:mint-dev-jwt --email you@kodus.io --expires 24h
+ *   pnpm run analytics:mint-dev-jwt --email you@kodus.io
+ *   pnpm run analytics:mint-dev-jwt --email you@kodus.io --expires 24h
  *
  * Env (from `.env`):
  *   API_JWT_SECRET       (required — same secret the api container uses)

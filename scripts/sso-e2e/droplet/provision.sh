@@ -36,9 +36,9 @@
 #   CADDY_ACME_CA               (optional; default LE production)
 #
 # Usage:
-#   yarn sso-e2e:droplet:provision                 # provision + run test
-#   yarn sso-e2e:droplet:provision --skip-test     # provision only
-#   yarn sso-e2e:droplet:provision --reuse         # reuse existing droplet
+#   pnpm run sso-e2e:droplet:provision                 # provision + run test
+#   pnpm run sso-e2e:droplet:provision --skip-test     # provision only
+#   pnpm run sso-e2e:droplet:provision --reuse         # reuse existing droplet
 
 set -euo pipefail
 
@@ -93,7 +93,7 @@ if [ "${REUSE}" = "1" ] && state_exists "${NAME}"; then
 else
     if state_exists "${NAME}"; then
         warn "Droplet '${NAME}' already exists (IP $(state_get "${NAME}" .server_ip))."
-        warn "Pass --reuse to reuse it, or destroy first: yarn sso-e2e:droplet:destroy --name ${NAME}"
+        warn "Pass --reuse to reuse it, or destroy first: pnpm run sso-e2e:droplet:destroy --name ${NAME}"
         exit 1
     fi
     log "Provisioning base Kodus stack on a fresh droplet (~5 min)…"
@@ -396,14 +396,14 @@ cat <<EOF
 
   Test user   sso-user@kodus-test.com / TestSso!2026
 
-  Run test    yarn sso-e2e:droplet:run
-  Destroy     yarn sso-e2e:droplet:destroy --name ${NAME}
+  Run test    pnpm run sso-e2e:droplet:run
+  Destroy     pnpm run sso-e2e:droplet:destroy --name ${NAME}
 
 EOF
 
 # ---------- step 10: run Playwright ----------
 if [ "${SKIP_TEST}" = "1" ]; then
-    log "Skipping Playwright (--skip-test). Run later: yarn sso-e2e:droplet:run"
+    log "Skipping Playwright (--skip-test). Run later: pnpm run sso-e2e:droplet:run"
     exit 0
 fi
 

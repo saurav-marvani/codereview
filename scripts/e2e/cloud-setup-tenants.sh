@@ -7,7 +7,7 @@
 # Config sources (caller env wins):
 #   1. inline env on the call
 #   2. scripts/e2e/.env       (per-repo override; gitignored)
-#   3. ~/.kodus-dev/config    (team default, set by `yarn selfhosted:setup`)
+#   3. ~/.kodus-dev/config    (team default, set by `pnpm run selfhosted:setup`)
 #
 # `op://Vault/Item/field` references are resolved via the 1Password CLI
 # the same way `run.sh` does — required since cloud signup needs the
@@ -88,7 +88,7 @@ cd "$E2E_DIR"
 
 if [ ! -d node_modules ]; then
     warn "Installing tests/e2e dependencies (first run)…"
-    yarn install --silent
+    pnpm install --silent
 fi
 
 exec npx tsx cli/cloud/setup-tenants.ts "$@"

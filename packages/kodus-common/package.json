@@ -14,14 +14,14 @@
     },
     "license": "AGPL-3.0-only",
     "scripts": {
-        "prepack": "rm -rf dist && yarn generate-barrels && yarn types",
-        "prepack:watch": "yarn generate-barrels && tsc -b --watch tsconfig.build.json",
+        "prepack": "rm -rf dist && pnpm run generate-barrels && pnpm run types",
+        "prepack:watch": "pnpm run generate-barrels && tsc -b --watch tsconfig.build.json",
         "generate-barrels": "barrelsby --delete -c barrelsby.json",
         "types": "tsc -b --force tsconfig.build.json && tsc-alias tsconfig.build.json",
         "test": "jest --runInBand --detectOpenHandles --forceExit",
         "publish:gar": "source scripts/refresh-token.sh && npm publish --registry=https://us-central1-npm.pkg.dev/$GAR_PROJECT_ID/kodus-pkg/ --access public",
         "refresh-token": "source scripts/refresh-token.sh",
-        "publish:quick": "source scripts/refresh-token.sh && yarn prepack && yarn publish:gar"
+        "publish:quick": "source scripts/refresh-token.sh && pnpm run prepack && pnpm run publish:gar"
     },
     "files": [
         "dist/**/*"
@@ -122,8 +122,10 @@
         "coverageDirectory": "../coverage",
         "testEnvironment": "node"
     },
-    "resolutions": {
-        "flatted": "^3.4.2",
-        "minimatch": "^10.2.4"
+    "pnpm": {
+        "overrides": {
+            "flatted": "^3.4.2",
+            "minimatch": "^10.2.4"
+        }
     }
 }

@@ -96,20 +96,20 @@ These can only be validated by triggering an actual release. See `docs-internal/
 
 ```bash
 # Cloud, GitHub, paid tenant
-yarn e2e:scenario code-review-basic --target cloud --provider github --license paid
+pnpm run e2e:scenario code-review-basic --target cloud --provider github --license paid
 
 # Self-hosted, GitLab, license-paid
-yarn e2e:scenario code-review-basic --target self-hosted --provider gitlab --license license-paid
+pnpm run e2e:scenario code-review-basic --target self-hosted --provider gitlab --license license-paid
 ```
 
 ### A full matrix
 
 ```bash
 # Run all P0 scenarios across the full matrix
-yarn e2e:matrix matrix/fast.yml
+pnpm run e2e:matrix matrix/fast.yml
 
 # Release validation (all scenarios, all cells)
-yarn e2e:matrix matrix/full.yml
+pnpm run e2e:matrix matrix/full.yml
 ```
 
 ## Environment variables

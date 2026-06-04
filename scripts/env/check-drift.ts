@@ -1,6 +1,6 @@
 /**
  * CI guard: regenerate from schema and fail if any committed target file
- * has drifted. Run with `yarn env:check`.
+ * has drifted. Run with `pnpm run env:check`.
  */
 
 import { execSync } from 'node:child_process';
@@ -66,7 +66,7 @@ for (const t of targets) {
 
 if (drifted > 0) {
     console.error(
-        `\n${drifted} target(s) drifted from .env.schema. Run \`yarn env:apply\` and commit.`,
+        `\n${drifted} target(s) drifted from .env.schema. Run \`pnpm run env:apply\` and commit.`,
     );
     process.exit(1);
 }

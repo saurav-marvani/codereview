@@ -189,7 +189,7 @@ if [[ ${#errors[@]} -gt 0 ]]; then
   for e in "${errors[@]}"; do
     echo "  - $e"
   done
-  echo "[env-doctor] fix tip: run 'yarn setup' and re-check"
+  echo "[env-doctor] fix tip: run 'pnpm run setup' and re-check"
   exit 1
 fi
 

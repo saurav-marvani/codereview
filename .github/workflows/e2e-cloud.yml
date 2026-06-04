@@ -7,7 +7,7 @@ permissions:
     contents: read
 
 # Runs the canonical e2e matrix against the cloud QA target. Mirrors
-# `yarn e2e:matrix matrix/fast.yml --target cloud` locally:
+# `pnpm run e2e:matrix matrix/fast.yml --target cloud` locally:
 #   - Same matrix YAML (tests/e2e/matrix/fast.yml) — single source of
 #     truth. Adding a scenario or cell to fast.yml is automatically
 #     picked up by CI; no parallel matrix list to keep in sync.

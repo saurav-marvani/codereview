@@ -97,13 +97,13 @@ jobs:
               uses: actions/setup-node@v4
               with:
                   node-version: "22"
-                  cache: "yarn"
+                  cache: "pnpm"
 
             - name: Install dependencies
-              run: yarn install --frozen-lockfile
+              run: pnpm install --frozen-lockfile
 
             - name: Verify snapshot is in sync
-              run: yarn feature-gate:snapshot:check
+              run: pnpm run feature-gate:snapshot:check
 
             - name: Draft and publish promotions for this release
               env:
@@ -124,7 +124,7 @@ jobs:
                   DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
                   RELEASE_TAG: ${{ needs.validate.outputs.tag }}
               run: |
-                  yarn ts-node scripts/feature-gate/publish-changelog.ts \
+                  pnpm run ts-node scripts/feature-gate/publish-changelog.ts \
                       --tag "$RELEASE_TAG"
 
             - name: Commit changelog entry (if any)

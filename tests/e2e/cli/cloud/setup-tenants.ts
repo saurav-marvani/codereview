@@ -6,9 +6,9 @@
  * isolation pattern.
  *
  * Usage:
- *   yarn cloud:setup-tenants                    # all tenants
+ *   pnpm run cloud:setup-tenants                    # all tenants
  *   CLOUD_SETUP_ONLY=e2e-paid-gh@kodus.io \     # one tenant
- *     yarn cloud:setup-tenants
+ *     pnpm run cloud:setup-tenants
  *
  * Idempotent: signUp() returns silently on 409, integration POST
  * upserts in place, repo registration is idempotent on the Kodus side.

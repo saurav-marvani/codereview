@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Warn the dev if .env-relevant files changed in a pull/checkout and the
-# local .env may be stale (i.e. you forgot to run `yarn env:pull`).
+# local .env may be stale (i.e. you forgot to run `pnpm run env:pull`).
 #
 # Runs from .husky/post-merge and .husky/post-checkout — must exit 0 even
 # on errors so the git operation never blocks.
@@ -36,6 +36,6 @@ fi
 
 printf "\n${Y}⚠  Schema or env templates changed in this update:${N}\n"
 echo "$CHANGED" | sed 's/^/   • /'
-printf "\n   ${B}Run \`yarn env:pull\`${N} to regenerate your local .env.\n\n"
+printf "\n   ${B}Run \`pnpm run env:pull\`${N} to regenerate your local .env.\n\n"
 
 exit 0

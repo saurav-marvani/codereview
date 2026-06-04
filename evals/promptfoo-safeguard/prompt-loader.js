@@ -2,7 +2,7 @@
  * Loads the pre-generated safeguard prompt from JSON.
  *
  * To regenerate the prompt after codebase changes, run:
- *   yarn eval:safeguard:generate-prompt
+ *   pnpm run eval:safeguard:generate-prompt
  */
 
 const fs = require('fs');

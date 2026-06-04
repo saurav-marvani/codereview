@@ -15,7 +15,7 @@ on:
             - "docker/Dockerfile"
             - "docker-bake.hcl"
             - "package.json"
-            - "yarn.lock"
+            - "pnpm-lock.yaml"
     workflow_dispatch:
         inputs:
             image_tag:

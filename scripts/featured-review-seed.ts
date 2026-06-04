@@ -12,8 +12,8 @@
  * Round-trips the `featured_public_reviews` Mongo collection through a
  * versioned JSON fixture (scripts/seed/featured-reviews.json by default):
  *
- *   yarn featured-review:seed --export      # dump current Mongo -> JSON
- *   yarn featured-review:seed                # upsert JSON -> Mongo
+ *   pnpm run featured-review:seed --export      # dump current Mongo -> JSON
+ *   pnpm run featured-review:seed                # upsert JSON -> Mongo
  *
  * Options:
  *   --export            Read Mongo and (re)write the fixture instead of importing.

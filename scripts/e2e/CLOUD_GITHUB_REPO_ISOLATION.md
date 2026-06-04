@@ -55,7 +55,7 @@ Code wiring (already merged with this doc):
    `/code-management/repositories` call uses `type:"replace"`, which
    removes the old shared repo from each tenant's config in the same step:
    ```
-   yarn cloud:setup-tenants
+   pnpm run cloud:setup-tenants
    ```
    This rewrites `~/.kodus-dev/cloud-tenants.json` with `repoFullName` per
    tenant.

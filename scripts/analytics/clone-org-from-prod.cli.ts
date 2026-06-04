@@ -30,14 +30,14 @@ import {
  *                 users running inside a container that injects envs).
  *
  * Usage:
- *   yarn analytics:clone-from-prod \
+ *   pnpm run analytics:clone-from-prod \
  *     --source-org 11111111-1111-1111-1111-111111111111 \
  *     --target-org analytics-test-kodus
  *
  *   # two-phase watermark test (dump up to T, then delta from T onward)
- *   yarn analytics:clone-from-prod --source-org <src> --target-org <dst> \
+ *   pnpm run analytics:clone-from-prod --source-org <src> --target-org <dst> \
  *     --until 2026-04-20T00:00:00Z --reset-target
- *   yarn analytics:clone-from-prod --source-org <src> --target-org <dst> \
+ *   pnpm run analytics:clone-from-prod --source-org <src> --target-org <dst> \
  *     --since 2026-04-20T00:00:00Z
  *
  * Safety rails:

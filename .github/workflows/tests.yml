@@ -18,7 +18,7 @@ on:
             - "jest.config.ts"
             - "tsconfig*.json"
             - "package.json"
-            - "yarn.lock"
+            - "pnpm-lock.yaml"
 
 jobs:
     test:
@@ -85,18 +85,19 @@ jobs:
               with:
                   node-version: "22"
 
-            - name: Cache Yarn dependencies
+            - name: Install pnpm
+              run: npm i -g pnpm@10.34.1
+
+            - name: Cache pnpm store
               uses: actions/cache@v5.0.5
               with:
-                  path: |
-                      .yarn/cache
-                      **/node_modules
-                  key: ${{ runner.os }}-node22-yarn-${{ hashFiles('**/yarn.lock') }}
+                  path: ~/.local/share/pnpm/store
+                  key: ${{ runner.os }}-node22-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
                   restore-keys: |
-                      ${{ runner.os }}-node22-yarn-
+                      ${{ runner.os }}-node22-pnpm-
 
             - name: Install dependencies
-              run: yarn install --frozen-lockfile
+              run: pnpm install --frozen-lockfile
 
             - name: Create environment.ts for tests
               run: |
@@ -116,10 +117,10 @@ jobs:
 
             - name: Run migrations
               if: github.event.pull_request.head.repo.fork == false
-              run: yarn migration:run
+              run: pnpm run migration:run
 
             - name: Run tests
-              run: API_NODE_ENV=test yarn test
+              run: API_NODE_ENV=test pnpm run test
 
             - name: Docker Compose Action Cleanup
               uses: hoverkraft-tech/compose-action@v2.6.0

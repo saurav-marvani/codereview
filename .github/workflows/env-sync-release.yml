@@ -60,12 +60,12 @@ jobs:
             - uses: actions/setup-node@v4
               with:
                   node-version: 22
-                  cache: yarn
-                  cache-dependency-path: kodus-ai/yarn.lock
+                  cache: pnpm
+                  cache-dependency-path: kodus-ai/pnpm-lock.yaml
 
             - name: Install deps
               working-directory: kodus-ai
-              run: yarn install --frozen-lockfile
+              run: pnpm install --frozen-lockfile
 
             - name: Regenerate installer artifacts from schema
               working-directory: kodus-ai

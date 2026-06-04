@@ -62,7 +62,7 @@ if ! op vault get "$VAULT" >/dev/null 2>&1; then
     exit 1
 fi
 if [[ ! -f "$TEMPLATE" ]]; then
-    echo "error: $TEMPLATE not found. Run 'yarn env:apply'." >&2
+    echo "error: $TEMPLATE not found. Run 'pnpm run env:apply'." >&2
     exit 1
 fi
 if [[ ! -f "$SOURCE" ]]; then
@@ -199,7 +199,7 @@ echo "  Failed:                 $FAILED"
 echo
 if [[ $PLACEHOLDER -gt 0 ]]; then
     echo "ℹ  $PLACEHOLDER item(s) created with EMPTY value (no source value found)."
-    echo "   The .env produced by 'yarn env:pull' will have these vars set to \"\""
+    echo "   The .env produced by 'pnpm run env:pull' will have these vars set to \"\""
     echo "   — @optional vars fall through, @required vars trip the Joi validator"
     echo "   on boot. Populate via 1P app or: op item edit <NAME> --vault \"$VAULT\" password=\"<value>\""
 fi
@@ -209,4 +209,4 @@ if [[ $FAILED -gt 0 ]]; then
     exit 1
 fi
 
-echo "Done. Verify with: yarn env:pull:check"
+echo "Done. Verify with: pnpm run env:pull:check"

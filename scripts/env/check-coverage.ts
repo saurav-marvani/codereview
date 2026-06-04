@@ -11,7 +11,7 @@
  *   4. compares against vars declared in .env.schema
  *   5. exits non-zero with a clear message if anything's missing
  *
- * Run locally: yarn env:check:coverage
+ * Run locally: pnpm run env:check:coverage
  * In CI: env-drift-check.yml runs this after the drift check.
  */
 
@@ -177,7 +177,7 @@ function main() {
     for (const n of undeclared.sort()) console.error(`    ${n}`);
     console.error();
     console.error('Add each one to .env.schema with the right audience and');
-    console.error('a short description, then re-run yarn env:apply. If a var');
+    console.error('a short description, then re-run pnpm run env:apply. If a var');
     console.error("really shouldn't be in the schema (CLI-only, test fixture,");
     console.error('false positive), add it to ALLOWLIST in scripts/env/check-coverage.ts.');
     process.exit(1);

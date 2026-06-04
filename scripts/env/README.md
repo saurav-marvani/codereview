@@ -10,14 +10,14 @@ your personal `.env.local`) and let the tooling do the rest.
 .env.schema  (THE source — edit only this)
      │
      ▼
-yarn env:apply
+pnpm run env:apply
      │
      ├─→ kodus-ai/.env.example                       (this repo, OSS / external contributors)
      ├─→ kodus-ai/.env.template                      (1Password injection template, this repo)
      ├─→ docs/_snippets/env-vars-generated.mdx        (this repo, embedded in Mintlify site)
      └─→ kodus-installer/.env.example                 (cross-repo, CI-only on release)
 
-.env.template  ──▶  yarn env:pull  ──▶  .env  (gitignored, per-dev)
+.env.template  ──▶  pnpm run env:pull  ──▶  .env  (gitignored, per-dev)
 ```
 
 ## TL;DR — pick your path
@@ -25,9 +25,9 @@ yarn env:apply
 | You are… | Do this |
 | --- | --- |
 | 🌍 **External / OSS contributor** | `cp .env.example .env`, fill the required values by hand. No 1Password needed. → [details](#oss--external-contributors) |
-| 🧑‍💻 **Kodus dev, first time** | Install the 1Password CLI, get vault access, `yarn env:pull`. → [setup](#one-time-setup) |
-| 🧑‍💻 **Kodus dev, day-to-day** | `yarn env:pull` whenever the schema changed (a git hook reminds you after `git pull`). |
-| ✏️ **Adding / changing a var** | Edit `.env.schema` → `yarn env:apply` → commit schema + generated files. → [guide](#adding-a-new-env-var) |
+| 🧑‍💻 **Kodus dev, first time** | Install the 1Password CLI, get vault access, `pnpm run env:pull`. → [setup](#one-time-setup) |
+| 🧑‍💻 **Kodus dev, day-to-day** | `pnpm run env:pull` whenever the schema changed (a git hook reminds you after `git pull`). |
+| ✏️ **Adding / changing a var** | Edit `.env.schema` → `pnpm run env:apply` → commit schema + generated files. → [guide](#adding-a-new-env-var) |
 | 🔑 **Adding / rotating a secret** | Vault item in 1Password + `@sensitive` entry in the schema. → [guide](#adding-a-new-secret) |
 | 🛠 **Personal tweak** (ngrok URL, port, `LOG_LEVEL=debug`) | Put it in `.env.local` — wins over `.env`, survives `env:pull`, never committed. → [cascade](#the-cascade--which-value-wins) |
 
@@ -36,9 +36,9 @@ yarn env:apply
 | File | Committed? | Who writes it | Role |
 | --- | --- | --- | --- |
 | `.env.schema` | ✅ | **humans, via PR** | Single source of truth: every var, its description, type, default, audience |
-| `.env.example` | ✅ | `yarn env:apply` | OSS-friendly template — copy & fill by hand |
-| `.env.template` | ✅ | `yarn env:apply` | 1Password injection template (`op://` refs) used by `env:pull` |
-| `.env` | ❌ (gitignored) | `yarn env:pull` (or hand-filled from `.env.example`) | Your actual local env. **Never hand-edit if you use `env:pull`** — it gets overwritten |
+| `.env.example` | ✅ | `pnpm run env:apply` | OSS-friendly template — copy & fill by hand |
+| `.env.template` | ✅ | `pnpm run env:apply` | 1Password injection template (`op://` refs) used by `env:pull` |
+| `.env` | ❌ (gitignored) | `pnpm run env:pull` (or hand-filled from `.env.example`) | Your actual local env. **Never hand-edit if you use `env:pull`** — it gets overwritten |
 | `.env.local` | ❌ (gitignored) | **you** | Personal overrides. Wins over `.env` everywhere (app + docker) |
 
 ## What goes where
@@ -62,14 +62,14 @@ cp .env.example .env
 # which ones are required and what each var does
 ```
 
-`yarn env:doctor` flags missing required values. For a full local
+`pnpm run env:doctor` flags missing required values. For a full local
 setup walkthrough see
 [CONTRIBUTING.md](../../CONTRIBUTING.md#setting-up-development-environment)
 and the
 [orchestrator quickstart](https://docs.kodus.io/how_to_deploy/en/local_quickstart/orchestrator).
 
 If your contribution introduces a new env var, declare it in
-`.env.schema` and run `yarn env:apply` (see
+`.env.schema` and run `pnpm run env:apply` (see
 [Adding a new env var](#adding-a-new-env-var)) — CI fails the PR
 otherwise.
 
@@ -93,14 +93,14 @@ value does Gabriel have in his `.env`?".
 3. **Ask an admin to add you to the `Kodus-Dev` vault.**
 4. **Verify:**
    ```bash
-   yarn env:pull:check
+   pnpm run env:pull:check
    ```
 
 ### Day-to-day
 
 ```bash
-yarn env:pull              # writes .env, backing up any previous one
-yarn env:pull --force      # overwrites without backup
+pnpm run env:pull              # writes .env, backing up any previous one
+pnpm run env:pull --force      # overwrites without backup
 ```
 
 Cheap and idempotent. Run it whenever someone rotates a secret in the
@@ -109,7 +109,7 @@ vault — no Slack post needed, no stale `.env`.
 A Husky `post-merge` / `post-checkout` hook (`scripts/dev/check-env-drift.sh`)
 prints a warning when `.env.schema`, `.env.template`, or `.env.example`
 changed in the latest pull or branch switch, so you don't forget to run
-`yarn env:pull` after picking up a teammate's PR. The hook only **warns**
+`pnpm run env:pull` after picking up a teammate's PR. The hook only **warns**
 — it doesn't auto-pull, since `op inject` triggers a biometric prompt.
 
 ### Troubleshooting
@@ -162,11 +162,11 @@ those.
    API_NEW_FEATURE_KEY=
    ```
 3. Add the value to your local `.env` to test.
-4. Run `yarn env:apply` — regenerates `.env.example`, `.env.template`,
+4. Run `pnpm run env:apply` — regenerates `.env.example`, `.env.template`,
    and the docs snippet.
 5. Commit `.env.schema` + the regenerated files together.
 
-CI blocks the PR if `yarn env:check` finds drift between the schema
+CI blocks the PR if `pnpm run env:check` finds drift between the schema
 and the committed outputs, **or** if code references a var the schema
 doesn't declare (coverage check).
 
@@ -174,7 +174,7 @@ doesn't declare (coverage check).
 
 1. Add the var to `.env.schema` with `@sensitive` and leave the value
    blank (so the generator emits an `op://...` ref).
-2. `yarn env:apply` — regenerates `.env.template` (and the rest).
+2. `pnpm run env:apply` — regenerates `.env.template` (and the rest).
 3. Create the matching item in the vault — or just re-run
    `./scripts/env/bootstrap-vault.sh` which is idempotent and will
    create the new item alongside the existing ones:
@@ -185,7 +185,7 @@ doesn't declare (coverage check).
    (We use the `Password` category, not `API Credential`, because the
    latter has a `valid from`/`expires` pair that the 1P UI flags as
    "expired" when left at the default `0` timestamp.)
-4. `yarn env:pull` to materialize.
+4. `pnpm run env:pull` to materialize.
 
 **Don't forget to fill the value** — an empty vault item injects an
 empty string, which silently breaks `@required` consumers.
@@ -194,11 +194,11 @@ empty string, which silently breaks `@required` consumers.
 
 Edit the item's `password` field in 1Password (UI or
 `op item edit "MY_KEY" --vault "Kodus-Dev" password="<new>"`). Each
-dev runs `yarn env:pull` to pick up the new value.
+dev runs `pnpm run env:pull` to pick up the new value.
 
 ### Renaming or removing a var
 
-Same flow as adding — edit the schema, run `yarn env:apply`, commit.
+Same flow as adding — edit the schema, run `pnpm run env:apply`, commit.
 The dead var disappears from all generated outputs automatically.
 
 ### Different default for self-hosted
@@ -215,7 +215,7 @@ value spanning several physical lines, leaves a dangling quote, and
 makes the whole stack fail to boot with a cryptic "unexpected character
 in variable name" error on some unrelated later line.
 
-`yarn env:pull` guards against this — it refuses to write a `.env`
+`pnpm run env:pull` guards against this — it refuses to write a `.env`
 whose values contain raw newlines and tells you which item is at fault.
 To store a PEM correctly:
 
@@ -273,15 +273,15 @@ API_PG_DB_DATABASE=kodus_db
 
 | Command | Description |
 | --- | --- |
-| `yarn env:pull` | Materialize `.env` from `.env.template` via 1Password (`op inject`) |
-| `yarn env:pull:check` | Verify 1Password CLI is signed in and the vault is reachable |
-| `yarn env:apply` | Apply: writes real `.env.example`, `.env.template`, and `docs/_snippets/...` |
-| `yarn env:generate` | Preview into `.env-preview/` (no overwrites) |
-| `yarn env:check` | Drift check + coverage check (used by CI gate) |
-| `yarn env:doctor` | Flag missing required values in your local `.env` |
-| `yarn env:audit` | Build review CSV at `.env-preview/review.csv` |
+| `pnpm run env:pull` | Materialize `.env` from `.env.template` via 1Password (`op inject`) |
+| `pnpm run env:pull:check` | Verify 1Password CLI is signed in and the vault is reachable |
+| `pnpm run env:apply` | Apply: writes real `.env.example`, `.env.template`, and `docs/_snippets/...` |
+| `pnpm run env:generate` | Preview into `.env-preview/` (no overwrites) |
+| `pnpm run env:check` | Drift check + coverage check (used by CI gate) |
+| `pnpm run env:doctor` | Flag missing required values in your local `.env` |
+| `pnpm run env:audit` | Build review CSV at `.env-preview/review.csv` |
 
-`yarn env:apply` does NOT touch `kodus-installer/.env.example` — that
+`pnpm run env:apply` does NOT touch `kodus-installer/.env.example` — that
 is cross-repo and only regenerated by CI on release tag.
 
 ## Vault convention
@@ -319,7 +319,7 @@ zero gain.
 Runs on every PR that touches `.env.schema`, `.env.example`, or
 `scripts/env/**`. Two gates:
 
-1. **Drift** — fails if `yarn env:apply` produces different generated
+1. **Drift** — fails if `pnpm run env:apply` produces different generated
    files than what the PR committed.
 2. **Coverage** — fails if code references a Kodus-shaped env var that
    the schema doesn't declare (with an allowlist for CLI-only vars,
@@ -346,7 +346,7 @@ it has its own sync flow:
 kodus-ai release tag (v2.x.y) pushed
   └─ env-sync-release.yml triggers
        ├─ checks out kodus-installer
-       ├─ runs `yarn ts-node scripts/env/generate.ts --apply --installer
+       ├─ runs `pnpm run ts-node scripts/env/generate.ts --apply --installer
        │                       --installer-out=../kodus-installer/.env.example`
        ├─ if .env.example changed → opens PR in kodus-installer
        └─ maintainer approves PR (matches release tag)
@@ -365,11 +365,11 @@ release.
 scripts/env/
 ├── parse-schema.ts                      ← reads & validates the schema
 ├── generate.ts                          ← renders the 4 outputs
-├── pull.sh                              ← yarn env:pull — op inject → .env
+├── pull.sh                              ← pnpm run env:pull — op inject → .env
 ├── bootstrap-vault.sh                   ← creates vault items from the template (idempotent)
-├── check-drift.ts                       ← CI gate, drift half (yarn env:check)
-├── check-coverage.ts                    ← CI gate, coverage half (yarn env:check)
-├── build-slim-csv.ts                    ← review CSV builder (yarn env:audit)
+├── check-drift.ts                       ← CI gate, drift half (pnpm run env:check)
+├── check-coverage.ts                    ← CI gate, coverage half (pnpm run env:check)
+├── build-slim-csv.ts                    ← review CSV builder (pnpm run env:audit)
 ├── open-sync-pr.sh                      ← helper used by the cross-repo workflow
 └── README.md                            ← this file
 .github/workflows/
@@ -386,5 +386,5 @@ a runtime dependency. We just adopted their decorator syntax because
 it's readable and well-documented.
 
 If we ever want schema-validated runtime injection
-(`varlock run -- yarn start`), the lib can be re-added — the same
+(`varlock run -- pnpm run start`), the lib can be re-added — the same
 schema works without changes.

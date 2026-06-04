@@ -39,7 +39,7 @@ interface BenchPR {
     golden_comments: { comment: string; severity?: string }[];
 }
 
-// Make `yarn benchmark:models` a true one-command: pull BYOK_* / GH_TEST_TOKEN
+// Make `pnpm run benchmark:models` a true one-command: pull BYOK_* / GH_TEST_TOKEN
 // / ANTHROPIC_API_KEY from ~/.kodus-dev/config if they're not already in the
 // env. Indent-tolerant (the config lines may be indented); never overrides an
 // env var the caller already set.
@@ -68,7 +68,7 @@ function loadPRs(): BenchPR[] {
 }
 
 // Dedicated benchmark tenant. Defaults to a fixed bench account so
-// `yarn benchmark:models` is one command and never mutates the shared cloud
+// `pnpm run benchmark:models` is one command and never mutates the shared cloud
 // QA tenants; override via env for a one-off. signUp is idempotent (409-OK),
 // so first run creates it and later runs reuse it.
 async function getSession(): Promise<KodusSession> {

@@ -2,8 +2,8 @@
  * Generates env templates and docs from .env.schema.
  *
  * Usage:
- *   yarn env:generate              # writes to .env-preview/ (compare without overwriting)
- *   yarn env:generate --apply      # writes to real targets
+ *   pnpm run env:generate              # writes to .env-preview/ (compare without overwriting)
+ *   pnpm run env:generate --apply      # writes to real targets
  *
  * Targets:
  *   kodus-ai/.env.example
@@ -30,7 +30,7 @@ const SCHEMA_PATH = join(REPO_ROOT, '.env.schema');
 const APPLY = process.argv.includes('--apply');
 // --installer flag writes ONLY the installer template; used by CI in the
 // release workflow (which clones the kodus-installer repo into ./kodus-installer
-// and runs `yarn env:apply --installer-out=../kodus-installer/.env.example`).
+// and runs `pnpm run env:apply --installer-out=../kodus-installer/.env.example`).
 // Default `--apply` does NOT touch the installer — that's a cross-repo target.
 const APPLY_INSTALLER = process.argv.includes('--installer');
 const INSTALLER_OUT_ARG = process.argv.find((a) =>
@@ -79,24 +79,24 @@ const TARGETS = APPLY
       };
 
 const HEADER_KODUS_AI = `# AUTO-GENERATED from .env.schema. Do NOT edit by hand.
-# Run \`yarn env:generate --apply\` after editing the schema.
+# Run \`pnpm run env:generate --apply\` after editing the schema.
 # Source: kodus-ai/.env.schema
 `;
 
 const HEADER_INSTALLER = `# =============================================
 # Kodus self-hosted environment file
 # AUTO-GENERATED from kodus-ai/.env.schema. Do NOT edit by hand.
-# Run \`yarn env:generate --apply\` in kodus-ai after editing the schema.
+# Run \`pnpm run env:generate --apply\` in kodus-ai after editing the schema.
 # =============================================
 `;
 
 const HEADER_TEMPLATE = `# AUTO-GENERATED from .env.schema. Do NOT edit by hand.
-# Run \`yarn env:generate --apply\` after editing the schema.
+# Run \`pnpm run env:generate --apply\` after editing the schema.
 #
 # This is the 1Password injection template — the single source of truth
 # for dev environment values. Materialize your local .env with:
 #
-#   yarn env:pull           # = op inject -i .env.template -o .env
+#   pnpm run env:pull           # = op inject -i .env.template -o .env
 #
 # Secrets are pulled from the "Kodus-Dev" vault in 1Password (each item
 # is named after its env var; the value lives in the "password" field).
@@ -249,7 +249,7 @@ function renderInstallerSchemaVars(sections: SchemaSection[]): string {
     lines.push('#!/usr/bin/env bash');
     lines.push('# AUTO-GENERATED from kodus-ai/.env.schema. Do NOT edit by hand.');
     lines.push('# Sourced by scripts/install.sh, scripts/doctor.sh, scripts/generate-secrets.sh');
-    lines.push('# Run `yarn env:generate --apply --installer` in kodus-ai to regenerate.');
+    lines.push('# Run `pnpm run env:generate --apply --installer` in kodus-ai to regenerate.');
     lines.push('');
     lines.push('# Vars the installer must see set before booting the stack.');
     lines.push('# Derived from `@required` in the schema (self-hosted audience).');

@@ -29,13 +29,13 @@
  * response_format for each.
  *
  * Run:
- *   yarn repro:structured-outputs                  # all scenarios, hermetic
- *   yarn repro:structured-outputs --scenario openrouter-kimi --live   # spot-check
+ *   pnpm run repro:structured-outputs                  # all scenarios, hermetic
+ *   pnpm run repro:structured-outputs --scenario openrouter-kimi --live   # spot-check
  *
  * Exit code is 0 only when every scenario matches its expectation.
  *
  * This file is intentionally NOT named `*.spec.ts`, so Jest's
- * `testMatch` in jest.config.ts ignores it and `yarn test` does not
+ * `testMatch` in jest.config.ts ignores it and `pnpm run test` does not
  * pick it up.
  */
 
