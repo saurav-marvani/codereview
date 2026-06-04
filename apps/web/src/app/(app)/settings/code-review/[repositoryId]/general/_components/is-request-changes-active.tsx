@@ -7,12 +7,14 @@ import { Switch } from "@components/ui/switch";
 import { Controller, useFormContext } from "react-hook-form";
 import { OverrideIndicatorForm } from "src/app/(app)/settings/code-review/_components/override";
 import { useIsGitlab } from "src/app/(app)/settings/_components/use-code-management-platform";
+import { useCodeReviewRouteParams } from "../../../_hooks";
 
 import type { CodeReviewFormType } from "../../../_types";
 
 export const IsRequestChangesActive = () => {
     const form = useFormContext<CodeReviewFormType>();
-    const isGitlab = useIsGitlab();
+    const { repositoryId } = useCodeReviewRouteParams();
+    const isGitlab = useIsGitlab(repositoryId);
 
     // Request Changes status is not supported on GitLab.
     if (isGitlab) return null;
