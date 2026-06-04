@@ -12,6 +12,10 @@ jest.mock('@libs/common/utils/crypto', () => ({
 }));
 
 import { byokToVercelModel } from '@libs/code-review/infrastructure/agents/llm/byok-to-vercel';
+import {
+    buildReasoningProviderOptions,
+    EFFORT_TO_BUDGET,
+} from '@libs/code-review/infrastructure/agents/llm/agent-loop';
 import { TestByokConnectionUseCase } from '@libs/organization/application/use-cases/organizationParameters/test-byok-connection.use-case';
 import axios from 'axios';
 
@@ -42,6 +46,45 @@ describe('anthropic_compatible BYOK provider', () => {
             // URL must be the root, not the /v1-suffixed base.
             expect(model.constructor.name).toBe('ChatAnthropic');
             expect((model as any).apiUrl).toBe('https://api.kimi.com/coding');
+        });
+    });
+
+    describe('reasoning provider options', () => {
+        // These pin a non-obvious contract that a future refactor merging the
+        // ANTHROPIC and ANTHROPIC_COMPATIBLE cases could silently break:
+        // third-party Anthropic-protocol vendors (Kimi/Z.ai/DeepSeek) must use
+        // the `anthropic` namespace with the *budget* thinking shape. The
+        // `openaiCompatible` namespace would be dropped by @ai-sdk/anthropic
+        // (reasoning silently off); the `adaptive` shape would 400 because
+        // these vendors don't implement Anthropic's adaptive thinking.
+        it('routes reasoning to the anthropic namespace with a budget shape', () => {
+            const opts = buildReasoningProviderOptions(
+                BYOKProvider.ANTHROPIC_COMPATIBLE,
+                'medium',
+                'kimi-for-coding',
+            );
+
+            expect(opts).toEqual({
+                anthropic: {
+                    thinking: {
+                        type: 'enabled',
+                        budgetTokens: EFFORT_TO_BUDGET.medium,
+                    },
+                },
+            });
+            // Guard against the two silent-failure modes explicitly:
+            expect(opts).not.toHaveProperty('openaiCompatible');
+            expect((opts as any).anthropic?.thinking?.type).not.toBe('adaptive');
+        });
+
+        it('turns thinking off for effort "none"', () => {
+            expect(
+                buildReasoningProviderOptions(
+                    BYOKProvider.ANTHROPIC_COMPATIBLE,
+                    'none',
+                    'kimi-for-coding',
+                ),
+            ).toEqual({});
         });
     });
 
