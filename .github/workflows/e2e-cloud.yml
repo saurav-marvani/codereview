@@ -118,9 +118,18 @@ jobs:
                   # PREVIOUS build (e.g. a brand-new endpoint 404s even though
                   # the code is on main). See the deploy-lag class of failures.
                   EXPECTED_VERSION: ${{ inputs.image_tag }}
+                  # WAF Allow-rule header (QA environment secret): GitHub
+                  # runner IPs come from a shared pool and intermittently land
+                  # on the QA WAF's block rules, 403-ing the whole run. Empty
+                  # → probes run bare (rule absent / fork).
+                  QA_WAF_BYPASS_HEADER: ${{ secrets.QA_WAF_BYPASS_HEADER }}
               run: |
                   set -uo pipefail
                   BASE="${TARGET_WEB_URL%/}/api/proxy/api"
+                  WAF_HDR=()
+                  if [ -n "${QA_WAF_BYPASS_HEADER:-}" ]; then
+                      WAF_HDR=(-H "x-kodus-e2e: ${QA_WAF_BYPASS_HEADER}")
+                  fi
 
                   # --- Phase 0: version gate (best-effort) ----------------------
                   # Health (@Public, @Controller('health')) returns the running
@@ -135,7 +144,7 @@ jobs:
                       echo "Waiting for QA /health version to report '$EXPECTED_VERSION' (short '$SHORT')…"
                       matched=""
                       for i in $(seq 1 60); do
-                          ver=$(curl -sS "$BASE/health" 2>/dev/null \
+                          ver=$(curl -sS "${WAF_HDR[@]}" "$BASE/health" 2>/dev/null \
                               | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).version||'')}catch{console.log('')}})" \
                               2>/dev/null || echo "")
                           case "$ver" in
@@ -167,6 +176,7 @@ jobs:
                   for i in $(seq 1 60); do
                       code=$(curl -sS -o /dev/null -w '%{http_code}' \
                           -X POST "$BASE/auth/login" \
+                          "${WAF_HDR[@]}" \
                           -H 'Content-Type: application/json' \
                           -d '{"email":"readiness-probe@invalid.kodus","password":"x"}' \
                           2>/dev/null || echo 000)
@@ -205,6 +215,12 @@ jobs:
                   # per run. Absent → that scenario is SKIPPED, not failed
                   # (SCENARIO_REQUIRED in run-matrix.ts).
                   GH_REPO_ADMIN_TOKEN: ${{ secrets.GH_REPO_ADMIN_TOKEN }}
+
+                  # WAF Allow-rule header: lib/http.ts injects `x-kodus-e2e`
+                  # on every request bound for qa.*.kodus.io (and ONLY those)
+                  # so runner IPs that land on the WAF's block rules don't 403
+                  # the whole run. Playwright contexts inject it via route().
+                  QA_WAF_BYPASS_HEADER: ${{ secrets.QA_WAF_BYPASS_HEADER }}
 
                   GL_TEST_TOKEN: ${{ secrets.GL_TEST_TOKEN }}
                   GL_TEST_REPO: ${{ secrets.GL_TEST_REPO }}

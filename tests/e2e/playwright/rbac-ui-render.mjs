@@ -22,6 +22,7 @@
 //   OUT_DIR     directory for videos/screenshots (default: ./rbac-ui-evidence)
 
 import { chromium } from "playwright";
+import { applyWafBypass } from "./waf-bypass.mjs";
 import { mkdirSync } from "node:fs";
 
 const WEB = (process.env.WEB_URL || "http://127.0.0.1:3000").replace(/\/$/, "");
@@ -101,6 +102,7 @@ for (const { role, email } of ROLES) {
         recordVideo: { dir: OUT_DIR, size: { width: 1280, height: 800 } },
         viewport: { width: 1280, height: 800 },
     });
+    await applyWafBypass(ctx);
     try {
         const cookies = await nextAuthCookies(email);
         await ctx.addCookies(cookies);
