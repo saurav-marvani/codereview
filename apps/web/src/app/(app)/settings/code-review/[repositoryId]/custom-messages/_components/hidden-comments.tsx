@@ -4,8 +4,7 @@ import { Button } from "@components/ui/button";
 import { CardHeader } from "@components/ui/card";
 import { Heading } from "@components/ui/heading";
 import { Switch } from "@components/ui/switch";
-import { useIsGithub } from "src/app/(app)/settings/_components/use-code-management-platform";
-import { useCodeReviewRouteParams } from "../../../_hooks";
+import { useShouldHideHiddenComments } from "src/app/(app)/settings/_components/use-code-management-platform";
 
 import { OverrideIndicator } from "../../../_components/override";
 import { IFormattedConfigProperty } from "../../../_types";
@@ -17,11 +16,9 @@ export const HiddenComments = (props: {
     handleRevert: () => void;
     canEdit: boolean;
 }) => {
-    const { repositoryId } = useCodeReviewRouteParams();
-    const isGithub = useIsGithub(repositoryId);
+    const shouldHide = useShouldHideHiddenComments();
 
-    // Hidden/minimized comments are a GitHub-only feature.
-    if (!isGithub) return null;
+    if (shouldHide) return null;
 
     return (
         <div className="flex flex-col gap-4">

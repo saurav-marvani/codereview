@@ -6,18 +6,15 @@ import { Heading } from "@components/ui/heading";
 import { Switch } from "@components/ui/switch";
 import { Controller, useFormContext } from "react-hook-form";
 import { OverrideIndicatorForm } from "src/app/(app)/settings/code-review/_components/override";
-import { useIsGitlab } from "src/app/(app)/settings/_components/use-code-management-platform";
-import { useCodeReviewRouteParams } from "../../../_hooks";
+import { useShouldHideRequestChanges } from "src/app/(app)/settings/_components/use-code-management-platform";
 
 import type { CodeReviewFormType } from "../../../_types";
 
 export const IsRequestChangesActive = () => {
     const form = useFormContext<CodeReviewFormType>();
-    const { repositoryId } = useCodeReviewRouteParams();
-    const isGitlab = useIsGitlab(repositoryId);
+    const shouldHide = useShouldHideRequestChanges();
 
-    // Request Changes status is not supported on GitLab.
-    if (isGitlab) return null;
+    if (shouldHide) return null;
 
     return (
         <div className="flex flex-col gap-2">
