@@ -1886,10 +1886,10 @@ export abstract class BaseCodeReviewAgentProvider {
 
     PHASE 3 — RESPOND
 
-      Write reasoning that shows your adversarial analysis:
-        For each changed function: what you challenged, what you found, why you reported or dismissed it.
-        BAD reasoning: "The code looks correct."
-        GOOD reasoning: "Challenged CreateDevice: what if two requests pass count check simultaneously? Grepped TagDevice(, found caller at impl.go:155. No lock or unique constraint — race condition. Reported."
+      For each finding you report or dismiss, give a one-line certificate:
+        Premise (what the changed code does) → Path (the concrete input/state that makes it fail, or why it cannot) → Verdict (report/dismiss + the evidence you inspected).
+        BAD: "The code looks correct."
+        GOOD: "CreateDevice: Premise — inserts a device after a count check. Path — two concurrent requests pass the check before either writes (caller impl.go:155, no lock or unique constraint). Verdict — race, reported."
 
       Do not stop after finding the first issue — investigate ALL changed code before responding.
       Do not burn steps rereading the same body. If a readFile range overlaps heavily with what you already saw, reread only when a newly discovered symbol or branch creates a new concrete question; otherwise continue with grep, caller/callee tracing, or another changed file.
@@ -2026,8 +2026,8 @@ ${callGraphSection}
   <Task>
     Review this Pull Request for ${taskDescription}.
     For each changed function: grep callers → read context → challenge with adversarial questions.${input.callGraph ? '\n    Use the call graph above as a fast map of production callers/callees, but still verify with tools before reporting.' : ''}
-    Promote a finding only when you can point to a concrete failure path, broken contract, wrong branch behavior, unsafe state transition, or caller/callee incompatibility introduced by the diff.
-    Prefer concrete findings over speculative theories. Dismiss only what you can explain WHY it cannot fail.
+    Promote a finding when the changed code gives you a code-backed suspicion of a defect. You don't need to fully prove the failure — anchor it to a specific changed line and let the verifier filter unsupported claims.
+    Dismiss only what you can explain WHY it cannot fail; when in doubt, report rather than self-censor.
 ${mixedLabelTaskGuidance}
   </Task>
 
@@ -2046,8 +2046,7 @@ ${coverageTargets ? `${coverageTargets}\n` : ''}
     - Pre-existing issues: report only if this PR makes them worse or newly reachable.
     - "Looks correct" is not a valid reason to dismiss — explain the specific reason it is safe.
     - Before finalizing, make sure you have inspected every ${input.fileTiers ? 'CRITICAL' : 'changed'} file listed above.
-    - Before reporting, be able to answer at least one of these: which changed line creates the risk, what concrete failing path follows, which caller/callee assumption is broken, or what observable bad behavior would happen.
-    - Do not promote a finding from a mere possibility. Plausible is not enough. The changed code plus the code you inspected must show a concrete failure path and a concrete wrong outcome.
+    - Reporting threshold (high-recall): report any defect the changed code makes you suspect, as long as you (1) anchor it to a specific changed line and (2) name the kind of failure — wrong output, crash, broken contract, wrong target or branch, lost side effect, or broken caller/callee assumption. You do NOT need to prove the exact triggering input or rule out every safe explanation; a later verifier filters unsupported claims. Only pure speculation with no anchor in the changed code is out.
     - Do not report generic resource exhaustion, shell injection, bypass, or performance theories unless the modified code directly creates or worsens that path.
     - Clear local defects in the diff should still be reported immediately. Cross-file claims require at least one confirming reference from a caller, callee, test, or nearby state transition.
     - Before every readFile call, identify the exact unanswered question that this read will answer.
@@ -2055,8 +2054,6 @@ ${coverageTargets ? `${coverageTargets}\n` : ''}
     - Treat redundant readFile calls as a mistake. Only reread overlapping lines if a newly discovered symbol, caller/callee, or branch creates a new concrete question that the previous read did not answer.
     - Do NOT report generic efficiency concerns (O(N), N+1, redundant calls, missing pagination, missing timeouts) as bugs. Report them only when the changed code creates a concrete, material slowdown or resource blowup, and then label them as performance.
     - Do NOT report missing defensive measures (missing CSRF, missing rate limiting, missing input validation) unless you can demonstrate a specific exploit path in the changed code.
-    - Every finding must pass this test: "Can I name the exact input or state that triggers the failure, and the exact wrong behavior, wrong output, or crash that results?" If not, do not report it.
-    - Before reporting, ask what would make the behavior intentional or safe. If the code you inspected does not let you reject that safe explanation, do not report the finding.
     - Concrete findings include build-time and contract failures too. If the diff introduces a signature mismatch, wrong delegate call, impossible method call, or dropped required side effect, you may report it even without a runtime trace.
     - For wrappers, middleware, providers, caches, and adapters, verify both behavior and wiring: the changed code may be wrong because it calls the wrong target, preserves the wrong cached semantics, or silently stops propagating tracing/logging/metrics/auth state.
     - For security flows, challenge any value that became static, shared, or reused across requests/users when it should be per-request, per-session, or per-principal.
