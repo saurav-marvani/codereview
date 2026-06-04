@@ -244,7 +244,7 @@ export function CuratedConnectPanel({
                             selectedId={variant?.id}
                             docsUrl={model.docsUrl}
                             onSelect={handleVariantChange}
-                            disabledVariantIds={new Set(["kimi-code"])}
+                            disabledVariantIds={disabledVariants}
                         />
                     )}
 
