@@ -317,6 +317,28 @@ export function isTransientFailure(message: string): boolean {
     return TRANSIENT_FAILURE_PATTERNS.some((re) => re.test(message ?? ""));
 }
 
+// ABSENCE failures (an expected event never materialized — review never
+// started, comment never arrived) get a settle delay before the retry.
+// Rationale: the per-deploy matrix starts ~5s after the GitOps infra PR,
+// and the version gate only proves the API converged — the WORKERS are
+// still rolling when the first review scenario fires its webhook. The
+// webhook lands (200), the job dies with the old worker, and an IMMEDIATE
+// retry falls inside the same rollout window: run 27021874607 had PRs
+// #22+#23 (attempt + instant retry, 15:16–15:19) with zero comments while
+// PR #24 one minute later reviewed fine. Two minutes covers the observed
+// worker-cycle gap. Pure transport noise (5xx/ECONNRESET/fetch failed)
+// keeps the instant retry — waiting buys nothing there.
+const ABSENCE_FAILURE_PATTERNS: RegExp[] = [
+    /no review activity|none arrived|never arrived|never (reached|registered|woke|started)|did not (arrive|appear|start)/i,
+    /No .* (comment|review|status) on (PR|MR)/i,
+];
+
+export function absenceRetryDelayMs(message: string): number {
+    return ABSENCE_FAILURE_PATTERNS.some((re) => re.test(message ?? ""))
+        ? 120_000
+        : 0;
+}
+
 export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
     const startedAt = new Date().toISOString();
     const results: ScenarioResult[] = [];
@@ -530,9 +552,13 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
                         isTransientFailure(e.message)
                     ) {
                         retriedAfter = e.message;
+                        const settleMs = absenceRetryDelayMs(e.message);
                         log.info(
-                            `RETRY ${cellLabel}: transient failure shape, re-running once (${e.message.slice(0, 160)})`,
+                            `RETRY ${cellLabel}: transient failure shape, re-running once${settleMs ? ` after a ${settleMs / 1000}s settle (absence shape — likely a deploy/worker rollout window)` : ""} (${e.message.slice(0, 160)})`,
                         );
+                        if (settleMs) {
+                            await new Promise((r) => setTimeout(r, settleMs));
+                        }
                         continue;
                     }
                     log.err(`FAIL  ${cellLabel}: ${e.message}`);

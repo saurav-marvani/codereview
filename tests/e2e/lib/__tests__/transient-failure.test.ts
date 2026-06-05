@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { isTransientFailure } from "../runner.js";
+import { absenceRetryDelayMs, isTransientFailure } from "../runner.js";
 
 // The retry classifier decides which cell failures get ONE automatic
 // re-run. The split is ABSENCE/NETWORK (retry — a lost webhook or provider
@@ -52,4 +52,27 @@ test("isTransientFailure: deterministic mismatches do NOT retry", () => {
 test("isTransientFailure: tolerates empty/undefined", () => {
     assert.equal(isTransientFailure(""), false);
     assert.equal(isTransientFailure(undefined as unknown as string), false);
+});
+
+test("absenceRetryDelayMs: review-never-started shapes get the 120s settle", () => {
+    const absent = [
+        "[provider:github] No kody-codereview status comment on PR #23 within 60s — review pipeline likely never started (check droplet worker logs and the webhook delivery list).",
+        "Assertion failed: No review activity on PR https://gitlab.com/x/-/merge_requests/79 within timeout",
+        "Expected a real review for license=trial but none arrived within 900s.",
+    ];
+    for (const msg of absent) {
+        assert.equal(absenceRetryDelayMs(msg), 120_000, msg.slice(0, 60));
+    }
+});
+
+test("absenceRetryDelayMs: transport noise retries immediately (0ms)", () => {
+    const transport = [
+        "TypeError: fetch failed",
+        "HTTP 502\n<html>Bad Gateway</html>",
+        "request to https://qa.web.kodus.io failed, reason: ECONNRESET",
+    ];
+    for (const msg of transport) {
+        assert.equal(absenceRetryDelayMs(msg), 0, msg.slice(0, 60));
+    }
+    assert.equal(absenceRetryDelayMs(""), 0);
 });
