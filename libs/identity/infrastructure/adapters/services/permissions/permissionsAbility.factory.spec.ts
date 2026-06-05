@@ -1,3 +1,4 @@
+import { subject as caslSubject } from '@casl/ability';
 import {
     Action,
     ResourceType,
@@ -69,6 +70,45 @@ describe('PermissionsAbilityFactory', () => {
         expect(ability.can(Action.Update, ResourceType.CodeReviewSettings)).toBe(
             false,
         );
+    });
+
+    it('CONTRIBUTOR reads are org-wide: not gated by repo assignment', async () => {
+        const ability = await buildFor(Role.CONTRIBUTOR);
+        // 'repo-unassigned' is NOT in the assigned list (['repo-1']); a
+        // contributor must still see its settings/rules/PRs (read-only).
+        const inUnassignedRepo = (resource: ResourceType) =>
+            caslSubject(resource, {
+                organizationId: 'org-1',
+                repoId: 'repo-unassigned',
+            });
+        expect(
+            ability.can(
+                Action.Read,
+                inUnassignedRepo(ResourceType.CodeReviewSettings) as any,
+            ),
+        ).toBe(true);
+        expect(
+            ability.can(
+                Action.Read,
+                inUnassignedRepo(ResourceType.KodyRules) as any,
+            ),
+        ).toBe(true);
+        expect(
+            ability.can(
+                Action.Read,
+                inUnassignedRepo(ResourceType.PullRequests) as any,
+            ),
+        ).toBe(true);
+        // Writes stay forbidden even on assigned repos.
+        expect(
+            ability.can(
+                Action.Update,
+                caslSubject(ResourceType.CodeReviewSettings, {
+                    organizationId: 'org-1',
+                    repoId: 'repo-1',
+                }) as any,
+            ),
+        ).toBe(false);
     });
 
     it('a user without a role can do nothing', async () => {

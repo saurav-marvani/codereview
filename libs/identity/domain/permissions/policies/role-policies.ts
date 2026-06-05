@@ -84,18 +84,17 @@ const billingManager: PolicyRule[] = [
     { action: Action.Read, resource: ResourceType.TokenUsage, scope: 'org' },
 ];
 
+// Contributor is a read-only role that is NOT gated by repo assignment: it
+// sees the whole org (settings, kody rules, issues, PRs, logs) by default.
+// Cockpit and Token Usage stay admin-only.
 const contributor: PolicyRule[] = [
-    { action: Action.Read, resource: ResourceType.CodeReviewSettings, scope: 'repo', global: true },
+    { action: Action.Read, resource: ResourceType.CodeReviewSettings, scope: 'org' },
     { action: Action.Read, resource: ResourceType.KodyRules, scope: 'org' },
-    { action: Action.Read, resource: ResourceType.Issues, scope: 'repo' },
+    { action: Action.Read, resource: ResourceType.Issues, scope: 'org' },
     { action: Action.Read, resource: ResourceType.IssuesSettings, scope: 'org' },
-    // CLI reviews — own (assigned repos).
-    { action: Action.Read, resource: ResourceType.CliReview, scope: 'repo' },
-
-    // Read-only visibility across the product, mirroring Repo Admin's read
-    // grants — except Cockpit and Token Usage, which stay admin-only.
-    { action: Action.Read, resource: ResourceType.PullRequests, scope: 'repo' },
-    { action: Action.Read, resource: ResourceType.Logs, scope: 'repo', global: true },
+    { action: Action.Read, resource: ResourceType.CliReview, scope: 'org' },
+    { action: Action.Read, resource: ResourceType.PullRequests, scope: 'org' },
+    { action: Action.Read, resource: ResourceType.Logs, scope: 'org' },
     { action: Action.Read, resource: ResourceType.GitSettings, scope: 'org' },
     { action: Action.Read, resource: ResourceType.PluginSettings, scope: 'org' },
 ];
