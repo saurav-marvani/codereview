@@ -65,7 +65,7 @@ jobs:
             - name: Build and Push Docker Image
               env:
                   ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-                  ECR_REPOSITORY: kodus-try-prod
+                  ECR_REPOSITORY: kodus-try-web-prod
                   IMAGE_TAG_SHA: ${{ github.sha }}
                   IMAGE_TAG_VERSION: ${{ env.RELEASE_VERSION }}
               run: |
@@ -87,7 +87,7 @@ jobs:
             - name: Trivy scan — kodus-try
               uses: aquasecurity/trivy-action@v0.36.0
               with:
-                  image-ref: ${{ steps.login-ecr.outputs.registry }}/kodus-try-prod:${{
+                  image-ref: ${{ steps.login-ecr.outputs.registry }}/kodus-try-web-prod:${{
                       env.RELEASE_VERSION }}
                   format: "sarif"
                   output: "trivy-try.sarif"
