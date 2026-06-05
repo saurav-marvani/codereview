@@ -28,9 +28,12 @@ const owner: PolicyRule[] = [
     { action: Action.Manage, resource: ResourceType.All, scope: 'org' },
 ];
 
+// Repo Admin sees the whole org by default (reads are org-wide); only WRITES
+// are gated by repo assignment — editing settings/rules/issues of a repo
+// requires that repo to be assigned to the user.
 const repoAdmin: PolicyRule[] = [
-    // Code review settings — read global + assigned repos, edit assigned repos.
-    { action: Action.Read, resource: ResourceType.CodeReviewSettings, scope: 'repo', global: true },
+    // Code review settings — read org-wide, edit assigned repos.
+    { action: Action.Read, resource: ResourceType.CodeReviewSettings, scope: 'org' },
     { action: Action.Update, resource: ResourceType.CodeReviewSettings, scope: 'repo' },
     { action: Action.Create, resource: ResourceType.CodeReviewSettings, scope: 'repo' },
 
@@ -42,7 +45,7 @@ const repoAdmin: PolicyRule[] = [
     { action: Action.Delete, resource: ResourceType.KodyRules, scope: 'repo' },
 
     // Cockpit — read only (no org-wide Update: cockpit *settings* are owner-only).
-    { action: Action.Read, resource: ResourceType.Cockpit, scope: 'repo', global: true },
+    { action: Action.Read, resource: ResourceType.Cockpit, scope: 'org' },
 
     // Issues — read across the org, create/update on assigned repos.
     { action: Action.Read, resource: ResourceType.Issues, scope: 'org' },
@@ -54,19 +57,15 @@ const repoAdmin: PolicyRule[] = [
     { action: Action.Update, resource: ResourceType.IssuesSettings, scope: 'org' },
     { action: Action.Create, resource: ResourceType.IssuesSettings, scope: 'org' },
 
-    { action: Action.Read, resource: ResourceType.Logs, scope: 'repo', global: true },
+    { action: Action.Read, resource: ResourceType.Logs, scope: 'org' },
 
-    // Pull requests — read only on assigned repos, consistent with the
-    // repo-scoped nature of this role (the PR dashboard filters to these via
-    // getRepositoryScope).
-    { action: Action.Read, resource: ResourceType.PullRequests, scope: 'repo' },
+    { action: Action.Read, resource: ResourceType.PullRequests, scope: 'org' },
 
     { action: Action.Read, resource: ResourceType.GitSettings, scope: 'org' },
     { action: Action.Read, resource: ResourceType.PluginSettings, scope: 'org' },
     { action: Action.Read, resource: ResourceType.TokenUsage, scope: 'org' },
 
-    // CLI reviews — own (assigned repos).
-    { action: Action.Read, resource: ResourceType.CliReview, scope: 'repo' },
+    { action: Action.Read, resource: ResourceType.CliReview, scope: 'org' },
 ];
 
 const billingManager: PolicyRule[] = [

@@ -72,6 +72,47 @@ describe('PermissionsAbilityFactory', () => {
         );
     });
 
+    it('REPO_ADMIN reads are org-wide, but writes stay gated by repo assignment', async () => {
+        const ability = await buildFor(Role.REPO_ADMIN);
+        const unassigned = (resource: ResourceType) =>
+            caslSubject(resource, {
+                organizationId: 'org-1',
+                repoId: 'repo-unassigned',
+            });
+        // Sees everything (read) regardless of assignment.
+        expect(
+            ability.can(
+                Action.Read,
+                unassigned(ResourceType.CodeReviewSettings) as any,
+            ),
+        ).toBe(true);
+        expect(
+            ability.can(Action.Read, unassigned(ResourceType.Cockpit) as any),
+        ).toBe(true);
+        expect(
+            ability.can(
+                Action.Read,
+                unassigned(ResourceType.PullRequests) as any,
+            ),
+        ).toBe(true);
+        // Edits only on assigned repos.
+        expect(
+            ability.can(
+                Action.Update,
+                unassigned(ResourceType.CodeReviewSettings) as any,
+            ),
+        ).toBe(false);
+        expect(
+            ability.can(
+                Action.Update,
+                caslSubject(ResourceType.CodeReviewSettings, {
+                    organizationId: 'org-1',
+                    repoId: 'repo-1',
+                }) as any,
+            ),
+        ).toBe(true);
+    });
+
     it('CONTRIBUTOR reads are org-wide: not gated by repo assignment', async () => {
         const ability = await buildFor(Role.CONTRIBUTOR);
         // 'repo-unassigned' is NOT in the assigned list (['repo-1']); a
