@@ -216,10 +216,9 @@ export const columns: ColumnDef<MembersSetup>[] = [
                 return <span className="font-medium">{role}</span>;
             }
 
-            const shouldShowButton = [
-                UserRole.CONTRIBUTOR,
-                UserRole.REPO_ADMIN,
-            ].includes(rowRole);
+            // Repo assignment only gates WRITES, and Contributor is
+            // read-only (org-wide reads) — assignment would be a no-op.
+            const shouldShowButton = rowRole === UserRole.REPO_ADMIN;
 
             const updateRoleAction = async (newRole: UserRole) => {
                 try {
