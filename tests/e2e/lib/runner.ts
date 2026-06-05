@@ -22,6 +22,7 @@ import {
     signUp,
 } from "./onboarding.js";
 import { randomBytes } from "node:crypto";
+import { registryRepoFor } from "./cloud-tenant-registry.js";
 import { logger } from "./log.js";
 
 const log = logger("runner");
@@ -173,6 +174,42 @@ function readCloudTenantsFile(): CloudTenantEntry[] {
     }
 }
 
+// Per-tenant fixture repo for a cloud cell. Prefers what the tenants file
+// (CLOUD_TENANTS_JSON in CI) says, but falls back to the canonical
+// lib/cloud-tenant-registry.ts mapping when the entry predates the
+// 1-repo-per-tenant fix (#1237) and lacks `repoFullName`. Without the
+// fallback, a stale secret silently drops every GitHub tenant onto the
+// shared env-resolved repo (GH_TEST_REPO_CLOUD) and the webhook fan-out
+// collision returns as "review never started" flakes — exactly what
+// happened 2026-06-03 when `environment: QA` started shadowing the fresh
+// repo-level secret with a 05-30 environment-scoped copy. For GitHub the
+// repo is load-bearing (1 org : 1 repo), so having NEITHER source is a
+// hard config error, not a quiet fallback.
+function resolveCloudRepo(
+    fromTenantsFile: string | undefined,
+    provider: ProviderName,
+    license: LicenseMode,
+): string | undefined {
+    if (fromTenantsFile) return fromTenantsFile;
+    const fromRegistry = registryRepoFor(provider, license);
+    if (provider !== "github") return fromRegistry;
+    if (!fromRegistry) {
+        throw new Error(
+            `cloud github tenant (license=${license}) has no dedicated fixture repo: ` +
+                `the tenants file entry lacks repoFullName AND lib/cloud-tenant-registry.ts ` +
+                `has no (github, ${license}) tenant. Re-seed with \`yarn cloud:setup-tenants\` ` +
+                `or add the tenant to the registry — falling back to a shared repo would ` +
+                `reintroduce the webhook fan-out collision (#1237).`,
+        );
+    }
+    log.info(
+        `[tenant] cloud-tenants entry for (github, ${license}) lacks repoFullName ` +
+            `(stale CLOUD_TENANTS_JSON / cloud-tenants.json) — using registry default ${fromRegistry}. ` +
+            `Re-seed with \`yarn cloud:setup-tenants\` and refresh the secret.`,
+    );
+    return fromRegistry;
+}
+
 async function resolveTenantForCell(
     target: TargetContext,
     license: LicenseMode,
@@ -192,7 +229,11 @@ async function resolveTenantForCell(
             return {
                 email: match.email,
                 password: match.password,
-                repoFullName: match.repoFullName,
+                repoFullName: resolveCloudRepo(
+                    match.repoFullName,
+                    provider,
+                    license,
+                ),
             };
 
         // Legacy fallback: per-license env vars (CLOUD_TENANT_PAID_EMAIL
@@ -208,7 +249,11 @@ async function resolveTenantForCell(
         const email = process.env[key[0]];
         const password = process.env[key[1]];
         if (!email || !password) return undefined;
-        return { email, password };
+        return {
+            email,
+            password,
+            repoFullName: resolveCloudRepo(undefined, provider, license),
+        };
     }
     // self-hosted: fresh tenant per matrix run. Deterministic per
     // (runId, provider) so all cells/scenarios within ONE matrix run
@@ -311,9 +356,15 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
         >();
         for (const c of opts.cells) {
             if (c.target !== opts.target) continue;
+            // Same stale-tenants-file fallback as resolveCloudRepo (non-
+            // throwing here: a cleanup miss is survivable, a dead run is
+            // not) — otherwise the sweep visits the shared default repo
+            // while the actual per-tenant repos keep their orphaned PRs.
             const repo =
                 opts.target === "cloud"
-                    ? repoByProviderLicense.get(`${c.provider}::${c.license}`)
+                    ? (repoByProviderLicense.get(
+                          `${c.provider}::${c.license}`,
+                      ) ?? registryRepoFor(c.provider, c.license))
                     : undefined;
             fixtures.set(`${c.provider}::${repo ?? "default"}`, {
                 provider: c.provider,

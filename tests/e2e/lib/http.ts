@@ -28,6 +28,10 @@ export interface HttpOptions {
     headers?: Record<string, string>;
     body?: unknown;
     timeoutMs?: number;
+    // "manual" surfaces 3xx responses instead of following them — needed
+    // by callers that assert ON the redirect itself (e.g. the RBAC route
+    // guard checking for a /forbidden Location). Default: fetch's "follow".
+    redirect?: "follow" | "manual";
 }
 
 export interface HttpResponse<T = unknown> {
@@ -72,6 +76,7 @@ async function attempt<T>(
         method: opts.method ?? "GET",
         headers: { ...(opts.headers ?? {}), ...wafBypassHeader(url) },
         signal: controller.signal,
+        ...(opts.redirect ? { redirect: opts.redirect } : {}),
     };
     if (opts.body !== undefined && opts.body !== null) {
         init.body =

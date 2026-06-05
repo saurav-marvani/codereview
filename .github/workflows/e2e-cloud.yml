@@ -64,10 +64,19 @@ jobs:
         name: cloud matrix (${{ inputs.matrix_file || 'matrix/fast.yml' }})
         runs-on: ubuntu-latest
         # QA environment: where the QA-scoped secrets live (GH_REPO_ADMIN_TOKEN
-        # for trial-managed-review's throwaway repos; CLOUD_TENANTS_JSON also
-        # has a copy here). Branch policy allows `main` only — fine, every real
-        # trigger (qa-build workflow_call, nightly schedule, dispatch) runs
-        # from main. Repo-level secrets keep resolving as before.
+        # for trial-managed-review's throwaway repos). Branch policy allows
+        # `main` only — fine, every real trigger (qa-build workflow_call,
+        # nightly schedule, dispatch) runs from main. Repo-level secrets keep
+        # resolving as before.
+        #
+        # CLOUD_TENANTS_JSON must exist ONLY at repo level: environment
+        # secrets SHADOW repo secrets, and a stale environment-scoped copy
+        # (sealed 05-30, pre-#1237, no repoFullName) silently dropped every
+        # GitHub tenant onto one shared repo from 06-03 to 06-05 — webhook
+        # fan-out collisions, "review never started" flakes. The env copy was
+        # deleted on 2026-06-05; don't recreate it. (lib/runner.ts now also
+        # falls back to lib/cloud-tenant-registry.ts for the repo mapping, so
+        # a stale secret can't reintroduce the collision either way.)
         environment: QA
         # fast.yml = ~30-45 min, full.yml = ~75-120 min. Cap with
         # generous headroom; cell-level timeouts inside the runner stop
