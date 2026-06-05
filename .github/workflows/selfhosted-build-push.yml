@@ -413,7 +413,12 @@ jobs:
             packages: read
         uses: ./.github/workflows/e2e-self-hosted-matrix.yml
         with:
-            image_tag: ${{ needs.plan-release.outputs.rc_tag }}
+            # rc_version (the DOCKER tag, e.g. 2.1.16-rc.68) — NOT rc_tag
+            # (the GIT tag, selfhosted-2.1.16-rc.68). The images are pushed
+            # as :<rc_version>; since kodus-installer#21 the droplet compose
+            # actually pins IMAGE_TAG, so passing the git tag makes every
+            # pull 404 ("manifest not found", all 5 cells, run 27021899293).
+            image_tag: ${{ needs.plan-release.outputs.rc_version }}
             # FULL coverage on release: adds upgrade-N-1→N, SSO,
             # Stripe billing — the lifecycle scenarios that only matter
             # when cutting a customer-visible release. e2e-cloud

@@ -14,7 +14,8 @@ permissions:
 # an RC build, before any promotion is allowed.
 #
 # Inputs:
-#   image_tag    Image tag to test against (REQUIRED, e.g. selfhosted-1.42.0-rc.1)
+#   image_tag    DOCKER image tag to test against (REQUIRED, e.g. 1.42.0-rc.1 —
+#                the ghcr tag, NOT the selfhosted-* git tag)
 #   matrix_file  Path to a matrix YAML file in tests/e2e/matrix/ (default fast.yml)
 #   keep_running Optional — leave droplets alive after each cell for debug
 #
