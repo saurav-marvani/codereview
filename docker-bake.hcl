@@ -45,6 +45,13 @@ target "base" {
     RELEASE_VERSION = "${RELEASE_VERSION}"
     API_CLOUD_MODE = "${API_CLOUD_MODE}"
   }
+  # github_token feeds @vscode/ripgrep's postinstall (via @morphllm/
+  # morphsdk): it downloads a prebuilt binary from the GitHub releases
+  # API, which 403s anonymous calls from shared CI runner IPs (killed
+  # the 2026-06-05 release build). Sourced from the GITHUB_TOKEN env at
+  # bake time; absent env → empty secret → install runs unauthenticated
+  # exactly as before (local builds unaffected).
+  secret = ["id=github_token,env=GITHUB_TOKEN"]
   cache-from = ["type=gha,scope=${CACHE_SCOPE}"]
   cache-to = ["type=gha,scope=${CACHE_SCOPE},mode=max"]
 }

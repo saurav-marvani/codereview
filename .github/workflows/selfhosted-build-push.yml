@@ -311,6 +311,11 @@ jobs:
 
             - name: Build and push RC images
               env:
+                  # Feeds the bake-level `github_token` secret: authenticates
+                  # @vscode/ripgrep's postinstall download (GitHub releases
+                  # API rate-limits anonymous runner IPs — killed the
+                  # 2026-06-05 release build with a 403).
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   # IMPORTANT: only the RC tag is pushed here. The final
                   # X.Y.Z tag and :latest are minted by selfhosted-promote.yml
                   # after the matrix E2E passes — never by this job.

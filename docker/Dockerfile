@@ -66,10 +66,16 @@ RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
   && YARN_CACHE_FOLDER=/yarn-cache yarn install \
   && YARN_CACHE_FOLDER=/yarn-cache yarn build
 
-# Install dependencies and link local packages
+# Install dependencies and link local packages.
+# github_token (optional) authenticates @vscode/ripgrep's postinstall
+# download against the GitHub releases API — anonymous calls from shared
+# CI runner IPs are rate-limited (403) and abort the whole install. Empty
+# or absent secret → unauthenticated, same as a local build.
 RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
+    --mount=type=secret,id=github_token,required=false \
     --mount=type=cache,target=/yarn-cache,sharing=locked \
-    YARN_CACHE_FOLDER=/yarn-cache yarn install --frozen-lockfile
+    if [ -s /run/secrets/github_token ]; then export GITHUB_TOKEN="$(cat /run/secrets/github_token)"; fi \
+ && YARN_CACHE_FOLDER=/yarn-cache yarn install --frozen-lockfile
 RUN rm -rf node_modules/@kodus/kodus-common && cp -r packages/kodus-common node_modules/@kodus/kodus-common
 RUN rm -rf node_modules/@kodus/flow && cp -r packages/kodus-flow node_modules/@kodus/flow
 
@@ -112,9 +118,13 @@ RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
 # ESLint, etc.) since the `build` stage already produced the compiled
 # output in ../build/usr/src/app/dist. --prefer-offline + the shared yarn
 # cache means we reuse the tarballs already downloaded by `deps`.
+# github_token: same ripgrep-postinstall rate-limit story as `deps` —
+# this stage re-runs postinstall scripts on its own node_modules.
 RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
+    --mount=type=secret,id=github_token,required=false \
     --mount=type=cache,target=/yarn-cache,sharing=locked \
-    YARN_CACHE_FOLDER=/yarn-cache yarn install --frozen-lockfile --prefer-offline --production=true
+    if [ -s /run/secrets/github_token ]; then export GITHUB_TOKEN="$(cat /run/secrets/github_token)"; fi \
+ && YARN_CACHE_FOLDER=/yarn-cache yarn install --frozen-lockfile --prefer-offline --production=true
 
 # Link local packages. Drop the nested node_modules/src/test that were
 # needed for `yarn prepack` but not at runtime — keeping them would
