@@ -84,7 +84,28 @@ jobs:
         environment: ci
         permissions:
             contents: read
+            # `gh variable set` below uses GITHUB_TOKEN — variables fall
+            # under the Actions permission scope.
+            actions: write
         steps:
+            # Variable FIRST, ruleset second — and with DIFFERENT tokens.
+            # RELEASE_BOT_TOKEN can PUT rulesets (admin) but has NO Actions
+            # variables access: on the first scheduled run (2026-06-05) the
+            # old single step activated the ruleset and THEN 403'd on
+            # `gh variable set`, killing the whole release at job 1 with the
+            # ruleset left active and unfreeze-main skipped. GITHUB_TOKEN
+            # with `actions: write` handles the variable; the admin token
+            # only touches the ruleset.
+            - name: Signal freeze to release-freeze-check.yml
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  REPO: ${{ github.repository }}
+              run: |
+                  set -euo pipefail
+                  # release-freeze-check.yml can't read rulesets with
+                  # GITHUB_TOKEN and gates on this variable instead.
+                  gh variable set RELEASE_FREEZE_ACTIVE --body "true" -R "$REPO"
+
             - name: Activate release-freeze ruleset
               env:
                   GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
@@ -99,9 +120,6 @@ jobs:
                   CURRENT=$(gh api "repos/${REPO}/rulesets/${RULESET_ID}")
                   echo "$CURRENT" | jq '.enforcement="active"' > /tmp/ruleset.json
                   gh api --method PUT "repos/${REPO}/rulesets/${RULESET_ID}" --input /tmp/ruleset.json | jq '{name, enforcement}'
-                  # Signal the freeze to release-freeze-check.yml, which can't
-                  # read rulesets with GITHUB_TOKEN and gates on this variable.
-                  gh variable set RELEASE_FREEZE_ACTIVE --body "true" -R "$REPO"
                   echo "::notice::main is now frozen — no PRs can merge until unfreeze-main runs."
 
             - name: Re-evaluate freeze eligibility on open PRs
@@ -630,11 +648,20 @@ jobs:
             - env-sync-installer
             - trigger-installer-e2e
             - cleanup-rc-tag
-        if: ${{ always() && needs.freeze-main.result == 'success' }}
+        # `!= 'skipped'` (not `== 'success'`): a PARTIALLY failed freeze
+        # (2026-06-05: ruleset activated, then the variable step 403'd)
+        # must still be rolled back, or main stays nominally frozen with
+        # no release in flight and no unfreeze ever firing. Only the
+        # hotfix path (freeze skipped) skips the rollback.
+        if: ${{ always() && needs.freeze-main.result != 'skipped' }}
         runs-on: ubuntu-latest
         environment: ci
         permissions:
             contents: read
+            # `gh variable set` below uses GITHUB_TOKEN — variables fall
+            # under the Actions permission scope (RELEASE_BOT_TOKEN has no
+            # variables access; see freeze-main).
+            actions: write
         steps:
             - name: Deactivate release-freeze ruleset
               env:
@@ -647,9 +674,15 @@ jobs:
                   CURRENT=$(gh api "repos/${REPO}/rulesets/${RULESET_ID}")
                   echo "$CURRENT" | jq '.enforcement="disabled"' > /tmp/ruleset.json
                   gh api --method PUT "repos/${REPO}/rulesets/${RULESET_ID}" --input /tmp/ruleset.json | jq '{name, enforcement}'
-                  # Clear the freeze signal read by release-freeze-check.yml.
-                  gh variable set RELEASE_FREEZE_ACTIVE --body "false" -R "$REPO"
                   echo "::notice::main is unfrozen — PRs can merge again."
+
+            - name: Clear freeze signal for release-freeze-check.yml
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  REPO: ${{ github.repository }}
+              run: |
+                  set -euo pipefail
+                  gh variable set RELEASE_FREEZE_ACTIVE --body "false" -R "$REPO"
 
             - name: Clear freeze-eligibility red on open PRs
               env:
@@ -697,7 +730,12 @@ jobs:
         # half-shipped state.
         if: always() && contains(needs.*.result, 'failure')
         runs-on: ubuntu-latest
-        environment: production
+        # NO environment here. `production` carries required_reviewers (the
+        # human promote gate) — binding the FAILURE ALERT to it left the
+        # 2026-06-05 release failure sitting in "waiting for approval" and
+        # Discord silent. Webhooks resolve from repo-level secrets
+        # (DISCORD_WEBHOOK_INTERNAL / DISCORD_WEBHOOK), which need no
+        # approval to read.
         permissions: {}
         steps:
             - name: Compose failure context
@@ -726,7 +764,11 @@ jobs:
             - name: Check Discord webhook configuration
               id: discord-webhook
               run: |
-                  if [ -n "${{ secrets.DISCORD_WEBHOOK_SELFHOSTED }}" ]; then
+                  # Gate on the SAME fallback chain the send step uses —
+                  # gating only on DISCORD_WEBHOOK_SELFHOSTED (an
+                  # environment-scoped secret) silently skips the alert when
+                  # the job runs without that environment.
+                  if [ -n "${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK_SELFHOSTED || secrets.DISCORD_WEBHOOK }}" ]; then
                     echo "configured=true" >> "$GITHUB_OUTPUT"
                   else
                     echo "configured=false" >> "$GITHUB_OUTPUT"
