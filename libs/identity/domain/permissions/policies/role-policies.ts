@@ -104,3 +104,12 @@ export const ROLE_POLICIES: Record<Role, PolicyRule[]> = {
     [Role.BILLING_MANAGER]: billingManager,
     [Role.CONTRIBUTOR]: contributor,
 };
+
+/**
+ * Whether repository assignment has any effect for the role — i.e. at least
+ * one of its grants is repo-scoped. Drives UI such as the repo-assignment
+ * chip in user management; derived from ROLE_POLICIES so it cannot drift
+ * when a role's scoping changes.
+ */
+export const roleUsesRepoAssignment = (role: Role | string): boolean =>
+    (ROLE_POLICIES[role as Role] ?? []).some((rule) => rule.scope === 'repo');
