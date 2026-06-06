@@ -28,6 +28,10 @@ export interface HttpOptions {
     headers?: Record<string, string>;
     body?: unknown;
     timeoutMs?: number;
+    // "manual" surfaces 3xx responses instead of following them — needed
+    // by callers that assert ON the redirect itself (e.g. the RBAC route
+    // guard checking for a /forbidden Location). Default: fetch's "follow".
+    redirect?: "follow" | "manual";
 }
 
 export interface HttpResponse<T = unknown> {
@@ -35,6 +39,26 @@ export interface HttpResponse<T = unknown> {
     headers: Headers;
     body: T;
     raw: string;
+}
+
+// AWS WAF on the QA ALB intermittently blocks GitHub-hosted runner IPs
+// (shared pool → some land on the IP-reputation/rate rules), 403-ing the
+// ENTIRE run. The WAF carries an Allow rule keyed on this secret header;
+// inject it on every request bound for a `qa.*.kodus.io` host — and ONLY
+// those: the secret must never reach github.com/gitlab.com/etc. No-op when
+// QA_WAF_BYPASS_HEADER is unset (local runs, forks).
+export function wafBypassHeader(url: string): Record<string, string> {
+    const secret = process.env.QA_WAF_BYPASS_HEADER;
+    if (!secret) return {};
+    try {
+        const host = new URL(url).hostname;
+        if (/^qa\.([a-z0-9-]+\.)*kodus\.io$/i.test(host)) {
+            return { "x-kodus-e2e": secret };
+        }
+    } catch {
+        // unparsable URL → fetch() will fail with its own error anyway
+    }
+    return {};
 }
 
 // Internal: one attempt of the actual fetch. Extracted so the retry
@@ -50,8 +74,9 @@ async function attempt<T>(
 
     const init: RequestInit = {
         method: opts.method ?? "GET",
-        headers: opts.headers ?? {},
+        headers: { ...(opts.headers ?? {}), ...wafBypassHeader(url) },
         signal: controller.signal,
+        ...(opts.redirect ? { redirect: opts.redirect } : {}),
     };
     if (opts.body !== undefined && opts.body !== null) {
         init.body =

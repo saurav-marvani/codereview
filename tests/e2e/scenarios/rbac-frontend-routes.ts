@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import { join } from "path";
 
+import { http } from "../lib/http.js";
 import {
     NON_OWNER_ROLES,
     RBAC_PASSWORD,
@@ -50,8 +51,8 @@ function loadRouteManifest(): RouteEntry[] {
 
 // Minimal cookie jar: name -> value, serialized as a Cookie header.
 type Jar = Map<string, string>;
-function absorb(jar: Jar, res: Response): void {
-    for (const c of res.headers.getSetCookie()) {
+function absorb(jar: Jar, headers: Headers): void {
+    for (const c of headers.getSetCookie()) {
         const [pair] = c.split(";");
         const eq = pair.indexOf("=");
         if (eq > 0) jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
@@ -60,6 +61,14 @@ function absorb(jar: Jar, res: Response): void {
 function cookieHeader(jar: Jar): string {
     return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
 }
+
+// All requests go through lib/http.ts — NOT bare fetch — for two
+// load-bearing reasons: (1) http() injects the AWS WAF bypass header on
+// qa.*.kodus.io hosts; without it the WAF intermittently 403s
+// GitHub-hosted runner IPs with an nginx HTML page, which a bare
+// `res.json()` surfaces as the useless "Unexpected token '<'" (the exact
+// 2026-06-05 nightly failure). (2) http() retries transport errors and
+// 429s, so a single connection reset doesn't fail 130+ route verdicts.
 
 /** Sign in through next-auth (credentials provider) over HTTP; returns the
  *  authenticated cookie jar the Next middleware accepts. */
@@ -70,9 +79,19 @@ async function nextAuthLogin(
 ): Promise<Jar> {
     const jar: Jar = new Map();
 
-    const csrfRes = await fetch(`${web}/api/auth/csrf`, { redirect: "manual" });
-    absorb(jar, csrfRes);
-    const { csrfToken } = (await csrfRes.json()) as { csrfToken: string };
+    const csrfRes = await http<{ csrfToken?: string }>(
+        `${web}/api/auth/csrf`,
+        { redirect: "manual" },
+    );
+    absorb(jar, csrfRes.headers);
+    const csrfToken = csrfRes.body?.csrfToken;
+    if (csrfRes.status !== 200 || typeof csrfToken !== "string") {
+        throw new Error(
+            `GET /api/auth/csrf returned HTTP ${csrfRes.status} ` +
+                `(${csrfRes.headers.get("content-type") ?? "no content-type"}) ` +
+                `instead of a JSON csrfToken: ${csrfRes.raw.slice(0, 200)}`,
+        );
+    }
 
     const form = new URLSearchParams({
         csrfToken,
@@ -81,7 +100,7 @@ async function nextAuthLogin(
         redirect: "false",
         json: "true",
     });
-    const cbRes = await fetch(`${web}/api/auth/callback/credentials`, {
+    const cbRes = await http(`${web}/api/auth/callback/credentials`, {
         method: "POST",
         headers: {
             "Content-Type": "application/x-www-form-urlencoded",
@@ -90,7 +109,7 @@ async function nextAuthLogin(
         body: form.toString(),
         redirect: "manual",
     });
-    absorb(jar, cbRes);
+    absorb(jar, cbRes.headers);
 
     // Auth.js v5 names the session cookie `authjs.session-token` over HTTP but
     // prefixes it `__Secure-authjs.session-token` over HTTPS (QA cloud), and
@@ -103,7 +122,8 @@ async function nextAuthLogin(
     );
     if (!hasSession) {
         throw new Error(
-            `next-auth login for ${email} did not yield a session (HTTP ${cbRes.status})`,
+            `next-auth login for ${email} did not yield a session ` +
+                `(HTTP ${cbRes.status}): ${cbRes.raw.slice(0, 200)}`,
         );
     }
     return jar;
@@ -115,7 +135,7 @@ async function routeVerdict(
     jar: Jar,
     route: string,
 ): Promise<"allow" | "deny"> {
-    const res = await fetch(`${web}${route}`, {
+    const res = await http(`${web}${route}`, {
         headers: { Cookie: cookieHeader(jar) },
         redirect: "manual",
     });

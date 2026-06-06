@@ -5,3 +5,6 @@ out
 next-env.d.ts
 .env*.local
 .vercel
+
+# Root .gitignore excludes *.d.ts globally; this one is hand-written.
+!src/types/css.d.ts

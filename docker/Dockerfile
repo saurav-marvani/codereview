@@ -63,10 +63,16 @@ RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
   && pnpm install --store-dir /pnpm-store \
   && pnpm run build
 
-# Install dependencies and link local packages
+# Install dependencies and link local packages.
+# github_token (optional) authenticates @vscode/ripgrep's postinstall
+# download against the GitHub releases API — anonymous calls from shared
+# CI runner IPs are rate-limited (403) and abort the whole install. Empty
+# or absent secret → unauthenticated, same as a local build.
 RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
+    --mount=type=secret,id=github_token,required=false \
     --mount=type=cache,target=/pnpm-store,sharing=shared \
-    pnpm install --frozen-lockfile --store-dir /pnpm-store
+    if [ -s /run/secrets/github_token ]; then export GITHUB_TOKEN="$(cat /run/secrets/github_token)"; fi \
+ && pnpm install --frozen-lockfile --store-dir /pnpm-store
 RUN rm -rf node_modules/@kodus/kodus-common && cp -r packages/kodus-common node_modules/@kodus/kodus-common
 RUN rm -rf node_modules/@kodus/flow && cp -r packages/kodus-flow node_modules/@kodus/flow
 
@@ -109,9 +115,13 @@ RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
 # since the `build` stage already produced the compiled output in
 # ../build/usr/src/app/dist. The shared pnpm store means packages already
 # downloaded by `deps` are hardlinked, not re-fetched.
+# github_token: same ripgrep-postinstall rate-limit story as `deps` —
+# this stage re-runs postinstall scripts on its own node_modules.
 RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
+    --mount=type=secret,id=github_token,required=false \
     --mount=type=cache,target=/pnpm-store,sharing=shared \
-    pnpm install --frozen-lockfile --prod --store-dir /pnpm-store
+    if [ -s /run/secrets/github_token ]; then export GITHUB_TOKEN="$(cat /run/secrets/github_token)"; fi \
+ && pnpm install --frozen-lockfile --prod --store-dir /pnpm-store
 
 # Link local packages. Drop the nested node_modules/src/test that were
 # needed for `pnpm run prepack` but not at runtime — keeping them would

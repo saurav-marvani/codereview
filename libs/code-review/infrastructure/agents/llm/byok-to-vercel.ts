@@ -11,7 +11,11 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createVertex } from '@ai-sdk/google-vertex';
 import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { BYOKConfig, BYOKProvider } from '@kodus/kodus-common/llm';
+import {
+    anthropicCompatibleRootURL,
+    BYOKConfig,
+    BYOKProvider,
+} from '@kodus/kodus-common/llm';
 import { decrypt } from '@libs/common/utils/crypto';
 
 /**
@@ -351,6 +355,15 @@ export function byokToVercelModel(
             return createAnthropic({
                 apiKey,
                 ...(baseURL ? { baseURL } : {}),
+            })(model);
+
+        case BYOKProvider.ANTHROPIC_COMPATIBLE:
+            // Anthropic-compatible endpoints (Kimi Code, Z.ai, DeepSeek):
+            // @ai-sdk/anthropic appends /messages to the base, so the base
+            // must carry the /v1 suffix — normalize whatever the user pasted.
+            return createAnthropic({
+                apiKey,
+                baseURL: `${anthropicCompatibleRootURL(baseURL || '')}/v1`,
             })(model);
 
         case BYOKProvider.GOOGLE_GEMINI:

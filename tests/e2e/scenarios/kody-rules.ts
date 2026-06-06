@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { RunContext, Scenario } from "../lib/types.js";
+import type { KodusSession, RunContext, Scenario } from "../lib/types.js";
 import { ensureOk, http } from "../lib/http.js";
 import { ensureLicenseSeat } from "../lib/onboarding.js";
 import { pollUntil } from "../providers/base.js";
@@ -86,6 +86,22 @@ export const kodyRulesCreateAndApply: Scenario = {
         // Rule application runs inside the review pipeline; on licensed
         // self-hosted the PR author needs a seat or the review is skipped.
         await ensureLicenseSeat(ctx.target, session, ctx.provider);
+
+        // Sweep stale `e2e-rule-*` rules from prior runs BEFORE creating a new
+        // one. The per-run `finally` deletes the rule it created, but a crash /
+        // SIGINT / failed delete leaks it — and these rules are IDENTICAL
+        // "flag TODO_REMOVE_ME" rules. When N duplicates exist, the review
+        // links the TODO violation to whichever duplicate the engine picked
+        // (an OLDER uuid), so the scenario's exact-`ruleId` suggestion query
+        // returns 0 even though the rule fired — exactly the gitlab failure on
+        // 2026-06-04 (org had 23 accumulated e2e TODO rules; the suggestion
+        // blamed a rule from a previous day). Cleaning first restores 1 rule :
+        // 1 expected blame. Matches by the `e2e-rule-` title prefix so a
+        // human's rule is never touched.
+        const swept = await sweepStaleE2ERules(ctx, session, String(repo.id));
+        if (swept > 0) {
+            log.info(`[kody-rules] swept ${swept} stale e2e-rule-* rule(s) before creating a fresh one`);
+        }
 
         const ruleName = `e2e-rule-${ctx.runId.slice(0, 8)}-${randomUUID().slice(0, 6)}`;
         // The rule must be unambiguous AND override intent-aware reasoning.
@@ -234,11 +250,21 @@ export const kodyRulesCreateAndApply: Scenario = {
             //   (b) real regression — the rule pipeline ignored an obvious
             //       match. If the re-trigger ALSO yields 0, it's (b) and we
             //       fail loudly.
-            // One retry, not a loop: (a) always clears on the second pass;
-            // anything that survives it is a genuine bug, not a race.
-            if (suggestionsCount === 0) {
+            // Re-trigger only when the first review neither linked a
+            // suggestion to our ruleId NOR visibly flagged the marker. If the
+            // marker WAS flagged, the rule fired and the missing id-link is
+            // just async suggestion persistence (observed: suggestion row
+            // written ~80s after MR open) — re-triggering there is pointless
+            // and, on an already-reviewed MR, often yields no new review at
+            // all, which used to fail the scenario at the poll timeout.
+            // One retry, not a loop: a true propagation race clears on the
+            // second pass; anything that survives is a genuine bug.
+            const firstReviewFlagged = (review.sample ?? "")
+                .toLowerCase()
+                .includes("todo_remove_me");
+            if (suggestionsCount === 0 && !firstReviewFlagged) {
                 log.warn(
-                    `0 suggestions on first review of PR ${opened.url} — re-triggering review (rule propagation race vs real miss)`,
+                    `0 suggestions and no marker in the first review of PR ${opened.url} — re-triggering (rule propagation race vs real miss)`,
                 );
                 const retrigger = await ctx.provider.triggerReviewOnExistingPR(
                     opened.number,
@@ -248,9 +274,25 @@ export const kodyRulesCreateAndApply: Scenario = {
                 ));
             }
 
+            // The scenario proves "a created rule is APPLIED to a fresh PR".
+            // Two independent signals confirm that; either suffices:
+            //   1. suggestionsCount>0 — a suggestion links back to OUR ruleId
+            //      (the strict signal; reliable now that sweepStaleE2ERules
+            //      guarantees no duplicate rule can absorb the blame).
+            //   2. the review visibly flagged the marker — the completion
+            //      comment names our rule or the TODO_REMOVE_ME substring.
+            // Relying on #1 alone made this brittle: when a duplicate rule
+            // existed the engine attributed the finding to the OTHER uuid, so
+            // the exact-id query returned 0 while the rule had plainly fired
+            // (gitlab, 2026-06-04). #2 catches that case deterministically.
+            const sampleText = (review.sample ?? "").toLowerCase();
+            const reviewFlaggedMarker =
+                sampleText.includes(ruleName.toLowerCase()) ||
+                sampleText.includes("todo_remove_me");
+
             ctx.assert(
-                suggestionsCount > 0,
-                `Rule ${ruleName} produced 0 suggestions even after a re-triggered review, though the fixture branch contains explicit TODO_REMOVE_ME occurrences. The rule pipeline ignored an active rule — a real regression, not a propagation race.`,
+                suggestionsCount > 0 || reviewFlaggedMarker,
+                `Rule ${ruleName} was not applied to PR ${opened.url}: 0 suggestions linked to its ruleId AND the review comment never flagged TODO_REMOVE_ME, even after a re-triggered review — the fixture branch contains explicit TODO_REMOVE_ME occurrences, so the rule pipeline ignored an active rule (real regression, not a propagation race). reviewSample(head)=${(review.sample ?? "").slice(0, 200)}`,
             );
 
             // Informational only — captured as evidence, not asserted on.
@@ -329,6 +371,71 @@ function findRuleStatusById(
         }
     }
     return undefined;
+}
+
+// Collect every {uuid, title} pair anywhere in the find-by-organization-id
+// response (shape ≈ `{ data: [{ repositoryId, rules: [{ uuid, title, … }] }] }`,
+// walked defensively). Used to find stale e2e rules to delete.
+function collectRules(
+    node: unknown,
+    out: Array<{ uuid: string; title: string }>,
+): void {
+    if (Array.isArray(node)) {
+        for (const item of node) collectRules(item, out);
+        return;
+    }
+    if (node && typeof node === "object") {
+        const obj = node as Record<string, unknown>;
+        if (typeof obj.uuid === "string" && typeof obj.title === "string") {
+            out.push({ uuid: obj.uuid, title: obj.title });
+        }
+        for (const v of Object.values(obj)) collectRules(v, out);
+    }
+}
+
+// Delete every `e2e-rule-*` rule left over from prior runs (crashes skip the
+// per-run finally). Best-effort — returns how many it deleted; a failed
+// delete just logs and is retried next run. Title-prefix scoped so a human
+// rule is never removed.
+async function sweepStaleE2ERules(
+    ctx: RunContext,
+    session: KodusSession,
+    _repoId: string,
+): Promise<number> {
+    const listResp = await http(
+        `${ctx.target.apiBaseUrl}/kody-rules/find-by-organization-id`,
+        {
+            headers: { Authorization: `Bearer ${session.accessToken}` },
+            timeoutMs: 15_000,
+        },
+    );
+    const found: Array<{ uuid: string; title: string }> = [];
+    collectRules(listResp.body, found);
+    // De-dupe (the same rule can appear under multiple repo groupings).
+    const stale = [
+        ...new Map(
+            found
+                .filter((r) => /^e2e-rule-/.test(r.title))
+                .map((r) => [r.uuid, r]),
+        ).values(),
+    ];
+    let deleted = 0;
+    for (const r of stale) {
+        try {
+            const del = await http(
+                `${ctx.target.apiBaseUrl}/kody-rules/delete-rule-in-organization-by-id?ruleId=${encodeURIComponent(r.uuid)}&teamId=${encodeURIComponent(session.teamId)}`,
+                {
+                    method: "DELETE",
+                    headers: { Authorization: `Bearer ${session.accessToken}` },
+                    timeoutMs: 20_000,
+                },
+            );
+            if (del.status >= 200 && del.status < 300) deleted++;
+        } catch {
+            /* best effort — next run sweeps it */
+        }
+    }
+    return deleted;
 }
 
 export default kodyRulesCreateAndApply;

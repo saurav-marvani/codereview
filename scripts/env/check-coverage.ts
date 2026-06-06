@@ -58,6 +58,14 @@ const ALLOWLIST: Array<{ pattern: RegExp; reason: string }> = [
         pattern: /^(BEARER_TOKEN|GOOGLE_SERVICE_ACCOUNT|NO_AUTH|BASIC_WITH_JWT)$/,
         reason: 'enum/string-literal in mcp-manager (false positive)',
     },
+    {
+        // GitHub Actions runtime variables referenced by inline `node`
+        // scripts in .github/workflows/*.yml (the scan includes *.yml).
+        // Injected by the Actions runner — CI plumbing, never Kodus
+        // runtime config, so they don't belong in .env.schema.
+        pattern: /^(GITHUB_OUTPUT|GITHUB_ENV|GITHUB_STATE|GITHUB_STEP_SUMMARY|GITHUB_PATH|RUNNER_TEMP)$/,
+        reason: 'GitHub Actions workflow plumbing (inline node in *.yml), not a Kodus env var',
+    },
 ];
 
 function grepStrongUsages(): Set<string> {

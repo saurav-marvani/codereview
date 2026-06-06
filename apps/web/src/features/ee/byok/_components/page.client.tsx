@@ -42,6 +42,7 @@ const CURATED_PROVIDERS = new Set([
     "anthropic",
     "openai",
     "openai_compatible",
+    "anthropic_compatible",
     "google_gemini",
     "openrouter",
 ]);
@@ -55,6 +56,8 @@ const providerLabel = (providerId?: string) => {
             return "OpenAI";
         case "openai_compatible":
             return "OpenAI-compatible";
+        case "anthropic_compatible":
+            return "Anthropic-compatible";
         case "anthropic":
             return "Anthropic";
         case "google_gemini":

@@ -223,3 +223,13 @@ parity-report.json
 
 opus-diagnosis-ptbr/
 scripts/benchmark/node_modules/
+
+# Benchmark recall experiments — analysis outputs + session tooling (regenerated, not product code)
+docs-internal/agent-execucao/
+scripts/benchmark/process-run.sh
+scripts/benchmark/funnel-extract.js
+scripts/benchmark/funnel-report.py
+scripts/benchmark/langfuse-enrich.py
+scripts/benchmark/execucao-detalhada.py
+scripts/benchmark/golden-context.py
+scripts/benchmark/golden-context.py.bak

@@ -12,6 +12,19 @@ export const useTokenUsageFilters = (models: string[]) => {
 
     const [selectedModels, setSelectedModels] = useState<string[]>(models);
 
+    // Keep selection in sync when the upstream `models` list changes —
+    // switching filter (daily/by-pr/by-developer) yields a different
+    // aggregation and can swap which models exist. Without this the dropdown
+    // claims "N selected" against models that aren't in the list anymore.
+    const modelsKey = models.join("|");
+    useEffect(() => {
+        setSelectedModels((prev) => {
+            const stillPresent = prev.filter((m) => models.includes(m));
+            return stillPresent.length === 0 ? models : stillPresent;
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [modelsKey]);
+
     const [prNumber, setPrNumber] = useState(
         searchParams.get("prNumber") ?? "",
     );

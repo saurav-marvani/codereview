@@ -125,6 +125,10 @@ jobs:
 
             - name: Build, tag, and push (api/webhooks/worker)
               env:
+                  # Authenticates @vscode/ripgrep's postinstall download via
+                  # the bake-level `github_token` secret (anonymous GitHub
+                  # API calls from runner IPs are rate-limited → 403).
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
                   API_TAGS: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API
                       }}:${{ env.IMAGE_TAG }}

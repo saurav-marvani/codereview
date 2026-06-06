@@ -1,8 +1,15 @@
 "use client";
 
+import { Button } from "@components/ui/button";
 import { Card } from "@components/ui/card";
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from "@components/ui/tooltip";
 import { getSpendLimitStatus } from "@services/spend-limit/fetch";
 import { useQuery } from "@tanstack/react-query";
+import { HelpCircleIcon } from "lucide-react";
 import { cn } from "src/core/utils/components";
 
 // Alert thresholds — shown as ticks so the limit's "danger zone" is legible.
@@ -38,9 +45,23 @@ export const SpendLimitProgress = () => {
     return (
         <Card className="flex flex-col gap-3 p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                <p className="text-text-secondary text-sm text-pretty">
-                    Monthly spend limit (BYOK)
-                </p>
+                <div className="flex items-center gap-1.5">
+                    <p className="text-text-secondary text-sm text-pretty">
+                        Monthly spend limit (BYOK)
+                    </p>
+                    <Tooltip>
+                        <TooltipContent className="text-text-primary max-w-64 text-pretty">
+                            This bar always reflects spend from the start of the
+                            current month through today and ignores the date
+                            filter above.
+                        </TooltipContent>
+                        <TooltipTrigger asChild>
+                            <Button variant="cancel" size="icon-xs">
+                                <HelpCircleIcon className="size-3.5" />
+                            </Button>
+                        </TooltipTrigger>
+                    </Tooltip>
+                </div>
                 <p className="text-text-primary text-sm tabular-nums">
                     <span className="font-semibold">{money(data.spentUsd)}</span>
                     <span className="text-text-tertiary">

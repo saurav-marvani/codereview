@@ -64,10 +64,19 @@ jobs:
         name: cloud matrix (${{ inputs.matrix_file || 'matrix/fast.yml' }})
         runs-on: ubuntu-latest
         # QA environment: where the QA-scoped secrets live (GH_REPO_ADMIN_TOKEN
-        # for trial-managed-review's throwaway repos; CLOUD_TENANTS_JSON also
-        # has a copy here). Branch policy allows `main` only — fine, every real
-        # trigger (qa-build workflow_call, nightly schedule, dispatch) runs
-        # from main. Repo-level secrets keep resolving as before.
+        # for trial-managed-review's throwaway repos). Branch policy allows
+        # `main` only — fine, every real trigger (qa-build workflow_call,
+        # nightly schedule, dispatch) runs from main. Repo-level secrets keep
+        # resolving as before.
+        #
+        # CLOUD_TENANTS_JSON must exist ONLY at repo level: environment
+        # secrets SHADOW repo secrets, and a stale environment-scoped copy
+        # (sealed 05-30, pre-#1237, no repoFullName) silently dropped every
+        # GitHub tenant onto one shared repo from 06-03 to 06-05 — webhook
+        # fan-out collisions, "review never started" flakes. The env copy was
+        # deleted on 2026-06-05; don't recreate it. (lib/runner.ts now also
+        # falls back to lib/cloud-tenant-registry.ts for the repo mapping, so
+        # a stale secret can't reintroduce the collision either way.)
         environment: QA
         # fast.yml = ~30-45 min, full.yml = ~75-120 min. Cap with
         # generous headroom; cell-level timeouts inside the runner stop
@@ -109,6 +118,7 @@ jobs:
                   echo "Seeded $COUNT cloud tenants"
 
             - name: Wait for QA backend to be healthy (avoid deploy-race 403s)
+              id: readiness
               env:
                   TARGET_WEB_URL: ${{ vars.CLOUD_QA_WEB_URL || 'https://qa.web.kodus.io' }}
                   # The image tag GitOps is deploying for THIS run. When set we
@@ -117,9 +127,18 @@ jobs:
                   # PREVIOUS build (e.g. a brand-new endpoint 404s even though
                   # the code is on main). See the deploy-lag class of failures.
                   EXPECTED_VERSION: ${{ inputs.image_tag }}
+                  # WAF Allow-rule header (QA environment secret): GitHub
+                  # runner IPs come from a shared pool and intermittently land
+                  # on the QA WAF's block rules, 403-ing the whole run. Empty
+                  # → probes run bare (rule absent / fork).
+                  QA_WAF_BYPASS_HEADER: ${{ secrets.QA_WAF_BYPASS_HEADER }}
               run: |
                   set -uo pipefail
                   BASE="${TARGET_WEB_URL%/}/api/proxy/api"
+                  WAF_HDR=()
+                  if [ -n "${QA_WAF_BYPASS_HEADER:-}" ]; then
+                      WAF_HDR=(-H "x-kodus-e2e: ${QA_WAF_BYPASS_HEADER}")
+                  fi
 
                   # --- Phase 0: version gate (best-effort) ----------------------
                   # Health (@Public, @Controller('health')) returns the running
@@ -134,7 +153,7 @@ jobs:
                       echo "Waiting for QA /health version to report '$EXPECTED_VERSION' (short '$SHORT')…"
                       matched=""
                       for i in $(seq 1 60); do
-                          ver=$(curl -sS "$BASE/health" 2>/dev/null \
+                          ver=$(curl -sS "${WAF_HDR[@]}" "$BASE/health" 2>/dev/null \
                               | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).version||'')}catch{console.log('')}})" \
                               2>/dev/null || echo "")
                           case "$ver" in
@@ -166,6 +185,7 @@ jobs:
                   for i in $(seq 1 60); do
                       code=$(curl -sS -o /dev/null -w '%{http_code}' \
                           -X POST "$BASE/auth/login" \
+                          "${WAF_HDR[@]}" \
                           -H 'Content-Type: application/json' \
                           -d '{"email":"readiness-probe@invalid.kodus","password":"x"}' \
                           2>/dev/null || echo 000)
@@ -182,6 +202,7 @@ jobs:
                   exit 1
 
             - name: Run cloud matrix
+              id: matrix
               env:
                   # target.sh expects TARGET_BASE_URL + TARGET_WEB_URL.
                   # vars.CLOUD_QA_* canonicalise the URLs; the matrix
@@ -203,6 +224,12 @@ jobs:
                   # per run. Absent → that scenario is SKIPPED, not failed
                   # (SCENARIO_REQUIRED in run-matrix.ts).
                   GH_REPO_ADMIN_TOKEN: ${{ secrets.GH_REPO_ADMIN_TOKEN }}
+
+                  # WAF Allow-rule header: lib/http.ts injects `x-kodus-e2e`
+                  # on every request bound for qa.*.kodus.io (and ONLY those)
+                  # so runner IPs that land on the WAF's block rules don't 403
+                  # the whole run. Playwright contexts inject it via route().
+                  QA_WAF_BYPASS_HEADER: ${{ secrets.QA_WAF_BYPASS_HEADER }}
 
                   GL_TEST_TOKEN: ${{ secrets.GL_TEST_TOKEN }}
                   GL_TEST_REPO: ${{ secrets.GL_TEST_REPO }}
@@ -239,16 +266,78 @@ jobs:
                   if-no-files-found: warn
                   retention-days: 30
 
-            - name: Notify Discord on failure
-              if: failure()
+            # Build the human-readable digest from the matrix's notify.json
+            # (written next to result.json) so Discord shows REAL numbers
+            # ("69/70 passed — 1 failed: …") instead of a binary "failed"
+            # that reads like the whole release gate collapsed.
+            - name: Build notification digest
+              id: digest
+              if: always()
+              run: |
+                  set -uo pipefail
+                  f=$(find tests/e2e/evidence -name notify.json -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2- || true)
+                  if [ -z "$f" ]; then
+                      echo "found=false" >> "$GITHUB_OUTPUT"
+                      exit 0
+                  fi
+                  echo "found=true" >> "$GITHUB_OUTPUT"
+                  NOTIFY_JSON="$f" node - <<'__JS__'
+                  const fs = require("fs");
+                  const n = JSON.parse(fs.readFileSync(process.env.NOTIFY_JSON, "utf8"));
+                  const fmt = (l) => l.map((x) => `• \`${x.cell}\`\n  ${x.error}`).join("\n");
+                  const out = [];
+                  out.push(`headline=${n.passed}/${n.total} passed (failed=${n.failed}, skipped=${n.skipped})`);
+                  out.push(`gating_count=${n.gatingFailures.length}`);
+                  out.push(`advisory_count=${n.advisoryFailures.length}`);
+                  out.push(`retried_count=${n.retriedCells.length}`);
+                  const body = [];
+                  if (n.gatingFailures.length) body.push(`**P0 failures (gating):**\n${fmt(n.gatingFailures)}`);
+                  if (n.advisoryFailures.length) body.push(`**Advisory (non-gating):**\n${fmt(n.advisoryFailures)}`);
+                  if (n.retriedCells.length) body.push(`Recovered on retry: ${n.retriedCells.map((c) => `\`${c}\``).join(", ")}`);
+                  // GITHUB_OUTPUT multiline
+                  out.push("details<<__EOF__");
+                  out.push(body.join("\n") || "—");
+                  out.push("__EOF__");
+                  fs.appendFileSync(process.env.GITHUB_OUTPUT, out.join("\n") + "\n");
+                  __JS__
+
+            # Case 1 — infra: QA never became reachable; the matrix NEVER RAN.
+            # Distinct wording so nobody reads it as "the tests broke".
+            - name: Notify Discord — QA unreachable (infra, matrix did not run)
+              if: failure() && steps.readiness.outcome == 'failure'
               uses: ./.github/actions/discord-notify
               with:
-                  # Per-channel secret with fallback to the general webhook so
-                  # nothing goes silent if DISCORD_WEBHOOK_INTERNAL isn't created yet.
                   webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
                   status: failure
-                  title: "❌ E2E cloud matrix failed"
+                  title: "🔌 E2E: QA unreachable — matrix did NOT run"
                   description: |
-                      `${{ inputs.matrix_file || 'matrix/fast.yml' }}` failed against QA cloud (${{ vars.CLOUD_QA_WEB_URL || 'https://qa.web.kodus.io' }}).
+                      The readiness gate could not reach QA (${{ vars.CLOUD_QA_WEB_URL || 'https://qa.web.kodus.io' }}) at the app level — this is an INFRA condition (deploy still rolling out, or WAF blocking the runner IP), not a test failure. No scenario was executed.
                       Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
                       Trigger: ${{ github.event_name }}${{ github.event_name == 'schedule' && ' (nightly catch-all)' || '' }}
+
+            # Case 2 — the matrix ran and a P0 (gating) failure happened.
+            - name: Notify Discord — gating failures
+              if: failure() && steps.matrix.outcome == 'failure'
+              uses: ./.github/actions/discord-notify
+              with:
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
+                  status: failure
+                  title: "❌ E2E cloud matrix: ${{ steps.digest.outputs.headline || 'failed (no digest)' }}"
+                  description: |
+                      ${{ steps.digest.outputs.details || 'No notify.json produced — see the run log.' }}
+                      Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+                      Trigger: ${{ github.event_name }}${{ github.event_name == 'schedule' && ' (nightly catch-all)' || '' }}
+
+            # Case 3 — run is GREEN but advisory (P1/P2/quarantined) cells
+            # failed: warn without crying wolf.
+            - name: Notify Discord — advisory failures on a green run
+              if: success() && steps.digest.outputs.advisory_count != '0' && steps.digest.outputs.advisory_count != ''
+              uses: ./.github/actions/discord-notify
+              with:
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
+                  status: cancelled
+                  title: "⚠️ E2E cloud matrix GREEN with advisories: ${{ steps.digest.outputs.headline }}"
+                  description: |
+                      All P0 gates passed. Non-gating failures to keep an eye on:
+                      ${{ steps.digest.outputs.details }}
+                      Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

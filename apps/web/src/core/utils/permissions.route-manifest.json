@@ -148,7 +148,7 @@
     "expected": {
       "billing_manager": "deny",
       "repo_admin": "allow",
-      "contributor": "deny"
+      "contributor": "allow"
     }
   },
   {
@@ -156,7 +156,7 @@
     "expected": {
       "billing_manager": "deny",
       "repo_admin": "allow",
-      "contributor": "deny"
+      "contributor": "allow"
     }
   },
   {
@@ -252,7 +252,7 @@
     "expected": {
       "billing_manager": "allow",
       "repo_admin": "allow",
-      "contributor": "deny"
+      "contributor": "allow"
     }
   },
   {
@@ -260,7 +260,7 @@
     "expected": {
       "billing_manager": "allow",
       "repo_admin": "allow",
-      "contributor": "deny"
+      "contributor": "allow"
     }
   },
   {
@@ -268,7 +268,7 @@
     "expected": {
       "billing_manager": "allow",
       "repo_admin": "allow",
-      "contributor": "deny"
+      "contributor": "allow"
     }
   },
   {
@@ -276,7 +276,7 @@
     "expected": {
       "billing_manager": "allow",
       "repo_admin": "allow",
-      "contributor": "deny"
+      "contributor": "allow"
     }
   },
   {
@@ -284,7 +284,7 @@
     "expected": {
       "billing_manager": "allow",
       "repo_admin": "allow",
-      "contributor": "deny"
+      "contributor": "allow"
     }
   },
   {
@@ -292,7 +292,7 @@
     "expected": {
       "billing_manager": "allow",
       "repo_admin": "allow",
-      "contributor": "deny"
+      "contributor": "allow"
     }
   },
   {
@@ -300,7 +300,7 @@
     "expected": {
       "billing_manager": "allow",
       "repo_admin": "allow",
-      "contributor": "deny"
+      "contributor": "allow"
     }
   },
   {
@@ -308,7 +308,7 @@
     "expected": {
       "billing_manager": "allow",
       "repo_admin": "allow",
-      "contributor": "deny"
+      "contributor": "allow"
     }
   },
   {
@@ -316,7 +316,7 @@
     "expected": {
       "billing_manager": "allow",
       "repo_admin": "allow",
-      "contributor": "deny"
+      "contributor": "allow"
     }
   },
   {
@@ -324,7 +324,7 @@
     "expected": {
       "billing_manager": "allow",
       "repo_admin": "allow",
-      "contributor": "deny"
+      "contributor": "allow"
     }
   },
   {
@@ -348,7 +348,7 @@
     "expected": {
       "billing_manager": "allow",
       "repo_admin": "allow",
-      "contributor": "deny"
+      "contributor": "allow"
     }
   }
 ]

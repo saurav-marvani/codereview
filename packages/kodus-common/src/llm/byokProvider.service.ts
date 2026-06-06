@@ -10,8 +10,26 @@ export enum BYOKProvider {
     GOOGLE_VERTEX = 'google_vertex',
     AMAZON_BEDROCK = 'amazon_bedrock',
     OPENAI_COMPATIBLE = 'openai_compatible',
+    ANTHROPIC_COMPATIBLE = 'anthropic_compatible',
     OPEN_ROUTER = 'open_router',
     NOVITA = 'novita',
+}
+
+/**
+ * Normalize an Anthropic-compatible base URL to its root form (no trailing
+ * slash, no `/v1` suffix). The two Anthropic SDK paths disagree on shape:
+ * LangChain's ChatAnthropic appends `/v1/messages` to the root, while
+ * `@ai-sdk/anthropic` appends `/messages` to a `/v1`-suffixed base. Users
+ * paste either shape (e.g. `https://api.kimi.com/coding` or
+ * `https://api.kimi.com/coding/v1`), so each call site normalizes from the
+ * root: LangChain uses it as-is, Vercel appends `/v1`.
+ */
+export function anthropicCompatibleRootURL(baseURL: string): string {
+    let trimmed = baseURL.trim();
+    while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1);
+    if (/\/v1$/i.test(trimmed)) trimmed = trimmed.slice(0, -3);
+    while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1);
+    return trimmed;
 }
 
 export interface BYOKConfig {
@@ -105,11 +123,18 @@ export class BYOKProviderService {
             );
         }
 
+        if (provider === BYOKProvider.ANTHROPIC_COMPATIBLE && !baseURL) {
+            throw new Error(
+                'baseURL is required for Anthropic Compatible provider',
+            );
+        }
+
         const modelInstance = adapter.build({
             model,
             apiKey,
             baseURL:
-                provider === BYOKProvider.OPENAI_COMPATIBLE
+                provider === BYOKProvider.OPENAI_COMPATIBLE ||
+                provider === BYOKProvider.ANTHROPIC_COMPATIBLE
                     ? baseURL
                     : provider === BYOKProvider.OPEN_ROUTER
                       ? 'https://openrouter.ai/api/v1'
@@ -190,6 +215,15 @@ export class BYOKProviderService {
             errors.push('baseURL is required for OpenAI Compatible provider');
         }
 
+        if (
+            providerConfig.provider === BYOKProvider.ANTHROPIC_COMPATIBLE &&
+            !providerConfig.baseURL
+        ) {
+            errors.push(
+                'baseURL is required for Anthropic Compatible provider',
+            );
+        }
+
         if (providerConfig.provider === BYOKProvider.GOOGLE_VERTEX) {
             if (!providerConfig.projectId) {
                 errors.push('projectId is required for Google Vertex AI');
@@ -224,6 +258,7 @@ export class BYOKProviderService {
             [BYOKProvider.GOOGLE_VERTEX]: 'Google Vertex',
             [BYOKProvider.AMAZON_BEDROCK]: 'Amazon Bedrock',
             [BYOKProvider.OPENAI_COMPATIBLE]: 'OpenAI Compatible',
+            [BYOKProvider.ANTHROPIC_COMPATIBLE]: 'Anthropic Compatible',
             [BYOKProvider.OPEN_ROUTER]: 'OpenRouter',
             [BYOKProvider.NOVITA]: 'Novita',
         };

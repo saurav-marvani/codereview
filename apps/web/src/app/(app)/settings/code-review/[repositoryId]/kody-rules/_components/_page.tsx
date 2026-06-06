@@ -30,6 +30,7 @@ import {
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
 import { useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import { BellRing, PlusIcon } from "lucide-react";
 import { PageBoundary } from "src/core/components/page-boundary";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
@@ -95,6 +96,21 @@ const isRulePendingCentralizedChange = (rule: KodyRule) => {
         KodyRuleCentralizedStatus.PENDING_DELETE
     );
 };
+
+// A 403 means the backend policy rejected the mutation (e.g. a repo admin
+// acting on rules outside their assigned repos) — retrying will never
+// succeed, so surface the real cause instead of the generic "try again".
+const bulkActionErrorToast = (
+    action: "pause" | "resume" | "delete",
+    error: unknown,
+) => ({
+    title: `Could not ${action} rules`,
+    description:
+        isAxiosError(error) && error.response?.status === 403
+            ? `You don't have permission to ${action} rules in this scope.`
+            : "Please try again in a moment.",
+    variant: "danger" as const,
+});
 
 
 const KodyRulesPageContent = () => {
@@ -347,41 +363,47 @@ const KodyRulesPageContent = () => {
                 : statusFilteredRules;
 
         // Popover filters: origin (Auto-sync / Onboard / Kody-generated /
-        // manual) and severity. Origin only applies to standard rules
-        // (memories don't have these origins).
-        const listFilteredRules = bannerFilteredRules.filter((rule) => {
-            const passesOrigin =
-                ruleType !== KodyRulesType.STANDARD ||
-                matchesOriginFilter(rule as KodyRule, listFilters);
-            const passesSeverity =
-                ruleType !== KodyRulesType.STANDARD ||
-                matchesSeverityFilter(rule as KodyRule, listFilters);
-            const passesSyncErrors =
-                ruleType !== KodyRulesType.STANDARD ||
-                matchesSyncErrorsFilter(rule as KodyRule, listFilters);
-            const passesPausedOnly =
-                ruleType !== KodyRulesType.STANDARD ||
-                matchesPausedOnlyFilter(rule as KodyRule, listFilters);
-            const passesKodySync =
-                ruleType !== KodyRulesType.STANDARD ||
-                matchesKodySyncFilter(rule as KodyRule, listFilters);
-            return (
-                passesOrigin &&
-                passesSeverity &&
-                passesSyncErrors &&
-                passesPausedOnly &&
-                passesKodySync
-            );
-        });
+        // manual), sync state, paused-only — everything EXCEPT severity,
+        // which is applied last (below) so the heatmap can count this
+        // pool. Origin only applies to standard rules (memories don't
+        // have these origins).
+        const nonSeverityFilteredRules = bannerFilteredRules.filter(
+            (rule) => {
+                const passesOrigin =
+                    ruleType !== KodyRulesType.STANDARD ||
+                    matchesOriginFilter(rule as KodyRule, listFilters);
+                const passesSyncErrors =
+                    ruleType !== KodyRulesType.STANDARD ||
+                    matchesSyncErrorsFilter(rule as KodyRule, listFilters);
+                const passesPausedOnly =
+                    ruleType !== KodyRulesType.STANDARD ||
+                    matchesPausedOnlyFilter(rule as KodyRule, listFilters);
+                const passesKodySync =
+                    ruleType !== KodyRulesType.STANDARD ||
+                    matchesKodySyncFilter(rule as KodyRule, listFilters);
+                return (
+                    passesOrigin &&
+                    passesSyncErrors &&
+                    passesPausedOnly &&
+                    passesKodySync
+                );
+            },
+        );
 
         const filterQueryLowercase = filterQuery.toLowerCase();
         const queryFilteredRules = !filterQuery
-            ? listFilteredRules
-            : listFilteredRules.filter((rule) =>
+            ? nonSeverityFilteredRules
+            : nonSeverityFilteredRules.filter((rule) =>
                 matchesTextQuery(rule as KodyRule, filterQueryLowercase),
             );
 
-        const rulesToDisplay = [...queryFilteredRules].sort((x, y) =>
+        const listFilteredRules = queryFilteredRules.filter(
+            (rule) =>
+                ruleType !== KodyRulesType.STANDARD ||
+                matchesSeverityFilter(rule as KodyRule, listFilters),
+        );
+
+        const rulesToDisplay = [...listFilteredRules].sort((x, y) =>
             compareRules(x as KodyRule, y as KodyRule, sortOption),
         );
 
@@ -391,16 +413,19 @@ const KodyRulesPageContent = () => {
             inheritedRepoRulesByType.length > 0 ||
             inheritedDirectoryRulesByType.length > 0;
 
-        // Severity distribution computed BEFORE severity filtering so the
-        // heatmap counters always reflect the full pool (otherwise clicking
-        // "Critical" would zero out the High/Medium/Low counters).
+        // Severity distribution over the pool with every OTHER filter
+        // (origin, sync, paused, text query) already applied, but NOT the
+        // severity selection itself: each chip must match the cards on
+        // screen when other filters are active (e.g. Origin: Library → "2
+        // High", not the unfiltered "4 High"), while clicking "Critical"
+        // still must not zero out the High/Medium/Low counters.
         const severityCounts: Record<string, number> = {
             critical: 0,
             high: 0,
             medium: 0,
             low: 0,
         };
-        for (const rule of bannerFilteredRules) {
+        for (const rule of queryFilteredRules) {
             const sev = (rule as KodyRule).severity?.toLowerCase();
             if (sev && severityCounts[sev] !== undefined) {
                 severityCounts[sev] += 1;
@@ -553,11 +578,7 @@ const KodyRulesPageContent = () => {
                 await refreshRulesList();
             } catch (error) {
                 console.error("Failed to bulk delete rules", error);
-                toast({
-                    title: "Could not delete rules",
-                    description: "Please try again in a moment.",
-                    variant: "danger",
-                });
+                toast(bulkActionErrorToast("delete", error));
             }
         },
     );
@@ -601,11 +622,7 @@ const KodyRulesPageContent = () => {
                 await refreshRulesList();
             } catch (error) {
                 console.error("Failed to bulk pause rules", error);
-                toast({
-                    title: "Could not pause rules",
-                    description: "Please try again in a moment.",
-                    variant: "danger",
-                });
+                toast(bulkActionErrorToast("pause", error));
             }
         },
     );
@@ -629,11 +646,7 @@ const KodyRulesPageContent = () => {
                 await refreshRulesList();
             } catch (error) {
                 console.error("Failed to bulk resume rules", error);
-                toast({
-                    title: "Could not resume rules",
-                    description: "Please try again in a moment.",
-                    variant: "danger",
-                });
+                toast(bulkActionErrorToast("resume", error));
             }
         },
     );
@@ -954,20 +967,26 @@ const KodyRulesPageContent = () => {
                             {renderPendingMergeFilter(
                                 reviewRulesState.pendingCentralizedCount,
                             )}
-                            <BulkActionToolbar
-                                selectedCount={selection.size}
-                                eligibleCount={eligibleSelectableIds.length}
-                                pauseableCount={pauseableIds.length}
-                                resumableCount={resumableIds.length}
-                                isDeleting={isBulkDeleting}
-                                isPausing={isBulkPausing}
-                                isResuming={isBulkResuming}
-                                onSelectAll={selectAllVisible}
-                                onClear={clearSelection}
-                                onDelete={handleBulkDelete}
-                                onPause={handleBulkPause}
-                                onResume={handleBulkResume}
-                            />
+                            {/* Bulk actions are mutations — without Update
+                                permission on this scope (e.g. repo admin on
+                                the Global page) the backend rejects them all,
+                                so don't offer selection at all. */}
+                            {canEdit && (
+                                <BulkActionToolbar
+                                    selectedCount={selection.size}
+                                    eligibleCount={eligibleSelectableIds.length}
+                                    pauseableCount={pauseableIds.length}
+                                    resumableCount={resumableIds.length}
+                                    isDeleting={isBulkDeleting}
+                                    isPausing={isBulkPausing}
+                                    isResuming={isBulkResuming}
+                                    onSelectAll={selectAllVisible}
+                                    onClear={clearSelection}
+                                    onDelete={handleBulkDelete}
+                                    onPause={handleBulkPause}
+                                    onResume={handleBulkResume}
+                                />
+                            )}
                             {(() => {
                                 const empty =
                                     !reviewRulesState.rulesToDisplay.length;
@@ -979,11 +998,17 @@ const KodyRulesPageContent = () => {
                                             }
                                             tab="review-rules"
                                             onAnyChange={refreshRulesList}
-                                            bulkSelection={{
-                                                selection,
-                                                onToggle: toggleSelection,
-                                                isEligible: isBulkEligible,
-                                            }}
+                                            bulkSelection={
+                                                canEdit
+                                                    ? {
+                                                          selection,
+                                                          onToggle:
+                                                              toggleSelection,
+                                                          isEligible:
+                                                              isBulkEligible,
+                                                      }
+                                                    : undefined
+                                            }
                                             syncEnabledForRepo={
                                                 isGlobalView
                                                     ? undefined
