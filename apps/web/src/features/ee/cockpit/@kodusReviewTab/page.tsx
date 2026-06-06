@@ -1,0 +1,109 @@
+import { extractApiData } from "../_helpers/api-data-extractor";
+import { getSelectedDateRange } from "../_helpers/get-selected-date-range";
+import {
+    getIgnoredCriticals,
+    getImplementationRateByCategory,
+    getImplementationRateBySeverity,
+    getImplementationRateWeekly,
+    getKodyRulesHealth,
+    getNegativeFeedbackByCategory,
+    getNegativeFeedbackWeekly,
+    getNegativeVoteRate,
+    getRepositoriesHealth,
+} from "../_services/analytics/review/fetch";
+import { FeedbackSection } from "./_components/feedback-section";
+import { RateByCategoryChart } from "./_components/rate-by-category-chart";
+import { RateBySeverityChart } from "./_components/rate-by-severity-chart";
+import { ReviewCards } from "./_components/review-cards";
+import { ReviewSection } from "./_components/review-section";
+import { RepositoriesHealthTable } from "./_components/repositories-health-table";
+import { RulesHealthTable } from "./_components/rules-health-table";
+import { WeeklyImplementationChart } from "./_components/weekly-implementation-chart";
+
+export default async function KodusReviewTab() {
+    const { startDate, endDate } = await getSelectedDateRange();
+    const params = { startDate, endDate };
+
+    const [
+        weekly,
+        byCategory,
+        bySeverity,
+        ignoredCriticals,
+        negativeByCategory,
+        negativeWeekly,
+        negativeVoteRate,
+        repositoriesHealth,
+        rulesHealth,
+    ] = await Promise.all([
+        getImplementationRateWeekly(params).then(extractApiData),
+        getImplementationRateByCategory(params).then(extractApiData),
+        getImplementationRateBySeverity(params).then(extractApiData),
+        getIgnoredCriticals(params).then(extractApiData),
+        getNegativeFeedbackByCategory(params).then(extractApiData),
+        getNegativeFeedbackWeekly(params).then(extractApiData),
+        getNegativeVoteRate(params).then(extractApiData),
+        getRepositoriesHealth(params).then(extractApiData),
+        // rules health merges Mongo metadata — tolerate failures without
+        // taking the whole tab down.
+        getKodyRulesHealth(params)
+            .then(extractApiData)
+            .catch(() => []),
+    ]);
+
+    const totals = (weekly ?? []).reduce(
+        (acc, w) => ({
+            sent: acc.sent + w.sent,
+            implemented: acc.implemented + w.implemented,
+        }),
+        { sent: 0, implemented: 0 },
+    );
+
+    return (
+        <div className="flex flex-col gap-2">
+            <ReviewCards
+                sent={totals.sent}
+                implemented={totals.implemented}
+                negativeVoteRate={negativeVoteRate}
+                ignoredCriticals={ignoredCriticals}
+            />
+
+            <ReviewSection
+                title="Implementation rate — week over week"
+                description="% of sent suggestions the team implemented">
+                <WeeklyImplementationChart data={weekly ?? []} />
+            </ReviewSection>
+
+            <div className="grid grid-cols-2 gap-2">
+                <ReviewSection
+                    title="Implementation rate by category"
+                    description="sent vs. implemented · click a bar to drill down">
+                    <RateByCategoryChart data={byCategory ?? []} />
+                </ReviewSection>
+
+                <ReviewSection
+                    title="Implementation rate by severity"
+                    description="expected: descending gradient (critical > low)"
+                    footer="If these bars look flat, severity isn't guiding the team — consider raising the review's minimum severity.">
+                    <RateBySeverityChart data={bySeverity ?? []} />
+                </ReviewSection>
+            </div>
+
+            <FeedbackSection
+                byCategory={negativeByCategory ?? []}
+                weekly={negativeWeekly ?? []}
+            />
+
+            <ReviewSection
+                title="Repositories — health"
+                description="where Kodus is landing vs. being ignored">
+                <RepositoriesHealthTable data={repositoriesHealth ?? []} />
+            </ReviewSection>
+
+            <ReviewSection
+                title="Kody Rules — health"
+                description="how each rule is performing · click a row to see its suggestions">
+                <RulesHealthTable data={rulesHealth ?? []} />
+            </ReviewSection>
+        </div>
+    );
+}

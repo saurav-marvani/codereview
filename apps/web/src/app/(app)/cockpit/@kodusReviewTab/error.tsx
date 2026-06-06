@@ -6,7 +6,6 @@ import { Button } from "@components/ui/button";
 import { CardContent } from "@components/ui/card";
 
 export default function ErrorPage({
-    error,
     reset,
 }: {
     error: Error & { digest?: string };
@@ -15,11 +14,10 @@ export default function ErrorPage({
     const router = useRouter();
 
     return (
-        <CardContent className="text-text-secondary -mt-4 flex h-full min-h-60 w-full flex-col items-center justify-center gap-2 text-center text-sm">
-            <span className="w-40">
-                It looks like we couldn't fetch the data.
+        <CardContent className="text-text-secondary flex h-64 w-full flex-col items-center justify-center gap-2 text-center text-sm">
+            <span className="w-60">
+                It looks like we couldn't fetch the review analytics data.
             </span>
-
             <Button
                 size="xs"
                 variant="primary-dark"

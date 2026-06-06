@@ -20,10 +20,9 @@ import { AnalyticsNotAvailable } from "./not-available";
 
 export default async function Layout({
     bugRatioAnalytics,
-    codeHealthByCategory,
-    codeHealthByRepository,
     deployFrequencyAnalytics,
     flowMetrics,
+    kodusReviewTab,
     leadTimeBreakdownChart,
     prCycleTimeAnalytics,
     prCycleTimeChart,
@@ -44,9 +43,8 @@ export default async function Layout({
     prsOpenedVsClosedChart: React.ReactNode;
     prsMergedByDeveloperChart: React.ReactNode;
     teamActivityChart: React.ReactNode;
-    codeHealthByCategory: React.ReactNode;
-    codeHealthByRepository: React.ReactNode;
     flowMetrics: React.ReactNode;
+    kodusReviewTab: React.ReactNode;
     kodySuggestionsAnalytics: React.ReactNode;
 }) {
     if (!process.env.WEB_ANALYTICS_SECRET) {
@@ -120,7 +118,7 @@ export default async function Layout({
                 </div>
 
                 <div className="mt-10">
-                    <Tabs defaultValue={"productivity" satisfies TabValue}>
+                    <Tabs defaultValue={"kodus-review" satisfies TabValue}>
                         <TabsList>
                             {/* TODO: add JIRA tab */}
                             {entries.map(([value, name]) => {
@@ -176,10 +174,9 @@ export default async function Layout({
 
                         <TabsContent
                             forceMount
-                            value={"code-health" satisfies TabValue}
+                            value={"kodus-review" satisfies TabValue}
                             className="flex flex-col gap-6">
-                            {codeHealthByCategory}
-                            {codeHealthByRepository}
+                            {kodusReviewTab}
                         </TabsContent>
                     </Tabs>
                 </div>

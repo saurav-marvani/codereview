@@ -233,6 +233,8 @@ export interface SuggestionsExplorerQuery {
     repository?: string;
     category?: string;
     severity?: string;
+    /** Kody Rule UUID — matches suggestions enforcing this rule. */
+    ruleId?: string;
     implementationStatus?:
         | 'implemented'
         | 'partially_implemented'

@@ -551,6 +551,12 @@ export class CockpitReviewAnalyticsService {
             params.push(q.severity.toLowerCase());
             filters.push(`AND lower(s."severity") = $${params.length}`);
         }
+        if (q.ruleId) {
+            params.push(q.ruleId);
+            filters.push(
+                `AND s."brokenKodyRulesIds" @> ARRAY[$${params.length}]::text[]`,
+            );
+        }
         if (q.implementationStatus) {
             if (q.implementationStatus === 'not_implemented') {
                 // Suggestions never evaluated land here too — for the user

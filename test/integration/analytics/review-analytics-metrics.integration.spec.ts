@@ -557,6 +557,16 @@ const Q = {
             });
             expect(search.total).toBe(1);
             expect(search.items[0].repository).toBe('org/web');
+
+            // rule drill-down from the rules health table
+            const byRule = await service.searchSuggestions({
+                ...Q,
+                ruleId: 'rule-sec',
+            });
+            expect(byRule.total).toBe(2); // s1, s2
+            expect(
+                byRule.items.map((i) => i.suggestionId).sort(),
+            ).toEqual(['s1', 's2']);
         });
     },
 );
