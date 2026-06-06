@@ -712,6 +712,53 @@ jobs:
                   done < /tmp/open-shas.txt
                   echo "::notice::Cleared release-freeze-eligible to success on all open PRs (freeze OFF)"
 
+    # The happy path was SILENT: matrix goes green, promote sits waiting
+    # for 3 reviewers, and nobody knows unless they watch the run (GitHub
+    # only notifies the environment reviewers, not the Discord channel).
+    # On 2026-06-05 the validated RC waited at the gate with zero channel
+    # visibility. Fires as soon as the matrix succeeds — promote is still
+    # `waiting` at that point, so this is the "come approve it" ping.
+    # Skipped on hotfix (the gate is bypassed there; nothing to approve).
+    notify-discord-rc-ready:
+        name: Notify Discord (RC validated — waiting promote approval)
+        needs:
+            - plan-release
+            - build-and-push
+            - e2e-matrix
+        if: >-
+            !cancelled() && inputs.hotfix != true &&
+            needs.plan-release.result == 'success' &&
+            needs.build-and-push.result == 'success' &&
+            needs.e2e-matrix.result == 'success'
+        runs-on: ubuntu-latest
+        permissions: {}
+        steps:
+            - name: Check Discord webhook configuration
+              id: discord-webhook
+              run: |
+                  # Same fallback chain as the failure notifier.
+                  if [ -n "${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK_SELFHOSTED || secrets.DISCORD_WEBHOOK }}" ]; then
+                    echo "configured=true" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "configured=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Notify Discord that the RC is validated
+              if: steps.discord-webhook.outputs.configured == 'true'
+              uses: sarisia/actions-status-discord@v1.16.0
+              with:
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK_SELFHOSTED || secrets.DISCORD_WEBHOOK }}
+                  content: ":white_check_mark: RC validated — **waiting promote approval**"
+                  title: "Self-Hosted RC validated (matrix green)"
+                  description: |
+                      RC tag:      `${{ needs.plan-release.outputs.rc_tag }}`
+                      Will become: `${{ needs.plan-release.outputs.release_tag }}` + `:latest`
+
+                      Full e2e matrix passed against this RC. Approve (or ignore to let it expire) at:
+                      https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+                  username: "GitHub Actions"
+                  color: 0x00cc66
+
     notify-discord-failure:
         name: Notify Discord (failure only)
         needs:
