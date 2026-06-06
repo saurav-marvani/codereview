@@ -419,19 +419,20 @@ export class PullRequestIngestionService {
                 "status", "authorId", "author_username", "totalChanges",
                 "createdAt", "openedAt", "closedAt",
                 "parsed_created_at", "parsed_opened_at", "parsed_closed_at",
-                "files", "commits", "source_updated_at"
+                "files", "commits", "source_updated_at", "pr_number"
              )
              VALUES (
                 $1, $2, $3, $4,
                 $5, $6, $7, $8,
                 $9, $10, $11,
                 $12, $13, $14,
-                $15::jsonb, $16::jsonb, $17
+                $15::jsonb, $16::jsonb, $17, $18
              )
              ON CONFLICT ("_id") DO UPDATE SET
                 "organizationId" = EXCLUDED."organizationId",
                 "repo_full_name" = EXCLUDED."repo_full_name",
                 "repositoryId" = EXCLUDED."repositoryId",
+                "pr_number" = EXCLUDED."pr_number",
                 "status" = EXCLUDED."status",
                 "authorId" = EXCLUDED."authorId",
                 "author_username" = EXCLUDED."author_username",
@@ -464,6 +465,7 @@ export class PullRequestIngestionService {
                 JSON.stringify(pr.files ?? []),
                 JSON.stringify(pr.commits ?? []),
                 sourceUpdatedAt,
+                typeof pr.number === 'number' ? pr.number : null,
             ],
         );
 
@@ -504,14 +506,15 @@ export class PullRequestIngestionService {
                         "suggestion_id", "organizationId", "pullRequestId",
                         "repositoryId", "filePath", "label", "severity",
                         "suggestionDeliveryStatus", "suggestionImplementationStatus",
-                        "suggestionCreatedAt", "raw"
+                        "suggestionCreatedAt", "brokenKodyRulesIds", "raw"
                      ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb
                      )
                      ON CONFLICT ("suggestion_id") DO UPDATE SET
                         "suggestionDeliveryStatus" = EXCLUDED."suggestionDeliveryStatus",
                         "suggestionImplementationStatus" = EXCLUDED."suggestionImplementationStatus",
                         "suggestionCreatedAt" = EXCLUDED."suggestionCreatedAt",
+                        "brokenKodyRulesIds" = EXCLUDED."brokenKodyRulesIds",
                         "raw" = EXCLUDED."raw"`,
                     [
                         s.id,
@@ -524,6 +527,9 @@ export class PullRequestIngestionService {
                         s.deliveryStatus ?? null,
                         implStatus,
                         createdAt,
+                        Array.isArray(s.brokenKodyRulesIds)
+                            ? s.brokenKodyRulesIds
+                            : null,
                         JSON.stringify(s),
                     ],
                 );

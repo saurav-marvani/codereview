@@ -7,11 +7,14 @@ import { UserModule } from '@libs/identity/modules/user.module';
 import { OrganizationModule } from '@libs/organization/modules/organization.module';
 
 import { COCKPIT_DEVELOPER_PRODUCTIVITY_SERVICE_TOKEN } from '../domain/contracts/cockpit-developer-productivity.service.contract';
+import { GetKodyRulesHealthUseCase } from '../application/use-cases/get-kody-rules-health.use-case';
 import { SendWeeklyRecapUseCase } from '../application/use-cases/send-weekly-recap.use-case';
+import { KodyRulesModule } from '@libs/kodyRules/modules/kodyRules.module';
 import { CockpitTierGuard } from '../infrastructure/guards/cockpit-tier.guard';
 import { CockpitCodeHealthService } from '../infrastructure/services/cockpit-code-health.service';
 import { CockpitDeveloperProductivityService } from '../infrastructure/services/cockpit-developer-productivity.service';
 import { CockpitHealthService } from '../infrastructure/services/cockpit-health.service';
+import { CockpitReviewAnalyticsService } from '../infrastructure/services/cockpit-review-analytics.service';
 import { CockpitSourceResolver } from '../infrastructure/services/cockpit-source.resolver';
 import { CockpitValidationService } from '../infrastructure/services/cockpit-validation.service';
 import { NotificationModule } from '@libs/notifications/modules/notification.module';
@@ -30,18 +33,21 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         forwardRef(() => UserModule),
         forwardRef(() => OrganizationModule),
         forwardRef(() => NotificationModule),
+        forwardRef(() => KodyRulesModule),
     ],
     providers: [
         CockpitSourceResolver,
         CockpitHealthService,
         CockpitValidationService,
         CockpitCodeHealthService,
+        CockpitReviewAnalyticsService,
         CockpitDeveloperProductivityService,
         {
             provide: COCKPIT_DEVELOPER_PRODUCTIVITY_SERVICE_TOKEN,
             useExisting: CockpitDeveloperProductivityService,
         },
         CockpitTierGuard,
+        GetKodyRulesHealthUseCase,
         SendWeeklyRecapUseCase,
     ],
     exports: [
@@ -49,9 +55,11 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         CockpitHealthService,
         CockpitValidationService,
         CockpitCodeHealthService,
+        CockpitReviewAnalyticsService,
         CockpitDeveloperProductivityService,
         COCKPIT_DEVELOPER_PRODUCTIVITY_SERVICE_TOKEN,
         CockpitTierGuard,
+        GetKodyRulesHealthUseCase,
         SendWeeklyRecapUseCase,
     ],
 })

@@ -5,6 +5,7 @@ export * from './domain/types';
 export * from './infrastructure/services/cockpit-code-health.service';
 export * from './infrastructure/services/cockpit-developer-productivity.service';
 export * from './infrastructure/services/cockpit-health.service';
+export * from './infrastructure/services/cockpit-review-analytics.service';
 export * from './infrastructure/services/cockpit-source.resolver';
 export * from './infrastructure/services/cockpit-validation.service';
 export * from './modules/cockpit.module';
