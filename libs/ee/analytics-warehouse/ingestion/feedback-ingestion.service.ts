@@ -102,7 +102,7 @@ export class FeedbackIngestionService {
 
             for await (const doc of cursor) {
                 scanned += 1;
-                buffer.push(doc as Record<string, unknown>);
+                buffer.push(doc as unknown as Record<string, unknown>);
 
                 const asDate = parseTimestamp(
                     (doc as { updatedAt?: unknown }).updatedAt,

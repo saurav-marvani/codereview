@@ -87,6 +87,7 @@ export class PullRequestsModel extends CoreDocument {
             rankScore: number;
             priorityStatus: PriorityStatus;
             deliveryStatus: DeliveryStatus;
+            brokenKodyRulesIds?: string[];
             implementationStatus: {
                 type: string;
                 default: 'not_implemented';

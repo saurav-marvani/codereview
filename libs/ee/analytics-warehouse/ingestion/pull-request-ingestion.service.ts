@@ -158,6 +158,10 @@ export class PullRequestIngestionService {
             _id: 1,
             organizationId: 1,
             repository: 1,
+            // Provider-facing PR number — feeds `pull_requests_opt.pr_number`
+            // (explorer deep links). Easy to miss: anything not listed here
+            // silently arrives as undefined in writeOnePR.
+            number: 1,
             status: 1,
             user: 1,
             totalChanges: 1,
