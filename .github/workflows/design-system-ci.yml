@@ -1,0 +1,54 @@
+name: "Design System: PR Tests"
+
+on:
+    pull_request:
+        branches: [main]
+        paths:
+            - "packages/kodus-ui/**"
+            - "apps/app/**"
+            - ".github/workflows/design-system-ci.yml"
+    push:
+        branches: [main]
+        paths:
+            - "packages/kodus-ui/**"
+            - "apps/app/**"
+            - ".github/workflows/design-system-ci.yml"
+
+permissions:
+    contents: read
+
+jobs:
+    kodus-ui:
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: packages/kodus-ui
+        steps:
+            - uses: actions/checkout@v6.0.2
+            - uses: actions/setup-node@v6.4.0
+              with:
+                  node-version: "22"
+                  cache: yarn
+                  cache-dependency-path: packages/kodus-ui/yarn.lock
+            - run: yarn install --frozen-lockfile
+            - run: yarn typecheck
+            - run: yarn test
+            - run: yarn build
+
+    app:
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: apps/app
+        steps:
+            - uses: actions/checkout@v6.0.2
+            - uses: actions/setup-node@v6.4.0
+              with:
+                  node-version: "22"
+                  cache: yarn
+                  cache-dependency-path: apps/app/yarn.lock
+            # apps/app consumes @kodus/ui from source — its deps must exist.
+            - run: yarn --cwd ../../packages/kodus-ui install --frozen-lockfile
+            - run: yarn install --frozen-lockfile
+            - run: yarn typecheck
+            - run: yarn build

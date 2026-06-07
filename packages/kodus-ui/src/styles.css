@@ -1,0 +1,211 @@
+/*
+ * Kodus DS — Forge tokens.
+ * DARK is canonical: the brand palette is CONTRACT (exact values, do not regenerate).
+ * LIGHT is a derivation of the same identity — warm paper neutrals, burnt orange
+ * accent (the contract amber fails contrast on light surfaces as text/fills).
+ *
+ * Consumers: `@import "@kodus/ui/styles.css";` inside their Tailwind v4 entry CSS,
+ * plus `@source "../node_modules/@kodus/ui/src";`. Toggle by putting the `light`
+ * class on <html>.
+ */
+:root {
+    color-scheme: dark;
+
+    --kds-background: #101019;
+    --kds-surface-1: #181825;
+    --kds-surface-2: #202032;
+    --kds-surface-3: #30304b;
+
+    --kds-border: #30304b;
+    --kds-border-strong: #3e3e5e;
+
+    --kds-text-1: #ffffff;
+    --kds-text-2: #cdcddf;
+    --kds-text-3: #f3f3f780;
+
+    --kds-accent: #f8b76d;
+    --kds-accent-hover: #fac68b;
+    --kds-accent-down: #f0a958;
+    --kds-on-accent: #443024;
+    --kds-accent-soft: #f8b76d21;
+
+    --kds-violet: #c9bbf2;
+    --kds-violet-soft: #c9bbf224;
+
+    --kds-success: #42be65;
+    --kds-success-soft: #42be6522;
+    --kds-danger: #fa5867;
+    --kds-danger-soft: #fa586722;
+    --kds-warning: #ff8b40;
+    --kds-warning-soft: #ff8b4022;
+    --kds-alert: #f2c631;
+    --kds-alert-soft: #f2c63122;
+    --kds-info: #5190ff;
+    --kds-info-soft: #5190ff22;
+
+    --kds-ring: #f8b76d66;
+    --kds-shimmer: #ffffff0d;
+    --kds-overlay: #05050e99;
+    --kds-shadow-pop: 0 8px 32px #05050eaa, 0 1px 0 #ffffff0a inset;
+}
+
+.light {
+    color-scheme: light;
+
+    --kds-background: #f5f4f0;
+    --kds-surface-1: #fcfbf9;
+    --kds-surface-2: #edebe4;
+    --kds-surface-3: #e0ddd3;
+
+    --kds-border: #e2dfd6;
+    --kds-border-strong: #cdc8bb;
+
+    --kds-text-1: #1c1c28;
+    --kds-text-2: #4c4c5e;
+    --kds-text-3: #1c1c2880;
+
+    --kds-accent: #b35c08;
+    --kds-accent-hover: #a05206;
+    --kds-accent-down: #8d4805;
+    --kds-on-accent: #fffaf2;
+    --kds-accent-soft: #b35c081a;
+
+    --kds-violet: #6553ab;
+    --kds-violet-soft: #6553ab1a;
+
+    --kds-success: #1e7e41;
+    --kds-success-soft: #1e7e411a;
+    --kds-danger: #c92837;
+    --kds-danger-soft: #c9283717;
+    --kds-warning: #b34708;
+    --kds-warning-soft: #b347081a;
+    --kds-alert: #8f6907;
+    --kds-alert-soft: #8f69071f;
+    --kds-info: #2059c8;
+    --kds-info-soft: #2059c817;
+
+    --kds-ring: #b35c0859;
+    --kds-shimmer: #1c1c280f;
+    --kds-overlay: #1c1c2866;
+    --kds-shadow-pop: 0 8px 32px #1c1c2824, 0 1px 2px #1c1c2812;
+}
+
+@theme inline {
+    --color-background: var(--kds-background);
+    --color-surface-1: var(--kds-surface-1);
+    --color-surface-2: var(--kds-surface-2);
+    --color-surface-3: var(--kds-surface-3);
+
+    --color-border: var(--kds-border);
+    --color-border-strong: var(--kds-border-strong);
+
+    --color-text-1: var(--kds-text-1);
+    --color-text-2: var(--kds-text-2);
+    --color-text-3: var(--kds-text-3);
+
+    --color-accent: var(--kds-accent);
+    --color-accent-hover: var(--kds-accent-hover);
+    --color-accent-down: var(--kds-accent-down);
+    --color-on-accent: var(--kds-on-accent);
+    --color-accent-soft: var(--kds-accent-soft);
+
+    --color-violet: var(--kds-violet);
+    --color-violet-soft: var(--kds-violet-soft);
+
+    --color-success: var(--kds-success);
+    --color-success-soft: var(--kds-success-soft);
+    --color-danger: var(--kds-danger);
+    --color-danger-soft: var(--kds-danger-soft);
+    --color-warning: var(--kds-warning);
+    --color-warning-soft: var(--kds-warning-soft);
+    --color-alert: var(--kds-alert);
+    --color-alert-soft: var(--kds-alert-soft);
+    --color-info: var(--kds-info);
+    --color-info-soft: var(--kds-info-soft);
+
+    --color-ring: var(--kds-ring);
+    --color-shimmer: var(--kds-shimmer);
+    --color-overlay: var(--kds-overlay);
+
+    --shadow-pop: var(--kds-shadow-pop);
+}
+
+@theme {
+    --font-sans: "DM Sans", sans-serif;
+    --font-mono: "Overpass Mono", monospace;
+
+    --radius-lg: 10px;
+    --radius-md: 8px;
+    --radius-sm: 6px;
+
+    --ease-out-quart: cubic-bezier(0.22, 1, 0.36, 1);
+
+    --animate-in-fade: kds-fade-in 180ms var(--ease-out-quart);
+    --animate-in-pop: kds-pop-in 180ms var(--ease-out-quart);
+    --animate-shimmer: kds-shimmer 1.6s var(--ease-out-quart) infinite;
+
+    @keyframes kds-fade-in {
+        from {
+            opacity: 0;
+        }
+        to {
+            opacity: 1;
+        }
+    }
+
+    @keyframes kds-pop-in {
+        from {
+            opacity: 0;
+            transform: translateY(4px) scale(0.98);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+
+    @keyframes kds-shimmer {
+        from {
+            transform: translateX(-100%);
+        }
+        to {
+            transform: translateX(100%);
+        }
+    }
+
+    @keyframes kds-collapse-down {
+        from {
+            height: 0;
+        }
+        to {
+            height: var(--radix-collapsible-content-height);
+        }
+    }
+
+    @keyframes kds-collapse-up {
+        from {
+            height: var(--radix-collapsible-content-height);
+        }
+        to {
+            height: 0;
+        }
+    }
+
+    @keyframes kds-accordion-down {
+        from {
+            height: 0;
+        }
+        to {
+            height: var(--radix-accordion-content-height);
+        }
+    }
+
+    @keyframes kds-accordion-up {
+        from {
+            height: var(--radix-accordion-content-height);
+        }
+        to {
+            height: 0;
+        }
+    }
+}

@@ -1,0 +1,12 @@
+@import "tailwindcss";
+@import "../../../packages/kodus-ui/src/styles.css";
+
+@source "../../../packages/kodus-ui/src";
+
+body {
+    background: var(--color-background);
+    color: var(--color-text-1);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+}

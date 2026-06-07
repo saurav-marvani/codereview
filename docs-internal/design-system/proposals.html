@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kodus DS · Direction Proposals</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Overpass+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ============ reset ============ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none}
+table{border-collapse:collapse;width:100%}
+
+/* ============ direction tokens ============ */
+/* Brand palette is CONTRACT — identical across directions. */
+:root{
+  --bg:#101019;
+  --surface-1:#181825;
+  --surface-2:#202032;
+  --surface-3:#30304b;
+  --border:#30304b;
+  --border-strong:#3e3e5e;
+  --text-1:#ffffff;
+  --text-2:#cdcddf;
+  --text-3:#f3f3f780;
+  --accent:#f8b76d;
+  --accent-hover:#fac68b;
+  --accent-down:#f0a958;
+  --on-accent:#443024;
+  --accent-soft:#f8b76d21;
+  --accent-text:#f8b76d;
+  --violet:#c9bbf2;
+  --violet-soft:#c9bbf224;
+  --success:#42be65;   --success-soft:#42be6522;
+  --danger:#fa5867;    --danger-soft:#fa586722;
+  --warning:#ff8b40;   --warning-soft:#ff8b4022;
+  --info:#5190ff;      --info-soft:#5190ff22;
+  --ring:#f8b76d66;
+  --shadow-pop:0 8px 32px #05050eaa, 0 1px 0 #ffffff0a inset;
+}
+/* A · FORGE — committed orange, soft radii. Kodus today, systematized. */
+body[data-dir="forge"]{
+  --radius-lg:10px; --radius-md:8px; --radius-sm:6px;
+  --fs-base:14px; --space:4px;
+}
+/* B · LEDGER — restrained: orange only on the primary action, hairlines and air. */
+body[data-dir="ledger"]{
+  --radius-lg:8px; --radius-md:6px; --radius-sm:5px;
+  --fs-base:14px; --space:5px;
+  --ring:#c9bbf24d;
+}
+/* ledger spends color sparingly: outline badges, flat chrome, type carries hierarchy */
+body[data-dir="ledger"] .badge{background:transparent;border:1px solid currentColor;height:21px}
+body[data-dir="ledger"] th{background:transparent}
+body[data-dir="ledger"] .finding-foot{background:transparent;border-top:1px solid var(--border)}
+body[data-dir="ledger"] .btn-secondary{background:transparent}
+body[data-dir="ledger"] .input{background:transparent}
+body[data-dir="ledger"] .input:focus-within{border-color:var(--violet);box-shadow:0 0 0 3px var(--ring)}
+body[data-dir="ledger"] .section-label{letter-spacing:0.14em;font-weight:500}
+/* C · INSTRUMENT — mono-forward density, near-square corners, one orange action per view. */
+body[data-dir="instrument"]{
+  --radius-lg:5px; --radius-md:4px; --radius-sm:3px;
+  --fs-base:13px; --space:3.5px;
+  --ring:#c9bbf280;
+  --shadow-pop:0 6px 28px #05050ecc, 0 0 0 1px var(--surface-3) inset;
+}
+/* instrument speaks mono where data lives */
+body[data-dir="instrument"] .badge,
+body[data-dir="instrument"] th,
+body[data-dir="instrument"] .meta,
+body[data-dir="instrument"] .section-label{font-family:"Overpass Mono",monospace;letter-spacing:0.02em}
+body[data-dir="instrument"] .btn{font-weight:500}
+
+/* ============ chrome (direction switcher) ============ */
+body{
+  font-family:"DM Sans",sans-serif;
+  font-size:var(--fs-base);
+  background:var(--bg);
+  color:var(--text-1);
+  transition:background 200ms cubic-bezier(0.22,1,0.36,1);
+  line-height:1.5;
+}
+.switcher{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:baseline;gap:28px;
+  padding:14px 32px;
+  background:var(--bg);
+  border-bottom:1px solid var(--border);
+}
+.switcher .wordmark{font-weight:700;font-size:15px;letter-spacing:-0.01em}
+.switcher .wordmark span{color:var(--accent-text)}
+.switcher nav{display:flex;gap:4px;margin-left:8px}
+.switcher nav button{
+  padding:6px 14px;border-radius:var(--radius-sm);
+  font-size:13px;font-weight:500;color:var(--text-2);
+  transition:color 150ms ease-out,background 150ms ease-out;
+}
+.switcher nav button:hover{color:var(--text-1)}
+.switcher nav button[aria-pressed="true"]{
+  background:var(--surface-2);color:var(--text-1);font-weight:600;
+}
+.switcher .thesis{margin-left:auto;font-size:12.5px;color:var(--text-3);max-width:52ch;text-align:right}
+
+/* ============ page scaffold ============ */
+.page{max-width:1180px;margin:0 auto;padding:48px 32px 120px}
+.dir-head{margin-bottom:40px}
+.dir-head h1{font-size:26px;font-weight:700;letter-spacing:-0.02em}
+.dir-head p{color:var(--text-2);margin-top:6px;max-width:68ch}
+.swatches{display:flex;gap:8px;margin-top:20px}
+.swatches div{height:36px;flex:1;border-radius:var(--radius-sm);border:1px solid var(--border)}
+.swatches .sw-label{display:block;font-size:10.5px;font-family:"Overpass Mono",monospace;color:var(--text-3);padding:42px 2px 0;white-space:nowrap}
+
+.section{margin-top:56px}
+.section-label{
+  font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.09em;
+  color:var(--text-3);margin-bottom:18px;
+}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.stack{display:flex;flex-direction:column;gap:16px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:start}
+@media (max-width:860px){.cols{grid-template-columns:1fr}}
+
+/* ============ buttons ============ */
+.btn{
+  display:inline-flex;align-items:center;gap:7px;
+  height:calc(var(--space)*8);padding:0 calc(var(--space)*3.5);
+  border-radius:var(--radius-md);
+  font-size:var(--fs-base);font-weight:600;letter-spacing:0.005em;
+  transition:background 150ms ease-out,color 150ms ease-out,border-color 150ms ease-out,transform 100ms ease-out;
+  border:1px solid transparent;
+}
+.btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.btn:active{transform:translateY(0.5px)}
+.btn-primary{background:var(--accent);color:var(--on-accent)}
+.btn-primary:hover{background:var(--accent-hover)}
+.btn-primary:active{background:var(--accent-down)}
+.btn-secondary{background:var(--surface-2);color:var(--text-1);border-color:var(--border)}
+.btn-secondary:hover{background:var(--surface-3);border-color:var(--border-strong)}
+.btn-ghost{color:var(--text-2)}
+.btn-ghost:hover{background:var(--surface-2);color:var(--text-1)}
+.btn-danger{background:var(--danger-soft);color:var(--danger);border-color:transparent}
+.btn-danger:hover{background:var(--danger);color:var(--bg)}
+.btn[disabled]{opacity:0.45;pointer-events:none}
+.btn .spinner{
+  width:13px;height:13px;border-radius:50%;
+  border:2px solid currentColor;border-top-color:transparent;
+  animation:spin 700ms linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.btn .spinner{animation-duration:2s}}
+.btn-sm{height:calc(var(--space)*7);padding:0 calc(var(--space)*2.5);font-size:calc(var(--fs-base) - 1px)}
+
+/* ============ inputs ============ */
+.field{display:flex;flex-direction:column;gap:6px;max-width:380px}
+.field label{font-size:calc(var(--fs-base) - 1px);font-weight:600;color:var(--text-2)}
+.input{
+  display:flex;align-items:center;gap:8px;
+  height:calc(var(--space)*8.5);padding:0 calc(var(--space)*3);
+  background:var(--surface-1);
+  border:1px solid var(--border);border-radius:var(--radius-md);
+  transition:border-color 150ms ease-out,box-shadow 150ms ease-out;
+}
+.input input{flex:1;background:none;border:none;outline:none;color:var(--text-1)}
+.input input::placeholder{color:var(--text-3)}
+.input:hover{border-color:var(--border-strong)}
+.input:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+.input.invalid{border-color:var(--danger)}
+.input.invalid:focus-within{box-shadow:0 0 0 3px var(--danger-soft)}
+.input .slash{
+  font-family:"Overpass Mono",monospace;font-size:11px;color:var(--text-3);
+  border:1px solid var(--border);border-radius:4px;padding:1px 6px;
+}
+.field .hint{font-size:12px;color:var(--text-3)}
+.field .error{font-size:12px;color:var(--danger);display:flex;gap:5px;align-items:center}
+
+/* ============ badges ============ */
+.badge{
+  display:inline-flex;align-items:center;gap:5px;
+  height:22px;padding:0 9px;border-radius:999px;
+  font-size:11.5px;font-weight:600;
+}
+.badge::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
+.badge-critical{background:var(--danger-soft);color:var(--danger)}
+.badge-high{background:var(--warning-soft);color:var(--warning)}
+.badge-medium{background:var(--info-soft);color:var(--info)}
+.badge-low{background:var(--surface-2);color:var(--text-2)}
+.badge-success{background:var(--success-soft);color:var(--success)}
+.badge-violet{background:var(--violet-soft);color:var(--violet)}
+/* instrument: badges go square, like flags in a terminal */
+body[data-dir="instrument"] .badge{border-radius:3px;height:20px;font-size:10.5px;text-transform:uppercase}
+body[data-dir="instrument"] .badge::before{width:4px;height:4px;border-radius:1px}
+
+/* ============ finding card ============ */
+.finding{
+  background:var(--surface-1);
+  border:1px solid var(--border);border-radius:var(--radius-lg);
+  overflow:hidden;
+}
+.finding-head{
+  display:flex;align-items:center;gap:10px;
+  padding:calc(var(--space)*3) calc(var(--space)*4);
+  border-bottom:1px solid var(--border);
+}
+.finding-head .path{font-family:"Overpass Mono",monospace;font-size:12px;color:var(--text-2)}
+.finding-head .line{font-family:"Overpass Mono",monospace;font-size:12px;color:var(--text-3)}
+.finding-head .badge{margin-left:auto}
+.finding-body{padding:calc(var(--space)*4)}
+.finding-body h3{font-size:calc(var(--fs-base) + 1px);font-weight:600;letter-spacing:-0.005em}
+.finding-body p{color:var(--text-2);margin-top:6px;max-width:70ch}
+.finding pre{
+  margin-top:14px;padding:calc(var(--space)*3) calc(var(--space)*3.5);
+  background:var(--bg);
+  border:1px solid var(--border);border-radius:var(--radius-md);
+  font-family:"Overpass Mono",monospace;font-size:12px;line-height:1.7;
+  overflow-x:auto;color:var(--text-2);
+}
+.finding pre .add{color:var(--success)}
+.finding pre .del{color:var(--danger)}
+.finding-foot{
+  display:flex;align-items:center;gap:8px;
+  padding:calc(var(--space)*2.5) calc(var(--space)*4);
+  background:var(--surface-2);
+}
+.finding-foot .meta{margin-left:auto;font-size:11.5px;color:var(--text-3)}
+
+/* ============ table ============ */
+.table-wrap{border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;background:var(--surface-1)}
+th{
+  text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;
+  color:var(--text-3);padding:calc(var(--space)*2.5) calc(var(--space)*4);
+  border-bottom:1px solid var(--border);background:var(--surface-2);
+}
+td{
+  padding:calc(var(--space)*3) calc(var(--space)*4);
+  border-bottom:1px solid var(--border);
+  font-size:var(--fs-base);vertical-align:middle;
+}
+tr:last-child td{border-bottom:none}
+tbody tr{transition:background 120ms ease-out}
+tbody tr:hover{background:var(--surface-2)}
+td .repo{font-weight:600}
+td .pr{font-family:"Overpass Mono",monospace;font-size:12px;color:var(--text-3)}
+td.num{font-family:"Overpass Mono",monospace;font-variant-numeric:tabular-nums;text-align:right;color:var(--text-2)}
+td .time{color:var(--text-3);font-size:calc(var(--fs-base) - 1px)}
+
+/* ============ dialog (static render) ============ */
+.dialog-stage{
+  position:relative;min-height:340px;display:grid;place-items:center;
+  background:var(--surface-2);
+  border:1px solid var(--border);border-radius:var(--radius-lg);
+}
+.dialog{
+  width:min(440px,90%);
+  background:var(--surface-1);
+  border:1px solid var(--border-strong);border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-pop);
+  padding:calc(var(--space)*6);
+}
+.dialog h3{font-size:16px;font-weight:700;letter-spacing:-0.01em}
+.dialog p{color:var(--text-2);margin-top:8px}
+.dialog p code{
+  font-family:"Overpass Mono",monospace;font-size:12px;
+  background:var(--surface-2);border:1px solid var(--border);
+  border-radius:4px;padding:1px 5px;color:var(--text-1);
+}
+.dialog .dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:24px}
+
+/* ============ misc ============ */
+.kbd{
+  font-family:"Overpass Mono",monospace;font-size:11px;color:var(--text-2);
+  border:1px solid var(--border-strong);border-bottom-width:2px;border-radius:5px;
+  padding:2px 7px;background:var(--surface-1);
+}
+</style>
+</head>
+<body data-dir="forge">
+
+<header class="switcher">
+  <div class="wordmark">kodus<span>·ds</span></div>
+  <nav aria-label="Direction">
+    <button data-pick="forge" aria-pressed="true">A · Forge</button>
+    <button data-pick="ledger" aria-pressed="false">B · Ledger</button>
+    <button data-pick="instrument" aria-pressed="false">C · Instrument</button>
+  </nav>
+  <div class="thesis" id="thesis"></div>
+</header>
+
+<main class="page">
+
+  <div class="dir-head">
+    <h1 id="dir-title"></h1>
+    <p id="dir-desc"></p>
+    <div class="swatches" id="swatches"></div>
+  </div>
+
+  <!-- BUTTONS -->
+  <section class="section">
+    <div class="section-label">Buttons</div>
+    <div class="stack">
+      <div class="row">
+        <button class="btn btn-primary">Run review</button>
+        <button class="btn btn-secondary">Configure</button>
+        <button class="btn btn-ghost">Cancel</button>
+        <button class="btn btn-danger">Delete rule</button>
+      </div>
+      <div class="row">
+        <button class="btn btn-primary" disabled>Run review</button>
+        <button class="btn btn-primary"><span class="spinner" aria-hidden="true"></span>Reviewing</button>
+        <button class="btn btn-secondary btn-sm">Sync repos</button>
+        <button class="btn btn-ghost btn-sm">View on GitHub</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- INPUTS -->
+  <section class="section">
+    <div class="section-label">Inputs</div>
+    <div class="cols">
+      <div class="field">
+        <label for="i1">Search repositories</label>
+        <div class="input">
+          <input id="i1" placeholder="kodustech/kodus-ai">
+          <span class="slash">/</span>
+        </div>
+        <span class="hint">Searches across all connected organizations.</span>
+      </div>
+      <div class="field">
+        <label for="i2">Webhook URL</label>
+        <div class="input invalid">
+          <input id="i2" value="htp://hooks.kodus" aria-invalid="true">
+        </div>
+        <span class="error">Must be a valid HTTPS URL.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- BADGES -->
+  <section class="section">
+    <div class="section-label">Severity &amp; status</div>
+    <div class="row">
+      <span class="badge badge-critical">Critical</span>
+      <span class="badge badge-high">High</span>
+      <span class="badge badge-medium">Medium</span>
+      <span class="badge badge-low">Low</span>
+      <span class="badge badge-success">Merged</span>
+      <span class="badge badge-violet">Kody Rule</span>
+    </div>
+  </section>
+
+  <!-- FINDING CARD -->
+  <section class="section">
+    <div class="section-label">Review finding</div>
+    <div class="finding">
+      <div class="finding-head">
+        <span class="path">src/core/payment/refund.service.ts</span>
+        <span class="line">L142</span>
+        <span class="badge badge-critical">Critical</span>
+      </div>
+      <div class="finding-body">
+        <h3>Refund amount not validated against original charge</h3>
+        <p>The handler accepts <strong>amount</strong> from the request body and passes it straight to the gateway. A caller can refund more than was charged. Clamp to the captured total before submitting.</p>
+        <pre><span class="del">- await gateway.refund(chargeId, body.amount);</span>
+<span class="add">+ const amount = Math.min(body.amount, charge.captured);</span>
+<span class="add">+ await gateway.refund(chargeId, amount);</span></pre>
+      </div>
+      <div class="finding-foot">
+        <button class="btn btn-primary btn-sm">Apply suggestion</button>
+        <button class="btn btn-ghost btn-sm">Dismiss</button>
+        <span class="meta">Kody · cross-file context · 2 min ago</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- TABLE -->
+  <section class="section">
+    <div class="section-label">Pull requests</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Repository</th><th>Pull request</th><th style="text-align:right">Findings</th><th>Top severity</th><th>Status</th><th>Reviewed</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="repo">kodus-ai</span></td>
+            <td><span class="pr">#1283 · ci: discord ping on RC validation</span></td>
+            <td class="num">0</td>
+            <td><span class="badge badge-low">None</span></td>
+            <td><span class="badge badge-success">Merged</span></td>
+            <td><span class="time">2h ago</span></td>
+          </tr>
+          <tr>
+            <td><span class="repo">kodus-installer</span></td>
+            <td><span class="pr">#21 · fix: respect IMAGE_TAG in compose</span></td>
+            <td class="num">3</td>
+            <td><span class="badge badge-high">High</span></td>
+            <td><span class="badge badge-violet">In review</span></td>
+            <td><span class="time">4h ago</span></td>
+          </tr>
+          <tr>
+            <td><span class="repo">kodus-ai</span></td>
+            <td><span class="pr">#1280 · fix: kody rules repo-scope authz</span></td>
+            <td class="num">7</td>
+            <td><span class="badge badge-critical">Critical</span></td>
+            <td><span class="badge badge-violet">In review</span></td>
+            <td><span class="time">yesterday</span></td>
+          </tr>
+          <tr>
+            <td><span class="repo">kodus-web</span></td>
+            <td><span class="pr">#412 · feat: cockpit deploy frequency chart</span></td>
+            <td class="num">1</td>
+            <td><span class="badge badge-medium">Medium</span></td>
+            <td><span class="badge badge-success">Merged</span></td>
+            <td><span class="time">2d ago</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- DIALOG -->
+  <section class="section">
+    <div class="section-label">Dialog</div>
+    <div class="dialog-stage">
+      <div class="dialog" role="dialog" aria-labelledby="dlg-t">
+        <h3 id="dlg-t">Delete this Kody Rule?</h3>
+        <p><code>no-raw-sql-in-controllers</code> is active in 12 repositories. Reviews already posted keep their comments; future reviews stop enforcing it.</p>
+        <div class="dialog-actions">
+          <button class="btn btn-ghost">Cancel</button>
+          <button class="btn btn-danger">Delete rule</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- KEYBOARD -->
+  <section class="section">
+    <div class="section-label">Keyboard</div>
+    <div class="row" style="gap:18px">
+      <span style="color:var(--text-2);font-size:13px">Next finding <span class="kbd">J</span></span>
+      <span style="color:var(--text-2);font-size:13px">Apply <span class="kbd">⌘</span> <span class="kbd">↵</span></span>
+      <span style="color:var(--text-2);font-size:13px">Command palette <span class="kbd">⌘</span> <span class="kbd">K</span></span>
+    </div>
+  </section>
+
+</main>
+
+<script>
+const DIRS = {
+  forge: {
+    title: "A · Forge",
+    thesis: "Committed orange, soft radii. Kodus today, systematized.",
+    desc: "The current product, tightened: orange carries primary actions, selection and focus with full confidence. Filled badges, soft 10px radii, comfortable spacing. The lowest-risk path — every screen you have today maps 1:1 onto these defaults.",
+    swatches: ["--bg","--surface-1","--surface-2","--border","--accent","--violet","--danger","--success"]
+  },
+  ledger: {
+    title: "B · Ledger",
+    thesis: "Restrained. Type and hairlines carry hierarchy; orange spent once.",
+    desc: "Same palette, Stripe-grade restraint: flat chrome, outline badges, transparent inputs, generous air. Orange appears only on the primary action; lilac takes focus rings. Reads as an audit document — calm, exact, enterprise. The redesign you feel most in what was removed.",
+    swatches: ["--bg","--surface-1","--surface-2","--border","--accent","--violet","--danger","--success"]
+  },
+  instrument: {
+    title: "C · Instrument",
+    thesis: "Mono-forward density. Near-square corners, one orange action per view.",
+    desc: "A precision instrument on the same palette: compact 13px scale, monospace for every piece of data, uppercase square badges, lilac selection. Orange is rationed to the single action that matters per view. Densest of the three, built for triaging a hundred findings without fatigue.",
+    swatches: ["--bg","--surface-1","--surface-2","--border","--accent","--violet","--danger","--success"]
+  }
+};
+const $ = s => document.querySelector(s);
+function pick(dir){
+  document.body.dataset.dir = dir;
+  document.querySelectorAll("[data-pick]").forEach(b =>
+    b.setAttribute("aria-pressed", String(b.dataset.pick === dir)));
+  const d = DIRS[dir];
+  $("#dir-title").textContent = d.title;
+  $("#dir-desc").textContent = d.desc;
+  $("#thesis").textContent = d.thesis;
+  const cs = getComputedStyle(document.body);
+  $("#swatches").innerHTML = d.swatches.map(v =>
+    `<div style="background:${cs.getPropertyValue(v)}"><span class="sw-label">${v.slice(2)}</span></div>`).join("");
+}
+document.querySelectorAll("[data-pick]").forEach(b =>
+  b.addEventListener("click", () => pick(b.dataset.pick)));
+pick("forge");
+</script>
+</body>
+</html>

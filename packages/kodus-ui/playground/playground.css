@@ -1,0 +1,12 @@
+@import "tailwindcss";
+@import "../src/styles.css";
+
+@source "../src";
+
+body {
+    background: var(--color-background);
+    color: var(--color-text-1);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+}

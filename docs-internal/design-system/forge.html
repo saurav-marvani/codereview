@@ -1,0 +1,1183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kodus DS · Forge — Component Spec</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Overpass+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ============ reset ============ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none}
+table{border-collapse:collapse;width:100%}
+
+/* ============ Forge tokens — brand palette is CONTRACT ============ */
+:root{
+  --bg:#101019;
+  --surface-1:#181825;
+  --surface-2:#202032;
+  --surface-3:#30304b;
+  --border:#30304b;
+  --border-strong:#3e3e5e;
+  --text-1:#ffffff;
+  --text-2:#cdcddf;
+  --text-3:#f3f3f780;
+  --accent:#f8b76d;
+  --accent-hover:#fac68b;
+  --accent-down:#f0a958;
+  --on-accent:#443024;
+  --accent-soft:#f8b76d21;
+  --violet:#c9bbf2;
+  --violet-soft:#c9bbf224;
+  --success:#42be65;   --success-soft:#42be6522;
+  --danger:#fa5867;    --danger-soft:#fa586722;
+  --warning:#ff8b40;   --warning-soft:#ff8b4022;
+  --alert:#f2c631;     --alert-soft:#f2c63122;
+  --info:#5190ff;      --info-soft:#5190ff22;
+  --ring:#f8b76d66;
+  --radius-lg:10px; --radius-md:8px; --radius-sm:6px;
+  --fs-base:14px; --space:4px;
+  --shadow-pop:0 8px 32px #05050eaa, 0 1px 0 #ffffff0a inset;
+  --ease:cubic-bezier(0.22,1,0.36,1);
+}
+
+body{
+  font-family:"DM Sans",sans-serif;
+  font-size:var(--fs-base);
+  background:var(--bg);
+  color:var(--text-1);
+  line-height:1.5;
+}
+
+/* ============ chrome ============ */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:24px;
+  padding:14px 32px;
+  background:var(--bg);
+  border-bottom:1px solid var(--border);
+  overflow-x:auto;
+}
+.topbar .wordmark{font-weight:700;font-size:15px;letter-spacing:-0.01em;white-space:nowrap}
+.topbar .wordmark span{color:var(--accent)}
+.topbar nav{display:flex;gap:2px}
+.topbar nav a{
+  padding:5px 10px;border-radius:var(--radius-sm);
+  font-size:12.5px;font-weight:500;color:var(--text-2);text-decoration:none;white-space:nowrap;
+  transition:color 150ms var(--ease),background 150ms var(--ease);
+}
+.topbar nav a:hover{color:var(--text-1);background:var(--surface-2)}
+
+.page{max-width:1180px;margin:0 auto;padding:48px 32px 120px}
+.dir-head h1{font-size:26px;font-weight:700;letter-spacing:-0.02em}
+.dir-head p{color:var(--text-2);margin-top:6px;max-width:70ch}
+
+.section{margin-top:64px;scroll-margin-top:80px}
+.section-label{
+  font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.09em;
+  color:var(--text-3);margin-bottom:18px;
+}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.stack{display:flex;flex-direction:column;gap:16px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:start}
+.cols-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:32px;align-items:start}
+@media (max-width:900px){.cols,.cols-3{grid-template-columns:1fr}}
+.spec-note{font-size:12px;color:var(--text-3);margin-top:12px;max-width:70ch}
+
+/* ============ typography ============ */
+.type-row{display:flex;align-items:baseline;gap:24px;padding:10px 0;border-bottom:1px solid var(--surface-1)}
+.type-row:last-child{border-bottom:none}
+.type-row .t-meta{font-family:"Overpass Mono",monospace;font-size:11px;color:var(--text-3);width:200px;flex-shrink:0}
+.t-display{font-size:26px;font-weight:700;letter-spacing:-0.02em}
+.t-h1{font-size:22px;font-weight:700;letter-spacing:-0.015em}
+.t-h2{font-size:18px;font-weight:650}
+.t-h3{font-size:15.5px;font-weight:600}
+.t-body{font-size:14px}
+.t-small{font-size:13px;color:var(--text-2)}
+.t-caption{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.09em;color:var(--text-3)}
+.t-code{font-family:"Overpass Mono",monospace;font-size:12px;color:var(--text-2)}
+
+/* ============ buttons ============ */
+.btn{
+  display:inline-flex;align-items:center;gap:7px;
+  height:32px;padding:0 14px;
+  border-radius:var(--radius-md);
+  font-size:var(--fs-base);font-weight:600;letter-spacing:0.005em;
+  transition:background 150ms var(--ease),color 150ms var(--ease),border-color 150ms var(--ease),transform 100ms var(--ease);
+  border:1px solid transparent;
+}
+.btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.btn:active{transform:translateY(0.5px)}
+.btn-primary{background:var(--accent);color:var(--on-accent)}
+.btn-primary:hover{background:var(--accent-hover)}
+.btn-primary:active{background:var(--accent-down)}
+.btn-secondary{background:var(--surface-2);color:var(--text-1);border-color:var(--border)}
+.btn-secondary:hover{background:var(--surface-3);border-color:var(--border-strong)}
+.btn-ghost{color:var(--text-2)}
+.btn-ghost:hover{background:var(--surface-2);color:var(--text-1)}
+.btn-danger{background:var(--danger-soft);color:var(--danger)}
+.btn-danger:hover{background:var(--danger);color:var(--bg)}
+.btn[disabled]{opacity:0.45;pointer-events:none}
+.btn .spinner{
+  width:13px;height:13px;border-radius:50%;
+  border:2px solid currentColor;border-top-color:transparent;
+  animation:spin 700ms linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spinner{animation-duration:2s}.skeleton::after{animation:none}}
+.btn-sm{height:28px;padding:0 10px;font-size:13px}
+.btn-icon{width:32px;padding:0;justify-content:center}
+
+/* standalone spinner sizes */
+.spinner{display:inline-block;width:16px;height:16px;border-radius:50%;border:2px solid var(--accent);border-top-color:transparent;animation:spin 700ms linear infinite}
+.spinner-lg{width:24px;height:24px;border-width:2.5px}
+.spinner-muted{border-color:var(--text-3);border-top-color:transparent}
+
+/* ============ inputs ============ */
+.field{display:flex;flex-direction:column;gap:6px;max-width:380px}
+.field label{font-size:13px;font-weight:600;color:var(--text-2)}
+.input{
+  display:flex;align-items:center;gap:8px;
+  height:34px;padding:0 12px;
+  background:var(--surface-1);
+  border:1px solid var(--border);border-radius:var(--radius-md);
+  transition:border-color 150ms var(--ease),box-shadow 150ms var(--ease);
+}
+.input input{flex:1;background:none;border:none;outline:none;color:var(--text-1);min-width:0}
+.input input::placeholder{color:var(--text-3)}
+.input:hover{border-color:var(--border-strong)}
+.input:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+.input.invalid{border-color:var(--danger)}
+.input.invalid:focus-within{box-shadow:0 0 0 3px var(--danger-soft)}
+.input.disabled{opacity:0.45;pointer-events:none}
+.input .slash{
+  font-family:"Overpass Mono",monospace;font-size:11px;color:var(--text-3);
+  border:1px solid var(--border);border-radius:4px;padding:1px 6px;
+}
+.field .hint{font-size:12px;color:var(--text-3)}
+.field .error{font-size:12px;color:var(--danger)}
+.textarea{
+  min-height:88px;padding:10px 12px;resize:vertical;width:100%;
+  background:var(--surface-1);color:var(--text-1);
+  border:1px solid var(--border);border-radius:var(--radius-md);
+  transition:border-color 150ms var(--ease),box-shadow 150ms var(--ease);
+  outline:none;font-size:var(--fs-base);line-height:1.55;
+}
+.textarea::placeholder{color:var(--text-3)}
+.textarea:hover{border-color:var(--border-strong)}
+.textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+
+/* select */
+.select-trigger{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  height:34px;padding:0 12px;max-width:380px;
+  background:var(--surface-1);
+  border:1px solid var(--border);border-radius:var(--radius-md);
+  font-size:var(--fs-base);color:var(--text-1);width:100%;
+  transition:border-color 150ms var(--ease);
+}
+.select-trigger:hover{border-color:var(--border-strong)}
+.select-trigger .chev{color:var(--text-3);font-size:11px}
+.menu{
+  width:280px;padding:5px;
+  background:var(--surface-2);
+  border:1px solid var(--border-strong);border-radius:var(--radius-md);
+  box-shadow:var(--shadow-pop);
+}
+.menu .menu-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-3);padding:7px 9px 4px}
+.menu .item{
+  display:flex;align-items:center;gap:9px;
+  padding:7px 9px;border-radius:var(--radius-sm);
+  font-size:13.5px;color:var(--text-1);cursor:pointer;
+  transition:background 120ms var(--ease);
+}
+.menu .item:hover{background:var(--surface-3)}
+.menu .item.selected{background:var(--accent-soft);color:var(--accent)}
+.menu .item.selected::after{content:"✓";margin-left:auto;font-size:12px}
+.menu .item.destructive{color:var(--danger)}
+.menu .item.destructive:hover{background:var(--danger-soft)}
+.menu .item .shortcut{margin-left:auto;font-family:"Overpass Mono",monospace;font-size:11px;color:var(--text-3)}
+.menu .sep{height:1px;background:var(--border);margin:5px 4px}
+.menu .item .ico{width:15px;text-align:center;color:var(--text-3)}
+
+/* ============ switch / checkbox / radio ============ */
+.ctl-row{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--text-2)}
+.switch{
+  position:relative;width:36px;height:20px;border-radius:999px;flex-shrink:0;
+  background:var(--surface-3);transition:background 180ms var(--ease);
+}
+.switch::after{
+  content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;
+  background:var(--text-2);transition:transform 180ms var(--ease),background 180ms var(--ease);
+}
+.switch.on{background:var(--accent)}
+.switch.on::after{transform:translateX(16px);background:var(--on-accent)}
+.switch.loading::after{
+  background:transparent;border:2px solid var(--text-2);border-top-color:transparent;
+  animation:spin 700ms linear infinite;
+}
+.switch.disabled{opacity:0.45}
+.switch:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.checkbox{
+  width:16px;height:16px;border-radius:4.5px;flex-shrink:0;
+  border:1.5px solid var(--border-strong);background:var(--surface-1);
+  display:inline-grid;place-items:center;font-size:11px;font-weight:700;
+  transition:background 150ms var(--ease),border-color 150ms var(--ease);
+}
+.checkbox.checked{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.checkbox.indeterminate{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.checkbox.disabled{opacity:0.45}
+.radio{
+  width:16px;height:16px;border-radius:50%;flex-shrink:0;
+  border:1.5px solid var(--border-strong);background:var(--surface-1);
+  display:inline-grid;place-items:center;
+  transition:border-color 150ms var(--ease);
+}
+.radio.checked{border-color:var(--accent)}
+.radio.checked::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent)}
+
+/* ============ badges ============ */
+.badge{
+  display:inline-flex;align-items:center;gap:5px;
+  height:22px;padding:0 9px;border-radius:999px;
+  font-size:11.5px;font-weight:600;
+}
+.badge::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
+.badge-critical{background:var(--danger-soft);color:var(--danger)}
+.badge-high{background:var(--warning-soft);color:var(--warning)}
+.badge-medium{background:var(--info-soft);color:var(--info)}
+.badge-low{background:var(--surface-2);color:var(--text-2)}
+.badge-success{background:var(--success-soft);color:var(--success)}
+.badge-violet{background:var(--violet-soft);color:var(--violet)}
+.badge-alert{background:var(--alert-soft);color:var(--alert)}
+.badge-plain::before{display:none}
+
+/* ============ tabs ============ */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border)}
+.tab{
+  padding:8px 14px;font-size:13.5px;font-weight:500;color:var(--text-2);
+  border-bottom:2px solid transparent;margin-bottom:-1px;
+  transition:color 150ms var(--ease);
+}
+.tab:hover{color:var(--text-1)}
+.tab.active{color:var(--text-1);font-weight:600;border-bottom-color:var(--accent)}
+.tab .count{
+  margin-left:6px;font-family:"Overpass Mono",monospace;font-size:10.5px;
+  background:var(--surface-2);border-radius:999px;padding:1px 6px;color:var(--text-3);
+}
+.tab.active .count{background:var(--accent-soft);color:var(--accent)}
+
+/* toggle group (segmented) */
+.seg{display:inline-flex;background:var(--surface-1);border:1px solid var(--border);border-radius:var(--radius-md);padding:2px;gap:2px}
+.seg button{
+  padding:5px 12px;border-radius:6px;font-size:13px;font-weight:500;color:var(--text-2);
+  transition:background 150ms var(--ease),color 150ms var(--ease);
+}
+.seg button:hover{color:var(--text-1)}
+.seg button.active{background:var(--surface-3);color:var(--text-1);font-weight:600}
+
+/* ============ tooltip / popover ============ */
+.tooltip{
+  display:inline-block;padding:5px 9px;
+  background:var(--surface-3);border-radius:var(--radius-sm);
+  font-size:12px;color:var(--text-1);
+  box-shadow:0 4px 16px #05050e88;
+}
+.popover{
+  width:300px;padding:16px;
+  background:var(--surface-2);
+  border:1px solid var(--border-strong);border-radius:var(--radius-md);
+  box-shadow:var(--shadow-pop);
+}
+.popover h4{font-size:14px;font-weight:600}
+.popover p{font-size:12.5px;color:var(--text-2);margin-top:5px}
+
+/* ============ command palette ============ */
+.cmdk{
+  width:min(560px,100%);
+  background:var(--surface-1);
+  border:1px solid var(--border-strong);border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-pop);overflow:hidden;
+}
+.cmdk .cmdk-input{
+  display:flex;align-items:center;gap:10px;
+  padding:14px 16px;border-bottom:1px solid var(--border);
+  color:var(--text-3);
+}
+.cmdk .cmdk-input input{flex:1;background:none;border:none;outline:none;color:var(--text-1);font-size:15px}
+.cmdk .cmdk-input input::placeholder{color:var(--text-3)}
+.cmdk .menu-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-3);padding:10px 12px 4px}
+.cmdk .item{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 12px;margin:0 5px;border-radius:var(--radius-sm);
+  font-size:13.5px;color:var(--text-1);cursor:pointer;
+}
+.cmdk .item .ico{width:16px;text-align:center;color:var(--text-3)}
+.cmdk .item.focused{background:var(--surface-2)}
+.cmdk .item .shortcut{margin-left:auto;display:flex;gap:4px}
+.cmdk .cmdk-foot{
+  display:flex;gap:16px;padding:9px 16px;margin-top:6px;
+  border-top:1px solid var(--border);
+  font-size:11.5px;color:var(--text-3);
+}
+
+/* ============ toast ============ */
+.toast{
+  display:flex;gap:11px;align-items:flex-start;
+  width:360px;padding:13px 14px;
+  background:var(--surface-2);
+  border:1px solid var(--border-strong);border-radius:var(--radius-md);
+  box-shadow:var(--shadow-pop);
+}
+.toast .t-ico{font-size:14px;line-height:1.4}
+.toast.success .t-ico{color:var(--success)}
+.toast.error .t-ico{color:var(--danger)}
+.toast.info .t-ico{color:var(--info)}
+.toast h5{font-size:13.5px;font-weight:600}
+.toast p{font-size:12.5px;color:var(--text-2);margin-top:2px}
+.toast .t-action{margin-left:auto;flex-shrink:0;font-size:12.5px;font-weight:600;color:var(--accent);align-self:center}
+.toast .t-action:hover{color:var(--accent-hover)}
+
+/* ============ alert ============ */
+.alert{
+  display:flex;gap:11px;align-items:flex-start;
+  padding:12px 14px;border-radius:var(--radius-md);
+  border:1px solid;font-size:13.5px;
+}
+.alert .a-ico{line-height:1.45}
+.alert h5{font-weight:600;font-size:13.5px}
+.alert p{color:var(--text-2);margin-top:2px;font-size:13px}
+.alert-info{border-color:#5190ff55;background:var(--info-soft)}
+.alert-info .a-ico{color:var(--info)}
+.alert-warning{border-color:#ff8b4055;background:var(--warning-soft)}
+.alert-warning .a-ico{color:var(--warning)}
+.alert-danger{border-color:#fa586755;background:var(--danger-soft)}
+.alert-danger .a-ico{color:var(--danger)}
+.alert-success{border-color:#42be6555;background:var(--success-soft)}
+.alert-success .a-ico{color:var(--success)}
+
+/* ============ avatar ============ */
+.avatar{
+  position:relative;width:32px;height:32px;border-radius:50%;flex-shrink:0;
+  display:inline-grid;place-items:center;
+  background:var(--surface-3);color:var(--text-1);
+  font-size:12px;font-weight:600;
+}
+.avatar.a-violet{background:var(--violet-soft);color:var(--violet)}
+.avatar.a-accent{background:var(--accent-soft);color:var(--accent)}
+.avatar .dot{
+  position:absolute;right:-1px;bottom:-1px;width:9px;height:9px;border-radius:50%;
+  background:var(--success);border:2px solid var(--bg);
+}
+.avatar-lg{width:40px;height:40px;font-size:14px}
+.avatar-sm{width:24px;height:24px;font-size:10px}
+.avatar-stack{display:flex}
+.avatar-stack .avatar{border:2px solid var(--bg);margin-left:-8px}
+.avatar-stack .avatar:first-child{margin-left:0}
+
+/* ============ skeleton ============ */
+.skeleton{
+  position:relative;overflow:hidden;background:var(--surface-2);border-radius:var(--radius-sm);
+}
+.skeleton::after{
+  content:"";position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent,#ffffff0d,transparent);
+  animation:shimmer 1.6s var(--ease) infinite;
+}
+@keyframes shimmer{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+
+/* ============ progress / slider ============ */
+.progress{height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden;max-width:380px}
+.progress div{height:100%;border-radius:999px;background:var(--accent)}
+.slider{position:relative;height:20px;max-width:380px;display:flex;align-items:center}
+.slider .track{width:100%;height:5px;border-radius:999px;background:var(--surface-2)}
+.slider .fill{position:absolute;left:0;width:60%;height:5px;border-radius:999px;background:var(--accent)}
+.slider .thumb{
+  position:absolute;left:60%;transform:translateX(-50%);
+  width:16px;height:16px;border-radius:50%;
+  background:var(--accent);border:3px solid var(--bg);
+  box-shadow:0 0 0 1px var(--border-strong);
+}
+
+/* ============ separator / collapsible ============ */
+.separator{height:1px;background:var(--border);margin:4px 0}
+.separator-v{width:1px;align-self:stretch;background:var(--border)}
+.collapsible{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface-1);overflow:hidden}
+.collapsible + .collapsible{margin-top:8px}
+.collapsible .c-head{
+  display:flex;align-items:center;gap:10px;width:100%;
+  padding:12px 14px;font-size:13.5px;font-weight:600;color:var(--text-1);text-align:left;
+}
+.collapsible .c-head .chev{margin-left:auto;color:var(--text-3);font-size:11px;transition:transform 200ms var(--ease)}
+.collapsible.open .c-head .chev{transform:rotate(180deg)}
+.collapsible .c-body{padding:0 14px 13px;font-size:13px;color:var(--text-2);max-width:70ch}
+
+/* ============ empty state ============ */
+.empty{
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+  padding:48px 24px;text-align:center;
+  border:1px dashed var(--border-strong);border-radius:var(--radius-lg);
+}
+.empty .e-ico{font-size:22px;color:var(--text-3);margin-bottom:4px}
+.empty h4{font-size:15px;font-weight:600}
+.empty p{font-size:13px;color:var(--text-2);max-width:42ch}
+.empty .btn{margin-top:12px}
+
+/* ============ finding card ============ */
+.finding{background:var(--surface-1);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden}
+.finding-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.finding-head .path{font-family:"Overpass Mono",monospace;font-size:12px;color:var(--text-2)}
+.finding-head .line{font-family:"Overpass Mono",monospace;font-size:12px;color:var(--text-3)}
+.finding-head .badge{margin-left:auto}
+.finding-body{padding:16px}
+.finding-body h3{font-size:15px;font-weight:600;letter-spacing:-0.005em}
+.finding-body p{color:var(--text-2);margin-top:6px;max-width:70ch}
+.finding pre{
+  margin-top:14px;padding:12px 14px;
+  background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-md);
+  font-family:"Overpass Mono",monospace;font-size:12px;line-height:1.7;
+  overflow-x:auto;color:var(--text-2);
+}
+.finding pre .add{color:var(--success)}
+.finding pre .del{color:var(--danger)}
+.finding-foot{display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--surface-2)}
+.finding-foot .meta{margin-left:auto;font-size:11.5px;color:var(--text-3)}
+
+/* ============ table ============ */
+.table-wrap{border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;background:var(--surface-1)}
+th{
+  text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;
+  color:var(--text-3);padding:10px 16px;
+  border-bottom:1px solid var(--border);background:var(--surface-2);
+}
+td{padding:12px 16px;border-bottom:1px solid var(--border);font-size:var(--fs-base);vertical-align:middle}
+tbody tr{transition:background 120ms var(--ease)}
+tbody tr:hover{background:var(--surface-2)}
+td .repo{font-weight:600}
+td .pr{font-family:"Overpass Mono",monospace;font-size:12px;color:var(--text-3)}
+td.num{font-family:"Overpass Mono",monospace;font-variant-numeric:tabular-nums;text-align:right;color:var(--text-2)}
+td .time{color:var(--text-3);font-size:13px}
+.table-foot{
+  display:flex;align-items:center;gap:8px;
+  padding:10px 16px;font-size:12.5px;color:var(--text-3);
+}
+.table-foot .pages{margin-left:auto;display:flex;gap:4px}
+.table-foot .pages button{
+  min-width:26px;height:26px;border-radius:var(--radius-sm);
+  font-size:12.5px;color:var(--text-2);font-variant-numeric:tabular-nums;
+  display:inline-grid;place-items:center;padding:0 6px;
+  transition:background 120ms var(--ease);
+}
+.table-foot .pages button:hover{background:var(--surface-2);color:var(--text-1)}
+.table-foot .pages button.current{background:var(--accent-soft);color:var(--accent);font-weight:600}
+
+/* ============ dialog ============ */
+.dialog-stage{
+  position:relative;min-height:300px;display:grid;place-items:center;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-lg);
+  padding:32px;
+}
+.dialog{
+  width:min(440px,100%);
+  background:var(--surface-1);
+  border:1px solid var(--border-strong);border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-pop);padding:24px;
+}
+.dialog h3{font-size:16px;font-weight:700;letter-spacing:-0.01em}
+.dialog p{color:var(--text-2);margin-top:8px}
+.dialog p code,.inline-code{
+  font-family:"Overpass Mono",monospace;font-size:12px;
+  background:var(--surface-2);border:1px solid var(--border);
+  border-radius:4px;padding:1px 5px;color:var(--text-1);
+}
+.dialog .dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:24px}
+
+/* ============ sidebar ============ */
+.sidebar-stage{
+  display:flex;min-height:520px;
+  border:1px solid var(--border);border-radius:var(--radius-lg);
+  overflow:hidden;background:var(--bg);
+}
+.sidebar{
+  width:264px;flex-shrink:0;
+  background:var(--surface-1);
+  border-right:1px solid var(--border);
+  padding:16px 12px;
+  display:flex;flex-direction:column;gap:20px;
+  overflow-y:auto;
+}
+.side-label{
+  font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.09em;
+  color:var(--text-3);padding:0 8px;margin-bottom:6px;
+}
+.side-item{
+  display:flex;align-items:center;gap:8px;width:100%;
+  height:32px;padding:0 8px;border-radius:var(--radius-sm);
+  font-size:13.5px;font-weight:500;color:var(--text-2);text-align:left;
+  transition:background 120ms var(--ease),color 120ms var(--ease);
+}
+.side-item:hover{background:var(--surface-2);color:var(--text-1)}
+.side-item.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.side-item .chev{font-size:9px;color:var(--text-3);width:10px;transition:transform 200ms var(--ease)}
+.side-item.collapsed .chev{transform:rotate(-90deg)}
+.side-item .count{
+  margin-left:auto;
+  min-width:18px;height:18px;padding:0 5px;border-radius:999px;
+  display:inline-grid;place-items:center;
+  font-family:"Overpass Mono",monospace;font-size:10.5px;font-weight:600;
+  background:var(--accent-soft);color:var(--accent);
+}
+.side-item .tag{margin-left:auto;font-size:10.5px;font-weight:600;height:18px;padding:0 7px;border-radius:999px;background:var(--violet-soft);color:var(--violet);display:inline-flex;align-items:center}
+.side-item .ico{width:15px;text-align:center;color:var(--text-3);font-size:12px}
+.side-item.active .ico{color:var(--accent)}
+.side-sub{
+  margin:2px 0 4px 13px;padding-left:9px;
+  border-left:1px solid var(--border);
+  display:flex;flex-direction:column;gap:1px;
+}
+.side-sub .side-item{height:29px;font-size:13px}
+.sidebar-content{flex:1;padding:28px 32px;min-width:0}
+
+/* ============ page header ============ */
+.breadcrumb{display:flex;align-items:center;gap:8px;font-size:13px}
+.breadcrumb a{color:var(--accent);text-decoration:none;font-weight:500}
+.breadcrumb a:hover{color:var(--accent-hover)}
+.breadcrumb .sep{color:var(--text-3);font-size:10px}
+.breadcrumb .current{color:var(--text-1);font-weight:600}
+.page-header{display:flex;align-items:flex-end;gap:16px;margin-top:10px}
+.page-header h2{font-size:22px;font-weight:700;letter-spacing:-0.015em}
+.page-header p{font-size:13px;color:var(--text-2);margin-top:3px}
+.page-header .actions{margin-left:auto;display:flex;gap:8px}
+
+/* ============ settings group ============ */
+.settings-group{
+  background:var(--surface-1);
+  border:1px solid var(--border);border-radius:var(--radius-lg);
+  overflow:hidden;
+}
+.settings-group + .settings-group{margin-top:16px}
+.settings-group .group-head{
+  display:flex;align-items:baseline;gap:10px;
+  padding:13px 18px;border-bottom:1px solid var(--border);
+  background:var(--surface-2);
+}
+.settings-group .group-head h4{font-size:13.5px;font-weight:650}
+.settings-group .group-head span{font-size:12px;color:var(--text-3)}
+.setting{
+  display:flex;align-items:center;gap:24px;
+  padding:15px 18px;
+}
+.setting + .setting{border-top:1px solid var(--border)}
+.setting .s-text{flex:1;min-width:0}
+.setting .s-text h5{font-size:14px;font-weight:600}
+.setting .s-text p{font-size:13px;color:var(--text-2);margin-top:3px;max-width:62ch}
+.setting .s-text .note{font-size:12px;color:var(--text-3);margin-top:5px}
+.setting .s-ctl{flex-shrink:0;display:flex;align-items:center;gap:10px}
+.setting .s-ctl .select-trigger{width:200px}
+.setting.disabled .s-text{opacity:0.5}
+.setting .sub{
+  margin-top:12px;padding:12px 14px;
+  background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-md);
+}
+.setting .sub label{display:block;font-size:13px;font-weight:600;color:var(--text-2);margin-bottom:6px}
+
+/* ============ kbd ============ */
+.kbd{
+  font-family:"Overpass Mono",monospace;font-size:11px;color:var(--text-2);
+  border:1px solid var(--border-strong);border-bottom-width:2px;border-radius:5px;
+  padding:2px 7px;background:var(--surface-1);
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wordmark">kodus<span>·ds</span> <span style="color:var(--text-3);font-weight:500;font-size:13px">/ forge</span></div>
+  <nav>
+    <a href="#typography">Type</a>
+    <a href="#buttons">Buttons</a>
+    <a href="#inputs">Inputs</a>
+    <a href="#controls">Controls</a>
+    <a href="#badges">Badges</a>
+    <a href="#tabs">Tabs</a>
+    <a href="#overlays">Overlays</a>
+    <a href="#cmdk">⌘K</a>
+    <a href="#feedback">Feedback</a>
+    <a href="#loading">Loading</a>
+    <a href="#avatars">Avatars</a>
+    <a href="#sidebar">Sidebar</a>
+    <a href="#settings">Settings</a>
+    <a href="#disclosure">Disclosure</a>
+    <a href="#empty">Empty</a>
+    <a href="#finding">Finding</a>
+    <a href="#table">Table</a>
+    <a href="#dialog">Dialog</a>
+  </nav>
+</header>
+
+<main class="page">
+
+  <div class="dir-head">
+    <h1>Forge — component spec</h1>
+    <p>The chosen direction on the contract palette. Every component your app imports today (by usage: button ×206, card ×136, toast ×66, dialog ×50, input ×47, switch ×36, tooltip ×34...) rendered with its Forge defaults. This page is the visual contract for <span class="inline-code">@kodus/ui</span>.</p>
+  </div>
+
+  <!-- TYPOGRAPHY -->
+  <section class="section" id="typography">
+    <div class="section-label">Typography — DM Sans · Overpass Mono</div>
+    <div class="type-row"><span class="t-meta">display · 26/700/-0.02em</span><span class="t-display">Code review on autopilot</span></div>
+    <div class="type-row"><span class="t-meta">h1 · 22/700/-0.015em</span><span class="t-h1">Kody Rules</span></div>
+    <div class="type-row"><span class="t-meta">h2 · 18/650</span><span class="t-h2">Repository settings</span></div>
+    <div class="type-row"><span class="t-meta">h3 · 15.5/600</span><span class="t-h3">Cross-file context</span></div>
+    <div class="type-row"><span class="t-meta">body · 14/400</span><span class="t-body">Kody reviews every pull request against your team's rules and posts inline suggestions.</span></div>
+    <div class="type-row"><span class="t-meta">small · 13/400</span><span class="t-small">Applies to all repositories in this organization.</span></div>
+    <div class="type-row"><span class="t-meta">caption · 11/600/+0.09em</span><span class="t-caption">Severity &amp; status</span></div>
+    <div class="type-row"><span class="t-meta">code · mono 12</span><span class="t-code">src/core/payment/refund.service.ts:142</span></div>
+  </section>
+
+  <!-- BUTTONS -->
+  <section class="section" id="buttons">
+    <div class="section-label">Buttons</div>
+    <div class="stack">
+      <div class="row">
+        <button class="btn btn-primary">Run review</button>
+        <button class="btn btn-secondary">Configure</button>
+        <button class="btn btn-ghost">Cancel</button>
+        <button class="btn btn-danger">Delete rule</button>
+        <button class="btn btn-secondary btn-icon" aria-label="More">⋯</button>
+      </div>
+      <div class="row">
+        <button class="btn btn-primary" disabled>Run review</button>
+        <button class="btn btn-primary"><span class="spinner" style="border-color:currentColor;border-top-color:transparent;width:13px;height:13px" aria-hidden="true"></span>Reviewing</button>
+        <button class="btn btn-secondary btn-sm">Sync repos</button>
+        <button class="btn btn-ghost btn-sm">View on GitHub</button>
+      </div>
+    </div>
+    <p class="spec-note">Primary is the page's main action; loading keeps width and swaps the icon slot for a spinner. Heights: 32px default, 28px small.</p>
+  </section>
+
+  <!-- INPUTS -->
+  <section class="section" id="inputs">
+    <div class="section-label">Inputs · select · textarea</div>
+    <div class="cols">
+      <div class="stack">
+        <div class="field">
+          <label for="i1">Search repositories</label>
+          <div class="input">
+            <input id="i1" placeholder="kodustech/kodus-ai">
+            <span class="slash">/</span>
+          </div>
+          <span class="hint">Searches across all connected organizations.</span>
+        </div>
+        <div class="field">
+          <label for="i2">Webhook URL</label>
+          <div class="input invalid">
+            <input id="i2" value="htp://hooks.kodus" aria-invalid="true">
+          </div>
+          <span class="error">Must be a valid HTTPS URL.</span>
+        </div>
+        <div class="field">
+          <label for="i3">API token</label>
+          <div class="input disabled">
+            <input id="i3" value="kd_••••••••••3f2a" disabled>
+          </div>
+          <span class="hint">Managed by your organization admin.</span>
+        </div>
+      </div>
+      <div class="stack">
+        <div class="field">
+          <label>Review trigger</label>
+          <button class="select-trigger">On every push <span class="chev">▼</span></button>
+        </div>
+        <div class="menu" role="listbox" style="max-width:380px;width:100%">
+          <div class="item selected">On every push</div>
+          <div class="item">When PR is opened</div>
+          <div class="item">When marked ready for review</div>
+          <div class="item">Manual only</div>
+        </div>
+        <div class="field" style="max-width:none">
+          <label for="t1">Rule instructions</label>
+          <textarea id="t1" class="textarea" placeholder="Describe what Kody should enforce, e.g. 'Controllers must not contain raw SQL...'"></textarea>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONTROLS -->
+  <section class="section" id="controls">
+    <div class="section-label">Switch · checkbox · radio</div>
+    <div class="cols-3">
+      <div class="stack">
+        <div class="ctl-row"><span class="switch" tabindex="0"></span> Draft PRs</div>
+        <div class="ctl-row"><span class="switch on" tabindex="0"></span> Cross-file analysis</div>
+        <div class="ctl-row"><span class="switch on loading" tabindex="0"></span> Kody Rules <span style="font-size:12px;color:var(--text-3)">saving…</span></div>
+        <div class="ctl-row"><span class="switch disabled"></span> SSO enforcement <span class="badge badge-violet badge-plain" style="height:18px;font-size:10.5px">Enterprise</span></div>
+      </div>
+      <div class="stack">
+        <div class="ctl-row"><span class="checkbox"></span> kodus-ai</div>
+        <div class="ctl-row"><span class="checkbox checked">✓</span> kodus-installer</div>
+        <div class="ctl-row"><span class="checkbox indeterminate">−</span> All repositories</div>
+        <div class="ctl-row"><span class="checkbox disabled"></span> kodus-archive <span style="font-size:12px;color:var(--text-3)">archived</span></div>
+      </div>
+      <div class="stack">
+        <div class="ctl-row"><span class="radio checked"></span> Light review — bugs only</div>
+        <div class="ctl-row"><span class="radio"></span> Standard — bugs + rules</div>
+        <div class="ctl-row"><span class="radio"></span> Deep — cross-file context</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BADGES -->
+  <section class="section" id="badges">
+    <div class="section-label">Severity &amp; status</div>
+    <div class="row">
+      <span class="badge badge-critical">Critical</span>
+      <span class="badge badge-high">High</span>
+      <span class="badge badge-medium">Medium</span>
+      <span class="badge badge-low">Low</span>
+      <span class="badge badge-success">Merged</span>
+      <span class="badge badge-violet">In review</span>
+      <span class="badge badge-alert">Pending</span>
+      <span class="badge badge-violet badge-plain">Kody Rule</span>
+    </div>
+    <p class="spec-note">Severity maps: critical→danger, high→warning, medium→info, low→neutral. Violet is Kody's color: AI output, rules, in-review. Dot omitted (<span class="inline-code">badge-plain</span>) when the badge is a label, not a state.</p>
+  </section>
+
+  <!-- TABS -->
+  <section class="section" id="tabs">
+    <div class="section-label">Tabs · segmented</div>
+    <div class="stack" style="gap:24px">
+      <div class="tabs">
+        <button class="tab active">Findings <span class="count">12</span></button>
+        <button class="tab">Files <span class="count">34</span></button>
+        <button class="tab">Kody Rules <span class="count">5</span></button>
+        <button class="tab">Activity</button>
+      </div>
+      <div class="row">
+        <div class="seg">
+          <button>Day</button>
+          <button class="active">Week</button>
+          <button>Month</button>
+        </div>
+        <div class="seg">
+          <button class="active">Comfortable</button>
+          <button>Compact</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- OVERLAYS -->
+  <section class="section" id="overlays">
+    <div class="section-label">Tooltip · popover · dropdown</div>
+    <div class="cols-3">
+      <div class="stack">
+        <span class="tooltip">Re-run review on latest commit</span>
+        <span class="tooltip">⌘K to open the palette</span>
+      </div>
+      <div class="popover">
+        <h4>Auto-assign reviewers</h4>
+        <p>Kody picks reviewers from CODEOWNERS and recent file history. You can override per repository.</p>
+        <div class="row" style="margin-top:12px">
+          <button class="btn btn-primary btn-sm">Enable</button>
+          <button class="btn btn-ghost btn-sm">Learn more</button>
+        </div>
+      </div>
+      <div class="menu">
+        <div class="menu-label">Pull request</div>
+        <div class="item"><span class="ico">↻</span> Re-run review <span class="shortcut">⌘R</span></div>
+        <div class="item"><span class="ico">⎘</span> Copy PR link <span class="shortcut">⌘C</span></div>
+        <div class="item"><span class="ico">◫</span> Open on GitHub</div>
+        <div class="sep"></div>
+        <div class="item destructive"><span class="ico">✕</span> Dismiss all findings</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMMAND PALETTE -->
+  <section class="section" id="cmdk">
+    <div class="section-label">Command palette</div>
+    <div class="cmdk">
+      <div class="cmdk-input">
+        <span>⌕</span>
+        <input placeholder="Search repos, PRs, rules…" value="kody ru">
+      </div>
+      <div class="menu-label">Kody Rules</div>
+      <div class="item focused"><span class="ico">◆</span> no-raw-sql-in-controllers <span class="shortcut"><span class="kbd">↵</span></span></div>
+      <div class="item"><span class="ico">◆</span> require-error-boundaries</div>
+      <div class="menu-label">Actions</div>
+      <div class="item"><span class="ico">＋</span> Create Kody Rule…</div>
+      <div class="cmdk-foot">
+        <span><span class="kbd">↑↓</span> navigate</span>
+        <span><span class="kbd">↵</span> open</span>
+        <span><span class="kbd">esc</span> close</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEEDBACK -->
+  <section class="section" id="feedback">
+    <div class="section-label">Toast · alert</div>
+    <div class="cols">
+      <div class="stack" style="gap:10px">
+        <div class="toast success">
+          <span class="t-ico">✓</span>
+          <div><h5>Review completed</h5><p>12 findings on kodus-ai #1280.</p></div>
+          <button class="t-action">View</button>
+        </div>
+        <div class="toast error">
+          <span class="t-ico">✕</span>
+          <div><h5>Webhook delivery failed</h5><p>GitHub returned 502. Retrying in 30s.</p></div>
+          <button class="t-action">Retry</button>
+        </div>
+        <div class="toast info">
+          <span class="t-ico">ℹ</span>
+          <div><h5>3 repos pending sync</h5><p>New repositories detected in kodustech.</p></div>
+        </div>
+      </div>
+      <div class="stack" style="gap:10px">
+        <div class="alert alert-info"><span class="a-ico">ℹ</span><div><h5>Trial: 9 days left</h5><p>Connect billing to keep reviews running after June 15.</p></div></div>
+        <div class="alert alert-warning"><span class="a-ico">⚠</span><div><h5>Rate limit at 80%</h5><p>GitHub API quota resets in 22 minutes; reviews may queue.</p></div></div>
+        <div class="alert alert-danger"><span class="a-ico">✕</span><div><h5>License expired</h5><p>Self-hosted reviews are paused until a new key is provisioned.</p></div></div>
+        <div class="alert alert-success"><span class="a-ico">✓</span><div><h5>All checks passed</h5><p>This PR meets every active Kody Rule.</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOADING -->
+  <section class="section" id="loading">
+    <div class="section-label">Skeleton · spinner · progress · slider</div>
+    <div class="cols">
+      <div class="finding" aria-hidden="true">
+        <div class="finding-head">
+          <span class="skeleton" style="width:220px;height:12px"></span>
+          <span class="skeleton" style="width:64px;height:20px;border-radius:999px;margin-left:auto"></span>
+        </div>
+        <div class="finding-body">
+          <span class="skeleton" style="display:block;width:60%;height:15px"></span>
+          <span class="skeleton" style="display:block;width:90%;height:12px;margin-top:10px"></span>
+          <span class="skeleton" style="display:block;width:75%;height:12px;margin-top:6px"></span>
+        </div>
+      </div>
+      <div class="stack" style="gap:24px">
+        <div class="row" style="gap:20px">
+          <span class="spinner"></span>
+          <span class="spinner spinner-lg"></span>
+          <span class="spinner spinner-muted"></span>
+          <span style="font-size:12px;color:var(--text-3)">inline · large · muted</span>
+        </div>
+        <div class="field" style="max-width:380px">
+          <label>Reviewing files — 21 of 34</label>
+          <div class="progress"><div style="width:62%"></div></div>
+        </div>
+        <div class="field" style="max-width:380px">
+          <label>Max suggestions per PR — 18</label>
+          <div class="slider"><div class="track"></div><div class="fill"></div><div class="thumb"></div></div>
+        </div>
+      </div>
+    </div>
+    <p class="spec-note">Skeletons mirror the layout they replace; spinners live inside buttons and inline rows only — never centered in a content area.</p>
+  </section>
+
+  <!-- AVATARS -->
+  <section class="section" id="avatars">
+    <div class="section-label">Avatars</div>
+    <div class="row" style="gap:24px">
+      <span class="avatar avatar-lg a-violet">K</span>
+      <span class="avatar">GM<span class="dot"></span></span>
+      <span class="avatar a-accent">JS</span>
+      <span class="avatar avatar-sm">RT</span>
+      <div class="avatar-stack">
+        <span class="avatar">GM</span>
+        <span class="avatar a-accent">JS</span>
+        <span class="avatar a-violet">K</span>
+        <span class="avatar" style="background:var(--surface-2);color:var(--text-3)">+4</span>
+      </div>
+    </div>
+    <p class="spec-note">Kody is always the violet "K". Status dot only where presence matters.</p>
+  </section>
+
+  <!-- SIDEBAR -->
+  <section class="section" id="sidebar">
+    <div class="section-label">Settings sidebar — scope tree</div>
+    <div class="sidebar-stage">
+      <aside class="sidebar">
+        <div>
+          <div class="side-label">Organization</div>
+          <button class="side-item"><span class="ico">⎇</span> Git Settings</button>
+          <button class="side-item"><span class="ico">▤</span> Subscription</button>
+          <button class="side-item"><span class="ico">◇</span> Plugins <span class="tag">Beta</span></button>
+        </div>
+        <div>
+          <div class="side-label">Code review</div>
+          <button class="side-item"><span class="chev">▼</span> Global <span class="count">3</span></button>
+          <div class="side-sub">
+            <button class="side-item active">General</button>
+            <button class="side-item">Review Categories</button>
+            <button class="side-item">Review Filters <span class="count">1</span></button>
+            <button class="side-item">Custom Prompts</button>
+            <button class="side-item">PR Summary</button>
+            <button class="side-item">Kody Rules <span class="count">2</span></button>
+            <button class="side-item">Custom Messages</button>
+          </div>
+          <button class="side-item"><span class="chev">▼</span> kodus-ai <span class="count">2</span></button>
+          <div class="side-sub">
+            <button class="side-item">General</button>
+            <button class="side-item">Kody Rules <span class="count">2</span></button>
+            <button class="side-item collapsed"><span class="chev">▼</span> apps/web</button>
+          </div>
+          <button class="side-item collapsed"><span class="chev">▼</span> kodus-installer</button>
+          <button class="side-item collapsed"><span class="chev">▼</span> kodus-web</button>
+        </div>
+      </aside>
+      <div class="sidebar-content">
+        <div class="breadcrumb">
+          <a href="#sidebar">Global</a><span class="sep">›</span><span class="current">General</span>
+        </div>
+        <div class="page-header">
+          <div>
+            <h2>General settings</h2>
+            <p>Defaults for every repository. Repos can override.</p>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary btn-sm">Save settings</button>
+          </div>
+        </div>
+        <div class="settings-group" style="margin-top:24px">
+          <div class="setting">
+            <div class="s-text">
+              <h5>Automated code review</h5>
+              <p>Kody reviews every new pull request automatically.</p>
+            </div>
+            <div class="s-ctl"><span class="switch on"></span></div>
+          </div>
+          <div class="setting">
+            <div class="s-text">
+              <h5>Review cadence</h5>
+              <p>How Kody runs follow-up reviews.</p>
+            </div>
+            <div class="s-ctl"><button class="select-trigger">Automatic <span class="chev">▼</span></button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="spec-note">Active item = accent-soft fill + accent text (orange is selection). Scope nodes (Global, repos, directories) collapse; the count pill is the override counter — accent-soft, mono numerals. Org-level routes sit in their own group above the tree. Sub-levels indent with a 1px rail, max three levels: global → repo → directory.</p>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="section" id="settings">
+    <div class="section-label">Page header · settings group</div>
+
+    <div class="breadcrumb">
+      <a href="#settings">Global</a><span class="sep">›</span><span class="current">General</span>
+    </div>
+    <div class="page-header" style="margin-bottom:24px">
+      <div>
+        <h2>General settings</h2>
+        <p>Defaults for every repository in kodustech. Repos can override.</p>
+      </div>
+      <div class="actions">
+        <button class="btn btn-secondary">Centralized config</button>
+        <button class="btn btn-primary">Save settings</button>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <div class="group-head"><h4>Automated review</h4><span>How and when Kody reviews pull requests</span></div>
+      <div class="setting">
+        <div class="s-text">
+          <h5>Automated code review</h5>
+          <p>Kody reviews every new pull request automatically, posting inline suggestions.</p>
+          <p class="note">When disabled, trigger manually with <span class="inline-code">@kody start-review</span> in PR comments.</p>
+        </div>
+        <div class="s-ctl"><span class="switch on" tabindex="0"></span></div>
+      </div>
+      <div class="setting">
+        <div class="s-text">
+          <h5>Review cadence</h5>
+          <p>How Kody runs follow-up reviews after the first one.</p>
+        </div>
+        <div class="s-ctl">
+          <button class="select-trigger">Automatic <span class="chev">▼</span></button>
+        </div>
+      </div>
+      <div class="setting">
+        <div class="s-text">
+          <h5>Run on draft pull requests</h5>
+          <p>Review drafts and give feedback before the PR is marked ready.</p>
+        </div>
+        <div class="s-ctl"><span class="switch on" tabindex="0"></span></div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <div class="group-head"><h4>Review outcome</h4><span>What Kody does after finishing a review</span></div>
+      <div class="setting">
+        <div class="s-text">
+          <h5>Approve when no issues found</h5>
+          <p>Kody approves the pull request automatically after a clean review.</p>
+        </div>
+        <div class="s-ctl"><span class="switch on" tabindex="0"></span></div>
+      </div>
+      <div class="setting">
+        <div class="s-text">
+          <h5>Request changes on critical issues</h5>
+          <p>Sets the review status to "Request Changes" when critical findings exist.</p>
+          <p class="note">Not applicable to GitLab.</p>
+        </div>
+        <div class="s-ctl"><span class="switch" tabindex="0"></span></div>
+      </div>
+      <div class="setting disabled">
+        <div class="s-text">
+          <h5>Status feedback</h5>
+          <p>Emoji reaction or comment when a review is skipped or blocked.</p>
+        </div>
+        <div class="s-ctl"><span class="badge badge-violet badge-plain" style="height:18px;font-size:10.5px">Enterprise</span><span class="switch disabled"></span></div>
+      </div>
+    </div>
+    <p class="spec-note">Related settings share one card with internal dividers — title + description left, control right. Rule of thumb: a group per concern, never one floating card per toggle. Select controls stay 200px on the row; anything bigger (textarea, repo picker) drops into a <span class="inline-code">sub</span> panel under the text.</p>
+  </section>
+
+  <!-- DISCLOSURE -->
+  <section class="section" id="disclosure">
+    <div class="section-label">Collapsible · separator</div>
+    <div class="collapsible open">
+      <button class="c-head">Which files does Kody analyze? <span class="chev">▼</span></button>
+      <div class="c-body">Every file changed in the PR, plus cross-file context: callers, implementations and type definitions of changed symbols, resolved across the repository.</div>
+    </div>
+    <div class="collapsible">
+      <button class="c-head">Can I scope a rule to one repository? <span class="chev">▼</span></button>
+    </div>
+    <div class="collapsible">
+      <button class="c-head">How are severities decided? <span class="chev">▼</span></button>
+    </div>
+  </section>
+
+  <!-- EMPTY -->
+  <section class="section" id="empty">
+    <div class="section-label">Empty state</div>
+    <div class="empty">
+      <span class="e-ico">◆</span>
+      <h4>No Kody Rules yet</h4>
+      <p>Rules turn your team's conventions into automated review comments. Start from a template or write your own.</p>
+      <button class="btn btn-primary">Create first rule</button>
+    </div>
+  </section>
+
+  <!-- FINDING -->
+  <section class="section" id="finding">
+    <div class="section-label">Review finding</div>
+    <div class="finding">
+      <div class="finding-head">
+        <span class="path">src/core/payment/refund.service.ts</span>
+        <span class="line">L142</span>
+        <span class="badge badge-critical">Critical</span>
+      </div>
+      <div class="finding-body">
+        <h3>Refund amount not validated against original charge</h3>
+        <p>The handler accepts <strong>amount</strong> from the request body and passes it straight to the gateway. A caller can refund more than was charged. Clamp to the captured total before submitting.</p>
+        <pre><span class="del">- await gateway.refund(chargeId, body.amount);</span>
+<span class="add">+ const amount = Math.min(body.amount, charge.captured);</span>
+<span class="add">+ await gateway.refund(chargeId, amount);</span></pre>
+      </div>
+      <div class="finding-foot">
+        <button class="btn btn-primary btn-sm">Apply suggestion</button>
+        <button class="btn btn-ghost btn-sm">Dismiss</button>
+        <span class="meta">Kody · cross-file context · 2 min ago</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- TABLE -->
+  <section class="section" id="table">
+    <div class="section-label">Data table</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th style="width:36px"><span class="checkbox indeterminate" style="vertical-align:middle">−</span></th><th>Repository</th><th>Pull request</th><th style="text-align:right">Findings</th><th>Top severity</th><th>Status</th><th>Reviewed</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="checkbox checked">✓</span></td>
+            <td><span class="repo">kodus-ai</span></td>
+            <td><span class="pr">#1283 · ci: discord ping on RC validation</span></td>
+            <td class="num">0</td>
+            <td><span class="badge badge-low">None</span></td>
+            <td><span class="badge badge-success">Merged</span></td>
+            <td><span class="time">2h ago</span></td>
+          </tr>
+          <tr>
+            <td><span class="checkbox checked">✓</span></td>
+            <td><span class="repo">kodus-installer</span></td>
+            <td><span class="pr">#21 · fix: respect IMAGE_TAG in compose</span></td>
+            <td class="num">3</td>
+            <td><span class="badge badge-high">High</span></td>
+            <td><span class="badge badge-violet">In review</span></td>
+            <td><span class="time">4h ago</span></td>
+          </tr>
+          <tr>
+            <td><span class="checkbox"></span></td>
+            <td><span class="repo">kodus-ai</span></td>
+            <td><span class="pr">#1280 · fix: kody rules repo-scope authz</span></td>
+            <td class="num">7</td>
+            <td><span class="badge badge-critical">Critical</span></td>
+            <td><span class="badge badge-violet">In review</span></td>
+            <td><span class="time">yesterday</span></td>
+          </tr>
+          <tr>
+            <td><span class="checkbox"></span></td>
+            <td><span class="repo">kodus-web</span></td>
+            <td><span class="pr">#412 · feat: cockpit deploy frequency chart</span></td>
+            <td class="num">1</td>
+            <td><span class="badge badge-medium">Medium</span></td>
+            <td><span class="badge badge-success">Merged</span></td>
+            <td><span class="time">2d ago</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="table-foot">
+        <span>2 of 48 selected</span>
+        <div class="pages">
+          <button>‹</button>
+          <button class="current">1</button>
+          <button>2</button>
+          <button>3</button>
+          <button>…</button>
+          <button>12</button>
+          <button>›</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DIALOG -->
+  <section class="section" id="dialog">
+    <div class="section-label">Dialog</div>
+    <div class="dialog-stage">
+      <div class="dialog" role="dialog" aria-labelledby="dlg-t">
+        <h3 id="dlg-t">Delete this Kody Rule?</h3>
+        <p><code>no-raw-sql-in-controllers</code> is active in 12 repositories. Reviews already posted keep their comments; future reviews stop enforcing it.</p>
+        <div class="dialog-actions">
+          <button class="btn btn-ghost">Cancel</button>
+          <button class="btn btn-danger">Delete rule</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- KEYBOARD -->
+  <section class="section" id="keyboard">
+    <div class="section-label">Keyboard</div>
+    <div class="row" style="gap:18px">
+      <span style="color:var(--text-2);font-size:13px">Next finding <span class="kbd">J</span></span>
+      <span style="color:var(--text-2);font-size:13px">Apply <span class="kbd">⌘</span> <span class="kbd">↵</span></span>
+      <span style="color:var(--text-2);font-size:13px">Command palette <span class="kbd">⌘</span> <span class="kbd">K</span></span>
+    </div>
+  </section>
+
+</main>
+</body>
+</html>

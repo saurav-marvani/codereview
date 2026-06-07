@@ -1,0 +1,36 @@
+{
+    "name": "kodus-app",
+    "private": true,
+    "version": "0.1.0",
+    "description": "Kodus web app v2 — Vite + TanStack + @kodus/ui (strangler over apps/web)",
+    "type": "module",
+    "scripts": {
+        "dev": "vite",
+        "build": "tsc --noEmit && vite build",
+        "preview": "vite preview",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@tanstack/react-query": "^5.66.0",
+        "@tanstack/react-router": "^1.114.0",
+        "class-variance-authority": "^0.7.1",
+        "clsx": "^2.1.1",
+        "cmdk": "^1.1.1",
+        "lucide-react": "^0.577.0",
+        "radix-ui": "^1.4.3",
+        "react": "19.2.6",
+        "react-day-picker": "^9.6.7",
+        "react-dom": "19.2.6",
+        "react-hook-form": "^7.76.0",
+        "tailwind-merge": "^3.0.2"
+    },
+    "devDependencies": {
+        "@tailwindcss/vite": "^4.1.0",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "@vitejs/plugin-react": "^4.3.4",
+        "tailwindcss": "^4.1.0",
+        "typescript": "^5.7.0",
+        "vite": "^6.2.0"
+    }
+}
