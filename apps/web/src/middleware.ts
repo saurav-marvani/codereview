@@ -22,6 +22,41 @@ const publicPaths = [
     "/sign-out",
 ];
 
+/**
+ * UI v2 (strangler) alpha rollout: when the org is allow-listed via
+ * WEB_UI_V2_ORG_IDS (comma-separated), set a routing cookie that the edge
+ * (nginx/CloudFront) reads to send migrated paths to the kodus-app
+ * container. No env set → complete no-op. Rollback = remove org from env.
+ */
+const UI_V2_COOKIE = "kodus_ui_v2";
+
+function applyUiV2Cookie(
+    response: NextResponse,
+    organizationId: string | undefined,
+): NextResponse {
+    const allowList = process.env.WEB_UI_V2_ORG_IDS;
+    if (!allowList) return response;
+
+    const enabled =
+        !!organizationId &&
+        allowList
+            .split(",")
+            .map((id) => id.trim())
+            .filter(Boolean)
+            .includes(organizationId);
+
+    if (enabled) {
+        response.cookies.set(UI_V2_COOKIE, "1", {
+            path: "/",
+            sameSite: "lax",
+        });
+    } else {
+        response.cookies.delete(UI_V2_COOKIE);
+    }
+
+    return response;
+}
+
 // Rotas de autenticação
 const authPaths = [
     "/sign-in",
@@ -129,7 +164,8 @@ export default auth(async (req) => {
         });
     }
 
-    return handleAuthenticated(req, pathname, session, next);
+    const response = await handleAuthenticated(req, pathname, session, next);
+    return applyUiV2Cookie(response, user.organizationId);
 });
 
 export const config = {

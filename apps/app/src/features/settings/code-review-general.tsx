@@ -25,29 +25,31 @@ import {
 } from "@kodus/ui";
 
 import {
-    useCodeReviewGeneralConfig,
-    useSaveCodeReviewGeneralConfig,
-    type CodeReviewGeneralConfig,
+    toGeneralSettings,
+    useCodeReviewConfig,
+    useSaveGeneralSettings,
+    type GeneralSettings,
 } from "./api";
 
 export function CodeReviewGeneralPage() {
     const { scope } = useParams({ strict: false });
     const scopeId = scope ?? "global";
-    const { data: config, isLoading } = useCodeReviewGeneralConfig(scopeId);
-    const save = useSaveCodeReviewGeneralConfig(scopeId);
+    const { config, isLoading } = useCodeReviewConfig(scopeId);
+    const save = useSaveGeneralSettings(scopeId);
+    const settings = toGeneralSettings(config);
 
-    const form = useForm<CodeReviewGeneralConfig>({
+    const form = useForm<GeneralSettings>({
         defaultValues: {
-            automatedReview: false,
-            reviewCadence: "automatic",
+            automatedReviewActive: false,
+            reviewCadenceType: "automatic",
             runOnDraft: false,
-            approveOnClean: false,
-            requestChangesOnCritical: false,
+            pullRequestApprovalActive: false,
+            isRequestChangesActive: false,
         },
-        values: config,
+        values: settings,
     });
 
-    if (isLoading || !config) return <LoadingState />;
+    if (isLoading || !settings) return <LoadingState />;
 
     const scopeLabel = scopeId === "global" ? "Global" : scopeId;
 
@@ -90,7 +92,7 @@ export function CodeReviewGeneralPage() {
                         description="How and when Kody reviews pull requests">
                         <FormField
                             control={form.control}
-                            name="automatedReview"
+                            name="automatedReviewActive"
                             render={({ field }) => (
                                 <Setting
                                     title="Automated code review"
@@ -110,7 +112,7 @@ export function CodeReviewGeneralPage() {
                         />
                         <FormField
                             control={form.control}
-                            name="reviewCadence"
+                            name="reviewCadenceType"
                             render={({ field }) => (
                                 <Setting
                                     title="Review cadence"
@@ -128,8 +130,8 @@ export function CodeReviewGeneralPage() {
                                                 <SelectItem value="automatic">
                                                     Automatic
                                                 </SelectItem>
-                                                <SelectItem value="every_push">
-                                                    Every push
+                                                <SelectItem value="auto_pause">
+                                                    Auto pause
                                                 </SelectItem>
                                                 <SelectItem value="manual">
                                                     Manual
@@ -166,7 +168,7 @@ export function CodeReviewGeneralPage() {
                         description="What Kody does after finishing a review">
                         <FormField
                             control={form.control}
-                            name="approveOnClean"
+                            name="pullRequestApprovalActive"
                             render={({ field }) => (
                                 <Setting
                                     title="Approve when no issues found"
@@ -186,7 +188,7 @@ export function CodeReviewGeneralPage() {
                         />
                         <FormField
                             control={form.control}
-                            name="requestChangesOnCritical"
+                            name="isRequestChangesActive"
                             render={({ field }) => (
                                 <Setting
                                     title="Request changes on critical issues"
