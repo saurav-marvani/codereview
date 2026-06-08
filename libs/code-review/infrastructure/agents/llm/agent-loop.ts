@@ -3752,30 +3752,29 @@ export function buildVerifierPrompt(
     return {
         system: `You are a surgical code review verifier.
 
-Your task is to verify ONE candidate finding.
+Your task is to verify ONE candidate finding: confirm or REFUTE its technical claim.
+You are NOT re-deciding whether it is "worth reporting" — the finder already promoted it.
+Your job is correctness, not taste. The bar to remove a finding is a REFUTATION, not a doubt.
 
 Rules:
 - You may use only a few tool calls. Be surgical.
-- Use tools to confirm or refute the candidate finding.
+- Use tools to confirm or REFUTE the candidate finding.
 - Treat call graph hints as fast navigation hints, not as final proof.
 - You must NOT create a new finding unrelated to the candidate.
 - Do NOT rewrite the finding text, summary, severity, or suggested fix.
 
-Drop criteria — drop the finding if ANY of these apply:
-- The finding is speculative: it describes a theoretical concern without pointing to a concrete failure path in the changed code (e.g. "lacks rate limiting", "could cause performance issues", "consider adding validation").
-- The finding is a pure efficiency concern without a failure path: O(N) queries, N+1 queries, redundant allocations, eager evaluation, synchronous operations in async context — UNLESS it causes a crash, timeout, or data corruption under normal usage.
-- The finding describes a missing defensive measure (missing CSRF, missing rate limit, missing input validation, missing authentication) without evidence that the omission is exploitable in the specific changed code.
-- The finding describes a pre-existing pattern that is NOT made worse by this PR.
-- The finding is about code style, naming, documentation, or best practices rather than a concrete bug.
-- The root cause described is factually wrong (e.g. claims something is not imported when it is).
+DROP the finding ONLY if you can actively REFUTE it — concrete evidence that it is wrong or cannot happen:
+- The root cause described is factually wrong (e.g. claims something is not imported when it is; claims a value can be null when it provably cannot).
+- The failure path is impossible given the actual code: a guard upstream prevents it, the branch is unreachable, or the value is already validated before use.
+- It is pure code style, naming, documentation, or formatting — not a behavior bug.
+- It is a generic "missing X" suggestion (missing rate limit / validation / CSRF / auth) with NO concrete code path where the omission produces a wrong outcome.
 
-Keep criteria — keep the finding only if ALL of these apply:
-- The finding identifies a concrete defect: wrong behavior, crash, data corruption, or security vulnerability.
-- The root cause is in lines added or modified by this PR.
-- You can trace a specific failure path from the changed code to the bad outcome.
-- The failure can happen under normal usage, not just under adversarial or extreme conditions.
+KEEP the finding (this is the DEFAULT) whenever you cannot refute it. Do NOT drop a finding merely because:
+- the trigger is concurrent, adversarial, or an edge condition — race conditions, SSRF, auth/FIPS bypass, and injection are REAL bugs, not "speculative" or "extreme";
+- the root cause is reached from a caller in another file — cross-file bugs are real; trace the path before judging;
+- the bug is not literally on a changed line, as long as the PR's change activates, exposes, or fails to guard it.
 
-When in doubt between a speculative concern and a real bug, DROP. Precision matters more than recall at this stage — a downstream reviewer exists.
+When in doubt, KEEP — a human reviewer makes the final call. Recall of real defects matters more here than trimming the last few low-value findings.
 
 Return JSON only at the end.`,
         prompt: `${evidenceBundle}
