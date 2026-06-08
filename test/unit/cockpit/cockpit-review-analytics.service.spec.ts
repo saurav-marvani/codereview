@@ -84,10 +84,22 @@ describe('CockpitReviewAnalyticsService', () => {
     });
 
     describe('getImplementationRateBySeverity', () => {
-        it('orders severities critical-first in SQL and maps rates', async () => {
+        it('orders critical-first and maps both full and native rates', async () => {
             query.mockResolvedValue([
-                { severity: 'critical', sent: 10, implemented: 7 },
-                { severity: 'low', sent: 20, implemented: 3 },
+                {
+                    severity: 'critical',
+                    sent: 10,
+                    implemented: 7,
+                    native_sent: 6,
+                    native_implemented: 3,
+                },
+                {
+                    severity: 'medium',
+                    sent: 86,
+                    implemented: 45,
+                    native_sent: 9,
+                    native_implemented: 2,
+                },
             ]);
 
             const rows =
@@ -95,12 +107,21 @@ describe('CockpitReviewAnalyticsService', () => {
 
             const [sql] = query.mock.calls[0];
             expect(sql).toContain(`WHEN 'critical' THEN 0`);
+            // native columns exclude rule-driven suggestions
+            expect(sql).toContain(`s."brokenKodyRulesIds" IS NOT NULL`);
+            expect(sql).toContain(`lower(s."label") = 'kody_rules'`);
             expect(rows[0]).toEqual({
                 severity: 'critical',
                 sent: 10,
                 implemented: 7,
                 rate: 0.7,
+                nativeSent: 6,
+                nativeImplemented: 3,
+                nativeRate: 0.5,
             });
+            // medium: full 0.52 inflated by rules; native is 0.22
+            expect(rows[1].rate).toBe(0.52);
+            expect(rows[1].nativeRate).toBe(0.22);
         });
     });
 
@@ -186,11 +207,32 @@ describe('CockpitReviewAnalyticsService', () => {
                 await service.getNegativeFeedbackByCategory(baseQuery);
 
             const [sql, params] = query.mock.calls[0];
-            expect(sql).toContain(`f."feedback_created_at" BETWEEN`);
+            // feedback is scoped to suggestions on closed PRs in the window
+            // (joined), not by the reaction's own timestamp
+            expect(sql).toContain('"analytics"."suggestion_feedback" f');
+            expect(sql).toContain(
+                `JOIN "analytics"."suggestions_mv" s ON s."suggestion_id" = f."suggestion_id"`,
+            );
+            expect(sql).toContain(`pr."status" = 'closed'`);
+            expect(sql).toContain(`HAVING SUM(f."thumbs_up")`);
             expect(params).toEqual(['org-1', '2026-03-01', '2026-06-01']);
             expect(rows).toEqual([
                 { category: 'Code Style', thumbsUp: 1, thumbsDown: 19 },
             ]);
+        });
+
+        it('reports no trend when the previous period had no feedback', async () => {
+            query
+                .mockResolvedValueOnce([{ thumbs_up: 3, thumbs_down: 5 }])
+                .mockResolvedValueOnce([{ thumbs_up: 0, thumbs_down: 0 }]);
+
+            const res = await service.getNegativeVoteRateHighlight(baseQuery);
+
+            // no baseline → don't fabricate a +100% swing
+            expect(res.comparison).toEqual({
+                percentageChange: 0,
+                trend: 'unchanged',
+            });
         });
 
         it('computes the negative vote rate highlight vs the previous period', async () => {

@@ -142,6 +142,14 @@ export interface ImplementationRateByCategoryRow
 export interface ImplementationRateBySeverityRow
     extends ImplementationRateBreakdown {
     severity: string;
+    /**
+     * Same counters excluding rule-driven suggestions (Kody Rules carry a
+     * user-defined severity, not a Kodus risk call). Lets the chart toggle
+     * between the full population and a Kodus-native calibration view.
+     */
+    nativeSent: number;
+    nativeImplemented: number;
+    nativeRate: number;
 }
 
 export interface IgnoredCriticalItem {
@@ -247,6 +255,7 @@ export interface SuggestionsExplorerQuery {
 export interface SuggestionsExplorerItem {
     suggestionId: string;
     repository: string | null;
+    repositoryId: string | null;
     filePath: string | null;
     category: string | null;
     severity: string | null;

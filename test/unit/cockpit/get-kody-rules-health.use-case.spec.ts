@@ -125,30 +125,26 @@ describe('GetKodyRulesHealthUseCase', () => {
         });
     });
 
-    it('keeps usage of rules that no longer exist, flagged as deleted', async () => {
+    it('drops usage of rules that are no longer active (deleted/inactive)', async () => {
         const useCase = mkUseCase(
             [
                 {
                     ruleId: 'ghost',
-                    triggers: 12,
-                    implemented: 8,
-                    rate: 0.67,
+                    triggers: 94,
+                    implemented: 12,
+                    rate: 0.13,
                     thumbsUp: 0,
                     thumbsDown: 0,
                     lastTriggeredAt: null,
                 },
             ],
+            // ghost has warehouse usage but isn't an active rule anymore
             { rules: [] },
         );
 
         const rows = await useCase.execute(baseQuery);
 
-        expect(rows).toHaveLength(1);
-        expect(rows[0]).toMatchObject({
-            ruleId: 'ghost',
-            title: '(deleted rule)',
-            state: 'healthy',
-        });
+        expect(rows).toEqual([]);
     });
 
     it('handles orgs without a kodyRules doc', async () => {

@@ -93,11 +93,14 @@ export class GetKodyRulesHealthUseCase {
                 Boolean(r.uuid) && r.status === KodyRulesStatus.ACTIVE,
         );
 
+        // Only active rules are actionable — the table is for deciding what
+        // to do with a rule (edit/scope/disable). Usage rows whose rule was
+        // deleted or is no longer active are dropped: they can't be acted on
+        // and would just be noise.
         const out: KodyRuleHealthRow[] = rules.map((rule) => {
             const { state, usage } = computeRuleState(
                 usageByRule.get(rule.uuid),
             );
-            usageByRule.delete(rule.uuid);
             return {
                 ruleId: rule.uuid,
                 title: rule.title,
@@ -107,20 +110,6 @@ export class GetKodyRulesHealthUseCase {
                 ...usage,
             };
         });
-
-        // Usage rows whose rule no longer exists / isn't active anymore —
-        // keep them (history is real) but without metadata.
-        for (const orphan of usageByRule.values()) {
-            const { state, usage } = computeRuleState(orphan);
-            out.push({
-                ruleId: orphan.ruleId,
-                title: '(deleted rule)',
-                severity: null,
-                repositoryId: null,
-                state,
-                ...usage,
-            });
-        }
 
         return out.sort((a, b) => b.triggers - a.triggers);
     }

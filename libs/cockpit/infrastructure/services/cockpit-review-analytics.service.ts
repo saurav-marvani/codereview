@@ -75,7 +75,12 @@ export class CockpitReviewAnalyticsService {
             ? (params.push(q.repository),
               `AND pr.repo_full_name = $${params.length}`)
             : '';
+        // `s."organizationId" = $1` is redundant with the join (s.org always
+        // equals pr.org) but lets the planner restrict suggestions_mv via
+        // `idx_sugg_mv_org` instead of seq-scanning the whole table — the
+        // difference that matters for large multi-tenant orgs.
         return `pr."organizationId" = $1
+                 AND s."organizationId" = $1
                  AND pr."closedAt" IS NOT NULL AND pr."closedAt" <> ''
                  AND pr."status" = 'closed'
                  AND pr."parsed_closed_at" BETWEEN $2::timestamptz AND $3::timestamptz
@@ -174,11 +179,20 @@ export class CockpitReviewAnalyticsService {
         const params: unknown[] = [];
         const scope = this.closedPrScope(q, params);
 
+        // A suggestion is rule-driven when it enforces a Kody Rule (or is
+        // labelled as such). Its severity is user-defined on the rule, not a
+        // Kodus risk call — so the chart exposes both the full population and
+        // a Kodus-native one (toggled client-side) to keep the calibration
+        // read honest.
+        const IS_KODY_RULE = `(s."brokenKodyRulesIds" IS NOT NULL OR lower(s."label") = 'kody_rules')`;
+
         const rows = (await this.ds.query(
             `SELECT
                 COALESCE(lower(s."severity"), 'unknown') AS severity,
                 COUNT(*)::int AS sent,
-                COUNT(*) FILTER (WHERE s."suggestionImplementationStatus" ${IMPLEMENTED})::int AS implemented
+                COUNT(*) FILTER (WHERE s."suggestionImplementationStatus" ${IMPLEMENTED})::int AS implemented,
+                COUNT(*) FILTER (WHERE NOT ${IS_KODY_RULE})::int AS native_sent,
+                COUNT(*) FILTER (WHERE NOT ${IS_KODY_RULE} AND s."suggestionImplementationStatus" ${IMPLEMENTED})::int AS native_implemented
              ${scope}
              GROUP BY severity
              ORDER BY CASE COALESCE(lower(s."severity"), 'unknown')
@@ -189,13 +203,25 @@ export class CockpitReviewAnalyticsService {
                           ELSE 4
                       END`,
             params,
-        )) as Array<{ severity: string; sent: number; implemented: number }>;
+        )) as Array<{
+            severity: string;
+            sent: number;
+            implemented: number;
+            native_sent: number;
+            native_implemented: number;
+        }>;
 
         return rows.map((r) => ({
             severity: r.severity,
             sent: Number(r.sent),
             implemented: Number(r.implemented),
             rate: this.rate(Number(r.sent), Number(r.implemented)),
+            nativeSent: Number(r.native_sent),
+            nativeImplemented: Number(r.native_implemented),
+            nativeRate: this.rate(
+                Number(r.native_sent),
+                Number(r.native_implemented),
+            ),
         }));
     }
 
@@ -349,39 +375,37 @@ export class CockpitReviewAnalyticsService {
     }
 
     /**
-     * Shared WHERE for feedback-window queries (alias `f`). Unlike the
-     * closed-PR scope, feedback aggregations bucket by when the reaction
-     * was recorded — a 👎 this week on last month's suggestion belongs to
-     * this week's chart.
+     * Shared FROM/WHERE for feedback aggregations. Scopes reactions to the
+     * SAME universe as every other chart — suggestions Kodus delivered on
+     * PRs closed in the window — by joining feedback → suggestion → PR.
+     *
+     * This is deliberate: scoping by the reaction's own timestamp instead
+     * let in 👎/👍 on suggestions that aren't in the warehouse (older than
+     * the window, un-ingested PRs), which surfaced as a bogus "Unknown"
+     * category and made the card total disagree with the breakdown.
      */
-    private feedbackWhere(q: CockpitRangeQuery, params: unknown[]): string {
-        params.push(q.organizationId, q.startDate, q.endDate);
-        const repoFilter = q.repository
-            ? (params.push(q.repository),
-              `AND f.repo_full_name = $${params.length}`)
-            : '';
-        return `f."organizationId" = $1
-                 AND f."feedback_created_at" BETWEEN $2::timestamptz AND $3::timestamptz
-                 ${repoFilter}`;
+    private feedbackScope(q: CockpitRangeQuery, params: unknown[]): string {
+        return `FROM "analytics"."suggestion_feedback" f
+                JOIN "analytics"."suggestions_mv" s ON s."suggestion_id" = f."suggestion_id"
+                JOIN "analytics"."pull_requests_opt" pr ON pr."_id" = s."pullRequestId"
+               WHERE ${this.closedPrWhere(q, params)}`;
     }
 
     async getNegativeFeedbackByCategory(
         q: CockpitRangeQuery,
     ): Promise<NegativeFeedbackByCategoryRow[]> {
         const params: unknown[] = [];
-        const where = this.feedbackWhere(q, params);
+        const scope = this.feedbackScope(q, params);
 
         const rows = (await this.ds.query(
             `SELECT
-                COALESCE(s."label", 'Unknown') AS category,
+                COALESCE(s."label", 'Uncategorized') AS category,
                 SUM(f."thumbs_up")::int AS thumbs_up,
                 SUM(f."thumbs_down")::int AS thumbs_down
-             FROM "analytics"."suggestion_feedback" f
-             LEFT JOIN "analytics"."suggestions_mv" s
-                    ON s."suggestion_id" = f."suggestion_id"
-            WHERE ${where}
-            GROUP BY category
-            ORDER BY thumbs_down DESC`,
+             ${scope}
+             GROUP BY category
+             HAVING SUM(f."thumbs_up") + SUM(f."thumbs_down") > 0
+             ORDER BY thumbs_down DESC`,
             params,
         )) as Array<{
             category: string;
@@ -400,17 +424,16 @@ export class CockpitReviewAnalyticsService {
         q: CockpitRangeQuery,
     ): Promise<NegativeFeedbackWeeklyRow[]> {
         const params: unknown[] = [];
-        const where = this.feedbackWhere(q, params);
+        const scope = this.feedbackScope(q, params);
 
         const rows = (await this.ds.query(
             `SELECT
-                to_char(date_trunc('week', f."feedback_created_at"), 'YYYY-MM-DD') AS week_start,
+                to_char(date_trunc('week', pr.parsed_closed_at), 'YYYY-MM-DD') AS week_start,
                 SUM(f."thumbs_up")::int AS thumbs_up,
                 SUM(f."thumbs_down")::int AS thumbs_down
-             FROM "analytics"."suggestion_feedback" f
-            WHERE ${where}
-            GROUP BY date_trunc('week', f."feedback_created_at")
-            ORDER BY date_trunc('week', f."feedback_created_at") ASC`,
+             ${scope}
+             GROUP BY date_trunc('week', pr.parsed_closed_at)
+             ORDER BY date_trunc('week', pr.parsed_closed_at) ASC`,
             params,
         )) as Array<{
             week_start: string;
@@ -432,7 +455,7 @@ export class CockpitReviewAnalyticsService {
 
         const run = async (startDate: string, endDate: string) => {
             const params: unknown[] = [];
-            const where = this.feedbackWhere(
+            const scope = this.feedbackScope(
                 { ...q, startDate, endDate },
                 params,
             );
@@ -440,8 +463,7 @@ export class CockpitReviewAnalyticsService {
                 `SELECT
                     COALESCE(SUM(f."thumbs_up"), 0)::int AS thumbs_up,
                     COALESCE(SUM(f."thumbs_down"), 0)::int AS thumbs_down
-                 FROM "analytics"."suggestion_feedback" f
-                WHERE ${where}`,
+                 ${scope}`,
                 params,
             )) as Array<{ thumbs_up: number; thumbs_down: number }>;
             const r = rows[0] ?? { thumbs_up: 0, thumbs_down: 0 };
@@ -459,16 +481,18 @@ export class CockpitReviewAnalyticsService {
             run(prev.startDate, prev.endDate),
         ]);
 
-        const { percentageChange, trend } = computeTrend(
-            current.negativeRate,
-            previous.negativeRate,
-            'down',
-        );
+        // No feedback last period → there's no baseline to compare against,
+        // so don't fabricate a "+100%" trend.
+        const hadPreviousBaseline =
+            previous.thumbsUp + previous.thumbsDown > 0;
+        const comparison = hadPreviousBaseline
+            ? computeTrend(current.negativeRate, previous.negativeRate, 'down')
+            : { percentageChange: 0, trend: 'unchanged' as const };
 
         return {
             currentPeriod: current,
             previousPeriod: previous,
-            comparison: { percentageChange, trend },
+            comparison,
         };
     }
 
@@ -597,6 +621,7 @@ export class CockpitReviewAnalyticsService {
                 s."raw"->>'improvedCode' AS improved_code,
                 s."raw"->>'language' AS language,
                 s."pullRequestId" AS pull_request_id,
+                s."repositoryId" AS repository_id,
                 pr."pr_number" AS pr_number,
                 (s."raw"->'comment'->>'id')::bigint AS comment_id,
                 to_char(s."suggestionCreatedAt", 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
@@ -622,6 +647,7 @@ export class CockpitReviewAnalyticsService {
             improved_code: string | null;
             language: string | null;
             pull_request_id: string;
+            repository_id: string | null;
             pr_number: number | null;
             comment_id: string | number | null;
             created_at: string | null;
@@ -631,6 +657,7 @@ export class CockpitReviewAnalyticsService {
         const items: SuggestionsExplorerItem[] = rows.map((r) => ({
             suggestionId: r.suggestion_id,
             repository: r.repository,
+            repositoryId: r.repository_id,
             filePath: r.file_path,
             category: r.category,
             severity: r.severity,
