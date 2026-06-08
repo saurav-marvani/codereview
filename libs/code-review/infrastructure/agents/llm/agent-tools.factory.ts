@@ -652,6 +652,13 @@ fi
                 }
 
                 const results: string[] = [];
+                // Track whether a real compiler/linter actually executed, as
+                // opposed to being absent from the sandbox. A clean run (empty
+                // output) and an unavailable tool ("command not found") both
+                // leave `results` empty — without this flag we cannot tell them
+                // apart and end up reporting "no errors" for code we never
+                // actually checked, manufacturing false confidence.
+                let anyCheckerExecuted = false;
 
                 const pushScopedResult = (
                     lang: string,
@@ -659,11 +666,18 @@ fi
                     rawOutput: string,
                 ) => {
                     const output = rawOutput?.trim();
+                    // Tool not present in the sandbox: the check did NOT run.
                     if (
-                        !output ||
-                        output.includes('command not found') ||
-                        output.includes('not found')
+                        output &&
+                        (output.includes('command not found') ||
+                            output.includes('not found'))
                     ) {
+                        return;
+                    }
+                    // We got here because the compiler/linter actually ran
+                    // (it either emitted diagnostics or produced clean output).
+                    anyCheckerExecuted = true;
+                    if (!output) {
                         return;
                     }
 
@@ -889,7 +903,14 @@ fi
                 }
 
                 if (results.length === 0) {
-                    return 'No type errors or linter issues found (or no supported linter available).';
+                    if (anyCheckerExecuted) {
+                        return 'Ran a build/type check on the changed files — no type errors or linter diagnostics found.';
+                    }
+                    return (
+                        '⚠️ Could NOT run a build/type check here — no compiler/linter for these files is available in the sandbox (missing toolchain or dependencies). ' +
+                        'This is NOT a clean result: the code was not verified. Do not assume it compiles or that signatures, argument types, and return types are correct. ' +
+                        'Verify manually — read the callee/definition with readFile and confirm the call matches its signature.'
+                    );
                 }
 
                 return truncateShellOutput(results.join('\n\n'));
