@@ -6,6 +6,14 @@ import { RemoteCommands } from '../../adapters/services/collectCrossFileContexts
 const logger = createLogger('AgentTools');
 
 export const MAX_GREP_MATCHES = 50;
+/**
+ * Cap on distinct match GROUPS returned by the rg context search (groups are
+ * separated by `--` lines under `-C`). Capping by match groups instead of raw
+ * lines — paired with a tighter `-C 2` context — lets the agent see ~10x more
+ * distinct locations for the same token budget, so a definition is not buried
+ * beyond the cutoff when a symbol has many usages.
+ */
+export const MAX_GREP_GROUPS = 40;
 export const MAX_READ_LENGTH = 8_000;
 export const MAX_LIST_LENGTH = 4_000;
 export const MAX_SHELL_OUTPUT = 10_000;
@@ -197,7 +205,7 @@ export function buildAgentTools(
                         const excludeTestsArgs = excludeTests
                             ? ` --glob '!*test*' --glob '!*Test*' --glob '!*spec*' --glob '!*Spec*' --glob '!*__tests__*'`
                             : '';
-                        const modeArg = namesOnly ? ' -l' : ' -n -C 5';
+                        const modeArg = namesOnly ? ' -l' : ' -n -C 2';
                         const cmd = `rg '${safePattern}'${globArg}${excludeTestsArgs}${modeArg} '${safePath}'`;
                         const { stdout, exitCode } =
                             await remoteCommands.exec(cmd);
@@ -210,22 +218,26 @@ export function buildAgentTools(
                             return 'No matches found.';
                         if (exitCode === 0) {
                             const raw = stdout.trim();
-                            const lines = raw.split('\n');
                             if (namesOnly) {
-                                return lines
+                                return raw
+                                    .split('\n')
                                     .slice(0, MAX_GREP_MATCHES)
                                     .join('\n');
                             }
-
-                            if (lines.length > MAX_GREP_MATCHES) {
+                            // Cap by match GROUPS (rg separates them with `--`
+                            // under -C), not raw lines, so many distinct match
+                            // locations survive the cutoff instead of a few
+                            // context-heavy blocks.
+                            const groups = raw.split(/\n--\n/);
+                            if (groups.length > MAX_GREP_GROUPS) {
                                 return (
-                                    lines
-                                        .slice(0, MAX_GREP_MATCHES)
-                                        .join('\n') +
-                                    `\n... (${lines.length - MAX_GREP_MATCHES} more lines)`
+                                    groups
+                                        .slice(0, MAX_GREP_GROUPS)
+                                        .join('\n--\n') +
+                                    `\n... (${groups.length - MAX_GREP_GROUPS} more matches)`
                                 );
                             }
-                            return stdout.trim();
+                            return raw;
                         }
                     } catch {
                         // rg not available, fall through to remoteCommands.grep
