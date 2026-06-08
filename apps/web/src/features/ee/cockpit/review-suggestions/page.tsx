@@ -1,11 +1,18 @@
-import Link from "next/link";
+import {
+    Breadcrumb,
+    BreadcrumbItem,
+    BreadcrumbLink,
+    BreadcrumbList,
+    BreadcrumbPage,
+    BreadcrumbSeparator,
+} from "@components/ui/breadcrumb";
 import { Page } from "@components/ui/page";
 
 import { getSelectedDateRange } from "../_helpers/get-selected-date-range";
 import { searchSuggestions } from "../_services/analytics/review/explorer-fetch";
 import { ExplorerFilters } from "./_components/explorer-filters";
 import { Pagination } from "./_components/pagination";
-import { SuggestionItem } from "./_components/suggestion-item";
+import { SuggestionsTable } from "./_components/suggestions-table";
 
 export type ExplorerSearchParams = {
     repository?: string;
@@ -46,21 +53,30 @@ export default async function ReviewSuggestionsPage({
 
     return (
         <Page.Root>
-            <Page.Header>
-                <div className="flex items-center gap-4">
-                    <Link
-                        href="/cockpit"
-                        className="text-text-tertiary hover:text-text-secondary text-sm font-semibold">
-                        ← Cockpit
-                    </Link>
-                    <Page.Title>Suggestions</Page.Title>
-                </div>
+            <Page.Header className="max-w-full px-6">
+                <Breadcrumb>
+                    <BreadcrumbList>
+                        <BreadcrumbItem>
+                            <BreadcrumbLink href="/cockpit">
+                                Cockpit
+                            </BreadcrumbLink>
+                        </BreadcrumbItem>
+                        <BreadcrumbSeparator />
+                        <BreadcrumbItem>
+                            <BreadcrumbPage>Suggestions</BreadcrumbPage>
+                        </BreadcrumbItem>
+                    </BreadcrumbList>
+                </Breadcrumb>
+            </Page.Header>
+
+            <Page.Header className="max-w-full px-6">
+                <Page.Title>Suggestions</Page.Title>
                 <span className="text-text-tertiary ml-auto text-xs">
                     {startDate} → {endDate} (cockpit date range)
                 </span>
             </Page.Header>
 
-            <Page.Content>
+            <Page.Content className="max-w-full px-6">
                 <ExplorerFilters params={params} />
 
                 <div className="text-text-secondary flex gap-5 px-1 text-sm">
@@ -75,20 +91,7 @@ export default async function ReviewSuggestionsPage({
                     </span>
                 </div>
 
-                <div className="flex flex-col gap-2">
-                    {result.items.length === 0 ? (
-                        <div className="border-card-lv3 text-text-tertiary rounded-lg border border-dashed p-14 text-center text-sm">
-                            No suggestions match these filters.
-                        </div>
-                    ) : (
-                        result.items.map((item) => (
-                            <SuggestionItem
-                                key={item.suggestionId}
-                                item={item}
-                            />
-                        ))
-                    )}
-                </div>
+                <SuggestionsTable items={result.items} />
 
                 <Pagination
                     total={result.total}

@@ -31,9 +31,12 @@ export const RateByCategoryChart = ({
                             `/review-suggestions?category=${encodeURIComponent(row.category)}`,
                         )
                     }
-                    className="hover:bg-card-lv2 group flex items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors">
-                    <span className="text-text-secondary w-36 shrink-0 truncate text-xs">
+                    className="hover:bg-card-lv3 group flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors">
+                    <span className="text-text-secondary group-hover:text-primary-light flex w-36 shrink-0 items-center gap-1 truncate text-xs transition-colors">
                         {row.category}
+                        <span className="opacity-0 transition-opacity group-hover:opacity-100">
+                            →
+                        </span>
                     </span>
                     <span className="bg-card-lv3/50 relative h-3.5 flex-1 overflow-hidden rounded-sm">
                         <span
@@ -49,7 +52,7 @@ export const RateByCategoryChart = ({
                             }}
                         />
                     </span>
-                    <span className="text-text-tertiary w-24 shrink-0 text-right font-mono text-xs">
+                    <span className="text-text-tertiary w-32 shrink-0 text-right font-mono text-xs whitespace-nowrap">
                         {row.implemented}/{row.sent} ·{" "}
                         {Math.round(row.rate * 100)}%
                     </span>

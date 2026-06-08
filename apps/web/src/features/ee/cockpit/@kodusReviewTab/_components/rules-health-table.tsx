@@ -2,41 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@components/ui/table";
+import { DataTable } from "@components/ui/data-table";
 import { cn } from "src/core/utils/components";
 
-import { CockpitNoDataPlaceholder } from "../../_components/no-data-placeholder";
 import type {
     KodyRuleHealthRow,
     KodyRuleHealthState,
 } from "../../_services/analytics/review/fetch";
-import { ImplRateBar } from "./impl-rate-bar";
-
-const PREVIEW_ROWS = 6;
-
-const stateMeta: Record<
-    KodyRuleHealthState,
-    { label: string; className: string }
-> = {
-    healthy: { label: "Healthy", className: "bg-success/15 text-success" },
-    noisy: { label: "Noisy", className: "bg-danger/15 text-danger" },
-    ignored: { label: "Ignored", className: "bg-warning/15 text-warning" },
-    stale: {
-        label: "Stale",
-        className: "bg-card-lv3 text-text-tertiary",
-    },
-    low_data: {
-        label: "Low data",
-        className: "bg-info/15 text-info",
-    },
-};
+import { rulesColumns } from "./rules-columns";
 
 const FILTERS: Array<{ value: KodyRuleHealthState | "all"; label: string }> = [
     { value: "all", label: "All" },
@@ -49,7 +22,6 @@ const FILTERS: Array<{ value: KodyRuleHealthState | "all"; label: string }> = [
 export const RulesHealthTable = ({ data }: { data: KodyRuleHealthRow[] }) => {
     const router = useRouter();
     const [filter, setFilter] = useState<KodyRuleHealthState | "all">("all");
-    const [showAll, setShowAll] = useState(false);
 
     if (!data.length) {
         return (
@@ -59,14 +31,12 @@ export const RulesHealthTable = ({ data }: { data: KodyRuleHealthRow[] }) => {
         );
     }
 
-    const filtered = data.filter(
-        (row) => filter === "all" || row.state === filter,
-    );
-    const visible = showAll ? filtered : filtered.slice(0, PREVIEW_ROWS);
+    const filtered =
+        filter === "all" ? data : data.filter((row) => row.state === filter);
 
     return (
         <div>
-            <div className="mb-3 flex gap-2">
+            <div className="mb-3 flex flex-wrap gap-2">
                 {FILTERS.map((option) => (
                     <button
                         key={option.value}
@@ -83,67 +53,21 @@ export const RulesHealthTable = ({ data }: { data: KodyRuleHealthRow[] }) => {
                 ))}
             </div>
 
-            <Table>
-                <TableHeader>
-                    <TableRow className="*:text-text-tertiary *:text-[11px] *:font-semibold *:uppercase">
-                        <TableHead>Rule</TableHead>
-                        <TableHead>Triggers</TableHead>
-                        <TableHead>Impl. rate</TableHead>
-                        <TableHead>👍 / 👎</TableHead>
-                        <TableHead>Status</TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {visible.map((row) => (
-                        <TableRow
-                            key={row.ruleId}
-                            className="hover:bg-card-lv2 cursor-pointer"
-                            onClick={() =>
-                                router.push(
-                                    `/review-suggestions?ruleId=${encodeURIComponent(row.ruleId)}&ruleTitle=${encodeURIComponent(row.title)}`,
-                                )
-                            }>
-                            <TableCell className="text-text-primary max-w-md truncate text-xs font-medium">
-                                {row.title}
-                            </TableCell>
-                            <TableCell className="font-mono text-xs">
-                                {row.triggers}
-                            </TableCell>
-                            <TableCell>
-                                <ImplRateBar rate={row.rate} />
-                            </TableCell>
-                            <TableCell className="text-xs whitespace-nowrap">
-                                <span className="text-success">
-                                    ▲ {row.thumbsUp}
-                                </span>{" "}
-                                <span className="text-danger">
-                                    ▼ {row.thumbsDown}
-                                </span>
-                            </TableCell>
-                            <TableCell>
-                                <span
-                                    className={cn(
-                                        "rounded-full px-2.5 py-1 text-[11px] font-bold whitespace-nowrap",
-                                        stateMeta[row.state].className,
-                                    )}>
-                                    {stateMeta[row.state].label}
-                                </span>
-                            </TableCell>
-                        </TableRow>
-                    ))}
-                </TableBody>
-            </Table>
-
-            {filtered.length > PREVIEW_ROWS && (
-                <button
-                    type="button"
-                    onClick={() => setShowAll((v) => !v)}
-                    className="text-primary-light mt-3 w-full text-center text-xs font-semibold">
-                    {showAll
-                        ? "Show less ↑"
-                        : `Show all ${filtered.length} rules ↓`}
-                </button>
-            )}
+            <DataTable
+                columns={rulesColumns}
+                data={filtered}
+                searchable
+                searchPlaceholder="Search rules…"
+                pageSize={10}
+                getRowId={(row) => row.ruleId}
+                onRowClick={(row) =>
+                    router.push(
+                        `/review-suggestions?ruleId=${encodeURIComponent(
+                            row.ruleId,
+                        )}&ruleTitle=${encodeURIComponent(row.title)}`,
+                    )
+                }
+            />
 
             <p className="text-text-tertiary mt-3 text-[11px]">
                 <strong>Healthy</strong> = good triggers + impl rate ·{" "}

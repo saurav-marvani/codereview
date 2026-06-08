@@ -22,6 +22,11 @@ export type ImplementationRateByCategoryRow = ImplementationRateBreakdown & {
 
 export type ImplementationRateBySeverityRow = ImplementationRateBreakdown & {
     severity: string;
+    // same counters excluding rule-driven suggestions (Kody Rules carry a
+    // user-defined severity, so they distort the Kodus calibration read).
+    nativeSent: number;
+    nativeImplemented: number;
+    nativeRate: number;
 };
 
 export type IgnoredCriticalsHighlight = {

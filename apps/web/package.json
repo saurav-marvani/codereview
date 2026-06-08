@@ -74,6 +74,7 @@
         "react-select": "^5.10.2",
         "react-sortablejs": "^6.1.4",
         "react-syntax-highlighter": "^16.1.1",
+        "recharts": "^3.8.1",
         "request-filtering-agent": "^3.2.0",
         "seed-color": "^2.0.1",
         "sortablejs": "^1.15.7",

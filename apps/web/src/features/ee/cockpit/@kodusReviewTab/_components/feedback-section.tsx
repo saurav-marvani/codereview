@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import useResizeObserver from "@hooks/use-resize-observer";
 import {
     Card,
     CardContent,
@@ -11,22 +10,28 @@ import {
     CardTitle,
 } from "@components/ui/card";
 import {
-    VictoryArea,
-    VictoryAxis,
-    VictoryChart,
-    VictoryTheme,
-} from "victory";
+    Area,
+    AreaChart,
+    CartesianGrid,
+    ResponsiveContainer,
+    Tooltip,
+    XAxis,
+    YAxis,
+} from "recharts";
 
 import { CockpitNoDataPlaceholder } from "../../_components/no-data-placeholder";
 import type {
     NegativeFeedbackByCategoryRow,
     NegativeFeedbackWeeklyRow,
 } from "../../_services/analytics/review/fetch";
-import {
-    CHART_AXIS_STYLE,
-    CHART_AXIS_STYLE_NO_GRID,
-} from "./chart-constants";
+import { ChartTooltip } from "./chart-tooltip";
 import { TogglePills } from "./toggle-pills";
+
+const axisProps = {
+    stroke: "transparent",
+    tick: { fill: "#f3f3f780", fontSize: 11 },
+    tickLine: false,
+} as const;
 
 type Mode = "category" | "trend";
 
@@ -59,9 +64,12 @@ const CategoryBars = ({
                             `/review-suggestions?category=${encodeURIComponent(row.category)}`,
                         )
                     }
-                    className="hover:bg-card-lv2 flex items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors">
-                    <span className="text-text-secondary w-36 shrink-0 truncate text-xs">
+                    className="hover:bg-card-lv3 group flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors">
+                    <span className="text-text-secondary group-hover:text-primary-light flex w-36 shrink-0 items-center gap-1 truncate text-xs transition-colors">
                         {row.category}
+                        <span className="opacity-0 transition-opacity group-hover:opacity-100">
+                            →
+                        </span>
                     </span>
                     <span className="bg-card-lv3/40 relative h-3 flex-1 overflow-hidden rounded-sm">
                         <span
@@ -71,7 +79,7 @@ const CategoryBars = ({
                             }}
                         />
                     </span>
-                    <span className="text-text-tertiary w-20 shrink-0 text-right font-mono text-xs">
+                    <span className="text-text-tertiary w-24 shrink-0 text-right font-mono text-xs whitespace-nowrap">
                         ▼ {row.thumbsDown} · ▲ {row.thumbsUp}
                     </span>
                 </button>
@@ -81,44 +89,59 @@ const CategoryBars = ({
 };
 
 const TrendChart = ({ data }: { data: NegativeFeedbackWeeklyRow[] }) => {
-    const [graphRef, boundingRect] = useResizeObserver();
-
     if (!data.length) return <CockpitNoDataPlaceholder />;
 
+    const chartData = data.map((w) => ({
+        week: w.weekStart,
+        "👎": w.thumbsDown,
+    }));
+
     return (
-        <div ref={graphRef} className="h-56 w-full">
-            {boundingRect.width > 0 && (
-                <VictoryChart
-                    theme={VictoryTheme.clean}
-                    width={boundingRect.width}
-                    height={224}
-                    padding={{ left: 40, right: 15, top: 10, bottom: 35 }}>
-                    <VictoryAxis style={CHART_AXIS_STYLE_NO_GRID} />
-                    <VictoryAxis
-                        dependentAxis
-                        tickFormat={(t: number) =>
-                            Number.isInteger(t) ? t : ""
-                        }
-                        style={CHART_AXIS_STYLE}
-                    />
-                    <VictoryArea
-                        interpolation="monotoneX"
-                        data={data.map((w) => ({
-                            x: w.weekStart,
-                            y: w.thumbsDown,
-                        }))}
-                        style={{
-                            data: {
-                                stroke: "#fa5867",
-                                strokeWidth: 2.5,
-                                fill: "#fa5867",
-                                fillOpacity: 0.12,
-                            },
-                        }}
-                    />
-                </VictoryChart>
-            )}
-        </div>
+        <ResponsiveContainer width="100%" height={224}>
+            <AreaChart
+                data={chartData}
+                margin={{ top: 10, right: 12, left: -20, bottom: 0 }}>
+                <defs>
+                    <linearGradient id="fillDowns" x1="0" y1="0" x2="0" y2="1">
+                        <stop
+                            offset="5%"
+                            stopColor="#fa5867"
+                            stopOpacity={0.4}
+                        />
+                        <stop
+                            offset="95%"
+                            stopColor="#fa5867"
+                            stopOpacity={0.02}
+                        />
+                    </linearGradient>
+                </defs>
+                <CartesianGrid
+                    vertical={false}
+                    strokeDasharray="3 3"
+                    stroke="#30304b88"
+                />
+                <XAxis dataKey="week" tickMargin={10} {...axisProps} />
+                <YAxis allowDecimals={false} {...axisProps} />
+                <Tooltip
+                    cursor={{ stroke: "#30304b", strokeDasharray: "3 3" }}
+                    content={<ChartTooltip />}
+                />
+                <Area
+                    type="monotone"
+                    dataKey="👎"
+                    stroke="#fa5867"
+                    strokeWidth={2.5}
+                    fill="url(#fillDowns)"
+                    dot={false}
+                    activeDot={{
+                        r: 4,
+                        fill: "#fa5867",
+                        stroke: "#181825",
+                        strokeWidth: 2,
+                    }}
+                />
+            </AreaChart>
+        </ResponsiveContainer>
     );
 };
 

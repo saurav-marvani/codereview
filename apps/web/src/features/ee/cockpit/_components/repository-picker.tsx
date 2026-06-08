@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@components/ui/button";
 import {
     Command,
@@ -33,6 +34,7 @@ export const RepositoryPicker = ({ cookieValue, teamId }: Props) => {
     const { data: repositories = [], isLoading } =
         useGetSelectedRepositories(teamId);
 
+    const router = useRouter();
     const [loading, startTransition] = useTransition();
     const [open, setOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
@@ -69,8 +71,9 @@ export const RepositoryPicker = ({ cookieValue, teamId }: Props) => {
         setSelectedRepository(repositoryFullName);
         setOpen(false);
 
-        startTransition(() => {
-            setCockpitRepositoryCookie(repositoryFullName);
+        startTransition(async () => {
+            await setCockpitRepositoryCookie(repositoryFullName);
+            router.refresh();
         });
     };
 
@@ -78,8 +81,9 @@ export const RepositoryPicker = ({ cookieValue, teamId }: Props) => {
         setSelectedRepository("");
         setOpen(false);
 
-        startTransition(() => {
-            setCockpitRepositoryCookie("");
+        startTransition(async () => {
+            await setCockpitRepositoryCookie("");
+            router.refresh();
         });
     };
 

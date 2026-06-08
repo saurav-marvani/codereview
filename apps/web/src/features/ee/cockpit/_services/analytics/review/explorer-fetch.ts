@@ -10,6 +10,7 @@ import { pathToApiUrl } from "src/core/utils/helpers";
 export type SuggestionsExplorerItem = {
     suggestionId: string;
     repository: string | null;
+    repositoryId: string | null;
     filePath: string | null;
     category: string | null;
     severity: string | null;

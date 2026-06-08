@@ -82,8 +82,7 @@ export default async function KodusReviewTab() {
 
                 <ReviewSection
                     title="Implementation rate by severity"
-                    description="expected: descending gradient (critical > low)"
-                    footer="If these bars look flat, severity isn't guiding the team — consider raising the review's minimum severity.">
+                    description="expected: descending gradient (critical > low)">
                     <RateBySeverityChart data={bySeverity ?? []} />
                 </ReviewSection>
             </div>

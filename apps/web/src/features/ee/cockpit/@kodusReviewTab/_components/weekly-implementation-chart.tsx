@@ -1,29 +1,31 @@
 "use client";
 
 import { useState } from "react";
-import useResizeObserver from "@hooks/use-resize-observer";
 import {
-    VictoryArea,
-    VictoryAxis,
-    VictoryChart,
-    VictoryLegend,
-    VictoryLine,
-    VictoryTheme,
-    VictoryTooltip,
-    VictoryVoronoiContainer,
-} from "victory";
+    Area,
+    AreaChart,
+    CartesianGrid,
+    Line,
+    LineChart,
+    ResponsiveContainer,
+    Tooltip,
+    XAxis,
+    YAxis,
+} from "recharts";
 
 import { CockpitNoDataPlaceholder } from "../../_components/no-data-placeholder";
 import type { ImplementationRateWeeklyRow } from "../../_services/analytics/review/fetch";
-import {
-    CHART_AXIS_STYLE,
-    CHART_AXIS_STYLE_NO_GRID,
-    SEVERITY_COLORS,
-    SEVERITY_ORDER,
-} from "./chart-constants";
+import { ChartTooltip } from "./chart-tooltip";
+import { SEVERITY_COLORS, SEVERITY_ORDER } from "./chart-constants";
 import { TogglePills } from "./toggle-pills";
 
 type Mode = "overall" | "severity";
+
+const axisProps = {
+    stroke: "transparent",
+    tick: { fill: "#f3f3f780", fontSize: 11 },
+    tickLine: false,
+} as const;
 
 export const WeeklyImplementationChart = ({
     data,
@@ -31,13 +33,23 @@ export const WeeklyImplementationChart = ({
     data: ImplementationRateWeeklyRow[];
 }) => {
     const [mode, setMode] = useState<Mode>("overall");
-    const [graphRef, boundingRect] = useResizeObserver();
 
     if (!data.length) return <CockpitNoDataPlaceholder />;
 
     const severities = SEVERITY_ORDER.filter((severity) =>
         data.some((w) => w.bySeverity[severity]),
     );
+
+    const chartData = data.map((w) => ({
+        week: w.weekStart,
+        rate: Math.round(w.rate * 100),
+        ...Object.fromEntries(
+            severities.map((s) => [
+                s,
+                Math.round((w.bySeverity[s]?.rate ?? 0) * 100),
+            ]),
+        ),
+    }));
 
     return (
         <div className="flex flex-col gap-2">
@@ -52,100 +64,119 @@ export const WeeklyImplementationChart = ({
                 />
             </div>
 
-            <div ref={graphRef} className="h-72 w-full">
-                {boundingRect.width > 0 && (
-                    <VictoryChart
-                        theme={VictoryTheme.clean}
-                        width={boundingRect.width}
-                        height={288}
-                        padding={{ left: 45, right: 15, top: 10, bottom: 40 }}
-                        containerComponent={
-                            <VictoryVoronoiContainer
-                                labels={({ datum }) =>
-                                    `${datum.childName ?? ""} ${Math.round(datum.y)}%`.trim()
-                                }
-                                labelComponent={
-                                    <VictoryTooltip
-                                        flyoutStyle={{
-                                            fill: "#181825",
-                                            stroke: "#30304b",
-                                        }}
-                                        style={{
-                                            fill: "#cdcddf",
-                                            fontSize: 11,
-                                        }}
-                                    />
-                                }
-                            />
-                        }>
-                        <VictoryAxis style={CHART_AXIS_STYLE_NO_GRID} />
-                        <VictoryAxis
-                            dependentAxis
-                            domain={[0, 100]}
-                            tickFormat={(t: number) => `${t}%`}
-                            style={CHART_AXIS_STYLE}
-                        />
-
-                        {mode === "overall" ? (
-                            <VictoryArea
-                                name="impl. rate"
-                                interpolation="monotoneX"
-                                data={data.map((w) => ({
-                                    x: w.weekStart,
-                                    y: w.rate * 100,
-                                }))}
-                                style={{
-                                    data: {
-                                        stroke: "#f8b76d",
-                                        strokeWidth: 2.5,
-                                        fill: "#f8b76d",
-                                        fillOpacity: 0.15,
-                                    },
-                                }}
-                            />
-                        ) : (
-                            severities.map((severity) => (
-                                <VictoryLine
-                                    key={severity}
-                                    name={severity}
-                                    interpolation="monotoneX"
-                                    data={data.map((w) => ({
-                                        x: w.weekStart,
-                                        y:
-                                            (w.bySeverity[severity]?.rate ??
-                                                0) * 100,
-                                    }))}
-                                    style={{
-                                        data: {
-                                            stroke: SEVERITY_COLORS[severity],
-                                            strokeWidth: 2,
-                                        },
-                                    }}
+            <ResponsiveContainer width="100%" height={288}>
+                {mode === "overall" ? (
+                    <AreaChart
+                        data={chartData}
+                        margin={{ top: 10, right: 12, left: -12, bottom: 0 }}>
+                        <defs>
+                            <linearGradient
+                                id="fillRate"
+                                x1="0"
+                                y1="0"
+                                x2="0"
+                                y2="1">
+                                <stop
+                                    offset="5%"
+                                    stopColor="#f8b76d"
+                                    stopOpacity={0.45}
                                 />
-                            ))
-                        )}
-
-                        {mode === "severity" && (
-                            <VictoryLegend
-                                orientation="horizontal"
-                                gutter={16}
-                                x={45}
-                                y={0}
-                                style={{
-                                    labels: { fill: "#cdcddf", fontSize: 11 },
-                                }}
-                                data={severities.map((severity) => ({
-                                    name: severity,
-                                    symbol: {
-                                        fill: SEVERITY_COLORS[severity],
-                                        type: "square",
-                                    },
-                                }))}
+                                <stop
+                                    offset="95%"
+                                    stopColor="#f8b76d"
+                                    stopOpacity={0.02}
+                                />
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid
+                            vertical={false}
+                            strokeDasharray="3 3"
+                            stroke="#30304b88"
+                        />
+                        <XAxis dataKey="week" tickMargin={10} {...axisProps} />
+                        <YAxis
+                            domain={[0, 100]}
+                            tickFormatter={(v) => `${v}%`}
+                            {...axisProps}
+                        />
+                        <Tooltip
+                            cursor={{
+                                stroke: "#30304b",
+                                strokeDasharray: "3 3",
+                            }}
+                            content={<ChartTooltip unit="%" />}
+                        />
+                        <Area
+                            type="monotone"
+                            dataKey="rate"
+                            name="impl. rate"
+                            stroke="#f8b76d"
+                            strokeWidth={2.5}
+                            fill="url(#fillRate)"
+                            dot={false}
+                            activeDot={{
+                                r: 4,
+                                fill: "#f8b76d",
+                                stroke: "#181825",
+                                strokeWidth: 2,
+                            }}
+                        />
+                    </AreaChart>
+                ) : (
+                    <LineChart
+                        data={chartData}
+                        margin={{ top: 10, right: 12, left: -12, bottom: 0 }}>
+                        <CartesianGrid
+                            vertical={false}
+                            strokeDasharray="3 3"
+                            stroke="#30304b88"
+                        />
+                        <XAxis dataKey="week" tickMargin={10} {...axisProps} />
+                        <YAxis
+                            domain={[0, 100]}
+                            tickFormatter={(v) => `${v}%`}
+                            {...axisProps}
+                        />
+                        <Tooltip
+                            cursor={{
+                                stroke: "#30304b",
+                                strokeDasharray: "3 3",
+                            }}
+                            content={<ChartTooltip unit="%" />}
+                        />
+                        {severities.map((severity) => (
+                            <Line
+                                key={severity}
+                                type="monotone"
+                                dataKey={severity}
+                                name={severity}
+                                stroke={SEVERITY_COLORS[severity]}
+                                strokeWidth={2}
+                                dot={false}
+                                activeDot={{ r: 3.5 }}
                             />
-                        )}
-                    </VictoryChart>
+                        ))}
+                    </LineChart>
                 )}
-            </div>
+            </ResponsiveContainer>
+
+            {mode === "severity" && (
+                <div className="text-text-secondary flex justify-center gap-4 text-xs">
+                    {severities.map((severity) => (
+                        <span
+                            key={severity}
+                            className="flex items-center gap-1.5 capitalize">
+                            <span
+                                className="size-2 rounded-xs"
+                                style={{
+                                    backgroundColor: SEVERITY_COLORS[severity],
+                                }}
+                            />
+                            {severity}
+                        </span>
+                    ))}
+                </div>
+            )}
         </div>
     );
 };
