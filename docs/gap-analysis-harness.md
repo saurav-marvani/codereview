@@ -26,7 +26,7 @@ Nota de tempero: reabrir o trio temático Bug/Security/Perf **não** é claramen
 - **O que o estado da arte mostra:**
   - Retrieval por similaridade (grep / BM25 / embedding) tem vantagem **quase nula** em código conectado por **arquitetura** (imports, herança, instanciação) em vez de similaridade textual. BM25 dá 78.2% vs 76.2% do baseline em tarefas de dependência oculta. **[verificado]**
   - Navegação em **grafo consultável** e **retrieval agêntico multi-hop** movem recall de forma grande: PRISM atinge 90.9% vs 61.5% (one-pass) no HotpotQA; CodexGraph/LocAgent motivam grafo consultável porque "retrieval por similaridade tem baixo recall em tarefas complexas". **[verificado]**
-  - *Refutado e NÃO usado como suporte:* o número-manchete de 99.4% / +23.2pp / p<0.001 do CodeCompass. **[refutado]**
+  - *Refutado e NÃO usado como suporte:* o número-manchete de 99.4% / +23.2pp / p&lt;0.001 do CodeCompass. **[refutado]**
 - **Nosso estado (código):** temos um **índice AST repo-wide (nodes/edges) persistido em banco** (`graph-indexer.service.ts`), mas:
   - ele é **achatado e injetado como bloco de texto** `<CallGraph>` no prompt;
   - o tool de navegação AST (`getCallers`) está **desabilitado** (`agent-tools.factory.ts` — "agent never called it in 170+ runs");

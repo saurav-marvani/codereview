@@ -91,6 +91,7 @@
                                 "group": "Cockpit",
                                 "pages": [
                                     "how_to_use/en/cockpit/overview",
+                                    "how_to_use/en/cockpit/kodus_review",
                                     {
                                         "group": "Metrics",
                                         "pages": [
@@ -378,6 +379,7 @@
                                 "group": "Cockpit",
                                 "pages": [
                                     "how_to_use/es/cockpit/overview",
+                                    "how_to_use/es/cockpit/kodus_review",
                                     {
                                         "group": "Métricas",
                                         "pages": [
@@ -665,6 +667,7 @@
                                 "group": "Cockpit",
                                 "pages": [
                                     "how_to_use/pt-br/cockpit/overview",
+                                    "how_to_use/pt-br/cockpit/kodus_review",
                                     {
                                         "group": "Métricas",
                                         "pages": [
@@ -952,6 +955,7 @@
                                 "group": "コックピット",
                                 "pages": [
                                     "how_to_use/ja/cockpit/overview",
+                                    "how_to_use/ja/cockpit/kodus_review",
                                     {
                                         "group": "メトリクス",
                                         "pages": [
@@ -1239,6 +1243,7 @@
                                 "group": "驾驶舱",
                                 "pages": [
                                     "how_to_use/zh/cockpit/overview",
+                                    "how_to_use/zh/cockpit/kodus_review",
                                     {
                                         "group": "指标",
                                         "pages": [
