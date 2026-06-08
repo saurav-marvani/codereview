@@ -29,8 +29,7 @@
                                 "group": "Getting Started",
                                 "pages": [
                                     "how_to_use/en/overview",
-                                    "how_to_use/en/quickstart",
-                                    "changelog/index"
+                                    "how_to_use/en/quickstart"
                                 ]
                             },
                             {
@@ -323,8 +322,7 @@
                                 "group": "Comenzando",
                                 "pages": [
                                     "how_to_use/es/overview",
-                                    "how_to_use/es/quickstart",
-                                    "changelog/index"
+                                    "how_to_use/es/quickstart"
                                 ]
                             },
                             {
@@ -616,8 +614,7 @@
                                 "group": "Primeiros Passos",
                                 "pages": [
                                     "how_to_use/pt-br/overview",
-                                    "how_to_use/pt-br/quickstart",
-                                    "changelog/index"
+                                    "how_to_use/pt-br/quickstart"
                                 ]
                             },
                             {
@@ -909,8 +906,7 @@
                                 "group": "はじめに",
                                 "pages": [
                                     "how_to_use/ja/overview",
-                                    "how_to_use/ja/quickstart",
-                                    "changelog/index"
+                                    "how_to_use/ja/quickstart"
                                 ]
                             },
                             {
@@ -1202,8 +1198,7 @@
                                 "group": "快速开始",
                                 "pages": [
                                     "how_to_use/zh/overview",
-                                    "how_to_use/zh/quickstart",
-                                    "changelog/index"
+                                    "how_to_use/zh/quickstart"
                                 ]
                             },
                             {
