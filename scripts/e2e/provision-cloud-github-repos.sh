@@ -110,4 +110,4 @@ done
 echo
 ok "done — created=${created} mirrored=${mirrored} skipped=${skipped}"
 echo "Next: re-seed tenants so each connects its dedicated repo (type:replace"
-echo "moves it off the shared repo):  yarn cloud:setup-tenants"
+echo "moves it off the shared repo):  pnpm run cloud:setup-tenants"

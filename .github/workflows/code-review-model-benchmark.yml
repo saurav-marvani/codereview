@@ -74,6 +74,11 @@ jobs:
     benchmark:
         name: tier-0 model benchmark
         runs-on: ubuntu-latest
+        # QA environment: home of QA_WAF_BYPASS_HEADER (the WAF Allow-rule
+        # header — runner IPs intermittently land on the QA WAF's block
+        # rules and every login 403s, the exact symptom described below).
+        # All triggers run from main, which the QA branch policy allows.
+        environment: QA
         # 6 models x 5 PRs, each review polled up to 25 min. Full runs are long;
         # GitHub's job ceiling is 6h. PR (light) runs are ~1 model.
         timeout-minutes: 350
@@ -112,9 +117,14 @@ jobs:
             - name: Wait for QA backend to be healthy (avoid deploy-race 403s)
               env:
                   CLOUD_WEB_BASE_URL: ${{ vars.CLOUD_QA_WEB_URL || 'https://qa.web.kodus.io' }}
+                  QA_WAF_BYPASS_HEADER: ${{ secrets.QA_WAF_BYPASS_HEADER }}
               run: |
                   set -uo pipefail
                   BASE="${CLOUD_WEB_BASE_URL%/}/api/proxy/api"
+                  WAF_HDR=()
+                  if [ -n "${QA_WAF_BYPASS_HEADER:-}" ]; then
+                      WAF_HDR=(-H "x-kodus-e2e: ${QA_WAF_BYPASS_HEADER}")
+                  fi
                   # On push to main this runs alongside the QA GitOps deploy, so it
                   # can hit the backend mid-rollout: the gateway then answers every
                   # request with an nginx "403 Forbidden" (or 5xx) and ALL model
@@ -126,6 +136,7 @@ jobs:
                   for i in $(seq 1 60); do
                       code=$(curl -sS -o /dev/null -w '%{http_code}' \
                           -X POST "$BASE/auth/login" \
+                          "${WAF_HDR[@]}" \
                           -H 'Content-Type: application/json' \
                           -d '{"email":"readiness-probe@invalid.kodus","password":"x"}' \
                           2>/dev/null || echo 000)
@@ -148,6 +159,9 @@ jobs:
                   BENCH_ONLY_MODEL: ${{ steps.scope.outputs.only_model }}
                   BENCH_TENANT_EMAIL: ${{ secrets.BENCH_TENANT_EMAIL }}
                   BENCH_TENANT_PASSWORD: ${{ secrets.BENCH_TENANT_PASSWORD }}
+                  # WAF Allow-rule header — lib/http.ts injects it on every
+                  # qa.*.kodus.io request (see e2e-cloud.yml for rationale).
+                  QA_WAF_BYPASS_HEADER: ${{ secrets.QA_WAF_BYPASS_HEADER }}
                   GH_TEST_TOKEN: ${{ secrets.GH_TEST_TOKEN }}
                   BYOK_ANTHROPIC_API_KEY: ${{ secrets.BYOK_ANTHROPIC_API_KEY }}
                   BYOK_OPENAI_API_KEY: ${{ secrets.BYOK_OPENAI_API_KEY }}

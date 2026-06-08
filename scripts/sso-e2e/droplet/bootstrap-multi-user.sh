@@ -46,7 +46,7 @@ LOCAL_SSH_KEY=$(ssh_key_path_for "${NAME}")
 
 DROPLET_STATE="${REPO_ROOT}/.tmp/sso-e2e-droplet.json"
 if [ ! -f "${DROPLET_STATE}" ]; then
-    err "Missing ${DROPLET_STATE}. Run: yarn sso-e2e:droplet:provision --reuse"
+    err "Missing ${DROPLET_STATE}. Run: pnpm run sso-e2e:droplet:provision --reuse"
     exit 1
 fi
 SERVER_IP=$(state_get "${NAME}" .server_ip)

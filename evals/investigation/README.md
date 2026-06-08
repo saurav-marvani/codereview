@@ -82,31 +82,31 @@ Suggested case shape:
 Smoke run:
 
 ```bash
-yarn eval:investigation
+pnpm run eval:investigation
 ```
 
 List available datasets:
 
 ```bash
-yarn eval:investigation --list-datasets
+pnpm run eval:investigation --list-datasets
 ```
 
 List available model presets:
 
 ```bash
-yarn eval:investigation --list-presets
+pnpm run eval:investigation --list-presets
 ```
 
 Run a specific dataset:
 
 ```bash
-yarn eval:investigation:no-cache --dataset authzservice-improve-authz-caching-grafana-codex.json
+pnpm run eval:investigation:no-cache --dataset authzservice-improve-authz-caching-grafana-codex.json
 ```
 
 Run a specific dataset with a preset model:
 
 ```bash
-yarn eval:investigation:no-cache \
+pnpm run eval:investigation:no-cache \
   --dataset authzservice-improve-authz-caching-grafana-codex.json \
   --preset gpt-5.4
 ```
@@ -114,13 +114,13 @@ yarn eval:investigation:no-cache \
 Run every dataset in `datasets/`:
 
 ```bash
-yarn eval:investigation:all:no-cache
+pnpm run eval:investigation:all:no-cache
 ```
 
 Run every dataset against multiple preset models in one shot:
 
 ```bash
-yarn eval:investigation:all:no-cache \
+pnpm run eval:investigation:all:no-cache \
   --preset gemini-3.1-pro \
   --preset gpt-5.4 \
   --preset kimi-k2.5
@@ -129,21 +129,21 @@ yarn eval:investigation:all:no-cache \
 Run Kimi directly against Moonshot's OpenAI-compatible API:
 
 ```bash
-yarn eval:investigation:all:no-cache \
+pnpm run eval:investigation:all:no-cache \
   --preset kimi-k2.5-moonshot
 ```
 
 Run Kimi through OpenRouter but force the Moonshot provider endpoint:
 
 ```bash
-yarn eval:investigation:all:no-cache \
+pnpm run eval:investigation:all:no-cache \
   --preset kimi-k2.5-openrouter-moonshot
 ```
 
 Run with a custom provider/model without editing `promptfoo.yaml`:
 
 ```bash
-yarn eval:investigation:no-cache \
+pnpm run eval:investigation:no-cache \
   --dataset smoke.json \
   --provider openai \
   --model gpt-5.4 \
@@ -171,7 +171,7 @@ Rules:
 Examples with custom routing:
 
 ```bash
-yarn eval:investigation:all:no-cache \
+pnpm run eval:investigation:all:no-cache \
   --provider openai-compatible \
   --model kimi-k2.5 \
   --api-key-env API_MOONSHOT_API_KEY \
@@ -180,7 +180,7 @@ yarn eval:investigation:all:no-cache \
 ```
 
 ```bash
-yarn eval:investigation:all:no-cache \
+pnpm run eval:investigation:all:no-cache \
   --provider openrouter \
   --model moonshotai/kimi-k2.5 \
   --provider-order moonshot \
@@ -231,19 +231,19 @@ Recommended workflow for a new real case:
 2. prune the changed-file set to the files that matter for the investigation
 3. add `grep` fixtures for the symbols you expect the agent to chase
 4. tighten `expected*` fields until the case fails for the right reason
-5. run `yarn eval:investigation:no-cache --dataset <case>.json`
+5. run `pnpm run eval:investigation:no-cache --dataset <case>.json`
 6. inspect `results/last-output.json` and `results/last-assertion.json`
 
 Select benchmark failures that are strong candidates for new planner cases:
 
 ```bash
-yarn eval:investigation:candidates
+pnpm run eval:investigation:candidates
 ```
 
 Compare specific runs and write the shortlist to JSON:
 
 ```bash
-yarn eval:investigation:candidates \
+pnpm run eval:investigation:candidates \
   --run gpt54-final-r01:severity \
   --run gemini31pro-planner:issue-critical \
   --run kimi25-moonshot:issue-critical \
@@ -254,19 +254,19 @@ yarn eval:investigation:candidates \
 Extract the whole shortlist into dataset seeds:
 
 ```bash
-yarn eval:investigation:extract:candidates --top 10
+pnpm run eval:investigation:extract:candidates --top 10
 ```
 
 Preview what will be extracted without hitting GitHub:
 
 ```bash
-yarn eval:investigation:extract:candidates --top 10 --dry-run
+pnpm run eval:investigation:extract:candidates --top 10 --dry-run
 ```
 
 Overwrite existing extracted seeds:
 
 ```bash
-yarn eval:investigation:extract:candidates --top 10 --overwrite
+pnpm run eval:investigation:extract:candidates --top 10 --overwrite
 ```
 
 Heuristics used by the selector:

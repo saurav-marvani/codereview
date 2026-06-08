@@ -49,7 +49,7 @@ jobs:
                         - 'libs/**'
                         - 'packages/**'
                         - 'package.json'
-                        - 'yarn.lock'
+                        - 'pnpm-lock.yaml'
                         - 'docker/Dockerfile'
                         - 'docker-bake.hcl'
 

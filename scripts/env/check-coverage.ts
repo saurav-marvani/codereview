@@ -11,7 +11,7 @@
  *   4. compares against vars declared in .env.schema
  *   5. exits non-zero with a clear message if anything's missing
  *
- * Run locally: yarn env:check:coverage
+ * Run locally: pnpm run env:check:coverage
  * In CI: env-drift-check.yml runs this after the drift check.
  */
 
@@ -57,6 +57,14 @@ const ALLOWLIST: Array<{ pattern: RegExp; reason: string }> = [
         // for env vars.
         pattern: /^(BEARER_TOKEN|GOOGLE_SERVICE_ACCOUNT|NO_AUTH|BASIC_WITH_JWT)$/,
         reason: 'enum/string-literal in mcp-manager (false positive)',
+    },
+    {
+        // GitHub Actions runtime variables referenced by inline `node`
+        // scripts in .github/workflows/*.yml (the scan includes *.yml).
+        // Injected by the Actions runner — CI plumbing, never Kodus
+        // runtime config, so they don't belong in .env.schema.
+        pattern: /^(GITHUB_OUTPUT|GITHUB_ENV|GITHUB_STATE|GITHUB_STEP_SUMMARY|GITHUB_PATH|RUNNER_TEMP)$/,
+        reason: 'GitHub Actions workflow plumbing (inline node in *.yml), not a Kodus env var',
     },
 ];
 
@@ -177,7 +185,7 @@ function main() {
     for (const n of undeclared.sort()) console.error(`    ${n}`);
     console.error();
     console.error('Add each one to .env.schema with the right audience and');
-    console.error('a short description, then re-run yarn env:apply. If a var');
+    console.error('a short description, then re-run pnpm run env:apply. If a var');
     console.error("really shouldn't be in the schema (CLI-only, test fixture,");
     console.error('false positive), add it to ALLOWLIST in scripts/env/check-coverage.ts.');
     process.exit(1);

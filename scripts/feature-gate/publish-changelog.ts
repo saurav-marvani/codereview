@@ -38,7 +38,7 @@
  *                                 that's set.
  *
  * Usage:
- *   yarn feature-gate:changelog --tag <release-tag>
+ *   pnpm run feature-gate:changelog --tag <release-tag>
  *
  *   --tag <name>   The release tag this run is publishing for. Workflow
  *                  passes `selfhosted-*` only; running locally with

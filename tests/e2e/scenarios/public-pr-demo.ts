@@ -163,7 +163,7 @@ export const publicPrDemo: Scenario = {
             // eslint-disable-next-line no-console
             console.warn(
                 "[public-pr-demo] no featured reviews seeded in this env — " +
-                    "featured-grid assertions were skipped. Run `yarn featured-review:seed`.",
+                    "featured-grid assertions were skipped. Run `pnpm run featured-review:seed`.",
             );
         }
 

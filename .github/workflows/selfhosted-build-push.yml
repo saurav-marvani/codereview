@@ -85,6 +85,24 @@ jobs:
         permissions:
             contents: read
         steps:
+            # Variable FIRST, ruleset second. Both steps use
+            # RELEASE_BOT_TOKEN, which carries BOTH "Administration" (the
+            # ruleset PUT) and "Variables: read/write". Do NOT swap the
+            # variable step to GITHUB_TOKEN: the Actions variables API is
+            # not reachable by the workflow token at all — `actions: write`
+            # still 403s with "Resource not accessible by integration"
+            # (verified live on run 27013019883, 2026-06-05). Only a PAT
+            # (classic `repo` scope or fine-grained with Variables) works.
+            - name: Signal freeze to release-freeze-check.yml
+              env:
+                  GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+                  REPO: ${{ github.repository }}
+              run: |
+                  set -euo pipefail
+                  # release-freeze-check.yml can't read rulesets with
+                  # GITHUB_TOKEN and gates on this variable instead.
+                  gh variable set RELEASE_FREEZE_ACTIVE --body "true" -R "$REPO"
+
             - name: Activate release-freeze ruleset
               env:
                   GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
@@ -99,9 +117,6 @@ jobs:
                   CURRENT=$(gh api "repos/${REPO}/rulesets/${RULESET_ID}")
                   echo "$CURRENT" | jq '.enforcement="active"' > /tmp/ruleset.json
                   gh api --method PUT "repos/${REPO}/rulesets/${RULESET_ID}" --input /tmp/ruleset.json | jq '{name, enforcement}'
-                  # Signal the freeze to release-freeze-check.yml, which can't
-                  # read rulesets with GITHUB_TOKEN and gates on this variable.
-                  gh variable set RELEASE_FREEZE_ACTIVE --body "true" -R "$REPO"
                   echo "::notice::main is now frozen — no PRs can merge until unfreeze-main runs."
 
             - name: Re-evaluate freeze eligibility on open PRs
@@ -296,6 +311,11 @@ jobs:
 
             - name: Build and push RC images
               env:
+                  # Feeds the bake-level `github_token` secret: authenticates
+                  # @vscode/ripgrep's postinstall download (GitHub releases
+                  # API rate-limits anonymous runner IPs — killed the
+                  # 2026-06-05 release build with a 403).
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   # IMPORTANT: only the RC tag is pushed here. The final
                   # X.Y.Z tag and :latest are minted by selfhosted-promote.yml
                   # after the matrix E2E passes — never by this job.
@@ -393,7 +413,12 @@ jobs:
             packages: read
         uses: ./.github/workflows/e2e-self-hosted-matrix.yml
         with:
-            image_tag: ${{ needs.plan-release.outputs.rc_tag }}
+            # rc_version (the DOCKER tag, e.g. 2.1.16-rc.68) — NOT rc_tag
+            # (the GIT tag, selfhosted-2.1.16-rc.68). The images are pushed
+            # as :<rc_version>; since kodus-installer#21 the droplet compose
+            # actually pins IMAGE_TAG, so passing the git tag makes every
+            # pull 404 ("manifest not found", all 5 cells, run 27021899293).
+            image_tag: ${{ needs.plan-release.outputs.rc_version }}
             # FULL coverage on release: adds upgrade-N-1→N, SSO,
             # Stripe billing — the lifecycle scenarios that only matter
             # when cutting a customer-visible release. e2e-cloud
@@ -630,7 +655,12 @@ jobs:
             - env-sync-installer
             - trigger-installer-e2e
             - cleanup-rc-tag
-        if: ${{ always() && needs.freeze-main.result == 'success' }}
+        # `!= 'skipped'` (not `== 'success'`): a PARTIALLY failed freeze
+        # (2026-06-05: ruleset activated, then the variable step 403'd)
+        # must still be rolled back, or main stays nominally frozen with
+        # no release in flight and no unfreeze ever firing. Only the
+        # hotfix path (freeze skipped) skips the rollback.
+        if: ${{ always() && needs.freeze-main.result != 'skipped' }}
         runs-on: ubuntu-latest
         environment: ci
         permissions:
@@ -647,9 +677,17 @@ jobs:
                   CURRENT=$(gh api "repos/${REPO}/rulesets/${RULESET_ID}")
                   echo "$CURRENT" | jq '.enforcement="disabled"' > /tmp/ruleset.json
                   gh api --method PUT "repos/${REPO}/rulesets/${RULESET_ID}" --input /tmp/ruleset.json | jq '{name, enforcement}'
-                  # Clear the freeze signal read by release-freeze-check.yml.
-                  gh variable set RELEASE_FREEZE_ACTIVE --body "false" -R "$REPO"
                   echo "::notice::main is unfrozen — PRs can merge again."
+
+            - name: Clear freeze signal for release-freeze-check.yml
+              env:
+                  # RELEASE_BOT_TOKEN, NOT github.token — the workflow token
+                  # cannot reach the Actions variables API (see freeze-main).
+                  GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+                  REPO: ${{ github.repository }}
+              run: |
+                  set -euo pipefail
+                  gh variable set RELEASE_FREEZE_ACTIVE --body "false" -R "$REPO"
 
             - name: Clear freeze-eligibility red on open PRs
               env:
@@ -674,9 +712,61 @@ jobs:
                   done < /tmp/open-shas.txt
                   echo "::notice::Cleared release-freeze-eligible to success on all open PRs (freeze OFF)"
 
+    # The happy path was SILENT: matrix goes green, promote sits waiting
+    # for 3 reviewers, and nobody knows unless they watch the run (GitHub
+    # only notifies the environment reviewers, not the Discord channel).
+    # On 2026-06-05 the validated RC waited at the gate with zero channel
+    # visibility. Fires as soon as the matrix succeeds — promote is still
+    # `waiting` at that point, so this is the "come approve it" ping.
+    # Skipped on hotfix (the gate is bypassed there; nothing to approve).
+    notify-discord-rc-ready:
+        name: Notify Discord (RC validated — waiting promote approval)
+        needs:
+            - plan-release
+            - build-and-push
+            - e2e-matrix
+        if: >-
+            !cancelled() && inputs.hotfix != true &&
+            needs.plan-release.result == 'success' &&
+            needs.build-and-push.result == 'success' &&
+            needs.e2e-matrix.result == 'success'
+        runs-on: ubuntu-latest
+        permissions: {}
+        steps:
+            - name: Check Discord webhook configuration
+              id: discord-webhook
+              run: |
+                  # Same fallback chain as the failure notifier.
+                  if [ -n "${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK_SELFHOSTED || secrets.DISCORD_WEBHOOK }}" ]; then
+                    echo "configured=true" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "configured=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Notify Discord that the RC is validated
+              if: steps.discord-webhook.outputs.configured == 'true'
+              uses: sarisia/actions-status-discord@v1.16.0
+              with:
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK_SELFHOSTED || secrets.DISCORD_WEBHOOK }}
+                  content: ":white_check_mark: RC validated — **waiting promote approval**"
+                  title: "Self-Hosted RC validated (matrix green)"
+                  description: |
+                      RC tag:      `${{ needs.plan-release.outputs.rc_tag }}`
+                      Will become: `${{ needs.plan-release.outputs.release_tag }}` + `:latest`
+
+                      Full e2e matrix passed against this RC. Approve (or ignore to let it expire) at:
+                      https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+                  username: "GitHub Actions"
+                  color: 0x00cc66
+
     notify-discord-failure:
         name: Notify Discord (failure only)
         needs:
+            # freeze-main included so a pre-release freeze failure (the
+            # 2026-06-05 403) triggers the alert DIRECTLY and names its
+            # phase — without it the alert only fired by accident and
+            # reported phase=Unknown.
+            - freeze-main
             - plan-release
             - create-rc-tag
             - build-and-push
@@ -697,7 +787,12 @@ jobs:
         # half-shipped state.
         if: always() && contains(needs.*.result, 'failure')
         runs-on: ubuntu-latest
-        environment: production
+        # NO environment here. `production` carries required_reviewers (the
+        # human promote gate) — binding the FAILURE ALERT to it left the
+        # 2026-06-05 release failure sitting in "waiting for approval" and
+        # Discord silent. Webhooks resolve from repo-level secrets
+        # (DISCORD_WEBHOOK_INTERNAL / DISCORD_WEBHOOK), which need no
+        # approval to read.
         permissions: {}
         steps:
             - name: Compose failure context
@@ -708,7 +803,8 @@ jobs:
                   # something downstream broke" — those are urgent in a
                   # different way (customer pulled :latest but the CLI /
                   # changelog / installer never updated).
-                  if   [ "${{ needs.plan-release.result }}"        = "failure" ]; then echo "phase=Plan release"        >> $GITHUB_OUTPUT; echo "color=0xff0000" >> $GITHUB_OUTPUT
+                  if   [ "${{ needs.freeze-main.result }}"         = "failure" ]; then echo "phase=Freeze main (pre-release)" >> $GITHUB_OUTPUT; echo "color=0xff0000" >> $GITHUB_OUTPUT
+                  elif [ "${{ needs.plan-release.result }}"        = "failure" ]; then echo "phase=Plan release"        >> $GITHUB_OUTPUT; echo "color=0xff0000" >> $GITHUB_OUTPUT
                   elif [ "${{ needs.create-rc-tag.result }}"       = "failure" ]; then echo "phase=Create RC tag"       >> $GITHUB_OUTPUT; echo "color=0xff0000" >> $GITHUB_OUTPUT
                   elif [ "${{ needs.build-and-push.result }}"      = "failure" ]; then echo "phase=Build"               >> $GITHUB_OUTPUT; echo "color=0xff0000" >> $GITHUB_OUTPUT
                   elif [ "${{ needs.e2e-matrix.result }}"          = "failure" ]; then echo "phase=E2E matrix"          >> $GITHUB_OUTPUT; echo "color=0xff8800" >> $GITHUB_OUTPUT
@@ -726,7 +822,11 @@ jobs:
             - name: Check Discord webhook configuration
               id: discord-webhook
               run: |
-                  if [ -n "${{ secrets.DISCORD_WEBHOOK_SELFHOSTED }}" ]; then
+                  # Gate on the SAME fallback chain the send step uses —
+                  # gating only on DISCORD_WEBHOOK_SELFHOSTED (an
+                  # environment-scoped secret) silently skips the alert when
+                  # the job runs without that environment.
+                  if [ -n "${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK_SELFHOSTED || secrets.DISCORD_WEBHOOK }}" ]; then
                     echo "configured=true" >> "$GITHUB_OUTPUT"
                   else
                     echo "configured=false" >> "$GITHUB_OUTPUT"

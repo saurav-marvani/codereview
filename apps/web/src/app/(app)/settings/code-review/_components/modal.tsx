@@ -705,7 +705,13 @@ export const KodyRuleAddOrUpdateItemModal = ({
                                                     openDelay={100}
                                                     closeDelay={200}>
                                                     <HoverCardTrigger asChild>
-                                                        <button type="button">
+                                                        {/* tabIndex -1: in view mode the rule-name input is
+                                                            disabled, so the dialog's open auto-focus would land
+                                                            on this button — and HoverCard opens on focus,
+                                                            covering the modal. Hover-only is fine for help. */}
+                                                        <button
+                                                            type="button"
+                                                            tabIndex={-1}>
                                                             <HelpCircle
                                                                 size={16}
                                                                 className="text-primary-light hover:text-primary-light/80 transition-colors"
@@ -956,7 +962,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
                                             htmlFor={field.name}>
                                             Path
                                             <Tooltip>
-                                                <TooltipTrigger>
+                                                <TooltipTrigger tabIndex={-1}>
                                                     <HelpCircle
                                                         size={16}
                                                         className="text-primary-light"
@@ -1096,7 +1102,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
                                         htmlFor={field.name}>
                                         Instructions
                                         <Tooltip>
-                                            <TooltipTrigger>
+                                            <TooltipTrigger tabIndex={-1}>
                                                 <HelpCircle
                                                     size={16}
                                                     className="text-primary-light"
@@ -1279,7 +1285,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
                                             htmlFor={field.name}>
                                             Severity
                                             <Tooltip>
-                                                <TooltipTrigger>
+                                                <TooltipTrigger tabIndex={-1}>
                                                     <HelpCircle
                                                         size={16}
                                                         className="text-primary-light"
@@ -1431,7 +1437,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
                                             <FormControl.Label className="mb-0 flex flex-row gap-1">
                                                 Inheritable
                                                 <Tooltip>
-                                                    <TooltipTrigger>
+                                                    <TooltipTrigger tabIndex={-1}>
                                                         <HelpCircle
                                                             size={16}
                                                             className="text-primary-light"

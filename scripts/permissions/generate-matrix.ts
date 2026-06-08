@@ -8,8 +8,8 @@
  * long as it's regenerated. CI enforces that via `--check`.
  *
  * Usage:
- *   yarn permissions:matrix          Regenerate the docs snippet.
- *   yarn permissions:matrix:check    Fail if the snippet is out of date.
+ *   pnpm run permissions:matrix          Regenerate the docs snippet.
+ *   pnpm run permissions:matrix:check    Fail if the snippet is out of date.
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
@@ -134,7 +134,7 @@ function render(): string {
     return [
         '{/* AUTO-GENERATED — do not edit by hand.',
         '   Source of truth: libs/identity/domain/permissions/policies/role-policies.ts',
-        '   Regenerate with: yarn permissions:matrix */}',
+        '   Regenerate with: pnpm run permissions:matrix */}',
         '',
         '<sub>',
         '**Legend** — `V` view · `E` edit (create/update) · `D` delete · `—` no access.',
@@ -160,7 +160,7 @@ function main() {
         if (current !== content) {
             console.error(
                 '✖ docs RBAC matrix is out of date with ROLE_POLICIES.\n' +
-                    '  Run `yarn permissions:matrix` and commit the result.',
+                    '  Run `pnpm run permissions:matrix` and commit the result.',
             );
             process.exit(1);
         }

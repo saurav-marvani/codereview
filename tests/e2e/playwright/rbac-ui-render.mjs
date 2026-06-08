@@ -3,29 +3,47 @@
 // The HTTP route-guard e2e proves *authorization* (200 vs /forbidden) but NOT
 // that the UI renders. This drives a real Chromium per role and asserts on the
 // rendered DOM — the "Token Usage" menu item appears only for allowed roles,
-// the /token-usage screen actually renders for them, and denied roles land on
-// a rendered /forbidden page. Records a video + screenshots per role.
+// and each route in ROUTE_CHECKS (token-usage, pull-requests, git settings,
+// cockpit) actually renders for allowed roles while denied roles land on a
+// rendered /forbidden page. Records a video + screenshots per role × route.
 //
 // Auth without the brittle sign-in form: we mint a next-auth session over HTTP
 // (validated flow) and inject the cookies straight into the browser context.
 //
 // Env:
-//   WEB_URL    e.g. https://qa.web.kodus.io  (or http://127.0.0.1:3000)
-//   PASSWORD   shared password for the provisioned role users
-//   ROLES_JSON JSON array: [{ "role": "repo_admin", "email": "..." }, ...]
-//   OUT_DIR    directory for videos/screenshots (default: ./rbac-ui-evidence)
+//   WEB_URL     e.g. https://qa.web.kodus.io  (or http://127.0.0.1:3000)
+//   PASSWORD    shared password for the provisioned role users
+//   ROLES_JSON  JSON array: [{ "role": "repo_admin", "email": "..." }, ...]
+//   ROUTES_JSON JSON array from the scenario: [{ "path", "marker",
+//               "expected": { billing_manager|repo_admin|contributor:
+//               "allow"|"deny" } }] — verdicts resolved from the committed
+//               permissions.route-manifest.json (derived from ROLE_POLICIES),
+//               so this spec never redefines the permission matrix.
+//   OUT_DIR     directory for videos/screenshots (default: ./rbac-ui-evidence)
 
 import { chromium } from "playwright";
+import { applyWafBypass } from "./waf-bypass.mjs";
 import { mkdirSync } from "node:fs";
 
 const WEB = (process.env.WEB_URL || "http://127.0.0.1:3000").replace(/\/$/, "");
 const PASSWORD = process.env.PASSWORD || "";
 const ROLES = JSON.parse(process.env.ROLES_JSON || "[]");
+const ROUTE_CHECKS = JSON.parse(process.env.ROUTES_JSON || "[]");
 const OUT_DIR = process.env.OUT_DIR || "./rbac-ui-evidence";
 mkdirSync(OUT_DIR, { recursive: true });
 
-// TokenUsage is the #1229 case: every role except contributor may see/open it.
-const tokenUsageAllowed = (role) => role !== "contributor";
+if (!ROUTE_CHECKS.length) {
+    console.error("[rbac-ui] ROUTES_JSON is empty — the scenario must pass the route matrix");
+    process.exit(1);
+}
+
+// Owner is omitted from the manifest: it reaches everything by definition.
+const isAllowed = (entry, role) =>
+    role === "owner" || entry.expected[role] === "allow";
+
+// The "Token Usage" user-menu item mirrors the /token-usage route verdict
+// (#1229 regression: menu shown ⇔ page reachable).
+const tokenUsageEntry = ROUTE_CHECKS.find((r) => r.path === "/token-usage");
 
 const log = (m) => console.log(`[rbac-ui] ${m}`);
 const failures = [];
@@ -84,6 +102,7 @@ for (const { role, email } of ROLES) {
         recordVideo: { dir: OUT_DIR, size: { width: 1280, height: 800 } },
         viewport: { width: 1280, height: 800 },
     });
+    await applyWafBypass(ctx);
     try {
         const cookies = await nextAuthCookies(email);
         await ctx.addCookies(cookies);
@@ -119,8 +138,8 @@ for (const { role, email } of ROLES) {
             }
         }
         await page.screenshot({ path: `${OUT_DIR}/${role}-menu.png`, fullPage: true });
-        const wantItem = tokenUsageAllowed(role);
-        if (opened) {
+        const wantItem = tokenUsageEntry ? isAllowed(tokenUsageEntry, role) : false;
+        if (opened && tokenUsageEntry) {
             const itemVisible =
                 (await page.getByRole("menuitem", { name: /Token Usage/i }).count()) > 0;
             if (itemVisible !== wantItem) {
@@ -136,29 +155,34 @@ for (const { role, email } of ROLES) {
             log(`WARN ${role}: user menu did not open (headless) — menu-item check skipped`);
         }
 
-        // ---- 2) Route render: open /token-usage, assert what renders ----
-        await page.goto(`${WEB}/token-usage`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-        await page.waitForTimeout(1500);
-        const url = page.url();
-        const bodyText = (await page.locator("body").innerText().catch(() => "")).toLowerCase();
-        await page.screenshot({ path: `${OUT_DIR}/${role}-token-usage.png`, fullPage: true });
+        // ---- 2) Route render: open each route, assert render vs /forbidden ----
+        for (const entry of ROUTE_CHECKS) {
+            const { path, marker } = entry;
+            const want = isAllowed(entry, role);
+            await page.goto(`${WEB}${path}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+            await page.waitForTimeout(1500);
+            const url = page.url();
+            const bodyText = (await page.locator("body").innerText().catch(() => "")).toLowerCase();
+            const slug = path.replace(/^\//, "").replace(/\//g, "-");
+            await page.screenshot({ path: `${OUT_DIR}/${role}-${slug}.png`, fullPage: true });
 
-        if (wantItem) {
-            const onForbidden = /\/forbidden\b/.test(url);
-            const renderedTitle = bodyText.includes("token usage");
-            if (onForbidden || !renderedTitle) {
-                failures.push(
-                    `${role}: /token-usage should RENDER (got url=${url}, hasTitle=${renderedTitle})`,
-                );
+            if (want) {
+                const onForbidden = /\/forbidden\b/.test(url);
+                const renderedTitle = marker ? bodyText.includes(marker) : true;
+                if (onForbidden || !renderedTitle) {
+                    failures.push(
+                        `${role}: ${path} should RENDER (got url=${url}, hasMarker=${renderedTitle})`,
+                    );
+                } else {
+                    log(`OK  ${role} ${path} rendered${marker ? " (marker visible)" : ""}`);
+                }
             } else {
-                log(`OK  ${role} /token-usage rendered (title visible)`);
-            }
-        } else {
-            const onForbidden = /\/forbidden\b/.test(url) || bodyText.includes("access denied");
-            if (!onForbidden) {
-                failures.push(`${role}: /token-usage should be FORBIDDEN (got url=${url})`);
-            } else {
-                log(`OK  ${role} /token-usage blocked → forbidden page rendered`);
+                const onForbidden = /\/forbidden\b/.test(url) || bodyText.includes("access denied");
+                if (!onForbidden) {
+                    failures.push(`${role}: ${path} should be FORBIDDEN (got url=${url})`);
+                } else {
+                    log(`OK  ${role} ${path} blocked → forbidden page rendered`);
+                }
             }
         }
     } catch (e) {

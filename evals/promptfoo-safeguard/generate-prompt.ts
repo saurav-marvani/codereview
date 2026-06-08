@@ -4,7 +4,7 @@
  * Regenerates the safeguard prompt JSON from the codebase.
  * Run this after changing the safeguard prompt.
  *
- * Usage: yarn eval:safeguard:generate-prompt
+ * Usage: pnpm run eval:safeguard:generate-prompt
  */
 
 import * as fs from 'fs';

@@ -10,7 +10,7 @@
  * instantly without re-running the review.
  *
  * Usage:
- *   yarn featured-review:promote <jobId> [options]
+ *   pnpm run featured-review:promote <jobId> [options]
  *
  * Options:
  *   --slug=<slug>           URL-safe id (default: derived from PR owner/repo/#)
@@ -36,7 +36,7 @@ const has = (name: string) => argv.includes(`--${name}`);
 const jobId = positionals[0];
 if (!jobId) {
     console.error(
-        'usage: yarn featured-review:promote <jobId> [--slug=...] [--tags=a,b] [--highlight="..."] [--sort=N] [--unpublish]',
+        'usage: pnpm run featured-review:promote <jobId> [--slug=...] [--tags=a,b] [--highlight="..."] [--sort=N] [--unpublish]',
     );
     process.exit(1);
 }

@@ -230,6 +230,7 @@ function buildOpenRouterRouting(input?: {
  */
 const PROVIDER_OPTIONS_NAMESPACE: Partial<Record<string, string>> = {
     [BYOKProvider.ANTHROPIC]: 'anthropic',
+    [BYOKProvider.ANTHROPIC_COMPATIBLE]: 'anthropic',
     [BYOKProvider.GOOGLE_GEMINI]: 'google',
     [BYOKProvider.GOOGLE_VERTEX]: 'google',
     [BYOKProvider.OPENAI]: 'openai',
@@ -438,6 +439,20 @@ export function buildReasoningProviderOptions(
                 },
             };
         }
+
+        case BYOKProvider.ANTHROPIC_COMPATIBLE:
+            // Anthropic-protocol endpoints from other vendors (Kimi Code,
+            // Z.ai, DeepSeek). They speak the classic thinking shape
+            // (enabled + budget_tokens); none of them implement Anthropic's
+            // newer adaptive thinking, so always use the budget form.
+            return {
+                anthropic: {
+                    thinking: {
+                        type: 'enabled',
+                        budgetTokens: EFFORT_TO_BUDGET[effort],
+                    },
+                },
+            };
 
         default:
             return {};

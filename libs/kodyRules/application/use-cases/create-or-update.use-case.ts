@@ -100,9 +100,7 @@ export class CreateOrUpdateKodyRulesUseCase {
                     user: this.request.user,
                     action: Action.Create,
                     resource: ResourceType.KodyRules,
-                    repoIds: kodyRule.repositoryId
-                        ? [kodyRule.repositoryId]
-                        : undefined,
+                    repoIds: await this.resolveAuthorizationRepoIds(kodyRule),
                 });
             }
 
@@ -207,6 +205,126 @@ export class CreateOrUpdateKodyRulesUseCase {
             });
             throw error;
         }
+    }
+
+    /**
+     * Which repo ids the mutation must be authorized against.
+     *
+     * Normally the rule's own repositoryId. Exception: an inheritance
+     * toggle (excluding/including a child scope from an inherited rule)
+     * mutates the PARENT rule document, but its effect is scoped to the
+     * toggled child — demanding write access on the parent would mean a
+     * repo admin cannot opt their own repo out of an inherited global
+     * rule ("Error disabling inheritance" 403). When the ONLY change vs
+     * the stored rule is inheritance.exclude/include, authorize against
+     * the toggled ids instead.
+     */
+    private async resolveAuthorizationRepoIds(
+        kodyRule: CreateKodyRuleDto,
+    ): Promise<string[] | undefined> {
+        const ruleScope = kodyRule.repositoryId
+            ? [kodyRule.repositoryId]
+            : undefined;
+
+        if (!kodyRule.uuid) {
+            return ruleScope;
+        }
+
+        const existing = await this.kodyRulesService.findById(kodyRule.uuid);
+        if (!existing) {
+            return ruleScope;
+        }
+
+        const toggledIds = this.getInheritanceOnlyToggledIds(
+            existing,
+            kodyRule,
+        );
+
+        return toggledIds ?? ruleScope;
+    }
+
+    /**
+     * Returns the ids added/removed in inheritance.exclude/include when
+     * those lists are the ONLY difference vs the stored rule, or null
+     * when anything else changed (callers then authorize against the
+     * rule's own scope, as before).
+     *
+     * The service update is a merge (`{...existingRule, ...kodyRule}`),
+     * so every key PRESENT in the payload can overwrite the stored value
+     * — compare them all, not a fixed whitelist. `inheritable` is
+     * rule-wide (affects every repo), so flipping it is NOT a per-repo
+     * toggle.
+     */
+    private getInheritanceOnlyToggledIds(
+        existing: Partial<IKodyRule>,
+        incoming: CreateKodyRuleDto,
+    ): string[] | null {
+        // Args of the request that aren't rule content, plus the lists we
+        // diff explicitly below.
+        const ignoredKeys = new Set([
+            'uuid',
+            'inheritance',
+            'teamId',
+            'createdAt',
+            'updatedAt',
+        ]);
+
+        const normalized = (value: unknown) =>
+            JSON.stringify(value ?? null);
+
+        for (const key of Object.keys(incoming)) {
+            if (ignoredKeys.has(key)) {
+                continue;
+            }
+            if (
+                normalized((incoming as any)[key]) !==
+                normalized((existing as any)[key])
+            ) {
+                return null;
+            }
+        }
+
+        const existingInheritance = existing.inheritance ?? {
+            inheritable: true,
+            exclude: [],
+            include: [],
+        };
+        const incomingInheritance = incoming.inheritance ?? {
+            inheritable: true,
+            exclude: [],
+            include: [],
+        };
+
+        if (
+            (existingInheritance.inheritable ?? true) !==
+            (incomingInheritance.inheritable ?? true)
+        ) {
+            return null;
+        }
+
+        const symmetricDiff = (a: string[] = [], b: string[] = []) => {
+            const setA = new Set(a);
+            const setB = new Set(b);
+            return [
+                ...a.filter((id) => !setB.has(id)),
+                ...b.filter((id) => !setA.has(id)),
+            ];
+        };
+
+        const toggledIds = [
+            ...new Set([
+                ...symmetricDiff(
+                    existingInheritance.exclude,
+                    incomingInheritance.exclude,
+                ),
+                ...symmetricDiff(
+                    existingInheritance.include,
+                    incomingInheritance.include,
+                ),
+            ]),
+        ];
+
+        return toggledIds.length > 0 ? toggledIds : null;
     }
 
     private async createCentralizedMutationIfEnabled(

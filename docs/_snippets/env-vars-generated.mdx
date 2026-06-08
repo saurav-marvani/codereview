@@ -6,7 +6,7 @@
 | --- | --- | --- | --- | --- |
 | `API_NODE_ENV` | – | enum(development,production,test) | ⚙️ Both | Runtime mode. In the kodus-ai dev tree this stays `development` (verbose logs, host-only auth cookies, dev-seed endpoints enabled). For self-hosted the installer ships `production` because every self-hosted deployment IS a production environment: with `development` the SSO handoff cookie is emitted without a Domain attribute and without the Secure flag (auth.controller.ts:287,292 + derive-sso-cookie-domain.ts:33), so the browser stores it host-only on the API origin and the front-end on a different subdomain can't read it — hard regression for any customer using SSO. Cloud envs are templated by infra-as-code, not this file. |
 | `API_DATABASE_ENV` | – | enum(development,production,test) | ⚙️ Both | Database environment selector — affects SSL defaults. |
-| `API_DATABASE_DISABLE_SSL` | – | boolean | ⚙️ Both | When DATABASE_ENV=production, set this to 'true' to disable SSL. Self-hosted ships a local Postgres container with no SSL, so the installer default flips this to true. Cloud (AWS RDS, etc) keeps SSL on. Covers ALL data sources (default + analytics) — individual API_PG_DB_SSL only flipped the primary connection, which is why the api still crashed on the analytics connection in the past. |
+| `API_DATABASE_DISABLE_SSL` | – | boolean | ⚙️ Both | Disable SSL on ALL Postgres connections (default + analytics warehouse). Local docker dev and self-hosted both run a Postgres container with no SSL, so the default is true. Cloud (AWS RDS, etc) requires SSL — its deploy env MUST set this to false explicitly. Covers ALL data sources — individual API_PG_DB_SSL only flipped the primary connection, which is why the api still crashed on the analytics connection (db_postgres is non-loopback, so SSL stayed on) in the past. |
 | `API_LOG_LEVEL` | – | enum(error,warn,info,debug) | ⚙️ Both | Log verbosity. Cloud runs at info; self-hosted defaults to error to keep disk usage and noise low for users without log aggregation. |
 | `API_LOG_PRETTY` | – | boolean | ⚙️ Both | Pretty-print logs (dev) vs JSON (prod). |
 | `API_CLOUD_MODE` | – | boolean | ☁️ Cloud | Cloud-only — billing + analytics. Self-hosted MUST keep false. |
@@ -118,6 +118,7 @@
 | `API_VERTEX_AI_LOCATION` | – | string | ☁️ Cloud |  |
 | `API_GOOGLE_AI_PROVIDER` | – | enum(gemini,vertex) | ☁️ Cloud | Google AI provider: gemini (AI Studio) or vertex (Vertex AI). |
 | `API_NOVITA_AI_API_KEY` | – | secret | ☁️ Cloud |  |
+| `API_MOONSHOT_API_KEY` | – | secret | ☁️ Cloud | Moonshot AI (Kimi) — used by the public-demo trial flow in libs/code-review/infrastructure/agents/llm/byok-to-vercel.ts when the default model name matches /^kimi[-_.]/. Wires through the OpenAI- compatible adapter pointed at https://api.moonshot.ai/v1. The eval scripts (evals/{investigation,promotion}/run-eval.js) also reference this key by name. Cloud-only — self-hosted has no Moonshot demo path. |
 | `API_GROQ_BASE_URL` | – | url | ☁️ Cloud |  |
 | `API_GROQ_API_KEY` | – | secret | ☁️ Cloud |  |
 | `API_CEREBRAS_BASE_URL` | – | url | ☁️ Cloud |  |
@@ -188,6 +189,7 @@
 | --- | --- | --- | --- | --- |
 | `API_NOTIFICATION_EMAIL_PROVIDER` | – | enum(resend,smtp) | ⚙️ Both | Notifications email provider |
 | `RESEND_API_KEY` | – | secret | ⚙️ Both | Resend — Kodus-managed email sender. |
+| `RESEND_TEST_EMAIL` | – | email | ☁️ Cloud | Destination address used by scripts/dev/test-emails.ts when smoke- testing transactional email delivery. Dev-only utility — production code doesn't read this. Cloud-only because the test script targets the Kodus-managed Resend setup. |
 | `API_USER_INVITE_BASE_URL` | – | url | ⚙️ Both |  |
 | `API_SMTP_HOST` | – | string | 🏠 Self-hosted | SMTP host |
 | `API_SMTP_PORT` | – | number | 🏠 Self-hosted | SMTP port |
@@ -226,7 +228,7 @@
 | `WEB_SUPPORT_DOCS_URL` | – | url | ⚙️ Both |  |
 | `WEB_SUPPORT_DISCORD_INVITE_URL` | – | url | ⚙️ Both |  |
 | `WEB_SUPPORT_TALK_TO_FOUNDER_URL` | – | url | ☁️ Cloud |  |
-| `ANALYTICS_PG_DB_HOST` | – | string | 🏢 ☁️ Cloud | Connection to the analytics Postgres (separate from main OLTP). |
+| `ANALYTICS_PG_DB_HOST` | – | string | 🏢 ☁️ Cloud | Connection to the analytics Postgres. In cloud / self-hosted-enterprise this is a dedicated instance (deploy env overrides these). For local docker dev the defaults reuse the main OLTP container (db_postgres) — an empty value here would defeat the loader's `??` fallback and resolve to loopback, so we set the dev values explicitly. |
 | `ANALYTICS_PG_DB_PORT` | – | port | 🏢 ☁️ Cloud |  |
 | `ANALYTICS_PG_DB_USERNAME` | – | string | 🏢 ☁️ Cloud |  |
 | `ANALYTICS_PG_DB_PASSWORD` | – | secret | 🏢 ☁️ Cloud |  |

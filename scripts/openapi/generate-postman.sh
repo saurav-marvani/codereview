@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
 if [ ! -f docs-internal/openapi.json ]; then
-  echo "docs-internal/openapi.json not found. Run: yarn openapi:export"
+  echo "docs-internal/openapi.json not found. Run: pnpm run openapi:export"
   exit 1
 fi
 

@@ -72,12 +72,12 @@ Constraints enforced by converter:
 From repo root:
 
 ```bash
-yarn eval:memory:quality
+pnpm run eval:memory:quality
 ```
 
 Optional:
 
 ```bash
-yarn eval:memory:quality:light
+pnpm run eval:memory:quality:light
 cd evals/promptfoo/memory-quality && ./run-memory-quality-eval.sh --dataset=./datasets/memory-conversations-v2.json --limit=3 --no-cache
 ```

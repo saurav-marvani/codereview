@@ -3,8 +3,8 @@
 # manual testing / bug repro / demos. Stays alive until you run destroy.sh.
 #
 # Usage:
-#   yarn selfhosted:provision                     # default instance
-#   yarn selfhosted:provision --name wellington   # named instance (multi-tenant)
+#   pnpm run selfhosted:provision                     # default instance
+#   pnpm run selfhosted:provision --name wellington   # named instance (multi-tenant)
 #
 # Required env (or scripts/selfhosted/.env):
 #   DIGITALOCEAN_TOKEN     DO API token        (default provider)
@@ -58,7 +58,7 @@ if state_exists "$NAME"; then
         exit 0
     fi
     warn "Instance '$NAME' already exists (IP $EXISTING_IP)."
-    warn "Run 'yarn selfhosted:status' to inspect, 'yarn selfhosted:destroy --name $NAME' to destroy, or pass --reuse to skip when present."
+    warn "Run 'pnpm run selfhosted:status' to inspect, 'pnpm run selfhosted:destroy --name $NAME' to destroy, or pass --reuse to skip when present."
     exit 1
 fi
 
@@ -71,7 +71,7 @@ fi
 # in the prompts — they just press Enter to save them. No retyping.
 if [ ! -f "$GLOBAL_CONFIG" ]; then
     log "First-time setup: no config at $GLOBAL_CONFIG yet."
-    log "Running 'yarn selfhosted:setup' so you only type secrets once."
+    log "Running 'pnpm run selfhosted:setup' so you only type secrets once."
     echo ""
     "$SCRIPT_DIR/setup.sh"
     echo ""
@@ -266,16 +266,16 @@ rollback_on_failure() {
         warn ""
         warn "  Server:  $SERVER_ID @ $SERVER_IP"
         warn "  SSH:     ssh -i $LOCAL_SSH_KEY root@$SERVER_IP"
-        warn "  Logs:    yarn selfhosted:logs${NAME:+ --name $NAME}"
-        warn "  Status:  yarn selfhosted:status${NAME:+ --name $NAME}"
-        warn "  Destroy: yarn selfhosted:destroy${NAME:+ --name $NAME}"
+        warn "  Logs:    pnpm run selfhosted:logs${NAME:+ --name $NAME}"
+        warn "  Status:  pnpm run selfhosted:status${NAME:+ --name $NAME}"
+        warn "  Destroy: pnpm run selfhosted:destroy${NAME:+ --name $NAME}"
         warn ""
         warn "  Remember: this droplet costs ~\$1/day. Destroy it when you're done."
         exit "$exit_code"
     fi
 
     if [ -f "$STATE_FILE" ]; then
-        warn "Provision failed AFTER state file was written. Run 'yarn selfhosted:destroy --name $NAME' to clean up."
+        warn "Provision failed AFTER state file was written. Run 'pnpm run selfhosted:destroy --name $NAME' to clean up."
         exit "$exit_code"
     fi
 
@@ -422,7 +422,7 @@ ssh_vm "chmod +x /opt/kodus-installer/scripts/*.sh"
 ok "Installer transferred"
 
 # ---------- apply cached dev image override (if any) ----------
-# If the operator ran `yarn selfhosted:deploy --name <something>` at any
+# If the operator ran `pnpm run selfhosted:deploy --name <something>` at any
 # point on this Mac, it cached a docker-compose.override.yml at
 # ~/.kodus-dev/last-deploy.override.yml that pins every kodus-* service
 # to a specific dev-tag in their personal GHCR namespace. Apply it to
@@ -722,13 +722,13 @@ $(echo -e "${GREEN}✅ Self-hosted stack online in ${MINS}m${SECS}s${NC}")
   $(echo -e "${BLUE}GH wired:${NC}")  $GH_CONFIGURED
 
   $(echo -e "${GRAY}SSH:${NC}")       ssh -i $LOCAL_SSH_KEY root@$SERVER_IP
-  $(echo -e "${GRAY}Status:${NC}")    yarn selfhosted:status${NAME:+ --name $NAME}
-  $(echo -e "${GRAY}Logs:${NC}")      yarn selfhosted:logs${NAME:+ --name $NAME}
-  $(echo -e "${GRAY}Destroy:${NC}")   yarn selfhosted:destroy${NAME:+ --name $NAME}
+  $(echo -e "${GRAY}Status:${NC}")    pnpm run selfhosted:status${NAME:+ --name $NAME}
+  $(echo -e "${GRAY}Logs:${NC}")      pnpm run selfhosted:logs${NAME:+ --name $NAME}
+  $(echo -e "${GRAY}Destroy:${NC}")   pnpm run selfhosted:destroy${NAME:+ --name $NAME}
 
 $(echo -e "${YELLOW}⚠️  This is a PUBLISHED image, NOT your local code.${NC}")
 $(echo -e "${YELLOW}    To test your current branch instead:${NC}")
-$(echo -e "${YELLOW}    →  yarn selfhosted:deploy${NAME:+ --name $NAME}${NC}")
+$(echo -e "${YELLOW}    →  pnpm run selfhosted:deploy${NAME:+ --name $NAME}${NC}")
 
 $(echo -e "${YELLOW}This VM is ALIVE. Cost: ~\$1/day on DO. Destroy when done.${NC}")
 

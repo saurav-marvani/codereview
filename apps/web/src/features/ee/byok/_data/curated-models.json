@@ -109,10 +109,11 @@
                 {
                     "id": "kimi-code",
                     "label": "Kimi Code Plan",
-                    "description": "Subscription plan with a dedicated coding endpoint. Capped at 30 concurrent requests.",
-                    "baseURL": "https://api.kimi.com/coding/v1",
+                    "description": "Subscription plan via Moonshot's Anthropic-compatible endpoint. Capped at 30 concurrent requests; subscription usage is governed by Moonshot's community guidelines — for heavy automated usage prefer the Developer API.",
+                    "baseURL": "https://api.kimi.com/coding",
                     "apiKeyUrl": "https://www.kimi.com/code",
-                    "maxConcurrentRequests": 30
+                    "maxConcurrentRequests": 30,
+                    "provider": "anthropic_compatible"
                 }
             ],
             "defaultVariantId": "moonshot",

@@ -17,7 +17,7 @@
     },
     "scripts": {
         "clean": "rm -rf dist",
-        "build": "yarn clean && yarn build:esm && yarn build:types",
+        "build": "pnpm run clean && pnpm run build:esm && pnpm run build:types",
         "build:esm": "tsc --project tsconfig.build.json",
         "build:types": "tsc --project tsconfig.build.json --emitDeclarationOnly",
         "build:watch": "tsc --project tsconfig.build.json --watch",
@@ -33,14 +33,14 @@
         "test:watch": "vitest watch",
         "test:coverage": "vitest run --coverage",
         "prepare": "[ -d .git ] && husky install || echo 'Skipping husky install: not a git repository'",
-        "prepublishOnly": "yarn build && node scripts/run-lint-if-needed.cjs",
+        "prepublishOnly": "pnpm run build && node scripts/run-lint-if-needed.cjs",
         "publish:gar": "source scripts/refresh-token.sh && npm publish --registry=https://us-central1-npm.pkg.dev/$GAR_PROJECT_ID/kodus-pkg/ --access public",
         "refresh-token": "source scripts/refresh-token.sh",
-        "publish:quick": "source scripts/refresh-token.sh && yarn build && yarn publish:gar",
+        "publish:quick": "source scripts/refresh-token.sh && pnpm run build && pnpm run publish:gar",
         "yalc:publish": "SKIP_LINT=1 yalc publish --sig",
         "yalc:push": "yalc push --changed --sig",
         "dev:yalc": "chokidar 'dist/**/*' -c 'yalc push --changed --sig'",
-        "dev:full": "concurrently \"yarn build:watch\" \"yarn dev:yalc\"",
+        "dev:full": "concurrently \"pnpm run build:watch\" \"pnpm run dev:yalc\"",
         "example:planner-integration-fixed": "tsx --tsconfig tsconfig.examples.json examples/planner-integration-fixed.ts"
     },
     "keywords": [
@@ -117,18 +117,6 @@
             "optional": true
         }
     },
-    "resolutions": {
-        "flatted": "^3.4.2",
-        "diff": "^4.0.4",
-        "@typescript-eslint/**/minimatch": "^10.2.4",
-        "qs": ">=6.14.2",
-        "@modelcontextprotocol/sdk": ">=1.26.0",
-        "rollup": ">=4.59.0",
-        "minimatch": "^10.2.4",
-        "hono": ">=4.12.7",
-        "@hono/node-server": ">=1.19.10",
-        "express-rate-limit": ">=8.2.2"
-    },
     "engines": {
         "node": ">=18.0.0"
     },
@@ -147,5 +135,18 @@
     "publishConfig": {
         "access": "public",
         "registry": "https://us-central1-npm.pkg.dev/$GAR_PROJECT_ID/kodus-pkg/"
+    },
+    "pnpm": {
+        "overrides": {
+            "flatted": "^3.4.2",
+            "diff": "^4.0.4",
+            "qs": ">=6.14.2",
+            "@modelcontextprotocol/sdk": ">=1.26.0",
+            "rollup": ">=4.59.0",
+            "minimatch": "^10.2.4",
+            "hono": ">=4.12.7",
+            "@hono/node-server": ">=1.19.10",
+            "express-rate-limit": ">=8.2.2"
+        }
     }
 }

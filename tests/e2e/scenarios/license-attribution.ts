@@ -68,11 +68,16 @@ export const licenseAttribution: Scenario = {
         // "trial ended" comment in validate-prerequisites.stage:681 is only
         // reachable from the cloud path (BYOK_REQUIRED, INVALID_LICENSE,
         // PLAN_LIMIT_EXCEEDED errorTypes), so license-free × self-hosted is
-        // structurally unprovable. Keep `free` (cloud post-trial no-BYOK) and
-        // `trial` (cloud) here — those DO trigger the notice path.
+        // structurally unprovable. `free` (cloud post-trial no-BYOK) stays —
+        // it triggers the notice path. `trial` is intentionally absent: a
+        // standing trial expires after 14 days and there is no reset endpoint,
+        // so it broke this scenario every release; trial moved to the
+        // fresh-org-per-run scenarios `trial-entitlement-gate` (API gate) and
+        // `trial-managed-review` (real managed review on a throwaway repo).
+        // The remaining tiers here cover review-positive (paid /
+        // community-byok / license-paid) and the blocked path (free).
         license: [
             "free",
-            "trial",
             "paid",
             "community-byok",
             "license-paid",

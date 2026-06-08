@@ -68,7 +68,12 @@ export const codeReviewBasic: Scenario = {
     appliesTo: {
         target: ["cloud", "self-hosted"],
         provider: ["github", "github-app", "gitlab", "bitbucket", "azure-devops"],
-        license: ["paid", "trial", "license-paid"],
+        // `trial` is intentionally NOT here: a standing trial subscription
+        // expires after 14 days (no reset endpoint) and broke this scenario
+        // every release. Trial coverage moved to fresh-org-per-run scenarios:
+        // `trial-entitlement-gate` (fast API gate check) and
+        // `trial-managed-review` (real managed-LLM review on a throwaway repo).
+        license: ["paid", "license-paid"],
     },
     // Scenario budget must comfortably exceed the inner pollForReview
     // budget (1500s) + onboarding + open-PR overhead. 1800s gives a

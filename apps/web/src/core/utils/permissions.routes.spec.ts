@@ -60,8 +60,19 @@ describe("canAccessRoute", () => {
         it("contributor cannot reach /cockpit", () => {
             expect(access(UserRole.CONTRIBUTOR, "/cockpit")).toBe(false);
         });
-        it("contributor cannot reach /settings/git", () => {
-            expect(access(UserRole.CONTRIBUTOR, "/settings/git")).toBe(false);
+        it("contributor cannot reach /settings/subscription (Billing)", () => {
+            expect(
+                access(UserRole.CONTRIBUTOR, "/settings/subscription"),
+            ).toBe(false);
+        });
+    });
+
+    describe("contributor read-only visibility (everything but cockpit/token-usage)", () => {
+        it("contributor can reach /settings/git", () => {
+            expect(access(UserRole.CONTRIBUTOR, "/settings/git")).toBe(true);
+        });
+        it("contributor can reach /pull-requests", () => {
+            expect(access(UserRole.CONTRIBUTOR, "/pull-requests")).toBe(true);
         });
     });
 

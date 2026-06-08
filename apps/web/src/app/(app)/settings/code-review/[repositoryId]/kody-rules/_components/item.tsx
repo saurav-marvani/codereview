@@ -5,7 +5,6 @@ import { Badge } from "@components/ui/badge";
 import { Button } from "@components/ui/button";
 import { Card, CardContent, CardHeader } from "@components/ui/card";
 import { Heading } from "@components/ui/heading";
-import { Link } from "@components/ui/link";
 import { magicModal } from "@components/ui/magic-modal";
 import { Section } from "@components/ui/section";
 import { Separator } from "@components/ui/separator";
@@ -24,12 +23,12 @@ import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
 import { EditIcon, EyeIcon, PlayIcon, TrashIcon } from "lucide-react";
 import { SuggestionsModal } from "src/app/(app)/library/kody-rules/_components/suggestions-modal";
-import { useSelectedTeamId } from "src/core/providers/selected-team-context";
-import { addSearchParamsToUrl } from "src/core/utils/url";
 
 import { OriginBadge } from "./origin-badge";
 
 import { DeleteKodyRuleConfirmationModal } from "../../../_components/delete-confirmation-modal";
+import { KodyRuleAddOrUpdateItemModal } from "../../../_components/modal";
+import { useFullCodeReviewConfig } from "../../../../_components/context";
 import { useCodeReviewRouteParams } from "../../../../_hooks";
 import { ExternalReferencesDisplay } from "../../pr-summary/_components/external-references-display";
 import { changeStatusKodyRules } from "@services/kodyRules/fetch";
@@ -39,14 +38,12 @@ import { useAsyncAction } from "@hooks/use-async-action";
 
 export const KodyRuleItem = ({
     rule,
-    tab,
     onAnyChange,
     showSuggestionsButton = false,
     selection,
     syncEnabledForRepo,
 }: {
     rule: KodyRuleWithInheritanceDetails;
-    tab: "review-rules" | "memories";
     onAnyChange: () => void;
     showSuggestionsButton?: boolean;
     /** Repo's `ideRulesSyncEnabled`; forwarded to OriginBadge so it can
@@ -62,7 +59,7 @@ export const KodyRuleItem = ({
     };
 }) => {
     const { repositoryId, directoryId } = useCodeReviewRouteParams();
-    const { teamId } = useSelectedTeamId();
+    const config = useFullCodeReviewConfig();
     const canEdit = usePermission(
         Action.Update,
         ResourceType.KodyRules,
@@ -90,6 +87,27 @@ export const KodyRuleItem = ({
                 : null;
     const entityLabel = isMemory ? "memory" : "rule";
     const isPaused = rule.status === KodyRulesStatus.PAUSED;
+
+    // Opens the edit/view modal in place — same pattern Delete and "New
+    // rule" already use — instead of navigating to the sibling
+    // /kody-rules/[id] page. The route round-trip unmounted the whole
+    // list into a full-page skeleton twice (open and close) and lost the
+    // scroll position (#1274). The [id] route stays for deep links.
+    const handleOpenRuleModal = async () => {
+        const directory = config?.repositories
+            .find((r) => r.id === repositoryId)
+            ?.directories?.find((d) => d.id === directoryId);
+
+        const response = await magicModal.show(() => (
+            <KodyRuleAddOrUpdateItemModal
+                rule={rule}
+                repositoryId={repositoryId}
+                directory={directory}
+                canEdit={canEdit}
+            />
+        ));
+        if (response) onAnyChange?.();
+    };
 
     const [handleResume, { loading: isResuming }] = useAsyncAction(async () => {
         if (!rule.uuid) return;
@@ -260,28 +278,22 @@ export const KodyRuleItem = ({
                         </Button>
                     )}
 
-                    <Link
-                        href={addSearchParamsToUrl(
-                            `/settings/code-review/${repositoryId}/kody-rules/${rule.uuid}`,
-                            { directoryId, teamId, tab },
-                        )}>
-                        <Button
-                            decorative
-                            size="icon-md"
-                            variant="secondary"
-                            aria-label={
-                                !canEdit || isInherited
-                                    ? "View " + entityLabel + " details"
-                                    : "Edit " + entityLabel
-                            }
-                            className="size-9">
-                            {!canEdit || isInherited ? (
-                                <EyeIcon aria-hidden />
-                            ) : (
-                                <EditIcon aria-hidden />
-                            )}
-                        </Button>
-                    </Link>
+                    <Button
+                        size="icon-md"
+                        variant="secondary"
+                        aria-label={
+                            !canEdit || isInherited
+                                ? "View " + entityLabel + " details"
+                                : "Edit " + entityLabel
+                        }
+                        className="size-9"
+                        onClick={handleOpenRuleModal}>
+                        {!canEdit || isInherited ? (
+                            <EyeIcon aria-hidden />
+                        ) : (
+                            <EditIcon aria-hidden />
+                        )}
+                    </Button>
 
                     <Button
                         size="icon-md"
