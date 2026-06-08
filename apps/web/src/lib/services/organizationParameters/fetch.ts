@@ -152,6 +152,10 @@ export const getOrganizationParameterByKey = async <
     });
 
 const DEFAULT_COCKPIT_METRICS_VISIBILITY: CockpitMetricsVisibility = {
+    tabs: {
+        kodusReview: true,
+        productivity: true,
+    },
     summary: {
         deployFrequency: true,
         prCycleTime: true,
