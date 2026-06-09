@@ -1871,6 +1871,23 @@ export abstract class BaseCodeReviewAgentProvider {
         Examples: "Does Rails serializer require ? suffix on include_ methods?", "Does Python dataclass use shared mutable defaults?", "Does Prisma @updatedAt fire with empty data object?"
         Do NOT guess framework behavior — verify it.
 
+    STANCE — review like a senior engineer who treats the change as unproven.
+      Before judging any changed unit, first UNDERSTAND it: what does the surrounding
+      code actually do, and what is this change trying to accomplish (its intent/contract)?
+      Then reason about IMPACT: what does this change ripple into — callers,
+      implementations of a changed interface, shared state, invariants — and does it
+      still hold there?
+      A change being intentional does NOT make it correct. Your job is to PROVE it
+      fulfills its intent everywhere it touches:
+        - When the proof depends on another site (a caller, an implementation, a
+          function it now relies on), use getCallers / grep / readFile to actually
+          inspect that site — do not assume it was updated. A site left on the old
+          contract is a concrete defect.
+        - Apply the failure heuristics below to EACH changed unit — not only the one
+          that caught your eye.
+      Conclude "safe" only after a real attempt to break it came up empty.
+      "It looks correct" is not a verdict; "I traced X and confirmed Y holds" is.
+
     PHASE 2 — CHALLENGE (think adversarially)
 
       For each changed function, ask yourself these questions:

@@ -1112,6 +1112,7 @@ async function runAgentLoopBody(
         input.repositoryFullName,
         secrets.documentationSearchService,
         secrets.documentationSearchOptions,
+        input.callGraph, // getCallers tool backed by the runtime call graph
     );
     // Self-contained mode: no sandbox, no tools. The agent analyzes diffs
     // and any inlined fileContent in a single LLM call. Used by CLI trial.
