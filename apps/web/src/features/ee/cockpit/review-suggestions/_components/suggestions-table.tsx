@@ -25,6 +25,20 @@ const statusLabel = (status: string | null) => {
     return "○ not implemented";
 };
 
+/**
+ * Deep link into the PR review screen, landing on this exact suggestion:
+ * `?file=<path>&suggestion=<id>` makes the screen scroll to and highlight
+ * the finding's card.
+ */
+const buildReviewDeepLink = (s: SuggestionsExplorerItem) => {
+    const base = `/pull-requests/${s.repositoryId}/${s.prNumber}`;
+    const params = new URLSearchParams();
+    if (s.filePath) params.set("file", s.filePath);
+    if (s.suggestionId) params.set("suggestion", s.suggestionId);
+    const qs = params.toString();
+    return qs ? `${base}?${qs}` : base;
+};
+
 export const SuggestionsTable = ({
     items,
 }: {
@@ -125,7 +139,9 @@ export const SuggestionsTable = ({
                                         leftIcon={<ExternalLink />}
                                         asChild>
                                         <Link
-                                            href={`/pull-requests/${selected.repositoryId}/${selected.prNumber}`}>
+                                            href={buildReviewDeepLink(
+                                                selected,
+                                            )}>
                                             Open in PR review
                                         </Link>
                                     </Button>

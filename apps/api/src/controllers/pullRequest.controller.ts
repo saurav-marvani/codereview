@@ -584,22 +584,63 @@ export class PullRequestController implements OnApplicationShutdown {
             repoName = repo.name;
         }
 
-        const files = await this.codeManagementService.getFilesByPullRequestId({
-            organizationAndTeamData,
-            repository: { name: repoName, id: repositoryId },
-            prNumber: parseInt(prNumber, 10),
-        });
+        let files: any[] = [];
+        try {
+            files = await this.codeManagementService.getFilesByPullRequestId({
+                organizationAndTeamData,
+                repository: { name: repoName, id: repositoryId },
+                prNumber: parseInt(prNumber, 10),
+            });
+        } catch {
+            // Provider call failed (rate limit, revoked token, repo the
+            // integration can't reach). Fall through to the stored snapshot.
+            files = [];
+        }
 
+        // Always read the stored snapshot — it's the source of commit
+        // metadata (the provider files call doesn't carry it) and the
+        // fallback for the diff when the provider is unreachable.
+        const stored =
+            await this.pullRequestsService.findByNumberAndRepositoryId(
+                parseInt(prNumber, 10),
+                repositoryId,
+                organizationAndTeamData,
+            );
+
+        const commits = mapStoredCommits(stored);
+
+        if (files && files.length > 0) {
+            return {
+                files: files.map((f: any) => ({
+                    filename: f.filename,
+                    status: f.status,
+                    additions: f.additions,
+                    deletions: f.deletions,
+                    changes: f.changes,
+                    patch: f.patch,
+                    previous_filename: f.previous_filename,
+                })),
+                commits,
+            };
+        }
+
+        // Fallback: serve the diff we already captured at review time from
+        // the `pullRequests` snapshot. Lets the review screen render even
+        // when the provider is unreachable (and is how cloned/historical
+        // PRs render locally).
         return {
-            files: (files || []).map((f: any) => ({
-                filename: f.filename,
-                status: f.status,
-                additions: f.additions,
-                deletions: f.deletions,
-                changes: f.changes,
-                patch: f.patch,
-                previous_filename: f.previous_filename,
-            })),
+            files: (stored?.files || [])
+                .filter((f: any) => f?.patch)
+                .map((f: any) => ({
+                    filename: f.path ?? f.filename,
+                    status: f.status,
+                    additions: f.added,
+                    deletions: f.deleted,
+                    changes: f.changes,
+                    patch: f.patch,
+                    previous_filename: f.previousName,
+                })),
+            commits,
         };
     }
 
@@ -721,4 +762,40 @@ export class PullRequestController implements OnApplicationShutdown {
             repositoriesCount: repositories.length,
         };
     }
+}
+
+/**
+ * Maps the commit metadata captured in the `pullRequests` snapshot into the
+ * shape the review screen's Commits tab consumes. The provider files call
+ * doesn't carry commits, so this is the only source for cloned/historical PRs.
+ * The commit HTML url is derived from the stored PR url (strip the PR/MR
+ * suffix, append `/commit/<sha>`) since the snapshot doesn't store it.
+ */
+function mapStoredCommits(stored: any): Array<{
+    sha: string;
+    message: string;
+    authorLogin?: string;
+    authoredAt?: string;
+    htmlUrl: string;
+}> {
+    const prUrl: string = stored?.url ?? '';
+    const base = prUrl.includes('/pull/')
+        ? prUrl.split('/pull/')[0]
+        : prUrl.includes('/-/merge_requests/')
+          ? prUrl.split('/-/merge_requests/')[0]
+          : prUrl.includes('/pullrequest/')
+            ? prUrl.split('/pullrequest/')[0]
+            : '';
+
+    return (stored?.commits || []).map((c: any) => {
+        const sha: string = c?.sha ?? '';
+        const author = c?.author ?? {};
+        return {
+            sha,
+            message: String(c?.message ?? '').split('\n')[0],
+            authorLogin: author.username || author.name || undefined,
+            authoredAt: author.date || c?.created_at || undefined,
+            htmlUrl: base && sha ? `${base}/commit/${sha}` : prUrl,
+        };
+    });
 }

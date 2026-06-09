@@ -21,6 +21,7 @@ import {
 } from "@services/pull-requests";
 import {
     AlertTriangleIcon,
+    ArrowRightIcon,
     ChevronDownIcon,
     ExternalLinkIcon,
     GitBranchIcon,
@@ -549,6 +550,21 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                         colSpan={11}
                         className="border-b-card-lv3/60 bg-card-lv2/20 p-0">
                         <div className="max-w-[calc(100vw-6rem)] px-4 pt-2 pb-6">
+                            {/* Quiet entry into the full review screen. Lives
+                                here (not on the row/title) because the row click
+                                is the inline expand and the title links out to
+                                the provider. Kept low-key — a text link, not a
+                                filled button — so it reads as "there's more"
+                                without competing with the timeline below. */}
+                            <div className="mt-1 mb-1 flex justify-end">
+                                <NextLink
+                                    href={`/pull-requests/${latest.repositoryId}/${latest.prNumber}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="text-text-tertiary hover:text-primary-light inline-flex items-center gap-1 text-xs font-medium transition-colors">
+                                    Open full review
+                                    <ArrowRightIcon className="size-3.5" />
+                                </NextLink>
+                            </div>
                             <div className="pt-2">
                                 <div className="space-y-3">
                                     {executions.map((execution, index) => {
