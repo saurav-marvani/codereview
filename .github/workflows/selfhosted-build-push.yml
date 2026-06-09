@@ -163,7 +163,12 @@ jobs:
         # Run on freeze success (normal release) OR skip (hotfix path).
         # Don't run if freeze failed — that indicates an admin / token /
         # ruleset bug and we shouldn't ship with main potentially open.
-        if: ${{ needs.freeze-main.result == 'success' || needs.freeze-main.result == 'skipped' }}
+        # `!cancelled()` defuses the implicit success() gate GitHub adds to any
+        # `if:` lacking a status function — without it a SKIPPED freeze-main
+        # (the hotfix path) fails that implicit gate and this job is skipped
+        # despite the explicit condition being true, cascading every job to
+        # skipped. The cron path never hit it because freeze-main always runs.
+        if: ${{ !cancelled() && (needs.freeze-main.result == 'success' || needs.freeze-main.result == 'skipped') }}
         runs-on: ubuntu-latest
         outputs:
             release_version: ${{ steps.bump.outputs.release_version }}
