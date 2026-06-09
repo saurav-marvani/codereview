@@ -9,9 +9,10 @@ Analytics worker 是**仅限企业版**的附加组件。它运行驱动 Cockpit
 （DORA 风格指标、PR 生命周期、基于 LLM 的 PR classifier）的摄取 cron。
 
 <Warning>
-默认安装程序**不**包含此 worker。社区版自托管部署不需要它，并且这些
-变量已从默认 `.env.example` 中过滤掉。除非您拥有自托管企业版许可证
-并需要 Cockpit 报告，否则请在此停止。
+analytics worker **默认不启动** — 它由 Compose 的 `analytics` profile 控制，
+因此普通的 `docker compose up` 永远不会启动它，社区版自托管部署不会为它付出
+任何代价。`ANALYTICS_*` 变量在 `.env.example` 中以注释形式提供。除非您拥有
+自托管企业版许可证并需要 Cockpit 报告，否则请在此停止。
 </Warning>
 
 ## 它做什么

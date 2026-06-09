@@ -10,10 +10,11 @@ Analytics worker は **Enterprise 専用**のアドオンです。Cockpit
 PR classifier）を駆動する取り込み cron を実行します。
 
 <Warning>
-デフォルトのインストーラーはこのワーカーを**含みません**。コミュニティ
-版のセルフホストデプロイメントには不要で、これらの変数はデフォルトの
-`.env.example` からフィルタリングされています。セルフホスト Enterprise
-ライセンスを持っていて、Cockpit のレポートが必要な場合のみ進めてください。
+analytics ワーカーは**デフォルトでは起動しません** — Compose の `analytics`
+プロファイルでゲートされているため、通常の `docker compose up` では起動せず、
+コミュニティ版のセルフホストデプロイメントはコストを払いません。`ANALYTICS_*`
+変数は `.env.example` にコメントアウトされた状態で含まれています。セルフホスト
+Enterprise ライセンスを持ち、Cockpit のレポートが必要な場合のみ進めてください。
 </Warning>
 
 ## 何をするか

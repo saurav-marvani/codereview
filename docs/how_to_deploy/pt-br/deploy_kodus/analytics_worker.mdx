@@ -10,10 +10,11 @@ de ingestão que alimenta os dashboards do Cockpit (métricas tipo DORA,
 ciclo de vida de PR, classifier de PR baseado em LLM).
 
 <Warning>
-O instalador padrão **não** inclui esse worker. Deploys self-hosted da
-versão community não precisam dele e essas vars são filtradas do
-`.env.example` padrão. Pare por aqui a menos que você tenha uma licença
-self-hosted Enterprise e queira os relatórios do Cockpit.
+O analytics worker fica **desligado por padrão** — ele é gated pelo profile
+`analytics` do Compose, então um `docker compose up` normal nunca o sobe e
+deploys community não pagam nada por ele. As vars `ANALYTICS_*` vêm comentadas
+no `.env.example`. Continue só se você tiver uma licença self-hosted Enterprise
+e quiser os relatórios do Cockpit.
 </Warning>
 
 ## O que ele faz
