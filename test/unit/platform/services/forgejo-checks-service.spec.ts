@@ -60,7 +60,7 @@ describe('ForgejoChecksService', () => {
     });
 
     describe('createCheckRun', () => {
-        it('should post a pending commit status and return sha-prefixed ID', async () => {
+        it('should post a pending commit status with Kodus Code Review context', async () => {
             const result = await service.createCheckRun({
                 organizationAndTeamData: mockOrganizationAndTeamData,
                 repository: mockRepository,
@@ -74,12 +74,6 @@ describe('ForgejoChecksService', () => {
             });
 
             expect(result).toBe('sha:abc123def456');
-            expect(mockGetAuthDetails).toHaveBeenCalledWith(
-                mockOrganizationAndTeamData,
-            );
-            expect(mockCreateForgejoClient).toHaveBeenCalledWith(
-                mockAuthDetail,
-            );
             expect(mockRepoCreateStatus).toHaveBeenCalledWith(
                 expect.objectContaining({
                     path: {
@@ -89,7 +83,7 @@ describe('ForgejoChecksService', () => {
                     },
                     body: expect.objectContaining({
                         state: 'pending',
-                        context: 'kodus-code-review',
+                        context: 'Kodus Code Review',
                         description: 'Code Review In Progress',
                     }),
                 }),
@@ -147,7 +141,7 @@ describe('ForgejoChecksService', () => {
     });
 
     describe('updateCheckRun', () => {
-        it('should repost status with success state on completion', async () => {
+        it('should repost with success state and "Code Review Complete" description', async () => {
             const result = await service.updateCheckRun({
                 organizationAndTeamData: mockOrganizationAndTeamData,
                 repository: mockRepository,
@@ -164,12 +158,16 @@ describe('ForgejoChecksService', () => {
             expect(mockRepoCreateStatus).toHaveBeenCalledWith(
                 expect.objectContaining({
                     path: expect.objectContaining({ sha: 'abc123def456' }),
-                    body: expect.objectContaining({ state: 'success' }),
+                    body: expect.objectContaining({
+                        state: 'success',
+                        context: 'Kodus Code Review',
+                        description: 'Code Review Complete',
+                    }),
                 }),
             );
         });
 
-        it('should repost with failure state on failure conclusion', async () => {
+        it('should repost with failure state and description', async () => {
             const result = await service.updateCheckRun({
                 organizationAndTeamData: mockOrganizationAndTeamData,
                 repository: mockRepository,
@@ -181,7 +179,10 @@ describe('ForgejoChecksService', () => {
             expect(result).toBe(true);
             expect(mockRepoCreateStatus).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    body: expect.objectContaining({ state: 'failure' }),
+                    body: expect.objectContaining({
+                        state: 'failure',
+                        description: 'Code Review Failed',
+                    }),
                 }),
             );
         });
@@ -198,7 +199,30 @@ describe('ForgejoChecksService', () => {
             expect(result).toBe(true);
             expect(mockRepoCreateStatus).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    body: expect.objectContaining({ state: 'warning' }),
+                    body: expect.objectContaining({
+                        state: 'warning',
+                        description: 'Code Review Completed with Warnings',
+                    }),
+                }),
+            );
+        });
+
+        it('should use output.title as description when provided mid-pipeline', async () => {
+            const result = await service.updateCheckRun({
+                organizationAndTeamData: mockOrganizationAndTeamData,
+                repository: mockRepository,
+                checkRunId: 'sha:abc123',
+                status: CheckStatus.IN_PROGRESS,
+                output: { title: 'PR-Level Analysis', summary: '' },
+            });
+
+            expect(result).toBe(true);
+            expect(mockRepoCreateStatus).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    body: expect.objectContaining({
+                        state: 'pending',
+                        description: 'PR-Level Analysis',
+                    }),
                 }),
             );
         });

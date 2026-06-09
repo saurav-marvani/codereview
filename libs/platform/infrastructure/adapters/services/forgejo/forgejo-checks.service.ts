@@ -16,8 +16,14 @@ import { ForgejoService } from '../forgejo.service';
  * Forgejo commit status states per the Forgejo API.
  * Unlike GitHub's Checks API, Forgejo uses the simpler commit status model:
  * POST a new status with the same `context` on the same SHA to "update".
+ *
+ * GitHub Checks API comparison:
+ * - `name` (per-stage, shows in CI list) → `context` (fixed label)
+ * - `output.title` / `output.summary` → `description`
+ * - `status: in_progress/completed` → `state: pending/success/failure/warning`
+ * - `conclusion: success/failure/neutral` → `state: success/failure/warning`
  */
-const COMMIT_STATUS_CONTEXT = 'kodus-code-review';
+const COMMIT_STATUS_CONTEXT = 'Kodus Code Review';
 
 const statusStateMap: Record<CheckStatus, string> = {
     [CheckStatus.IN_PROGRESS]: 'pending',
@@ -27,7 +33,7 @@ const statusStateMap: Record<CheckStatus, string> = {
 const conclusionStateMap: Record<CheckConclusion, string> = {
     [CheckConclusion.SUCCESS]: 'success',
     [CheckConclusion.FAILURE]: 'failure',
-    [CheckConclusion.NEUTRAL]: 'warning', // Forgejo-specific state
+    [CheckConclusion.NEUTRAL]: 'warning',
     [CheckConclusion.SKIPPED]: 'warning',
 };
 
@@ -78,7 +84,8 @@ export class ForgejoChecksService implements IChecksAdapter {
                 body: {
                     state,
                     context: COMMIT_STATUS_CONTEXT,
-                    description: output?.title || output?.summary || '',
+                    description:
+                        output?.title || output?.summary || 'Starting...',
                     target_url: output?.text,
                 },
             });
@@ -93,8 +100,6 @@ export class ForgejoChecksService implements IChecksAdapter {
                 },
             });
 
-            // Encode the SHA into the returned ID so updateCheckRun can
-            // recover it — Forgejo has no update endpoint; we repost by SHA.
             return `sha:${headSha}`;
         } catch (error) {
             this.logger.error({
@@ -116,8 +121,6 @@ export class ForgejoChecksService implements IChecksAdapter {
             output,
         } = params;
 
-        // Forgejo has no update endpoint — repost with the same context.
-        // Recover the head SHA from the checkRunId we stored in createCheckRun.
         const headSha = this.resolveHeadSha(params);
         if (!headSha) {
             this.logger.warn({
@@ -151,6 +154,7 @@ export class ForgejoChecksService implements IChecksAdapter {
                 this.forgejoService.createForgejoClient(authDetail);
 
             const state = this.resolveState(status, conclusion);
+            const description = this.resolveDescription(status, conclusion, output);
 
             await repoCreateStatus({
                 client,
@@ -162,7 +166,7 @@ export class ForgejoChecksService implements IChecksAdapter {
                 body: {
                     state,
                     context: COMMIT_STATUS_CONTEXT,
-                    description: output?.title || output?.summary || '',
+                    description,
                     target_url: output?.text,
                 },
             });
@@ -174,6 +178,7 @@ export class ForgejoChecksService implements IChecksAdapter {
                     checkRunId: params.checkRunId,
                     repository: repository.name,
                     state,
+                    description,
                 },
             });
 
@@ -203,6 +208,37 @@ export class ForgejoChecksService implements IChecksAdapter {
             return statusStateMap[status] ?? 'pending';
         }
         return 'pending';
+    }
+
+    /**
+     * Resolve the human-readable description shown in the Forgejo CI section.
+     * Mimics GitHub's check run output titles per stage.
+     */
+    private resolveDescription(
+        status?: CheckStatus,
+        conclusion?: CheckConclusion,
+        output?: UpdateCheckRunParams['output'],
+    ): string {
+        if (output?.title) return output.title;
+
+        if (status === CheckStatus.COMPLETED) {
+            switch (conclusion) {
+                case CheckConclusion.SUCCESS:
+                    return 'Code Review Complete';
+                case CheckConclusion.FAILURE:
+                    return 'Code Review Failed';
+                case CheckConclusion.NEUTRAL:
+                    return 'Code Review Completed with Warnings';
+                case CheckConclusion.SKIPPED:
+                    return 'Code Review Skipped';
+            }
+        }
+
+        if (status === CheckStatus.IN_PROGRESS) {
+            return output?.summary || 'Code Review In Progress';
+        }
+
+        return 'Code Review In Progress';
     }
 
     /**
