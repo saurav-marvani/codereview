@@ -75,6 +75,29 @@ describe('analyticsPostgresConfigLoader', () => {
         expect(cfg.schema).toBe('analytics');
     });
 
+    it('treats an EMPTY ANALYTICS_PG_DB_HOST as unset and cascades (self-hosted doc path)', () => {
+        // The deploy docs tell self-hosted operators to "leave
+        // ANALYTICS_PG_DB_HOST empty", and docker-compose materializes unset
+        // vars as empty strings. A plain `??` chain would treat '' as a value
+        // → host='' → driver connects to 127.0.0.1 → ECONNREFUSED. Empty must
+        // fall through to API_PG_DB_*.
+        process.env.ANALYTICS_PG_DB_HOST = '';
+        process.env.ANALYTICS_PG_DB_USERNAME = '';
+        process.env.ANALYTICS_PG_DB_PASSWORD = '';
+        process.env.ANALYTICS_PG_DB_DATABASE = '';
+        process.env.API_PG_DB_HOST = 'oltp.internal';
+        process.env.API_PG_DB_USERNAME = 'kodus';
+        process.env.API_PG_DB_PASSWORD = 'kodus';
+        process.env.API_PG_DB_DATABASE = 'kodus_db';
+
+        const cfg = load();
+
+        expect(cfg.host).toBe('oltp.internal');
+        expect(cfg.username).toBe('kodus');
+        expect(cfg.password).toBe('kodus');
+        expect(cfg.database).toBe('kodus_db');
+    });
+
     it('honors a custom schema override', () => {
         process.env.API_PG_DB_HOST = 'oltp';
         process.env.ANALYTICS_PG_DB_SCHEMA = 'warehouse';
