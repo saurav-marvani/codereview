@@ -6,6 +6,7 @@ import { REQUEST } from '@nestjs/core';
 
 import { PullRequestController } from '@/core/infrastructure/http/controllers/pullRequest.controller';
 import { GetEnrichedPullRequestsUseCase } from '@libs/code-review/application/use-cases/dashboard/get-enriched-pull-requests.use-case';
+import { GetPullRequestFilesUseCase } from '@libs/code-review/application/use-cases/pullRequests/get-pull-request-files.use-case';
 import { GetPullRequestSuggestionsUseCase } from '@libs/code-review/application/use-cases/pullRequests/get-pull-request-suggestions.use-case';
 import { CodeManagementService } from '@libs/platform/infrastructure/services/codeManagement.service';
 import { BackfillHistoricalPRsUseCase } from '@libs/platformData/application/use-cases/pullRequests/backfill-historical-prs.use-case';
@@ -115,6 +116,7 @@ const mockAutomationExecutionService = {
 };
 const mockGetEnrichedPRs = { execute: jest.fn() };
 const mockGetPullRequestSuggestionsUseCase = { execute: jest.fn() };
+const mockGetPullRequestFilesUseCase = { execute: jest.fn() };
 const mockCodeManagement = {
     getRepositories: jest.fn(),
     getPullRequestReviewThreads: jest.fn(),
@@ -145,6 +147,10 @@ describe('PullRequestController', () => {
                 {
                     provide: GetPullRequestSuggestionsUseCase,
                     useValue: mockGetPullRequestSuggestionsUseCase,
+                },
+                {
+                    provide: GetPullRequestFilesUseCase,
+                    useValue: mockGetPullRequestFilesUseCase,
                 },
                 {
                     provide: BackfillHistoricalPRsUseCase,
