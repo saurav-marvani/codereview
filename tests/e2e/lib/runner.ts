@@ -14,6 +14,7 @@ import type {
 } from "./types.js";
 import { ScenarioSkipError } from "./types.js";
 import { makeProvider } from "../providers/index.js";
+import { makeGithubTokenPicker } from "./github-token-pool.js";
 import {
     finishOnboarding,
     login,
@@ -420,6 +421,10 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
         }
     }
 
+    // Round-robins GitHub cells across the bot-account token pool so no single
+    // account's rate limit caps the run (no-op with a single token).
+    const pickGithubToken = makeGithubTokenPicker();
+
     for (const cell of opts.cells) {
         if (cell.target !== opts.target) continue;
 
@@ -463,6 +468,18 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
 
             log.info(`RUN   ${cellLabel}`);
 
+            // Assign this GitHub run a token from the bot-account pool
+            // (round-robin). Same token across both attempts so a retry stays
+            // on the same account; other cells keep draining the other tokens.
+            const ghAssignment =
+                cell.provider === "github" ? pickGithubToken() : undefined;
+            const githubToken = ghAssignment?.token;
+            if (ghAssignment && ghAssignment.size > 1) {
+                log.info(
+                    `  github → token slot ${ghAssignment.slot}/${ghAssignment.size}`,
+                );
+            }
+
             // One automatic retry for TRANSIENT failure shapes (lost
             // webhook, provider hiccup, network) — see isTransientFailure.
             // Deterministic assertion mismatches ("expected deny, got
@@ -477,6 +494,7 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
                         cell.provider,
                         cell.target,
                         tenant?.repoFullName,
+                        githubToken,
                     );
                     const scenarioArtifactDir = join(
                         artifactDir,
