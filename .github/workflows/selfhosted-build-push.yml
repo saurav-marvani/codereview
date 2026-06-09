@@ -250,6 +250,10 @@ jobs:
     create-rc-tag:
         name: Create RC git tag at current SHA
         needs: plan-release
+        # !cancelled() defuses the implicit success() gate — on the hotfix path
+        # the skipped freeze-main propagates a skip down the whole chain unless
+        # each job explicitly opts back in. Still gates on the real need.
+        if: ${{ !cancelled() && needs.plan-release.result == 'success' }}
         runs-on: ubuntu-latest
         permissions:
             contents: write
@@ -280,6 +284,7 @@ jobs:
         needs:
             - plan-release
             - create-rc-tag
+        if: ${{ !cancelled() && needs.plan-release.result == 'success' && needs.create-rc-tag.result == 'success' }}
         runs-on: ubuntu-latest
         # No environment: production here on purpose. The gate is at PROMOTE,
         # not at build — the Friday-morning flow dispatches at 9h and lets
@@ -413,6 +418,7 @@ jobs:
         needs:
             - plan-release
             - build-and-push
+        if: ${{ !cancelled() && needs.plan-release.result == 'success' && needs.build-and-push.result == 'success' }}
         permissions:
             contents: read
             packages: read
@@ -436,6 +442,7 @@ jobs:
         needs:
             - plan-release
             - e2e-matrix
+        if: ${{ !cancelled() && needs.plan-release.result == 'success' && needs.e2e-matrix.result == 'success' }}
         permissions:
             contents: write
             packages: write
@@ -456,7 +463,7 @@ jobs:
         needs:
             - plan-release
             - promote
-        if: needs.promote.result == 'success'
+        if: ${{ !cancelled() && needs.promote.result == 'success' }}
         runs-on: ubuntu-latest
         environment: ci
         permissions:
@@ -526,7 +533,7 @@ jobs:
         name: Publish CLI release
         needs:
             - cli-changes
-        if: needs.cli-changes.outputs.should_release == 'true'
+        if: ${{ !cancelled() && needs.cli-changes.outputs.should_release == 'true' }}
         permissions:
             contents: write
             id-token: write
@@ -540,7 +547,7 @@ jobs:
         needs:
             - plan-release
             - promote
-        if: needs.promote.result == 'success'
+        if: ${{ !cancelled() && needs.promote.result == 'success' }}
         permissions:
             contents: write
         uses: ./.github/workflows/changelog-publish.yml
@@ -553,7 +560,7 @@ jobs:
         needs:
             - plan-release
             - promote
-        if: needs.promote.result == 'success'
+        if: ${{ !cancelled() && needs.promote.result == 'success' }}
         runs-on: ubuntu-latest
         permissions:
             contents: write
@@ -581,7 +588,7 @@ jobs:
         # Gated on promote so we don't push env updates to the installer
         # for an RC that never shipped. plan-release.outputs.release_tag
         # is the final selfhosted-X.Y.Z (no -rc suffix).
-        if: needs.promote.result == 'success'
+        if: ${{ !cancelled() && needs.promote.result == 'success' }}
         # Same cascading-events restriction as cli-release / changelog-
         # publish: the selfhosted-X.Y.Z tag pushed by GITHUB_TOKEN above
         # would not fire env-sync-release.yml's `push: tags` trigger.
@@ -602,7 +609,7 @@ jobs:
         # matrix that gates promote lives at e2e-self-hosted-matrix.yml
         # in this repo. Both run — the installer one is a redundant
         # post-promote sanity check against the published :latest image.
-        if: needs.promote.result == 'success'
+        if: ${{ !cancelled() && needs.promote.result == 'success' }}
         runs-on: ubuntu-latest
         environment: ci
         # GITHUB_TOKEN isn't used here (we dispatch with CROSS_REPO_PAT),
