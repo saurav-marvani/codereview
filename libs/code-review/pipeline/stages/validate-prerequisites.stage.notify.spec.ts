@@ -190,13 +190,28 @@ describe('ValidatePrerequisitesStage — review.skipped_no_license emit', () => 
         expect(notificationService.emit).not.toHaveBeenCalled();
     });
 
-    it('skips the emit when PR author is bot/external (resolver returns null)', async () => {
+    it('falls back to org owners when the PR author is a bot/external user (resolver returns null)', async () => {
         prAuthorResolver.resolve.mockResolvedValueOnce(null);
+        usersService.find.mockResolvedValueOnce([
+            { email: 'owner@acme.com' } as any,
+        ]);
 
         await stage.execute(makeContext());
 
-        expect(rateLimiter.shouldEmit).not.toHaveBeenCalled();
-        expect(notificationService.emit).not.toHaveBeenCalled();
+        // Rate-limited under a shared "owners" bucket, then emitted to OWNER.
+        expect(rateLimiter.shouldEmit).toHaveBeenCalledWith(
+            expect.stringContaining(':owners:'),
+            expect.any(Number),
+        );
+        expect(notificationService.emit).toHaveBeenCalledWith(
+            expect.objectContaining({
+                event: NotificationEvent.REVIEW_SKIPPED_NO_LICENSE,
+                recipients: expect.objectContaining({
+                    kind: 'role',
+                    role: 'owner',
+                }),
+            }),
+        );
     });
 
     it('omits ownerContact when no owner is registered for the org', async () => {

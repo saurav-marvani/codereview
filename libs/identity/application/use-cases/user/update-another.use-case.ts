@@ -140,22 +140,21 @@ export class UpdateAnotherUserUseCase implements IUseCase {
                     logParams,
                 );
 
-                // Notify the affected user. Best-effort: emit failures
-                // don't break the role-change flow.
+                // Notify that a member's role changed. The audience (org
+                // owners) is declared as `audienceRoles` in the catalog and
+                // resolved config-driven by the dispatcher — no recipients
+                // here. Best-effort: emit failures don't break the flow.
                 try {
                     await this.notificationService.emit({
                         event: NotificationEvent.ORG_ROLE_CHANGED,
                         payload: {
+                            affectedUserEmail: targetUser.email ?? '',
                             previousRole: String(previousRole ?? 'unknown'),
                             newRole: String(role),
                             changedBy: actingUser?.email ?? userId,
                             organizationName: organization.name ?? '',
                         },
                         organizationId,
-                        recipients: {
-                            kind: 'user',
-                            userId: targetUserId,
-                        },
                     });
                 } catch (notifyError) {
                     this.logger.error({

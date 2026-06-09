@@ -124,8 +124,14 @@ export const EVENT_DEFAULTS: Readonly<
         criticality: Criticality.INFORMATIONAL,
         category: 'team',
         label: 'Role Changed',
-        defaultChannels: new Set([NotificationChannel.IN_APP]),
+        defaultChannels: new Set([
+            NotificationChannel.EMAIL,
+            NotificationChannel.IN_APP,
+        ]),
         icon: 'zap',
+        // Pure role-fanout: the audience is the org owners, derived from
+        // config rather than hardcoded at the call site.
+        audienceRoles: [Role.OWNER],
     },
 
     // ── IDE rule sync ──────────────────────────────────────────
@@ -134,7 +140,10 @@ export const EVENT_DEFAULTS: Readonly<
         criticality: Criticality.INFORMATIONAL,
         category: 'kody_rules',
         label: 'IDE Rules Synced',
-        defaultChannels: new Set([NotificationChannel.IN_APP]),
+        defaultChannels: new Set([
+            NotificationChannel.EMAIL,
+            NotificationChannel.IN_APP,
+        ]),
         icon: 'bell',
     },
     [NotificationEvent.IDE_RULES_SYNC_FAILED]: {
@@ -154,7 +163,10 @@ export const EVENT_DEFAULTS: Readonly<
         criticality: Criticality.INFORMATIONAL,
         category: 'review',
         label: 'Pull Request Auto-Approved',
-        defaultChannels: new Set([NotificationChannel.IN_APP]),
+        defaultChannels: new Set([
+            NotificationChannel.EMAIL,
+            NotificationChannel.IN_APP,
+        ]),
         icon: 'bell',
     },
     [NotificationEvent.REVIEW_FAILED]: {
@@ -171,7 +183,10 @@ export const EVENT_DEFAULTS: Readonly<
         criticality: Criticality.INFORMATIONAL,
         category: 'review',
         label: 'Review Skipped (No License)',
-        defaultChannels: new Set([NotificationChannel.IN_APP]),
+        defaultChannels: new Set([
+            NotificationChannel.EMAIL,
+            NotificationChannel.IN_APP,
+        ]),
         icon: 'info',
     },
 
