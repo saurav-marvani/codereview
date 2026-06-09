@@ -8,6 +8,7 @@ import {
     computePreviousPeriod,
     computeTrend,
 } from '../../application/date-range.util';
+import { ICockpitReviewAnalyticsService } from '../../domain/contracts/cockpit-review-analytics.service.contract';
 import {
     CockpitRangeQuery,
     IgnoredCriticalsHighlight,
@@ -50,7 +51,9 @@ const EXPLORER_MAX_PAGE_SIZE = 100;
 const IGNORED_CRITICALS_MAX_ITEMS = 50;
 
 @Injectable()
-export class CockpitReviewAnalyticsService {
+export class CockpitReviewAnalyticsService
+    implements ICockpitReviewAnalyticsService
+{
     constructor(
         @InjectDataSource(ANALYTICS_DATA_SOURCE)
         private readonly ds: DataSource,

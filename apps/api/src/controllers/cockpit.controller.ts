@@ -17,7 +17,8 @@ import {
     ICockpitDeveloperProductivityService,
     CockpitHealthService,
     CockpitRangeQuery,
-    CockpitReviewAnalyticsService,
+    COCKPIT_REVIEW_ANALYTICS_SERVICE_TOKEN,
+    ICockpitReviewAnalyticsService,
     CockpitSourceResolver,
     CockpitValidationService,
     SuggestionsExplorerQuery,
@@ -196,7 +197,8 @@ export class CockpitCodeHealthController {
 @Controller('review-analytics')
 export class CockpitReviewAnalyticsController {
     constructor(
-        private readonly reviewAnalytics: CockpitReviewAnalyticsService,
+        @Inject(COCKPIT_REVIEW_ANALYTICS_SERVICE_TOKEN)
+        private readonly reviewAnalytics: ICockpitReviewAnalyticsService,
         private readonly kodyRulesHealth: GetKodyRulesHealthUseCase,
     ) {}
 

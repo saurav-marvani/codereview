@@ -7,6 +7,7 @@ import { UserModule } from '@libs/identity/modules/user.module';
 import { OrganizationModule } from '@libs/organization/modules/organization.module';
 
 import { COCKPIT_DEVELOPER_PRODUCTIVITY_SERVICE_TOKEN } from '../domain/contracts/cockpit-developer-productivity.service.contract';
+import { COCKPIT_REVIEW_ANALYTICS_SERVICE_TOKEN } from '../domain/contracts/cockpit-review-analytics.service.contract';
 import { GetKodyRulesHealthUseCase } from '../application/use-cases/get-kody-rules-health.use-case';
 import { SendWeeklyRecapUseCase } from '../application/use-cases/send-weekly-recap.use-case';
 import { KodyRulesModule } from '@libs/kodyRules/modules/kodyRules.module';
@@ -46,6 +47,10 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
             provide: COCKPIT_DEVELOPER_PRODUCTIVITY_SERVICE_TOKEN,
             useExisting: CockpitDeveloperProductivityService,
         },
+        {
+            provide: COCKPIT_REVIEW_ANALYTICS_SERVICE_TOKEN,
+            useExisting: CockpitReviewAnalyticsService,
+        },
         CockpitTierGuard,
         GetKodyRulesHealthUseCase,
         SendWeeklyRecapUseCase,
@@ -58,6 +63,7 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         CockpitReviewAnalyticsService,
         CockpitDeveloperProductivityService,
         COCKPIT_DEVELOPER_PRODUCTIVITY_SERVICE_TOKEN,
+        COCKPIT_REVIEW_ANALYTICS_SERVICE_TOKEN,
         CockpitTierGuard,
         GetKodyRulesHealthUseCase,
         SendWeeklyRecapUseCase,

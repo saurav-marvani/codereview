@@ -15,7 +15,10 @@ import {
     KodyRuleHealthState,
     KodyRuleUsageRow,
 } from '../../domain/types';
-import { CockpitReviewAnalyticsService } from '../../infrastructure/services/cockpit-review-analytics.service';
+import {
+    COCKPIT_REVIEW_ANALYTICS_SERVICE_TOKEN,
+    ICockpitReviewAnalyticsService,
+} from '../../domain/contracts/cockpit-review-analytics.service.contract';
 
 /**
  * "Kody Rules — health" table: merges warehouse usage (triggers /
@@ -76,7 +79,8 @@ export function computeRuleState(usage: KodyRuleUsageRow | undefined): {
 @Injectable()
 export class GetKodyRulesHealthUseCase {
     constructor(
-        private readonly reviewAnalytics: CockpitReviewAnalyticsService,
+        @Inject(COCKPIT_REVIEW_ANALYTICS_SERVICE_TOKEN)
+        private readonly reviewAnalytics: ICockpitReviewAnalyticsService,
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: IKodyRulesService,
     ) {}
