@@ -74,11 +74,19 @@ export default async function KodusReviewTab() {
             </ReviewSection>
 
             <div className="grid grid-cols-2 gap-2">
-                <ReviewSection
-                    title="Implementation rate by category"
-                    description="sent vs. implemented · click a bar to drill down">
-                    <RateByCategoryChart data={byCategory ?? []} />
-                </ReviewSection>
+                {/* Anchor + highlight target for the "Critical suggestions not
+                    yet addressed" card — lands the user on the theme breakdown
+                    (themes that get ignored), each bar drilling to PR samples,
+                    instead of a flat list of individual findings. */}
+                <section
+                    id="themes-by-category"
+                    className="target:ring-primary-light/60 scroll-mt-24 rounded-xl transition-shadow target:ring-2">
+                    <ReviewSection
+                        title="Implementation rate by category"
+                        description="sent vs. implemented · click a theme to see its PRs">
+                        <RateByCategoryChart data={byCategory ?? []} />
+                    </ReviewSection>
+                </section>
 
                 <ReviewSection
                     title="Implementation rate by severity"

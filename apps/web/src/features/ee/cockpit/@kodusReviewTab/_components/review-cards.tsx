@@ -109,20 +109,18 @@ export const ReviewCards = ({
                 )}
             </MetricCard>
 
-            <Link
-                href="/review-suggestions?severity=critical&implementationStatus=not_implemented"
-                className="block">
+            <Link href="#themes-by-category" className="block" scroll>
                 <Card
                     color="lv1"
                     className="border-danger/40 hover:border-danger/70 min-h-40 justify-between gap-2 border p-5 transition-colors">
                     <CardTitle className="text-text-secondary text-xs leading-snug font-semibold">
-                        ⚠️ Criticals ignored in merged PRs
+                        Critical suggestions not yet addressed
                     </CardTitle>
                     <div className="text-danger text-3xl font-bold">
                         {criticalsCount}
                     </div>
                     <div className="text-text-tertiary text-xs leading-snug">
-                        critical suggestions left unimplemented →
+                        on merged PRs · see which themes get ignored ↓
                     </div>
                 </Card>
             </Link>
