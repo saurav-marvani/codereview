@@ -52,27 +52,39 @@ RUN_MIGRATIONS="${RUN_MIGRATIONS:-false}"
 RUN_SEEDS="${RUN_SEEDS:-false}"
 
 if [ "$RUN_MIGRATIONS" = "true" ]; then
-  echo "▶ Running OLTP migrations (PROD)..."
-  # Use node with compiled migrations in prod
-  if [ -f "dist/libs/core/infrastructure/database/typeorm/ormconfig.js" ]; then
-      npm run migration:run:prod
+  # Run OLTP + analytics migrations under a Postgres advisory lock so the
+  # replicas that share this entrypoint (api / worker / webhooks) don't run
+  # them concurrently. Without serialization they race on CREATE TYPE
+  # (duplicate key pg_type_typname_nsp_index) -> migration fails -> set -e
+  # crashes the container -> CrashLoopBackOff churns the boot and the analytics
+  # warehouse (migrated after OLTP) is left uncreated -> /cockpit/validate 500.
+  if [ -f "scripts/run-migrations-with-lock.cjs" ]; then
+      echo "▶ Running migrations under advisory lock (PROD)..."
+      node -r ./tsconfig-paths-bootstrap.js scripts/run-migrations-with-lock.cjs
   else
-      echo "⚠️ Migration config not found at dist/libs/core/infrastructure/database/typeorm/ormconfig.js. Skipping."
-  fi
+      # Fallback: legacy un-serialized path (only if the lock runner is absent
+      # from the image — keeps boot working no matter what).
+      echo "▶ Running OLTP migrations (PROD)..."
+      if [ -f "dist/libs/core/infrastructure/database/typeorm/ormconfig.js" ]; then
+          npm run migration:run:prod
+      else
+          echo "⚠️ Migration config not found at dist/libs/core/infrastructure/database/typeorm/ormconfig.js. Skipping."
+      fi
 
-  echo "▶ Ensuring analytics schema exists (PROD)..."
-  # See dev-entrypoint.sh for rationale. Idempotent.
-  if [ -f "dist/scripts/analytics/ensure-schema.cli.js" ]; then
-      npm run analytics:ensure-schema:prod
-  else
-      echo "⚠️ ensure-schema CLI not found in dist/. Skipping (migration may fail on first boot)."
-  fi
+      echo "▶ Ensuring analytics schema exists (PROD)..."
+      # See dev-entrypoint.sh for rationale. Idempotent.
+      if [ -f "dist/scripts/analytics/ensure-schema.cli.js" ]; then
+          npm run analytics:ensure-schema:prod
+      else
+          echo "⚠️ ensure-schema CLI not found in dist/. Skipping (migration may fail on first boot)."
+      fi
 
-  echo "▶ Running analytics warehouse migrations (PROD)..."
-  if [ -f "dist/libs/ee/analytics-warehouse/infrastructure/ormconfig.js" ]; then
-      npm run analytics:migration:run:prod
-  else
-      echo "⚠️ Analytics ormconfig not found at dist/libs/ee/analytics-warehouse/infrastructure/ormconfig.js. Skipping."
+      echo "▶ Running analytics warehouse migrations (PROD)..."
+      if [ -f "dist/libs/ee/analytics-warehouse/infrastructure/ormconfig.js" ]; then
+          npm run analytics:migration:run:prod
+      else
+          echo "⚠️ Analytics ormconfig not found at dist/libs/ee/analytics-warehouse/infrastructure/ormconfig.js. Skipping."
+      fi
   fi
 
   # MCP manager owns its own schema and runs its migration from a
