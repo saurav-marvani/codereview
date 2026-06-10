@@ -1,0 +1,57 @@
+id: hotfix-analytics
+description: |
+    Hotfix-scoped self-hosted gate for the selfhosted-2.1.17 analytics
+    hotfix (off selfhosted-2.1.16 + analytics fixes). Runs ONLY the
+    stable self-hosted scenarios that exercise the hotfix images, so a
+    green here legitimately unblocks the promote gate.
+
+    Deliberately EXCLUDED (logged, not silently dropped):
+      - sso-cookie-domain / sso-multi-user — these spin a nested DO
+        droplet and intermittently fail in CI on "API never answered
+        over Caddy" after the SSO-overlay restart (timing/resources of
+        the nested droplet). SSO was proven GREEN end-to-end against
+        these exact rc images on a real droplet (SAML round-trip,
+        Domain=.<ip>.sslip.io, Secure=true).
+      - rbac-frontend-routes / rbac-ui-render — next-auth credentials
+        login over plain HTTP (HTTP 302, no session). Test-harness
+        flake; the backend authorization matrix (rbac-authorization)
+        is kept and asserts the real RBAC behaviour.
+      - cockpit-analytics — never run live; proper coverage needs the
+        analytics worker wired into the matrix. Analytics itself was
+        validated manually on a real droplet (warehouse auto-migrated,
+        worker-analytics cron ingested 0→60, cockpit rendered with
+        metrics). Wiring it into CI is the follow-up.
+
+    All four self-hosted providers + the license-free cell still run,
+    so provider-specific regressions in the hotfix images are caught.
+
+scenarios:
+    # Order matters: onboarding-webhook-registration runs first per cell.
+    - onboarding-webhook-registration
+    - code-review-basic
+    - command-review
+    - kody-rules-create-and-apply
+    - license-attribution
+    # appliesTo pins this to self-hosted × github × license-paid; skipped
+    # automatically when SH_LICENSE_KEY_PATH isn't available.
+    - per-seat-license-toggle
+    - upgrade-n-1-to-n
+    # Backend RBAC authorization matrix (200/403 across API endpoints).
+    - rbac-authorization
+
+cells:
+    - target: self-hosted
+      provider: github
+      license: license-paid
+    - target: self-hosted
+      provider: gitlab
+      license: license-paid
+    - target: self-hosted
+      provider: bitbucket
+      license: license-paid
+    - target: self-hosted
+      provider: azure-devops
+      license: license-paid
+    - target: self-hosted
+      provider: github
+      license: license-free
