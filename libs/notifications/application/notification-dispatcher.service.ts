@@ -205,13 +205,22 @@ export class NotificationDispatcherService {
         correlationId: string,
         rules: IRoutingRule[],
     ): Promise<void> {
-        let enabledChannels = this.resolveEnabledChannels(
-            rules,
-            event,
-            recipient.role,
-            defaults,
-            recipient.directed === true,
-        );
+        // Directed recipients (the directly-involved person — PR author, sync
+        // initiator, removed user) are always reached: they bypass role-based
+        // routing config and resolve to the event's catalog defaults, narrowed
+        // only by any per-recipient channel override below. This is what keeps
+        // a non-default-role directed recipient from being swallowed by an
+        // off ('{}') wildcard baseline. Audience members go through the rules.
+        let enabledChannels = recipient.directed
+            ? [...defaults.defaultChannels].filter((ch) =>
+                  ACTIVE_CHANNELS.has(ch),
+              )
+            : this.resolveEnabledChannels(
+                  rules,
+                  event,
+                  recipient.role,
+                  defaults,
+              );
 
         // Per-recipient channel override: when the originating
         // NotificationRecipient declared `channels`, intersect with the
@@ -757,18 +766,16 @@ export class NotificationDispatcherService {
      * like any other (their catalog defaults already cover every active
      * channel, so this only grants the ability to mute).
      *
-     * `forceAudience` is set for directed recipients (the explicit envelope
-     * recipients): in the code fallback they always resolve to the catalog
-     * defaults, so a directly-involved contributor is never gated off an event
-     * that only defaults to owners. Everything is intersected with
-     * ACTIVE_CHANNELS.
+     * Directed recipients do not go through here at all — they are resolved
+     * to catalog defaults by the caller, so they are never gated off by an
+     * off ('{}') wildcard baseline or a non-default role. Everything is
+     * intersected with ACTIVE_CHANNELS.
      */
     private resolveEnabledChannels(
         rules: IRoutingRule[],
         event: string,
         role: string,
         defaults: (typeof EVENT_DEFAULTS)[NotificationEvent],
-        forceAudience = false,
     ): NotificationChannel[] {
         if (defaults.criticality === Criticality.SYSTEM) {
             return [...defaults.defaultChannels].filter((ch) =>
@@ -789,10 +796,9 @@ export class NotificationDispatcherService {
         );
         if (wildcard) return this.activeEnabledChannels(wildcard.channels);
 
-        // No rows: fall back to the catalog defaults for default roles and
-        // directed recipients; everyone else is off.
+        // No rows: fall back to the catalog defaults for default roles;
+        // everyone else is off.
         const isDefaultRole =
-            forceAudience ||
             !defaults.defaultRoles ||
             (defaults.defaultRoles as readonly string[]).includes(role);
         if (isDefaultRole) {

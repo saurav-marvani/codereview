@@ -452,6 +452,43 @@ describe('NotificationDispatcherService', () => {
             expect(t.emailAdapter.deliver).toHaveBeenCalledTimes(2);
             expect(t.inAppAdapter.deliver).toHaveBeenCalledTimes(2);
         });
+
+        it('still delivers to a directed recipient when an off "*" baseline would gate their role', async () => {
+            const t = makeDispatcher();
+            // author-1 is a contributor (a non-default role for this event).
+            t.usersService.find.mockResolvedValue([
+                {
+                    uuid: 'author-1',
+                    email: 'author@a.com',
+                    role: 'contributor',
+                },
+            ] as any);
+            // The seeded role-fanout shape: an off ('{}') wildcard baseline.
+            // The directed recipient must NOT be swallowed by it.
+            t.routingRuleRepo.findByOrganization.mockResolvedValueOnce([
+                { event: SPEND_THRESHOLD, role: '*', channels: {} } as any,
+            ]);
+
+            await t.dispatcher.dispatch(
+                baseMessage({
+                    event: SPEND_THRESHOLD,
+                    payload: {
+                        percentage: 75,
+                        monthlyLimitUsd: 1000,
+                        spentUsd: 760,
+                        periodKey: '2026-06',
+                    },
+                    recipients: [{ kind: 'user', userId: 'author-1' }],
+                }),
+            );
+
+            // Directed → catalog defaults (email + in_app), despite '*' = {}.
+            expect(t.emailAdapter.deliver).toHaveBeenCalledTimes(1);
+            expect(t.inAppAdapter.deliver).toHaveBeenCalledTimes(1);
+            expect(t.emailAdapter.deliver.mock.calls[0][0].userEmail).toBe(
+                'author@a.com',
+            );
+        });
     });
 
     describe('dispatchToRecipient — channel resolution', () => {
