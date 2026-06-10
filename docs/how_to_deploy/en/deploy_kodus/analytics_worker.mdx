@@ -10,10 +10,11 @@ ingestion cron that powers the Cockpit dashboards (DORA-style metrics,
 PR lifecycle, LLM-based PR classifier).
 
 <Warning>
-The default installer **does not** ship this worker. Community self-hosted
-deployments don't need it and these vars are filtered out of the default
-`.env.example`. Stop here unless you have a self-hosted Enterprise
-license and want the Cockpit reports.
+The analytics worker stays **off by default** — it's gated behind the
+`analytics` Compose profile, so a normal `docker compose up` never starts it
+and community self-hosted deployments pay nothing for it. The `ANALYTICS_*`
+vars ship commented out in `.env.example`. Continue only if you have a
+self-hosted Enterprise license and want the Cockpit reports.
 </Warning>
 
 ## What it does
@@ -36,10 +37,11 @@ unaffected by long-running ingestion queries.
 The analytics warehouse is a Postgres **schema**, not a separate database.
 Two supported layouts:
 
-- **Shared Postgres (recommended for self-hosted)** — leave
-  `ANALYTICS_PG_DB_HOST` empty. The config loader falls back to the main
-  `API_PG_DB_*` vars and creates an `analytics` schema in the same instance.
-  One DB to back up and operate.
+- **Shared Postgres (recommended for self-hosted)** — leave the
+  `ANALYTICS_PG_DB_*` vars **unset** (commented out, not set to an empty
+  value). The config loader cascades to the main `API_PG_DB_*` vars and
+  creates an `analytics` schema in the same instance. One DB to back up and
+  operate.
 - **Dedicated Postgres** — set the full `ANALYTICS_PG_DB_*` block to point
   at a separate instance. Use this when you want analytical queries fully
   isolated from the OLTP write path.
@@ -57,45 +59,62 @@ flowchart LR
 
 ## Enabling on self-hosted Enterprise
 
-### 1. Add the service to `docker-compose.yml`
+### 1. Turn on the `analytics` profile
+
+The `worker-analytics` service ships in the installer's `docker-compose.yml`
+behind an opt-in [Compose profile](https://docs.docker.com/compose/profiles/),
+so it stays off for community installs. Enable it by adding to your `.env`:
+
+```bash
+COMPOSE_PROFILES=analytics
+```
+
+It uses the **same image as `worker`** — only `WORKER_ROLE=analytics` (set on
+the service in `docker-compose.yml`) flips it into ingestion mode. Leave
+`WORKER_ROLE=code-review` in `.env` for the main worker; the analytics
+container overrides it.
+
+<Note>
+Running a hand-rolled compose (not the Kodus installer)? Add the service
+yourself:
 
 ```yaml
 worker-analytics:
-    image: ghcr.io/kodustech/kodus-ai-worker:latest
+    image: ghcr.io/kodustech/kodus-ai-worker:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: kodus-worker-analytics
+    profiles: ["analytics"]
     environment:
-        - ENV=production
-        - NODE_ENV=production
         - WORKER_ROLE=analytics
-    networks:
-        - shared-network
-        - kodus-backend-services
+    networks: [shared-network, kodus-backend-services]
     restart: unless-stopped
-    env_file:
-        - .env
-    depends_on:
-        - db_kodus_postgres
-        - db_kodus_mongodb
-        - rabbitmq
+    env_file: [.env]
+    depends_on: [db_kodus_postgres, db_kodus_mongodb, rabbitmq]
 ```
+</Note>
 
-The image is identical to the `worker` service — only `WORKER_ROLE=analytics`
-flips it into ingestion mode.
+### 2. (Optional) tune the analytics block in `.env`
 
-### 2. Add the analytics block to `.env`
+Defaults work out of the box for the shared-Postgres layout — you only need
+this block to change cron schedules or point at a dedicated Postgres.
 
-**Shared Postgres (recommended):**
+**Shared Postgres (recommended):** leave the `ANALYTICS_PG_DB_*` connection
+vars **unset** (commented out). The loader cascades to the main `API_PG_DB_*`
+and creates the `analytics` schema in the same instance.
+
+<Warning>
+Do **not** set `ANALYTICS_PG_DB_HOST=` to an empty value — leave it commented
+out. An empty string is treated as "set to nothing", which can short-circuit
+the fallback to the main Postgres.
+</Warning>
 
 ```bash
-# Empty ANALYTICS_PG_DB_HOST → loader reuses API_PG_DB_* and creates the
-# `analytics` schema in the main instance.
-ANALYTICS_PG_DB_HOST=
-ANALYTICS_PG_DB_SCHEMA=analytics
-
-# Cron schedules (UTC).
-ANALYTICS_INGESTION_CRON=*/30 * * * *
-ANALYTICS_CLASSIFIER_CRON=*/15 * * * *
+ANALYTICS_PG_DB_SCHEMA=analytics        # default; override only to rename
+ANALYTICS_INGESTION_CRON=*/30 * * * *   # default
+ANALYTICS_CLASSIFIER_CRON=*/15 * * * *  # default
+# No LLM key configured? Disable the PR classifier — DORA / lifecycle
+# metrics still work without it:
+# ANALYTICS_CLASSIFIER_DISABLED=true
 ```
 
 **Dedicated Postgres:**
@@ -107,28 +126,31 @@ ANALYTICS_PG_DB_USERNAME=analytics
 ANALYTICS_PG_DB_PASSWORD=...
 ANALYTICS_PG_DB_DATABASE=kodus_analytics
 ANALYTICS_PG_DB_SCHEMA=analytics
-
-ANALYTICS_INGESTION_CRON=*/30 * * * *
-ANALYTICS_CLASSIFIER_CRON=*/15 * * * *
 ```
 
 ### 3. Boot — migrations run automatically
 
-The `worker-analytics` container shares the same `prod-entrypoint.sh` as
-`api`/`worker`/`webhooks`. With `RUN_MIGRATIONS=true` (installer default),
-the analytics warehouse migrations (`yarn analytics:migration:run:prod`)
-run on first boot, creating the `analytics` schema and its tables.
+```bash
+COMPOSE_PROFILES=analytics docker compose up -d
+```
+
+`worker-analytics` shares the same `prod-entrypoint.sh` as `api`/`worker`. With
+`RUN_MIGRATIONS=true` (installer default), the analytics warehouse migrations
+run on first boot, creating the `analytics` schema and its tables. The first
+ingestion run then imports the PR history Kodus already has in Mongo;
+subsequent runs are incremental (by `updatedAt`).
 
 ## Reference
 
 | Variable | Description | Default |
 |---|---|---|
 | `WORKER_ROLE` | Must be set to `analytics` on this container. | _required_ |
-| `ANALYTICS_PG_DB_HOST` | Analytics Postgres host. Empty → reuse main Postgres. | _empty_ |
+| `COMPOSE_PROFILES` | Set to `analytics` to bring the worker up. | _unset_ |
+| `ANALYTICS_PG_DB_HOST` | Analytics Postgres host. Unset → reuse main Postgres. | _unset_ |
 | `ANALYTICS_PG_DB_PORT` | Analytics Postgres port. | `5432` |
-| `ANALYTICS_PG_DB_USERNAME` | Analytics Postgres user. Empty → reuse `API_PG_DB_USERNAME`. | _empty_ |
-| `ANALYTICS_PG_DB_PASSWORD` | Analytics Postgres password. Empty → reuse `API_PG_DB_PASSWORD`. | _empty_ |
-| `ANALYTICS_PG_DB_DATABASE` | Analytics Postgres database. Empty → reuse `API_PG_DB_DATABASE`. | _empty_ |
+| `ANALYTICS_PG_DB_USERNAME` | Analytics Postgres user. Unset → reuse `API_PG_DB_USERNAME`. | _unset_ |
+| `ANALYTICS_PG_DB_PASSWORD` | Analytics Postgres password. Unset → reuse `API_PG_DB_PASSWORD`. | _unset_ |
+| `ANALYTICS_PG_DB_DATABASE` | Analytics Postgres database. Unset → reuse `API_PG_DB_DATABASE`. | _unset_ |
 | `ANALYTICS_PG_DB_SCHEMA` | Schema name for the warehouse tables. | `analytics` |
 | `ANALYTICS_PG_POOL_MAX` | Upper bound on the analytics Postgres pool. | `5` |
 | `ANALYTICS_INGESTION_CRON` | Cron schedule for the ingestion run (UTC). | `*/30 * * * *` |
@@ -139,9 +161,7 @@ run on first boot, creating the `analytics` schema and its tables.
 To stop ingestion at runtime without removing the container, set
 `ANALYTICS_INGESTION_DISABLED=true` and/or `ANALYTICS_CLASSIFIER_DISABLED=true`
 and restart `worker-analytics`. The cron stays scheduled but each tick
-short-circuits. Use this for incident triage, not as a long-term config —
-they are managed primarily for cloud and may not appear in the installer
-template.
+short-circuits.
 
 ## Verifying it's working
 

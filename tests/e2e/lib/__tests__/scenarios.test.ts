@@ -2,9 +2,10 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { allScenarios, resolveScenarios } from "../../scenarios/index.js";
 
-test("allScenarios: includes the 16 release-gate scenarios", () => {
+test("allScenarios: includes the 17 release-gate scenarios", () => {
     const ids = Object.keys(allScenarios).sort();
     assert.deepEqual(ids, [
+        "cockpit-analytics",
         "code-review-basic",
         "command-review",
         "kody-rules-create-and-apply",

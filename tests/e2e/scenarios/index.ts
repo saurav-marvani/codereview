@@ -1,4 +1,5 @@
 import type { Scenario } from "../lib/types.js";
+import cockpitAnalytics from "./cockpit-analytics.js";
 import codeReviewBasic from "./code-review-basic.js";
 import commandReview from "./command-review.js";
 import kodyRulesCreateAndApply from "./kody-rules.js";
@@ -20,6 +21,7 @@ export const allScenarios: Record<string, Scenario> = {
     [onboardingWebhookRegistration.id]: onboardingWebhookRegistration,
     [codeReviewBasic.id]: codeReviewBasic,
     [commandReview.id]: commandReview,
+    [cockpitAnalytics.id]: cockpitAnalytics,
     [kodyRulesCreateAndApply.id]: kodyRulesCreateAndApply,
     [licenseAttribution.id]: licenseAttribution,
     [perSeatLicenseToggle.id]: perSeatLicenseToggle,
@@ -48,6 +50,7 @@ export function resolveScenarios(ids: string[]): Scenario[] {
 }
 
 export {
+    cockpitAnalytics,
     codeReviewBasic,
     commandReview,
     kodyRulesCreateAndApply,
