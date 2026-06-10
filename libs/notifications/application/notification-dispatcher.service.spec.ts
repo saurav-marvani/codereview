@@ -264,7 +264,7 @@ describe('NotificationDispatcherService', () => {
                 baseMessage({
                     event: SPEND_THRESHOLD,
                     payload: thresholdPayload,
-                    recipients: [{ kind: 'role', role: Role.OWNER }],
+                    recipients: [],
                 }),
             );
 
@@ -299,7 +299,7 @@ describe('NotificationDispatcherService', () => {
                 baseMessage({
                     event: SPEND_THRESHOLD,
                     payload: thresholdPayload,
-                    recipients: [{ kind: 'role', role: Role.OWNER }],
+                    recipients: [],
                 }),
             );
 
@@ -323,7 +323,7 @@ describe('NotificationDispatcherService', () => {
                         spentUsd: 1200,
                         periodKey: '2026-06',
                     },
-                    recipients: [{ kind: 'role', role: Role.OWNER }],
+                    recipients: [],
                 }),
             );
 
@@ -333,6 +333,65 @@ describe('NotificationDispatcherService', () => {
             expect(t.emailAdapter.deliver.mock.calls[0][0].userEmail).toBe(
                 'o@a.com',
             );
+        });
+    });
+
+    describe('mixed events (directed recipient + config audience)', () => {
+        // A defaultRoles event that ALSO carries an explicit directed
+        // recipient: the directed user is delivered even when their role is
+        // not a default role, while the config audience is gated as usual.
+        const SPEND_THRESHOLD =
+            NotificationEvent.SPEND_LIMIT_THRESHOLD_REACHED; // defaultRoles [OWNER]
+
+        it('delivers to the directed recipient AND the config audience', async () => {
+            const t = makeDispatcher();
+            // resolveRecipients (directed user) and resolveAllOrgMembers
+            // (audience) both call find — route by the query shape.
+            t.usersService.find.mockImplementation(async (q: any) => {
+                if (q?.uuid === 'author-1') {
+                    return [
+                        {
+                            uuid: 'author-1',
+                            email: 'author@a.com',
+                            role: 'contributor',
+                        },
+                    ] as any;
+                }
+                // all org members
+                return [
+                    { uuid: 'owner-1', email: 'o@a.com', role: 'owner' },
+                    {
+                        uuid: 'author-1',
+                        email: 'author@a.com',
+                        role: 'contributor',
+                    },
+                ] as any;
+            });
+
+            await t.dispatcher.dispatch(
+                baseMessage({
+                    event: SPEND_THRESHOLD,
+                    payload: {
+                        percentage: 75,
+                        monthlyLimitUsd: 1000,
+                        spentUsd: 760,
+                        periodKey: '2026-06',
+                    },
+                    recipients: [{ kind: 'user', userId: 'author-1' }],
+                }),
+            );
+
+            const emailed = t.emailAdapter.deliver.mock.calls.map(
+                (c) => c[0].userEmail,
+            );
+            // Owner via the config audience; the contributor author via the
+            // directed bypass (would be gated off as a non-default role).
+            expect(emailed).toEqual(
+                expect.arrayContaining(['o@a.com', 'author@a.com']),
+            );
+            // author-1 is in both lists but deduped to a single (directed) entry.
+            expect(t.emailAdapter.deliver).toHaveBeenCalledTimes(2);
+            expect(t.inAppAdapter.deliver).toHaveBeenCalledTimes(2);
         });
     });
 

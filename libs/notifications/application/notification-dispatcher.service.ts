@@ -58,6 +58,15 @@ interface ResolvedRecipient {
      * recipient gets email and another gets in-app.
      */
     channels?: NotificationChannel[];
+    /**
+     * True for the explicit envelope recipients the emitter chose (the PR
+     * author, the removed user, the sync initiator). They are always
+     * delivered, on their own/default channels, regardless of whether their
+     * role is one of the event's defaultRoles — so a directly-involved
+     * contributor is never gated off. Config-driven audience members
+     * (from defaultRoles) leave this unset.
+     */
+    directed?: boolean;
 }
 
 /**
@@ -112,14 +121,26 @@ export class NotificationDispatcherService {
         const rules =
             await this.routingRuleRepo.findByOrganization(organizationId);
 
-        // Role-fanout events (those declaring `defaultRoles`) derive their
-        // audience from configuration: the default roles are on, and an admin
-        // can opt other roles in. So we fan out to every org member and let
-        // per-role channel resolution gate who actually receives. Everything
-        // else uses the explicit recipients the emitter chose.
-        const recipients = defaults.defaultRoles
+        // Two independent recipient sources, unioned so an event can reach
+        // both at once (the "mixed" events):
+        //
+        //  - directed: the explicit envelope recipients the emitter chose (PR
+        //    author, removed user, …). Always delivered, bypassing role gating.
+        //  - audience: events declaring `defaultRoles` also fan out to every
+        //    org member, gated per role by routing config (default roles on,
+        //    admins can opt others in).
+        //
+        // A user present in both keeps the directed entry (listed first, so
+        // dedup wins) and is never gated off for not being a default role.
+        const directed = message.recipients?.length
+            ? (await this.resolveRecipients(message, organizationId)).map(
+                  (r) => ({ ...r, directed: true }),
+              )
+            : [];
+        const audience = defaults.defaultRoles
             ? await this.resolveAllOrgMembers(organizationId)
-            : await this.resolveRecipients(message, organizationId);
+            : [];
+        const recipients = this.dedupeByUser([...directed, ...audience]);
 
         // Per-recipient try/catch so a thrown error (DB outage, adapter
         // bug) for one recipient does not abort the loop and bubble up
@@ -158,6 +179,23 @@ export class NotificationDispatcherService {
         }
     }
 
+    /**
+     * Dedup a unioned recipient list by user (email-only fallbacks keyed by
+     * address). First occurrence wins, so directed recipients — which are
+     * listed before the config audience — take precedence over the same user
+     * resolved as an audience member.
+     */
+    private dedupeByUser(
+        recipients: ResolvedRecipient[],
+    ): ResolvedRecipient[] {
+        const byKey = new Map<string, ResolvedRecipient>();
+        for (const r of recipients) {
+            const key = r.userId ? r.userId : `EMAIL:${r.email}`;
+            if (!byKey.has(key)) byKey.set(key, r);
+        }
+        return [...byKey.values()];
+    }
+
     private async dispatchToRecipient(
         recipient: ResolvedRecipient,
         event: NotificationEvent,
@@ -172,6 +210,7 @@ export class NotificationDispatcherService {
             event,
             recipient.role,
             defaults,
+            recipient.directed === true,
         );
 
         // Per-recipient channel override: when the originating
@@ -718,12 +757,18 @@ export class NotificationDispatcherService {
      * Events without `defaultRoles` treat every role as an audience role, so
      * their behaviour is unchanged (specific → '*' → defaults; CRITICAL ⇒ all).
      * Everything is intersected with ACTIVE_CHANNELS.
+     *
+     * `forceAudience` is set for directed recipients (the explicit envelope
+     * recipients): they always resolve as if their role were an audience role,
+     * so a directly-involved contributor is never gated off an event that
+     * only defaults to owners.
      */
     private resolveEnabledChannels(
         rules: IRoutingRule[],
         event: string,
         role: string,
         defaults: (typeof EVENT_DEFAULTS)[NotificationEvent],
+        forceAudience = false,
     ): NotificationChannel[] {
         if (defaults.criticality === Criticality.SYSTEM) {
             return [...defaults.defaultChannels].filter((ch) =>
@@ -732,6 +777,7 @@ export class NotificationDispatcherService {
         }
 
         const isAudienceRole =
+            forceAudience ||
             !defaults.defaultRoles ||
             (defaults.defaultRoles as readonly string[]).includes(role);
 
