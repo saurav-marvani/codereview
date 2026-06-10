@@ -167,36 +167,8 @@ export class RoutingRuleService {
                 );
             }
 
-            // Skip channel checks for deletes — the row is going away.
-            if (rule.delete) continue;
-
-            // Critical events: the default-audience roles (and the All Roles
-            // row that seeds their defaults) must keep every active channel —
-            // they can't be muted. Roles an admin opts in *outside*
-            // defaultRoles are freely configurable, since they're additive.
-            const locksAllChannels =
-                eventDefaults.criticality === Criticality.CRITICAL &&
-                (rule.role === ROLE_WILDCARD ||
-                    !eventDefaults.defaultRoles ||
-                    (
-                        eventDefaults.defaultRoles as readonly string[]
-                    ).includes(rule.role));
-
-            if (locksAllChannels) {
-                const disabledChannels = Object.entries(rule.channels)
-                    .filter(
-                        ([ch, enabled]) =>
-                            !enabled &&
-                            ACTIVE_CHANNELS.has(ch as NotificationChannel),
-                    )
-                    .map(([ch]) => ch);
-
-                if (disabledChannels.length > 0) {
-                    throw new BadRequestException(
-                        `Cannot disable channels [${disabledChannels.join(', ')}] for critical event "${rule.event}". Critical notifications must reach the default roles on all active channels.`,
-                    );
-                }
-            }
+            // Critical events are no longer locked: every non-system event is
+            // freely configurable per role, criticality included.
         }
 
         const toDelete = rules.filter((r) => r.delete);

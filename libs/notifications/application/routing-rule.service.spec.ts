@@ -38,6 +38,26 @@ describe('RoutingRuleService', () => {
             expect(routingRuleRepo.upsertBatch).not.toHaveBeenCalled();
         });
 
+        it('allows muting a channel on a CRITICAL event (lock removed)', async () => {
+            // BILLING_PAYMENT_FAILED is CRITICAL — disabling in_app used to be
+            // rejected; it now passes straight through to upsertBatch.
+            await service.upsertRules('org-1', [
+                {
+                    event: NotificationEvent.BILLING_PAYMENT_FAILED,
+                    role: Role.OWNER,
+                    channels: { email: true, in_app: false },
+                },
+            ]);
+
+            expect(routingRuleRepo.upsertBatch).toHaveBeenCalledWith([
+                expect.objectContaining({
+                    event: NotificationEvent.BILLING_PAYMENT_FAILED,
+                    role: Role.OWNER,
+                    channels: { email: true, in_app: false },
+                }),
+            ]);
+        });
+
         it('rejects a delete that targets the wildcard role', async () => {
             await expect(
                 service.upsertRules('org-1', [

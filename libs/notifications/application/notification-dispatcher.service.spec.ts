@@ -308,7 +308,7 @@ describe('NotificationDispatcherService', () => {
             expect(t.inAppAdapter.deliver).toHaveBeenCalledTimes(1);
         });
 
-        it('CRITICAL locks all channels for audience roles, leaves others off', async () => {
+        it('CRITICAL events resolve to catalog defaults (no lock), others off', async () => {
             const t = makeDispatcher();
             t.usersService.find.mockResolvedValueOnce([
                 { uuid: 'owner-1', email: 'o@a.com', role: 'owner' } as any,
@@ -327,12 +327,43 @@ describe('NotificationDispatcherService', () => {
                 }),
             );
 
-            // Owner (audience, critical) → all active channels; contributor off.
+            // Owner (audience) → default channels; contributor off.
             expect(t.emailAdapter.deliver).toHaveBeenCalledTimes(1);
             expect(t.inAppAdapter.deliver).toHaveBeenCalledTimes(1);
             expect(t.emailAdapter.deliver.mock.calls[0][0].userEmail).toBe(
                 'o@a.com',
             );
+        });
+
+        it('a routing rule can now mute a channel on a CRITICAL event', async () => {
+            const t = makeDispatcher();
+            t.usersService.find.mockResolvedValueOnce([
+                { uuid: 'owner-1', email: 'o@a.com', role: 'owner' } as any,
+            ]);
+            // Owner mutes in-app for the critical spend-exceeded event — under
+            // the old lock this was rejected/ignored; now it takes effect.
+            t.routingRuleRepo.findByOrganization.mockResolvedValueOnce([
+                {
+                    event: SPEND_EXCEEDED,
+                    role: 'owner',
+                    channels: { email: true, in_app: false },
+                } as any,
+            ]);
+
+            await t.dispatcher.dispatch(
+                baseMessage({
+                    event: SPEND_EXCEEDED,
+                    payload: {
+                        monthlyLimitUsd: 1000,
+                        spentUsd: 1200,
+                        periodKey: '2026-06',
+                    },
+                    recipients: [],
+                }),
+            );
+
+            expect(t.emailAdapter.deliver).toHaveBeenCalledTimes(1);
+            expect(t.inAppAdapter.deliver).not.toHaveBeenCalled();
         });
     });
 

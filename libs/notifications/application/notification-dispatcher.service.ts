@@ -749,10 +749,13 @@ export class NotificationDispatcherService {
      *   - A specific (event, role) row always wins.
      *   - Otherwise the role's *default* depends on whether it's a declared
      *     audience role for the event:
-     *       · audience role  → CRITICAL ⇒ all active channels (locked);
-     *                          else the '*' row, else catalog defaults.
+     *       · audience role  → the '*' row, else catalog defaults.
      *       · non-audience   → off (empty) unless an admin added a specific
      *                          row opting it in.
+     *
+     * Criticality no longer locks channels — critical events are configurable
+     * like any other (their catalog defaults already cover every active
+     * channel, so this only grants the ability to mute).
      *
      * Events without `defaultRoles` treat every role as an audience role, so
      * their behaviour is unchanged (specific → '*' → defaults; CRITICAL ⇒ all).
@@ -780,10 +783,6 @@ export class NotificationDispatcherService {
             forceAudience ||
             !defaults.defaultRoles ||
             (defaults.defaultRoles as readonly string[]).includes(role);
-
-        if (defaults.criticality === Criticality.CRITICAL && isAudienceRole) {
-            return [...ACTIVE_CHANNELS];
-        }
 
         const specific = rules.find(
             (r) => r.event === event && r.role === role,
