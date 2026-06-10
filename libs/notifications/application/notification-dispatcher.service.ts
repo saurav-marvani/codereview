@@ -117,9 +117,15 @@ export class NotificationDispatcherService {
         }
 
         // Preload the org's routing rules once so per-recipient channel
-        // resolution is in-memory (no N queries during fanout).
+        // resolution is in-memory (no N queries during fanout). Indexed by
+        // `${event}:${role}` so each recipient's lookup is O(1) rather than an
+        // O(rules) scan — the fanout loop below runs once per recipient.
         const rules =
             await this.routingRuleRepo.findByOrganization(organizationId);
+        const ruleByKey = new Map<string, IRoutingRule>();
+        for (const r of rules) {
+            ruleByKey.set(`${r.event}:${r.role}`, r);
+        }
 
         // Two independent recipient sources, unioned so an event can reach
         // both at once (the "mixed" events):
@@ -156,7 +162,7 @@ export class NotificationDispatcherService {
                     payload,
                     organizationId,
                     correlationId,
-                    rules,
+                    ruleByKey,
                 );
             } catch (error) {
                 this.logger.error({
@@ -203,7 +209,7 @@ export class NotificationDispatcherService {
         payload: Record<string, unknown>,
         organizationId: string,
         correlationId: string,
-        rules: IRoutingRule[],
+        ruleByKey: Map<string, IRoutingRule>,
     ): Promise<void> {
         // Directed recipients (the directly-involved person — PR author, sync
         // initiator, removed user) are always reached: they bypass role-based
@@ -216,7 +222,7 @@ export class NotificationDispatcherService {
                   ACTIVE_CHANNELS.has(ch),
               )
             : this.resolveEnabledChannels(
-                  rules,
+                  ruleByKey,
                   event,
                   recipient.role,
                   defaults,
@@ -772,7 +778,7 @@ export class NotificationDispatcherService {
      * intersected with ACTIVE_CHANNELS.
      */
     private resolveEnabledChannels(
-        rules: IRoutingRule[],
+        ruleByKey: Map<string, IRoutingRule>,
         event: string,
         role: string,
         defaults: (typeof EVENT_DEFAULTS)[NotificationEvent],
@@ -785,15 +791,12 @@ export class NotificationDispatcherService {
 
         // A specific (event, role) row wins; otherwise the '*' baseline applies
         // to every role. Both are honored before the code fallback so the
-        // stored config is the source of truth for seeded orgs.
-        const specific = rules.find(
-            (r) => r.event === event && r.role === role,
-        );
+        // stored config is the source of truth for seeded orgs. Lookups are
+        // O(1) against the map the caller built once for the whole fanout.
+        const specific = ruleByKey.get(`${event}:${role}`);
         if (specific) return this.activeEnabledChannels(specific.channels);
 
-        const wildcard = rules.find(
-            (r) => r.event === event && r.role === ROLE_WILDCARD,
-        );
+        const wildcard = ruleByKey.get(`${event}:${ROLE_WILDCARD}`);
         if (wildcard) return this.activeEnabledChannels(wildcard.channels);
 
         // No rows: fall back to the catalog defaults for default roles;
