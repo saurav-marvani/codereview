@@ -16,7 +16,6 @@ import { tabs, type TabValue } from "./_constants";
 import { extractApiData } from "./_helpers/api-data-extractor";
 import { isCockpitTierAllowed } from "./_helpers/tier-policy";
 import { getAnalyticsStatus } from "./_services/analytics/fetch";
-import { AnalyticsNotAvailable } from "./not-available";
 
 export default async function Layout({
     bugRatioAnalytics,
@@ -45,10 +44,14 @@ export default async function Layout({
     flowMetrics: React.ReactNode;
     kodusReviewTab: React.ReactNode;
 }) {
-    if (!process.env.WEB_ANALYTICS_SECRET) {
-        return <AnalyticsNotAvailable />;
-    }
-
+    // Cockpit availability is decided solely by the license tier below
+    // (`isCockpitTierAllowed`). We intentionally do NOT gate on
+    // `WEB_ANALYTICS_SECRET`: that env var is the x-api-key for the retired
+    // standalone `kodus-service-analytics` microservice, and the backend
+    // source resolver now hard-returns INTERNAL — analytics is served by the
+    // in-process Postgres warehouse via apps/api (JWT auth), which never reads
+    // that secret. Gating the page on an empty legacy secret made self-hosted
+    // Enterprise orgs see "Analytics Not Available" despite a valid license.
     const [cookieStore, selectedTeamId] = await Promise.all([
         cookies(),
         getGlobalSelectedTeamId(),

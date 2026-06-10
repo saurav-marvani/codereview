@@ -23,6 +23,10 @@
         "apps/mcp-manager/src/config/typeorm.config.ts",
         "apps/mcp-manager/src/database/migrations/**/*",
         "apps/mcp-manager/src/**/*.entity.ts",
-        "scripts/mcp-manager/ensure-schema.cli.ts"
+        "scripts/mcp-manager/ensure-schema.cli.ts",
+        "libs/ee/analytics-warehouse/infrastructure/ormconfig.ts",
+        "libs/ee/analytics-warehouse/migrations/**/*",
+        "libs/ee/analytics-warehouse/entities/**/*.entity.ts",
+        "scripts/analytics/ensure-schema.cli.ts"
     ]
 }
