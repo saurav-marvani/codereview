@@ -21,24 +21,47 @@ const API = "https://api.github.com";
 
 // Repo CREATE/DELETE needs org Administration rights, which the regular
 // fine-grained GH_TEST_TOKEN (scoped to kodus-e2e, All-repositories but no
-// admin) typically lacks. GH_REPO_ADMIN_TOKEN, when set, is used ONLY here —
+// admin) typically lacks. GH_REPO_ADMIN_TOKEN(_2,_3…) are used ONLY here —
 // for minting/mirroring/deleting the throwaway repo. Everything else
 // (integration binding, listing, PRs, polling) keeps using GH_TEST_TOKEN,
 // whose first org is kodus-e2e (that's what the Kodus integration binds to —
 // github.service.ts picks orgs[0]). Falls back to GH_TEST_TOKEN when the
 // admin var is absent (a single fully-privileged token also works).
+//
+// GitHub's primary rate limit is per ACCOUNT (5000 req/hr), not per token, so
+// a single admin account doing every repo create/delete/mirror across the
+// matrix exhausts it (the cloud-matrix github cells then 403 on
+// "API rate limit exceeded for user ID …"). Round-robin across the pool of
+// admin tokens (each a DIFFERENT account) so the heavy repo-admin traffic
+// spreads over multiple per-account quotas. Both tokens must be distinct
+// GitHub accounts that are members of the org with Administration + Contents
+// write — a second PAT of the SAME account buys no extra quota.
+const MAX_ADMIN_TOKENS = 5;
+function adminTokenPool(): string[] {
+    const pool: string[] = [];
+    if (process.env.GH_REPO_ADMIN_TOKEN) pool.push(process.env.GH_REPO_ADMIN_TOKEN);
+    for (let i = 2; i <= MAX_ADMIN_TOKENS; i++) {
+        const v = process.env[`GH_REPO_ADMIN_TOKEN_${i}`];
+        if (v) pool.push(v);
+    }
+    if (pool.length === 0 && process.env.GH_TEST_TOKEN) {
+        pool.push(process.env.GH_TEST_TOKEN);
+    }
+    return [...new Set(pool.map((t) => t.trim()).filter(Boolean))];
+}
+let adminTokenIdx = 0;
 function token(): string {
-    const t = process.env.GH_REPO_ADMIN_TOKEN || process.env.GH_TEST_TOKEN;
-    if (!t)
+    const pool = adminTokenPool();
+    if (!pool.length)
         throw new Error(
             "GH_REPO_ADMIN_TOKEN or GH_TEST_TOKEN is required for throwaway repos",
         );
-    return t;
+    return pool[adminTokenIdx++ % pool.length];
 }
 
-function headers(): Record<string, string> {
+function headers(tok?: string): Record<string, string> {
     return {
-        Authorization: `Bearer ${token()}`,
+        Authorization: `Bearer ${tok ?? token()}`,
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     };
@@ -53,10 +76,14 @@ export async function createThrowawayRepo(
     const owner = baseRepo.split("/")[0];
     const full = `${owner}/${name}`;
 
+    // Pick ONE admin token for this whole repo (create + mirror push) so the
+    // push isn't attempted by a different account than the one that created
+    // the repo. Rotation happens ACROSS repos — token() round-robins per call.
+    const tok = token();
     log.info(`Creating throwaway repo ${full} (mirror of ${baseRepo})`);
     let resp = await http(`${API}/orgs/${owner}/repos`, {
         method: "POST",
-        headers: headers(),
+        headers: headers(tok),
         body: {
             name,
             private: true,
@@ -71,7 +98,7 @@ export async function createThrowawayRepo(
         // Owner is the token's user, not an org.
         resp = await http(`${API}/user/repos`, {
             method: "POST",
-            headers: headers(),
+            headers: headers(tok),
             body: { name, private: true, auto_init: false },
             timeoutMs: 30_000,
         });
@@ -102,7 +129,7 @@ export async function createThrowawayRepo(
             GIT_CONFIG_COUNT: "1",
             GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader",
             GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(
-                `x-access-token:${token()}`,
+                `x-access-token:${tok}`,
             ).toString("base64")}`,
         };
         // Transient local socket errors ("Recv failure: Can't assign
