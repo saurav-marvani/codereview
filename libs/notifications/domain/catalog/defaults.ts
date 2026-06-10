@@ -155,6 +155,9 @@ export const EVENT_DEFAULTS: Readonly<
             NotificationChannel.IN_APP,
         ]),
         icon: 'shield-alert',
+        // Mixed event: the sync initiator is notified directly (emit
+        // recipient); the owner audience is config-driven.
+        defaultRoles: [Role.OWNER],
     },
 
     // ── Code review ────────────────────────────────────────────
@@ -178,6 +181,9 @@ export const EVENT_DEFAULTS: Readonly<
             NotificationChannel.IN_APP,
         ]),
         icon: 'shield-alert',
+        // Mixed event: the PR author is notified directly (emit recipient);
+        // the owner audience is config-driven.
+        defaultRoles: [Role.OWNER],
     },
     [NotificationEvent.REVIEW_SKIPPED_NO_LICENSE]: {
         criticality: Criticality.INFORMATIONAL,
