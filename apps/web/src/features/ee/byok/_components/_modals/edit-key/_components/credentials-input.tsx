@@ -77,9 +77,10 @@ const VertexFields = () => {
                 <AlertDescription className="text-pretty">
                     Run{" "}
                     <code className="bg-card-lv2 rounded px-1 py-0.5 font-mono text-[11px]">
-                        base64 -w 0 sa.json
+                        base64 &lt; sa.json | tr -d &apos;\n&apos;
                     </code>{" "}
-                    and paste the output below. Kodus extracts{" "}
+                    (works on macOS and Linux) and paste the output below.
+                    Kodus extracts{" "}
                     <code className="bg-card-lv2 rounded px-1 py-0.5 font-mono text-[11px]">
                         project_id
                     </code>{" "}

@@ -463,7 +463,11 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
             !!suggestions?.codeSuggestions &&
             suggestions?.codeSuggestions?.length > 0;
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
-        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+        // Fallback to a Vertex (SA-auth) Gemini model. The legacy v2 engine
+        // builds Vertex models via `ChatVertexAI` (Gemini protocol only), so
+        // `VERTEX_CLAUDE_3_5_SONNET` was silently broken as a fallback here.
+        // Claude on Vertex is supported via BYOK (v5) only.
+        const fallbackProvider = LLMModelProvider.VERTEX_GEMINI_2_5_PRO;
 
         const baseContext = await this.prepareAnalysisContext(
             fileContext,
