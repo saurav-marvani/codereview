@@ -229,6 +229,12 @@ jobs:
                   # per run. Absent → that scenario is SKIPPED, not failed
                   # (SCENARIO_REQUIRED in run-matrix.ts).
                   GH_REPO_ADMIN_TOKEN: ${{ secrets.GH_REPO_ADMIN_TOKEN }}
+                  # Second admin account (DIFFERENT GitHub user). GitHub's
+                  # primary rate limit is per-account, so repo create/delete/
+                  # mirror round-robins across these admin tokens (see
+                  # github-repos.ts) to spread the heaviest GitHub traffic over
+                  # multiple per-account quotas instead of exhausting one.
+                  GH_REPO_ADMIN_TOKEN_2: ${{ secrets.GH_REPO_ADMIN_TOKEN_2 }}
 
                   # WAF Allow-rule header: lib/http.ts injects `x-kodus-e2e`
                   # on every request bound for qa.*.kodus.io (and ONLY those)
