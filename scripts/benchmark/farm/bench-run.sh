@@ -30,8 +30,14 @@ BRANCH="${2:-}"
 
 RESULTS_ROOT="${FARM_SCRIPT_DIR}/results"
 E2E_DIR="${REPO_ROOT}/tests/e2e"
-# GitHub token for cloning the repo-set + opening PRs (clone-run-repos.ts / farm-run.ts).
+# GitHub tokens:
+#  - GH_TEST_TOKEN  (bot) opens PRs in farm-run.ts — avoids abuse-flagging your
+#    personal account on a 50-PR burst.
+#  - GH_CLONE_TOKEN must have the `workflow` scope (the dataset branches carry
+#    .github/workflows/* files that GitHub refuses to push otherwise). The e2e
+#    bot token usually lacks it, so default to your gh CLI token here.
 export GH_TEST_TOKEN="${GH_TEST_TOKEN:-${GH_DEV_TOKEN:-$(gh auth token 2>/dev/null || true)}}"
+export GH_CLONE_TOKEN="${GH_CLONE_TOKEN:-$(gh auth token 2>/dev/null || true)}"
 
 # ---- foreground: stamp a run id, daemonize, return ----
 if [ "${BENCH_RUN_BG:-0}" != "1" ]; then
