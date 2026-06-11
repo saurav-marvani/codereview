@@ -33,16 +33,8 @@ reviewOptions:
 
 # suggestion control
 suggestionControl:
-    groupingMode: 'full' # minimal | full
     applyFiltersToKodyRules: false
-    limitationType: 'pr' # file | pr | severity
-    maxSuggestions: 9 # min 7, no max
     severityLevelFilter: 'high' # low | medium | high | critical
-    severityLimits: # when limitationType == severity
-        low: 0
-        medium: 0
-        high: 0
-        critical: 0
 
 # PR summary
 summary:
