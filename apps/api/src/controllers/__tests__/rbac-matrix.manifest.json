@@ -220,6 +220,28 @@
     }
   },
   {
+    "key": "cockpit.controller.ts#operationalMetrics",
+    "httpMethod": "GET",
+    "urlPath": "/review-analytics/highlights/operational-metrics",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
+    "key": "cockpit.controller.ts#operationalOutcomesWeekly",
+    "httpMethod": "GET",
+    "urlPath": "/review-analytics/charts/operational-outcomes-weekly",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
     "key": "cockpit.controller.ts#prSizeChart",
     "httpMethod": "GET",
     "urlPath": "/productivity/charts/pr-size",

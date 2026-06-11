@@ -20,6 +20,11 @@ import {
     ImplementationRateBySeverityRow,
     ImplementationRateWeeklyRow,
     RepositoryHealthRow,
+    ReviewOperationalMetricComparison,
+    ReviewOperationalMetrics,
+    ReviewOperationalMetricsPeriod,
+    ReviewOperationalMetricsWeeklyRow,
+    ReviewOperationalRateComparison,
     SuggestionsExplorerItem,
     SuggestionsExplorerQuery,
     SuggestionsExplorerResult,
@@ -496,6 +501,222 @@ export class CockpitReviewAnalyticsService
             currentPeriod: current,
             previousPeriod: previous,
             comparison,
+        };
+    }
+
+    async getReviewOperationalMetrics(
+        q: CockpitRangeQuery,
+    ): Promise<ReviewOperationalMetrics> {
+        const prev = computePreviousPeriod(q.startDate, q.endDate);
+
+        const [current, previous] = await Promise.all([
+            this.getReviewOperationalMetricsPeriod(q),
+            this.getReviewOperationalMetricsPeriod({
+                ...q,
+                startDate: prev.startDate,
+                endDate: prev.endDate,
+            }),
+        ]);
+
+        return {
+            currentPeriod: current,
+            previousPeriod: previous,
+            comparison: {
+                processedPRs: this.compareOperationalMetric(
+                    current.processedPRs,
+                    previous.processedPRs,
+                    'up',
+                ),
+                processedReviews: this.compareOperationalMetric(
+                    current.processedReviews,
+                    previous.processedReviews,
+                    'up',
+                ),
+                successRate: this.compareOperationalRate(
+                    current.successRate,
+                    previous.successRate,
+                    'up',
+                ),
+                errorRate: this.compareOperationalRate(
+                    current.errorRate,
+                    previous.errorRate,
+                    'down',
+                ),
+                skippedRate: this.compareOperationalRate(
+                    current.skippedRate,
+                    previous.skippedRate,
+                    'down',
+                ),
+            },
+        };
+    }
+
+    async getReviewOperationalMetricsWeekly(
+        q: CockpitRangeQuery,
+    ): Promise<ReviewOperationalMetricsWeeklyRow[]> {
+        const params: unknown[] = [q.organizationId, q.startDate, q.endDate];
+        const repositoryFilter = q.repository
+            ? (params.push(q.repository),
+              `AND roe."repo_full_name" = $${params.length}`)
+            : '';
+
+        const rows = (await this.ds.query(
+            // Same HashAggregate-over-PR-key rewrite as the period query: group
+            // by (week, repo, PR) once, then roll the per-PR tallies up per
+            // week. Avoids the disk-spilling COUNT(DISTINCT) sort; identical
+            // results.
+            `WITH scoped AS (
+                SELECT
+                    date_trunc('week', roe."created_at") AS week_start,
+                    roe."status",
+                    roe."repositoryId",
+                    roe."pullRequestNumber"
+                  FROM "analytics"."review_operational_executions" roe
+                 WHERE roe."organizationId" = $1
+                   AND roe."created_at" >= $2::date
+                   AND roe."created_at" < ($3::date + INTERVAL '1 day')
+                   ${repositoryFilter}
+            ),
+            per_pr AS (
+                SELECT
+                    week_start,
+                    COUNT(*) AS reviews,
+                    COUNT(*) FILTER (WHERE "status" = 'success') AS successful,
+                    COUNT(*) FILTER (WHERE "status" IN ('error', 'partial_error')) AS errored,
+                    COUNT(*) FILTER (WHERE "status" = 'skipped') AS skipped
+                  FROM scoped
+                 GROUP BY week_start, "repositoryId", "pullRequestNumber"
+            )
+            SELECT
+                to_char(week_start, 'YYYY-MM-DD') AS week_start,
+                COALESCE(SUM(reviews), 0)::int AS processed_reviews,
+                COUNT(*)::int AS processed_prs,
+                COALESCE(SUM(successful), 0)::int AS successful_reviews,
+                COALESCE(SUM(errored), 0)::int AS error_reviews,
+                COALESCE(SUM(skipped), 0)::int AS skipped_reviews
+              FROM per_pr
+             GROUP BY week_start
+             ORDER BY week_start ASC`,
+            params,
+        )) as Array<{
+            week_start: string;
+            processed_reviews: number | string | null;
+            processed_prs: number | string | null;
+            successful_reviews: number | string | null;
+            error_reviews: number | string | null;
+            skipped_reviews: number | string | null;
+        }>;
+
+        return rows.map((row) => {
+            const processedReviews = Number(row.processed_reviews ?? 0);
+            const successfulReviews = Number(row.successful_reviews ?? 0);
+            const errorReviews = Number(row.error_reviews ?? 0);
+            const skippedReviews = Number(row.skipped_reviews ?? 0);
+
+            return {
+                weekStart: row.week_start,
+                processedPRs: Number(row.processed_prs ?? 0),
+                processedReviews,
+                successfulReviews,
+                errorReviews,
+                skippedReviews,
+                successRate: this.rate(processedReviews, successfulReviews),
+                errorRate: this.rate(processedReviews, errorReviews),
+                skippedRate: this.rate(processedReviews, skippedReviews),
+            };
+        });
+    }
+
+    private async getReviewOperationalMetricsPeriod(
+        q: CockpitRangeQuery,
+    ): Promise<ReviewOperationalMetricsPeriod> {
+        const params: unknown[] = [q.organizationId, q.startDate, q.endDate];
+        const repositoryFilter = q.repository
+            ? (params.push(q.repository),
+              `AND roe."repo_full_name" = $${params.length}`)
+            : '';
+
+        const rows = (await this.ds.query(
+            // processed_prs is a distinct (repo, PR) count. Grouping by the
+            // PR key once (HashAggregate) and summing the per-PR tallies is
+            // ~4-8x faster than COUNT(DISTINCT ...), which forces a full sort
+            // that spills to disk on high-volume orgs. Results are identical.
+            `WITH scoped AS (
+                SELECT
+                    roe."status",
+                    roe."repositoryId",
+                    roe."pullRequestNumber"
+                  FROM "analytics"."review_operational_executions" roe
+                 WHERE roe."organizationId" = $1
+                   AND roe."created_at" >= $2::date
+                   AND roe."created_at" < ($3::date + INTERVAL '1 day')
+                   ${repositoryFilter}
+            ),
+            per_pr AS (
+                SELECT
+                    COUNT(*) AS reviews,
+                    COUNT(*) FILTER (WHERE "status" = 'success') AS successful,
+                    COUNT(*) FILTER (WHERE "status" IN ('error', 'partial_error')) AS errored,
+                    COUNT(*) FILTER (WHERE "status" = 'skipped') AS skipped
+                  FROM scoped
+                 GROUP BY "repositoryId", "pullRequestNumber"
+            )
+            SELECT
+                COALESCE(SUM(reviews), 0)::int AS processed_reviews,
+                COUNT(*)::int AS processed_prs,
+                COALESCE(SUM(successful), 0)::int AS successful_reviews,
+                COALESCE(SUM(errored), 0)::int AS error_reviews,
+                COALESCE(SUM(skipped), 0)::int AS skipped_reviews
+              FROM per_pr`,
+            params,
+        )) as Array<{
+            processed_reviews: number | string | null;
+            processed_prs: number | string | null;
+            successful_reviews: number | string | null;
+            error_reviews: number | string | null;
+            skipped_reviews: number | string | null;
+        }>;
+
+        const row = rows[0] ?? {
+            processed_reviews: 0,
+            processed_prs: 0,
+            successful_reviews: 0,
+            error_reviews: 0,
+            skipped_reviews: 0,
+        };
+        const processedReviews = Number(row.processed_reviews ?? 0);
+        const successfulReviews = Number(row.successful_reviews ?? 0);
+        const errorReviews = Number(row.error_reviews ?? 0);
+        const skippedReviews = Number(row.skipped_reviews ?? 0);
+
+        return {
+            processedPRs: Number(row.processed_prs ?? 0),
+            processedReviews,
+            successfulReviews,
+            errorReviews,
+            skippedReviews,
+            successRate: this.rate(processedReviews, successfulReviews),
+            errorRate: this.rate(processedReviews, errorReviews),
+            skippedRate: this.rate(processedReviews, skippedReviews),
+        };
+    }
+
+    private compareOperationalMetric(
+        current: number,
+        previous: number,
+        direction: 'up' | 'down',
+    ): ReviewOperationalMetricComparison {
+        return computeTrend(current, previous, direction);
+    }
+
+    private compareOperationalRate(
+        current: number,
+        previous: number,
+        direction: 'up' | 'down',
+    ): ReviewOperationalRateComparison {
+        return {
+            ...computeTrend(current, previous, direction),
+            percentagePointChange: this.round((current - previous) * 100),
         };
     }
 

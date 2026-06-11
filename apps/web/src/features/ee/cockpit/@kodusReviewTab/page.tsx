@@ -9,12 +9,15 @@ import {
     getNegativeFeedbackByCategory,
     getNegativeFeedbackWeekly,
     getNegativeVoteRate,
+    getReviewOperationalMetrics,
+    getReviewOperationalOutcomesWeekly,
     getRepositoriesHealth,
 } from "../_services/analytics/review/fetch";
 import { FeedbackSection } from "./_components/feedback-section";
 import { RateByCategoryChart } from "./_components/rate-by-category-chart";
 import { RateBySeverityChart } from "./_components/rate-by-severity-chart";
 import { ReviewCards } from "./_components/review-cards";
+import { ReviewOperationalOutcomesChart } from "./_components/review-operational-outcomes-chart";
 import { ReviewSection } from "./_components/review-section";
 import { RepositoriesHealthTable } from "./_components/repositories-health-table";
 import { RulesHealthTable } from "./_components/rules-health-table";
@@ -32,6 +35,8 @@ export default async function KodusReviewTab() {
         negativeByCategory,
         negativeWeekly,
         negativeVoteRate,
+        operationalMetrics,
+        operationalWeekly,
         repositoriesHealth,
         rulesHealth,
     ] = await Promise.all([
@@ -42,6 +47,12 @@ export default async function KodusReviewTab() {
         getNegativeFeedbackByCategory(params).then(extractApiData),
         getNegativeFeedbackWeekly(params).then(extractApiData),
         getNegativeVoteRate(params).then(extractApiData),
+        getReviewOperationalMetrics(params)
+            .then(extractApiData)
+            .catch(() => null),
+        getReviewOperationalOutcomesWeekly(params)
+            .then(extractApiData)
+            .catch(() => null),
         getRepositoriesHealth(params).then(extractApiData),
         // rules health merges Mongo metadata — tolerate failures without
         // taking the whole tab down.
@@ -65,7 +76,19 @@ export default async function KodusReviewTab() {
                 implemented={totals.implemented}
                 negativeVoteRate={negativeVoteRate}
                 ignoredCriticals={ignoredCriticals}
+                operationalMetrics={operationalMetrics}
             />
+
+            {operationalMetrics && operationalWeekly?.length ? (
+                <ReviewSection
+                    title="Review processing outcomes"
+                    description="weekly composition · success, error, skipped">
+                    <ReviewOperationalOutcomesChart
+                        metrics={operationalMetrics}
+                        weekly={operationalWeekly}
+                    />
+                </ReviewSection>
+            ) : null}
 
             <ReviewSection
                 title="Implementation rate — week over week"
@@ -80,7 +103,7 @@ export default async function KodusReviewTab() {
                     instead of a flat list of individual findings. */}
                 <section
                     id="themes-by-category"
-                    className="target:ring-primary-light/60 scroll-mt-24 rounded-xl transition-shadow target:ring-2">
+                    className="target:ring-primary-light/60 h-full scroll-mt-24 rounded-xl transition-shadow target:ring-2">
                     <ReviewSection
                         title="Implementation rate by category"
                         description="sent vs. implemented · click a theme to see its PRs">

@@ -18,6 +18,7 @@ import { ANALYTICS_ENTITIES } from '../entities';
 import { BackfillOrchestratorService } from '../ingestion/backfill-orchestrator.service';
 import { FeedbackIngestionService } from '../ingestion/feedback-ingestion.service';
 import { PullRequestIngestionService } from '../ingestion/pull-request-ingestion.service';
+import { ReviewOperationalIngestionService } from '../ingestion/review-operational-ingestion.service';
 import { AnalyticsTypeORMFactory } from '../infrastructure/typeORM.factory';
 import { ANALYTICS_DATA_SOURCE } from '../schema.constant';
 
@@ -67,6 +68,7 @@ export class AnalyticsWarehouseModule {
             providers: [
                 PullRequestIngestionService,
                 FeedbackIngestionService,
+                ReviewOperationalIngestionService,
                 BackfillOrchestratorService,
                 PullRequestClassifierService,
             ],
@@ -74,6 +76,7 @@ export class AnalyticsWarehouseModule {
                 TypeOrmModule,
                 PullRequestIngestionService,
                 FeedbackIngestionService,
+                ReviewOperationalIngestionService,
                 BackfillOrchestratorService,
                 PullRequestClassifierService,
             ],
