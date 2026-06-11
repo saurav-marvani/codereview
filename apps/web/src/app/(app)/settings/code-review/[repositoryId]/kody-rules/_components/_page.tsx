@@ -108,7 +108,11 @@ const bulkActionErrorToast = (
     description:
         isAxiosError(error) && error.response?.status === 403
             ? `You don't have permission to ${action} rules in this scope.`
-            : "Please try again in a moment.",
+            : isAxiosError(error) &&
+                error.response?.data?.message ===
+                    "Free plan's limit of Kody Rules reached."
+              ? "You have reached the limit of 10 active Kody rules. Pause or delete another rule first."
+              : "Please try again in a moment.",
     variant: "danger" as const,
 });
 

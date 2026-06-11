@@ -647,12 +647,20 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
             buildCentralizedPath: jest.fn(),
         };
 
+        const permissionValidationServiceMock = {
+            shouldLimitResources: jest.fn().mockResolvedValue(false),
+        };
+
+        const validationService = new KodyRulesValidationService(
+            permissionValidationServiceMock as any,
+        );
+
         const service = new KodyRulesService(
             repositoryMock as any,
             { emit: jest.fn() } as any,
             {} as any,
             {} as any,
-            new KodyRulesValidationService({} as any),
+            validationService,
             {} as any,
             {} as any,
             {} as any,

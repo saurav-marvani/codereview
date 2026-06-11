@@ -15,14 +15,23 @@ import { GitLabProvider } from "./gitlab.js";
 // shared repo never fans a webhook out across multiple orgs. Only the
 // GitHub PAT provider honours it; the others are already 1 org : 1 repo
 // on cloud and ignore it, and github-app is pinned to its App-bound repo.
+// `githubToken` overrides the GitHub PAT for this provider instance — the
+// matrix runner round-robins it across the bot-account pool so no single
+// account's rate limit caps the whole run (see lib/github-token-pool.ts).
+// Ignored by the non-GitHub providers and by github-app (installation auth).
 export function makeProvider(
     name: ProviderName,
     target: Target = "self-hosted",
     repoOverride?: string,
+    githubToken?: string,
 ): Provider {
     switch (name) {
         case "github":
-            return new GitHubProvider({ target, repoOverride });
+            return new GitHubProvider({
+                target,
+                repoOverride,
+                tokenOverride: githubToken,
+            });
         case "github-app":
             // App variant is cloud-only and pinned to its own App-bound repo
             // (GH_APP_TEST_REPO), so it's already repo-independent.

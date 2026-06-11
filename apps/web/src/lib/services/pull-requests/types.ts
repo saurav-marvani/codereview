@@ -170,9 +170,19 @@ export interface PullRequestFile {
     previous_filename?: string;
 }
 
+export interface PullRequestCommit {
+    sha: string;
+    message: string;
+    authorLogin?: string;
+    authorAvatarUrl?: string;
+    authoredAt?: string;
+    htmlUrl: string;
+}
+
 export interface PullRequestFilesResponse {
     data: {
         files: PullRequestFile[];
+        commits?: PullRequestCommit[];
     };
     statusCode: number;
     type: string;

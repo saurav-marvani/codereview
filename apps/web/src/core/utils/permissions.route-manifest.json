@@ -160,6 +160,14 @@
     }
   },
   {
+    "route": "/review-suggestions",
+    "expected": {
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
     "route": "/settings",
     "expected": {
       "billing_manager": "allow",

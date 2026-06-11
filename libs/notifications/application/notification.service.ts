@@ -34,7 +34,7 @@ export interface EmitNotificationInput<E extends NotificationEvent> {
     organizationId: string;
     /**
      * Explicit recipients (a bare object is normalized to an array).
-     * Optional for events that declare `audienceRoles` in the catalog — those
+     * Optional for events that declare `defaultRoles` in the catalog — those
      * resolve their audience from notification config at dispatch time, so the
      * emitter doesn't choose recipients.
      */
@@ -82,11 +82,11 @@ export class NotificationService {
               ? input.recipients
               : [input.recipients];
 
-        // Events that declare audienceRoles derive their audience from config
+        // Events that declare defaultRoles derive their audience from config
         // at dispatch time, so empty recipients is expected. For everything
         // else, no recipients means there is nothing to deliver.
         const usesConfigAudience =
-            !!EVENT_DEFAULTS[input.event]?.audienceRoles;
+            !!EVENT_DEFAULTS[input.event]?.defaultRoles;
         if (recipients.length === 0 && !usesConfigAudience) {
             this.logger.warn({
                 message: `emit called with no recipients — skipping ${input.event}`,

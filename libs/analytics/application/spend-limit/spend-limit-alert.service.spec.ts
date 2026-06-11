@@ -70,7 +70,7 @@ describe('SpendLimitAlertService', () => {
             periodKey: '2026-06',
         });
         // No recipients: the audience is resolved from the event's
-        // audienceRoles + notification config at dispatch time.
+        // defaultRoles + notification config at dispatch time.
         expect(first.recipients).toBeUndefined();
 
         const saved = configService.saveConfig.mock.calls[0][1];

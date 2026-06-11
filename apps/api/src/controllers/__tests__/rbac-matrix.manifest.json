@@ -88,9 +88,64 @@
     }
   },
   {
+    "key": "cockpit.controller.ts#ignoredCriticals",
+    "httpMethod": "GET",
+    "urlPath": "/review-analytics/highlights/ignored-criticals",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
     "key": "cockpit.controller.ts#implementationRate",
     "httpMethod": "GET",
     "urlPath": "/code-health/highlights/suggestions-implementation-rate",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
+    "key": "cockpit.controller.ts#implementationRateByCategory",
+    "httpMethod": "GET",
+    "urlPath": "/review-analytics/charts/implementation-rate-by-category",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
+    "key": "cockpit.controller.ts#implementationRateBySeverity",
+    "httpMethod": "GET",
+    "urlPath": "/review-analytics/charts/implementation-rate-by-severity",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
+    "key": "cockpit.controller.ts#implementationRateWeekly",
+    "httpMethod": "GET",
+    "urlPath": "/review-analytics/charts/implementation-rate-weekly",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
+    "key": "cockpit.controller.ts#kodyRulesHealthTable",
+    "httpMethod": "GET",
+    "urlPath": "/review-analytics/tables/kody-rules-health",
     "expected": {
       "owner": "allow",
       "billing_manager": "deny",
@@ -124,6 +179,39 @@
     "key": "cockpit.controller.ts#leadTimeHighlight",
     "httpMethod": "GET",
     "urlPath": "/productivity/highlights/lead-time-for-change",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
+    "key": "cockpit.controller.ts#negativeFeedbackByCategory",
+    "httpMethod": "GET",
+    "urlPath": "/review-analytics/charts/negative-feedback-by-category",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
+    "key": "cockpit.controller.ts#negativeFeedbackWeekly",
+    "httpMethod": "GET",
+    "urlPath": "/review-analytics/charts/negative-feedback-weekly",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
+    "key": "cockpit.controller.ts#negativeVoteRate",
+    "httpMethod": "GET",
+    "urlPath": "/review-analytics/highlights/negative-vote-rate",
     "expected": {
       "owner": "allow",
       "billing_manager": "deny",
@@ -168,6 +256,28 @@
     "key": "cockpit.controller.ts#pullRequestsOpenedVsClosed",
     "httpMethod": "GET",
     "urlPath": "/productivity/charts/pull-requests-opened-vs-closed",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
+    "key": "cockpit.controller.ts#repositoriesHealth",
+    "httpMethod": "GET",
+    "urlPath": "/review-analytics/tables/repositories-health",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
+    "key": "cockpit.controller.ts#suggestions",
+    "httpMethod": "GET",
+    "urlPath": "/review-analytics/suggestions",
     "expected": {
       "owner": "allow",
       "billing_manager": "deny",

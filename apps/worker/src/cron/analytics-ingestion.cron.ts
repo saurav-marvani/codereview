@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
-import { PullRequestIngestionService } from '@libs/ee/analytics-warehouse';
+import {
+    FeedbackIngestionService,
+    PullRequestIngestionService,
+} from '@libs/ee/analytics-warehouse';
 
 /**
  * Cron wrapper that drives `PullRequestIngestionService` on a schedule.
@@ -21,6 +24,7 @@ export class AnalyticsIngestionCron {
 
     constructor(
         private readonly ingestion: PullRequestIngestionService,
+        private readonly feedbackIngestion: FeedbackIngestionService,
     ) {}
 
     // `??` only swaps null/undefined — but docker-compose sets the var
@@ -50,6 +54,20 @@ export class AnalyticsIngestionCron {
             this.logger.log(
                 `analytics ingestion done in ${Date.now() - start}ms — ${JSON.stringify(res)}`,
             );
+            // Feedback is a much lighter pass (flat docs, no children);
+            // run it on the same tick so both stay equally fresh. Its
+            // failure must not mask a successful PR ingestion above.
+            try {
+                const fb = await this.feedbackIngestion.run();
+                this.logger.log(
+                    `feedback ingestion done — ${JSON.stringify(fb)}`,
+                );
+            } catch (fbErr) {
+                this.logger.error(
+                    `feedback ingestion failed: ${fbErr instanceof Error ? fbErr.message : String(fbErr)}`,
+                    fbErr instanceof Error ? fbErr.stack : undefined,
+                );
+            }
         } catch (err) {
             this.logger.error(
                 `analytics ingestion failed: ${err instanceof Error ? err.message : String(err)}`,

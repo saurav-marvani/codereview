@@ -14,6 +14,7 @@ import type {
 } from "./types.js";
 import { ScenarioSkipError } from "./types.js";
 import { makeProvider } from "../providers/index.js";
+import { makeGithubTokenPicker } from "./github-token-pool.js";
 import {
     finishOnboarding,
     login,
@@ -317,6 +318,20 @@ export function isTransientFailure(message: string): boolean {
     return TRANSIENT_FAILURE_PATTERNS.some((re) => re.test(message ?? ""));
 }
 
+// GitHub's primary rate limit is per ACCOUNT and resets hourly, so an
+// in-run retry can't clear it — re-running just burns more of the same
+// quota. When a cell fails purely because GitHub said "rate limit
+// exceeded", we mark it SKIPPED (infra, not a product failure) so a
+// transient quota exhaustion doesn't gate a release as red. This is
+// reported LOUDLY (log.err + a github-rate-limit skipReason) precisely so
+// it can't masquerade as a clean pass — a wall of rate-limit skips means
+// "add quota / spread load", not "all green".
+const GITHUB_RATE_LIMIT_PATTERN =
+    /rate limit exceeded|api rate limit|secondary rate limit|exceeded a secondary rate limit/i;
+export function isGithubRateLimit(message: string): boolean {
+    return GITHUB_RATE_LIMIT_PATTERN.test(message ?? "");
+}
+
 // ABSENCE failures (an expected event never materialized — review never
 // started, comment never arrived) get a settle delay before the retry.
 // Rationale: the per-deploy matrix starts ~5s after the GitOps infra PR,
@@ -393,6 +408,10 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
                 repo,
             });
         }
+        // Spread cleanup's repo/PR listing across the bot-account pool too —
+        // otherwise every fixture lists on the single default account and helps
+        // exhaust its per-account GitHub rate limit before the cells even run.
+        const pickCleanupToken = makeGithubTokenPicker();
         for (const { provider: providerName, repo } of fixtures.values()) {
             const label = `${providerName}${repo ? ` (${repo})` : ""}`;
             try {
@@ -400,6 +419,9 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
                     providerName,
                     opts.target,
                     repo,
+                    providerName === "github"
+                        ? pickCleanupToken().token
+                        : undefined,
                 );
                 const { closed } = await provider.cleanupStaleE2EArtifacts();
                 if (closed > 0) {
@@ -419,6 +441,10 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
             }
         }
     }
+
+    // Round-robins GitHub cells across the bot-account token pool so no single
+    // account's rate limit caps the run (no-op with a single token).
+    const pickGithubToken = makeGithubTokenPicker();
 
     for (const cell of opts.cells) {
         if (cell.target !== opts.target) continue;
@@ -463,6 +489,18 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
 
             log.info(`RUN   ${cellLabel}`);
 
+            // Assign this GitHub run a token from the bot-account pool
+            // (round-robin). Same token across both attempts so a retry stays
+            // on the same account; other cells keep draining the other tokens.
+            const ghAssignment =
+                cell.provider === "github" ? pickGithubToken() : undefined;
+            const githubToken = ghAssignment?.token;
+            if (ghAssignment && ghAssignment.size > 1) {
+                log.info(
+                    `  github → token slot ${ghAssignment.slot}/${ghAssignment.size}`,
+                );
+            }
+
             // One automatic retry for TRANSIENT failure shapes (lost
             // webhook, provider hiccup, network) — see isTransientFailure.
             // Deterministic assertion mismatches ("expected deny, got
@@ -477,6 +515,7 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
                         cell.provider,
                         cell.target,
                         tenant?.repoFullName,
+                        githubToken,
                     );
                     const scenarioArtifactDir = join(
                         artifactDir,
@@ -542,6 +581,21 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
                         results.push(
                             makeResult(scenario, cell, "skipped", duration, {
                                 skipReason: e.message,
+                            }),
+                        );
+                        break;
+                    }
+                    // GitHub rate limit (per-account, hourly reset): an in-run
+                    // retry can't clear it, so SKIP (infra, non-gating) instead
+                    // of failing the release red. Logged loudly so a wall of
+                    // these reads as "out of quota / spread load", not a pass.
+                    if (isGithubRateLimit(e.message)) {
+                        log.err(
+                            `SKIP  ${cellLabel}: GitHub rate limit — quota exhausted, NOT a product pass (${e.message.slice(0, 160)})`,
+                        );
+                        results.push(
+                            makeResult(scenario, cell, "skipped", duration, {
+                                skipReason: `github-rate-limit: ${e.message.slice(0, 200)}`,
                             }),
                         );
                         break;

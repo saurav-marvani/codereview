@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@components/ui/button";
 import { Calendar } from "@components/ui/calendar";
 import {
@@ -67,6 +68,7 @@ const ranges = [
 const defaultItem = ranges[0];
 
 export const DateRangePicker = ({ cookieValue, ...props }: Props) => {
+    const router = useRouter();
     const [loading, startTransition] = useTransition();
     const [open, setOpen] = useState(false);
 
@@ -129,7 +131,7 @@ export const DateRangePicker = ({ cookieValue, ...props }: Props) => {
                         size="md"
                         variant="helper"
                         leftIcon={<CalendarIcon />}
-                        className="-mt-4 w-68 justify-start">
+                        className="w-68 justify-start">
                         {label ? (
                             label
                         ) : (
@@ -188,8 +190,13 @@ export const DateRangePicker = ({ cookieValue, ...props }: Props) => {
                             setOpen(false);
                             setSelectedRange(range);
 
-                            startTransition(() => {
-                                setCockpitDateRangeCookie(range);
+                            startTransition(async () => {
+                                await setCockpitDateRangeCookie(range);
+                                // Parallel-route slots (the cockpit tabs)
+                                // don't reliably re-render from revalidateTag
+                                // alone — force a refresh so they re-read the
+                                // new range cookie.
+                                router.refresh();
                             });
                         }}
                     />
@@ -217,8 +224,11 @@ export const DateRangePicker = ({ cookieValue, ...props }: Props) => {
                                         to: r.range.to,
                                     });
 
-                                    startTransition(() => {
-                                        setCockpitDateRangeCookie(r.range);
+                                    startTransition(async () => {
+                                        await setCockpitDateRangeCookie(
+                                            r.range,
+                                        );
+                                        router.refresh();
                                     });
                                 }}>
                                 {r.label}

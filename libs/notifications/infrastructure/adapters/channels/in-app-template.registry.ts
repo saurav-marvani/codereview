@@ -103,8 +103,8 @@ export const IN_APP_TEMPLATE_REGISTRY: Partial<
     },
 
     [NotificationEvent.ORG_ROLE_CHANGED]: (m) => ({
-        title: 'Your role changed',
-        body: `Your role in ${m.organizationName ?? 'the organization'} changed from ${m.previousRole ?? 'unknown'} to ${m.newRole ?? 'unknown'}.`,
+        title: 'Member role changed',
+        body: `${m.affectedUserEmail ?? 'A member'}'s role in ${m.organizationName ?? 'the organization'} changed from ${m.previousRole ?? 'unknown'} to ${m.newRole ?? 'unknown'}${m.changedBy ? ` by ${m.changedBy}` : ''}.`,
     }),
 
     [NotificationEvent.BILLING_PAYMENT_FAILED]: (m) => {

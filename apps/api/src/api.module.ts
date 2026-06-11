@@ -75,6 +75,7 @@ import {
     CockpitCodeHealthController,
     CockpitController,
     CockpitProductivityController,
+    CockpitReviewAnalyticsController,
     CockpitWeeklyRecapController,
 } from './controllers/cockpit.controller';
 import { PullRequestController } from './controllers/pullRequest.controller';
@@ -188,6 +189,7 @@ import { NotificationController } from './controllers/notification.controller';
         CockpitController,
         CockpitCodeHealthController,
         CockpitProductivityController,
+        CockpitReviewAnalyticsController,
         CockpitWeeklyRecapController,
         NotificationController,
     ],

@@ -15,7 +15,6 @@ import { NotificationService } from '@libs/notifications/application/notificatio
 import { PrAuthorRecipientResolver } from '@libs/notifications/application/pr-author-recipient.resolver';
 import { NotificationEvent } from '@libs/notifications/domain/catalog/events';
 import { NotificationRecipient } from '@libs/notifications/domain/recipient';
-import { Role } from '@libs/identity/domain/permissions/enums/permissions.enum';
 import { ByokConcurrencyGateService } from './byok-concurrency-gate.service';
 import { DistributedLock } from '@libs/core/workflow/infrastructure/distributed-lock.service';
 import { raceWithAbortSignal } from '@libs/core/workflow/infrastructure/abort-signal-race';
@@ -293,9 +292,9 @@ export class CodeReviewJobProcessorService implements IJobProcessorService {
             const authorLogin: string | undefined =
                 author?.login ?? author?.username ?? author?.nickname;
 
-            const recipients: NotificationRecipient[] = [
-                { kind: 'role', role: Role.OWNER },
-            ];
+            // Owners are the config-driven audience (defaultRoles in the
+            // catalog); only the PR author is passed as a directed recipient.
+            const recipients: NotificationRecipient[] = [];
             if (authorEmail) {
                 const prAuthor =
                     await this.prAuthorRecipientResolver.resolve(

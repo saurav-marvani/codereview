@@ -87,7 +87,7 @@ export interface EventCatalogEntry {
      * role can receive it (user/email-directed or PR-author style) — shown
      * under every role.
      */
-    audienceRoles?: string[];
+    defaultRoles?: string[];
 }
 
 /**

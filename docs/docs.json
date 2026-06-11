@@ -29,8 +29,7 @@
                                 "group": "Getting Started",
                                 "pages": [
                                     "how_to_use/en/overview",
-                                    "how_to_use/en/quickstart",
-                                    "changelog/index"
+                                    "how_to_use/en/quickstart"
                                 ]
                             },
                             {
@@ -92,6 +91,7 @@
                                 "group": "Cockpit",
                                 "pages": [
                                     "how_to_use/en/cockpit/overview",
+                                    "how_to_use/en/cockpit/kodus_review",
                                     {
                                         "group": "Metrics",
                                         "pages": [
@@ -323,8 +323,7 @@
                                 "group": "Comenzando",
                                 "pages": [
                                     "how_to_use/es/overview",
-                                    "how_to_use/es/quickstart",
-                                    "changelog/index"
+                                    "how_to_use/es/quickstart"
                                 ]
                             },
                             {
@@ -385,6 +384,7 @@
                                 "group": "Cockpit",
                                 "pages": [
                                     "how_to_use/es/cockpit/overview",
+                                    "how_to_use/es/cockpit/kodus_review",
                                     {
                                         "group": "Métricas",
                                         "pages": [
@@ -616,8 +616,7 @@
                                 "group": "Primeiros Passos",
                                 "pages": [
                                     "how_to_use/pt-br/overview",
-                                    "how_to_use/pt-br/quickstart",
-                                    "changelog/index"
+                                    "how_to_use/pt-br/quickstart"
                                 ]
                             },
                             {
@@ -678,6 +677,7 @@
                                 "group": "Cockpit",
                                 "pages": [
                                     "how_to_use/pt-br/cockpit/overview",
+                                    "how_to_use/pt-br/cockpit/kodus_review",
                                     {
                                         "group": "Métricas",
                                         "pages": [
@@ -909,8 +909,7 @@
                                 "group": "はじめに",
                                 "pages": [
                                     "how_to_use/ja/overview",
-                                    "how_to_use/ja/quickstart",
-                                    "changelog/index"
+                                    "how_to_use/ja/quickstart"
                                 ]
                             },
                             {
@@ -971,6 +970,7 @@
                                 "group": "コックピット",
                                 "pages": [
                                     "how_to_use/ja/cockpit/overview",
+                                    "how_to_use/ja/cockpit/kodus_review",
                                     {
                                         "group": "メトリクス",
                                         "pages": [
@@ -1202,8 +1202,7 @@
                                 "group": "快速开始",
                                 "pages": [
                                     "how_to_use/zh/overview",
-                                    "how_to_use/zh/quickstart",
-                                    "changelog/index"
+                                    "how_to_use/zh/quickstart"
                                 ]
                             },
                             {
@@ -1264,6 +1263,7 @@
                                 "group": "驾驶舱",
                                 "pages": [
                                     "how_to_use/zh/cockpit/overview",
+                                    "how_to_use/zh/cockpit/kodus_review",
                                     {
                                         "group": "指标",
                                         "pages": [

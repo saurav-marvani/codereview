@@ -7,6 +7,7 @@ import {
 } from '@libs/identity/domain/auth/contracts/auth.service.contracts';
 import { BackfillHistoricalPRsUseCase } from '@libs/platformData/application/use-cases/pullRequests/backfill-historical-prs.use-case';
 import { GetEnrichedPullRequestsUseCase } from '@libs/code-review/application/use-cases/dashboard/get-enriched-pull-requests.use-case';
+import { GetPullRequestFilesUseCase } from '@libs/code-review/application/use-cases/pullRequests/get-pull-request-files.use-case';
 import { GetPullRequestSuggestionsUseCase } from '@libs/code-review/application/use-cases/pullRequests/get-pull-request-suggestions.use-case';
 import {
     Action,
@@ -91,6 +92,7 @@ export class PullRequestController implements OnApplicationShutdown {
     constructor(
         private readonly getEnrichedPullRequestsUseCase: GetEnrichedPullRequestsUseCase,
         private readonly getPullRequestSuggestionsUseCase: GetPullRequestSuggestionsUseCase,
+        private readonly getPullRequestFilesUseCase: GetPullRequestFilesUseCase,
         private readonly codeManagementService: CodeManagementService,
         private readonly backfillHistoricalPRsUseCase: BackfillHistoricalPRsUseCase,
         @Inject(REQUEST)
@@ -561,46 +563,13 @@ export class PullRequestController implements OnApplicationShutdown {
             throw new NotFoundException('Missing required parameters');
         }
 
-        const organizationAndTeamData = { organizationId, teamId };
-
-        let repoName = repositoryName;
-
-        if (!repoName) {
-            const repositories =
-                await this.codeManagementService.getRepositories({
-                    organizationAndTeamData,
-                });
-
-            const repo = (repositories || []).find(
-                (r: any) => r?.id === repositoryId,
-            );
-
-            if (!repo) {
-                throw new NotFoundException(
-                    `Repository not found (id: ${repositoryId})`,
-                );
-            }
-
-            repoName = repo.name;
-        }
-
-        const files = await this.codeManagementService.getFilesByPullRequestId({
-            organizationAndTeamData,
-            repository: { name: repoName, id: repositoryId },
+        return this.getPullRequestFilesUseCase.execute({
+            organizationId,
+            teamId,
+            repositoryId,
+            repositoryName,
             prNumber: parseInt(prNumber, 10),
         });
-
-        return {
-            files: (files || []).map((f: any) => ({
-                filename: f.filename,
-                status: f.status,
-                additions: f.additions,
-                deletions: f.deletions,
-                changes: f.changes,
-                patch: f.patch,
-                previous_filename: f.previous_filename,
-            })),
-        };
     }
 
     @Get('/onboarding-signals')

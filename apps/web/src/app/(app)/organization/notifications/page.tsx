@@ -20,7 +20,7 @@ import {
     TooltipTrigger,
 } from "@components/ui/tooltip";
 import { useAsyncAction } from "@hooks/use-async-action";
-import { LockIcon, RotateCcwIcon, Save, Undo2 } from "lucide-react";
+import { RotateCcwIcon, Save, Undo2 } from "lucide-react";
 import {
     Controller,
     FormProvider,
@@ -73,15 +73,16 @@ const toFormKey = (event: string) => event.replaceAll(".", "__");
 const fromFormKey = (key: string) => key.replaceAll("__", ".");
 
 /**
- * A role is part of an event's default audience when the event doesn't
- * restrict its audience (any role can receive it), the role is one of the
- * declared `audienceRoles`, or it's the wildcard "All Roles" row (which seeds
- * the audience defaults). Non-audience roles start off and are opt-in.
+ * Whether a role gets the event's catalog defaults when there is no stored
+ * rule for it (and no wildcard row). Mirrors the dispatcher's fallback: a
+ * declared default role (or an event with no declared roles) defaults on;
+ * every other role defaults off. Once a "*" or role row exists it takes over —
+ * any role is freely configurable.
  */
-const isAudienceRole = (ev: EventDef, roleValue: string) =>
+const isDefaultRole = (ev: EventDef, roleValue: string) =>
     roleValue === "*" ||
-    !ev.audienceRoles ||
-    ev.audienceRoles.includes(roleValue);
+    !ev.defaultRoles ||
+    ev.defaultRoles.includes(roleValue);
 
 const buildDefaults = (
     rules: RoutingRule[],
@@ -102,13 +103,13 @@ const buildDefaults = (
             const eventRules = byEvent[ev.event] ?? {};
             // Lookup order, mirroring the dispatcher's runtime resolution:
             //   1. Role-specific stored rule wins.
-            //   2. For an audience role: the wildcard ('*') rule, else the
-            //      catalog default.
-            //   3. For a non-audience role with no rule: off (opt-in).
+            //   2. The wildcard ('*') rule — a literal baseline for every role.
+            //   3. No rule: catalog default for a default role, else off.
             const source =
                 eventRules[role.value] ??
-                (isAudienceRole(ev, role.value)
-                    ? (eventRules["*"] ?? ev.defaultChannels)
+                eventRules["*"] ??
+                (isDefaultRole(ev, role.value)
+                    ? ev.defaultChannels
                     : undefined);
             const channelValues: ChannelMap = {};
             for (const ch of channels) {
@@ -505,10 +506,6 @@ function EventRow({
     event: EventDef;
     criticalityLabels: Record<EventCriticality, string>;
 }) {
-    const isCritical = event.criticality === "critical";
-    // Critical channels are locked-on only for the default audience roles;
-    // a role an admin opts in is freely configurable.
-    const locked = isCritical && isAudienceRole(event, role);
     const badgeLabel =
         criticalityLabels[event.criticality] ?? event.criticality;
     const badgeClass = CRITICALITY_BADGE_CLASS[event.criticality];
@@ -535,26 +532,9 @@ function EventRow({
 
             {channels.map((ch) => (
                 <div key={ch.value} className="flex justify-center">
-                    {locked ? (
-                        <LockedChannelIndicator />
-                    ) : (
-                        <ChannelToggle
-                            role={role}
-                            event={event}
-                            channel={ch}
-                        />
-                    )}
+                    <ChannelToggle role={role} event={event} channel={ch} />
                 </div>
             ))}
-        </div>
-    );
-}
-
-function LockedChannelIndicator() {
-    return (
-        <div className="text-text-tertiary flex items-center gap-1 text-xs">
-            <LockIcon className="size-3" />
-            <span>On</span>
         </div>
     );
 }

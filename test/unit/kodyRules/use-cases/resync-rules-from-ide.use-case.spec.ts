@@ -1,7 +1,6 @@
 import { REQUEST } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 
-import { Role } from '@libs/identity/domain/permissions/enums/permissions.enum';
 import { ResyncRulesFromIdeUseCase } from '@libs/kodyRules/application/use-cases/resync-rules-from-ide.use-case';
 import { ValidateRuleFileReferencesUseCase } from '@libs/kodyRules/application/use-cases/validate-rule-file-references.use-case';
 import { KodyRulesSyncService } from '@libs/kodyRules/infrastructure/adapters/services/kodyRulesSync.service';
@@ -164,10 +163,9 @@ describe('ResyncRulesFromIdeUseCase', () => {
                         repoName: 'repo-one',
                         reason: 'repo-one boom',
                     }),
-                    recipients: expect.arrayContaining([
-                        { kind: 'role', role: Role.OWNER },
-                        { kind: 'user', userId: 'user-1' },
-                    ]),
+                    // Owners come from the catalog's defaultRoles; only the
+                    // sync initiator is a directed recipient.
+                    recipients: [{ kind: 'user', userId: 'user-1' }],
                 }),
             );
 

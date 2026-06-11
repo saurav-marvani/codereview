@@ -85,8 +85,10 @@ describe('UpdateAnotherUserUseCase — org.role_changed emit', () => {
             expect.objectContaining({
                 event: NotificationEvent.ORG_ROLE_CHANGED,
                 organizationId: 'org-1',
-                recipients: { kind: 'user', userId: 'target-1' },
+                // Audience (org owners) is config-driven via the catalog's
+                // `defaultRoles`, so the emit passes no recipients.
                 payload: {
+                    affectedUserEmail: 'target@acme.com',
                     previousRole: Role.CONTRIBUTOR,
                     newRole: Role.OWNER,
                     changedBy: 'admin@acme.com',

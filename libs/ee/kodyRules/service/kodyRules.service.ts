@@ -454,6 +454,22 @@ export class KodyRulesService implements IKodyRulesService {
             throw new NotFoundException('Rule not found');
         }
 
+        // When unpausing (changing from non-ACTIVE to ACTIVE), enforce the
+        // free-plan quota so the user can't bypass the 10-rule limit by
+        // pausing and creating new rules.
+        if (
+            kodyRule.status === KodyRulesStatus.ACTIVE &&
+            existingRule.status !== KodyRulesStatus.ACTIVE
+        ) {
+            const activeRulesCount = (existing.rules ?? []).filter(
+                (r) => r.status === KodyRulesStatus.ACTIVE,
+            ).length;
+            await this.ensureFreePlanLimit(
+                organizationAndTeamData,
+                activeRulesCount + 1,
+            );
+        }
+
         // Normalize severity on the way in (create/addRule already do this);
         // otherwise an update could persist a mixed-case severity that only
         // looks consistent because find() lower-cases on read.

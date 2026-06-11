@@ -160,6 +160,7 @@
         "mcp-manager:ensure-schema": "TS_NODE_PROJECT=tsconfig.json ts-node -r tsconfig-paths/register scripts/mcp-manager/ensure-schema.cli.ts",
         "mcp-manager:ensure-schema:prod": "node -r ./tsconfig-paths-bootstrap.js dist/scripts/mcp-manager/ensure-schema.cli.js",
         "mcp-manager:migration:run:prod": "node -r ./tsconfig-paths-bootstrap.js ./node_modules/typeorm/cli.js migration:run -d dist/apps/mcp-manager/src/config/typeorm.config.js",
+        "analytics:feedback-backfill": "TS_NODE_PROJECT=tsconfig.json ts-node -r tsconfig-paths/register scripts/analytics/feedback-backfill.cli.ts",
         "analytics:backfill": "TS_NODE_PROJECT=tsconfig.json ts-node -r tsconfig-paths/register scripts/analytics/backfill.cli.ts",
         "analytics:backfill:prod": "node dist/apps/analytics-cli/main.js",
         "ast:backfill": "TS_NODE_PROJECT=tsconfig.json ts-node -r tsconfig-paths/register apps/ast-cli/src/main.ts",

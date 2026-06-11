@@ -47,9 +47,16 @@ export class GitHubProvider extends BaseProvider {
     protected readonly apiBase = "https://api.github.com";
     protected readonly existingPrNumber?: number;
 
-    constructor(opts?: { repoOverride?: string; target?: Target }) {
+    constructor(opts?: {
+        repoOverride?: string;
+        target?: Target;
+        tokenOverride?: string;
+    }) {
         super();
-        this.token = requireEnv("GH_TEST_TOKEN");
+        // tokenOverride is the round-robin token the matrix runner assigns
+        // from the bot-account pool (see lib/github-token-pool.ts). Falls back
+        // to the single GH_TEST_TOKEN when no pool is configured.
+        this.token = opts?.tokenOverride || requireEnv("GH_TEST_TOKEN");
         // Subclasses (notably GitHubAppProvider) need to target a
         // DIFFERENT repo than the PAT-driven default — the GitHub App
         // is installed scope-limited to that other repo, so any PR we

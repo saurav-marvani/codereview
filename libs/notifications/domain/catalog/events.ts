@@ -112,6 +112,8 @@ export interface NotificationPayloadMap {
     };
 
     [NotificationEvent.ORG_ROLE_CHANGED]: {
+        /** The member whose role changed (this notifies admins, not them). */
+        affectedUserEmail: string;
         previousRole: string;
         newRole: string;
         changedBy: string;
