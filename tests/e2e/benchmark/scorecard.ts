@@ -139,7 +139,11 @@ async function main() {
     const apiKey =
         process.env.ANTHROPIC_API_KEY || process.env.BYOK_ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY (judge) not set");
-    const resultsPath = join(process.cwd(), "benchmark", "results.json");
+    // Default to run.ts's results.json; the farm overrides per-run (via
+    // SCORECARD_RESULTS) so parallel slots judge their own file without
+    // clobbering a shared one.
+    const resultsPath =
+        process.env.SCORECARD_RESULTS ?? join(process.cwd(), "benchmark", "results.json");
     const { results } = JSON.parse(readFileSync(resultsPath, "utf8")) as {
         results: PRResult[];
     };
@@ -217,7 +221,7 @@ async function main() {
                 s.f1.toFixed(2),
         );
     }
-    const out = join(process.cwd(), "benchmark", "scorecard.json");
+    const out = process.env.SCORECARD_OUT ?? join(process.cwd(), "benchmark", "scorecard.json");
     writeFileSync(out, JSON.stringify({ scoredAt: new Date().toISOString(), scores }, null, 2));
     console.log(`\n→ ${out}`);
 }

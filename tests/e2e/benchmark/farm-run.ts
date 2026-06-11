@@ -253,10 +253,10 @@ async function reviewOnePR(model: BenchModel, pr: BenchPR): Promise<{ ok: boolea
         const findings = reviewed ? await collectFindingsStable(repo, opened.number) : [];
         if (reviewed) log.ok(`${repoShort}: reviewed (${findings.length} findings)${retried ? " [retry]" : ""}`);
         else log.err(`${repoShort}: ${outcome} after retry (PR #${opened.number})`);
-        return { ok: reviewed, result: { repo, prNumber: opened.number, head: pr.head, golden_comments: pr.golden_comments, findings, retried } };
+        return { ok: reviewed, result: { model: model.slug, repo, prNumber: opened.number, head: pr.head, golden_comments: pr.golden_comments, findings, retried } };
     } catch (err) {
         log.err(`${repo}: ${(err as Error).message}`);
-        return { ok: false, result: { repo, head: pr.head, error: (err as Error).message } };
+        return { ok: false, result: { model: model.slug, repo, head: pr.head, error: (err as Error).message } };
     } finally {
         if (opened) await provider.closePR(opened).catch(() => {});
     }
