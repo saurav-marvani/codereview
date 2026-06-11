@@ -59,7 +59,11 @@ scp -i "$SSH_KEY" \
 
 # --- 3. build + (re)start the compiled stack ---
 log "Building compiled artifact + starting stack (first build ~10-15min, cached re-syncs faster)..."
-farm_ssh "$SLOT" "cd '$REMOTE_SRC' && BENCH_TAG='$TAG' docker compose -f docker-compose.bench.yml up -d --build"
+# API_CLOUD_MODE=true: the farm reuses run.ts's proven cloud-mode onboarding
+# (trial -> BYOK -> migrate-to-free). Passed here so it lands in BOTH the build
+# arg (bakes environment.ts) and the runtime env (compose `environment:`), kept
+# consistent so the app doesn't split-brain between baked + runtime cloud flags.
+farm_ssh "$SLOT" "cd '$REMOTE_SRC' && BENCH_TAG='$TAG' API_CLOUD_MODE=true docker compose -f docker-compose.bench.yml up -d --build"
 
 # --- 4. wait for API health ---
 log "Waiting for API /health..."
