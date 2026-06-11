@@ -74,6 +74,12 @@ bash "${FARM_SCRIPT_DIR}/bench-sync.sh" "$SLOT" "$BRANCH"
 
 IP="$(farm_ip_for "$SLOT")"
 
+# tests/e2e is a self-contained npm project (its own node_modules: tsx, undici,
+# zod…). On a Docker-only host (no root node_modules) it must be installed once,
+# same as scripts/e2e/run.sh does. tsx then resolves from tests/e2e/node_modules.
+CURRENT_PHASE="deps"; set_status deps
+( cd "$E2E_DIR" && [ -d node_modules ] || npm install --silent )
+
 CURRENT_PHASE="clone"; set_status clone
 ( cd "$E2E_DIR" && FARM_RUN_ID="$RUN_ID" npx tsx benchmark/clone-run-repos.ts )
 
