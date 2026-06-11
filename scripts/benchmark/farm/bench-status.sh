@@ -22,7 +22,7 @@ log "Slot '$SLOT' ($NAME) at $IP"
 
 echo
 dim "── containers ──"
-farm_ssh "$SLOT" "cd '$REMOTE_SRC' 2>/dev/null && docker compose -f docker-compose.bench.yml ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}' 2>/dev/null || echo '(no bench stack yet — run bench-sync.sh)'"
+farm_ssh "$SLOT" "cd '$REMOTE_SRC' 2>/dev/null && docker compose -f docker-compose.bench.yml ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}' 2>/dev/null || echo '(no bench stack yet -- run bench-sync.sh)'"
 
 echo
 dim "── worker log (last 20 lines) ──"

@@ -17,8 +17,8 @@ SLOT="${1:-}"
 [ -n "$SLOT" ] || { err "Usage: bench-down.sh <slot>"; exit 2; }
 
 NAME="$(farm_name_for "$SLOT")"
-state_exists "$NAME" || { warn "Slot '$SLOT' has no droplet — nothing to destroy."; exit 0; }
+state_exists "$NAME" || { warn "Slot '$SLOT' has no droplet -- nothing to destroy."; exit 0; }
 
-log "Destroying slot '$SLOT' ($NAME)…"
+log "Destroying slot '$SLOT' ($NAME)..."
 bash "${REPO_ROOT}/scripts/selfhosted/destroy.sh" --name "$NAME"
 ok "Slot '$SLOT' destroyed."

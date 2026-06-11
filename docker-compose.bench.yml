@@ -112,7 +112,7 @@ services:
             - RUN_SEEDS=false
         depends_on:
             kodus-api:
-                condition: service_healthy
+                condition: service_started
             rabbitmq:
                 condition: service_healthy
         healthcheck:
@@ -146,7 +146,7 @@ services:
             - '${API_WEBHOOKS_PORT:-3332}:3332'
         depends_on:
             kodus-api:
-                condition: service_healthy
+                condition: service_started
             rabbitmq:
                 condition: service_healthy
         healthcheck:
@@ -185,7 +185,7 @@ services:
             - '${WEB_PORT:-3000}:3000'
         depends_on:
             kodus-api:
-                condition: service_healthy
+                condition: service_started
         restart: unless-stopped
         networks:
             - kodus-bench-net
