@@ -264,7 +264,17 @@ async function reviewOnePR(model: BenchModel, pr: BenchPR): Promise<{ ok: boolea
 
 async function main() {
     loadConfig();
-    const prs = loadPRs();
+    let prs = loadPRs();
+    // FARM_MAX_PRS caps the PR count for a cheap plumbing smoke (e.g. =2) before
+    // committing to the full 50-PR / ~40min / real-$ run. Clones still cover all
+    // 5 repos, so a small cap exercises every repo.
+    const maxPrs = Number(process.env.FARM_MAX_PRS ?? 0);
+    if (maxPrs > 0) {
+        const seen = new Set<string>();
+        // Prefer one-per-repo first so a small cap spans repos, not just sentry.
+        const onePerRepo = prs.filter((p) => { const b = p.repo.split("/")[1]; if (seen.has(b)) return false; seen.add(b); return true; });
+        prs = [...onePerRepo, ...prs.filter((p) => !onePerRepo.includes(p))].slice(0, maxPrs);
+    }
     const slug = process.env.FARM_MODEL_SLUG;
     const models = loadTier0Models();
     const model = slug ? models.find((m) => m.slug === slug) : models[0];

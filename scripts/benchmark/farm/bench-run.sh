@@ -13,6 +13,7 @@
 # Env:
 #   BENCH_ENV_FILE   .env shipped to the droplet (default <repo>/.env)
 #   BENCH_MODEL      curated model slug to benchmark (default: farm-run.ts's first)
+#   BENCH_MAX_PRS    cap PRs for a cheap plumbing smoke (e.g. 2); 0 = all 50
 #   BENCH_DO_SIZE    droplet size if one must be created (default s-4vcpu-8gb)
 #
 # Usage:
@@ -72,7 +73,7 @@ CURRENT_PHASE="clone"; set_status clone
 
 CURRENT_PHASE="review"; set_status review
 ( cd "$E2E_DIR" && FARM_RUN_ID="$RUN_ID" FARM_WEB_BASE_URL="http://${IP}:${WEB_PORT:-3000}" \
-    FARM_MODEL_SLUG="${BENCH_MODEL:-}" npx tsx benchmark/farm-run.ts )
+    FARM_MODEL_SLUG="${BENCH_MODEL:-}" FARM_MAX_PRS="${BENCH_MAX_PRS:-0}" npx tsx benchmark/farm-run.ts )
 
 CURRENT_PHASE="judge"; set_status judge
 ( cd "$E2E_DIR" && SCORECARD_RESULTS="${E2E_DIR}/benchmark/results-farm-${RUN_ID}.json" \
