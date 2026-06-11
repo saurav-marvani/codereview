@@ -96,7 +96,13 @@ describe('ReviewOperationalIngestionService.run()', () => {
 
         expect(appCalls[0].sql).toContain('FROM "automation_execution" ae');
         expect(appCalls[0].sql).toContain('"code_review_execution" cre');
-        expect(appCalls[0].sql).toContain('ae."status"::text = ANY');
+        // statuses inlined as enum literals (matches the partial index predicate)
+        expect(appCalls[0].sql).toContain(
+            `ae."status" IN ('success', 'error', 'partial_error', 'skipped')`,
+        );
+        expect(appCalls[0].sql).not.toContain('::text = ANY');
+        // native uuid ordering (no ::text cast) so the index satisfies ORDER BY
+        expect(appCalls[0].sql).toContain('ORDER BY ae."updatedAt" ASC, ae."uuid" ASC');
         // 6-month backfill floor on both createdAt and updatedAt.
         expect(appCalls[0].sql).toContain(
             `ae."createdAt" >= now() - INTERVAL '6 months'`,
@@ -138,10 +144,9 @@ describe('ReviewOperationalIngestionService.run()', () => {
 
         await service.run();
 
-        expect(appCalls[0].sql).toContain('ae."updatedAt" > $3::timestamp');
-        expect(appCalls[0].sql).toContain('ae."uuid"::text > $4');
+        expect(appCalls[0].sql).toContain('ae."updatedAt" > $2::timestamp');
+        expect(appCalls[0].sql).toContain('ae."uuid" > $3::uuid');
         expect(appCalls[0].params).toEqual([
-            ['success', 'error', 'partial_error', 'skipped'],
             500,
             watermarkAt,
             '11111111-1111-1111-1111-111111111111',

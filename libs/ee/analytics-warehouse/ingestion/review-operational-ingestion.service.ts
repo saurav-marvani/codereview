@@ -16,6 +16,14 @@ const TERMINAL_REVIEW_STATUSES = [
     'skipped',
 ] as const;
 
+// Inlined as enum literals (not a `status::text = ANY($n)` param) so the
+// predicate matches `IDX_automation_exec_review_ops_watermark`'s partial index
+// condition verbatim — otherwise the planner can't prove the match and falls
+// back to a full seq scan + on-disk sort (~50x slower on the backfill).
+const TERMINAL_REVIEW_STATUS_SQL = TERMINAL_REVIEW_STATUSES.map(
+    (status) => `'${status}'`,
+).join(', ');
+
 /**
  * Hard cap on how far back the import reaches. The cockpit date picker tops out
  * at a 3-month range and every metric compares it against the equally-long
@@ -145,7 +153,7 @@ export class ReviewOperationalIngestionService {
         organizationId: string | undefined,
         batchSize: number,
     ): Promise<ReviewOperationalSourceRow[]> {
-        const params: unknown[] = [TERMINAL_REVIEW_STATUSES, batchSize];
+        const params: unknown[] = [batchSize];
         const orgFilter = organizationId
             ? (params.push(organizationId),
               `AND t."organization_id" = $${params.length}`)
@@ -161,7 +169,7 @@ export class ReviewOperationalIngestionService {
                     ae."updatedAt" > $${updatedAtIndex}::timestamp
                     OR (
                         ae."updatedAt" = $${updatedAtIndex}::timestamp
-                        AND ae."uuid"::text > $${params.length}
+                        AND ae."uuid" > $${params.length}::uuid
                     )
                 )`;
             } else {
@@ -197,7 +205,7 @@ export class ReviewOperationalIngestionService {
                        ORDER BY r."createdAt" DESC
                        LIMIT 1
                   ) repo ON true
-                 WHERE ae."status"::text = ANY($1::text[])
+                 WHERE ae."status" IN (${TERMINAL_REVIEW_STATUS_SQL})
                    AND ae."pullRequestNumber" IS NOT NULL
                    AND ae."repositoryId" IS NOT NULL
                    -- 6-month floor: bounds the historical backfill. updatedAt
@@ -213,8 +221,8 @@ export class ReviewOperationalIngestionService {
                    )
                    ${orgFilter}
                    ${cursorFilter}
-             ORDER BY ae."updatedAt" ASC, ae."uuid"::text ASC
-             LIMIT $2`,
+             ORDER BY ae."updatedAt" ASC, ae."uuid" ASC
+             LIMIT $1`,
             params,
         )) as ReviewOperationalSourceRow[];
     }
