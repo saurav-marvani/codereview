@@ -44,6 +44,7 @@ import type { AwaitedReturnType } from "src/core/types";
 import { revalidateServerSidePath } from "src/core/utils/revalidate-server-side";
 import { useSubscriptionStatus } from "src/features/ee/subscription/_hooks/use-subscription-status";
 
+import { AuthMethodConnect } from "./auth-method-connect";
 import { RequiredConfiguration } from "./required-configuration";
 import { SelectTools } from "./select-tools";
 
@@ -104,6 +105,10 @@ export const PluginModal = ({
         plugin.authScheme?.toLowerCase() === "oauth2" &&
         ["custom", "kodusmcp"].includes(plugin.provider) &&
         !plugin.active;
+
+    // Integrations that expose more than one auth method (e.g. Jira/Linear:
+    // OAuth or API token) let the user pick before connecting.
+    const hasSelectableAuth = (plugin.authMethods?.length ?? 0) > 1;
 
     const [requiredParamsValues, setRequiredParamsValues] = useState<
         Record<string, string>
@@ -172,10 +177,11 @@ export const PluginModal = ({
         Object.values(requiredParamsValues).every((v) => v.trim().length > 0);
 
     const [authorizePlugin, { loading: isAuthorizePluginLoading }] =
-        useAsyncAction(async () => {
+        useAsyncAction(async (authMethod?: string) => {
             const initializeResponse = await initializeOauthCustomMCPPlugin(
                 plugin.provider,
                 plugin.id,
+                authMethod,
             );
             if (initializeResponse && "authUrl" in initializeResponse) {
                 sessionStorage.setItem(
@@ -400,7 +406,21 @@ export const PluginModal = ({
                                 </Card>
                             )}
 
-                            {isCustomOauthUnauthorized && !isConnected ? (
+                            {hasSelectableAuth &&
+                            !isConnected &&
+                            plugin.authMethods ? (
+                                <AuthMethodConnect
+                                    integrationId={plugin.id}
+                                    appName={plugin.appName}
+                                    authMethods={plugin.authMethods}
+                                    canEdit={canEdit}
+                                    isDefault={Boolean(isDefault)}
+                                    onAuthorize={(authMethod) =>
+                                        authorizePlugin(authMethod)
+                                    }
+                                    isAuthorizing={isAuthorizePluginLoading}
+                                />
+                            ) : isCustomOauthUnauthorized && !isConnected ? (
                                 <Card
                                     className="flex w-full flex-col items-center justify-center py-8"
                                     color="lv1">

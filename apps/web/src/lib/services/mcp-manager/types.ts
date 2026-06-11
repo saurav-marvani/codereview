@@ -19,6 +19,21 @@ export type CustomMCPPlugin = {
     isConnected: boolean;
 };
 
+export type MCPAuthMethodUserField = {
+    name: string;
+    label?: string;
+    required?: boolean;
+    secret?: boolean;
+};
+
+export type MCPAuthMethod = {
+    id: string;
+    label?: string;
+    type: string;
+    default?: boolean;
+    userFields?: MCPAuthMethodUserField[];
+};
+
 export const CUSTOM_MCP_AUTH_METHODS = {
     NONE: "none",
     BEARER: "bearer_token",

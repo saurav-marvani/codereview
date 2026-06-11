@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+    BadRequestException,
+    Injectable,
+    Logger,
+    NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -8,6 +13,10 @@ import { MCPIntegrationInterface } from '../integrations/interfaces/mcp-integrat
 import { IntegrationsService } from '../integrations/integrations.service';
 import { MCPProviderType } from '../providers/interfaces/provider.interface';
 import { ProviderFactory } from '../providers/provider.factory';
+import { KodusMCPProvider } from '../providers/kodusMCP/kodus-mcp.provider';
+import { getAuthMethod } from '../providers/kodusMCP/auth-methods';
+import { validateTokenSubmission } from '../providers/kodusMCP/token-submission';
+import { ConnectTokenDto } from './dto/connect-token.dto';
 import { CreateIntegrationDto } from './dto/create-integration.dto';
 import { FinishOAuthDto } from './dto/finish-oauth.dto';
 import { InitiateConnectionDto } from './dto/initiate-connection.dto';
@@ -432,6 +441,84 @@ export class McpService {
         }
     }
 
+    /**
+     * Resolve the auth header(s) the agent runtime must send for a managed
+     * (kodusmcp) connection — refreshed OAuth bearer or a stored static token.
+     * Internal use only (consumed by the runtime's connection formatter).
+     */
+    async getKodusMCPConnectionConfig(
+        organizationId: string,
+        integrationId: string,
+    ): Promise<{ headers: Record<string, string> }> {
+        const headers =
+            await this.integrationOAuthService.resolveManagedAuthHeaders(
+                organizationId,
+                integrationId,
+            );
+
+        return { headers };
+    }
+
+    /**
+     * Connect a managed (kodusmcp) integration using a user-supplied static
+     * token (bring-your-own-token auth method). Validates the submission against
+     * the selected method, stores the encrypted credential, and upserts an
+     * ACTIVE connection row tagged with the chosen method.
+     */
+    async connectManagedToken(
+        organizationId: string,
+        integrationId: string,
+        dto: ConnectTokenDto,
+    ) {
+        const provider = this.providerFactory.getProvider(
+            'kodusmcp',
+        ) as KodusMCPProvider;
+
+        const methods = provider.getAuthMethods(integrationId);
+        const method = getAuthMethod(methods, dto.authMethod);
+
+        if (!method) {
+            throw new BadRequestException(
+                `Unknown auth method "${dto.authMethod}" for integration ${integrationId}`,
+            );
+        }
+
+        const credential = validateTokenSubmission(method, {
+            secret: dto.secret,
+            fields: dto.fields,
+        });
+
+        await this.integrationOAuthService.saveTokenCredential(
+            organizationId,
+            integrationId,
+            credential,
+        );
+
+        const config = provider.getManagedConfig(integrationId);
+
+        const existingConnection = await this.connectionRepository.findOne({
+            where: { integrationId, organizationId },
+        });
+
+        const newConnection = {
+            integrationId,
+            organizationId,
+            provider: 'kodusmcp',
+            status: MCPConnectionStatus.ACTIVE,
+            appName: config.name,
+            mcpUrl: config.baseUrl,
+            allowedTools: dto.allowedTools ?? [],
+            metadata: {
+                ...(existingConnection?.metadata ?? {}),
+                authMethod: method.id,
+            },
+        };
+
+        return this.connectionRepository.save(
+            Object.assign(existingConnection || {}, newConnection),
+        );
+    }
+
     async createIntegration(
         organizationId: string,
         providerType: string,
@@ -624,6 +711,7 @@ export class McpService {
             const authUrl = await mcpProvider.initiateManagedOAuth(
                 organizationId,
                 integrationId,
+                body.authMethod,
             );
 
             return { authUrl };

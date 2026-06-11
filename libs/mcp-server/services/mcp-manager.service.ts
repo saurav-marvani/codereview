@@ -366,6 +366,13 @@ export class MCPManagerService {
             type = integration.protocol;
         }
 
+        if (connection.provider === 'kodusmcp') {
+            const config = await this.fetchKodusMcpConnectionConfig(connection);
+            if (config?.headers) {
+                headers = { ...headers, ...config.headers };
+            }
+        }
+
         return {
             name: connection.appName,
             provider: connection.provider,
@@ -376,6 +383,39 @@ export class MCPManagerService {
             timeout: 60_000,
             allowedTools: connection.allowedTools,
         };
+    }
+
+    /**
+     * Resolve the auth header(s) for a managed (kodusmcp) connection from the
+     * MCP Manager. Native OAuth/token MCPs (Linear, Sentry, Atlassian, …) need a
+     * per-org `Authorization` header that the manager mints and refreshes;
+     * `none`-auth servers get `{}`. Failures are tolerated so a transient manager
+     * hiccup never drops the connection — it falls back to no header.
+     */
+    private async fetchKodusMcpConnectionConfig(
+        connection: MCPItem,
+    ): Promise<{ headers?: Record<string, string> } | undefined> {
+        try {
+            return (await this.axiosMCPManagerService.get(
+                `mcp/integration/kodusmcp/${connection.integrationId}/connection-config`,
+                {
+                    headers: this.getAuthHeaders({
+                        organizationId: connection.organizationId,
+                    }),
+                },
+            )) as { headers?: Record<string, string> } | undefined;
+        } catch (error) {
+            this.logger.warn({
+                message: 'Failed to resolve kodusmcp connection config',
+                context: MCPManagerService.name,
+                error,
+                metadata: {
+                    organizationId: connection.organizationId,
+                    integrationId: connection.integrationId,
+                },
+            });
+            return undefined;
+        }
     }
 
     private async fetchCustomIntegrationConfig(
