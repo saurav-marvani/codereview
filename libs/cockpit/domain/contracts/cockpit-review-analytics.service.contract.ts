@@ -9,6 +9,8 @@ import {
     NegativeFeedbackWeeklyRow,
     NegativeVoteRateHighlight,
     RepositoryHealthRow,
+    ReviewOperationalMetrics,
+    ReviewOperationalMetricsWeeklyRow,
     SuggestionsExplorerQuery,
     SuggestionsExplorerResult,
 } from '../types';
@@ -47,6 +49,12 @@ export interface ICockpitReviewAnalyticsService {
     getNegativeVoteRateHighlight(
         q: CockpitRangeQuery,
     ): Promise<NegativeVoteRateHighlight>;
+    getReviewOperationalMetrics(
+        q: CockpitRangeQuery,
+    ): Promise<ReviewOperationalMetrics>;
+    getReviewOperationalMetricsWeekly(
+        q: CockpitRangeQuery,
+    ): Promise<ReviewOperationalMetricsWeeklyRow[]>;
     getKodyRulesUsage(q: CockpitRangeQuery): Promise<KodyRuleUsageRow[]>;
     searchSuggestions(
         q: SuggestionsExplorerQuery,

@@ -96,9 +96,9 @@ env_set() {
     fi
 }
 CURR_HOSTNAME=$(grep -E '^WEB_HOSTNAME_API=' /opt/kodus-installer/.env | head -1 | cut -d= -f2-)
-if [ "${CURR_HOSTNAME}" != "kodus-api" ]; then
-    echo "==> repairing WEB_HOSTNAME_API (was '${CURR_HOSTNAME}') -> kodus-api" >&2
-    env_set WEB_HOSTNAME_API "kodus-api"
+if [ "${CURR_HOSTNAME}" != "api" ]; then
+    echo "==> repairing WEB_HOSTNAME_API (was '${CURR_HOSTNAME}') -> api" >&2
+    env_set WEB_HOSTNAME_API "api"
     env_set WEB_PORT_API "3001"
     cd /opt/kodus-installer && docker compose -p kodus-installer -f docker-compose.yml up -d --force-recreate kodus-web
 fi

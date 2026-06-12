@@ -233,12 +233,21 @@ export class GetCodeReviewParameterUseCase {
 
                 for (const dir of repo.directories || []) {
                     try {
+                        const isDirectoryGroup =
+                            Array.isArray(dir.folders) &&
+                            dir.folders.length > 0;
+
                         const directoryFile =
                             await this.codeBaseConfigService.getKodusConfigFile(
                                 {
                                     organizationAndTeamData,
                                     repository,
-                                    directoryPath: dir.path,
+                                    ...(isDirectoryGroup
+                                        ? { directoryId: dir.id }
+                                        : {
+                                              directoryPath:
+                                                  (dir as any).path,
+                                          }),
                                     overrideConfig:
                                         dir.configs
                                             ?.kodusConfigFileOverridesWebPreferences ??
@@ -289,7 +298,7 @@ export class GetCodeReviewParameterUseCase {
                                 teamId: organizationAndTeamData.teamId,
                                 repositoryId: repo.id,
                                 directoryId: dir.id,
-                                directoryPath: dir.path,
+                                directoryPath: dir.folders?.[0]?.path,
                             },
                         });
                         continue;

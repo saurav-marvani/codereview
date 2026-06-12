@@ -23,6 +23,9 @@ scenarios:
     # from the command. Covers all 4 providers.
     - command-review
     - kody-rules-create-and-apply
+    # Centralized config (config-as-code) init→sync→disable on a throwaway org.
+    # github × {paid, license-paid}; skipped unless CENTRALIZED_CONFIG_TEST_REPO is set.
+    - centralized-config-sync
     - license-attribution
     # Trial coverage (cloud × github × trial): fresh org per run (14-day
     # window never lapses). entitlement-gate = fast API check;

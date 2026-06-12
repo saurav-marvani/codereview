@@ -24,6 +24,12 @@ scenarios:
     # from the command. Covers all 4 providers.
     - command-review
     - kody-rules-create-and-apply
+    # Centralized config (config-as-code) init→sync→disable. Signs up its own
+    # throwaway org (enabling centralized config makes a tenant's review config
+    # read-only, so it must not touch the shared review tenants). Pinned to
+    # github × {paid, license-paid} = one cell per target. SKIPPED unless
+    # CENTRALIZED_CONFIG_TEST_REPO points at a seeded source repo.
+    - centralized-config-sync
     - license-attribution
     # Trial coverage (cloud × github × trial, one cell each). Both sign up a
     # FRESH org per run so the 14-day trial window never lapses — the standing

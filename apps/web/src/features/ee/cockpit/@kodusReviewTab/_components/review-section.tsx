@@ -6,18 +6,21 @@ import {
     CardHeader,
     CardTitle,
 } from "@components/ui/card";
+import { cn } from "src/core/utils/components";
 
 export const ReviewSection = ({
     title,
     description,
     footer,
+    className,
     children,
 }: React.PropsWithChildren & {
     title: string;
     description?: string;
     footer?: string;
+    className?: string;
 }) => (
-    <Card color="lv1">
+    <Card color="lv1" className={cn("h-full", className)}>
         <CardHeader>
             <CardTitle className="text-sm">{title}</CardTitle>
             {description && (

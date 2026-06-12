@@ -209,6 +209,19 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                     return null;
                 }
 
+                // Directory group format: <repo>/.kody-directory-groups/<id>/kodus-config.yml
+                if (
+                    directorySegments.length === 3 &&
+                    directorySegments[1] === '.kody-directory-groups'
+                ) {
+                    const directoryId = directorySegments[2];
+                    return {
+                        repositoryId: repoId,
+                        centralizedDirectoryPath: dirName,
+                        directoryId,
+                    };
+                }
+
                 const relativeDirectoryPath = directorySegments
                     .slice(1)
                     .join('/');
@@ -230,14 +243,17 @@ export class CentralizedConfigService implements ICentralizedConfigService {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { name: string; id: string };
         dir?: string;
+        directoryId?: string;
     }) {
-        const { organizationAndTeamData, repository, dir } = params;
+        const { organizationAndTeamData, repository, dir, directoryId } =
+            params;
 
         try {
             const file = await this.codeBaseConfigService.getKodusConfigFile({
                 organizationAndTeamData,
                 repository,
                 directoryPath: dir,
+                directoryId,
                 removeProperties: false,
             });
 
@@ -251,8 +267,67 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                     organizationAndTeamData,
                     repository,
                     dir,
+                    directoryId,
                 },
                 error,
+            });
+
+            return null;
+        }
+    }
+
+    private async fetchDirectoryGroupFoldersFile(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { name: string; id: string };
+        centralizedDirectoryPath: string;
+    }): Promise<{ folders?: Array<{ path: string }> } | null> {
+        const { organizationAndTeamData, repository, centralizedDirectoryPath } =
+            params;
+
+        try {
+            const response =
+                await this.codeManagementService.getRepositoryContentFile({
+                    organizationAndTeamData,
+                    repository,
+                    file: {
+                        filename: `${centralizedDirectoryPath}/folders.yml`,
+                    },
+                    pullRequest: null,
+                } as any);
+
+            if (!response?.data?.content) {
+                return null;
+            }
+
+            let content = response.data.content;
+
+            if (response.data.encoding === 'base64') {
+                content = Buffer.from(content, 'base64').toString('utf-8');
+            }
+
+            const parsed = yaml.load(content);
+
+            if (
+                !parsed ||
+                typeof parsed !== 'object' ||
+                !('folders' in parsed) ||
+                !Array.isArray((parsed as any).folders)
+            ) {
+                return null;
+            }
+
+            return parsed as { folders?: Array<{ path: string }> };
+        } catch (error) {
+            this.logger.warn({
+                message:
+                    'Failed to fetch directory group folders file from centralized repository',
+                context: CentralizedConfigService.name,
+                error,
+                metadata: {
+                    organizationAndTeamData,
+                    repository,
+                    directoryId,
+                },
             });
 
             return null;
@@ -302,6 +377,7 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                         centralizedDirectoryPath,
                         repositoryId,
                         directoryPath,
+                        directoryId,
                     } = configFileMeta;
 
                     let configFile;
@@ -324,6 +400,7 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                                 centralizedDirectoryPath,
                                 repositoryId,
                                 directoryPath,
+                                directoryId,
                             },
                         });
                         continue;
@@ -348,20 +425,47 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                                 centralizedDirectoryPath,
                                 repositoryId,
                                 directoryPath,
+                                directoryId,
                             },
                         });
                     }
 
-                    await this.updateOrCreateCodeReviewParameterUseCase.execute(
-                        {
-                            actor,
-                            skipAuthorization: true,
-                            configValue: configToSave,
-                            organizationAndTeamData,
-                            repositoryId,
-                            directoryPath,
-                        },
-                    );
+                    if (directoryId) {
+                        const foldersFileContent =
+                            await this.fetchDirectoryGroupFoldersFile({
+                                organizationAndTeamData,
+                                repository: centralizedRepository,
+                                centralizedDirectoryPath,
+                            });
+
+                        const directoryPaths =
+                            foldersFileContent?.folders?.map(
+                                (f: { path: string }) => f.path,
+                            ) ?? [];
+
+                        await this.updateOrCreateCodeReviewParameterUseCase.execute(
+                            {
+                                actor,
+                                skipAuthorization: true,
+                                configValue: configToSave,
+                                organizationAndTeamData,
+                                repositoryId,
+                                directoryId,
+                                directoryPaths,
+                            },
+                        );
+                    } else {
+                        await this.updateOrCreateCodeReviewParameterUseCase.execute(
+                            {
+                                actor,
+                                skipAuthorization: true,
+                                configValue: configToSave,
+                                organizationAndTeamData,
+                                repositoryId,
+                                directoryPath,
+                            },
+                        );
+                    }
 
                     const syncCustomMessagesResult =
                         await this.syncCustomMessages(
@@ -462,25 +566,49 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                 Set<string>
             >();
 
+            const desiredDirectoryIdsByRepository = new Map<
+                string,
+                Set<string>
+            >();
+
             const repositoriesWithDeletedDirectories = new Set<string>();
 
             for (const meta of configFiles) {
-                if (!meta.repositoryId || !meta.directoryPath) {
+                if (!meta.repositoryId) {
                     continue;
                 }
 
-                if (
-                    !desiredDirectoryConfigsByRepository.has(meta.repositoryId)
-                ) {
-                    desiredDirectoryConfigsByRepository.set(
-                        meta.repositoryId,
-                        new Set<string>(),
-                    );
+                if (meta.directoryId) {
+                    if (
+                        !desiredDirectoryIdsByRepository.has(meta.repositoryId)
+                    ) {
+                        desiredDirectoryIdsByRepository.set(
+                            meta.repositoryId,
+                            new Set<string>(),
+                        );
+                    }
+
+                    desiredDirectoryIdsByRepository
+                        .get(meta.repositoryId)
+                        ?.add(meta.directoryId);
                 }
 
-                desiredDirectoryConfigsByRepository
-                    .get(meta.repositoryId)
-                    ?.add(meta.directoryPath);
+                if (meta.directoryPath) {
+                    if (
+                        !desiredDirectoryConfigsByRepository.has(
+                            meta.repositoryId,
+                        )
+                    ) {
+                        desiredDirectoryConfigsByRepository.set(
+                            meta.repositoryId,
+                            new Set<string>(),
+                        );
+                    }
+
+                    desiredDirectoryConfigsByRepository
+                        .get(meta.repositoryId)
+                        ?.add(meta.directoryPath);
+                }
             }
 
             // Reuse existing deletion logic for directory scope removals.
@@ -490,12 +618,24 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                     desiredDirectoryConfigsByRepository.get(repository.id) ??
                     new Set<string>();
 
+                const desiredDirectoryIds =
+                    desiredDirectoryIdsByRepository.get(repository.id) ??
+                    new Set<string>();
+
                 const staleDirectories = (repository.directories ?? []).filter(
                     (directory) => {
                         const primaryPath =
                             directory.folders?.[0]?.path ??
                             (directory as any).path;
-                        return !primaryPath || !desiredDirectoryPaths.has(primaryPath);
+
+                        const isTrackedById = desiredDirectoryIds.has(
+                            directory.id,
+                        );
+                        const isTrackedByPath =
+                            primaryPath &&
+                            desiredDirectoryPaths.has(primaryPath);
+
+                        return !isTrackedById && !isTrackedByPath;
                     },
                 );
 

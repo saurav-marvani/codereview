@@ -404,6 +404,41 @@ export class CentralizedConfigPrService {
         return `${params.repositoryFolder}/${params.relativePath}`;
     }
 
+    buildDirectoryGroupConfigPath(
+        repositoryFolder: string,
+        directoryId: string,
+    ): string {
+        if (repositoryFolder === 'global') {
+            return `.kody-directory-groups/${directoryId}/kodus-config.yml`;
+        }
+
+        return `${repositoryFolder}/.kody-directory-groups/${directoryId}/kodus-config.yml`;
+    }
+
+    buildDirectoryGroupFoldersPath(
+        repositoryFolder: string,
+        directoryId: string,
+    ): string {
+        if (repositoryFolder === 'global') {
+            return `.kody-directory-groups/${directoryId}/folders.yml`;
+        }
+
+        return `${repositoryFolder}/.kody-directory-groups/${directoryId}/folders.yml`;
+    }
+
+    buildDirectoryGroupRulesPath(
+        repositoryFolder: string,
+        directoryId: string,
+        rulesDirectory: string,
+        fileName: string,
+    ): string {
+        if (repositoryFolder === 'global') {
+            return `.kody-directory-groups/${directoryId}/.kody-rules/${rulesDirectory}/${fileName}`;
+        }
+
+        return `${repositoryFolder}/.kody-directory-groups/${directoryId}/.kody-rules/${rulesDirectory}/${fileName}`;
+    }
+
     sanitizeFileName(name?: string, fallback = 'item', maxLength = 30): string {
         const normalized = (name || '')
             .trim()
@@ -413,6 +448,100 @@ export class CentralizedConfigPrService {
             .slice(0, maxLength);
 
         return normalized || fallback;
+    }
+
+    async getCentralizedConfigWithValidatedPullRequest(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<CentralizedConfigParameter | null> {
+        const centralizedConfig = await this.getCentralizedConfigParameter(
+            organizationAndTeamData,
+        );
+
+        if (
+            !centralizedConfig?.enabled ||
+            !centralizedConfig.activePullRequest
+        ) {
+            return centralizedConfig;
+        }
+
+        const centralizedRepository =
+            await this.getCentralizedRepositoryIfEnabled(
+                organizationAndTeamData,
+            );
+
+        if (!centralizedRepository) {
+            return centralizedConfig;
+        }
+
+        const trackedPullRequest = centralizedConfig.activePullRequest;
+        const trackedPrNumber =
+            trackedPullRequest.prNumber ||
+            this.extractPullRequestNumber(trackedPullRequest.prUrl);
+
+        if (
+            this.normalizeRepositoryId(trackedPullRequest.repository?.id) &&
+            this.normalizeRepositoryId(trackedPullRequest.repository?.id) !==
+                this.normalizeRepositoryId(centralizedRepository.id)
+        ) {
+            await this.clearActivePullRequestMetadata(organizationAndTeamData);
+
+            return {
+                ...centralizedConfig,
+                activePullRequest: null,
+            };
+        }
+
+        if (!trackedPrNumber) {
+            await this.clearActivePullRequestMetadata(organizationAndTeamData);
+
+            return {
+                ...centralizedConfig,
+                activePullRequest: null,
+            };
+        }
+
+        try {
+            const trackedPullRequestState =
+                await this.codeManagementService.getPullRequest({
+                    organizationAndTeamData,
+                    repository: centralizedRepository,
+                    prNumber: trackedPrNumber,
+                });
+
+            if (
+                trackedPullRequestState &&
+                trackedPullRequestState.state === PullRequestState.OPENED
+            ) {
+                return centralizedConfig;
+            }
+
+            await this.clearActivePullRequestMetadata(organizationAndTeamData);
+
+            await this.triggerBestEffortSyncAfterTrackedPullRequestClosed({
+                organizationAndTeamData,
+                repository: centralizedRepository,
+                state: trackedPullRequestState?.state,
+                pullRequestNumber: trackedPrNumber,
+            });
+
+            return {
+                ...centralizedConfig,
+                activePullRequest: null,
+            };
+        } catch (error) {
+            this.logger.warn({
+                message:
+                    'Failed to validate tracked centralized pull request for config read. Returning stale active pull request metadata.',
+                context: CentralizedConfigPrService.name,
+                error: this.normalizeError(error),
+                metadata: {
+                    organizationAndTeamData,
+                    trackedPrNumber,
+                },
+            });
+
+            return centralizedConfig;
+        }
     }
 
     async getScopedKodusConfigFileContent(params: {
@@ -429,9 +558,10 @@ export class CentralizedConfigPrService {
             return null;
         }
 
-        const centralizedConfig = await this.getCentralizedConfigParameter(
-            params.organizationAndTeamData,
-        );
+        const centralizedConfig =
+            await this.getCentralizedConfigWithValidatedPullRequest(
+                params.organizationAndTeamData,
+            );
 
         const branchRef = await this.resolveScopedConfigReadBranchRef({
             organizationAndTeamData: params.organizationAndTeamData,

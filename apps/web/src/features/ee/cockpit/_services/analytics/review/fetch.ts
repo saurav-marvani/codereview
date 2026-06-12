@@ -108,6 +108,59 @@ export type NegativeVoteRateHighlight = {
     };
 };
 
+export type ReviewOperationalMetrics = {
+    currentPeriod: {
+        processedPRs: number;
+        processedReviews: number;
+        successfulReviews: number;
+        errorReviews: number;
+        skippedReviews: number;
+        successRate: number;
+        errorRate: number;
+        skippedRate: number;
+    };
+    previousPeriod: {
+        processedPRs: number;
+        processedReviews: number;
+        successfulReviews: number;
+        errorReviews: number;
+        skippedReviews: number;
+        successRate: number;
+        errorRate: number;
+        skippedRate: number;
+    };
+    comparison: {
+        processedPRs: {
+            percentageChange: number;
+            trend: "improved" | "worsened" | "unchanged";
+        };
+        processedReviews: {
+            percentageChange: number;
+            trend: "improved" | "worsened" | "unchanged";
+        };
+        successRate: {
+            percentageChange: number;
+            percentagePointChange: number;
+            trend: "improved" | "worsened" | "unchanged";
+        };
+        errorRate: {
+            percentageChange: number;
+            percentagePointChange: number;
+            trend: "improved" | "worsened" | "unchanged";
+        };
+        skippedRate: {
+            percentageChange: number;
+            percentagePointChange: number;
+            trend: "improved" | "worsened" | "unchanged";
+        };
+    };
+};
+
+export type ReviewOperationalMetricsWeeklyRow =
+    ReviewOperationalMetrics["currentPeriod"] & {
+        weekStart: string;
+    };
+
 const REVIEW_TAGS: { next: { tags: string[] } } = {
     next: {
         tags: [
@@ -168,5 +221,17 @@ export const getNegativeFeedbackWeekly = (params: AnalyticsParams) =>
 export const getNegativeVoteRate = (params: AnalyticsParams) =>
     analyticsFetch<NegativeVoteRateHighlight>(
         "/review-analytics/highlights/negative-vote-rate",
+        { params, ...REVIEW_TAGS },
+    );
+
+export const getReviewOperationalMetrics = (params: AnalyticsParams) =>
+    analyticsFetch<ReviewOperationalMetrics>(
+        "/review-analytics/highlights/operational-metrics",
+        { params, ...REVIEW_TAGS },
+    );
+
+export const getReviewOperationalOutcomesWeekly = (params: AnalyticsParams) =>
+    analyticsFetch<ReviewOperationalMetricsWeeklyRow[]>(
+        "/review-analytics/charts/operational-outcomes-weekly",
         { params, ...REVIEW_TAGS },
     );

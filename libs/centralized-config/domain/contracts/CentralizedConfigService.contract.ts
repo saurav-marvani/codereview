@@ -13,6 +13,7 @@ export interface IConfigFileMeta {
     centralizedDirectoryPath?: string;
     repositoryId?: string;
     directoryPath?: string;
+    directoryId?: string;
 }
 
 export interface IKodyRuleFileMeta {

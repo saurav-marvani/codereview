@@ -9,7 +9,7 @@
 #      so secrets live in one place (~/.kodus-dev/config).
 #   2. Layers Caddy + Keycloak on top via docker/sso-e2e/droplet/compose.yml.
 #      Caddy fronts three sslip.io hostnames:
-#          api.<IP>.sslip.io  → kodus-api:3001
+#          api.<IP>.sslip.io  → api:3001
 #          app.<IP>.sslip.io  → kodus-web-prod:3000
 #          kc.<IP>.sslip.io   → kc-sso-e2e:8080
 #      with Let's Encrypt auto-issued certs (HTTP-01 over port 80).
@@ -189,7 +189,11 @@ env_set NEXTAUTH_URL "${APP_BASE_URL}"
 # sign-in form's /auth/sso/check call). The public API origin lives
 # in API_URL above for cookie-domain / SAML purposes — those code
 # paths read API_URL directly, not WEB_HOSTNAME_API.
-env_set WEB_HOSTNAME_API "kodus-api"
+# Use the compose SERVICE name `api` (Docker DNS always resolves it on the
+# shared network) — NOT the literal `kodus-api`, which matches neither the
+# service (`api`) nor the container (`kodus_api`, GLOBAL_API_CONTAINER_NAME's
+# installer default) and so 502s every web→API server-side call.
+env_set WEB_HOSTNAME_API "api"
 env_set WEB_PORT_API "3001"
 # kodus-installer defaults API_NODE_ENV to "development" for the
 # self-hosted dev experience. The SSO cookie code path explicitly

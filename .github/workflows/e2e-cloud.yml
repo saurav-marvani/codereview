@@ -172,33 +172,65 @@ jobs:
                       echo "No image_tag input — skipping version gate, app-readiness probe only."
                   fi
 
-                  # --- Phase 1: app-level readiness (hard gate) ----------------
+                  # --- Phase 1: app-level readiness + SETTLE (hard gate) -------
                   # Chained right after the QA GitOps deploy, the backend can still
-                  # be rolling out: the gateway then answers every request with an
-                  # nginx "403 Forbidden" (or 5xx / connection-refused), and the
-                  # matrix reports 40+ confusing `onboarding:login HTTP 403` cell
-                  # failures. Probe the auth layer with a throwaway bad-cred login
-                  # until it responds at the APP level (a real 400/401 for bad
-                  # creds) instead of the gateway, so the run starts against a
-                  # ready backend. A healthy QA passes on the first attempt.
-                  echo "Probing $BASE/auth/login for app-level readiness…"
-                  for i in $(seq 1 60); do
+                  # be rolling out: the gateway answers 403/5xx/000, OR — the case
+                  # that bit us on 2026-06-12 — the API answers app-level for a
+                  # moment and then restarts AGAIN as the rollout rolls across
+                  # replicas. A single momentary 200 is exactly how the review
+                  # WORKER ends up not-yet-consuming when the matrix starts, so the
+                  # first review "never starts" (no kody-codereview status comment).
+                  # So we do NOT proceed on the first healthy probe: we require the
+                  # backend to stay app-ready AND on the expected build for several
+                  # CONSECUTIVE checks, proving the rollout has actually settled.
+                  echo "Probing $BASE/auth/login for app-level readiness (settle gate)…"
+                  NEED_OK=3          # consecutive clean probes required to proceed
+                  SETTLE_SLEEP=10    # spacing between probes (s)
+                  ok_streak=0
+                  for i in $(seq 1 90); do
                       code=$(curl -sS -o /dev/null -w '%{http_code}' \
                           -X POST "$BASE/auth/login" \
                           "${WAF_HDR[@]}" \
                           -H 'Content-Type: application/json' \
                           -d '{"email":"readiness-probe@invalid.kodus","password":"x"}' \
                           2>/dev/null || echo 000)
+                      # If we know the target build, the live version must ALSO still
+                      # match on each probe — a flip back to the prior build means a
+                      # replica is mid-restart, so the rollout hasn't settled. Stays
+                      # best-effort: an empty/'unknown' version (RELEASE_VERSION unset)
+                      # can't be gated on, so it never blocks here.
+                      ver_ok=1
+                      if [ -n "${EXPECTED_VERSION:-}" ]; then
+                          ver=$(curl -sS "${WAF_HDR[@]}" "$BASE/health" 2>/dev/null \
+                              | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).version||'')}catch{console.log('')}})" \
+                              2>/dev/null || echo "")
+                          case "$ver" in
+                              ""|unknown) ver_ok=1 ;;
+                              *"$EXPECTED_VERSION"*|*"${EXPECTED_VERSION:0:7}"*) ver_ok=1 ;;
+                              *) ver_ok=0 ;;
+                          esac
+                      fi
                       case "$code" in
                           200|201|400|401|404|422)
-                              echo "QA auth healthy (bad-cred login → HTTP $code) after $i attempt(s)."
-                              exit 0 ;;
+                              if [ "$ver_ok" = 1 ]; then
+                                  ok_streak=$((ok_streak + 1))
+                                  echo "attempt $i/90: app-ready (HTTP $code), settle streak $ok_streak/$NEED_OK"
+                                  if [ "$ok_streak" -ge "$NEED_OK" ]; then
+                                      echo "QA settled on the expected build — proceeding."
+                                      exit 0
+                                  fi
+                              else
+                                  echo "attempt $i/90: app-ready (HTTP $code) but version flipped to '$ver' (rollout still moving) — resetting streak"
+                                  ok_streak=0
+                              fi
+                              sleep "$SETTLE_SLEEP" ;;
                           *)
-                              echo "attempt $i/60: HTTP $code (gateway/rollout) — waiting 10s…"
-                              sleep 10 ;;
+                              echo "attempt $i/90: HTTP $code (gateway/rollout) — resetting streak, waiting ${SETTLE_SLEEP}s…"
+                              ok_streak=0
+                              sleep "$SETTLE_SLEEP" ;;
                       esac
                   done
-                  echo "::error::QA backend never reached app-level readiness in ~10min — aborting before the matrix to avoid deploy-race false failures."
+                  echo "::error::QA backend never settled (app-ready + expected build, $NEED_OK consecutive) in ~15min — aborting before the matrix to avoid deploy-race false failures."
                   exit 1
 
             - name: Run cloud matrix

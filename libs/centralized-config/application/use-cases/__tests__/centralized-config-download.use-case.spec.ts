@@ -67,6 +67,7 @@ describe('CentralizedConfigDownloadUseCase', () => {
                                     id: 'dir-1',
                                     path: '/src',
                                     isSelected: true,
+                                    folders: [{ path: '/src' }],
                                 },
                             ],
                         },
@@ -167,17 +168,22 @@ describe('CentralizedConfigDownloadUseCase', () => {
         const repoEntry = entries.find(
             (e) => e.path === 'repo-one/kodus-config.yml',
         );
-        const dirEntry = entries.find(
-            (e) => e.path === 'repo-one/src/kodus-config.yml',
+        const dirConfigEntry = entries.find(
+            (e) => e.path === 'repo-one/.kody-directory-groups/dir-1/kodus-config.yml',
+        );
+        const dirFoldersEntry = entries.find(
+            (e) => e.path === 'repo-one/.kody-directory-groups/dir-1/folders.yml',
         );
 
         expect(globalEntry).toBeDefined();
         expect(repoEntry).toBeDefined();
-        expect(dirEntry).toBeDefined();
+        expect(dirConfigEntry).toBeDefined();
+        expect(dirFoldersEntry).toBeDefined();
 
         const globalConfig = yaml.load(globalEntry.content) as any;
         const repoConfig = yaml.load(repoEntry.content) as any;
-        const dirConfig = yaml.load(dirEntry.content) as any;
+        const dirConfig = yaml.load(dirConfigEntry.content) as any;
+        const dirFolders = yaml.load(dirFoldersEntry.content) as any;
 
         expect(globalConfig.customMessages.startReviewMessage.content).toBe(
             'global-start',
@@ -189,6 +195,7 @@ describe('CentralizedConfigDownloadUseCase', () => {
             hideComments: true,
             suggestionCopyPrompt: false,
         });
+        expect(dirFolders.folders).toEqual([{ path: '/src' }]);
     });
 
     it('creates config file when scope has only custom messages and empty base config', async () => {
@@ -290,11 +297,13 @@ describe('CentralizedConfigDownloadUseCase', () => {
                                     id: 'dir-parent',
                                     path: '/src',
                                     isSelected: true,
+                                    folders: [{ path: '/src' }],
                                 },
                                 {
                                     id: 'dir-child',
                                     path: '/src/app',
                                     isSelected: true,
+                                    folders: [{ path: '/src/app' }],
                                 },
                             ],
                         },
@@ -391,20 +400,24 @@ describe('CentralizedConfigDownloadUseCase', () => {
         const repoEntry = entries.find(
             (entry) => entry.path === 'repo-one/kodus-config.yml',
         );
-        const parentDirEntry = entries.find(
-            (entry) => entry.path === 'repo-one/src/kodus-config.yml',
+        const parentDirConfigEntry = entries.find(
+            (entry) => entry.path === 'repo-one/.kody-directory-groups/dir-parent/kodus-config.yml',
         );
-        const childDirEntry = entries.find(
-            (entry) => entry.path === 'repo-one/src/app/kodus-config.yml',
+        const parentDirFoldersEntry = entries.find(
+            (entry) => entry.path === 'repo-one/.kody-directory-groups/dir-parent/folders.yml',
+        );
+        const childDirConfigEntry = entries.find(
+            (entry) => entry.path === 'repo-one/.kody-directory-groups/dir-child/kodus-config.yml',
         );
 
         expect(globalEntry).toBeDefined();
-        expect(parentDirEntry).toBeDefined();
+        expect(parentDirConfigEntry).toBeDefined();
+        expect(parentDirFoldersEntry).toBeDefined();
         expect(repoEntry).toBeUndefined();
-        expect(childDirEntry).toBeUndefined();
+        expect(childDirConfigEntry).toBeUndefined();
 
         const globalConfig = yaml.load(globalEntry.content) as any;
-        const parentDirConfig = yaml.load(parentDirEntry.content) as any;
+        const parentDirConfig = yaml.load(parentDirConfigEntry.content) as any;
 
         expect(globalConfig.customMessages.startReviewMessage.content).toBe(
             'global-custom',
@@ -495,7 +508,7 @@ describe('CentralizedConfigDownloadUseCase', () => {
             }),
             'org-1',
             {
-                userId: 'user-1',
+                userId: 'kody',
                 userEmail: 'kody@kodus.io',
             },
             true,

@@ -6,7 +6,19 @@ export type TokenUsageQueryContract = {
     byok: boolean;
 };
 
+/** Token counts for a single tier bucket of calls. */
+export interface TierUsage {
+    input: number;
+    output: number;
+    total: number;
+    outputReasoning: number;
+    cacheRead: number;
+    cacheWrite: number;
+}
+
 export interface BaseUsageContract {
+    model: string;
+    /** Flat totals across both tiers — sum of byTier.le + byTier.gt. */
     input: number;
     output: number;
     total: number;
@@ -15,10 +27,15 @@ export interface BaseUsageContract {
     cacheRead?: number;
     /** Input tokens that created cache entries on this call (Anthropic). */
     cacheWrite?: number;
-    model: string;
+    /**
+     * Per-tier breakdown. Present only for tier-aware models (e.g. Gemini Pro
+     * with its >200K threshold). Flat-priced models omit this.
+     */
+    byTier?: {
+        le: TierUsage;
+        gt: TierUsage;
+    };
 }
-
-export type UsageSummaryContract = BaseUsageContract;
 
 export interface DailyUsageResultContract extends BaseUsageContract {
     date: string; // YYYY-MM-DD
@@ -36,13 +53,47 @@ export interface UsageByDeveloperResultContract extends BaseUsageContract {
     developer: string;
 }
 
-export interface DailyUsageByDeveloperResultContract extends UsageByDeveloperResultContract {
+export interface DailyUsageByDeveloperResultContract
+    extends UsageByDeveloperResultContract {
     date: string; // YYYY-MM-DD
+}
+
+/** USD-denominated cost broken down by token type. */
+export interface CostBreakdown {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    total: number;
+}
+
+/**
+ * `'missing'` means the backend could not price this model (no manual override
+ * and no catalog entry). The UI surfaces a warning and excludes the row from
+ * cost totals.
+ */
+export type PricingSource = 'manual' | 'catalog' | 'missing';
+
+/** Per-model row enriched server-side with cost + pricing source. */
+export interface EnrichedModelUsage extends BaseUsageContract {
+    cost: CostBreakdown;
+    costByTier?: {
+        le: CostBreakdown;
+        gt: CostBreakdown;
+    };
+    pricingSource: PricingSource;
+}
+
+/** Rich payload returned by `/usage/tokens/summary`. */
+export interface UsageSummaryContract {
+    totals: BaseUsageContract;
+    totalCost: CostBreakdown;
+    byModel: EnrichedModelUsage[];
 }
 
 export type TokenPrice = {
     default: number;
-    above200k?: number;
+    tier?: { threshold: number; rate: number };
 };
 
 /**

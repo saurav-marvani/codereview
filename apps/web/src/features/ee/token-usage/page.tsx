@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { Page } from "@components/ui/page";
 import {
     getDailyTokenUsage,
+    getSummaryTokenUsage,
     getTokenPricing,
     getTokenUsageByDeveloper,
     getTokenUsageByPR,
@@ -11,6 +12,7 @@ import {
     BaseUsageContract,
     ModelPricingInfo,
     UsageByPrResultContract,
+    UsageSummaryContract,
 } from "@services/usage/types";
 import { CookieName } from "src/core/utils/cookie";
 import { getGlobalSelectedTeamId } from "src/core/utils/get-global-selected-team-id";
@@ -97,22 +99,48 @@ export default async function TokenUsagePage({
     };
 
     let data: BaseUsageContract[] = [];
+    let summary: UsageSummaryContract | null = null;
+    let activeDayCount = 0;
+    let uniquePrCount = 0;
     const filterType = params.filter ?? "daily";
 
     try {
-        switch (filterType) {
-            case "daily":
-                data = await getDailyTokenUsage(filters);
-                break;
-            case "by-pr":
-                data = await getTokenUsageByPR(filters);
-                break;
-            case "by-developer":
-                data = await getTokenUsageByDeveloper(filters);
-                break;
-            default:
-                data = await getDailyTokenUsage(filters);
-        }
+        const chartFetch =
+            filterType === "by-pr"
+                ? getTokenUsageByPR(filters)
+                : filterType === "by-developer"
+                  ? getTokenUsageByDeveloper(filters)
+                  : getDailyTokenUsage(filters);
+
+        // Daily + by-pr requests run unconditionally because the cost cards
+        // need both "active days" and "unique PRs" counts regardless of which
+        // dimension the chart is rendering.
+        const [chartData, summaryData, dailyData, prData] = await Promise.all([
+            chartFetch,
+            getSummaryTokenUsage(filters),
+            filterType === "daily"
+                ? Promise.resolve(null)
+                : getDailyTokenUsage(filters),
+            filterType === "by-pr"
+                ? Promise.resolve(null)
+                : getTokenUsageByPR(filters),
+        ]);
+
+        data = chartData;
+        summary = summaryData;
+
+        const dailyRows = (filterType === "daily" ? chartData : dailyData) ?? [];
+        const prRows = (filterType === "by-pr" ? chartData : prData) ?? [];
+        activeDayCount = new Set(
+            (dailyRows as Array<{ date?: string }>)
+                .map((r) => r.date)
+                .filter(Boolean),
+        ).size;
+        uniquePrCount = new Set(
+            (prRows as Array<{ prNumber?: number }>)
+                .map((r) => r.prNumber)
+                .filter((n): n is number => typeof n === "number"),
+        ).size;
     } catch (error) {
         console.error("Failed to fetch token usage data:", error);
     }
@@ -199,6 +227,9 @@ export default async function TokenUsagePage({
             <Page.Content>
                 <TokenUsagePageClient
                     data={data}
+                    summary={summary}
+                    activeDayCount={activeDayCount}
+                    uniquePrCount={uniquePrCount}
                     cookieValue={dateRangeCookieValue}
                     models={uniqueModels}
                     pricing={pricing}

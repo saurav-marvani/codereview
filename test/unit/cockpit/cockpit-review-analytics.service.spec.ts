@@ -15,9 +15,11 @@ describe('CockpitReviewAnalyticsService', () => {
 
     beforeEach(() => {
         query = jest.fn().mockResolvedValue([]);
-        service = new CockpitReviewAnalyticsService({
-            query,
-        } as unknown as DataSource);
+        service = new CockpitReviewAnalyticsService(
+            {
+                query,
+            } as unknown as DataSource,
+        );
     });
 
     describe('getImplementationRateWeekly', () => {
@@ -194,6 +196,161 @@ describe('CockpitReviewAnalyticsService', () => {
                     lastTriggeredAt: '2026-05-22T10:00:00Z',
                 },
             ]);
+        });
+    });
+
+    describe('getReviewOperationalMetrics', () => {
+        it('compares processed PRs, review volume and terminal status rates', async () => {
+            query
+                .mockResolvedValueOnce([
+                    {
+                        processed_prs: 10,
+                        processed_reviews: 20,
+                        successful_reviews: 14,
+                        error_reviews: 4,
+                        skipped_reviews: 2,
+                    },
+                ])
+                .mockResolvedValueOnce([
+                    {
+                        processed_prs: 5,
+                        processed_reviews: 10,
+                        successful_reviews: 8,
+                        error_reviews: 1,
+                        skipped_reviews: 1,
+                    },
+                ]);
+
+            const res = await service.getReviewOperationalMetrics(baseQuery);
+
+            const [sql, params] = query.mock.calls[0];
+            expect(sql).toContain(
+                '"analytics"."review_operational_executions" roe',
+            );
+            expect(sql).toContain('roe."organizationId" = $1');
+            expect(sql).not.toContain('"automation_execution"');
+            expect(sql).not.toContain('"code_review_execution"');
+            expect(params).toEqual(['org-1', '2026-03-01', '2026-06-01']);
+
+            expect(res.currentPeriod).toEqual({
+                processedPRs: 10,
+                processedReviews: 20,
+                successfulReviews: 14,
+                errorReviews: 4,
+                skippedReviews: 2,
+                successRate: 0.7,
+                errorRate: 0.2,
+                skippedRate: 0.1,
+            });
+            expect(res.previousPeriod.successRate).toBe(0.8);
+            expect(res.comparison.processedPRs).toEqual({
+                percentageChange: 100,
+                trend: 'improved',
+            });
+            expect(res.comparison.successRate).toEqual({
+                percentageChange: -12.5,
+                percentagePointChange: -10,
+                trend: 'worsened',
+            });
+            expect(res.comparison.errorRate).toEqual({
+                percentageChange: 100,
+                percentagePointChange: 10,
+                trend: 'worsened',
+            });
+            expect(res.comparison.skippedRate).toEqual({
+                percentageChange: 0,
+                percentagePointChange: 0,
+                trend: 'unchanged',
+            });
+        });
+
+        it('applies the repository filter against repository full name', async () => {
+            await service.getReviewOperationalMetrics({
+                ...baseQuery,
+                repository: 'org/repo',
+            });
+
+            const [sql, params] = query.mock.calls[0];
+            expect(sql).toContain('roe."repo_full_name" = $4');
+            expect(sql).not.toContain('FROM "repositories"');
+            expect(params[3]).toBe('org/repo');
+        });
+    });
+
+    describe('getReviewOperationalMetricsWeekly', () => {
+        it('groups operational outcomes by week and derives rates', async () => {
+            query.mockResolvedValue([
+                {
+                    week_start: '2026-05-04',
+                    processed_prs: 4,
+                    processed_reviews: 10,
+                    successful_reviews: 6,
+                    error_reviews: 1,
+                    skipped_reviews: 3,
+                },
+                {
+                    week_start: '2026-05-11',
+                    processed_prs: 8,
+                    processed_reviews: 20,
+                    successful_reviews: 12,
+                    error_reviews: 4,
+                    skipped_reviews: 4,
+                },
+            ]);
+
+            const rows =
+                await service.getReviewOperationalMetricsWeekly(baseQuery);
+
+            const [sql, params] = query.mock.calls[0];
+            expect(sql).toContain(`date_trunc('week', roe."created_at")`);
+            expect(sql).toContain(
+                'GROUP BY week_start, "repositoryId", "pullRequestNumber"',
+            );
+            expect(sql).toContain('ORDER BY week_start ASC');
+            // distinct-PR count is now a HashAggregate roll-up, not COUNT(DISTINCT)
+            expect(sql).not.toContain('COUNT(DISTINCT');
+            expect(sql).toContain(
+                '"analytics"."review_operational_executions" roe',
+            );
+            expect(sql).not.toContain('"code_review_execution"');
+            expect(params).toEqual(['org-1', '2026-03-01', '2026-06-01']);
+
+            expect(rows).toEqual([
+                {
+                    weekStart: '2026-05-04',
+                    processedPRs: 4,
+                    processedReviews: 10,
+                    successfulReviews: 6,
+                    errorReviews: 1,
+                    skippedReviews: 3,
+                    successRate: 0.6,
+                    errorRate: 0.1,
+                    skippedRate: 0.3,
+                },
+                {
+                    weekStart: '2026-05-11',
+                    processedPRs: 8,
+                    processedReviews: 20,
+                    successfulReviews: 12,
+                    errorReviews: 4,
+                    skippedReviews: 4,
+                    successRate: 0.6,
+                    errorRate: 0.2,
+                    skippedRate: 0.2,
+                },
+            ]);
+        });
+
+        it('applies the repository filter to weekly operational outcomes', async () => {
+            await service.getReviewOperationalMetricsWeekly({
+                ...baseQuery,
+                repository: 'org/repo',
+            });
+
+            const [sql, params] = query.mock.calls[0];
+            expect(sql).toContain('roe."repo_full_name" = $4');
+            expect(sql).not.toContain('FROM "repositories"');
+            expect(params[3]).toBe('org/repo');
         });
     });
 

@@ -1,11 +1,13 @@
 /**
- * Per-token rate with an optional tiered rate above 200K prompt tokens.
- * Prices are per-token (NOT per million) to match the cost math, which
- * multiplies raw token counts by these rates.
+ * Per-token rate with an optional tier breakpoint. When `tier` is set, calls
+ * whose input exceeds `tier.threshold` tokens are billed at `tier.rate`; calls
+ * at or below the threshold use `default`. The threshold is per-model (Gemini
+ * Pro uses 200K today; others may differ). Prices are per-token (NOT per
+ * million) to match the cost math, which multiplies raw counts by these rates.
  */
 export interface TokenRate {
     default: number;
-    above200k?: number;
+    tier?: { threshold: number; rate: number };
 }
 
 export interface ModelTokenRates {

@@ -11,6 +11,15 @@ const CACHE_KEY = 'token-pricing:litellm';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 15_000;
 
+/**
+ * The token threshold encoded in the LiteLLM catalog's `*_above_200k_tokens`
+ * field names. Every model with tier-aware pricing in the catalog today uses
+ * this single breakpoint. If LiteLLM ever ships a model with a different
+ * breakpoint, we'll either parse it from the field name dynamically or carry
+ * a per-model override here.
+ */
+const LITELLM_TIER_THRESHOLD_TOKENS = 200_000;
+
 type LiteLLMModel = {
     input_cost_per_token?: number;
     input_cost_per_token_above_200k_tokens?: number;
@@ -24,10 +33,14 @@ type LiteLLMModel = {
     mode?: string;
 };
 
-/** Per-token rate with optional tiered rate above 200K prompt tokens. */
+/**
+ * Per-token rate with an optional tier breakpoint. When `tier` is set, calls
+ * whose input exceeds `tier.threshold` tokens are billed at `tier.rate`; calls
+ * at or below the threshold use `default`. The threshold is per-model.
+ */
 export type TokenPrice = {
     default: number;
-    above200k?: number;
+    tier?: { threshold: number; rate: number };
 };
 
 /**
@@ -216,10 +229,17 @@ export class TokenPricingUseCase {
         };
     }
 
-    private toTokenPrice(base?: number, above200k?: number): TokenPrice {
+    private toTokenPrice(base?: number, tieredRate?: number): TokenPrice {
         return {
             default: typeof base === 'number' ? base : 0,
-            ...(typeof above200k === 'number' ? { above200k } : {}),
+            ...(typeof tieredRate === 'number'
+                ? {
+                      tier: {
+                          threshold: LITELLM_TIER_THRESHOLD_TOKENS,
+                          rate: tieredRate,
+                      },
+                  }
+                : {}),
         };
     }
 
