@@ -59,9 +59,22 @@ farm_ssh() {
     ssh_to "$(farm_name_for "$slot")" "$@"
 }
 
-# The .env the bench stack uses on the droplet. Defaults to the developer's
-# main-repo .env (gitignored, so it is NOT shipped by `git archive`). Override
-# with BENCH_ENV_FILE to point at a dedicated benchmark env.
+# The .env the bench stack uses on the droplet (gitignored, so NOT shipped by
+# `git archive` — it's scp'd separately). Resolution:
+#   1. BENCH_ENV_FILE if set;
+#   2. this checkout's .env;
+#   3. (worktree case) the MAIN checkout's .env — worktrees share .git but have
+#      no .env of their own, so resolve it via the common git dir. This lets
+#      `bench-run a <branch>` work from a worktree without passing BENCH_ENV_FILE.
 bench_env_file() {
-    echo "${BENCH_ENV_FILE:-${REPO_ROOT}/.env}"
+    if [ -n "${BENCH_ENV_FILE:-}" ]; then echo "$BENCH_ENV_FILE"; return; fi
+    if [ -f "${REPO_ROOT}/.env" ]; then echo "${REPO_ROOT}/.env"; return; fi
+    local common main_root
+    common="$(git -C "$REPO_ROOT" rev-parse --git-common-dir 2>/dev/null || true)"
+    if [ -n "$common" ]; then
+        case "$common" in /*) ;; *) common="${REPO_ROOT}/${common}" ;; esac
+        main_root="$(cd "$(dirname "$common")" 2>/dev/null && pwd || true)"
+        [ -n "$main_root" ] && [ -f "${main_root}/.env" ] && { echo "${main_root}/.env"; return; }
+    fi
+    echo "${REPO_ROOT}/.env"   # default — bench-sync errors clearly if absent
 }
