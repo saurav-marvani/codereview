@@ -114,10 +114,16 @@ jobs:
                       echo "Manual dispatch: only_model='$ONLY_MODEL_INPUT'"
                   fi
 
-            - name: Wait for QA backend to be healthy (avoid deploy-race 403s)
+            - name: Wait for QA backend to settle on this build (avoid deploy-race)
               env:
                   CLOUD_WEB_BASE_URL: ${{ vars.CLOUD_QA_WEB_URL || 'https://qa.web.kodus.io' }}
                   QA_WAF_BYPASS_HEADER: ${{ secrets.QA_WAF_BYPASS_HEADER }}
+                  # The benchmark fires on the SAME push that triggers the QA GitOps
+                  # deploy of github.sha. Gate on the live /health version matching
+                  # this SHA so the benchmark BLOCKS until its own rollout has fully
+                  # landed — and stays settled — before opening 25 PRs. Empty on
+                  # workflow_dispatch (no deploy in flight) → pure readiness probe.
+                  EXPECTED_VERSION: ${{ github.event_name == 'push' && github.sha || '' }}
               run: |
                   set -uo pipefail
                   BASE="${CLOUD_WEB_BASE_URL%/}/api/proxy/api"
@@ -125,31 +131,63 @@ jobs:
                   if [ -n "${QA_WAF_BYPASS_HEADER:-}" ]; then
                       WAF_HDR=(-H "x-kodus-e2e: ${QA_WAF_BYPASS_HEADER}")
                   fi
-                  # On push to main this runs alongside the QA GitOps deploy, so it
-                  # can hit the backend mid-rollout: the gateway then answers every
-                  # request with an nginx "403 Forbidden" (or 5xx) and ALL model
-                  # logins fail with `onboarding:login: HTTP 403`, reding the run.
-                  # Probe /auth/login with a throwaway bad credential until the auth
-                  # layer answers at the APP level (400/401/404) instead of the
-                  # gateway (403/5xx/000). A healthy QA passes on the first attempt.
-                  echo "Probing $BASE/auth/login for app-level readiness…"
-                  for i in $(seq 1 60); do
+                  # On push this runs alongside the QA GitOps deploy, so it can hit
+                  # the backend mid-rollout: the gateway answers 403/5xx/000, OR the
+                  # API answers app-level for a moment and then restarts again as the
+                  # rollout rolls across replicas — and a single momentary 200 is
+                  # exactly how the review WORKER ends up not-yet-consuming when the
+                  # 25 reviews fire (every model × repo then "review timeout", the
+                  # 2026-06-12 red). So we do NOT proceed on the first healthy probe:
+                  # we require the backend to stay app-ready AND on THIS build for
+                  # several CONSECUTIVE checks, proving the rollout has settled.
+                  echo "Probing $BASE/auth/login for app-level readiness (settle gate)…"
+                  NEED_OK=3          # consecutive clean probes required to proceed
+                  SETTLE_SLEEP=10    # spacing between probes (s)
+                  ok_streak=0
+                  for i in $(seq 1 90); do
                       code=$(curl -sS -o /dev/null -w '%{http_code}' \
                           -X POST "$BASE/auth/login" \
                           "${WAF_HDR[@]}" \
                           -H 'Content-Type: application/json' \
                           -d '{"email":"readiness-probe@invalid.kodus","password":"x"}' \
                           2>/dev/null || echo 000)
+                      # If we know the target build, the live version must ALSO still
+                      # match on each probe — a flip back to the prior build means a
+                      # replica is mid-restart, so the rollout hasn't settled. Stays
+                      # best-effort: an empty/'unknown' version can't be gated on, so
+                      # it never blocks here.
+                      ver_ok=1
+                      if [ -n "${EXPECTED_VERSION:-}" ]; then
+                          ver=$(curl -sS "${WAF_HDR[@]}" "$BASE/health" 2>/dev/null \
+                              | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).version||'')}catch{console.log('')}})" \
+                              2>/dev/null || echo "")
+                          case "$ver" in
+                              ""|unknown) ver_ok=1 ;;
+                              *"$EXPECTED_VERSION"*|*"${EXPECTED_VERSION:0:7}"*) ver_ok=1 ;;
+                              *) ver_ok=0 ;;
+                          esac
+                      fi
                       case "$code" in
                           200|201|400|401|404|422)
-                              echo "QA auth healthy (bad-cred login → HTTP $code) after $i attempt(s)."
-                              exit 0 ;;
+                              if [ "$ver_ok" = 1 ]; then
+                                  ok_streak=$((ok_streak + 1))
+                                  echo "attempt $i/90: app-ready (HTTP $code), settle streak $ok_streak/$NEED_OK"
+                                  if [ "$ok_streak" -ge "$NEED_OK" ]; then
+                                      echo "QA settled on this build — proceeding with the benchmark."
+                                      exit 0
+                                  fi
+                              else
+                                  echo "attempt $i/90: app-ready (HTTP $code) but version='$ver' (rollout still moving) — resetting streak"
+                                  ok_streak=0
+                              fi
+                              sleep "$SETTLE_SLEEP" ;;
                           *)
-                              echo "attempt $i/60: HTTP $code (gateway/rollout) — waiting 10s…"
-                              sleep 10 ;;
+                              echo "attempt $i/90: HTTP $code (gateway/rollout) — resetting streak, waiting ${SETTLE_SLEEP}s…"
+                              ok_streak=0
+                              sleep "$SETTLE_SLEEP" ;;
                       esac
                   done
-                  echo "::error::QA backend never reached app-level readiness in ~10min — aborting before the benchmark to avoid deploy-race false failures."
+                  echo "::error::QA backend never settled (app-ready + this build, $NEED_OK consecutive) in ~15min — aborting before the benchmark to avoid deploy-race false failures."
                   exit 1
 
             - name: Run benchmark (mechanical gate — fails if any review fails)
