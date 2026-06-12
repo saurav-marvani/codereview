@@ -1,25 +1,29 @@
-import type { Scenario } from "../lib/types.js";
-import centralizedConfigSync from "./centralized-config-sync.js";
-import codeReviewBasic from "./code-review-basic.js";
-import commandReview from "./command-review.js";
-import kodyRulesCreateAndApply from "./kody-rules.js";
-import licenseAttribution from "./license-attribution.js";
-import onboardingWebhookRegistration from "./onboarding-webhook-registration.js";
-import perSeatLicenseToggle from "./per-seat-license-toggle.js";
-import publicPrDemo from "./public-pr-demo.js";
-import rbacAuthorization from "./rbac-authorization.js";
-import rbacFrontendRoutes from "./rbac-frontend-routes.js";
-import rbacUiRender from "./rbac-ui-render.js";
-import ssoCookieDomain from "./sso-cookie-domain.js";
-import ssoMultiUser from "./sso-multi-user.js";
-import stripeBilling from "./stripe-billing.js";
-import trialEntitlementGate from "./trial-entitlement-gate.js";
-import trialManagedReview from "./trial-managed-review.js";
-import upgradeNMinusOneToN from "./upgrade.js";
+import type { Scenario } from '../lib/types.js';
+import centralizedConfigSync from './centralized-config-sync.js';
+import codeReviewBasic from './code-review-basic.js';
+import codeReviewVertexByok from './code-review-vertex-byok.js';
+import conversationVertexByok from './conversation-vertex-byok.js';
+import commandReview from './command-review.js';
+import kodyRulesCreateAndApply from './kody-rules.js';
+import licenseAttribution from './license-attribution.js';
+import onboardingWebhookRegistration from './onboarding-webhook-registration.js';
+import perSeatLicenseToggle from './per-seat-license-toggle.js';
+import publicPrDemo from './public-pr-demo.js';
+import rbacAuthorization from './rbac-authorization.js';
+import rbacFrontendRoutes from './rbac-frontend-routes.js';
+import rbacUiRender from './rbac-ui-render.js';
+import ssoCookieDomain from './sso-cookie-domain.js';
+import ssoMultiUser from './sso-multi-user.js';
+import stripeBilling from './stripe-billing.js';
+import trialEntitlementGate from './trial-entitlement-gate.js';
+import trialManagedReview from './trial-managed-review.js';
+import upgradeNMinusOneToN from './upgrade.js';
 
 export const allScenarios: Record<string, Scenario> = {
     [onboardingWebhookRegistration.id]: onboardingWebhookRegistration,
     [codeReviewBasic.id]: codeReviewBasic,
+    [codeReviewVertexByok.id]: codeReviewVertexByok,
+    [conversationVertexByok.id]: conversationVertexByok,
     [centralizedConfigSync.id]: centralizedConfigSync,
     [commandReview.id]: commandReview,
     [kodyRulesCreateAndApply.id]: kodyRulesCreateAndApply,
@@ -42,7 +46,7 @@ export function resolveScenarios(ids: string[]): Scenario[] {
         const s = allScenarios[id];
         if (!s) {
             throw new Error(
-                `Unknown scenario: ${id}. Known: ${Object.keys(allScenarios).join(", ")}`,
+                `Unknown scenario: ${id}. Known: ${Object.keys(allScenarios).join(', ')}`,
             );
         }
         return s;
@@ -52,6 +56,8 @@ export function resolveScenarios(ids: string[]): Scenario[] {
 export {
     centralizedConfigSync,
     codeReviewBasic,
+    codeReviewVertexByok,
+    conversationVertexByok,
     commandReview,
     kodyRulesCreateAndApply,
     licenseAttribution,

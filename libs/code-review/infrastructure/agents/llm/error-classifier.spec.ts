@@ -39,6 +39,36 @@ describe('classifyLLMError', () => {
             );
         });
 
+        it('reads the access-denied detail from responseBody when message is just "Not Found"', () => {
+            // Mirrors @ai-sdk APICallError: terse message, detail in body.
+            const err = Object.assign(new Error('Not Found'), {
+                statusCode: 404,
+                responseBody: JSON.stringify({
+                    error: {
+                        code: 404,
+                        message:
+                            'Publisher Model `.../publishers/anthropic/models/claude-sonnet-4-6` was not found or your project does not have access to it.',
+                        status: 'NOT_FOUND',
+                    },
+                }),
+            });
+            expect(classifyLLMError(err, 'google_vertex').category).toBe(
+                ReviewErrorCategory.MODEL_ACCESS_DENIED,
+            );
+        });
+
+        it('maps Vertex 404 "does not have access" → MODEL_ACCESS_DENIED with Model Garden guidance', () => {
+            const err = errorWithStatus(
+                'Publisher Model `projects/p/locations/global/publishers/anthropic/models/claude-sonnet-4-6` was not found or your project does not have access to it.',
+                404,
+            );
+            const info = classifyLLMError(err, 'google_vertex');
+            expect(info.category).toBe(
+                ReviewErrorCategory.MODEL_ACCESS_DENIED,
+            );
+            expect(info.friendlyMessage).toMatch(/Model Garden/i);
+        });
+
         it('disambiguates 429 with quota-ish wording → QUOTA_EXCEEDED', () => {
             const err = errorWithStatus(
                 'You exceeded your current quota, please check your plan and billing details.',
@@ -258,6 +288,7 @@ describe('isTerminalCategory', () => {
         ReviewErrorCategory.AUTH_INVALID,
         ReviewErrorCategory.QUOTA_EXCEEDED,
         ReviewErrorCategory.MODEL_NOT_FOUND,
+        ReviewErrorCategory.MODEL_ACCESS_DENIED,
     ])('%s is terminal', (cat) => {
         expect(isTerminalCategory(cat)).toBe(true);
     });

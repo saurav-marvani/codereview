@@ -9,6 +9,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createVertex } from '@ai-sdk/google-vertex';
+import { createVertexAnthropic } from '@ai-sdk/google-vertex/anthropic';
 import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import {
@@ -24,27 +25,60 @@ import { decrypt } from '@libs/common/utils/crypto';
  * so self-hosted deployments using the same `API_VERTEX_AI_API_KEY` env var
  * format (base64 SA JSON) work on both the v2 engine and the v5 agent.
  *
+ * Routes by model id: `claude-*` models on Vertex speak the Anthropic
+ * Messages protocol (Vertex MaaS), not the Gemini protocol, so they need
+ * `createVertexAnthropic` from `@ai-sdk/google-vertex/anthropic`. Every
+ * other model id (Gemini) uses `createVertex`. Using `createVertex` for a
+ * Claude model id builds a Gemini-protocol client and fails at call time.
+ *
  * Returns null when the value is not a valid base64-encoded JSON with a
  * `project_id` — the caller should fall back to another provider path.
  */
+/**
+ * Parse a Google Service Account from either raw JSON or base64-encoded
+ * JSON. Users routinely paste the SA JSON file contents directly; base64
+ * of a JSON object always starts with `ey` (from `{"`), while raw JSON
+ * starts with `{`, so the leading char disambiguates with no ambiguity.
+ * Returns null when neither form yields valid JSON.
+ */
+function parseSaCredentials(input: string): { project_id?: string } | null {
+    const trimmed = (input || '').trim();
+    if (!trimmed) return null;
+    const jsonText = trimmed.startsWith('{')
+        ? trimmed
+        : Buffer.from(trimmed, 'base64').toString('utf-8');
+    try {
+        return JSON.parse(jsonText) as { project_id?: string };
+    } catch {
+        return null;
+    }
+}
+
 function vertexModelFromSaJson(
-    base64SaJson: string,
+    saJsonOrBase64: string,
     modelId: string,
     locationOverride?: string,
 ): LanguageModel | null {
     try {
-        const decoded = Buffer.from(base64SaJson, 'base64').toString('utf-8');
-        const credentials = JSON.parse(decoded) as { project_id?: string };
+        const credentials = parseSaCredentials(saJsonOrBase64);
         if (!credentials?.project_id) return null;
         // Keep this helper pure: the caller is responsible for resolving
         // the region (BYOK config or env var) and passing it as
-        // locationOverride. Default to us-central1 when omitted.
-        const location = locationOverride?.trim() || 'us-central1';
-        return createVertex({
+        // locationOverride. Default to the GLOBAL endpoint when omitted —
+        // it serves every current Claude and Gemini model on Vertex and
+        // routes dynamically, so users never have to know per-model region
+        // availability. (Regional endpoints like us-central1 don't serve
+        // Claude at all.)
+        const location = locationOverride?.trim() || 'global';
+        const settings = {
             project: credentials.project_id,
             location,
             googleAuthOptions: { credentials: credentials as any },
-        })(modelId);
+        };
+        if (CLAUDE_MODEL_PATTERN.test(modelId)) {
+            return createVertexAnthropic(settings)(modelId);
+        }
+        return createVertex(settings)(modelId);
     } catch {
         return null;
     }
@@ -247,7 +281,8 @@ export function byokToVercelModel(
             // every supported provider — the prefix of the model name picks
             // the right SDK so tools/auth/protocol match:
             //   gemini-*  → Vertex (SA JSON in API_VERTEX_AI_API_KEY)
-            //   claude-*  → Anthropic native Messages API
+            //   claude-*  → Anthropic native (API_OPEN_AI_API_KEY) when set,
+            //               else Vertex Anthropic (SA JSON in API_VERTEX_AI_API_KEY)
             //   any other → OpenAI-compatible (OpenAI, Moonshot, z.AI, etc.)
             const isGemini = GEMINI_MODEL_PATTERN.test(envMode);
             const isClaude = CLAUDE_MODEL_PATTERN.test(envMode);
@@ -296,6 +331,18 @@ export function byokToVercelModel(
                     // when the user explicitly points at Anthropic.
                     ...(openaiBaseURL ? { baseURL: openaiBaseURL } : {}),
                 })(envMode);
+            }
+            if (isClaude && vertexKey && !viaProxy) {
+                // Claude on Vertex (MaaS): the SA JSON in API_VERTEX_AI_API_KEY
+                // routes through @ai-sdk/google-vertex/anthropic. Only reached
+                // when no direct Anthropic key (API_OPEN_AI_API_KEY) is set —
+                // that native path above takes precedence.
+                const vertexModel = vertexModelFromSaJson(
+                    vertexKey,
+                    envMode,
+                    process.env.API_VERTEX_AI_LOCATION,
+                );
+                if (vertexModel) return vertexModel;
             }
             if (openaiKey) {
                 return createOpenAICompatible({
@@ -471,6 +518,9 @@ export function getModelName(
         if (isClaude && process.env.API_OPEN_AI_API_KEY && !viaProxy) {
             return `anthropic:${envMode}`;
         }
+        if (isClaude && process.env.API_VERTEX_AI_API_KEY && !viaProxy) {
+            return `google_vertex:${envMode}`;
+        }
         if (process.env.API_OPEN_AI_API_KEY) {
             return `openai_compatible:${envMode}`;
         }
@@ -535,6 +585,15 @@ export function getInternalModel(
                 apiKey: openaiKey,
                 ...(openaiBaseURL ? { baseURL: openaiBaseURL } : {}),
             })(envMode);
+        }
+        if (isClaude && vertexKey && !viaProxy) {
+            // Claude on Vertex (MaaS) — see byokToVercelModel for rationale.
+            const vertexModel = vertexModelFromSaJson(
+                vertexKey,
+                envMode,
+                process.env.API_VERTEX_AI_LOCATION,
+            );
+            if (vertexModel) return vertexModel;
         }
         if (openaiKey) {
             return createOpenAICompatible({

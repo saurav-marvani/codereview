@@ -20,6 +20,13 @@ export enum ReviewErrorCategory {
     QUOTA_EXCEEDED = 'QUOTA_EXCEEDED',
     RATE_LIMIT = 'RATE_LIMIT',
     MODEL_NOT_FOUND = 'MODEL_NOT_FOUND',
+    /**
+     * The model exists but the account/project isn't entitled to it — most
+     * commonly a Google Vertex Anthropic/Gemini model that hasn't been
+     * enabled in the project's Model Garden. Distinct from MODEL_NOT_FOUND
+     * because the fix is "enable/grant access", not "fix the model name".
+     */
+    MODEL_ACCESS_DENIED = 'MODEL_ACCESS_DENIED',
     CONTEXT_OVERFLOW = 'CONTEXT_OVERFLOW',
     TRANSIENT = 'TRANSIENT',
     UNKNOWN = 'UNKNOWN',
@@ -82,7 +89,12 @@ export function classifyLLMError(
 ): ClassifiedErrorInfo {
     const rawMessage =
         err instanceof Error ? err.message : String(err ?? 'unknown');
-    const lower = rawMessage.toLowerCase();
+    // Match against the FULL error text, not just `message`. Vercel AI SDK's
+    // APICallError sets `message` to a terse "Not Found" while the actionable
+    // detail (e.g. Vertex's "your project does not have access to it") lives
+    // in the upstream `responseBody`/`data`. Classifying on `message` alone
+    // misses it and mislabels access-denied as a plain model-not-found.
+    const lower = extractErrorText(err).toLowerCase() || rawMessage.toLowerCase();
     const httpStatus = extractHttpStatus(err);
 
     let category = matchByHttpStatus(httpStatus, lower);
@@ -115,8 +127,38 @@ export function isTerminalCategory(category: ReviewErrorCategory): boolean {
     return (
         category === ReviewErrorCategory.AUTH_INVALID ||
         category === ReviewErrorCategory.QUOTA_EXCEEDED ||
-        category === ReviewErrorCategory.MODEL_NOT_FOUND
+        category === ReviewErrorCategory.MODEL_NOT_FOUND ||
+        category === ReviewErrorCategory.MODEL_ACCESS_DENIED
     );
+}
+
+/**
+ * Build the searchable text for classification from all the places providers
+ * stash detail: `message`, the raw HTTP body (`responseBody`/`data`), and the
+ * `cause` chain. The Vercel AI SDK in particular puts the upstream JSON error
+ * body in `responseBody` while leaving `message` as a generic status phrase.
+ */
+function extractErrorText(err: unknown, depth = 0): string {
+    if (!err || depth > 3) return '';
+    if (typeof err === 'string') return err;
+    if (typeof err !== 'object') return String(err);
+    const e = err as Record<string, unknown>;
+    const parts: string[] = [];
+    if (typeof e.message === 'string') parts.push(e.message);
+    if (typeof e.responseBody === 'string') parts.push(e.responseBody);
+    if (typeof e.body === 'string') parts.push(e.body);
+    if (typeof e.data === 'string') parts.push(e.data);
+    else if (e.data && typeof e.data === 'object') {
+        try {
+            parts.push(JSON.stringify(e.data));
+        } catch {
+            /* ignore non-serializable */
+        }
+    }
+    if (e.cause && e.cause !== err) {
+        parts.push(extractErrorText(e.cause, depth + 1));
+    }
+    return parts.join(' ');
 }
 
 function extractHttpStatus(err: unknown): number | undefined {
@@ -155,7 +197,14 @@ function matchByHttpStatus(
             : ReviewErrorCategory.RATE_LIMIT;
     }
     if (status === 404) {
-        // Most provider 404s on the inference endpoint are model-not-found.
+        // Vertex returns 404 when the project isn't entitled to a publisher
+        // model ("...was not found or your project does not have access to
+        // it"). That's an enablement problem (Model Garden), not a bad model
+        // name — classify it distinctly so the user gets the right fix.
+        if (looksLikeModelAccessDenied(lowerMessage)) {
+            return ReviewErrorCategory.MODEL_ACCESS_DENIED;
+        }
+        // Most other provider 404s on the inference endpoint are model-not-found.
         return ReviewErrorCategory.MODEL_NOT_FOUND;
     }
     if (status >= 500 && status < 600) {
@@ -170,6 +219,21 @@ function looksLikeQuota(lower: string): boolean {
         lower.includes('credit') ||
         lower.includes('billing') ||
         lower.includes('payment')
+    );
+}
+
+/**
+ * Detects the "model exists but you're not entitled to it" shape. Vertex is
+ * the main source: "Publisher Model `...` was not found or your project does
+ * not have access to it." (the model must be enabled in Model Garden first).
+ */
+function looksLikeModelAccessDenied(lower: string): boolean {
+    return (
+        lower.includes('does not have access') ||
+        lower.includes("doesn't have access") ||
+        (lower.includes('publisher model') && lower.includes('not found')) ||
+        lower.includes('not been allowlisted') ||
+        lower.includes('enable the model')
     );
 }
 
@@ -201,6 +265,9 @@ function matchByMessage(lower: string): ReviewErrorCategory {
         lower.includes('too many requests')
     ) {
         return ReviewErrorCategory.RATE_LIMIT;
+    }
+    if (looksLikeModelAccessDenied(lower)) {
+        return ReviewErrorCategory.MODEL_ACCESS_DENIED;
     }
     if (
         lower.includes('model_not_found') ||
@@ -247,6 +314,10 @@ function buildFriendlyMessage(
             return `Rate limit reached on the provider${providerLabel}. Try again in a few minutes.`;
         case ReviewErrorCategory.MODEL_NOT_FOUND:
             return `The configured model is not available on the provider${providerLabel}. Verify the model name in your settings.`;
+        case ReviewErrorCategory.MODEL_ACCESS_DENIED:
+            return (provider || '').toLowerCase().includes('vertex')
+                ? `Your Google Cloud project doesn't have access to the configured model on Vertex AI. Enable it in the project's Vertex AI Model Garden (open the model and accept the provider's terms), then comment \`@kody review\` to retry. The model id and region are fine — this is a one-time per-model enablement in Google Cloud.`
+                : `Your account doesn't have access to the configured model${providerLabel}. Enable or request access to it on the provider, then retry.`;
         case ReviewErrorCategory.CONTEXT_OVERFLOW:
             // Generic fallback only — typed AgentContextWindowTooSmallError /
             // AgentPromptTooLargeError go through buildContextOverflowMessage

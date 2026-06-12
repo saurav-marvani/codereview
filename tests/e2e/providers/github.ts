@@ -570,6 +570,127 @@ export class GitHubProvider extends BaseProvider {
         return { id: String(resp.body.id) };
     }
 
+    // Posts an issue comment AS A DIFFERENT GitHub identity (token override).
+    // The conversation scenario needs this: Kody ignores any comment whose
+    // author login contains "kody"/"kodus" (isKodyComment → treats it as its
+    // own), and the e2e bots are all `kodus-e2e-bot-N`. So the `@kody` mention
+    // must come from a non-Kody account.
+    async postCommentAs(
+        prNumber: number,
+        body: string,
+        token: string,
+    ): Promise<{ id: string }> {
+        const resp = await http<{ id: number }>(
+            `${this.apiBase}/repos/${this.repoFullName}/issues/${prNumber}/comments`,
+            {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    Accept: "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+                body: { body },
+            },
+        );
+        ensureOk(resp, "github:postCommentAs");
+        return { id: String(resp.body.id) };
+    }
+
+    // Posts an INLINE review comment as a different identity (token override).
+    // Kody's ConversationAgent only resolves the mention when it's a review
+    // (inline) comment — `getPullRequestReviewComment` lists review comments
+    // only, so an issue comment is never found and the flow silently returns.
+    // We attach it at file level (subject_type=file) so no valid diff line is
+    // needed. Returns the new review comment id.
+    async postReviewCommentAs(
+        prNumber: number,
+        body: string,
+        token: string,
+    ): Promise<{ id: string }> {
+        const h = {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        };
+        const pr = await http<{ head: { sha: string } }>(
+            `${this.apiBase}/repos/${this.repoFullName}/pulls/${prNumber}`,
+            { headers: h },
+        );
+        ensureOk(pr, "github:postReviewCommentAs:getPR");
+        const files = await http<{ filename: string }[]>(
+            `${this.apiBase}/repos/${this.repoFullName}/pulls/${prNumber}/files`,
+            { headers: h },
+        );
+        ensureOk(files, "github:postReviewCommentAs:getFiles");
+        const path = files.body?.[0]?.filename;
+        const resp = await http<{ id: number }>(
+            `${this.apiBase}/repos/${this.repoFullName}/pulls/${prNumber}/comments`,
+            {
+                method: "POST",
+                headers: h,
+                body: {
+                    body,
+                    commit_id: pr.body.head.sha,
+                    path,
+                    subject_type: "file",
+                },
+            },
+        );
+        ensureOk(resp, "github:postReviewCommentAs");
+        return { id: String(resp.body.id) };
+    }
+
+    // Polls for Kody's conversational reply to an `@kody <question>` review
+    // comment (the kodus-flow ConversationAgent path → v2/BYOK). Kody replies
+    // via createReplyForReviewComment, so the answer lands in the PR's REVIEW
+    // comments. Returns the first NEW review comment that is neither ours
+    // (`@kody …`) nor a code-review finding (those carry the
+    // `<!-- kody-codereview` marker). null at timeout.
+    async pollForKodyReply(
+        pr: { number: number },
+        opts: { sinceIso: string; triggerId?: string; timeoutSec?: number },
+    ): Promise<{ id: string; body: string } | null> {
+        const since = encodeURIComponent(opts.sinceIso);
+        return pollUntil(
+            async () => {
+                const comments = await http<
+                    { id: number; body: string; created_at?: string }[]
+                >(
+                    `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}/comments?since=${since}`,
+                    { headers: this.headers() },
+                );
+                for (const c of comments.body ?? []) {
+                    if (String(c.id) === opts.triggerId) continue;
+                    const body = c.body ?? "";
+                    if (body.toLowerCase().startsWith("@kody")) continue;
+                    // Skip code-review status/findings — conversation replies
+                    // don't carry the review discriminator.
+                    if (body.includes("<!-- kody-codereview")) continue;
+                    if (!body.trim()) continue;
+                    return { id: String(c.id), body: body.slice(0, 600) };
+                }
+                return null;
+            },
+            { timeoutSec: opts.timeoutSec ?? 300, intervalSec: 10 },
+        );
+    }
+
+    // Merges a PR (kody-issues generation fires off the closed/merged PR
+    // webhook). Falls back to a plain close if merge is not allowed (e.g.
+    // branch protection) so the issues path still gets a closed-PR event.
+    async mergePR(pr: OpenedPR): Promise<void> {
+        const resp = await http(
+            `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}/merge`,
+            { method: "PUT", headers: this.headers(), body: { merge_method: "squash" } },
+        );
+        if (resp.status < 200 || resp.status >= 300) {
+            log.info(
+                `github:mergePR PR#${pr.number} not mergeable (HTTP ${resp.status}) — falling back to close`,
+            );
+            await this.closePR(pr);
+        }
+    }
+
     // Return type widened from the literal "token" to the full union so
     // GitHubAppProvider (which extends this class) can override and
     // return "oauth" without TS complaining about variance — the App
