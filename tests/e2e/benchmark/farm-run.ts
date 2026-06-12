@@ -27,8 +27,6 @@ import { GitHubProvider } from "../providers/github.js";
 import { login, signUp, registerIntegration, finishOnboarding, resetCodeReviewConfig } from "../lib/onboarding.js";
 import { http, ensureOk } from "../lib/http.js";
 import { logger } from "../lib/log.js";
-import { loadTier0Models, type BenchModel } from "./models.js";
-import { setByokConfig, testByok } from "./byok.js";
 import type { TargetContext, KodusSession } from "../lib/types.js";
 
 const log = logger("farm");
@@ -131,22 +129,11 @@ async function registerRepos(session: KodusSession, repoFullNames: string[]): Pr
     log.ok(`onboarded ${found.length} repos`);
 }
 
-// trial -> BYOK config -> migrate-to-free, so the cloud review gate
-// (permissionValidation) allows reviews on the free_byok plan. Idempotent.
-async function ensureReviewLicense(session: KodusSession, seedModel: BenchModel): Promise<void> {
-    const billing = `${DROPLET.webBaseUrl}/api/proxy/billing`;
-    const auth = { Authorization: `Bearer ${session.accessToken}` };
-    const body = { organizationId: session.organizationId, teamId: session.teamId };
-    const okOrAlready = (s: number, raw: string) =>
-        (s >= 200 && s < 300) || s === 409 || (s === 400 && /already|trial|existe|free_byok/i.test(raw));
-
-    const trial = await http(`${billing}/trial`, { method: "POST", headers: auth, body: { ...body, byok: true }, timeoutMs: 30_000 });
-    if (!okOrAlready(trial.status, trial.raw)) throw new Error(`billing/trial failed: HTTP ${trial.status} ${trial.raw.slice(0, 200)}`);
-    await setByokConfig({ apiBaseUrl: DROPLET.apiBaseUrl, accessToken: session.accessToken }, seedModel);
-    const migrate = await http(`${billing}/migrate-to-free`, { method: "POST", headers: auth, body, timeoutMs: 30_000 });
-    if (!okOrAlready(migrate.status, migrate.raw)) throw new Error(`billing/migrate-to-free failed: HTTP ${migrate.status} ${migrate.raw.slice(0, 200)}`);
-    log.ok(`review license ready (free_byok)`);
-}
+// No review-license step: the droplet runs self-hosted with no license, which
+// permissionValidation treats as Community Edition = "allow everything". The
+// cloud billing dance (trial/migrate-to-free) is intentionally gone — it needs
+// a kodus-service-billing microservice the droplet doesn't run. The review model
+// comes from the droplet's .env (API_LLM_PROVIDER_MODEL), not per-tenant BYOK.
 
 async function ensureOnboarded(session: KodusSession, repoFullNames: string[]): Promise<void> {
     let avail = await listOrgRepos(session);
@@ -231,7 +218,9 @@ async function collectFindingsStable(repo: string, prNumber: number): Promise<st
 }
 
 // Open a PR on its per-run clone, wait for Kody, collect findings, close.
-async function reviewOnePR(model: BenchModel, pr: BenchPR): Promise<{ ok: boolean; result: unknown }> {
+// `modelLabel` is only for the result/scorecard grouping (the actual model is
+// the droplet's .env config in self-hosted CE).
+async function reviewOnePR(modelLabel: string, pr: BenchPR): Promise<{ ok: boolean; result: unknown }> {
     const repo = clonedRepo(pr.repo);
     const provider = new GitHubProvider({ repoOverride: repo, target: "cloud" });
     const repoShort = repo.split("/")[1];
@@ -253,10 +242,10 @@ async function reviewOnePR(model: BenchModel, pr: BenchPR): Promise<{ ok: boolea
         const findings = reviewed ? await collectFindingsStable(repo, opened.number) : [];
         if (reviewed) log.ok(`${repoShort}: reviewed (${findings.length} findings)${retried ? " [retry]" : ""}`);
         else log.err(`${repoShort}: ${outcome} after retry (PR #${opened.number})`);
-        return { ok: reviewed, result: { model: model.slug, repo, prNumber: opened.number, head: pr.head, golden_comments: pr.golden_comments, findings, retried } };
+        return { ok: reviewed, result: { model: modelLabel, repo, prNumber: opened.number, head: pr.head, golden_comments: pr.golden_comments, findings, retried } };
     } catch (err) {
         log.err(`${repo}: ${(err as Error).message}`);
-        return { ok: false, result: { model: model.slug, repo, head: pr.head, error: (err as Error).message } };
+        return { ok: false, result: { model: modelLabel, repo, head: pr.head, error: (err as Error).message } };
     } finally {
         if (opened) await provider.closePR(opened).catch(() => {});
     }
@@ -275,12 +264,11 @@ async function main() {
         const onePerRepo = prs.filter((p) => { const b = p.repo.split("/")[1]; if (seen.has(b)) return false; seen.add(b); return true; });
         prs = [...onePerRepo, ...prs.filter((p) => !onePerRepo.includes(p))].slice(0, maxPrs);
     }
-    const slug = process.env.FARM_MODEL_SLUG;
-    const models = loadTier0Models();
-    const model = slug ? models.find((m) => m.slug === slug) : models[0];
-    if (!model) throw new Error(`model '${slug}' not in curated list`);
+    // Self-hosted CE: the actual model is the droplet's .env config; this label
+    // is only for grouping the scorecard. Default to a generic tag.
+    const modelLabel = process.env.FARM_MODEL_SLUG || "selfhosted";
 
-    log.info(`Farm run ${RUN_ID}: ${prs.length} PRs on ${DROPLET.webBaseUrl} (model ${model.slug}) — clones kodus-e2e/<base>-${RUN_ID}`);
+    log.info(`Farm run ${RUN_ID}: ${prs.length} PRs on ${DROPLET.webBaseUrl} (label ${modelLabel}, model from droplet .env) — clones kodus-e2e/<base>-${RUN_ID}`);
 
     // JIT tenant for this run.
     const email = `farm-${RUN_ID}@kodus.io`;
@@ -289,24 +277,20 @@ async function main() {
     const session = await login(DROPLET, { email, password });
     log.ok(`tenant ready (team ${session.teamId})`);
 
-    await ensureReviewLicense(session, model);
+    // No billing/BYOK in self-hosted CE — just onboard the repos (+ webhooks) and
+    // reset the review config. The permission gate allows everything (no license).
     await ensureOnboarded(session, prs.map((p) => clonedRepo(p.repo)));
-
-    const s = { apiBaseUrl: DROPLET.apiBaseUrl, accessToken: session.accessToken };
-    const tb = await testByok(s, model);
-    if (!tb.ok) throw new Error(`test-byok failed: ${tb.code} ${tb.message ?? ""}`);
-    await setByokConfig(s, model);
     await resetCodeReviewConfig(DROPLET, session);
-    log.ok(`BYOK set + validated (${tb.latencyMs}ms)`);
+    log.ok(`onboarded (self-hosted CE)`);
 
-    // All 50 PRs concurrently — each is a distinct cloned repo, so webhooks
-    // never collide (bounded by the slowest single review, not the sum).
-    const outcomes = await Promise.all(prs.map((pr) => reviewOnePR(model, pr)));
+    // All PRs concurrently — each is a distinct cloned repo, so webhooks never
+    // collide (bounded by the slowest single review, not the sum).
+    const outcomes = await Promise.all(prs.map((pr) => reviewOnePR(modelLabel, pr)));
     const results = outcomes.map((o) => o.result);
     const ok = outcomes.filter((o) => o.ok).length;
 
     const outPath = join(process.cwd(), "benchmark", `results-farm-${RUN_ID}.json`);
-    writeFileSync(outPath, JSON.stringify({ ranAt: new Date().toISOString(), runId: RUN_ID, model: model.slug, results }, null, 2));
+    writeFileSync(outPath, JSON.stringify({ ranAt: new Date().toISOString(), runId: RUN_ID, model: modelLabel, results }, null, 2));
     log.info(`RESULT: ${ok} reviewed, ${prs.length - ok} failed (of ${prs.length}). -> ${outPath}`);
     if (ok === 0) process.exit(1);
 }

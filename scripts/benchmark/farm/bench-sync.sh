@@ -57,12 +57,26 @@ scp -i "$SSH_KEY" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
     "$ENV_SRC" "root@${IP}:${REMOTE_SRC}/.env"
 
+# Droplet-specific overrides in .env.local (compose loads it AFTER .env, so it
+# wins). The GitHub webhook the app registers on each repo MUST be the droplet's
+# PUBLIC ip:3332 (the webhooks service) so GitHub can deliver PR events — the
+# dev default points at localhost. API_URL likewise points at the droplet.
+log "Writing droplet webhook override (.env.local)..."
+farm_ssh "$SLOT" "cat > '${REMOTE_SRC}/.env.local' <<EOF
+API_GITHUB_CODE_MANAGEMENT_WEBHOOK=http://${IP}:3332/github/webhook
+API_URL=http://${IP}:3001
+EOF"
+
 # --- 3. build + (re)start the compiled stack ---
-# API_CLOUD_MODE=true: the farm reuses run.ts's proven cloud-mode onboarding
-# (trial -> BYOK -> migrate-to-free). Passed to BOTH build arg (bakes
-# environment.ts) and runtime env so baked/runtime cloud flags stay consistent.
+# API_CLOUD_MODE=false: the droplet is a true self-contained self-hosted stack.
+# Cloud mode routes /api/proxy/billing to a separate kodus-service-billing micro-
+# service that the droplet doesn't run (the trial/migrate-to-free dance 500s). In
+# self-hosted with no license the permission gate is Community Edition = "allow
+# everything" (permissionValidation.validateSelfHostedPermissions), so reviews
+# run with no billing/seat. Passed to BOTH the build arg (bakes environment.ts)
+# and the runtime env so baked/runtime flags stay consistent.
 COMPOSE="docker compose -f docker-compose.bench.yml"
-BENV="BENCH_TAG='$TAG' API_CLOUD_MODE=true"
+BENV="BENCH_TAG='$TAG' API_CLOUD_MODE=false"
 
 # Recreate the stack CLEANLY: `down` first, then build + `up`. Two reasons:
 #  1. RAM — building the memory-hungry web (Next) build while the old 4-container
