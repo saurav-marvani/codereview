@@ -58,12 +58,46 @@ scp -i "$SSH_KEY" \
     "$ENV_SRC" "root@${IP}:${REMOTE_SRC}/.env"
 
 # --- 3. build + (re)start the compiled stack ---
-log "Building compiled artifact + starting stack (first build ~10-15min, cached re-syncs faster)..."
 # API_CLOUD_MODE=true: the farm reuses run.ts's proven cloud-mode onboarding
-# (trial -> BYOK -> migrate-to-free). Passed here so it lands in BOTH the build
-# arg (bakes environment.ts) and the runtime env (compose `environment:`), kept
-# consistent so the app doesn't split-brain between baked + runtime cloud flags.
-farm_ssh "$SLOT" "cd '$REMOTE_SRC' && BENCH_TAG='$TAG' API_CLOUD_MODE=true docker compose -f docker-compose.bench.yml up -d --build"
+# (trial -> BYOK -> migrate-to-free). Passed to BOTH build arg (bakes
+# environment.ts) and runtime env so baked/runtime cloud flags stay consistent.
+COMPOSE="docker compose -f docker-compose.bench.yml"
+BENV="BENCH_TAG='$TAG' API_CLOUD_MODE=true"
+
+# Recreate the stack CLEANLY: `down` first, then build + `up`. Two reasons:
+#  1. RAM — building the memory-hungry web (Next) build while the old 4-container
+#     stack runs OOM-kills the 8GB box and resets SSH mid-build. With everything
+#     down, the build has the whole box.
+#  2. Correctness — partial stop/up on a long-lived rabbitmq leaves the
+#     auto-delete `workflow.jobs.code_review.queue` dead with nobody recreating
+#     it (api boots before the worker, fails QueueBind, never serves /health). A
+#     full down→up reproduces the clean first-boot that declares it. Volumes
+#     (pg/mongo/rabbit data) persist across `down`, so migrations stay no-ops.
+log "Recreating stack cleanly (down)..."
+farm_ssh "$SLOT" "cd '$REMOTE_SRC' && $COMPOSE down --remove-orphans 2>/dev/null || true"
+
+# Build + up DETACHED on the droplet (nohup -> log + exit marker) and poll, so a
+# transient SSH drop during the ~10min build doesn't fail the whole run. `up
+# --build` builds with the stack down (max RAM) then starts a fresh set.
+log "Building + starting stack (detached; first build ~10-15min, cached re-syncs faster)..."
+farm_ssh "$SLOT" "cd '$REMOTE_SRC' && rm -f /tmp/bench-build.done && nohup env $BENV sh -c '$COMPOSE up -d --build > /tmp/bench-build.log 2>&1; echo \$? > /tmp/bench-build.done' >/dev/null 2>&1 </dev/null & echo launched"
+BUILD_RC=""
+for i in $(seq 1 160); do   # up to ~40min
+    if farm_ssh "$SLOT" "test -f /tmp/bench-build.done" 2>/dev/null; then
+        BUILD_RC="$(farm_ssh "$SLOT" "cat /tmp/bench-build.done" 2>/dev/null | tr -dc 0-9)"
+        break
+    fi
+    sleep 15
+done
+if [ "${BUILD_RC:-}" != "0" ]; then
+    err "Build/up failed (rc=${BUILD_RC:-timeout}). Tail:"
+    farm_ssh "$SLOT" "tail -25 /tmp/bench-build.log 2>/dev/null" || true
+    exit 1
+fi
+
+# Reclaim disk: drop bench images from previous commits (kept only the current
+# tag). Old tagged images aren't dangling, so prune alone won't catch them.
+farm_ssh "$SLOT" "docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^kodus-ai(-web)?-bench:' | grep -v ':${TAG}\$' | xargs -r docker rmi -f >/dev/null 2>&1 || true"
 
 # --- 4. wait for API health ---
 log "Waiting for API /health..."
