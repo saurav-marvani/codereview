@@ -11,6 +11,7 @@ import {
 import { DeleteByRepositoryOrDirectoryPullRequestMessagesUseCase } from '@libs/code-review/application/use-cases/pullRequestMessages/delete-by-repository-or-directory.use-case';
 import { buildKodyRuleCentralizedFilePath } from '@libs/centralized-config/utils/kody-rules-centralized-pr.builder';
 import { buildKodusConfigCentralizedMutationRequest } from '@libs/centralized-config/utils/kodus-config-centralized-pr.builder';
+import { buildGroupFolderName } from '@libs/centralized-config/utils/path-encoder';
 import { ParametersKey } from '@libs/core/domain/enums';
 import { CodeReviewParameter } from '@libs/core/infrastructure/config/types/general/codeReviewConfig.type';
 import { ActionType } from '@libs/core/infrastructure/config/types/general/codeReviewSettingsLog.type';
@@ -213,7 +214,6 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
             directoryPath: isDirectoryGroup
                 ? undefined
                 : directory?.folders?.[0]?.path,
-            directoryId: isDirectoryGroup ? directory?.id : undefined,
             folders: isDirectoryGroup ? directory?.folders : undefined,
             configFileContent: null,
             title: `Remove Kodus config for ${repository.name}${directory ? ` (${directory.name ?? directory.folders?.[0]?.path ?? ''})` : ''}`,
@@ -236,9 +236,12 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
                             ? baseRequest.files
                             : baseRequest.files({ repositoryFolder });
 
+                        const groupFolderNamesByDirId =
+                            this.buildGroupFolderNameMap(repository);
                         const ruleFileDeletes = this.getRuleDeleteFileChanges(
                             rulesForScope,
                             repositoryFolder,
+                            groupFolderNamesByDirId,
                         );
 
                         return [...configFileDeletes, ...ruleFileDeletes];
@@ -295,6 +298,7 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
     private getRuleDeleteFileChanges(
         rulesForScope: Partial<IKodyRule>[],
         repositoryFolder: string,
+        groupFolderNamesByDirId: Map<string, string>,
     ): Array<{ path: string; operation: 'delete' }> {
         const rulePaths = new Set<string>();
 
@@ -309,7 +313,9 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
                 rulesDirectory:
                     rule.type === KodyRulesType.MEMORY ? 'memories' : 'review',
                 ruleContent: rule,
-                directoryId: rule.directoryId,
+                groupFolderName: rule.directoryId
+                    ? groupFolderNamesByDirId.get(String(rule.directoryId))
+                    : undefined,
             });
 
             rulePaths.add(centralizedPath);
@@ -319,6 +325,26 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
             path,
             operation: 'delete' as const,
         }));
+    }
+
+    private buildGroupFolderNameMap(
+        repository: { directories?: Array<{ id?: string; folders?: Array<{ path: string }> }> },
+    ): Map<string, string> {
+        const map = new Map<string, string>();
+        for (const dir of repository.directories ?? []) {
+            if (!dir?.id || !dir.folders || dir.folders.length === 0) {
+                continue;
+            }
+            try {
+                map.set(
+                    String(dir.id),
+                    buildGroupFolderName(dir.folders.map((f) => f.path)),
+                );
+            } catch {
+                // Skip groups with invalid path sets — they cannot be reached on disk.
+            }
+        }
+        return map;
     }
 
     private hasMeaningfulConfigValues(

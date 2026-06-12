@@ -297,10 +297,6 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
                             ? undefined
                             : pullRequestMessages.repositoryId,
                     directoryPath: directoryPath || undefined,
-                    directoryId:
-                        pullRequestMessages.configLevel === ConfigLevel.DIRECTORY
-                            ? pullRequestMessages.directoryId
-                            : undefined,
                     configFileContent:
                         Object.keys(configFileContent).length > 0
                             ? configFileContent
