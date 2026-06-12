@@ -333,7 +333,15 @@ env_set() {
     fi
 }
 env_set IMAGE_TAG "$IMAGE_TAG"
-env_set WEB_HOSTNAME_API "kodus-api"
+# Point the web's server-side API calls (next-auth authorize → /auth/login,
+# used by rbac-frontend-routes / rbac-ui-render) at the compose SERVICE name
+# `api`, which Docker DNS always resolves on the shared network regardless of
+# container_name. The old literal `kodus-api` matched neither the service
+# (`api`) nor the actual container (`kodus_api` once GLOBAL_API_CONTAINER_NAME
+# is set), so authorize() got ENOTFOUND → returned null → the next-auth login
+# 302'd with no session → both RBAC web scenarios failed on self-hosted only
+# (cloud passes: it reaches the API over the public URL, not a docker host).
+env_set WEB_HOSTNAME_API "api"
 env_set WEB_PORT_API "3001"
 env_set NEXTAUTH_URL "http://$SERVER_IP:3000"
 # Webhook URL env var names are INCONSISTENT across providers in the app:
@@ -405,7 +413,7 @@ done
 
 if [ ${#HEALTH_FAILED[@]} -gt 0 ]; then
     err "Health check failed for: ${HEALTH_FAILED[*]}"
-    ssh_vm "cd /opt/kodus-installer && docker compose logs api worker webhooks --tail 80 --no-color" || true
+    ssh_vm "cd /opt/kodus-installer && docker compose logs api kodus-web worker webhooks --tail 80 --no-color" || true
     exit 1
 fi
 
@@ -468,7 +476,7 @@ set -e
 # agent actually received the rule. Best-effort: never fail the run on this.
 PROV="${TARGET_FILTER_PROVIDER:-unknown}"
 mkdir -p "$E2E_ROOT/evidence"
-ssh_vm "cd /opt/kodus-installer && docker compose logs api worker webhooks --tail 2000 --no-color" \
+ssh_vm "cd /opt/kodus-installer && docker compose logs api kodus-web worker webhooks --tail 2000 --no-color" \
     > "$E2E_ROOT/evidence/droplet-logs-${PROV}.txt" 2>&1 \
     && ok "Captured droplet logs → evidence/droplet-logs-${PROV}.txt" \
     || warn "Could not capture droplet logs"
