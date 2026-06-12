@@ -59,6 +59,11 @@ describe('GetKodyRulesHealthUseCase', () => {
         usageRows: unknown[],
         rulesDoc: unknown,
         repoNames: Map<string, string> = new Map(),
+        directories: Array<{
+            id: string;
+            name?: string;
+            folders?: Array<{ path: string }>;
+        }> = [],
     ) => {
         const reviewAnalytics = {
             getKodyRulesUsage: jest.fn().mockResolvedValue(usageRows),
@@ -67,9 +72,21 @@ describe('GetKodyRulesHealthUseCase', () => {
         const kodyRulesService = {
             findByOrganizationId: jest.fn().mockResolvedValue(rulesDoc),
         };
+        const teamService = {
+            find: jest.fn().mockResolvedValue([{ uuid: 'team-1' }]),
+        };
+        const parametersService = {
+            findByKey: jest.fn().mockResolvedValue({
+                configValue: {
+                    repositories: [{ directories }],
+                },
+            }),
+        };
         return new GetKodyRulesHealthUseCase(
             reviewAnalytics as never,
             kodyRulesService as never,
+            teamService as never,
+            parametersService as never,
         );
     };
 
@@ -157,7 +174,7 @@ describe('GetKodyRulesHealthUseCase', () => {
         await expect(useCase.execute(baseQuery)).resolves.toEqual([]);
     });
 
-    it('labels scope: global sentinel → null, repo → resolved name, folder → path', async () => {
+    it('labels scope: global sentinel → null, repo → resolved name, folder → resolved directory name', async () => {
         const useCase = mkUseCase(
             [],
             {
@@ -172,18 +189,35 @@ describe('GetKodyRulesHealthUseCase', () => {
                         uuid: 'r',
                         title: 'Repo rule',
                         repositoryId: '670345891',
+                        // a file glob is NOT folder scope — must read as Repo
+                        path: '**/*.ts',
                         status: KodyRulesStatus.ACTIVE,
                     },
                     {
                         uuid: 'f',
                         title: 'Folder rule',
                         repositoryId: '670345891',
-                        path: 'src/auth',
+                        directoryId: 'dir-1',
+                        path: '**/*.ts',
+                        status: KodyRulesStatus.ACTIVE,
+                    },
+                    {
+                        uuid: 'm',
+                        title: 'Multi-folder rule',
+                        repositoryId: '670345891',
+                        directoryId: 'dir-2',
                         status: KodyRulesStatus.ACTIVE,
                     },
                 ],
             },
             new Map([['670345891', 'kodustech/kodus-ai']]),
+            [
+                { id: 'dir-1', folders: [{ path: '/apps/api' }] },
+                {
+                    id: 'dir-2',
+                    folders: [{ path: '/apps/api' }, { path: '/apps/web' }],
+                },
+            ],
         );
 
         const rows = await useCase.execute(baseQuery);
@@ -193,18 +227,26 @@ describe('GetKodyRulesHealthUseCase', () => {
         expect(byId.g).toMatchObject({
             repositoryId: null,
             repositoryName: null,
-            directoryPath: null,
+            directoryId: null,
+            directoryFolders: null,
         });
-        // repo-scoped: id kept, name resolved from the warehouse map
+        // repo-scoped: id kept, name resolved; a file glob does NOT make it a folder
         expect(byId.r).toMatchObject({
             repositoryId: '670345891',
             repositoryName: 'kodustech/kodus-ai',
-            directoryPath: null,
+            directoryId: null,
+            directoryFolders: null,
         });
-        // folder-scoped: path surfaced
+        // folder-scoped: directoryId drives scope, folder path resolved from config
         expect(byId.f).toMatchObject({
             repositoryName: 'kodustech/kodus-ai',
-            directoryPath: 'src/auth',
+            directoryId: 'dir-1',
+            directoryFolders: ['/apps/api'],
+        });
+        // multi-folder directory: all folder paths surfaced for the UI's +N
+        expect(byId.m).toMatchObject({
+            directoryId: 'dir-2',
+            directoryFolders: ['/apps/api', '/apps/web'],
         });
     });
 });
