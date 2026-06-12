@@ -279,9 +279,10 @@ export class CentralizedConfigService implements ICentralizedConfigService {
     private async fetchDirectoryGroupFoldersFile(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { name: string; id: string };
-        directoryId: string;
+        centralizedDirectoryPath: string;
     }): Promise<{ folders?: Array<{ path: string }> } | null> {
-        const { organizationAndTeamData, repository, directoryId } = params;
+        const { organizationAndTeamData, repository, centralizedDirectoryPath } =
+            params;
 
         try {
             const response =
@@ -289,7 +290,7 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                     organizationAndTeamData,
                     repository,
                     file: {
-                        filename: `.kody-directory-groups/${directoryId}/folders.yml`,
+                        filename: `${centralizedDirectoryPath}/folders.yml`,
                     },
                     pullRequest: null,
                 } as any);
@@ -386,7 +387,6 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                             organizationAndTeamData,
                             repository: centralizedRepository,
                             dir: centralizedDirectoryPath,
-                            directoryId,
                         });
                     }
 
@@ -435,7 +435,7 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                             await this.fetchDirectoryGroupFoldersFile({
                                 organizationAndTeamData,
                                 repository: centralizedRepository,
-                                directoryId,
+                                centralizedDirectoryPath,
                             });
 
                         const directoryPaths =
