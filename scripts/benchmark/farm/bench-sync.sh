@@ -97,7 +97,7 @@ fi
 
 # Reclaim disk: drop bench images from previous commits (kept only the current
 # tag). Old tagged images aren't dangling, so prune alone won't catch them.
-farm_ssh "$SLOT" "docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^kodus-ai(-web)?-bench:' | grep -v ':${TAG}\$' | xargs -r docker rmi -f >/dev/null 2>&1 || true"
+farm_ssh "$SLOT" "docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^kodus-ai-(bench-(api|worker|webhooks)|web-bench):' | grep -v ':${TAG}\$' | xargs -r docker rmi -f >/dev/null 2>&1 || true"
 
 # --- 4. wait for API health ---
 log "Waiting for API /health..."

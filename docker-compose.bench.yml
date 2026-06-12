@@ -58,6 +58,13 @@ services:
     #----------------------------------------------------------------
     kodus-api:
         <<: *bench-app
+        # Distinct image per service: all three build the SAME Dockerfile but
+        # different target stages (api/worker/webhooks), each with its own baked
+        # CMD. Sharing one image tag (the anchor's) makes the last-built target
+        # overwrite it, so all three containers run whatever built last — e.g.
+        # the api container running `node dist/apps/worker/main.js` (no HTTP
+        # server → /health refused). Per-service tags keep them separate.
+        image: kodus-ai-bench-api:${BENCH_TAG:-latest}
         build:
             context: .
             dockerfile: docker/Dockerfile
@@ -104,6 +111,7 @@ services:
 
     worker:
         <<: *bench-app
+        image: kodus-ai-bench-worker:${BENCH_TAG:-latest}
         build:
             context: .
             dockerfile: docker/Dockerfile
@@ -135,6 +143,7 @@ services:
 
     webhooks:
         <<: *bench-app
+        image: kodus-ai-bench-webhooks:${BENCH_TAG:-latest}
         build:
             context: .
             dockerfile: docker/Dockerfile
