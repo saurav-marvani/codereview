@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { Callbacks } from '@langchain/core/callbacks/manager';
 import { getAdapter } from './providerAdapters/index';
+import { VertexAnthropicAdapter } from './providerAdapters/vertexAnthropicAdapter';
+
+/** Claude model ids (e.g. claude-sonnet-4-6, claude-haiku-4-5@20251001). */
+const CLAUDE_MODEL_PATTERN = /^claude[-_]/i;
 
 export enum BYOKProvider {
     OPENAI = 'openai',
@@ -105,10 +109,17 @@ export class BYOKProviderService {
             apiKey,
             model,
             baseURL,
+            vertexLocation,
             disableReasoning,
             reasoningEffort,
         } = config.main;
-        const adapter = getAdapter(provider);
+        // Claude on Vertex needs the Anthropic protocol, which the Gemini-only
+        // ChatVertexAI can't speak — route it to the Vertex-Anthropic adapter.
+        const adapter =
+            provider === BYOKProvider.GOOGLE_VERTEX &&
+            CLAUDE_MODEL_PATTERN.test(model)
+                ? new VertexAnthropicAdapter()
+                : getAdapter(provider);
 
         // Map config.main.reasoningEffort to reasoningLevel if caller didn't provide one
         const resolvedReasoningLevel =
@@ -132,6 +143,7 @@ export class BYOKProviderService {
         const modelInstance = adapter.build({
             model,
             apiKey,
+            vertexLocation,
             baseURL:
                 provider === BYOKProvider.OPENAI_COMPATIBLE ||
                 provider === BYOKProvider.ANTHROPIC_COMPATIBLE

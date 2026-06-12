@@ -7,7 +7,9 @@ test("allScenarios: includes the registered release-gate scenarios", () => {
     assert.deepEqual(ids, [
         "centralized-config-sync",
         "code-review-basic",
+        "code-review-vertex-byok",
         "command-review",
+        "conversation-vertex-byok",
         "kody-rules-create-and-apply",
         "license-attribution",
         "onboarding-webhook-registration",
