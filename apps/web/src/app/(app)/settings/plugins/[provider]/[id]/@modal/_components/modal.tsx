@@ -110,6 +110,15 @@ export const PluginModal = ({
         ["custom", "kodusmcp"].includes(plugin.provider) &&
         !plugin.active;
 
+    // Only label "OAuth login" when OAuth is the *only* way to connect — not for
+    // integrations that also accept a token (e.g. Jira/Linear) or token-only ones.
+    const hasNonOauthMethod =
+        plugin.authMethods?.some(
+            (method) => method.type !== "oauth2" && method.type !== "none",
+        ) ?? false;
+    const showsOAuthBadge =
+        plugin.authScheme?.toLowerCase() === "oauth2" && !hasNonOauthMethod;
+
     // Managed integrations that require auth (OAuth and/or a token) show the
     // auth-method picker + token form before connecting — covers single-method
     // (e.g. Fireflies: API key only) and multi-method (e.g. Jira: OAuth or token).
@@ -356,11 +365,13 @@ export const PluginModal = ({
 
                     <div className="-mx-6 overflow-auto px-6">
                         <div className="flex flex-col gap-3">
-                            {plugin.authScheme.toLowerCase() === "oauth2" && (
+                            {(showsOAuthBadge || isConnected || isDefault) && (
                                 <div className="mb-2 flex items-center gap-2">
-                                    <Badge className="pointer-events-none">
-                                        Oauth login
-                                    </Badge>
+                                    {showsOAuthBadge && (
+                                        <Badge className="pointer-events-none">
+                                            Oauth login
+                                        </Badge>
+                                    )}
 
                                     {isConnected && (
                                         <Badge
