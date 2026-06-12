@@ -237,6 +237,7 @@
 | `ANALYTICS_PG_POOL_MAX` | – | string | 🏢 ☁️ Cloud | Upper bound on the analytics Postgres pool. |
 | `ANALYTICS_INGESTION_CRON` | – | cron | 🏢 ☁️ Cloud | Cron expression — analytics ingestion. Default = every 30 min. |
 | `ANALYTICS_INGESTION_DISABLED` | – | boolean | ☁️ Cloud | Kill switch for the ingestion cron regardless of role. |
+| `ANALYTICS_INGESTION_RUN_ON_BOOT` | – | boolean | 🏢 ☁️ Cloud | Run one ingestion pass on worker boot instead of waiting for the first scheduled cron tick (so a fresh install / restart catches up immediately). Opt-out only: set 'false' to skip the boot pass. Default = run on boot. |
 | `ANALYTICS_CLASSIFIER_CRON` | – | cron | 🏢 ☁️ Cloud | Cron — LLM-based PR type classifier (analytics worker role). |
 | `ANALYTICS_CLASSIFIER_DISABLED` | – | boolean | ☁️ Cloud | Kill switch for the classifier. |
 | `API_PG_ANALYTICS_HOST` | – | string | 🏢 ☁️ Cloud | Alternative naming used by some loaders. Verify if duplicate of ANALYTICS_PG_DB_*. |
