@@ -4,10 +4,6 @@ jest.mock('@kodus/flow', () => ({
     createMCPAdapter: jest.fn(),
 }));
 
-jest.mock('../../src/clients/composio', () => ({
-    ComposioClient: jest.fn().mockImplementation(() => ({})),
-}));
-
 import { McpService } from '../../src/modules/mcp/mcp.service';
 import { MCPConnectionStatus } from '../../src/modules/mcp/entities/mcp-connection.entity';
 import { MCPIntegrationAuthType } from '../../src/modules/integrations/enums/integration.enum';

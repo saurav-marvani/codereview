@@ -1,7 +1,6 @@
 import { MCPConnectionStatus } from '../../mcp/entities/mcp-connection.entity';
 
 export enum MCPProviderType {
-    COMPOSIO = 'composio',
     KODUSMCP = 'kodusmcp',
     CUSTOM = 'custom',
 }

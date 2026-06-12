@@ -241,7 +241,7 @@ export class KodusMCPProvider extends BaseProvider {
                 id: integration.id,
                 name: integration.name,
                 description: this.integrationDescriptionService.getDescription(
-                    'composio',
+                    'kodusmcp',
                     integration.appName,
                 ),
                 authScheme: integration.authScheme,

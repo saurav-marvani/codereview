@@ -84,7 +84,7 @@ export class McpController {
         name: 'provider',
         required: false,
         type: String,
-        example: 'composio',
+        example: 'kodusmcp',
     })
     @ApiQuery({
         name: 'appName',
@@ -250,7 +250,7 @@ export class McpController {
     @ApiParam({
         name: 'provider',
         type: String,
-        example: 'composio',
+        example: 'kodusmcp',
     })
     @ApiParam({
         name: 'integrationId',
@@ -282,7 +282,7 @@ export class McpController {
     @ApiParam({
         name: 'provider',
         type: String,
-        example: 'composio',
+        example: 'kodusmcp',
     })
     @ApiParam({
         name: 'integrationId',
@@ -312,7 +312,7 @@ export class McpController {
     @ApiParam({
         name: 'provider',
         type: String,
-        example: 'composio',
+        example: 'kodusmcp',
     })
     @ApiParam({
         name: 'integrationId',
@@ -344,7 +344,7 @@ export class McpController {
     @ApiParam({
         name: 'provider',
         type: String,
-        example: 'composio',
+        example: 'kodusmcp',
     })
     @ApiBody({ type: InitiateConnectionDto })
     initiateConnection(

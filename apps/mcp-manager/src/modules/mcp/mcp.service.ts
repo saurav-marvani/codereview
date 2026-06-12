@@ -59,22 +59,9 @@ export class McpService {
         connectionId: string,
         organizationId: string,
     ) {
-        // Try to find by UUID first
-        let connection = await this.connectionRepository.findOne({
+        return this.connectionRepository.findOne({
             where: { id: connectionId, organizationId },
         });
-
-        // If not found and looks like Composio ID, try other ways
-        if (!connection && connectionId.startsWith('ca_')) {
-            connection = await this.connectionRepository.findOne({
-                where: {
-                    organizationId,
-                    metadata: { connection: { id: connectionId } },
-                },
-            });
-        }
-
-        return connection;
     }
 
     async getConnection(connectionId: string, organizationId: string) {
@@ -262,15 +249,7 @@ export class McpService {
 
         const provider = this.providerFactory.getProvider(connection.provider);
 
-        const composioConnectionId = connection.metadata?.connection?.id;
-
-        if (!composioConnectionId) {
-            console.warn(
-                'Composio connection ID not found in metadata, using provided ID',
-            );
-        }
-
-        await provider.deleteConnection(composioConnectionId || connectionId);
+        await provider.deleteConnection(connectionId);
 
         // Remove OAuth state for the integration associated with this connection
         await this.integrationOAuthService.deleteOAuthState(
