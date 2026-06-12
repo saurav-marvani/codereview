@@ -201,13 +201,22 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
             return null;
         }
 
+        const isDirectoryGroup =
+            directory &&
+            !!directory.folders &&
+            directory.folders.length > 0;
+
         const baseRequest = buildKodusConfigCentralizedMutationRequest({
             centralizedConfigPrService: this.centralizedConfigPrService,
             organizationAndTeamData,
             repositoryId,
-            directoryPath: directory?.folders?.[0]?.path,
+            directoryPath: isDirectoryGroup
+                ? undefined
+                : directory?.folders?.[0]?.path,
+            directoryId: isDirectoryGroup ? directory?.id : undefined,
+            folders: isDirectoryGroup ? directory?.folders : undefined,
             configFileContent: null,
-            title: `Remove Kodus config for ${repository.name}${directory ? ` (${directory.folders?.[0]?.path ?? ''})` : ''}`,
+            title: `Remove Kodus config for ${repository.name}${directory ? ` (${directory.name ?? directory.folders?.[0]?.path ?? ''})` : ''}`,
             description:
                 'This pull request proposes removing a code review scope configuration from centralized config.',
             commitMessage: `remove code review config for ${repository.name}`,
@@ -300,6 +309,7 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
                 rulesDirectory:
                     rule.type === KodyRulesType.MEMORY ? 'memories' : 'review',
                 ruleContent: rule,
+                directoryId: rule.directoryId,
             });
 
             rulePaths.add(centralizedPath);

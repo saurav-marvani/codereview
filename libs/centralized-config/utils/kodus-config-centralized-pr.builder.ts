@@ -12,6 +12,8 @@ interface BuildKodusConfigCentralizedMutationRequestParams {
     organizationAndTeamData: OrganizationAndTeamData;
     repositoryId?: string;
     directoryPath?: string;
+    directoryId?: string;
+    folders?: Array<{ path: string }>;
     configFileContent?: Partial<KodusConfigFile> | null;
     title: string;
     description: string;
@@ -25,11 +27,55 @@ export function buildKodusConfigCentralizedMutationRequest(
     params: BuildKodusConfigCentralizedMutationRequestParams,
 ): CentralizedMutationPullRequestRequest {
     const normalizedDirectoryPath = normalizeDirectoryPath(params.directoryPath);
+    const directoryId = params.directoryId;
 
     return {
         organizationAndTeamData: params.organizationAndTeamData,
         repositoryId: params.repositoryId,
         files: ({ repositoryFolder }) => {
+            if (directoryId) {
+                const configPath =
+                    params.centralizedConfigPrService.buildDirectoryGroupConfigPath(
+                        repositoryFolder,
+                        directoryId,
+                    );
+                const foldersPath =
+                    params.centralizedConfigPrService.buildDirectoryGroupFoldersPath(
+                        repositoryFolder,
+                        directoryId,
+                    );
+                const hasContent = hasConfigContent(params.configFileContent);
+
+                if (!hasContent) {
+                    return [
+                        { path: configPath, operation: 'delete' },
+                        { path: foldersPath, operation: 'delete' },
+                    ];
+                }
+
+                const files: {
+                    path: string;
+                    operation: 'upsert' | 'delete';
+                    content?: string;
+                }[] = [
+                    {
+                        path: configPath,
+                        operation: 'upsert',
+                        content: yaml.dump(params.configFileContent),
+                    },
+                ];
+
+                if (params.folders && params.folders.length > 0) {
+                    files.push({
+                        path: foldersPath,
+                        operation: 'upsert',
+                        content: yaml.dump({ folders: params.folders }),
+                    });
+                }
+
+                return files;
+            }
+
             const path = params.centralizedConfigPrService.buildCentralizedPath({
                 repositoryFolder,
                 relativePath: buildKodusConfigRelativePath(

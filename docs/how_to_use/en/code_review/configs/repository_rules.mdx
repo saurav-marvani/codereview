@@ -29,7 +29,7 @@ Each rule file must follow this exact template structure:
 ```markdown
 ---
 title: "<rule name>"
-scope: "file"            # "file" or "pull_request"
+scope: "file"            # "file" or "pull-request"
 path: []                 # list of globs. example: ["**/*.ts", "apps/web/**"]
 severity_min: "high"     # "low", "medium", "high", "critical"
 languages: []            # optional. ex: ["jsts", "go", "php", "ruby", "java", "csharp", "dart", "kotlin", "rust"]
@@ -63,7 +63,7 @@ Describe what to review and how to decide. Be direct and objective.
 | Field | Description | Values |
 |-------|-------------|---------|
 | `title` | Rule name displayed in the interface | Any descriptive string |
-| `scope` | Rule analysis scope | `"file"` or `"pull_request"` |
+| `scope` | Rule analysis scope | `"file"` or `"pull-request"` |
 | `path` | File paths where rule applies | Array of glob patterns |
 | `severity_min` | Minimum severity level | `"low"`, `"medium"`, `"high"`, `"critical"` |
 
@@ -112,7 +112,7 @@ function processUser(user: User) {
 ```markdown
 ---
 title: "New API endpoints must have tests"
-scope: "pull_request"
+scope: "pull-request"
 path: ["**/*"]
 severity_min: "high"
 buckets: ["testing"]

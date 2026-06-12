@@ -480,6 +480,7 @@ export class KodyRulesTools {
                                 organizationAndTeamData:
                                     params.organizationAndTeamData,
                                 repositoryId: params.kodyRule.repositoryId,
+                                directoryId: params.kodyRule.directoryId,
                                 ruleContent: params.kodyRule,
                                 ruleType: KodyRulesType.STANDARD,
                                 operation: 'create',
@@ -745,6 +746,7 @@ export class KodyRulesTools {
                                     this.centralizedConfigPrService,
                                 organizationAndTeamData,
                                 repositoryId: mergedRule.repositoryId,
+                                directoryId: mergedRule.directoryId,
                                 ruleContent: mergedRule,
                                 ruleType: KodyRulesType.STANDARD,
                                 operation: 'update',
