@@ -66,6 +66,14 @@ services:
                 - API_CLOUD_MODE=${API_CLOUD_MODE:-false}
                 - RELEASE_VERSION=${BENCH_TAG:-local}
         container_name: kodus_api_bench
+        # The web proxy + MCP URL reach the API by the dev container name
+        # `kodus_api` (.env: GLOBAL_API_CONTAINER_NAME, API_KODUS_MCP_SERVER_URL),
+        # but our container is `kodus_api_bench` — add `kodus_api` as a network
+        # alias so those hostnames resolve. Overrides the anchor's short-form net.
+        networks:
+            kodus-bench-net:
+                aliases:
+                    - kodus_api
         # Only the API runs migrations/seeds, once, before the others come up.
         # The entrypoint gates on RUN_MIGRATIONS; worker/webhooks set it false
         # so they don't race the schema.
