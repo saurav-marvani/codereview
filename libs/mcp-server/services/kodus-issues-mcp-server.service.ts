@@ -4,14 +4,14 @@ import { Response } from 'express';
 import { hostname } from 'node:os';
 
 import { extractMcpRequestMetadata } from '../utils/mcp-protocol.utils';
-import { GithubIssuesMcpServerFactory } from './github-issues-mcp-server.factory';
+import { KodusIssuesMcpServerFactory } from './kodus-issues-mcp-server.factory';
 
 @Injectable()
-export class GithubIssuesMcpServerService {
-    private readonly logger = createLogger(GithubIssuesMcpServerService.name);
+export class KodusIssuesMcpServerService {
+    private readonly logger = createLogger(KodusIssuesMcpServerService.name);
     private readonly instanceId = hostname();
 
-    constructor(private readonly factory: GithubIssuesMcpServerFactory) {}
+    constructor(private readonly factory: KodusIssuesMcpServerFactory) {}
 
     async handleRequest(body: any, res: Response): Promise<void> {
         const startedAt = Date.now();
@@ -31,8 +31,8 @@ export class GithubIssuesMcpServerService {
         };
 
         this.logger.log({
-            message: 'GitHub Issues MCP stateless request received',
-            context: GithubIssuesMcpServerService.name,
+            message: 'Kodus Issues MCP stateless request received',
+            context: KodusIssuesMcpServerService.name,
             metadata: {
                 method: res.req.method,
                 path: res.req.originalUrl ?? res.req.url,
@@ -48,8 +48,8 @@ export class GithubIssuesMcpServerService {
             }
 
             this.logger.warn({
-                message: 'GitHub Issues MCP stateless request aborted',
-                context: GithubIssuesMcpServerService.name,
+                message: 'Kodus Issues MCP stateless request aborted',
+                context: KodusIssuesMcpServerService.name,
                 metadata: {
                     method: res.req.method,
                     path: res.req.originalUrl ?? res.req.url,
@@ -63,8 +63,8 @@ export class GithubIssuesMcpServerService {
         res.once('finish', () => {
             isFinished = true;
             this.logger.log({
-                message: 'GitHub Issues MCP stateless request completed',
-                context: GithubIssuesMcpServerService.name,
+                message: 'Kodus Issues MCP stateless request completed',
+                context: KodusIssuesMcpServerService.name,
                 metadata: {
                     method: res.req.method,
                     path: res.req.originalUrl ?? res.req.url,
@@ -82,8 +82,8 @@ export class GithubIssuesMcpServerService {
             await transport.handleRequest(res.req, res, body);
         } catch (error) {
             this.logger.error({
-                message: 'GitHub Issues MCP stateless request failed',
-                context: GithubIssuesMcpServerService.name,
+                message: 'Kodus Issues MCP stateless request failed',
+                context: KodusIssuesMcpServerService.name,
                 error: error instanceof Error ? error : undefined,
                 metadata: {
                     method: res.req.method,

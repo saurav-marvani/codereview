@@ -115,8 +115,7 @@ interface MCPIntegrationOAuth2 extends MCPIntegrationBase {
 }
 
 export const KODUS_MCP_INTEGRATION_ID = 'kd_mcp_oTUrzqsaxTg';
-export const KODUS_MCP_GITHUB_ISSUES_INTEGRATION_ID =
-    'kodus-github-issues-default';
+export const KODUS_ISSUES_INTEGRATION_ID = 'kodus-issues-default';
 
 @Injectable()
 export class MCPManagerService {

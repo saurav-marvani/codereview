@@ -495,18 +495,51 @@ export class McpService {
             credential,
         );
 
+        return this.upsertManagedConnection(
+            organizationId,
+            integrationId,
+            method.id,
+            dto.allowedTools,
+        );
+    }
+
+    /**
+     * Create or update the ACTIVE `mcp_connections` row for a managed (kodusmcp)
+     * integration once its credential is in place — used by both the token path
+     * and the OAuth finalize. Without this, OAuth-connected integrations had no
+     * connection row, so the UI couldn't tell they were connected.
+     *
+     * Defaults `allowedTools` to the read-only set (verification use case) when
+     * none is given; tool-listing failures fall back to "all" so a transient
+     * hiccup never blocks the connection.
+     */
+    private async upsertManagedConnection(
+        organizationId: string,
+        integrationId: string,
+        authMethodId: string,
+        allowedToolsOverride?: string[],
+    ) {
+        const provider = this.providerFactory.getProvider(
+            'kodusmcp',
+        ) as KodusMCPProvider;
+
         const config = provider.getManagedConfig(integrationId);
 
-        // Default to read-only tools (verification use case) when the caller
-        // didn't pick a subset. Tools are now listable with the just-saved
-        // credential.
-        let allowedTools = dto.allowedTools;
+        let allowedTools = allowedToolsOverride;
         if (!allowedTools?.length) {
-            const tools = await provider.getIntegrationTools(
-                integrationId,
-                organizationId,
-            );
-            allowedTools = defaultReadOnlyToolSlugs(tools);
+            try {
+                const tools = await provider.getIntegrationTools(
+                    integrationId,
+                    organizationId,
+                );
+                allowedTools = defaultReadOnlyToolSlugs(tools);
+            } catch (error) {
+                this.logger.warn(
+                    `Failed to list tools for ${integrationId}; defaulting to all tools`,
+                    error instanceof Error ? error.stack : String(error),
+                );
+                allowedTools = [];
+            }
         }
 
         const existingConnection = await this.connectionRepository.findOne({
@@ -523,7 +556,7 @@ export class McpService {
             allowedTools,
             metadata: {
                 ...(existingConnection?.metadata ?? {}),
-                authMethod: method.id,
+                authMethod: authMethodId,
             },
         };
 
@@ -772,6 +805,22 @@ export class McpService {
                 code,
                 state,
             });
+
+            // Create the connection row so the integration reads as connected
+            // (the OAuth grant is now ACTIVE). Tag it with the integration's
+            // OAuth method.
+            const kodusProvider = mcpProvider as KodusMCPProvider;
+            const oauthMethod = kodusProvider
+                .getAuthMethods(integrationId)
+                .find(
+                    (method) => method.type === MCPIntegrationAuthType.OAUTH2,
+                );
+
+            await this.upsertManagedConnection(
+                organizationId,
+                integrationId,
+                oauthMethod?.id ?? 'oauth',
+            );
 
             return { message: 'OAuth integration finalized' };
         }

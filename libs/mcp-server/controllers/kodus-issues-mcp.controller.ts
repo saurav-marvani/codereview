@@ -19,28 +19,28 @@ import { Response } from 'express';
 import { createLogger } from '@kodus/flow';
 import { Public } from '@libs/identity/infrastructure/adapters/services/auth/public.decorator';
 import { McpEnabledGuard } from '../guards/mcp-enabled.guard';
-import { GithubIssuesMcpServerService } from '../services/github-issues-mcp-server.service';
+import { KodusIssuesMcpServerService } from '../services/kodus-issues-mcp-server.service';
 import {
     handleStatelessMcpPost,
     handleUnsupportedStatelessMcpMethod,
 } from './mcp-controller.helper';
 
-@ApiTags('MCP Github Issues')
+@ApiTags('MCP Issues')
 @Public()
-@Controller('mcp/github-issues')
+@Controller('mcp/issues')
 @UseGuards(McpEnabledGuard)
-export class GithubIssuesMcpController {
-    private readonly logger = createLogger(GithubIssuesMcpController.name);
+export class KodusIssuesMcpController {
+    private readonly logger = createLogger(KodusIssuesMcpController.name);
 
     constructor(
-        private readonly mcpServerService: GithubIssuesMcpServerService,
+        private readonly mcpServerService: KodusIssuesMcpServerService,
     ) {}
 
     @Post()
     @ApiOperation({
-        summary: 'Handle GitHub Issues MCP client request',
+        summary: 'Handle Kodus Issues MCP client request',
         description:
-            'Handles JSON-RPC MCP client requests over stateless Streamable HTTP. Each POST request creates a fresh MCP server and transport for the lifetime of that request only.',
+            'Handles JSON-RPC MCP client requests over stateless Streamable HTTP. Each POST creates a fresh MCP server and transport for that request only.',
     })
     @ApiHeader({
         name: 'accept',
@@ -62,15 +62,15 @@ export class GithubIssuesMcpController {
             handler: this.mcpServerService.handleRequest.bind(
                 this.mcpServerService,
             ),
-            errorContext: GithubIssuesMcpController.name,
-            errorMessage: 'Error handling GitHub Issues MCP request',
+            errorContext: KodusIssuesMcpController.name,
+            errorMessage: 'Error handling Kodus Issues MCP request',
             logger: this.logger,
         });
     }
 
     @Get()
     @ApiOperation({
-        summary: 'GET is not supported for this GitHub Issues MCP endpoint',
+        summary: 'GET is not supported for this Kodus Issues MCP endpoint',
         description:
             'This deployment runs MCP in stateless POST-only mode. Long-lived SSE streams are not exposed on this endpoint.',
     })
@@ -81,7 +81,7 @@ export class GithubIssuesMcpController {
 
     @Delete()
     @ApiOperation({
-        summary: 'DELETE is not supported for this GitHub Issues MCP endpoint',
+        summary: 'DELETE is not supported for this Kodus Issues MCP endpoint',
         description:
             'This deployment does not keep MCP sessions between requests, so there is no session to terminate.',
     })

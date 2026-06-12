@@ -18,11 +18,11 @@
         "authMethods": [{ "id": "none", "type": "none", "default": true }]
     },
     {
-        "id": "kodus-github-issues-default",
-        "name": "Github Issues by Kodus",
-        "baseUrl": "/mcp/github-issues",
+        "id": "kodus-issues-default",
+        "name": "Git Issues",
+        "baseUrl": "/mcp/issues",
         "protocol": "http",
-        "logoUrl": "https://kodus.io/wp-content/uploads/2026/03/github_kodus.png",
+        "logoUrl": "https://kodus.io/wp-content/uploads/2025/11/Kodus-AI-Logo-6.png",
         "headers": {},
         "authMethods": [{ "id": "none", "type": "none", "default": true }]
     },

@@ -22,7 +22,7 @@ import { MagicModalContext } from "@components/ui/magic-modal";
 import { PopoverTrigger } from "@components/ui/popover";
 import { useToast } from "@components/ui/toaster/use-toast";
 import { useAsyncAction } from "@hooks/use-async-action";
-import { checkHasConnectionByPlatform } from "@services/integrations/fetch";
+import { checkIssuesProviderSupported } from "@services/integrations/fetch";
 import {
     deleteMCPConnection,
     deleteMCPCustomPlugin,
@@ -35,8 +35,9 @@ import {
 } from "@services/mcp-manager/fetch";
 import {
     CUSTOM_MCP_SESSION_STORAGE_KEYS,
-    KODUS_MCP_GITHUB_ISSUES_INTEGRATION_ID,
+    KODUS_ISSUES_INTEGRATION_ID,
 } from "@services/mcp-manager/types";
+import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
 import { EditIcon, PlugIcon, RefreshCwIcon, Trash } from "lucide-react";
@@ -95,11 +96,14 @@ export const PluginModal = ({
     const isDefault = plugin.isDefault;
     const canEdit = usePermission(Action.Update, ResourceType.PluginSettings);
     const canDelete = usePermission(Action.Delete, ResourceType.PluginSettings);
-    const requiresGithubIntegration =
-        plugin.id === KODUS_MCP_GITHUB_ISSUES_INTEGRATION_ID;
-    const [hasGithubIntegration, setHasGithubIntegration] = useState<
-        boolean | null
-    >(requiresGithubIntegration ? null : true);
+    const { teamId } = useSelectedTeamId();
+    // The generic issues MCP reuses the team's code-management integration, so
+    // it only works on hosts with a native issue tracker (not Azure Repos or
+    // Bitbucket Data Center). Gate install on backend-confirmed support.
+    const requiresIssuesSupport = plugin.id === KODUS_ISSUES_INTEGRATION_ID;
+    const [isIssuesSupported, setIsIssuesSupported] = useState<boolean | null>(
+        requiresIssuesSupport ? null : true,
+    );
 
     const isCustomOauthUnauthorized =
         plugin.authScheme?.toLowerCase() === "oauth2" &&
@@ -136,35 +140,31 @@ export const PluginModal = ({
     useEffect(() => {
         let mounted = true;
 
-        if (!requiresGithubIntegration) {
-            setHasGithubIntegration(true);
+        if (!requiresIssuesSupport || !teamId) {
             return;
         }
 
         (async () => {
-            const result = await checkHasConnectionByPlatform({
-                platform: "github",
-                category: "codeManagement",
-            });
+            const result = await checkIssuesProviderSupported({ teamId });
 
             if (!mounted) {
                 return;
             }
 
-            const hasConnection =
+            const supported =
                 typeof result === "boolean"
                     ? result
                     : "error" in result
                       ? false
                       : Boolean(result);
 
-            setHasGithubIntegration(hasConnection);
+            setIsIssuesSupported(supported);
         })();
 
         return () => {
             mounted = false;
         };
-    }, [requiresGithubIntegration]);
+    }, [requiresIssuesSupport, teamId]);
 
     const hasToolsWithWarningSelected = useMemo(
         () =>
@@ -213,12 +213,12 @@ export const PluginModal = ({
 
     const [installPlugin, { loading: isInstallPluginLoading }] = useAsyncAction(
         async () => {
-            if (requiresGithubIntegration && !hasGithubIntegration) {
+            if (requiresIssuesSupport && isIssuesSupported === false) {
                 toast({
                     variant: "warning",
-                    title: "GitHub integration required",
+                    title: "Issue tracker not supported",
                     description:
-                        "Connect GitHub in Settings > Integrations before installing this MCP.",
+                        "Your connected code provider has no native issue tracker (Azure Repos and Bitbucket Data Center aren't supported).",
                 });
                 return;
             }
@@ -320,12 +320,12 @@ export const PluginModal = ({
         isResetAuthLoading ||
         isDeletePluginLoading;
 
-    const isGithubIntegrationMissing =
-        requiresGithubIntegration && hasGithubIntegration === false;
-    const isGithubIntegrationPending =
-        requiresGithubIntegration && hasGithubIntegration === null;
-    const isGithubIntegrationBlocked =
-        isGithubIntegrationMissing || isGithubIntegrationPending;
+    const isIssuesProviderUnsupported =
+        requiresIssuesSupport && isIssuesSupported === false;
+    const isIssuesSupportPending =
+        requiresIssuesSupport && isIssuesSupported === null;
+    const isIssuesSupportBlocked =
+        isIssuesProviderUnsupported || isIssuesSupportPending;
 
     return (
         <MagicModalContext
@@ -389,21 +389,21 @@ export const PluginModal = ({
                                 />
                             )}
 
-                            {(isGithubIntegrationMissing ||
-                                isGithubIntegrationPending) && (
+                            {isIssuesSupportBlocked && (
                                 <Card
                                     className="flex w-full flex-col gap-2 px-4 py-3 text-sm"
                                     color="lv1">
-                                    {isGithubIntegrationPending ? (
+                                    {isIssuesSupportPending ? (
                                         <p className="text-text-secondary">
-                                            Checking GitHub integration
-                                            status...
+                                            Checking issue-tracker support…
                                         </p>
                                     ) : (
                                         <p className="text-text-secondary">
-                                            GitHub integration is required to
-                                            install this MCP. Connect GitHub in
-                                            Settings &gt; Integrations.
+                                            Your connected code provider doesn’t
+                                            have a native issue tracker (Azure
+                                            Repos and Bitbucket Data Center
+                                            aren’t supported), so this MCP can’t
+                                            be installed.
                                         </p>
                                     )}
                                 </Card>
@@ -542,7 +542,7 @@ export const PluginModal = ({
                                                     !areRequiredParametersValid ||
                                                     selectedTools.length ===
                                                         0 ||
-                                                    isGithubIntegrationBlocked ||
+                                                    isIssuesSupportBlocked ||
                                                     (hasToolsWithWarningSelected &&
                                                         !confirmInstallationOfToolsWithWarnings)
                                                 }>
@@ -562,7 +562,7 @@ export const PluginModal = ({
                                                             !areRequiredParametersValid ||
                                                             selectedTools.length ===
                                                                 0 ||
-                                                            isGithubIntegrationBlocked ||
+                                                            isIssuesSupportBlocked ||
                                                             (hasToolsWithWarningSelected &&
                                                                 !confirmInstallationOfToolsWithWarnings)
                                                         }>
