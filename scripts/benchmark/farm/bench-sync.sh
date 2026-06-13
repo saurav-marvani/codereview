@@ -50,9 +50,19 @@ farm_ssh "$SLOT" "rm -rf '$REMOTE_SRC' && mkdir -p '$REMOTE_SRC'"
 git -C "$REPO_ROOT" archive --format=tar "$BRANCH" \
     | farm_ssh "$SLOT" "tar -x -C '$REMOTE_SRC'"
 
+SSH_KEY="$(state_get "$NAME" .ssh_key_path)"
+SCP="scp -i $SSH_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+
+# --- 1b. overlay the FARM's bench compose (decoupled from the benchmarked
+# branch). The branch supplies the engine source + docker/Dockerfile (both from
+# main), but docker-compose.bench.yml lives on the farm branch — so the branch's
+# archive doesn't contain it. Ship it from the farm checkout so ANY branch
+# (an experiment off main, before the farm is merged) builds. ---
+log "Overlaying farm compose (docker-compose.bench.yml)..."
+$SCP "$REPO_ROOT/docker-compose.bench.yml" "root@${IP}:${REMOTE_SRC}/docker-compose.bench.yml"
+
 # --- 2. ship .env (gitignored -> not in archive) ---
 log "Shipping env from $ENV_SRC..."
-SSH_KEY="$(state_get "$NAME" .ssh_key_path)"
 scp -i "$SSH_KEY" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
     "$ENV_SRC" "root@${IP}:${REMOTE_SRC}/.env"
