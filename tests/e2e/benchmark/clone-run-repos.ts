@@ -32,7 +32,16 @@ interface BenchPR { repo: string; head: string; base: string }
 function loadPRs(): BenchPR[] {
     const p = join(process.cwd(), "..", "..", "scripts", "benchmark", "prs-benchmark.json");
     const raw = JSON.parse(readFileSync(p, "utf8"));
-    return (raw.prs ?? raw) as BenchPR[];
+    let prs = (raw.prs ?? raw) as BenchPR[];
+    // Honor FARM_MAX_PRS the SAME way farm-run.ts does (one-per-repo first) so a
+    // capped smoke only clones the repos it will actually open PRs on.
+    const maxPrs = Number(process.env.FARM_MAX_PRS ?? 0);
+    if (maxPrs > 0) {
+        const seen = new Set<string>();
+        const onePerRepo = prs.filter((p) => { const b = p.repo.split("/")[1]; if (seen.has(b)) return false; seen.add(b); return true; });
+        prs = [...onePerRepo, ...prs.filter((p) => !onePerRepo.includes(p))].slice(0, maxPrs);
+    }
+    return prs;
 }
 
 function sh(cmd: string, cwd?: string): string {

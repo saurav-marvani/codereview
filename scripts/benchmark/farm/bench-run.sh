@@ -81,7 +81,7 @@ CURRENT_PHASE="deps"; set_status deps
 ( cd "$E2E_DIR" && [ -d node_modules ] || npm install --silent )
 
 CURRENT_PHASE="clone"; set_status clone
-( cd "$E2E_DIR" && FARM_RUN_ID="$RUN_ID" npx tsx benchmark/clone-run-repos.ts )
+( cd "$E2E_DIR" && FARM_RUN_ID="$RUN_ID" FARM_MAX_PRS="${BENCH_MAX_PRS:-0}" npx tsx benchmark/clone-run-repos.ts )
 
 CURRENT_PHASE="review"; set_status review
 ( cd "$E2E_DIR" && FARM_RUN_ID="$RUN_ID" FARM_WEB_BASE_URL="http://${IP}:${WEB_PORT:-3000}" \
@@ -94,7 +94,7 @@ CURRENT_PHASE="judge"; set_status judge
 cp "${E2E_DIR}/benchmark/results-farm-${RUN_ID}.json" "${RUNDIR}/results.json" 2>/dev/null || true
 
 CURRENT_PHASE="cleanup"; set_status cleanup
-( cd "$E2E_DIR" && FARM_RUN_ID="$RUN_ID" npx tsx benchmark/clone-run-repos.ts --destroy ) || \
+( cd "$E2E_DIR" && FARM_RUN_ID="$RUN_ID" FARM_MAX_PRS="${BENCH_MAX_PRS:-0}" npx tsx benchmark/clone-run-repos.ts --destroy ) || \
     warn "[${RUN_ID}] repo-set cleanup failed -- orphan kodus-e2e/*-${RUN_ID} may remain"
 
 trap - ERR
