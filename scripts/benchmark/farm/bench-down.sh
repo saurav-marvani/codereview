@@ -20,5 +20,8 @@ NAME="$(farm_name_for "$SLOT")"
 state_exists "$NAME" || { warn "Slot '$SLOT' has no droplet -- nothing to destroy."; exit 0; }
 
 log "Destroying slot '$SLOT' ($NAME)..."
-bash "${REPO_ROOT}/scripts/selfhosted/destroy.sh" --name "$NAME"
+# -y: non-interactive (the farm is script-driven; destroy.sh otherwise prompts
+# for confirmation and hangs). The `kodus-selfhosted-*` prefix safety check in
+# destroy.sh still guards against nuking the wrong droplet.
+bash "${REPO_ROOT}/scripts/selfhosted/destroy.sh" --name "$NAME" -y
 ok "Slot '$SLOT' destroyed."
