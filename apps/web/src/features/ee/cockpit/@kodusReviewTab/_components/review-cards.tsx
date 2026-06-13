@@ -4,24 +4,41 @@ import { Card, CardTitle } from "@components/ui/card";
 import type {
     IgnoredCriticalsHighlight,
     NegativeVoteRateHighlight,
+    ReviewOperationalMetrics,
 } from "../../_services/analytics/review/fetch";
 import { PercentageDiff } from "../../_components/percentage-diff";
 
 const pct = (value: number) => `${Math.round(value * 100)}%`;
+const count = (value: number) => Intl.NumberFormat("en-US").format(value);
+
+const trendStatus = (trend: "improved" | "worsened" | "unchanged") => {
+    if (trend === "improved") return "good";
+    if (trend === "worsened") return "bad";
+    return "neutral";
+};
 
 const MetricCard = ({
     title,
     children,
     footer,
+    aside,
 }: React.PropsWithChildren & {
     title: string;
     footer?: React.ReactNode;
+    aside?: React.ReactNode;
 }) => (
     <Card color="lv1" className="min-h-40 justify-between gap-2 p-5">
         <CardTitle className="text-text-secondary text-xs leading-snug font-semibold">
             {title}
         </CardTitle>
-        <div className="text-3xl font-bold">{children}</div>
+        <div className="flex items-end justify-between gap-3">
+            <div className="text-3xl font-bold">{children}</div>
+            {aside && (
+                <div className="flex justify-end pb-1 text-xs font-semibold">
+                    {aside}
+                </div>
+            )}
+        </div>
         {footer && (
             <div className="text-text-tertiary text-xs leading-snug">
                 {footer}
@@ -30,16 +47,38 @@ const MetricCard = ({
     </Card>
 );
 
+const WoWDiff = ({
+    value,
+    unit,
+    trend,
+    mode,
+}: {
+    value: number;
+    unit: "%" | "pp";
+    trend: "improved" | "worsened" | "unchanged";
+    mode: React.ComponentProps<typeof PercentageDiff>["mode"];
+}) => {
+    const formattedValue = `${Math.abs(value)}${unit === "pp" ? " pp" : "%"}`;
+
+    return (
+        <PercentageDiff mode={mode} status={trendStatus(trend)}>
+            {formattedValue}
+        </PercentageDiff>
+    );
+};
+
 export const ReviewCards = ({
     sent,
     implemented,
     negativeVoteRate,
     ignoredCriticals,
+    operationalMetrics,
 }: {
     sent: number;
     implemented: number;
     negativeVoteRate: NegativeVoteRateHighlight | undefined;
     ignoredCriticals: IgnoredCriticalsHighlight | undefined;
+    operationalMetrics?: ReviewOperationalMetrics | null;
 }) => {
     const rate = sent > 0 ? implemented / sent : 0;
     const current = negativeVoteRate?.currentPeriod;
@@ -52,18 +91,43 @@ export const ReviewCards = ({
     const totalReactions =
         (current?.thumbsUp ?? 0) + (current?.thumbsDown ?? 0);
     const lowSample = totalReactions < MIN_REACTIONS_FOR_RATE;
+    const gridClassName = operationalMetrics
+        ? "grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5"
+        : "grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4";
+    const formattedImplemented = count(implemented);
+    const formattedSent = count(sent);
+    const suggestionsFooter = `${formattedImplemented} of ${formattedSent} suggestions implemented`;
 
     return (
-        <div className="grid grid-cols-4 gap-2">
-            <MetricCard
-                title="Implementation rate"
-                footer={`${implemented} of ${sent} suggestions implemented`}>
+        <div className={gridClassName}>
+            <MetricCard title="Implementation rate" footer={suggestionsFooter}>
                 {pct(rate)}
             </MetricCard>
 
             <MetricCard title="Suggestions sent" footer="in this period">
-                {sent}
+                {count(sent)}
             </MetricCard>
+
+            {operationalMetrics && (
+                <MetricCard
+                    title="PRs processed"
+                    footer={`${count(operationalMetrics.previousPeriod.processedPRs)} previous period`}
+                    aside={
+                        <WoWDiff
+                            value={
+                                operationalMetrics.comparison.processedPRs
+                                    .percentageChange
+                            }
+                            unit="%"
+                            trend={
+                                operationalMetrics.comparison.processedPRs.trend
+                            }
+                            mode="higher-is-better"
+                        />
+                    }>
+                    {count(operationalMetrics.currentPeriod.processedPRs)}
+                </MetricCard>
+            )}
 
             <MetricCard
                 title="Negative vote rate"

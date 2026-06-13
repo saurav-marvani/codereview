@@ -116,12 +116,23 @@ export class DeleteRuleInOrganizationByIdKodyRulesUseCase {
                             ? 'memories'
                             : 'review';
 
+                    const fileName = `${this.centralizedConfigPrService.sanitizeFileName(existingRule.title, 'rule')}.yml`;
+
                     const centralizedPath =
                         existingRule.centralizedConfig?.path ||
-                        this.centralizedConfigPrService.buildCentralizedPath({
-                            repositoryFolder,
-                            relativePath: `.kody-rules/${rulesDirectory}/${this.centralizedConfigPrService.sanitizeFileName(existingRule.title, 'rule')}.yml`,
-                        });
+                        (existingRule.directoryId
+                            ? this.centralizedConfigPrService.buildDirectoryGroupRulesPath(
+                                  repositoryFolder,
+                                  existingRule.directoryId,
+                                  rulesDirectory,
+                                  fileName,
+                              )
+                            : this.centralizedConfigPrService.buildCentralizedPath(
+                                  {
+                                      repositoryFolder,
+                                      relativePath: `.kody-rules/${rulesDirectory}/${fileName}`,
+                                  },
+                              ));
 
                     await this.kodyRulesService.createOrUpdate(
                         {

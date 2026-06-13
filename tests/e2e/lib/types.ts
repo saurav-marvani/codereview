@@ -131,6 +131,34 @@ export interface Provider {
         opts: { sinceIso: string; timeoutSec: number },
     ): Promise<{ startedAt: string; sample: string }>;
     postComment(prNumber: number, body: string): Promise<{ id: string }>;
+    // Optional: posts a comment as a DIFFERENT identity (token override). The
+    // conversation scenario needs this — Kody ignores comments whose author
+    // login contains "kody"/"kodus" (the e2e bots), so the `@kody` mention must
+    // come from a non-Kody account.
+    postCommentAs?(
+        prNumber: number,
+        body: string,
+        token: string,
+    ): Promise<{ id: string }>;
+    // Optional: posts an INLINE review comment as a different identity. Kody's
+    // ConversationAgent only resolves the mention from a review comment (issue
+    // comments are never found), so the conversation scenario needs this.
+    postReviewCommentAs?(
+        prNumber: number,
+        body: string,
+        token: string,
+    ): Promise<{ id: string }>;
+    // Optional: polls for Kody's conversational reply to an `@kody <question>`
+    // comment (kodus-flow ConversationAgent → v2/BYOK path). Returns the first
+    // new non-trigger, non-code-review comment, or null at timeout. Only GitHub
+    // is wired; the conversation scenario gates on its presence.
+    pollForKodyReply?(
+        pr: { number: number },
+        opts: { sinceIso: string; triggerId?: string; timeoutSec?: number },
+    ): Promise<{ id: string; body: string } | null>;
+    // Optional: merges a PR (falls back to close). Drives the closed/merged-PR
+    // webhook that triggers kody-issues generation (v2/BYOK path).
+    mergePR?(pr: OpenedPR): Promise<void>;
     authMode(): "token" | "oauth" | "app-password";
     authToken(): string;
     // Provider-specific extra body fields for POST /code-management/auth-integration.

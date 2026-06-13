@@ -367,7 +367,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         const directoryFileDelta = await this.getKodusConfigFile({
             organizationAndTeamData,
             repository,
-            directoryPath: this.getDirectoryPrimaryPath(directoryConfig),
+            directoryId: directoryConfig?.id,
             defaultBranch,
             overrideConfig: this.getFileOverridePreference(
                 repoConfig,
@@ -638,6 +638,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         repository: { id: string; name: string };
         overrideConfig?: boolean;
         directoryPath?: string;
+        directoryId?: string;
         defaultBranch?: string;
         removeProperties?: boolean;
     }): Promise<KodusConfigFile | undefined> {
@@ -645,6 +646,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
             organizationAndTeamData,
             repository,
             directoryPath,
+            directoryId,
             defaultBranch,
             overrideConfig = true,
             removeProperties = true,
@@ -669,6 +671,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
             repository,
             defaultBranchName,
             directoryPath,
+            directoryId,
         );
 
         if (!kodusConfigFileContent) {
@@ -701,11 +704,14 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         repository: { id: string; name: string },
         defaultBranchName = 'main',
         directoryPath?: string,
+        directoryId?: string,
     ): Promise<string | null> {
         const configFileName = 'kodus-config.yml';
         let fullPath = configFileName;
 
-        if (directoryPath) {
+        if (directoryId) {
+            fullPath = `.kody-directory-groups/${directoryId}/${configFileName}`;
+        } else if (directoryPath) {
             const normalizedPath = directoryPath.endsWith('/')
                 ? directoryPath
                 : `${directoryPath}/`;

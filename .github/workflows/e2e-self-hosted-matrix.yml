@@ -183,6 +183,19 @@ jobs:
                   # scenario auto-skips via --skip-missing-tokens.
                   SH_LICENSE_KEY_SEATS1: ${{ secrets.SH_LICENSE_KEY_SEATS1 }}
 
+                  # Claude-on-Vertex BYOK scenarios (code-review-vertex-byok /
+                  # conversation-vertex-byok). Each auto-skips when its secret is
+                  # unset. VERTEX_MODEL must be enabled in the SA project's Vertex
+                  # AI Model Garden; `global` serves the bare-id Claude models.
+                  # conversation-vertex-byok additionally needs a NON-Kody GitHub
+                  # account token (login without "kody"/"kodus", PR R/W on the
+                  # fixture repo) AND a kodus-common release carrying the v2
+                  # adapter fix — until that release it runs red, not skip.
+                  VERTEX_SA_JSON: ${{ secrets.VERTEX_SA_JSON }}
+                  VERTEX_REGION: global
+                  VERTEX_MODEL: claude-haiku-4-5
+                  CONVERSATION_USER_TOKEN: ${{ secrets.CONVERSATION_USER_TOKEN }}
+
                   # LLM provider — vm.sh expects these to write to the VM's .env.
                   # OpenAI gpt-5.4-mini: light/fast (Kimi via Moonshot was too
                   # slow and flaked on 429s). Native OpenAI endpoint, so NO

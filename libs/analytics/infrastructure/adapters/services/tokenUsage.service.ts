@@ -4,6 +4,7 @@ import {
 } from '@libs/analytics/domain/token-usage/contracts/tokenUsage.repository.contract';
 import { ITokenUsageService } from '@libs/analytics/domain/token-usage/contracts/tokenUsage.service.contract';
 import {
+    BaseUsageContract,
     DailyUsageByPrResultContract,
     DailyUsageResultContract,
     TokenUsageQueryContract,
@@ -23,6 +24,12 @@ export class TokenUsageService implements ITokenUsageService {
         query: TokenUsageQueryContract,
     ): Promise<UsageSummaryContract> {
         return this.repository.getSummary(query);
+    }
+
+    async getSummaryByModel(
+        query: TokenUsageQueryContract,
+    ): Promise<BaseUsageContract[]> {
+        return this.repository.getSummaryByModel(query);
     }
 
     async getDailyUsage(

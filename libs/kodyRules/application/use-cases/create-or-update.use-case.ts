@@ -371,11 +371,19 @@ export class CreateOrUpdateKodyRulesUseCase {
             const rulesDirectory =
                 ruleType === KodyRulesType.MEMORY ? 'memories' : 'review';
 
-            const centralizedPath =
-                this.centralizedConfigPrService.buildCentralizedPath({
-                    repositoryFolder,
-                    relativePath: `.kody-rules/${rulesDirectory}/${this.centralizedConfigPrService.sanitizeFileName(existingRule.title, 'rule')}.yml`,
-                });
+            const fileName = `${this.centralizedConfigPrService.sanitizeFileName(existingRule.title, 'rule')}.yml`;
+
+            const centralizedPath = effectiveRule.directoryId
+                ? this.centralizedConfigPrService.buildDirectoryGroupRulesPath(
+                      repositoryFolder,
+                      effectiveRule.directoryId,
+                      rulesDirectory,
+                      fileName,
+                  )
+                : this.centralizedConfigPrService.buildCentralizedPath({
+                      repositoryFolder,
+                      relativePath: `.kody-rules/${rulesDirectory}/${fileName}`,
+                  });
 
             effectiveRule.centralizedConfig = {
                 path: centralizedPath,

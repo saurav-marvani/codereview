@@ -1,4 +1,5 @@
 import {
+    BaseUsageContract,
     TokenUsageQueryContract,
     DailyUsageResultContract,
     UsageSummaryContract,
@@ -10,6 +11,10 @@ export const TOKEN_USAGE_REPOSITORY_TOKEN = Symbol.for('TokenUsageRepository');
 
 export interface ITokenUsageRepository {
     getSummary(query: TokenUsageQueryContract): Promise<UsageSummaryContract>;
+
+    getSummaryByModel(
+        query: TokenUsageQueryContract,
+    ): Promise<BaseUsageContract[]>;
 
     getDailyUsage(
         query: TokenUsageQueryContract,

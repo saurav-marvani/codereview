@@ -1,3 +1,5 @@
+import { SpendLimitConfigService } from '@libs/analytics/application/spend-limit/spend-limit-config.service';
+import { BuildUsageSummaryUseCase } from '@libs/analytics/application/use-cases/usage/build-usage-summary.use-case';
 import { CostEstimateUseCase } from '@libs/analytics/application/use-cases/usage/cost-estimate.use-case';
 import { TokenPricingUseCase } from '@libs/analytics/application/use-cases/usage/token-pricing.use-case';
 import { TokensByDeveloperUseCase } from '@libs/analytics/application/use-cases/usage/tokens-developer.use-case';
@@ -13,7 +15,7 @@ import {
     TokenUsageQueryContract,
     UsageByDeveloperResultContract,
     UsageByPrResultContract,
-    UsageSummaryContract,
+    UsageSummaryReportContract,
 } from '@libs/analytics/domain/token-usage/types/tokenUsage.types';
 import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';
 import {
@@ -79,17 +81,20 @@ export class TokenUsageController {
         private readonly tokensByDeveloperUseCase: TokensByDeveloperUseCase,
         private readonly tokenPricingUseCase: TokenPricingUseCase,
         private readonly costEstimateUseCase: CostEstimateUseCase,
+        private readonly buildUsageSummaryUseCase: BuildUsageSummaryUseCase,
+        private readonly spendLimitConfigService: SpendLimitConfigService,
     ) {}
 
     @Get('tokens/summary')
     @ApiOperation({
         summary: 'Get token usage summary',
-        description: 'Return aggregated token usage for the selected period.',
+        description:
+            'Return totals + total cost + per-model breakdown (with byTier and pricing source) for the selected period.',
     })
     @ApiOkResponse({ type: UsageSummaryResponseDto })
     async getSummary(
         @Query() query: TokenUsageQueryDto,
-    ): Promise<UsageSummaryContract> {
+    ): Promise<UsageSummaryReportContract> {
         const organizationId = this.request?.user?.organization?.uuid;
 
         if (!organizationId) {
@@ -97,7 +102,16 @@ export class TokenUsageController {
         }
 
         const mapped = this.mapDtoToContract(query, organizationId);
-        return this.tokenUsageService.getSummary(mapped);
+        // Load the org's manual pricing overrides so the summary's totalCost
+        // reconciles with the spend-limit widget, which also honors them.
+        const config = await this.spendLimitConfigService.getConfig({
+            organizationId,
+            teamId: '',
+        });
+        return this.buildUsageSummaryUseCase.execute(
+            mapped,
+            config?.modelPricing,
+        );
     }
 
     @Get('tokens/daily')

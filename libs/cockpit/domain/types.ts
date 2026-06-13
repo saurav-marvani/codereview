@@ -222,11 +222,56 @@ export type NegativeVoteRateHighlight = PeriodComparison<{
     negativeRate: number;
 }>;
 
+export interface ReviewOperationalMetricsPeriod {
+    /** Distinct PRs with a terminal review execution in the period. */
+    processedPRs: number;
+    /** Terminal review executions in the period. */
+    processedReviews: number;
+    successfulReviews: number;
+    errorReviews: number;
+    skippedReviews: number;
+    successRate: number;
+    errorRate: number;
+    skippedRate: number;
+}
+
+export interface ReviewOperationalMetricsWeeklyRow
+    extends ReviewOperationalMetricsPeriod {
+    weekStart: string;
+}
+
+export interface ReviewOperationalMetricComparison {
+    percentageChange: number;
+    trend: 'improved' | 'worsened' | 'unchanged';
+}
+
+export interface ReviewOperationalRateComparison
+    extends ReviewOperationalMetricComparison {
+    percentagePointChange: number;
+}
+
+export interface ReviewOperationalMetrics {
+    currentPeriod: ReviewOperationalMetricsPeriod;
+    previousPeriod: ReviewOperationalMetricsPeriod;
+    comparison: {
+        processedPRs: ReviewOperationalMetricComparison;
+        processedReviews: ReviewOperationalMetricComparison;
+        successRate: ReviewOperationalRateComparison;
+        errorRate: ReviewOperationalRateComparison;
+        skippedRate: ReviewOperationalRateComparison;
+    };
+}
+
 /** Warehouse usage merged with rule metadata from Mongo `kodyRules`. */
 export interface KodyRuleHealthRow extends KodyRuleUsageRow {
     title: string;
     severity: string | null;
+    /** External repo id the rule is scoped to; null → org-wide (global). */
     repositoryId: string | null;
+    /** Resolved `repo_full_name` for `repositoryId`, when known. */
+    repositoryName: string | null;
+    /** Folder/path the rule is scoped to; null/'' → not folder-scoped. */
+    directoryPath: string | null;
     /**
      * `noisy` (negative feedback) only becomes computable in phase 3 when
      * `suggestion_feedback` lands in the warehouse.

@@ -16,6 +16,7 @@ interface BuildKodyRuleCentralizedMutationRequestParams {
     centralizedConfigPrService: CentralizedConfigPrService;
     organizationAndTeamData: OrganizationAndTeamData;
     repositoryId?: string;
+    directoryId?: string;
     ruleContent: Partial<IKodyRule>;
     ruleType: KodyRulesType;
     operation: KodyRuleMutationOperation;
@@ -38,6 +39,7 @@ export function buildKodyRuleCentralizedMutationRequest(
                 repositoryFolder,
                 rulesDirectory,
                 ruleContent: params.ruleContent,
+                directoryId: params.directoryId,
             });
 
             if (params.operation === 'delete') {
@@ -69,6 +71,7 @@ export function buildKodyRuleCentralizedFilePath(params: {
     repositoryFolder: string;
     rulesDirectory: string;
     ruleContent: Partial<IKodyRule>;
+    directoryId?: string;
 }): string {
     const normalizedPath = normalizeCentralizedPath(
         params.ruleContent.centralizedConfig?.path,
@@ -79,6 +82,15 @@ export function buildKodyRuleCentralizedFilePath(params: {
     }
 
     const fileName = `${params.centralizedConfigPrService.sanitizeFileName(params.ruleContent.title, 'rule')}.yml`;
+
+    if (params.directoryId) {
+        return params.centralizedConfigPrService.buildDirectoryGroupRulesPath(
+            params.repositoryFolder,
+            params.directoryId,
+            params.rulesDirectory,
+            fileName,
+        );
+    }
 
     return params.centralizedConfigPrService.buildCentralizedPath({
         repositoryFolder: params.repositoryFolder,

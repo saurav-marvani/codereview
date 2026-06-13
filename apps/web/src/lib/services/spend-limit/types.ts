@@ -2,7 +2,7 @@ export type PricingSource = "manual" | "catalog" | "none";
 
 export interface TokenRate {
     default: number;
-    above200k?: number;
+    tier?: { threshold: number; rate: number };
 }
 
 export interface ModelTokenRates {

@@ -38,6 +38,30 @@ jest.mock(
     }),
 );
 
+// generateSummaryPR now runs through the v5 path (byok-to-vercel +
+// tracedGenerateText) instead of the v2 BYOKPromptRunnerService builder, so
+// Claude-on-Vertex works. Mock that path: capture the system/user prompts
+// (Bug E) and return a deterministic summary (Bug A).
+jest.mock('@libs/code-review/infrastructure/agents/llm/byok-to-vercel', () => ({
+    byokToVercelModel: jest.fn(() => ({ __mockModel: true })),
+}));
+jest.mock('@libs/code-review/infrastructure/agents/llm/agent-loop', () => ({
+    tracedGenerateText: jest.fn(
+        async ({ system, prompt }: { system?: string; prompt?: string }) => {
+            if (system) {
+                capturedPrompts.push({ prompt: system, role: 'system' });
+            }
+            if (prompt) {
+                capturedPrompts.push({ prompt, role: 'user' });
+            }
+            return { text: NEW_SUMMARY_TEXT };
+        },
+    ),
+}));
+jest.mock('@libs/core/log/langfuse', () => ({
+    buildLangfuseTelemetry: () => ({ isEnabled: false, functionId: 'test' }),
+}));
+
 import { CommentManagerService } from './commentManager.service';
 
 describe('CommentManagerService.generateSummaryPR', () => {

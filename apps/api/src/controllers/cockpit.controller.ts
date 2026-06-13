@@ -248,6 +248,25 @@ export class CockpitReviewAnalyticsController {
         return this.reviewAnalytics.getNegativeVoteRateHighlight(q);
     }
 
+    @Get('/highlights/operational-metrics')
+    @ApiOperation({
+        summary:
+            'PRs processed, reviews processed and terminal review status rates current vs previous period',
+    })
+    operationalMetrics(@Query() q: CockpitRangeQuery) {
+        requireRange(q);
+        return this.reviewAnalytics.getReviewOperationalMetrics(q);
+    }
+
+    @Get('/charts/operational-outcomes-weekly')
+    @ApiOperation({
+        summary: 'Weekly review processing outcomes by terminal status',
+    })
+    operationalOutcomesWeekly(@Query() q: CockpitRangeQuery) {
+        requireRange(q);
+        return this.reviewAnalytics.getReviewOperationalMetricsWeekly(q);
+    }
+
     @Get('/highlights/ignored-criticals')
     @ApiOperation({
         summary:
