@@ -92,7 +92,15 @@ RUN sed -e "s/__CLOUD_MODE__/${API_CLOUD_MODE}/g" \
         -e "/declare const/d" \
         libs/ee/configs/environment/environment.template.ts > libs/ee/configs/environment/environment.ts
 
-RUN pnpm run build:apps && pnpm run build:migrations
+# Persist webpack's incremental filesystem cache (node_modules/.cache/webpack,
+# the default when cache.type='filesystem' with no cacheDirectory — see
+# webpack.config.js) across builds via a BuildKit cache mount. Without this the
+# `COPY . .` above invalidates the layer on every source change and webpack
+# recompiles all 6 apps from scratch (~3min). With it, only the changed modules
+# rebuild → seconds. sharing=locked because build:apps runs the 6 nest builds in
+# parallel against one shared cache dir.
+RUN --mount=type=cache,target=/usr/src/app/node_modules/.cache,sharing=locked \
+    pnpm run build:apps && pnpm run build:migrations
 
 # Install production dependencies only
 FROM base AS prod-deps
