@@ -38,6 +38,23 @@ function loadPRs(): BenchPR[] {
 function sh(cmd: string, cwd?: string): string {
     return execSync(cmd, { cwd, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
 }
+// Pushing a full-history mirror of a big repo (grafana) routinely drops the
+// connection on the sideband/cleanup ("RPC failed; Recv failure / hung up")
+// even though the refs often land. Retry the force-push a few times — it's
+// idempotent, and a confirming retry returns fast once the refs are already up.
+function shRetry(cmd: string, cwd: string, attempts = 4): void {
+    let lastErr: unknown;
+    for (let i = 1; i <= attempts; i++) {
+        try { sh(cmd, cwd); return; }
+        catch (e) {
+            lastErr = e;
+            const ms = 4000 * i;
+            console.log(`  push attempt ${i}/${attempts} failed; retrying in ${ms / 1000}s…`);
+            execSync(`sleep ${ms / 1000}`);
+        }
+    }
+    throw lastErr;
+}
 function gh(args: string): string {
     return sh(`gh ${args}`);
 }
@@ -84,7 +101,7 @@ function provision(): void {
             const defaultBranch = [...branches].find((b) => /^(master|main)$/.test(b)) ?? [...branches][0];
             const refspecs = [...branches].map((b) => `refs/heads/${b}:refs/heads/${b}`).join(" ");
             console.log(`  -> force-pushing ${branches.size} branches to ${name}…`);
-            sh(`git push --force --quiet ${authUrl(full)} ${refspecs}`, mirror);
+            shRetry(`git push --force --quiet ${authUrl(full)} ${refspecs}`, mirror);
             try { gh(`api -X PATCH repos/${full} -f default_branch=${defaultBranch}`); } catch { /* best-effort */ }
             console.log(`  ok ${name} ready`);
         } finally {
