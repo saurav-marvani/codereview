@@ -64,6 +64,11 @@ describe('GetKodyRulesHealthUseCase', () => {
             name?: string;
             folders?: Array<{ path: string }>;
         }> = [],
+        configRepos: Array<{
+            id: string;
+            name?: string;
+            full_name?: string;
+        }> = [],
     ) => {
         const reviewAnalytics = {
             getKodyRulesUsage: jest.fn().mockResolvedValue(usageRows),
@@ -82,11 +87,17 @@ describe('GetKodyRulesHealthUseCase', () => {
                 },
             }),
         };
+        const integrationConfigService = {
+            findIntegrationConfigFormatted: jest
+                .fn()
+                .mockResolvedValue(configRepos),
+        };
         return new GetKodyRulesHealthUseCase(
             reviewAnalytics as never,
             kodyRulesService as never,
             teamService as never,
             parametersService as never,
+            integrationConfigService as never,
         );
     };
 
@@ -247,6 +258,34 @@ describe('GetKodyRulesHealthUseCase', () => {
         expect(byId.m).toMatchObject({
             directoryId: 'dir-2',
             directoryFolders: ['/apps/api', '/apps/web'],
+        });
+    });
+
+    it('resolves repo name from the integration config when the warehouse has no PRs for it', async () => {
+        const useCase = mkUseCase(
+            [],
+            {
+                rules: [
+                    {
+                        uuid: 'noPr',
+                        title: 'Repo rule on a repo with no reviewed PRs',
+                        repositoryId: '670345891',
+                        status: KodyRulesStatus.ACTIVE,
+                    },
+                ],
+            },
+            // warehouse knows nothing about this repo (0 triggers → no row)
+            new Map(),
+            [],
+            // ...but the code-management integration does
+            [{ id: '670345891', full_name: 'kodustech/kodus-ai' }],
+        );
+
+        const rows = await useCase.execute(baseQuery);
+
+        expect(rows[0]).toMatchObject({
+            repositoryId: '670345891',
+            repositoryName: 'kodustech/kodus-ai',
         });
     });
 });
