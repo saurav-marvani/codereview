@@ -27,6 +27,8 @@ import { GitHubProvider } from "../providers/github.js";
 import { login, signUp, registerIntegration, finishOnboarding, resetCodeReviewConfig } from "../lib/onboarding.js";
 import { http, ensureOk } from "../lib/http.js";
 import { logger } from "../lib/log.js";
+import { loadTier0Models } from "./models.js";
+import { setByokConfig, testByok } from "./byok.js";
 import type { TargetContext, KodusSession } from "../lib/types.js";
 
 const log = logger("farm");
@@ -66,7 +68,10 @@ function loadConfig(): void {
         if (!m) continue;
         const [, k, vRaw] = m;
         if (process.env[k] !== undefined) continue;
-        const v = vRaw.replace(/^["']|["']$/g, "");
+        // Strip a trailing inline comment + whitespace before quotes — a
+        // `BYOK_*_API_KEY=sk-... # note` line would otherwise carry the comment
+        // into the key and 401 test-byok.
+        const v = vRaw.replace(/\s+#.*$/, "").trim().replace(/^["']|["']$/g, "");
         if (v.startsWith("op://")) continue;
         process.env[k] = v;
     }
@@ -267,11 +272,17 @@ async function main() {
         const onePerRepo = prs.filter((p) => { const b = p.repo.split("/")[1]; if (seen.has(b)) return false; seen.add(b); return true; });
         prs = [...onePerRepo, ...prs.filter((p) => !onePerRepo.includes(p))].slice(0, maxPrs);
     }
-    // Self-hosted CE: the actual model is the droplet's .env config; this label
-    // is only for grouping the scorecard. Default to a generic tag.
-    const modelLabel = process.env.FARM_MODEL_SLUG || "selfhosted";
+    // PIN the model via BYOK (the tier-0 mechanism) — `auto` from the droplet's
+    // .env is not a benchmarkable model. Self-hosted CE honors the org's BYOK
+    // config (byokPromptRunner uses it whenever present; no cloud/license gate),
+    // so we set it WITHOUT the cloud billing dance (that needs an absent
+    // kodus-service-billing). FARM_MODEL_SLUG selects from curated-models.json.
+    const slug = process.env.FARM_MODEL_SLUG;
+    const models = loadTier0Models();
+    const model = slug ? models.find((m) => m.slug === slug) : models[0];
+    if (!model) throw new Error(`model '${slug}' not in curated list (slugs: ${models.map((m) => m.slug).join(", ")})`);
 
-    log.info(`Farm run ${RUN_ID}: ${prs.length} PRs on ${DROPLET.webBaseUrl} (label ${modelLabel}, model from droplet .env) — clones ${CLONE_ORG}/<base>-${RUN_ID}`);
+    log.info(`Farm run ${RUN_ID}: ${prs.length} PRs on ${DROPLET.webBaseUrl} (model ${model.slug} via BYOK) — clones ${CLONE_ORG}/<base>-${RUN_ID}`);
 
     // JIT tenant for this run.
     const email = `farm-${RUN_ID}@kodus.io`;
@@ -280,11 +291,18 @@ async function main() {
     const session = await login(DROPLET, { email, password });
     log.ok(`tenant ready (team ${session.teamId})`);
 
-    // No billing/BYOK in self-hosted CE — just onboard the repos (+ webhooks) and
-    // reset the review config. The permission gate allows everything (no license).
+    // Onboard repos (+ webhooks). No billing/license in CE — the gate allows all.
     await ensureOnboarded(session, prs.map((p) => clonedRepo(p.repo)));
+
+    // Pin the model: validate the BYOK key, then store the BYOK config so the
+    // review runs on exactly this model (not the .env's `auto`).
+    const s = { apiBaseUrl: DROPLET.apiBaseUrl, accessToken: session.accessToken };
+    const tb = await testByok(s, model);
+    if (!tb.ok) throw new Error(`test-byok failed for ${model.slug}: ${tb.code} ${tb.message ?? ""}`);
+    await setByokConfig(s, model);
     await resetCodeReviewConfig(DROPLET, session);
-    log.ok(`onboarded (self-hosted CE)`);
+    log.ok(`onboarded + BYOK pinned to ${model.slug} (${tb.latencyMs}ms)`);
+    const modelLabel = model.slug;
 
     // All PRs concurrently — each is a distinct cloned repo, so webhooks never
     // collide (bounded by the slowest single review, not the sum).
