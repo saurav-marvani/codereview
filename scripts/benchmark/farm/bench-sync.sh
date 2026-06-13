@@ -97,8 +97,13 @@ log "Building + starting stack (detached; first build ~10-15min, cached re-syncs
 farm_ssh "$SLOT" "cd '$REMOTE_SRC' && rm -f /tmp/bench-build.done && nohup env $BENV sh -c '$COMPOSE up -d --build > /tmp/bench-build.log 2>&1; echo \$? > /tmp/bench-build.done' >/dev/null 2>&1 </dev/null & echo launched"
 BUILD_RC=""
 for i in $(seq 1 160); do   # up to ~40min
-    if farm_ssh "$SLOT" "test -f /tmp/bench-build.done" 2>/dev/null; then
-        BUILD_RC="$(farm_ssh "$SLOT" "cat /tmp/bench-build.done" 2>/dev/null | tr -dc 0-9)"
+    # `|| true` INSIDE the $() so a transient SSH hiccup while polling never
+    # trips `set -e` (an unguarded $() that errors would silently kill the run
+    # right after "launched", with the build itself perfectly fine). Empty when
+    # the marker isn't there yet; once present it holds the exit code digits.
+    done_rc="$(farm_ssh "$SLOT" "cat /tmp/bench-build.done 2>/dev/null" 2>/dev/null || true)"
+    if [ -n "$done_rc" ]; then
+        BUILD_RC="$(printf '%s' "$done_rc" | tr -dc 0-9)"
         break
     fi
     sleep 15
