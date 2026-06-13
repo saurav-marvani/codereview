@@ -20,8 +20,8 @@ FARM_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${FARM_SCRIPT_DIR}/_farm-common.sh"
 
 K="${1:-${BENCH_POOL_SIZE:-3}}"
-[ -n "${FARM_GH_TOKEN:-}" ] || { err "FARM_GH_TOKEN not set — add it to ~/.kodus-dev/config"; exit 2; }
+[ -n "${FARM_GH_TOKEN:-}" ] || { err "FARM_GH_TOKEN not set -- add it to ~/.kodus-dev/config"; exit 2; }
 
-log "Refilling the pool to ${K} set(s)…"
+log "Refilling the pool to ${K} set(s)..."
 ( cd "${REPO_ROOT}/tests/e2e" && FARM_POOL_SIZE="${K}" npx tsx benchmark/clone-run-repos.ts --refill )
 ok "Pool topped up to ${K}."
