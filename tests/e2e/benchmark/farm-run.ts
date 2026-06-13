@@ -130,7 +130,12 @@ async function registerRepos(session: KodusSession, repoFullNames: string[]): Pr
             method: "POST",
             headers: { Authorization: `Bearer ${session.accessToken}` },
             body: { teamId: session.teamId, type: "replace", repositories: found },
-            timeoutMs: 30_000,
+            // Onboarding creates a GitHub webhook per repo synchronously; for the
+            // full 5-repo set that's >30s. The default timeout would abort + the
+            // http helper would RETRY this non-idempotent POST, racing the first
+            // call's webhook creation ("delete-a-repository-webhook Not Found").
+            // A generous timeout lets it finish in one shot — no retry, no race.
+            timeoutMs: 180_000,
         },
     );
     ensureOk(resp, "farm:registerRepos");
