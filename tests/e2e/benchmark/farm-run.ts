@@ -80,7 +80,10 @@ function loadPRs(): BenchPR[] {
     return (raw.prs ?? raw) as BenchPR[];
 }
 
-const CLONE_ORG = "kodus-e2e";
+const CLONE_ORG = process.env.FARM_GH_ORG || "kodus-bench";
+// Dedicated benchmark-org PAT (NOT GH_TEST_TOKEN, which the rest of the e2e
+// suite uses). Falls back to GH_TEST_TOKEN for backward compat.
+const FARM_GH = process.env.FARM_GH_TOKEN || process.env.GH_TEST_TOKEN || "";
 // ai-code-review-benchmark/sentry  ->  kodus-e2e/sentry-<RUN_ID>
 function clonedRepo(sourceRepo: string): string {
     const base = sourceRepo.split("/")[1];
@@ -140,7 +143,7 @@ async function ensureOnboarded(session: KodusSession, repoFullNames: string[]): 
     const selected = new Set(avail.filter((r) => r.selected === true).map((r) => r.full_name as string));
     const allSelected = avail.length > 0 && repoFullNames.every((fn) => selected.has(fn));
     if (!allSelected) {
-        const provider0 = new GitHubProvider({ repoOverride: repoFullNames[0], target: "cloud" });
+        const provider0 = new GitHubProvider({ repoOverride: repoFullNames[0], target: "cloud", tokenOverride: FARM_GH });
         await registerIntegration(DROPLET, provider0, session);
         await registerRepos(session, repoFullNames);
         avail = await listOrgRepos(session);
@@ -160,7 +163,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function ghGetJson<T>(url: string): Promise<T> {
     const headers = {
-        Authorization: `Bearer ${process.env.GH_TEST_TOKEN!}`,
+        Authorization: `Bearer ${FARM_GH}`,
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     };
@@ -222,7 +225,7 @@ async function collectFindingsStable(repo: string, prNumber: number): Promise<st
 // the droplet's .env config in self-hosted CE).
 async function reviewOnePR(modelLabel: string, pr: BenchPR): Promise<{ ok: boolean; result: unknown }> {
     const repo = clonedRepo(pr.repo);
-    const provider = new GitHubProvider({ repoOverride: repo, target: "cloud" });
+    const provider = new GitHubProvider({ repoOverride: repo, target: "cloud", tokenOverride: FARM_GH });
     const repoShort = repo.split("/")[1];
     let opened;
     try {

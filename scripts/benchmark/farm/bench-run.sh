@@ -30,14 +30,14 @@ BRANCH="${2:-}"
 
 RESULTS_ROOT="${FARM_SCRIPT_DIR}/results"
 E2E_DIR="${REPO_ROOT}/tests/e2e"
-# GitHub tokens:
-#  - GH_TEST_TOKEN  (bot) opens PRs in farm-run.ts — avoids abuse-flagging your
-#    personal account on a 50-PR burst.
-#  - GH_CLONE_TOKEN must have the `workflow` scope (the dataset branches carry
-#    .github/workflows/* files that GitHub refuses to push otherwise). The e2e
-#    bot token usually lacks it, so default to your gh CLI token here.
-export GH_TEST_TOKEN="${GH_TEST_TOKEN:-${GH_DEV_TOKEN:-$(gh auth token 2>/dev/null || true)}}"
-export GH_CLONE_TOKEN="${GH_CLONE_TOKEN:-$(gh auth token 2>/dev/null || true)}"
+# The farm uses ONE dedicated token, FARM_GH_TOKEN — a fine-grained PAT scoped to
+# the benchmark org with repo Administration/Contents/PR/Webhooks/Workflows. It
+# is NOT GH_TEST_TOKEN (that's reused by the rest of the e2e suite). It's read
+# from ~/.kodus-dev/config (exported by _common.sh's `set -a` config load) and
+# used by clone-run-repos.ts (create/push/delete) + farm-run.ts (integration +
+# PRs, via GitHubProvider tokenOverride).
+[ -n "${FARM_GH_TOKEN:-}" ] || { err "FARM_GH_TOKEN not set — add it to ~/.kodus-dev/config (a PAT scoped to the benchmark org: repo Administration+Contents+Pull requests+Webhooks+Workflows, all repos)"; exit 2; }
+export FARM_GH_TOKEN
 
 # ---- foreground: stamp a run id, daemonize, return ----
 if [ "${BENCH_RUN_BG:-0}" != "1" ]; then

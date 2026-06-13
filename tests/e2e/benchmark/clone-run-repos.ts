@@ -18,13 +18,11 @@ import { mkdtempSync, existsSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const ORG = "kodus-e2e";
-// Pushing the dataset branches includes .github/workflows/* files, which GitHub
-// rejects unless the token has the `workflow` scope. The e2e BOT token
-// (GH_TEST/DEV) usually lacks it, so prefer GH_CLONE_TOKEN (the user's
-// workflow-scoped gh token) for the mirror push + repo create/delete.
-const TOKEN = process.env.GH_CLONE_TOKEN || process.env.GH_TEST_TOKEN || process.env.GH_DEV_TOKEN;
-if (!TOKEN) throw new Error("GH_CLONE_TOKEN / GH_TEST_TOKEN not set");
+const ORG = process.env.FARM_GH_ORG || "kodus-bench";
+// FARM_GH_TOKEN is the dedicated benchmark-org PAT (scoped to ORG, with the
+// `workflow` permission the dataset's .github/workflows/* branches need).
+const TOKEN = process.env.FARM_GH_TOKEN || process.env.GH_CLONE_TOKEN || process.env.GH_TEST_TOKEN || process.env.GH_DEV_TOKEN;
+if (!TOKEN) throw new Error("FARM_GH_TOKEN not set");
 const RUN_ID = process.env.FARM_RUN_ID;
 if (!RUN_ID) throw new Error("FARM_RUN_ID not set");
 const DESTROY = process.argv.includes("--destroy");
