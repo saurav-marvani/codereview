@@ -18,6 +18,7 @@
 #
 # Usage:
 #   ! scripts/benchmark/farm/bench-run.sh a my-engine-experiment
+#   ! scripts/benchmark/farm/bench-run.sh a            # branch defaults to the current one
 
 set -euo pipefail
 FARM_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,8 +26,11 @@ FARM_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${FARM_SCRIPT_DIR}/_farm-common.sh"
 
 SLOT="${1:-}"
-BRANCH="${2:-}"
-[ -n "$SLOT" ] && [ -n "$BRANCH" ] || { err "Usage: bench-run.sh <slot> <branch>"; exit 2; }
+[ -n "$SLOT" ] || { err "Usage: bench-run.sh <slot> [branch]   (branch defaults to the current checked-out branch)"; exit 2; }
+# Branch is optional: default to whatever branch you're on. git archive needs a
+# named ref, so a detached HEAD must pass the branch explicitly.
+BRANCH="${2:-$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)}"
+[ -n "$BRANCH" ] && [ "$BRANCH" != "HEAD" ] || { err "Could not resolve a branch (detached HEAD?) — pass it: bench-run.sh $SLOT <branch>"; exit 2; }
 
 RESULTS_ROOT="${FARM_SCRIPT_DIR}/results"
 E2E_DIR="${REPO_ROOT}/tests/e2e"
