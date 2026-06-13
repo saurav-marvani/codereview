@@ -22,7 +22,10 @@ function loadConfig(): void {
     for (const line of text.split("\n")) {
         const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)=(.*)$/);
         if (m && process.env[m[1]] === undefined) {
-            const v = m[2].replace(/^["']|["']$/g, "");
+            // Strip a trailing inline comment (" # ...") + surrounding quotes +
+            // trailing whitespace — config lines like `KEY=sk-... # note` would
+            // otherwise carry the comment into the value and 401 the judge.
+            const v = m[2].replace(/\s+#.*$/, "").trim().replace(/^["']|["']$/g, "");
             if (!v.startsWith("op://")) process.env[m[1]] = v;
         }
     }

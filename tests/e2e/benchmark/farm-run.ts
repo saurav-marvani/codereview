@@ -271,7 +271,7 @@ async function main() {
     // is only for grouping the scorecard. Default to a generic tag.
     const modelLabel = process.env.FARM_MODEL_SLUG || "selfhosted";
 
-    log.info(`Farm run ${RUN_ID}: ${prs.length} PRs on ${DROPLET.webBaseUrl} (label ${modelLabel}, model from droplet .env) — clones kodus-e2e/<base>-${RUN_ID}`);
+    log.info(`Farm run ${RUN_ID}: ${prs.length} PRs on ${DROPLET.webBaseUrl} (label ${modelLabel}, model from droplet .env) — clones ${CLONE_ORG}/<base>-${RUN_ID}`);
 
     // JIT tenant for this run.
     const email = `farm-${RUN_ID}@kodus.io`;
