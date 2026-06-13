@@ -1,41 +1,55 @@
-// Clone a fresh, single-use repo-set for ONE farm benchmark run.
+// Per-run repo-sets for the benchmark farm — with a pre-cloned POOL + a local
+// source-mirror cache, so the slow part (mirror + full-history push of the 5
+// dataset repos) happens in the BACKGROUND, not on a run's hot path.
 //
-// Each run needs its OWN copy of the 5 dataset repos because parallel runs
-// collide on a repo's single webhook owner, and re-opening PRs on a reused repo
-// leaks prior review comments into the next review. So we mint pristine clones
-// kodus-e2e/<base>-<RUN_ID> and throw them away at the end of the run.
+// Each run needs its OWN copy of the 5 dataset repos: parallel runs collide on a
+// repo's single webhook owner, and re-opening PRs on a reused repo leaks prior
+// review comments. So every run gets pristine `<org>/<base>-<RUN_ID>` repos.
 //
-// Mechanic (mirrors provision-repos.ts): git mirror the dataset's source repo
-// (ai-code-review-benchmark/<base>) once, then force-push ONLY the head+base
-// branches the run's 50 PRs need into the per-run copy. Template-generate
-// flattens history + drops PR branches, so it must be a real mirror+push.
+// Why a pool: minting a set means git-mirroring each source (ai-code-review-
+// benchmark/<base>) and force-pushing the head/base branches its PRs need. For
+// big repos (grafana) that's minutes + flaky. So we keep K pre-built `*-pool-*`
+// sets warm; a run CLAIMS one by renaming it to its RUN_ID (atomic: the first
+// repo's rename is the lock), which is instant. No pool free -> clone inline.
 //
-// Run OUTSIDE the network sandbox (large git upload):
-//   GH_TEST_TOKEN=$(gh auth token) FARM_RUN_ID=<id> tsx benchmark/clone-run-repos.ts
-//   GH_TEST_TOKEN=$(gh auth token) FARM_RUN_ID=<id> tsx benchmark/clone-run-repos.ts --destroy
+// Local mirror cache (~/.cache/kodus-bench-mirrors/<base>.git): the source is
+// mirrored ONCE and kept fresh with `remote update --prune`, so neither pool
+// refill nor an inline clone re-downloads full history every time. `--mirror`
+// keeps ALL refs, so the exact head/base branches are always present; we push
+// only the subset each set needs.
+//
+// Modes (run OUTSIDE the network sandbox — large git transfer):
+//   FARM_RUN_ID=<id> tsx clone-run-repos.ts            # provision inline (1 set)
+//   FARM_RUN_ID=<id> tsx clone-run-repos.ts --claim    # claim a pool set -> RUN_ID (exit 3 = none free)
+//   FARM_RUN_ID=<id> tsx clone-run-repos.ts --destroy  # delete the run's set
+//   FARM_POOL_SIZE=3 tsx clone-run-repos.ts --refill   # top the pool up to K sets
 import { execSync } from "node:child_process";
-import { mkdtempSync, existsSync, rmSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 const ORG = process.env.FARM_GH_ORG || "kodus-bench";
-// FARM_GH_TOKEN is the dedicated benchmark-org PAT (scoped to ORG, with the
-// `workflow` permission the dataset's .github/workflows/* branches need).
 const TOKEN = process.env.FARM_GH_TOKEN || process.env.GH_CLONE_TOKEN || process.env.GH_TEST_TOKEN || process.env.GH_DEV_TOKEN;
 if (!TOKEN) throw new Error("FARM_GH_TOKEN not set");
+
+const MODE = process.argv.includes("--destroy") ? "destroy"
+    : process.argv.includes("--refill") ? "refill"
+    : process.argv.includes("--claim") ? "claim"
+    : "provision";
+
 const RUN_ID = process.env.FARM_RUN_ID;
-if (!RUN_ID) throw new Error("FARM_RUN_ID not set");
-const DESTROY = process.argv.includes("--destroy");
+if (MODE !== "refill" && !RUN_ID) throw new Error("FARM_RUN_ID not set");
+
+const MIRROR_DIR = join(homedir(), ".cache", "kodus-bench-mirrors");
 
 interface BenchPR { repo: string; head: string; base: string }
 
-function loadPRs(): BenchPR[] {
+// applyCap=false loads the FULL 50 (pool sets are always full so any run can
+// claim them); provision/claim of a capped smoke pass applyCap=true.
+function loadPRs(applyCap = true): BenchPR[] {
     const p = join(process.cwd(), "..", "..", "scripts", "benchmark", "prs-benchmark.json");
-    const raw = JSON.parse(readFileSync(p, "utf8"));
-    let prs = (raw.prs ?? raw) as BenchPR[];
-    // Honor FARM_MAX_PRS the SAME way farm-run.ts does (one-per-repo first) so a
-    // capped smoke only clones the repos it will actually open PRs on.
-    const maxPrs = Number(process.env.FARM_MAX_PRS ?? 0);
+    let prs = (JSON.parse(readFileSync(p, "utf8")).prs ?? []) as BenchPR[];
+    const maxPrs = applyCap ? Number(process.env.FARM_MAX_PRS ?? 0) : 0;
     if (maxPrs > 0) {
         const seen = new Set<string>();
         const onePerRepo = prs.filter((p) => { const b = p.repo.split("/")[1]; if (seen.has(b)) return false; seen.add(b); return true; });
@@ -47,89 +61,135 @@ function loadPRs(): BenchPR[] {
 function sh(cmd: string, cwd?: string): string {
     return execSync(cmd, { cwd, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
 }
-// Pushing a full-history mirror of a big repo (grafana) routinely drops the
-// connection on the sideband/cleanup ("RPC failed; Recv failure / hung up")
-// even though the refs often land. Retry the force-push a few times — it's
-// idempotent, and a confirming retry returns fast once the refs are already up.
-function shRetry(cmd: string, cwd: string, attempts = 4): void {
+// Big-repo pushes drop the connection on sideband/cleanup even though refs land;
+// retry the idempotent force-push (a confirming retry returns fast).
+function shRetry(cmd: string, cwd?: string, attempts = 4): void {
     let lastErr: unknown;
     for (let i = 1; i <= attempts; i++) {
         try { sh(cmd, cwd); return; }
-        catch (e) {
-            lastErr = e;
-            const ms = 4000 * i;
-            console.log(`  push attempt ${i}/${attempts} failed; retrying in ${ms / 1000}s…`);
-            execSync(`sleep ${ms / 1000}`);
-        }
+        catch (e) { lastErr = e; console.log(`  push attempt ${i}/${attempts} failed; retrying…`); execSync(`sleep ${4 * i}`); }
     }
     throw lastErr;
 }
-function gh(args: string): string {
-    return sh(`gh ${args}`);
-}
+const gh = (args: string) => sh(`gh ${args}`);
 const authUrl = (repo: string) => `https://x-access-token:${TOKEN}@github.com/${repo}.git`;
 
 function repoExists(full: string): boolean {
     try { gh(`api repos/${full} --jq .full_name`); return true; } catch { return false; }
 }
-function branchSha(full: string, branch: string): string | null {
-    try { return gh(`api repos/${full}/branches/${encodeURIComponent(branch)} --jq .commit.sha`).trim(); } catch { return null; }
-}
-function createRepo(name: string): void {
+function createRepo(name: string, descr: string): void {
     if (repoExists(`${ORG}/${name}`)) return;
-    gh(`api -X POST orgs/${ORG}/repos -f name=${name} -F private=false -f description="farm benchmark run ${RUN_ID} (single-use clone)"`);
-    console.log(`  + created ${ORG}/${name}`);
+    gh(`api -X POST orgs/${ORG}/repos -f name=${name} -F private=false -f description="${descr}"`);
 }
 
-// base repo -> the distinct branches its PRs need (heads + their bases)
+// base -> { source, branches } for the dataset's PRs.
 function branchesByBase(prs: BenchPR[]): Map<string, { source: string; branches: Set<string> }> {
     const m = new Map<string, { source: string; branches: Set<string> }>();
     for (const pr of prs) {
         const base = pr.repo.split("/")[1];
         if (!m.has(base)) m.set(base, { source: pr.repo, branches: new Set() });
-        const e = m.get(base)!;
-        e.branches.add(pr.head);
-        e.branches.add(pr.base);
+        m.get(base)!.branches.add(pr.head);
+        m.get(base)!.branches.add(pr.base);
     }
     return m;
 }
 
-function provision(): void {
-    const byBase = branchesByBase(loadPRs());
-    console.log(`Provisioning ${byBase.size} clones for run ${RUN_ID} (kodus-e2e/<base>-${RUN_ID})`);
-    for (const [base, { source, branches }] of byBase) {
-        const name = `${base}-${RUN_ID}`;
-        const full = `${ORG}/${name}`;
-        const work = mkdtempSync(join(tmpdir(), `farm-clone-${base}-`));
-        const mirror = join(work, "src.git");
-        try {
-            console.log(`[${base}] mirroring ${source} (${branches.size} branches)…`);
-            sh(`git clone --mirror --quiet ${authUrl(source)} ${mirror}`);
-            createRepo(name);
-            // The PR base branch becomes the repo default for a clean PR target.
-            const defaultBranch = [...branches].find((b) => /^(master|main)$/.test(b)) ?? [...branches][0];
-            const refspecs = [...branches].map((b) => `refs/heads/${b}:refs/heads/${b}`).join(" ");
-            console.log(`  -> force-pushing ${branches.size} branches to ${name}…`);
-            shRetry(`git push --force --quiet ${authUrl(full)} ${refspecs}`, mirror);
-            try { gh(`api -X PATCH repos/${full} -f default_branch=${defaultBranch}`); } catch { /* best-effort */ }
-            console.log(`  ok ${name} ready`);
-        } finally {
-            if (existsSync(work)) rmSync(work, { recursive: true, force: true });
+// Local bare mirror of a source repo, kept fresh. Returns its path.
+function ensureMirror(source: string): string {
+    const base = source.split("/")[1];
+    const path = join(MIRROR_DIR, `${base}.git`);
+    if (existsSync(path)) {
+        // Refresh refs (cheap, incremental). set-url first so a rotated token
+        // doesn't get stuck on the old one baked into the remote URL.
+        try { sh(`git -C ${path} remote set-url origin ${authUrl(source)}`); sh(`git -C ${path} remote update --prune`); }
+        catch { /* keep the stale mirror on a transient fetch error */ }
+    } else {
+        mkdirSync(MIRROR_DIR, { recursive: true });
+        console.log(`[${base}] caching source mirror (first time)…`);
+        sh(`git clone --mirror --quiet ${authUrl(source)} ${path}`);
+    }
+    return path;
+}
+
+// Build one repo-set named <base>-<suffix>, pushing from the cached mirror.
+function buildSet(suffix: string, prs: BenchPR[], descr: string): void {
+    for (const [base, { source, branches }] of branchesByBase(prs)) {
+        const name = `${base}-${suffix}`;
+        const mirror = ensureMirror(source);
+        createRepo(name, descr);
+        const defaultBranch = [...branches].find((b) => /^(master|main)$/.test(b)) ?? [...branches][0];
+        const refspecs = [...branches].map((b) => `refs/heads/${b}:refs/heads/${b}`).join(" ");
+        console.log(`  -> ${name}: pushing ${branches.size} branches…`);
+        shRetry(`git push --force --quiet ${authUrl(`${ORG}/${name}`)} ${refspecs}`, mirror);
+        try { gh(`api -X PATCH repos/${ORG}/${name} -f default_branch=${defaultBranch}`); } catch { /* best-effort */ }
+        console.log(`  ok ${name}`);
+    }
+}
+
+// All complete pool-ids present in the org (a set is complete when every base
+// has a `<base>-pool-<id>` repo).
+function poolSets(): string[] {
+    const bases = [...branchesByBase(loadPRs(false)).keys()];
+    let names: string[] = [];
+    try { names = gh(`api orgs/${ORG}/repos?per_page=100 --paginate --jq .[].name`).split("\n").filter(Boolean); }
+    catch { return []; }
+    const byId = new Map<string, Set<string>>();
+    for (const n of names) {
+        const m = n.match(/^(.+)-(pool-[a-z0-9]+)$/);
+        if (m && bases.includes(m[1])) {
+            if (!byId.has(m[2])) byId.set(m[2], new Set());
+            byId.get(m[2])!.add(m[1]);
         }
     }
+    return [...byId.entries()].filter(([, s]) => bases.every((b) => s.has(b))).map(([id]) => id);
+}
+
+function provision(): void {
+    console.log(`Provisioning a set for run ${RUN_ID} (${ORG}/<base>-${RUN_ID})`);
+    buildSet(RUN_ID!, loadPRs(), `farm run ${RUN_ID} (single-use)`);
     console.log("done.");
 }
 
 function destroy(): void {
-    const byBase = branchesByBase(loadPRs());
-    console.log(`Destroying ${byBase.size} clones for run ${RUN_ID}`);
-    for (const base of byBase.keys()) {
+    console.log(`Destroying run ${RUN_ID}'s set`);
+    for (const base of branchesByBase(loadPRs()).keys()) {
         const full = `${ORG}/${base}-${RUN_ID}`;
-        if (!repoExists(full)) { console.log(`  = ${full} already gone`); continue; }
+        if (!repoExists(full)) continue;
         try { gh(`api -X DELETE repos/${full}`); console.log(`  - deleted ${full}`); }
         catch (e) { console.error(`  ! failed to delete ${full}: ${(e as Error).message}`); }
     }
     console.log("done.");
 }
 
-(DESTROY ? destroy : provision)();
+// Claim a pool set by renaming it to RUN_ID. The FIRST base's rename is the
+// atomic lock (a concurrent claimer gets 404 and moves on). Exits 3 if no pool
+// set is free, so bench-run falls back to an inline clone.
+function claim(): void {
+    const bases = [...branchesByBase(loadPRs(false)).keys()];
+    for (const poolid of poolSets()) {
+        try { gh(`api -X PATCH repos/${ORG}/${bases[0]}-${poolid} -f name=${bases[0]}-${RUN_ID}`); }
+        catch { continue; } // taken/raced — next pool set
+        for (const base of bases.slice(1)) {
+            gh(`api -X PATCH repos/${ORG}/${base}-${poolid} -f name=${base}-${RUN_ID}`);
+        }
+        console.log(`claimed pool set ${poolid} -> ${RUN_ID} (instant)`);
+        return;
+    }
+    console.log("no pool set free — caller should clone inline");
+    process.exit(3);
+}
+
+function refill(): void {
+    const K = Number(process.env.FARM_POOL_SIZE ?? 3);
+    let have = poolSets().length;
+    console.log(`Pool refill: ${have}/${K} sets ready`);
+    while (have < K) {
+        const poolid = `pool-${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
+        console.log(`minting ${poolid} (${have + 1}/${K})…`);
+        buildSet(poolid, loadPRs(false), `farm pool (pre-cloned, single-use)`);
+        have = poolSets().length;
+    }
+    console.log("pool full.");
+}
+
+({ provision, destroy, claim, refill }[MODE])();

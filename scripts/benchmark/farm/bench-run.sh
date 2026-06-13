@@ -85,7 +85,21 @@ CURRENT_PHASE="deps"; set_status deps
 ( cd "$E2E_DIR" && [ -d node_modules ] || npm install --silent )
 
 CURRENT_PHASE="clone"; set_status clone
-( cd "$E2E_DIR" && FARM_RUN_ID="$RUN_ID" FARM_MAX_PRS="${BENCH_MAX_PRS:-0}" npx tsx benchmark/clone-run-repos.ts )
+# Full run: try to CLAIM a pre-cloned set from the pool (instant rename) before
+# paying the ~30min mint. Capped smokes skip the pool (pool sets are full; an
+# inline clone of the 1-2 capped repos is cheaper than consuming a full set).
+CLAIMED=0
+if [ "${BENCH_MAX_PRS:-0}" = "0" ]; then
+    if ( cd "$E2E_DIR" && FARM_RUN_ID="$RUN_ID" npx tsx benchmark/clone-run-repos.ts --claim ); then
+        CLAIMED=1
+    fi
+fi
+if [ "$CLAIMED" = "0" ]; then
+    ( cd "$E2E_DIR" && FARM_RUN_ID="$RUN_ID" FARM_MAX_PRS="${BENCH_MAX_PRS:-0}" npx tsx benchmark/clone-run-repos.ts )
+fi
+# Best-effort detached pool top-up so the pool self-sustains (replaces what this
+# run consumed). nohup so it outlives this run; failures are non-fatal.
+( cd "$E2E_DIR" && FARM_POOL_SIZE="${BENCH_POOL_SIZE:-3}" nohup npx tsx benchmark/clone-run-repos.ts --refill >/dev/null 2>&1 & ) || true
 
 CURRENT_PHASE="review"; set_status review
 ( cd "$E2E_DIR" && FARM_RUN_ID="$RUN_ID" FARM_WEB_BASE_URL="http://${IP}:${WEB_PORT:-3000}" \
