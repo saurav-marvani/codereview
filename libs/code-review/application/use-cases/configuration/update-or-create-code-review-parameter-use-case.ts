@@ -64,6 +64,7 @@ import { ParametersEntity } from '@libs/organization/domain/parameters/entities/
 import { CreateOrUpdateCodeReviewParameterDto } from '@libs/organization/dtos/create-or-update-code-review-parameter.dto';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { buildKodusConfigCentralizedMutationRequest } from '@libs/centralized-config/utils/kodus-config-centralized-pr.builder';
+import { formatRuleToYaml } from '@libs/centralized-config/utils/kody-rules-centralized-pr.builder';
 import {
     IDE_RULES_SYNC_DISABLED_EVENT,
     IdeRulesSyncDisabledEvent,
@@ -125,7 +126,13 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                 | Array<{ path: string }>
                 | undefined;
             let previousRulesFileNames:
-                | { review?: string[]; memories?: string[] }
+                | {
+                      review?: Array<{ fileName: string; content: string }>;
+                      memories?: Array<{
+                          fileName: string;
+                          content: string;
+                      }>;
+                  }
                 | undefined;
 
             // Resolve directoryPaths: prefer array, fallback to single path
@@ -593,7 +600,10 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         directoryId?: string,
         requestUser?: RequestUserContext,
         previousFolders?: Array<{ path: string }>,
-        previousRulesFileNames?: { review?: string[]; memories?: string[] },
+        previousRulesFileNames?: {
+            review?: Array<{ fileName: string; content: string }>;
+            memories?: Array<{ fileName: string; content: string }>;
+        },
     ) {
         const resolver = new ConfigResolver(codeReviewConfigs);
 
@@ -646,9 +656,12 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             deepDifference(parentConfig, newResolvedConfig),
         );
 
+        const pathsChanged =
+            !!previousFolders && previousFolders.length > 0;
         const isSelectionOnlyPayload =
             this.isSelectionOnlyConfigPayload(sanitizedIncomingConfig) &&
-            level !== ConfigLevel.GLOBAL;
+            level !== ConfigLevel.GLOBAL &&
+            !pathsChanged;
 
         const centralizedPr = isSelectionOnlyPayload
             ? null
@@ -723,8 +736,8 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         directory?: DirectoryCodeReviewConfig;
         previousFolders?: Array<{ path: string }>;
         previousRulesFileNames?: {
-            review?: string[];
-            memories?: string[];
+            review?: Array<{ fileName: string; content: string }>;
+            memories?: Array<{ fileName: string; content: string }>;
         };
     }): Promise<CentralizedPrMetadata | null> {
         if (params.actor?.source === 'sync') {
@@ -796,7 +809,11 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             configFileContent.customMessages = existingCustomMessages;
         }
 
+        const folderRenamePending =
+            params.previousFolders && params.previousFolders.length > 0;
+
         if (
+            !folderRenamePending &&
             this.hasNoScopedConfigChanges(
                 existingScopedConfigFileContent,
                 configFileContent,
@@ -867,9 +884,12 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         organizationId: string,
         repositoryId: string,
         directoryId: string,
-    ): Promise<{ review: string[]; memories: string[] }> {
-        const review: string[] = [];
-        const memories: string[] = [];
+    ): Promise<{
+        review: Array<{ fileName: string; content: string }>;
+        memories: Array<{ fileName: string; content: string }>;
+    }> {
+        const review: Array<{ fileName: string; content: string }> = [];
+        const memories: Array<{ fileName: string; content: string }> = [];
 
         if (!organizationId || !repositoryId || !directoryId) {
             return { review, memories };
@@ -906,10 +926,13 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                         'rule',
                     )}.yml`;
 
+                    const content = formatRuleToYaml(rule);
+                    const entry = { fileName, content };
+
                     if (rule.type === KodyRulesType.MEMORY) {
-                        memories.push(fileName);
+                        memories.push(entry);
                     } else {
-                        review.push(fileName);
+                        review.push(entry);
                     }
                 }
             }

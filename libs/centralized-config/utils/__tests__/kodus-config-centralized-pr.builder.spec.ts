@@ -91,6 +91,45 @@ describe('buildKodusConfigCentralizedMutationRequest — directory group flow', 
         ]);
     });
 
+    it('moves rule files to the new folder (upsert+delete) when content is provided on a rename', () => {
+        const service = buildServiceMock();
+        const req = buildKodusConfigCentralizedMutationRequest({
+            centralizedConfigPrService: service as any,
+            organizationAndTeamData: orgAndTeam,
+            repositoryId: 'repo-1',
+            folders: [{ path: 'app/api' }, { path: 'app/web' }],
+            previousFolders: [{ path: 'app/api' }],
+            previousRulesFileNames: {
+                review: [
+                    { fileName: 'no-console.yml', content: 'title: no-console\n' },
+                ],
+                memories: [
+                    { fileName: 'style.yml', content: 'title: style\n' },
+                ],
+            },
+            configFileContent: null,
+            title: 't',
+            description: 'd',
+            commitMessage: 'c',
+            sourceBranchPrefix: 'kodus-test',
+        });
+
+        const files = (req.files as any)({ repositoryFolder: 'repo-1-name' });
+        const paths = files.map((f: any) => `${f.operation} ${f.path}`).sort();
+        expect(paths).toEqual([
+            'delete repo-1-name/app%2Fapi/.kody-rules/memories/style.yml',
+            'delete repo-1-name/app%2Fapi/.kody-rules/review/no-console.yml',
+            'delete repo-1-name/app%2Fapi/kodus-config.yml',
+            'upsert repo-1-name/app%2Fapi&app%2Fweb/.kody-rules/memories/style.yml',
+            'upsert repo-1-name/app%2Fapi&app%2Fweb/.kody-rules/review/no-console.yml',
+        ]);
+        const upsertReview = files.find((f: any) =>
+            f.path.endsWith('review/no-console.yml') &&
+            f.operation === 'upsert',
+        );
+        expect(upsertReview.content).toBe('title: no-console\n');
+    });
+
     it('deletes the current folder when content is cleared and paths are unchanged', () => {
         const service = buildServiceMock();
         const req = buildKodusConfigCentralizedMutationRequest({

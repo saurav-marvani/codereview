@@ -112,7 +112,7 @@ function normalizeCentralizedPath(path?: string): string | null {
     return normalized;
 }
 
-function formatRuleToYaml(rule: Partial<IKodyRule>): string {
+export function formatRuleToYaml(rule: Partial<IKodyRule>): string {
     const ruleForYaml = {
         title: rule.title,
         rule: rule.rule,

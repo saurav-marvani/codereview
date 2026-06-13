@@ -17,9 +17,13 @@ type FileMutationOperation = {
 
 export type DirectoryGroupFolderRef = { path: string };
 
+export type PreviousGroupRuleEntry =
+    | string
+    | { fileName: string; content?: string };
+
 export interface PreviousGroupRuleFileNames {
-    review?: string[];
-    memories?: string[];
+    review?: PreviousGroupRuleEntry[];
+    memories?: PreviousGroupRuleEntry[];
 }
 
 interface BuildKodusConfigCentralizedMutationRequestParams {
@@ -159,19 +163,21 @@ function buildDirectoryGroupFileOps(args: {
             operation: 'delete',
         });
 
-        appendRuleDeletes(
+        appendRuleMoves(
             ops,
             centralizedConfigPrService,
             repositoryFolder,
             oldFolderName,
+            folderRenamed ? newFolderName : null,
             previousRulesFileNames?.review ?? [],
             'review',
         );
-        appendRuleDeletes(
+        appendRuleMoves(
             ops,
             centralizedConfigPrService,
             repositoryFolder,
             oldFolderName,
+            folderRenamed ? newFolderName : null,
             previousRulesFileNames?.memories ?? [],
             'memories',
         );
@@ -180,19 +186,42 @@ function buildDirectoryGroupFileOps(args: {
     return ops;
 }
 
-function appendRuleDeletes(
+function appendRuleMoves(
     ops: FileMutationOperation[],
     centralizedConfigPrService: CentralizedConfigPrService,
     repositoryFolder: string,
-    folderName: string,
-    fileNames: string[],
+    oldFolderName: string,
+    newFolderName: string | null,
+    entries: PreviousGroupRuleEntry[],
     rulesDirectory: 'review' | 'memories',
 ): void {
-    for (const fileName of fileNames) {
+    for (const entry of entries) {
+        const fileName =
+            typeof entry === 'string' ? entry : entry.fileName;
+        const content =
+            typeof entry === 'string' ? undefined : entry.content;
+
+        // When the folder is renamed AND we have the rule's content, also
+        // recreate the file at the new encoded folder so the rule survives
+        // the move (the next sync would otherwise re-create it asymmetrically
+        // and risk losing audit history).
+        if (newFolderName && content) {
+            ops.push({
+                path: centralizedConfigPrService.buildDirectoryGroupRulesPath(
+                    repositoryFolder,
+                    newFolderName,
+                    rulesDirectory,
+                    fileName,
+                ),
+                operation: 'upsert',
+                content,
+            });
+        }
+
         ops.push({
             path: centralizedConfigPrService.buildDirectoryGroupRulesPath(
                 repositoryFolder,
-                folderName,
+                oldFolderName,
                 rulesDirectory,
                 fileName,
             ),
