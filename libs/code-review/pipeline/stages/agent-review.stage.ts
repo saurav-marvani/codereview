@@ -509,21 +509,36 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 callGraph,
                 callGraphJson: context.callGraphJson,
                 reviewMode: context.codeReviewConfig?.reviewMode || 'normal',
-                // Trial mode has no BYOK config (organizationId='trial'
-                // isn't a UUID, so getBYOKConfig returns null). Without
-                // this override the agent falls back to gemini-3.1-pro,
-                // which makes anonymous public-demo reviews take 4–5
-                // minutes. Force Gemini 3 Flash for the trial flow —
-                // newer than 2.5 Flash, fast enough for demo latency
-                // (~30s), and the agent loop stays under control.
-                // `isTrialMode` lives on the CLI pipeline context — we
-                // can't import that type here without inverting the
-                // dep graph (cli-review depends on code-review), so
-                // the cast is intentional.
-                defaultModelOverride: (context as { isTrialMode?: boolean })
-                    .isTrialMode
-                    ? 'gemini-3-flash-preview'
-                    : undefined,
+                // Trial reviews get a forced default model (only consulted
+                // when there's no BYOK config). Two distinct "trial" surfaces,
+                // each with its OWN model:
+                //   1. Subscription trial — signed-up orgs in their 14-day
+                //      trial (`subscriptionStatus === 'trial'`, captured by
+                //      ValidatePrerequisitesStage). Routed to Kimi K2.6: they
+                //      run the managed pipeline with no BYOK, so without this
+                //      they'd burn the expensive 3.1-pro default on Kodus's
+                //      dime for the whole trial window. The `kimi-` prefix
+                //      routes through Moonshot's OpenAI-compatible endpoint in
+                //      byokToVercelModel (reads API_MOONSHOT_API_KEY — that env
+                //      MUST be set in the cloud deployment).
+                //   2. Anonymous public demo (`isTrialMode`, try.kodus.io) —
+                //      kept on Gemini 3 Flash: it's a latency-sensitive public
+                //      demo and the try UI advertises "Gemini 3 Flash". Without
+                //      this it would fall back to the slow 3.1-pro default
+                //      (~4-5 min).
+                // Either override is ignored when a BYOK config is present
+                // (byokToVercelModel prefers BYOK), so a trial org that
+                // configured its own key keeps using it.
+                // `isTrialMode` lives on the CLI pipeline context — we can't
+                // import that type here without inverting the dep graph
+                // (cli-review depends on code-review), so the cast is
+                // intentional.
+                defaultModelOverride:
+                    context.pipelineMetadata?.subscriptionStatus === 'trial'
+                        ? 'kimi-k2.6'
+                        : (context as { isTrialMode?: boolean }).isTrialMode
+                          ? 'gemini-3-flash-preview'
+                          : undefined,
                 // Per-repo/directory model override resolved by ValidateConfigStage.
                 byokModel: context.codeReviewConfig?.byokModel,
                 // Adaptive-fit profile: agents read this to decide whether

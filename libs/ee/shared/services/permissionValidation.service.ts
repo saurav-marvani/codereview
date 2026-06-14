@@ -46,6 +46,10 @@ export interface ValidationResult {
     byokConfig?: BYOKConfig | null;
     errorType?: ValidationErrorType;
     metadata?: Record<string, any>;
+    // Subscription status of the org (e.g. 'trial', 'active'). Exposed so
+    // downstream consumers (the review pipeline) can pick a trial-specific
+    // model without re-validating the license.
+    subscriptionStatus?: string;
 }
 
 @Injectable()
@@ -166,7 +170,10 @@ export class PermissionValidationService {
 
             // 2. Trial always allows (no BYOK required and no user validation)
             if (validation.subscriptionStatus === 'trial') {
-                return { allowed: true };
+                return {
+                    allowed: true,
+                    subscriptionStatus: validation.subscriptionStatus,
+                };
             }
 
             // 3. Identify plan type
@@ -255,6 +262,7 @@ export class PermissionValidationService {
             return {
                 allowed: true,
                 byokConfig,
+                subscriptionStatus: validation.subscriptionStatus,
                 metadata: { planType: validation.planType, identifiedPlanType },
             };
         } catch (error) {
