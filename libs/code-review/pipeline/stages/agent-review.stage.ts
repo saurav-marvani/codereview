@@ -509,32 +509,36 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 callGraph,
                 callGraphJson: context.callGraphJson,
                 reviewMode: context.codeReviewConfig?.reviewMode || 'normal',
-                // Route trial reviews to Kimi K2.6 (Moonshot) instead of the
-                // production default (gemini-3.1-pro). Two distinct "trial"
-                // surfaces both qualify, and neither carries a BYOK config:
-                //   1. Anonymous public demo — `isTrialMode` on the CLI
-                //      pipeline context (organizationId='trial', not a UUID).
-                //   2. Signed-up orgs in their subscription trial —
-                //      `subscriptionStatus === 'trial'`, captured by
-                //      ValidatePrerequisitesStage from the license check.
-                //      These run the managed pipeline with no BYOK, so without
-                //      this they'd burn the expensive 3.1-pro default on
-                //      Kodus's dime for the whole trial window.
-                // The `kimi-` prefix routes through Moonshot's
-                // OpenAI-compatible endpoint in byokToVercelModel, which reads
-                // API_MOONSHOT_API_KEY — that env MUST be set in the cloud
-                // deployment. The override is ignored whenever a BYOK config
-                // is present (byokToVercelModel prefers BYOK), so a trial org
-                // that configured its own key keeps using it.
+                // Trial reviews get a forced default model (only consulted
+                // when there's no BYOK config). Two distinct "trial" surfaces,
+                // each with its OWN model:
+                //   1. Subscription trial — signed-up orgs in their 14-day
+                //      trial (`subscriptionStatus === 'trial'`, captured by
+                //      ValidatePrerequisitesStage). Routed to Kimi K2.6: they
+                //      run the managed pipeline with no BYOK, so without this
+                //      they'd burn the expensive 3.1-pro default on Kodus's
+                //      dime for the whole trial window. The `kimi-` prefix
+                //      routes through Moonshot's OpenAI-compatible endpoint in
+                //      byokToVercelModel (reads API_MOONSHOT_API_KEY — that env
+                //      MUST be set in the cloud deployment).
+                //   2. Anonymous public demo (`isTrialMode`, try.kodus.io) —
+                //      kept on Gemini 3 Flash: it's a latency-sensitive public
+                //      demo and the try UI advertises "Gemini 3 Flash". Without
+                //      this it would fall back to the slow 3.1-pro default
+                //      (~4-5 min).
+                // Either override is ignored when a BYOK config is present
+                // (byokToVercelModel prefers BYOK), so a trial org that
+                // configured its own key keeps using it.
                 // `isTrialMode` lives on the CLI pipeline context — we can't
                 // import that type here without inverting the dep graph
                 // (cli-review depends on code-review), so the cast is
                 // intentional.
                 defaultModelOverride:
-                    (context as { isTrialMode?: boolean }).isTrialMode ||
                     context.pipelineMetadata?.subscriptionStatus === 'trial'
                         ? 'kimi-k2.6'
-                        : undefined,
+                        : (context as { isTrialMode?: boolean }).isTrialMode
+                          ? 'gemini-3-flash-preview'
+                          : undefined,
                 // Per-repo/directory model override resolved by ValidateConfigStage.
                 byokModel: context.codeReviewConfig?.byokModel,
                 // Adaptive-fit profile: agents read this to decide whether
