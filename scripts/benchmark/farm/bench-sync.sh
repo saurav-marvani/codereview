@@ -77,6 +77,15 @@ API_GITHUB_CODE_MANAGEMENT_WEBHOOK=http://${IP}:3332/github/webhook
 API_URL=http://${IP}:3001
 EOF"
 
+# Force the model's required temperature globally (the engine's per-prompt temps
+# otherwise 400 on models like kimi-k2.7-code that only accept temperature=1).
+# bench-run resolves BENCH_TEMPERATURE from the catalog; empty -> no override
+# (the model keeps the engine's natural per-prompt temperatures).
+if [ -n "${BENCH_TEMPERATURE:-}" ]; then
+    log "Pinning API_LLM_TEMPERATURE_OVERRIDE=${BENCH_TEMPERATURE} (model requires it)"
+    farm_ssh "$SLOT" "echo 'API_LLM_TEMPERATURE_OVERRIDE=${BENCH_TEMPERATURE}' >> '${REMOTE_SRC}/.env.local'"
+fi
+
 # --- 3. build + (re)start the compiled stack ---
 # API_CLOUD_MODE=false: the droplet is a true self-contained self-hosted stack.
 # Cloud mode routes /api/proxy/billing to a separate kodus-service-billing micro-
