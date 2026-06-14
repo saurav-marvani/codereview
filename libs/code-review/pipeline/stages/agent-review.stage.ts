@@ -513,16 +513,19 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 // isn't a UUID, so getBYOKConfig returns null). Without
                 // this override the agent falls back to gemini-3.1-pro,
                 // which makes anonymous public-demo reviews take 4–5
-                // minutes. Force Gemini 3 Flash for the trial flow —
-                // newer than 2.5 Flash, fast enough for demo latency
-                // (~30s), and the agent loop stays under control.
+                // minutes. Force Kimi K2.6 (Moonshot) for the trial flow —
+                // a coding-tuned model that showcases review quality while
+                // staying fast enough for demo latency. The `kimi-` prefix
+                // routes through Moonshot's OpenAI-compatible endpoint in
+                // byokToVercelModel, which reads API_MOONSHOT_API_KEY —
+                // that env MUST be set in the cloud/trial deployment.
                 // `isTrialMode` lives on the CLI pipeline context — we
                 // can't import that type here without inverting the
                 // dep graph (cli-review depends on code-review), so
                 // the cast is intentional.
                 defaultModelOverride: (context as { isTrialMode?: boolean })
                     .isTrialMode
-                    ? 'gemini-3-flash-preview'
+                    ? 'kimi-k2.6'
                     : undefined,
                 // Per-repo/directory model override resolved by ValidateConfigStage.
                 byokModel: context.codeReviewConfig?.byokModel,
