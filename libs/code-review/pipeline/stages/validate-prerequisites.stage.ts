@@ -219,6 +219,13 @@ export class ValidatePrerequisitesStage extends BasePipelineStage<CodeReviewPipe
                     draft.codeReviewConfig.byokConfig =
                         validationResult.byokConfig;
                 }
+                if (validationResult.subscriptionStatus) {
+                    if (!draft.pipelineMetadata) {
+                        draft.pipelineMetadata = {};
+                    }
+                    draft.pipelineMetadata.subscriptionStatus =
+                        validationResult.subscriptionStatus;
+                }
             });
         }
 

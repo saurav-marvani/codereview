@@ -1410,12 +1410,18 @@ Analyze the suggestions and recommend the most relevant rules.`;
         };
 
         const ccp = await this.resolveCentralizedConfigPrService();
+        const memoryGroupFolderName =
+            await ccp.resolveDirectoryGroupFolderName(
+                organizationAndTeamData,
+                payload.repositoryId,
+                payload.directoryId,
+            );
         const centralizedPr = await ccp.createMutationPullRequestIfEnabled(
             buildKodyRuleCentralizedMutationRequest({
                 centralizedConfigPrService: ccp,
                 organizationAndTeamData,
                 repositoryId: payload.repositoryId,
-                directoryId: payload.directoryId,
+                groupFolderName: memoryGroupFolderName ?? undefined,
                 ruleContent: payload,
                 ruleType: KodyRulesType.MEMORY,
                 operation,
