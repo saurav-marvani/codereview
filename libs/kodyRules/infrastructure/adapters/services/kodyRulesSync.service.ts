@@ -690,7 +690,7 @@ export class KodyRulesSyncService {
                             filePath: f.filename,
                         })
                     )?.id,
-                    origin: KodyRulesOrigin.USER,
+                    origin: KodyRulesOrigin.REPO_FILE_SYNC,
                     status: oneRule.status as any,
                     scope:
                         (oneRule.scope as KodyRulesScope) ||
@@ -1036,7 +1036,7 @@ export class KodyRulesSyncService {
                             filePath: file.path,
                         })
                     )?.id,
-                    origin: KodyRulesOrigin.USER,
+                    origin: KodyRulesOrigin.REPO_FILE_SYNC,
                     status: oneRule.status as any,
                     scope:
                         (oneRule.scope as KodyRulesScope) ||
@@ -1253,7 +1253,7 @@ export class KodyRulesSyncService {
                     filePath,
                 })
             )?.id,
-            origin: KodyRulesOrigin.USER,
+            origin: KodyRulesOrigin.REPO_FILE_SYNC,
             status: oneRule.status as any,
             scope: (oneRule.scope as KodyRulesScope) || KodyRulesScope.FILE,
             examples: Array.isArray(oneRule.examples)
@@ -1617,7 +1617,7 @@ export class KodyRulesSyncService {
                         scope:
                             (rule.scope as KodyRulesScope) ||
                             KodyRulesScope.FILE,
-                        origin: KodyRulesOrigin.USER,
+                        origin: KodyRulesOrigin.REPO_FILE_SYNC,
                         status: (rule.status as any) || KodyRulesStatus.PENDING,
                         examples: Array.isArray(rule.examples)
                             ? (rule.examples as any)
@@ -1890,7 +1890,7 @@ export class KodyRulesSyncService {
                     path: validated.path,
                     sourcePath,
                     repositoryId: rule?.repositoryId || params.repositoryId,
-                    origin: KodyRulesOrigin.USER,
+                    origin: KodyRulesOrigin.REPO_FILE_SYNC,
                     status: options?.defaultStatus || KodyRulesStatus.ACTIVE,
                     examples: Array.isArray(rule?.examples)
                         ? rule.examples.map((example: any) => ({
@@ -1970,7 +1970,7 @@ export class KodyRulesSyncService {
                     path: rule?.path || params.filePath,
                     sourcePath: rule?.sourcePath || params.filePath,
                     repositoryId: rule?.repositoryId || params.repositoryId,
-                    origin: KodyRulesOrigin.USER,
+                    origin: KodyRulesOrigin.REPO_FILE_SYNC,
                     status: options?.defaultStatus || KodyRulesStatus.ACTIVE,
                     examples: Array.isArray(rule?.examples)
                         ? rule.examples.map((example: any) => ({

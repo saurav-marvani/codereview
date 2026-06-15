@@ -18,6 +18,8 @@ const ALLOWED_ORIGINS: ReadonlySet<InferredRuleOrigin> = new Set([
     "Onboard",
     "Kody-generated",
     "Library",
+    "MCP/Agent",
+    "CLI",
     "manual",
 ]);
 

@@ -110,4 +110,27 @@ describe("inferRuleOrigin", () => {
             "manual",
         );
     });
+
+    describe("explicit origin → label (sourcePath irrelevant)", () => {
+        it.each([
+            ["repo_file_sync", "Auto-sync"],
+            ["onboarding_repo_analysis", "Onboard"],
+            ["past_reviews", "Kody-generated"],
+            ["library", "Library"],
+            ["mcp_agent", "MCP/Agent"],
+            ["cli", "CLI"],
+            ["manual", "manual"],
+        ])("maps %s → %s", (origin, label) => {
+            expect(inferRuleOrigin({ origin, sourcePath: null })).toBe(label);
+        });
+
+        it("explicit origin wins over a leaked sourcePath", () => {
+            expect(
+                inferRuleOrigin({
+                    origin: "mcp_agent",
+                    sourcePath: ".cursorrules",
+                }),
+            ).toBe("MCP/Agent");
+        });
+    });
 });

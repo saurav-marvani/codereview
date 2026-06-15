@@ -159,6 +159,8 @@ const ORIGIN_OPTIONS: InferredRuleOrigin[] = [
     "Onboard",
     "Kody-generated",
     "Library",
+    "MCP/Agent",
+    "CLI",
     "manual",
 ];
 

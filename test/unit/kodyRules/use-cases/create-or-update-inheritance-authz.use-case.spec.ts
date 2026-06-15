@@ -94,7 +94,7 @@ describe('CreateOrUpdateKodyRulesUseCase — inheritance toggle authz', () => {
         scope: 'file',
         status: KodyRulesStatus.ACTIVE,
         type: KodyRulesType.STANDARD,
-        origin: KodyRulesOrigin.USER,
+        origin: KodyRulesOrigin.MANUAL,
         repositoryId: 'global',
         examples: [],
         inheritance: {

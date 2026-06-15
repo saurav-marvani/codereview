@@ -53,7 +53,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
         uuid: 'existing-memory-1',
         type: KodyRulesType.MEMORY,
         status: KodyRulesStatus.ACTIVE,
-        origin: KodyRulesOrigin.GENERATED,
+        origin: KodyRulesOrigin.PAST_REVIEWS,
         title: 'Use strict typing',
         rule: 'Always use explicit types in public APIs',
         repositoryId: 'repo-1',
@@ -69,7 +69,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
         rule: 'Always use explicit types in public APIs',
         repositoryId: 'repo-1',
         status: KodyRulesStatus.ACTIVE,
-        origin: KodyRulesOrigin.GENERATED,
+        origin: KodyRulesOrigin.PAST_REVIEWS,
         directoryId: undefined,
         path: undefined,
         ...overrides,
@@ -217,7 +217,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
                 title: 'Prefer strict typing',
                 rule: 'Use explicit types on exported functions and public APIs',
                 severity: 'medium',
-                origin: KodyRulesOrigin.GENERATED,
+                origin: KodyRulesOrigin.PAST_REVIEWS,
             }),
             { userId: 'kody', userEmail: 'kody@kodus.io' },
         );
@@ -304,7 +304,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
             },
             currentMemory: {
                 ...existingMemory,
-                origin: KodyRulesOrigin.USER,
+                origin: KodyRulesOrigin.MANUAL,
             },
             requireApproval: false,
         });
@@ -352,7 +352,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
             },
             currentMemory: {
                 ...existingMemory,
-                origin: KodyRulesOrigin.GENERATED,
+                origin: KodyRulesOrigin.PAST_REVIEWS,
             },
             requireApproval: true,
         });
@@ -458,7 +458,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
             createGeneratedMemory({
                 title: 'Team preference',
                 rule: 'Prefer compact examples',
-                origin: KodyRulesOrigin.USER,
+                origin: KodyRulesOrigin.MANUAL,
             }),
             { userId: 'user-1', userEmail: 'user@kodus.io' },
         );
@@ -597,14 +597,14 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
             title: 'Prefer strict typing',
             rule: 'Use explicit types on exported functions and public APIs',
             repositoryId: 'repo-1',
-            origin: KodyRulesOrigin.GENERATED,
+            origin: KodyRulesOrigin.PAST_REVIEWS,
         };
 
         const targetMemoryRule: Partial<IKodyRule> = {
             ...existingMemory,
             uuid: 'existing-memory-1',
             status: KodyRulesStatus.ACTIVE,
-            origin: KodyRulesOrigin.USER,
+            origin: KodyRulesOrigin.MANUAL,
         };
 
         const repositoryMock = {

@@ -22,6 +22,7 @@ import {
     INTEGRATION_SERVICE_TOKEN,
 } from '@libs/integrations/domain/integrations/contracts/integration.service.contracts';
 import {
+    KodyRulesOrigin,
     KodyRulesStatus,
     KodyRulesType,
 } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
@@ -235,7 +236,7 @@ export class GenerateKodyRulesUseCase {
                     const dto: CreateKodyRuleDto = {
                         type: KodyRulesType.STANDARD,
                         examples: rule.examples,
-                        origin: rule.origin,
+                        origin: KodyRulesOrigin.PAST_REVIEWS,
                         rule: rule.rule,
                         title: rule.title,
                         repositoryId: repository.id,

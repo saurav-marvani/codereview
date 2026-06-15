@@ -14,7 +14,6 @@ import {
 import {
     IKodyRule,
     KodyRuleRequestType,
-    KodyRulesOrigin,
     KodyRulesStatus,
     KodyRulesType,
 } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
@@ -242,7 +241,6 @@ export class ApplyPendingKodyRulesUseCase {
         return {
             ...(rule as CreateKodyRuleDto),
             type: rule.type || KodyRulesType.STANDARD,
-            origin: rule.origin || KodyRulesOrigin.GENERATED,
             severity: (rule.severity as any) || 'medium',
             path: rule.path || '',
             examples: (rule.examples as any) || [],

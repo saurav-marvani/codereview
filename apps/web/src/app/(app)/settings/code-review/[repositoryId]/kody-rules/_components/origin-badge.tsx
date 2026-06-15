@@ -13,6 +13,8 @@ const ORIGIN_TOOLTIPS: Record<Exclude<InferredRuleOrigin, "manual">, string> = {
     "Kody-generated":
         "Suggested by the Kody rule generator from past reviews",
     Library: "Added from the Kody rule library",
+    "MCP/Agent": "Created by an MCP / agent",
+    CLI: "Created via the Kody CLI",
 };
 
 // Distinct colour per origin so users can tell where a rule came from
@@ -41,6 +43,9 @@ const ORIGIN_CLASSES: Record<
         "bg-tertiary-light/10 text-tertiary-light ring-tertiary-light/40 [--button-foreground:var(--color-tertiary-light)]",
     Library:
         "bg-info/10 text-info ring-info/40 [--button-foreground:var(--color-info)]",
+    "MCP/Agent":
+        "bg-card-lv2 text-text-secondary ring-card-lv3 [--button-foreground:var(--color-text-secondary)]",
+    CLI: "bg-card-lv2 text-text-secondary ring-card-lv3 [--button-foreground:var(--color-text-secondary)]",
 };
 
 type OriginBadgeProps = {

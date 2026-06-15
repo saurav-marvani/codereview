@@ -146,10 +146,15 @@ export interface IKodyRuleExternalReference {
     };
 }
 
+/** Where a Kody Rule or Memory came from. */
 export enum KodyRulesOrigin {
-    USER = 'user',
+    MANUAL = 'manual',
     LIBRARY = 'library',
-    GENERATED = 'generated',
+    PAST_REVIEWS = 'past_reviews',
+    REPO_FILE_SYNC = 'repo_file_sync',
+    ONBOARDING_REPO_ANALYSIS = 'onboarding_repo_analysis',
+    MCP_AGENT = 'mcp_agent',
+    CLI = 'cli',
 }
 
 export enum KodyRulesStatus {

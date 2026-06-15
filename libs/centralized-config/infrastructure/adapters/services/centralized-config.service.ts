@@ -53,8 +53,8 @@ import {
     kodyRuleSchema,
     kodyRulesExampleSchema,
     kodyRulesInheritanceSchema,
-    KodyRulesOrigin,
     KodyRulesScope,
+    KodyRulesOrigin,
     KodyRulesStatus,
     KodyRulesType,
 } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
@@ -1946,7 +1946,7 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                             path: ruleFileMeta.path,
                             status: KodyRuleCentralizedStatus.SYNCED,
                         },
-                        origin: KodyRulesOrigin.USER,
+                        origin: KodyRulesOrigin.REPO_FILE_SYNC,
                     };
 
                     await this.createOrUpdateKodyRulesUseCase.execute(

@@ -36,7 +36,6 @@ import {
 import {
     IKodyRule,
     KodyRuleCentralizedStatus,
-    KodyRulesOrigin,
     KodyRulesStatus,
     KodyRulesType,
 } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
@@ -472,7 +471,6 @@ export class CreateOrUpdateKodyRulesUseCase {
                         ...(effectiveRule as CreateKodyRuleDto),
                         type: ruleType,
                         repositoryId: effectiveRule.repositoryId,
-                        origin: effectiveRule.origin || KodyRulesOrigin.USER,
                         status: effectiveRule.status || KodyRulesStatus.ACTIVE,
                         centralizedConfig: {
                             path: centralizedPath,
@@ -495,7 +493,6 @@ export class CreateOrUpdateKodyRulesUseCase {
                     uuid: existingRule.uuid,
                     type: ruleType,
                     repositoryId: existingRule.repositoryId,
-                    origin: existingRule.origin || KodyRulesOrigin.USER,
                     status: existingRule.status || KodyRulesStatus.ACTIVE,
                     centralizedConfig: {
                         path: centralizedPath,

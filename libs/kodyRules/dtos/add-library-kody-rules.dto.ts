@@ -2,10 +2,7 @@ import {
     KodyRuleSeverity,
     KodyRulesExampleDto,
 } from '@libs/ee/kodyRules/dtos/create-kody-rule.dto';
-import {
-    KodyRulesOrigin,
-    KodyRulesStatus,
-} from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
+import { KodyRulesStatus } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
@@ -88,11 +85,6 @@ export class AddLibraryKodyRulesDto {
     @Type(() => KodyRulesExampleDto)
     @ApiPropertyOptional({ type: KodyRulesExampleDto, isArray: true })
     examples: KodyRulesExampleDto[];
-
-    @IsOptional()
-    @IsEnum(KodyRulesOrigin)
-    @ApiPropertyOptional({ enum: KodyRulesOrigin, enumName: 'KodyRulesOrigin' })
-    origin?: KodyRulesOrigin;
 
     @IsOptional()
     @IsEnum(KodyRulesStatus)

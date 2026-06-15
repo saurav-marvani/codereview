@@ -207,8 +207,11 @@ export class KodyRuleDto {
     @ApiProperty({ type: KodyRulesExampleDto, isArray: true, nullable: true })
     examples?: KodyRulesExampleDto[] | null;
 
-    @ApiProperty()
-    origin: string;
+    @ApiPropertyOptional({
+        description:
+            'Explicit provenance (manual, library, past_reviews, repo_file_sync, onboarding_repo_analysis, mcp_agent, cli).',
+    })
+    origin?: string;
 
     @ApiProperty()
     scope: string;
