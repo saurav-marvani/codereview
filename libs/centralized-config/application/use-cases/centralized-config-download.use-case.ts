@@ -7,6 +7,7 @@ import { GenerateKodusConfigFileUseCase } from '@libs/code-review/application/us
 import { GetCodeReviewParameterUseCase } from '@libs/code-review/application/use-cases/configuration/get-code-review-parameter.use-case';
 import { CentralizedConfigPrService } from '@libs/centralized-config/infrastructure/adapters/services/centralized-config-pr.service';
 import { buildGroupFolderName } from '@libs/centralized-config/utils/path-encoder';
+import { formatRuleToYaml } from '@libs/centralized-config/utils/kody-rules-centralized-pr.builder';
 import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/find-rules-in-organization-by-filter.use-case';
 import { CreateOrUpdateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/create-or-update.use-case';
 import {
@@ -424,25 +425,11 @@ export class CentralizedConfigDownloadUseCase {
 
             entries.push({
                 path: entryPath,
-                content: this.formatRuleToYaml(rule),
+                content: formatRuleToYaml(rule),
             });
         }
 
         return entries;
-    }
-
-    private formatRuleToYaml(rule: IKodyRule): string {
-        const ruleForYaml = {
-            title: rule.title,
-            rule: rule.rule,
-            ...(rule.severity ? { severity: rule.severity } : {}),
-            ...(rule.scope ? { scope: rule.scope } : {}),
-            ...(rule.path ? { path: rule.path } : {}),
-            ...(rule.examples ? { examples: rule.examples } : {}),
-            ...(rule.inheritance ? { inheritance: rule.inheritance } : {}),
-        };
-
-        return yaml.dump(ruleForYaml);
     }
 
     private async ensureRulePendingWithSourcePath(

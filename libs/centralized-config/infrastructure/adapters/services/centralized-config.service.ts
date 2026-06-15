@@ -1933,13 +1933,17 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                         continue;
                     }
 
+                    const { enabled, ...ruleFields } = compliantRule;
                     const ruleDto = {
-                        ...compliantRule,
+                        ...ruleFields,
                         uuid: existingRuleBySourcePath.get(
                             getSourcePathLookupKey(ruleFileMeta.path),
                         )?.uuid,
                         type: ruleFileMeta.ruleType,
-                        status: KodyRulesStatus.ACTIVE,
+                        status:
+                            enabled === false
+                                ? KodyRulesStatus.PAUSED
+                                : KodyRulesStatus.ACTIVE,
                         repositoryId: ruleFileMeta.repositoryId || 'global',
                         directoryId,
                         centralizedConfig: {
@@ -2059,6 +2063,7 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                     include: [],
                     exclude: [],
                 }),
+                enabled: z.boolean().default(true),
             })
             .safeParse(ruleContent);
 

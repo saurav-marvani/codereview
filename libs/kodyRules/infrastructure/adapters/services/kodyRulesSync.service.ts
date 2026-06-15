@@ -52,6 +52,7 @@ import { PromptSourceType } from '@libs/ai-engine/domain/prompt/interfaces/promp
 import { createLogger } from '@kodus/flow';
 import { UpdateOrCreateCodeReviewParameterUseCase } from '@libs/code-review/application/use-cases/configuration/update-or-create-code-review-parameter-use-case';
 import { CreateOrUpdateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/create-or-update.use-case';
+import { DeleteRuleInOrganizationByIdKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/delete-rule-in-organization-by-id.use-case';
 import {
     CONTEXT_RESOLUTION_SERVICE_TOKEN,
     IContextResolutionService,
@@ -131,6 +132,7 @@ export class KodyRulesSyncService {
         private readonly codeManagementService: CodeManagementService,
         private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
         private readonly createOrUpdateKodyRulesUseCase: CreateOrUpdateKodyRulesUseCase,
+        private readonly deleteRuleInOrganizationByIdKodyRulesUseCase: DeleteRuleInOrganizationByIdKodyRulesUseCase,
         private readonly promptRunnerService: PromptRunnerService,
         private readonly permissionValidationService: PermissionValidationService,
         private readonly observabilityService: ObservabilityService,
@@ -2772,14 +2774,34 @@ export class KodyRulesSyncService {
             return true;
         });
 
+        // Route through the centralized-aware use-cases (which fall back to a
+        // direct DB write when centralized config is off) so bulk pause/resume/
+        // delete don't bypass config-as-code: pause/resume re-emit the rule
+        // file (paused → `enabled: false`), delete removes it.
         let changed = 0;
         for (const rule of ideSyncRules) {
             if (!rule.uuid) continue;
-            await this.kodyRulesService.createOrUpdate(
-                organizationAndTeamData,
-                { ...rule, status: targetStatus } as any,
-                this.systemUserInfo,
-            );
+
+            if (targetStatus === KodyRulesStatus.DELETED) {
+                await this.deleteRuleInOrganizationByIdKodyRulesUseCase.execute(
+                    rule.uuid,
+                    {
+                        source: 'web',
+                        organizationId: organizationAndTeamData.organizationId,
+                        teamId: organizationAndTeamData.teamId,
+                        userId: this.systemUserInfo.userId,
+                        userEmail: this.systemUserInfo.userEmail,
+                    },
+                );
+            } else {
+                await this.createOrUpdateKodyRulesUseCase.execute(
+                    { ...rule, status: targetStatus } as any,
+                    organizationAndTeamData.organizationId,
+                    this.systemUserInfo,
+                    true,
+                    organizationAndTeamData.teamId,
+                );
+            }
             changed += 1;
         }
         return changed;

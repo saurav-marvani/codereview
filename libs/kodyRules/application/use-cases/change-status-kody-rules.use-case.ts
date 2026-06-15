@@ -116,7 +116,14 @@ export class ChangeStatusKodyRulesUseCase {
                     | boolean
                     | null = null;
 
-                if (status === KodyRulesStatus.ACTIVE) {
+                if (
+                    status === KodyRulesStatus.ACTIVE ||
+                    status === KodyRulesStatus.PAUSED
+                ) {
+                    // Route through the centralized-aware upsert: when
+                    // centralized config is on, this re-emits the rule file
+                    // (paused → `enabled: false`) as a PR change instead of
+                    // writing the status straight to the DB.
                     result = await this.createOrUpdateKodyRulesUseCase.execute(
                         {
                             ...(rule as any),
