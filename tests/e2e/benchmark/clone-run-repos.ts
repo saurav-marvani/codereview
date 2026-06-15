@@ -169,8 +169,21 @@ function claim(): void {
     for (const poolid of poolSets()) {
         try { gh(`api -X PATCH repos/${ORG}/${bases[0]}-${poolid} -f name=${bases[0]}-${RUN_ID}`); }
         catch { continue; } // taken/raced — next pool set
+        // Lock acquired (bases[0] renamed). The remaining renames MUST all land,
+        // or the set is left half-pool/half-run (neither a usable pool set nor a
+        // complete run set). Retry each through transient blips; if one still
+        // fails, surface the partial set loudly for manual cleanup instead of
+        // aborting opaquely mid-loop.
         for (const base of bases.slice(1)) {
-            gh(`api -X PATCH repos/${ORG}/${base}-${poolid} -f name=${base}-${RUN_ID}`);
+            try { shRetry(`gh api -X PATCH repos/${ORG}/${base}-${poolid} -f name=${base}-${RUN_ID}`); }
+            catch (e) {
+                throw new Error(
+                    `claim: pool set ${poolid} left HALF-RENAMED to ${RUN_ID} — ` +
+                    `'${base}-${poolid}' did not rename after retries; some repos are ` +
+                    `'<base>-${RUN_ID}' and the rest still '<base>-${poolid}'. ` +
+                    `Manual cleanup needed. Cause: ${(e as Error).message}`,
+                );
+            }
         }
         console.log(`claimed pool set ${poolid} -> ${RUN_ID} (instant)`);
         return;

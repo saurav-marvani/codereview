@@ -55,6 +55,22 @@ interface BenchPR {
 // Pull BYOK_* / GH_TEST_TOKEN / ANTHROPIC_API_KEY from ~/.kodus-dev/config if
 // not already exported. Indent-tolerant; never overrides a caller-set var.
 // (Mirrors run.ts:loadConfig.)
+// Parse a config value, stripping a trailing inline comment WITHOUT corrupting
+// quoted values. A `BYOK_*=sk-... # note` line must drop the comment (else it
+// 401s test-byok), but a quoted `KEY="a # b"` keeps the `#` — the old
+// `replace(/\s+#.*$/)` truncated both. If quoted, return the quoted content and
+// ignore anything after the closing quote (that's the comment); if unquoted,
+// strip a trailing ` # comment`.
+function parseConfigValue(raw: string): string {
+    const s = raw.trim();
+    const q = s[0];
+    if (q === '"' || q === "'") {
+        const end = s.indexOf(q, 1);
+        if (end !== -1) return s.slice(1, end);
+    }
+    return s.replace(/\s+#.*$/, "").trim();
+}
+
 function loadConfig(): void {
     const path = join(homedir(), ".kodus-dev", "config");
     let text: string;
@@ -68,10 +84,7 @@ function loadConfig(): void {
         if (!m) continue;
         const [, k, vRaw] = m;
         if (process.env[k] !== undefined) continue;
-        // Strip a trailing inline comment + whitespace before quotes — a
-        // `BYOK_*_API_KEY=sk-... # note` line would otherwise carry the comment
-        // into the key and 401 test-byok.
-        const v = vRaw.replace(/\s+#.*$/, "").trim().replace(/^["']|["']$/g, "");
+        const v = parseConfigValue(vRaw);
         if (v.startsWith("op://")) continue;
         process.env[k] = v;
     }
