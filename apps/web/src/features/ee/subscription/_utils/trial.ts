@@ -59,17 +59,17 @@ export const getTrialCreditBalance = (
 export const getTrialTierLabel = (tier?: TrialCreditTier): string => {
     switch (tier) {
         case "base":
-            return "Base evaluation";
+            return "Base";
         case "team_signal":
-            return "Team evaluation";
+            return "Team signal";
         case "qualified":
-            return "Qualified evaluation";
+            return "Qualified";
         case "manual":
-            return "Manual extension";
+            return "Manual";
         case "referral":
-            return "Referral bonus";
+            return "Referral";
         default:
-            return "Base evaluation";
+            return "Base";
     }
 };
 
@@ -83,11 +83,11 @@ const fallbackUnlocks = (params: {
         title: "Add your team",
         description:
             params.workspaceMembersCount && params.workspaceMembersCount > 1
-                ? "Team member detected. Extra PR reviews unlock after this step is confirmed."
+                ? "Team member detected. We can confirm this extension."
                 : params.codeHostMembersCount &&
                     params.codeHostMembersCount >= 3
-                  ? "Code organization size detected. Invite teammates to evaluate on real PRs."
-                  : "Invite another developer so the trial reflects a real team workflow.",
+                  ? "Invite teammates so the evaluation reflects real team usage."
+                  : "Invite another developer to evaluate Kodus as a team.",
         rewardLabel: `+${TRIAL_UNLOCK_TEAM_REWARD} reviews`,
         status:
             params.workspaceMembersCount && params.workspaceMembersCount > 1
@@ -98,8 +98,7 @@ const fallbackUnlocks = (params: {
     {
         key: "multi_author_review",
         title: "Review PRs from 2 developers",
-        description:
-            "Run Kodus on real PRs from more than one author to unlock a stronger evaluation.",
+        description: "Run reviews on real PRs from more than one author.",
         rewardLabel: `+${TRIAL_UNLOCK_MULTI_AUTHOR_REWARD} reviews`,
         status: "locked",
     },
@@ -107,7 +106,7 @@ const fallbackUnlocks = (params: {
         key: "byok",
         title: "Connect BYOK",
         description:
-            "Use your AI key for trial reviews without using PR reviews paid by Kodus.",
+            "Use your own AI key. Reviews no longer use Kodus-paid PRs.",
         rewardLabel: TRIAL_UNLOCK_BYOK_REWARD_LABEL,
         status: params.byok ? "completed" : "available",
         href: "/organization/byok",
@@ -115,8 +114,7 @@ const fallbackUnlocks = (params: {
     {
         key: "referral",
         title: "Refer another engineering team",
-        description:
-            "Both teams get extra evaluation reviews after the referred company connects an org and runs its first review.",
+        description: "Both teams can get extra evaluation reviews after setup.",
         rewardLabel: `+${TRIAL_UNLOCK_REFERRAL_REWARD} reviews`,
         status: "locked",
         href: "mailto:?subject=Try%20Kodus%20for%20AI%20PR%20reviews&body=Hey%2C%20we%27re%20trying%20Kodus%20for%20AI%20pull%20request%20reviews.%20Might%20be%20useful%20for%20your%20engineering%20team%3A%20https%3A%2F%2Fkodus.io",

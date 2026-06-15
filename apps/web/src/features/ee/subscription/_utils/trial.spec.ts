@@ -34,10 +34,10 @@ describe("trial subscription helpers", () => {
     });
 
     it("maps internal trial tiers to customer-facing labels", () => {
-        expect(getTrialTierLabel("base")).toBe("Base evaluation");
-        expect(getTrialTierLabel("team_signal")).toBe("Team evaluation");
-        expect(getTrialTierLabel("qualified")).toBe("Qualified evaluation");
-        expect(getTrialTierLabel("unknown")).toBe("Base evaluation");
+        expect(getTrialTierLabel("base")).toBe("Base");
+        expect(getTrialTierLabel("team_signal")).toBe("Team signal");
+        expect(getTrialTierLabel("qualified")).toBe("Qualified");
+        expect(getTrialTierLabel("unknown")).toBe("Base");
     });
 
     it("marks BYOK unlock as completed when BYOK is active", () => {

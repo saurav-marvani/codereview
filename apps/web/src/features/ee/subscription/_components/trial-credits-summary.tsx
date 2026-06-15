@@ -53,20 +53,12 @@ const TrialTierItem = ({ unlock }: { unlock: TrialUnlockViewModel }) => {
     const statusVariant = statusVariantByStatus[unlock.status] ?? "helper";
 
     return (
-        <div className="flex items-start gap-3">
+        <div className="grid grid-cols-[auto_1fr] gap-3 md:grid-cols-[auto_1fr_auto]">
             <Icon className="text-primary-light mt-0.5 size-4 shrink-0" />
             <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-text-primary text-sm font-semibold">
-                        {unlock.title}
-                    </p>
-                    <Badge size="xs" variant={statusVariant}>
-                        {statusLabel}
-                    </Badge>
-                    <span className="text-primary-light text-xs font-semibold">
-                        {unlock.rewardLabel}
-                    </span>
-                </div>
+                <p className="text-text-primary text-sm font-semibold">
+                    {unlock.title}
+                </p>
                 <p className="text-text-secondary mt-1 text-xs">
                     {unlock.description}
                 </p>
@@ -85,6 +77,14 @@ const TrialTierItem = ({ unlock }: { unlock: TrialUnlockViewModel }) => {
                         </Button>
                     </Link>
                 )}
+            </div>
+            <div className="col-start-2 flex flex-wrap items-center gap-2 md:col-start-auto md:justify-end">
+                <Badge size="xs" variant={statusVariant}>
+                    {statusLabel}
+                </Badge>
+                <span className="text-primary-light text-xs font-semibold">
+                    {unlock.rewardLabel}
+                </span>
             </div>
         </div>
     );
@@ -116,36 +116,51 @@ export const TrialCreditsSummary = ({
         workspaceMembersCount,
         codeHostMembersCount,
     });
-    const remainingLabel = `${balance.remaining} of ${balance.total}`;
-    const daysLeftLabel =
-        typeof daysLeft === "number"
-            ? `${daysLeft} days left in your Team trial`
-            : `${TRIAL_DAYS}-day Team trial`;
+    const daysLeftValue = typeof daysLeft === "number" ? daysLeft : TRIAL_DAYS;
+    const trialReviewCopy = byok
+        ? "BYOK active. Reviews use your AI key."
+        : `${balance.remaining} of ${balance.total} Kodus-paid PR reviews left.`;
 
     return (
         <section className="flex flex-col gap-5">
             <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div>
+                    <p className="text-text-primary text-base font-semibold">
+                        Team trial status
+                    </p>
+                    <p className="text-text-secondary mt-1 text-sm">
+                        Your Team plan trial and Kodus-paid PR reviews are
+                        separate limits.
+                    </p>
+                </div>
+
+                <div className="border-card-lv3 grid grid-cols-1 gap-4 border-y py-3 md:grid-cols-2">
                     <div>
-                        <p className="text-text-primary text-base font-semibold">
-                            Kodus pays for your first {balance.total} PR reviews
+                        <p className="text-text-tertiary text-xs font-semibold uppercase">
+                            Team plan access
                         </p>
-                        <p className="text-text-secondary mt-1 text-sm">
-                            {daysLeftLabel}. After the {balance.total} reviews,
-                            connect BYOK or upgrade to keep reviewing PRs.
+                        <p className="text-text-primary mt-1 text-xl font-semibold">
+                            {daysLeftValue} days
+                        </p>
+                        <p className="text-text-secondary mt-1 text-xs">
+                            Full Team features during the {TRIAL_DAYS}-day
+                            trial.
                         </p>
                     </div>
 
-                    {!byok && (
-                        <div className="text-left md:text-right">
-                            <p className="text-text-primary text-xl font-semibold">
-                                {remainingLabel}
-                            </p>
-                            <p className="text-text-tertiary text-xs">
-                                Kodus-paid reviews left
-                            </p>
-                        </div>
-                    )}
+                    <div>
+                        <p className="text-text-tertiary text-xs font-semibold uppercase">
+                            PR reviews paid by Kodus
+                        </p>
+                        <p className="text-text-primary mt-1 text-xl font-semibold">
+                            {byok
+                                ? "BYOK"
+                                : `${balance.remaining} of ${balance.total}`}
+                        </p>
+                        <p className="text-text-secondary mt-1 text-xs">
+                            {trialReviewCopy}
+                        </p>
+                    </div>
                 </div>
 
                 {!byok ? (
@@ -171,8 +186,9 @@ export const TrialCreditsSummary = ({
                     <div className="bg-success/10 text-success flex items-start gap-2 rounded-lg p-3 text-sm">
                         <SparklesIcon className="mt-0.5 size-4 shrink-0" />
                         <p>
-                            BYOK is active. Reviews use your AI key and do not
-                            count against the PR reviews paid by Kodus.
+                            BYOK is active, so the 14-day Team trial controls
+                            feature access. PR review volume depends on your AI
+                            provider key.
                         </p>
                     </div>
                 )}
@@ -183,20 +199,20 @@ export const TrialCreditsSummary = ({
                     <div className="flex flex-col gap-1">
                         <div className="flex flex-wrap items-center gap-2">
                             <p className="text-text-primary text-sm font-semibold">
-                                Ways to extend this evaluation
+                                Trial extension tiers
                             </p>
                             <Badge size="xs" variant="helper">
-                                {getTrialTierLabel(trialCreditTier)}
+                                Current: {getTrialTierLabel(trialCreditTier)}
                             </Badge>
                         </div>
                         <p className="text-text-secondary text-xs">
-                            These steps can add more Kodus-paid PR reviews for
-                            qualified trials. BYOK is always available and uses
-                            your own AI key.
+                            These steps can unlock more Kodus-paid PR reviews
+                            for qualified trials. BYOK stays available even when
+                            the Kodus-paid reviews run out.
                         </p>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-x-6 gap-y-4 lg:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-x-6 gap-y-4">
                         {unlocks.map((unlock) => (
                             <TrialTierItem key={unlock.key} unlock={unlock} />
                         ))}
