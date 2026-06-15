@@ -67,6 +67,11 @@ scenarios:
     # Chromium per role and asserts the Token Usage menu item + /token-usage
     # screen actually RENDER, and denied roles get a rendered /forbidden page.
     - rbac-ui-render
+    # Cockpit analytics availability (real browser): warehouse-up API probe +
+    # /cockpit page not gated behind the vestigial WEB_ANALYTICS_SECRET. Runs
+    # on cloud (paid/trial) and self-hosted (license-paid) github cells via
+    # appliesTo; browser layer self-skips on non-cockpit tiers.
+    - cockpit-analytics
     # Public PR-review demo API (also in fast.yml). Anonymous, cloud-only;
     # appliesTo pins it to one cell (cloud × github × paid).
     - public-pr-demo
