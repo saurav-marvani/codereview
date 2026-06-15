@@ -67,6 +67,13 @@ interface PRResult {
 async function judgeCall(apiKey: string, prompt: string): Promise<string> {
     let lastErr: unknown;
     for (let attempt = 0; attempt < 6; attempt++) {
+        // Hard per-call timeout. Without it a hung socket (ESTABLISHED but no
+        // bytes — the Anthropic API occasionally stalls a request) blocks fetch
+        // FOREVER: the retry below never fires because nothing throws, and the
+        // whole scorecard wedges at 0% CPU. AbortController turns that stall into
+        // a throw so the retry/backoff actually engages.
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 90_000);
         try {
             const resp = await fetch("https://api.anthropic.com/v1/messages", {
                 method: "POST",
@@ -80,6 +87,7 @@ async function judgeCall(apiKey: string, prompt: string): Promise<string> {
                     max_tokens: 256,
                     messages: [{ role: "user", content: prompt }],
                 }),
+                signal: ctrl.signal,
             });
             if (resp.ok) {
                 const data = (await resp.json()) as {
@@ -100,6 +108,8 @@ async function judgeCall(apiKey: string, prompt: string): Promise<string> {
             // the whole scorecard on one blip (a ~600-call run will hit some).
             lastErr = e;
             if (/HTTP (401|400)/.test((e as Error).message)) throw e;
+        } finally {
+            clearTimeout(timer);
         }
         await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
     }

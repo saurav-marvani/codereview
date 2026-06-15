@@ -269,7 +269,7 @@
             "id": "gemini-3-flash-preview",
             "displayName": "Gemini 3 Flash",
             "provider": "google_gemini",
-            "tier": "budget",
+            "tier": "recommended",
             "benchmarkScore": 83.9,
             "description": "Largest context window at lowest cost.",
             "speed": "medium",
