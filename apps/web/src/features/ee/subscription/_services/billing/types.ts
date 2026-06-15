@@ -10,6 +10,50 @@ export type OrganizationLicenseTrial = {
     valid: true;
     subscriptionStatus: "trial";
     trialEnd: string;
+    byok?: boolean;
+    trialReviewCreditsTotal?: number;
+    trialReviewCreditsUsed?: number;
+    trialReviewCreditsRemaining?: number;
+    trialCreditTier?: TrialCreditTier;
+    trialUnlocks?: Array<TrialUnlock>;
+};
+
+export type TrialCreditTier =
+    | "base"
+    | "team_signal"
+    | "qualified"
+    | "manual"
+    | "referral"
+    | (string & {});
+
+export type TrialUnlockKey =
+    | "team_setup"
+    | "multi_author_review"
+    | "byok"
+    | "referral"
+    | "manual"
+    | (string & {});
+
+export type TrialUnlockStatus =
+    | "locked"
+    | "available"
+    | "completed"
+    | "claimed";
+
+export type TrialUnlock = {
+    key: TrialUnlockKey;
+    status: TrialUnlockStatus;
+    rewardCredits?: number;
+    title?: string;
+    description?: string;
+    completedAt?: string;
+};
+
+export type TrialReviewCredits = {
+    total?: number;
+    used?: number;
+    remaining?: number;
+    tier?: TrialCreditTier;
 };
 
 export type PlanType =

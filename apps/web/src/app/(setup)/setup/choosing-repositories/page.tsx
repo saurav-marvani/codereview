@@ -38,6 +38,7 @@ import {
     AlertTriangle,
     FolderX,
     HatGlasses,
+    InfoIcon,
     KeyRound,
     PowerIcon,
     Sparkles,
@@ -48,6 +49,10 @@ import { IntegrationCategory } from "src/core/types";
 import { generateQueryKey } from "src/core/utils/reactQuery";
 import { safeArray } from "src/core/utils/safe-array";
 import { pluralize } from "src/core/utils/string";
+import {
+    TRIAL_DAYS,
+    TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED,
+} from "src/features/ee/subscription/_constants/trial";
 
 import { StepIndicators } from "../_components/step-indicators";
 
@@ -194,7 +199,9 @@ export default function App() {
                         ),
                     }),
                     queryClient.invalidateQueries({
-                        queryKey: [CODE_MANAGEMENT_API_PATHS.GET_REPOSITORIES_ORG],
+                        queryKey: [
+                            CODE_MANAGEMENT_API_PATHS.GET_REPOSITORIES_ORG,
+                        ],
                     }),
                 ]);
 
@@ -335,6 +342,25 @@ export default function App() {
                             </div>
 
                             <div className="flex flex-col gap-4">
+                                <Alert variant="info">
+                                    <InfoIcon />
+                                    <AlertTitle>
+                                        Team trial includes managed PR reviews
+                                    </AlertTitle>
+                                    <AlertDescription>
+                                        <p>
+                                            Your {TRIAL_DAYS}-day Team trial
+                                            includes{" "}
+                                            {
+                                                TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED
+                                            }{" "}
+                                            managed AI PR reviews. BYOK reviews
+                                            use your AI key and do not consume
+                                            Kodus credits.
+                                        </p>
+                                    </AlertDescription>
+                                </Alert>
+
                                 <FormControl.Root>
                                     <FormControl.Label htmlFor="select-repositories">
                                         Select repositories

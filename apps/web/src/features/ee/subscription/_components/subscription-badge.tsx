@@ -9,14 +9,27 @@ const SubscriptionTrial = () => {
     const subscriptionStatus = useSubscriptionStatus();
     if (
         subscriptionStatus.status !== "trial-active" &&
-        subscriptionStatus.status !== "trial-expiring"
+        subscriptionStatus.status !== "trial-expiring" &&
+        subscriptionStatus.status !== "trial-exhausted"
     ) {
         return null;
     }
 
+    if (subscriptionStatus.status === "trial-exhausted") {
+        return (
+            <Button decorative size="sm" variant="tertiary">
+                No trial reviews left
+            </Button>
+        );
+    }
+
+    const remaining = subscriptionStatus.trialReviewCredits?.remaining;
+
     return (
         <Button decorative size="sm" variant="tertiary">
-            {subscriptionStatus.trialDaysLeft} days free trial
+            {typeof remaining === "number"
+                ? `${remaining} PR reviews left`
+                : `${subscriptionStatus.trialDaysLeft} days Team trial`}
         </Button>
     );
 };
@@ -74,6 +87,7 @@ const components: Partial<
     "active": SubscriptionActive,
     "trial-active": SubscriptionTrial,
     "trial-expiring": SubscriptionTrial,
+    "trial-exhausted": SubscriptionTrial,
     "free": SubscriptionUpgrade,
     "canceled": SubscriptionUpgrade,
     "payment-failed": SubscriptionPaymentFailed,

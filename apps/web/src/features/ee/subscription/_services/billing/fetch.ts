@@ -3,7 +3,7 @@ import { getOrganizationId } from "@services/organizations/fetch";
 import { pathToApiUrl } from "src/core/utils/helpers";
 import { isSelfHosted } from "src/core/utils/self-hosted";
 
-import type { OrganizationLicense, Plan, PlanType } from "./types";
+import type { OrganizationLicense, Plan, PlanType, TrialUnlock } from "./types";
 import { billingFetch } from "./utils";
 
 type OrganizationMember = {
@@ -51,6 +51,12 @@ export const startTeamTrial = async (params: {
         stripeSubscriptionId: null;
         totalLicenses: number;
         assignedLicenses: number;
+        byok?: boolean;
+        trialReviewCreditsTotal?: number;
+        trialReviewCreditsUsed?: number;
+        trialReviewCreditsRemaining?: number;
+        trialCreditTier?: string;
+        trialUnlocks?: Array<TrialUnlock>;
         createdAt: Date;
         updatedAt: Date;
     }>(`trial`, {

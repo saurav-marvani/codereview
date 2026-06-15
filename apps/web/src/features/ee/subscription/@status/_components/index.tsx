@@ -19,6 +19,7 @@ const components: Partial<
     "active": Active,
     "trial-active": Trial,
     "trial-expiring": Trial,
+    "trial-exhausted": Trial,
     "free": FreeByok,
     "canceled": Canceled,
     "payment-failed": PaymentFailed,
@@ -26,8 +27,10 @@ const components: Partial<
 
 export const Redirect = ({
     members,
+    codeHostMembersCount,
 }: {
     members: TeamMembersResponse["members"];
+    codeHostMembersCount?: number;
 }) => {
     const subscriptionStatus = useSubscriptionStatus();
     const { status } = subscriptionStatus;
@@ -47,5 +50,10 @@ export const Redirect = ({
     const Component = components[status];
 
     if (!Component) return null;
-    return <Component members={members} />;
+    return (
+        <Component
+            members={members}
+            codeHostMembersCount={codeHostMembersCount}
+        />
+    );
 };

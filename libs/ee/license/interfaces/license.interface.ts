@@ -32,10 +32,25 @@ export type OrganizationLicenseValidationResult = {
     numberOfLicenses?: number;
     planType?: string;
     expiresAt?: string;
+    byok?: boolean;
+    trialReviewCreditsTotal?: number;
+    trialReviewCreditsUsed?: number;
+    trialReviewCreditsRemaining?: number;
+    trialCreditTier?: string;
+    trialUnlocks?: TrialUnlock[];
 };
 
 export type UserWithLicense = {
     git_id: string;
+};
+
+export type TrialUnlock = {
+    key: string;
+    status: 'locked' | 'available' | 'completed' | 'claimed' | string;
+    rewardCredits?: number;
+    title?: string;
+    description?: string;
+    completedAt?: string;
 };
 
 export const LICENSE_SERVICE_TOKEN = Symbol.for('LicenseService');

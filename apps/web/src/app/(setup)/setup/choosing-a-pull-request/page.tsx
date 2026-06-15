@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
 import { redirect } from "next/navigation";
 import { SelectPullRequest } from "@components/system/select-pull-requests";
 import { Alert, AlertDescription, AlertTitle } from "@components/ui/alert";
@@ -17,13 +17,20 @@ import { Link } from "@components/ui/link";
 import { MagicModalContext } from "@components/ui/magic-modal";
 import { Page } from "@components/ui/page";
 import { useSuspenseGetOnboardingPullRequests } from "@services/codeManagement/hooks";
+import { useSuspenseGetBYOK } from "@services/organizationParameters/hooks";
 import { useSuspenseGetParameterPlatformConfigs } from "@services/parameters/hooks";
 import { useSuspenseGetOrganizationId } from "@services/setup/hooks";
-import { PartyPopperIcon } from "lucide-react";
+import { InfoIcon, PartyPopperIcon } from "lucide-react";
 import { useAuth } from "src/core/providers/auth.provider";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { useFinishOnboardingReviewingPR } from "src/features/ee/onboarding/_hooks/use-finish-onboarding-reviewing-pr";
 import { useFinishOnboardingWithoutSelectingPR } from "src/features/ee/onboarding/_hooks/use-finish-onboarding-without-selecting-pr";
+import {
+    TRIAL_DAYS,
+    TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED,
+} from "src/features/ee/subscription/_constants/trial";
+
+type PullRequestOption = ComponentProps<typeof SelectPullRequest>["value"];
 
 export default function App() {
     const { userId } = useAuth();
@@ -35,11 +42,13 @@ export default function App() {
 
     const pullRequests = useSuspenseGetOnboardingPullRequests(teamId);
     const organizationId = useSuspenseGetOrganizationId();
+    const byokConfig = useSuspenseGetBYOK();
+    const hasBYOK = !!byokConfig?.configValue?.main;
 
     const [open, setOpen] = useState(false);
-    const [selectedPR, setSelectedPR] = useState<
-        (typeof pullRequests)[number] | undefined
-    >(pullRequests.length === 1 ? pullRequests[0] : undefined);
+    const [selectedPR, setSelectedPR] = useState<PullRequestOption>(
+        pullRequests.length === 1 ? pullRequests[0] : undefined,
+    );
 
     const [requestedPullRequestReview, setRequestedPullRequestReview] =
         useState(false);
@@ -125,6 +134,35 @@ export default function App() {
                                 </>
                             ) : (
                                 <>
+                                    <Alert variant="info" className="mb-1">
+                                        <InfoIcon />
+                                        <AlertTitle>
+                                            {hasBYOK
+                                                ? "This review uses your AI key"
+                                                : "Your trial includes managed reviews"}
+                                        </AlertTitle>
+                                        <AlertDescription>
+                                            {hasBYOK ? (
+                                                <p>
+                                                    BYOK is configured, so this
+                                                    PR uses your provider key
+                                                    and does not consume Kodus
+                                                    managed trial reviews.
+                                                </p>
+                                            ) : (
+                                                <p>
+                                                    Reviewing now uses 1 of the{" "}
+                                                    {
+                                                        TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED
+                                                    }{" "}
+                                                    managed AI PR reviews
+                                                    included in your{" "}
+                                                    {TRIAL_DAYS}-day Team trial.
+                                                </p>
+                                            )}
+                                        </AlertDescription>
+                                    </Alert>
+
                                     <FormControl.Root>
                                         <FormControl.Label htmlFor="select-pull-request">
                                             Select a PR to review

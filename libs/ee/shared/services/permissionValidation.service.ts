@@ -168,11 +168,68 @@ export class PermissionValidationService {
                 };
             }
 
-            // 2. Trial always allows (no BYOK required and no user validation)
+            // 2. Trial skips user validation, but still honors BYOK and
+            // billing-managed review credits when those fields are present.
             if (validation.subscriptionStatus === 'trial') {
+                let trialByokConfig: BYOKConfig | null = null;
+
+                try {
+                    trialByokConfig = await this.getBYOKConfig(
+                        organizationAndTeamData,
+                    );
+                } catch (error) {
+                    this.logger.warn({
+                        message:
+                            'Could not resolve BYOK config for trial; continuing with managed trial validation',
+                        context:
+                            contextName || PermissionValidationService.name,
+                        metadata: { organizationAndTeamData },
+                        error,
+                    });
+                }
+
+                if (
+                    !trialByokConfig &&
+                    validation.trialReviewCreditsRemaining === 0
+                ) {
+                    this.logger.warn({
+                        message: 'Trial managed review credits exhausted',
+                        context:
+                            contextName || PermissionValidationService.name,
+                        metadata: {
+                            organizationAndTeamData,
+                            trialReviewCreditsTotal:
+                                validation.trialReviewCreditsTotal,
+                            trialReviewCreditsUsed:
+                                validation.trialReviewCreditsUsed,
+                            trialCreditTier: validation.trialCreditTier,
+                            trialUnlocks: validation.trialUnlocks,
+                        },
+                    });
+
+                    return {
+                        allowed: false,
+                        errorType: ValidationErrorType.PLAN_LIMIT_EXCEEDED,
+                        metadata: { validation },
+                        subscriptionStatus: validation.subscriptionStatus,
+                    };
+                }
+
                 return {
                     allowed: true,
+                    byokConfig: trialByokConfig,
                     subscriptionStatus: validation.subscriptionStatus,
+                    metadata: {
+                        byok: Boolean(trialByokConfig),
+                        trialReviewCreditsTotal:
+                            validation.trialReviewCreditsTotal,
+                        trialReviewCreditsUsed:
+                            validation.trialReviewCreditsUsed,
+                        trialReviewCreditsRemaining:
+                            validation.trialReviewCreditsRemaining,
+                        trialCreditTier: validation.trialCreditTier,
+                        trialUnlocks: validation.trialUnlocks,
+                    },
                 };
             }
 
