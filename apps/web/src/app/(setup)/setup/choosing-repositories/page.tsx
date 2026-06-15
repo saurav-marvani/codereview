@@ -347,7 +347,7 @@ export default function App() {
                                     <AlertTitle>
                                         Your trial includes{" "}
                                         {TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED}{" "}
-                                        PR reviews with Kodus credits
+                                        PR reviews
                                     </AlertTitle>
                                     <AlertDescription>
                                         <p>
@@ -355,8 +355,8 @@ export default function App() {
                                             first reviews during your{" "}
                                             {TRIAL_DAYS}-day Team trial. If you
                                             connect BYOK, reviews use your AI
-                                            key instead and do not spend those
-                                            credits.
+                                            key instead and do not count against
+                                            those included PR reviews.
                                         </p>
                                     </AlertDescription>
                                 </Alert>

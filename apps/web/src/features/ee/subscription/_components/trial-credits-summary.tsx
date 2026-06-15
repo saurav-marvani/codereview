@@ -146,8 +146,8 @@ export const TrialCreditsSummary = ({
         codeHostMembersCount,
     });
     const liveBalanceLabel = balance.hasLiveData
-        ? `${balance.remaining} of ${balance.total} Kodus review credits left`
-        : `${balance.total} PR reviews included with Kodus credits`;
+        ? `${balance.remaining} of ${balance.total} included PR reviews left`
+        : `${balance.total} PR reviews included in your trial`;
 
     return (
         <section className="flex flex-col gap-4">
@@ -197,10 +197,10 @@ export const TrialCreditsSummary = ({
 
                     <p className="text-text-tertiary mt-2 text-xs">
                         {byok
-                            ? "BYOK reviews use your AI key and do not spend Kodus trial credits."
+                            ? "BYOK reviews use your AI key and do not count against your included PR reviews."
                             : balance.hasLiveData
-                              ? "Kodus credits cover the AI cost for each review until they run out."
-                              : "Live credit balance appears here once trial credit data is available."}
+                              ? "Kodus covers the AI cost for each included PR review until the included reviews run out."
+                              : "Live PR review usage appears here once billing data is available."}
                     </p>
                 </div>
             </div>
@@ -209,10 +209,10 @@ export const TrialCreditsSummary = ({
                 <div className="flex flex-col gap-2">
                     <div className="flex items-center justify-between gap-4">
                         <p className="text-text-primary text-sm font-semibold">
-                            Unlock more evaluation capacity
+                            Unlock more trial PR reviews
                         </p>
                         <span className="text-text-tertiary text-xs">
-                            Credits unlock automatically
+                            Adds apply automatically
                         </span>
                     </div>
 

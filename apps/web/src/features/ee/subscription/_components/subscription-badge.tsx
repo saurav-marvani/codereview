@@ -18,7 +18,7 @@ const SubscriptionTrial = () => {
     if (subscriptionStatus.status === "trial-exhausted") {
         return (
             <Button decorative size="sm" variant="tertiary">
-                No Kodus credits left
+                No trial PR reviews left
             </Button>
         );
     }
@@ -28,7 +28,7 @@ const SubscriptionTrial = () => {
     return (
         <Button decorative size="sm" variant="tertiary">
             {typeof remaining === "number"
-                ? `${remaining} review credits left`
+                ? `${remaining} trial PR reviews left`
                 : `${subscriptionStatus.trialDaysLeft} days Team trial`}
         </Button>
     );

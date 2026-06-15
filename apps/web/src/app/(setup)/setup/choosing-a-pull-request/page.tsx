@@ -139,22 +139,23 @@ export default function App() {
                                         <AlertTitle>
                                             {hasBYOK
                                                 ? "This review uses your AI key"
-                                                : `Your trial includes ${TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED} PR reviews with Kodus credits`}
+                                                : `Your trial includes ${TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED} PR reviews`}
                                         </AlertTitle>
                                         <AlertDescription>
                                             {hasBYOK ? (
                                                 <p>
                                                     BYOK is configured, so this
                                                     PR uses your provider key
-                                                    and does not spend your
-                                                    Kodus trial review credits.
+                                                    and does not count against
+                                                    your included trial PR
+                                                    reviews.
                                                 </p>
                                             ) : (
                                                 <p>
                                                     Kodus covers the AI cost for
                                                     these first reviews.
-                                                    Reviewing this PR spends 1
-                                                    credit from your{" "}
+                                                    Reviewing this PR uses 1
+                                                    included review from your{" "}
                                                     {TRIAL_DAYS}-day Team trial.
                                                 </p>
                                             )}
