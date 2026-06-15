@@ -1,21 +1,9 @@
 "use client";
 
-import type { ComponentProps, ElementType } from "react";
-import { Badge } from "@components/ui/badge";
 import { Button } from "@components/ui/button";
 import { Link } from "@components/ui/link";
 import { Progress } from "@components/ui/progress";
-import {
-    Building2Icon,
-    CheckCircle2Icon,
-    CircleIcon,
-    GitPullRequestIcon,
-    KeyRoundIcon,
-    LockIcon,
-    MailPlusIcon,
-    UsersIcon,
-} from "lucide-react";
-import { cn } from "src/core/utils/components";
+import { GitPullRequestIcon, KeyRoundIcon, SparklesIcon } from "lucide-react";
 
 import { TRIAL_DAYS } from "../_constants/trial";
 import type {
@@ -23,110 +11,12 @@ import type {
     TrialReviewCredits,
     TrialUnlock,
 } from "../_services/billing/types";
-import {
-    getTrialCreditBalance,
-    getTrialTierLabel,
-    getTrialUnlocks,
-    type TrialUnlockViewModel,
-} from "../_utils/trial";
-
-const unlockIconByKey: Record<string, ElementType> = {
-    team_setup: UsersIcon,
-    multi_author_review: GitPullRequestIcon,
-    byok: KeyRoundIcon,
-    referral: Building2Icon,
-    manual: MailPlusIcon,
-};
-
-const statusLabelByStatus: Record<string, string> = {
-    locked: "Locked",
-    available: "Available",
-    completed: "Done",
-    claimed: "Done",
-};
-
-const statusVariantByStatus: Record<
-    string,
-    ComponentProps<typeof Badge>["variant"]
-> = {
-    locked: "helper",
-    available: "tertiary",
-    completed: "success",
-    claimed: "success",
-};
-
-const TrialUnlockItem = ({ unlock }: { unlock: TrialUnlockViewModel }) => {
-    const Icon = unlockIconByKey[unlock.key] ?? CircleIcon;
-    const isDone = unlock.status === "completed" || unlock.status === "claimed";
-    const isLocked = unlock.status === "locked";
-    const statusLabel = statusLabelByStatus[unlock.status] ?? "Available";
-    const statusVariant = statusVariantByStatus[unlock.status] ?? "helper";
-
-    return (
-        <div className="border-card-lv3/70 flex items-start gap-3 rounded-lg border p-3">
-            <div
-                className={cn(
-                    "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg",
-                    isDone
-                        ? "bg-success/15 text-success"
-                        : "bg-card-lv2 text-text-secondary",
-                )}>
-                {isDone ? (
-                    <CheckCircle2Icon className="size-4" />
-                ) : isLocked ? (
-                    <LockIcon className="size-4" />
-                ) : (
-                    <Icon className="size-4" />
-                )}
-            </div>
-
-            <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-text-primary text-sm font-semibold">
-                        {unlock.title}
-                    </p>
-                    <Badge size="xs" variant={statusVariant}>
-                        {statusLabel}
-                    </Badge>
-                    <span className="text-primary-light text-xs font-semibold">
-                        {unlock.rewardLabel}
-                    </span>
-                </div>
-
-                <p className="text-text-secondary mt-1 text-xs">
-                    {unlock.description}
-                </p>
-
-                {unlock.href && !isDone && (
-                    <Link
-                        href={unlock.href}
-                        className="mt-2 inline-flex"
-                        noHoverUnderline>
-                        <Button
-                            decorative
-                            size="xs"
-                            variant={isLocked ? "helper" : "tertiary"}>
-                            {unlock.key === "referral"
-                                ? "Refer a team"
-                                : unlock.key === "byok"
-                                  ? "Configure BYOK"
-                                  : "Open setup"}
-                        </Button>
-                    </Link>
-                )}
-            </div>
-        </div>
-    );
-};
+import { getTrialCreditBalance } from "../_utils/trial";
 
 export const TrialCreditsSummary = ({
     credits,
-    trialCreditTier,
-    trialUnlocks,
     byok,
     daysLeft,
-    workspaceMembersCount,
-    codeHostMembersCount,
     compact = false,
 }: {
     credits?: TrialReviewCredits;
@@ -139,53 +29,49 @@ export const TrialCreditsSummary = ({
     compact?: boolean;
 }) => {
     const balance = getTrialCreditBalance(credits);
-    const unlocks = getTrialUnlocks({
-        billingUnlocks: trialUnlocks,
-        byok,
-        workspaceMembersCount,
-        codeHostMembersCount,
-    });
-    const liveBalanceLabel = balance.hasLiveData
-        ? `${balance.remaining} of ${balance.total} PR reviews paid by Kodus left`
-        : `First ${balance.total} PR reviews are on Kodus`;
+    const remainingLabel = `${balance.remaining} of ${balance.total}`;
+    const daysLeftLabel =
+        typeof daysLeft === "number"
+            ? `${daysLeft} days left in your Team trial`
+            : `${TRIAL_DAYS}-day Team trial`;
 
     return (
-        <section className="flex flex-col gap-4">
+        <section className="flex flex-col gap-5">
             <div className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-center gap-2">
-                    <Badge size="xs" variant="primary-dark">
-                        {getTrialTierLabel(trialCreditTier)}
-                    </Badge>
-                    <Badge size="xs" variant="helper">
-                        {TRIAL_DAYS}-day Team trial
-                    </Badge>
-                    {typeof daysLeft === "number" && (
-                        <Badge size="xs" variant="helper">
-                            {daysLeft} days left
-                        </Badge>
-                    )}
-                    {byok && (
-                        <Badge size="xs" variant="success">
-                            BYOK active
-                        </Badge>
-                    )}
-                </div>
-
-                <div>
-                    <div className="mb-2 flex items-center justify-between gap-4 text-sm">
-                        <p className="text-text-primary font-semibold">
-                            {byok
-                                ? "Reviews use your AI key"
-                                : liveBalanceLabel}
+                <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                    <div>
+                        <p className="text-text-primary text-base font-semibold">
+                            Kodus pays for your first {balance.total} PR reviews
                         </p>
-                        {!byok && balance.hasLiveData && (
-                            <p className="text-text-tertiary text-xs">
-                                {balance.used} used
-                            </p>
-                        )}
+                        <p className="text-text-secondary mt-1 text-sm">
+                            {daysLeftLabel}. After the {balance.total} reviews,
+                            connect BYOK or upgrade to keep reviewing PRs.
+                        </p>
                     </div>
 
                     {!byok && (
+                        <div className="text-left md:text-right">
+                            <p className="text-text-primary text-xl font-semibold">
+                                {remainingLabel}
+                            </p>
+                            <p className="text-text-tertiary text-xs">
+                                Kodus-paid reviews left
+                            </p>
+                        </div>
+                    )}
+                </div>
+
+                {!byok ? (
+                    <div>
+                        <div className="mb-2 flex items-center justify-between gap-4 text-sm">
+                            <p className="text-text-secondary text-xs">
+                                {balance.used} used
+                            </p>
+                            <p className="text-text-secondary text-xs">
+                                {balance.total} total
+                            </p>
+                        </div>
+
                         <Progress
                             value={balance.used}
                             max={balance.total}
@@ -193,33 +79,73 @@ export const TrialCreditsSummary = ({
                                 balance.remaining === 0 ? "tertiary" : "primary"
                             }
                         />
-                    )}
-
-                    <p className="text-text-tertiary mt-2 text-xs">
-                        {byok
-                            ? "BYOK reviews use your AI key and do not count against the PR reviews paid by Kodus."
-                            : balance.hasLiveData
-                              ? "After these PR reviews run out, connect BYOK or upgrade to keep reviewing PRs."
-                              : "Live PR review usage appears here once billing data is available."}
-                    </p>
-                </div>
+                    </div>
+                ) : (
+                    <div className="bg-success/10 text-success flex items-start gap-2 rounded-lg p-3 text-sm">
+                        <SparklesIcon className="mt-0.5 size-4 shrink-0" />
+                        <p>
+                            BYOK is active. Reviews use your AI key and do not
+                            count against the PR reviews paid by Kodus.
+                        </p>
+                    </div>
+                )}
             </div>
 
             {!compact && (
-                <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between gap-4">
-                        <p className="text-text-primary text-sm font-semibold">
-                            Unlock more trial PR reviews
-                        </p>
-                        <span className="text-text-tertiary text-xs">
-                            Adds apply automatically
-                        </span>
-                    </div>
+                <div className="border-card-lv3 flex flex-col gap-3 border-t pt-4">
+                    <p className="text-text-primary text-sm font-semibold">
+                        Need more reviews?
+                    </p>
 
-                    <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
-                        {unlocks.map((unlock) => (
-                            <TrialUnlockItem key={unlock.key} unlock={unlock} />
-                        ))}
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                        <div className="flex items-start gap-3">
+                            <KeyRoundIcon className="text-primary-light mt-0.5 size-4 shrink-0" />
+                            <div className="min-w-0">
+                                <p className="text-text-primary text-sm font-semibold">
+                                    Connect BYOK
+                                </p>
+                                <p className="text-text-secondary mt-1 text-xs">
+                                    Reviews use your own AI key, so they do not
+                                    use the {balance.total} PR reviews paid by
+                                    Kodus.
+                                </p>
+                                <Link
+                                    href="/organization/byok"
+                                    className="mt-2 inline-flex"
+                                    noHoverUnderline>
+                                    <Button
+                                        decorative
+                                        size="xs"
+                                        variant="tertiary">
+                                        Configure BYOK
+                                    </Button>
+                                </Link>
+                            </div>
+                        </div>
+
+                        <div className="flex items-start gap-3">
+                            <GitPullRequestIcon className="text-primary-light mt-0.5 size-4 shrink-0" />
+                            <div className="min-w-0">
+                                <p className="text-text-primary text-sm font-semibold">
+                                    Upgrade
+                                </p>
+                                <p className="text-text-secondary mt-1 text-xs">
+                                    Keep Kodus-managed PR reviews running after
+                                    the trial allowance ends.
+                                </p>
+                                <Link
+                                    href="/choose-plan"
+                                    className="mt-2 inline-flex"
+                                    noHoverUnderline>
+                                    <Button
+                                        decorative
+                                        size="xs"
+                                        variant="helper">
+                                        View plans
+                                    </Button>
+                                </Link>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
