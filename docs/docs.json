@@ -1526,6 +1526,10 @@
     },
     "redirects": [
         {
+            "source": "/changelog.xml",
+            "destination": "/changelog/rss.xml"
+        },
+        {
             "source": "/how_to_use/en/cli/overview",
             "destination": "/how_to_use/en/cli/introduction"
         },
