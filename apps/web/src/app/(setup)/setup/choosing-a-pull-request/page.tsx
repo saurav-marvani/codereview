@@ -139,7 +139,7 @@ export default function App() {
                                         <AlertTitle>
                                             {hasBYOK
                                                 ? "This review uses your AI key"
-                                                : `Your trial includes ${TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED} PR reviews`}
+                                                : `Your first ${TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED} PR reviews are on Kodus`}
                                         </AlertTitle>
                                         <AlertDescription>
                                             {hasBYOK ? (
@@ -147,16 +147,21 @@ export default function App() {
                                                     BYOK is configured, so this
                                                     PR uses your provider key
                                                     and does not count against
-                                                    your included trial PR
-                                                    reviews.
+                                                    the PR reviews paid by
+                                                    Kodus.
                                                 </p>
                                             ) : (
                                                 <p>
-                                                    Kodus covers the AI cost for
-                                                    these first reviews.
-                                                    Reviewing this PR uses 1
-                                                    included review from your{" "}
-                                                    {TRIAL_DAYS}-day Team trial.
+                                                    During your {TRIAL_DAYS}-day
+                                                    Team trial, this review uses
+                                                    1 of the{" "}
+                                                    {
+                                                        TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED
+                                                    }{" "}
+                                                    PR reviews paid by Kodus.
+                                                    After that, connect BYOK or
+                                                    upgrade to keep reviewing
+                                                    PRs.
                                                 </p>
                                             )}
                                         </AlertDescription>

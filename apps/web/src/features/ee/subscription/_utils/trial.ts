@@ -107,7 +107,7 @@ const fallbackUnlocks = (params: {
         key: "byok",
         title: "Connect BYOK",
         description:
-            "Use your AI key for trial reviews without using included PR reviews.",
+            "Use your AI key for trial reviews without using PR reviews paid by Kodus.",
         rewardLabel: TRIAL_UNLOCK_BYOK_REWARD_LABEL,
         status: params.byok ? "completed" : "available",
         href: "/organization/byok",

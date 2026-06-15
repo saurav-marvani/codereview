@@ -146,8 +146,8 @@ export const TrialCreditsSummary = ({
         codeHostMembersCount,
     });
     const liveBalanceLabel = balance.hasLiveData
-        ? `${balance.remaining} of ${balance.total} included PR reviews left`
-        : `${balance.total} PR reviews included in your trial`;
+        ? `${balance.remaining} of ${balance.total} PR reviews paid by Kodus left`
+        : `First ${balance.total} PR reviews are on Kodus`;
 
     return (
         <section className="flex flex-col gap-4">
@@ -197,9 +197,9 @@ export const TrialCreditsSummary = ({
 
                     <p className="text-text-tertiary mt-2 text-xs">
                         {byok
-                            ? "BYOK reviews use your AI key and do not count against your included PR reviews."
+                            ? "BYOK reviews use your AI key and do not count against the PR reviews paid by Kodus."
                             : balance.hasLiveData
-                              ? "Kodus covers the AI cost for each included PR review until the included reviews run out."
+                              ? "After these PR reviews run out, connect BYOK or upgrade to keep reviewing PRs."
                               : "Live PR review usage appears here once billing data is available."}
                     </p>
                 </div>

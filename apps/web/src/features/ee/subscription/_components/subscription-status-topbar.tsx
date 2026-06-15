@@ -24,7 +24,7 @@ const TrialExpiring = () => {
 const TrialExhausted = () => {
     return (
         <div className="bg-danger/30 py-2 text-center text-sm">
-            You used all included trial PR reviews.{" "}
+            You used all PR reviews paid by Kodus for this trial.{" "}
             <Link href="/organization/byok" className="font-bold">
                 Connect BYOK
             </Link>{" "}
