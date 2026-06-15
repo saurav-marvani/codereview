@@ -53,6 +53,17 @@ export type TrialUnlock = {
     completedAt?: string;
 };
 
+export type ConsumeTrialReviewCreditResult = {
+    allowed: boolean;
+    reason?: string;
+    alreadyConsumed?: boolean;
+    trialReviewCreditsTotal?: number;
+    trialReviewCreditsUsed?: number;
+    trialReviewCreditsRemaining?: number;
+    trialCreditTier?: string;
+    trialUnlocks?: TrialUnlock[];
+};
+
 export const LICENSE_SERVICE_TOKEN = Symbol.for('LicenseService');
 
 export interface ILicenseService {
@@ -89,4 +100,15 @@ export interface ILicenseService {
         userGitId: string,
         provider: string,
     ): Promise<boolean>;
+
+    /**
+     * Atomically consume one Kodus-funded trial review credit.
+     *
+     * @param organizationAndTeamData Organization ID and team ID.
+     * @param usageKey Optional idempotency key for the reviewed PR.
+     */
+    consumeTrialReviewCredit(
+        organizationAndTeamData: OrganizationAndTeamData,
+        usageKey?: string,
+    ): Promise<ConsumeTrialReviewCreditResult>;
 }

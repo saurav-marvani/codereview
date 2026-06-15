@@ -52,6 +52,11 @@ export interface ValidationResult {
     subscriptionStatus?: string;
 }
 
+export type ExecutionPermissionValidationOptions = {
+    consumeTrialReviewCredit?: boolean;
+    trialReviewCreditUsageKey?: string;
+};
+
 @Injectable()
 export class PermissionValidationService {
     private readonly isCloud: boolean;
@@ -118,6 +123,7 @@ export class PermissionValidationService {
         organizationAndTeamData: OrganizationAndTeamData,
         userGitId?: string,
         contextName?: string,
+        options: ExecutionPermissionValidationOptions = {},
     ): Promise<ValidationResult> {
         try {
             // Development mode always allows
@@ -213,6 +219,51 @@ export class PermissionValidationService {
                         metadata: { validation },
                         subscriptionStatus: validation.subscriptionStatus,
                     };
+                }
+
+                if (!trialByokConfig && options.consumeTrialReviewCredit) {
+                    const consumeResult =
+                        await this.licenseService.consumeTrialReviewCredit(
+                            organizationAndTeamData,
+                            options.trialReviewCreditUsageKey,
+                        );
+
+                    if (!consumeResult.allowed) {
+                        this.logger.warn({
+                            message: 'Trial review credit consumption denied',
+                            context:
+                                contextName || PermissionValidationService.name,
+                            metadata: {
+                                organizationAndTeamData,
+                                reason: consumeResult.reason,
+                                trialReviewCreditUsageKey:
+                                    options.trialReviewCreditUsageKey,
+                                consumeResult,
+                            },
+                        });
+
+                        return {
+                            allowed: false,
+                            errorType: ValidationErrorType.PLAN_LIMIT_EXCEEDED,
+                            metadata: { validation, consumeResult },
+                            subscriptionStatus: validation.subscriptionStatus,
+                        };
+                    }
+
+                    validation.trialReviewCreditsTotal =
+                        consumeResult.trialReviewCreditsTotal ??
+                        validation.trialReviewCreditsTotal;
+                    validation.trialReviewCreditsUsed =
+                        consumeResult.trialReviewCreditsUsed ??
+                        validation.trialReviewCreditsUsed;
+                    validation.trialReviewCreditsRemaining =
+                        consumeResult.trialReviewCreditsRemaining ??
+                        validation.trialReviewCreditsRemaining;
+                    validation.trialCreditTier =
+                        consumeResult.trialCreditTier ??
+                        validation.trialCreditTier;
+                    validation.trialUnlocks =
+                        consumeResult.trialUnlocks ?? validation.trialUnlocks;
                 }
 
                 return {

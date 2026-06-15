@@ -203,6 +203,13 @@ export class ValidatePrerequisitesStage extends BasePipelineStage<CodeReviewPipe
                 organizationAndTeamData,
                 userGitId,
                 ValidatePrerequisitesStage.name,
+                {
+                    consumeTrialReviewCredit: true,
+                    trialReviewCreditUsageKey:
+                        context.repository?.id && pullRequest?.number
+                            ? `${context.repository.id}:${pullRequest.number}`
+                            : undefined,
+                },
             );
 
         if (
@@ -231,7 +238,9 @@ export class ValidatePrerequisitesStage extends BasePipelineStage<CodeReviewPipe
 
         // If validation failed due to USER_NOT_LICENSED, try auto-assign FIRST
         // (before checking autoReviewEnabled, because auto-assign should work regardless)
-        if (validationResult.errorType === ValidationErrorType.USER_NOT_LICENSED) {
+        if (
+            validationResult.errorType === ValidationErrorType.USER_NOT_LICENSED
+        ) {
             const failureHandled = await this.handleValidationFailure(
                 context,
                 validationResult,
@@ -887,7 +896,8 @@ export class ValidatePrerequisitesStage extends BasePipelineStage<CodeReviewPipe
             this.logger.error({
                 message:
                     'Failed to emit review.skipped_no_license notification',
-                error: error instanceof Error ? error : new Error(String(error)),
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
                 context: this.stageName,
             });
         }

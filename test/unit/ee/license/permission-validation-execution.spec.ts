@@ -41,6 +41,14 @@ function createMockLicenseService(overrides: any = {}) {
         }),
         getAllUsersWithLicense: jest.fn().mockResolvedValue([]),
         assignLicense: jest.fn().mockResolvedValue(true),
+        consumeTrialReviewCredit: jest.fn().mockResolvedValue({
+            allowed: true,
+            trialReviewCreditsTotal: 5,
+            trialReviewCreditsUsed: 1,
+            trialReviewCreditsRemaining: 4,
+            trialCreditTier: 'base',
+            trialUnlocks: [],
+        }),
     };
 }
 
@@ -104,6 +112,71 @@ describe('PermissionValidationService.validateExecutionPermissions', () => {
 
         const result = await service.validateExecutionPermissions(orgData);
         expect(result.allowed).toBe(true);
+    });
+
+    it('should consume one managed trial credit when requested by review execution', async () => {
+        const licenseService = createMockLicenseService({
+            subscriptionStatus: 'trial',
+            planType: 'trial',
+            trialReviewCreditsTotal: 5,
+            trialReviewCreditsUsed: 0,
+            trialReviewCreditsRemaining: 5,
+        });
+        const service = createService(
+            licenseService,
+            createMockOrgParamsService(),
+        );
+
+        const result = await service.validateExecutionPermissions(
+            orgData,
+            undefined,
+            'ValidatePrerequisitesStage',
+            {
+                consumeTrialReviewCredit: true,
+                trialReviewCreditUsageKey: 'repo-1:123',
+            },
+        );
+
+        expect(result.allowed).toBe(true);
+        expect(licenseService.consumeTrialReviewCredit).toHaveBeenCalledWith(
+            orgData,
+            'repo-1:123',
+        );
+        expect(result.metadata?.trialReviewCreditsRemaining).toBe(4);
+    });
+
+    it('should deny trial review when billing cannot consume a trial credit', async () => {
+        const licenseService = createMockLicenseService({
+            subscriptionStatus: 'trial',
+            planType: 'trial',
+            trialReviewCreditsTotal: 5,
+            trialReviewCreditsUsed: 5,
+            trialReviewCreditsRemaining: 1,
+        });
+        licenseService.consumeTrialReviewCredit.mockResolvedValue({
+            allowed: false,
+            reason: 'TRIAL_REVIEW_CREDITS_EXHAUSTED',
+            trialReviewCreditsTotal: 5,
+            trialReviewCreditsUsed: 5,
+            trialReviewCreditsRemaining: 0,
+        });
+        const service = createService(
+            licenseService,
+            createMockOrgParamsService(),
+        );
+
+        const result = await service.validateExecutionPermissions(
+            orgData,
+            undefined,
+            'ValidatePrerequisitesStage',
+            {
+                consumeTrialReviewCredit: true,
+                trialReviewCreditUsageKey: 'repo-1:123',
+            },
+        );
+
+        expect(result.allowed).toBe(false);
+        expect(result.errorType).toBe(ValidationErrorType.PLAN_LIMIT_EXCEEDED);
     });
 
     it('should deny managed trial when review credits are exhausted', async () => {
