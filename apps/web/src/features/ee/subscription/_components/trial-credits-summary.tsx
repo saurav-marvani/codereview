@@ -5,7 +5,14 @@ import { Badge } from "@components/ui/badge";
 import { Button } from "@components/ui/button";
 import { Link } from "@components/ui/link";
 import { Progress } from "@components/ui/progress";
-import { GitPullRequestIcon, KeyRoundIcon, SparklesIcon } from "lucide-react";
+import {
+    Building2Icon,
+    GitPullRequestIcon,
+    KeyRoundIcon,
+    MailCheckIcon,
+    SparklesIcon,
+    UsersIcon,
+} from "lucide-react";
 
 import { TRIAL_DAYS } from "../_constants/trial";
 import type {
@@ -21,11 +28,11 @@ import {
 } from "../_utils/trial";
 
 const unlockIconByKey: Record<string, ElementType> = {
-    team_setup: SparklesIcon,
-    multi_author_review: GitPullRequestIcon,
+    company_email: MailCheckIcon,
+    team_setup: UsersIcon,
+    code_org_10_plus: Building2Icon,
     byok: KeyRoundIcon,
-    referral: SparklesIcon,
-    manual: SparklesIcon,
+    manual_extension: GitPullRequestIcon,
 };
 
 const statusLabelByStatus: Record<string, string> = {
@@ -71,8 +78,8 @@ const TrialTierItem = ({ unlock }: { unlock: TrialUnlockViewModel }) => {
                         <Button decorative size="xs" variant="tertiary">
                             {unlock.key === "byok"
                                 ? "Configure BYOK"
-                                : unlock.key === "referral"
-                                  ? "Refer a team"
+                                : unlock.key === "manual_extension"
+                                  ? "Request review"
                                   : "Open setup"}
                         </Button>
                     </Link>
@@ -206,9 +213,9 @@ export const TrialCreditsSummary = ({
                             </Badge>
                         </div>
                         <p className="text-text-secondary text-xs">
-                            These steps can unlock more Kodus-paid PR reviews
-                            for qualified trials. BYOK stays available even when
-                            the Kodus-paid reviews run out.
+                            Automatic signals add more Kodus-paid PR reviews
+                            once. BYOK stays available and does not use these PR
+                            reviews.
                         </p>
                     </div>
 

@@ -55,18 +55,18 @@ describe("trial subscription helpers", () => {
         const unlocks = getTrialUnlocks({
             billingUnlocks: [
                 {
-                    key: "multi_author_review",
+                    key: "code_org_10_plus",
                     status: "completed",
-                    rewardCredits: 10,
+                    rewardCredits: 20,
                 },
             ],
         });
 
         expect(
-            unlocks.find((unlock) => unlock.key === "multi_author_review"),
+            unlocks.find((unlock) => unlock.key === "code_org_10_plus"),
         ).toMatchObject({
             status: "completed",
-            rewardLabel: "+10 reviews",
+            rewardLabel: "+20 reviews",
         });
     });
 
@@ -74,21 +74,20 @@ describe("trial subscription helpers", () => {
         const unlocks = getTrialUnlocks({
             billingUnlocks: [
                 {
-                    key: "manual",
+                    key: "manual_extension",
                     title: "Sales extension",
                     description: "Manual extension approved by sales.",
                     status: "claimed",
-                    rewardCredits: 20,
                 },
             ],
         });
 
-        expect(unlocks.find((unlock) => unlock.key === "manual")).toMatchObject(
-            {
-                title: "Sales extension",
-                status: "claimed",
-                rewardLabel: "+20 reviews",
-            },
-        );
+        expect(
+            unlocks.find((unlock) => unlock.key === "manual_extension"),
+        ).toMatchObject({
+            title: "Sales extension",
+            status: "claimed",
+            rewardLabel: "Manual review",
+        });
     });
 });

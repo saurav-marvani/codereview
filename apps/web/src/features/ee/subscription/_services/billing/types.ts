@@ -23,15 +23,14 @@ export type TrialCreditTier =
     | "team_signal"
     | "qualified"
     | "manual"
-    | "referral"
     | (string & {});
 
 export type TrialUnlockKey =
+    | "company_email"
     | "team_setup"
-    | "multi_author_review"
+    | "code_org_10_plus"
     | "byok"
-    | "referral"
-    | "manual"
+    | "manual_extension"
     | (string & {});
 
 export type TrialUnlockStatus =
@@ -54,6 +53,13 @@ export type TrialReviewCredits = {
     used?: number;
     remaining?: number;
     tier?: TrialCreditTier;
+};
+
+export type TrialUnlockSignals = {
+    companyEmailVerified?: boolean;
+    workspaceMembersCount?: number;
+    codeHostMembersCount?: number;
+    byok?: boolean;
 };
 
 export type PlanType =

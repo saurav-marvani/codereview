@@ -3,7 +3,13 @@ import { getOrganizationId } from "@services/organizations/fetch";
 import { pathToApiUrl } from "src/core/utils/helpers";
 import { isSelfHosted } from "src/core/utils/self-hosted";
 
-import type { OrganizationLicense, Plan, PlanType, TrialUnlock } from "./types";
+import type {
+    OrganizationLicense,
+    Plan,
+    PlanType,
+    TrialUnlock,
+    TrialUnlockSignals,
+} from "./types";
 import { billingFetch } from "./utils";
 
 type OrganizationMember = {
@@ -201,6 +207,25 @@ export const validateOrganizationLicense = async (params: {
     return billingFetch<OrganizationLicense>(`validate-org-license`, {
         method: "GET",
         params: { organizationId, teamId: params.teamId },
+    });
+};
+
+export const recalculateTrialUnlocks = async (params: {
+    teamId: string;
+    signals: TrialUnlockSignals;
+}): Promise<OrganizationLicense | undefined> => {
+    if (isSelfHosted) {
+        return undefined;
+    }
+
+    const organizationId = await getOrganizationId();
+    return billingFetch<OrganizationLicense>(`trial-unlocks/recalculate`, {
+        method: "POST",
+        body: JSON.stringify({
+            organizationId,
+            teamId: params.teamId,
+            signals: params.signals,
+        }),
     });
 };
 

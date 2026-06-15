@@ -2,6 +2,11 @@
 
 import type { TeamMembersResponse } from "@services/setup/types";
 import { useSubscriptionStatus } from "src/features/ee/subscription/_hooks/use-subscription-status";
+import {
+    SubscriptionProvider,
+    useSubscriptionContext,
+} from "src/features/ee/subscription/_providers/subscription-context";
+import type { OrganizationLicenseTrial } from "src/features/ee/subscription/_services/billing/types";
 
 import { Active } from "./active";
 import { Canceled } from "./canceled";
@@ -26,6 +31,40 @@ const components: Partial<
 };
 
 export const Redirect = ({
+    members,
+    codeHostMembersCount,
+    trialLicense,
+}: {
+    members: TeamMembersResponse["members"];
+    codeHostMembersCount?: number;
+    trialLicense?: OrganizationLicenseTrial;
+}) => {
+    const subscriptionContext = useSubscriptionContext();
+
+    if (trialLicense) {
+        return (
+            <SubscriptionProvider
+                license={trialLicense}
+                usersWithAssignedLicense={
+                    subscriptionContext.usersWithAssignedLicense
+                }>
+                <RedirectContent
+                    members={members}
+                    codeHostMembersCount={codeHostMembersCount}
+                />
+            </SubscriptionProvider>
+        );
+    }
+
+    return (
+        <RedirectContent
+            members={members}
+            codeHostMembersCount={codeHostMembersCount}
+        />
+    );
+};
+
+const RedirectContent = ({
     members,
     codeHostMembersCount,
 }: {

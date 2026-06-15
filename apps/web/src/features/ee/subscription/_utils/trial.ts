@@ -1,8 +1,8 @@
 import {
     TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED,
     TRIAL_UNLOCK_BYOK_REWARD_LABEL,
-    TRIAL_UNLOCK_MULTI_AUTHOR_REWARD,
-    TRIAL_UNLOCK_REFERRAL_REWARD,
+    TRIAL_UNLOCK_CODE_ORG_REWARD,
+    TRIAL_UNLOCK_COMPANY_EMAIL_REWARD,
     TRIAL_UNLOCK_TEAM_REWARD,
 } from "../_constants/trial";
 import type {
@@ -66,8 +66,6 @@ export const getTrialTierLabel = (tier?: TrialCreditTier): string => {
             return "Qualified";
         case "manual":
             return "Manual";
-        case "referral":
-            return "Referral";
         default:
             return "Base";
     }
@@ -79,28 +77,39 @@ const fallbackUnlocks = (params: {
     codeHostMembersCount?: number;
 }): TrialUnlockViewModel[] => [
     {
-        key: "team_setup",
-        title: "Add your team",
+        key: "company_email",
+        title: "Use a company email",
         description:
-            params.workspaceMembersCount && params.workspaceMembersCount > 1
-                ? "Team member detected. We can confirm this extension."
-                : params.codeHostMembersCount &&
-                    params.codeHostMembersCount >= 3
-                  ? "Invite teammates so the evaluation reflects real team usage."
-                  : "Invite another developer to evaluate Kodus as a team.",
+            "A confirmed work email helps us qualify the trial automatically.",
+        rewardLabel: `+${TRIAL_UNLOCK_COMPANY_EMAIL_REWARD} reviews`,
+        status: "locked",
+    },
+    {
+        key: "team_setup",
+        title: "Invite 3 teammates",
+        description:
+            params.workspaceMembersCount && params.workspaceMembersCount >= 3
+                ? "Workspace has enough teammates for a real team evaluation."
+                : "Add teammates so the trial reflects a real review workflow.",
         rewardLabel: `+${TRIAL_UNLOCK_TEAM_REWARD} reviews`,
         status:
-            params.workspaceMembersCount && params.workspaceMembersCount > 1
-                ? "available"
+            params.workspaceMembersCount && params.workspaceMembersCount >= 3
+                ? "completed"
                 : "locked",
         href: "/settings/subscription?tab=admins",
     },
     {
-        key: "multi_author_review",
-        title: "Review PRs from 2 developers",
-        description: "Run reviews on real PRs from more than one author.",
-        rewardLabel: `+${TRIAL_UNLOCK_MULTI_AUTHOR_REWARD} reviews`,
-        status: "locked",
+        key: "code_org_10_plus",
+        title: "Connect a 10+ developer code org",
+        description:
+            params.codeHostMembersCount && params.codeHostMembersCount >= 10
+                ? "Connected code org has at least 10 members."
+                : "Connect the organization, not only a personal account, so we can evaluate team fit.",
+        rewardLabel: `+${TRIAL_UNLOCK_CODE_ORG_REWARD} reviews`,
+        status:
+            params.codeHostMembersCount && params.codeHostMembersCount >= 10
+                ? "completed"
+                : "locked",
     },
     {
         key: "byok",
@@ -112,12 +121,13 @@ const fallbackUnlocks = (params: {
         href: "/organization/byok",
     },
     {
-        key: "referral",
-        title: "Refer another engineering team",
-        description: "Both teams can get extra evaluation reviews after setup.",
-        rewardLabel: `+${TRIAL_UNLOCK_REFERRAL_REWARD} reviews`,
-        status: "locked",
-        href: "mailto:?subject=Try%20Kodus%20for%20AI%20PR%20reviews&body=Hey%2C%20we%27re%20trying%20Kodus%20for%20AI%20pull%20request%20reviews.%20Might%20be%20useful%20for%20your%20engineering%20team%3A%20https%3A%2F%2Fkodus.io",
+        key: "manual_extension",
+        title: "Request more trial PR reviews",
+        description:
+            "Ask Kodus to review your trial signals and extend the evaluation manually.",
+        rewardLabel: "Manual review",
+        status: "available",
+        href: "mailto:sales@kodus.io?subject=Trial%20PR%20review%20extension",
     },
 ];
 
@@ -129,7 +139,7 @@ const getBillingUnlockRewardLabel = (
         return `+${unlock.rewardCredits} reviews`;
     }
 
-    return fallbackRewardLabel ?? "Extra PR reviews";
+    return fallbackRewardLabel ?? "Manual review";
 };
 
 export const getTrialUnlocks = (params: {
