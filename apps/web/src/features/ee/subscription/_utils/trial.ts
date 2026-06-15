@@ -83,7 +83,7 @@ const fallbackUnlocks = (params: {
         title: "Add your team",
         description:
             params.workspaceMembersCount && params.workspaceMembersCount > 1
-                ? "Team member detected. Extra review credits are granted when billing confirms the unlock."
+                ? "Team member detected. Extra review credits unlock after this step is confirmed."
                 : params.codeHostMembersCount &&
                     params.codeHostMembersCount >= 3
                   ? "Code organization size detected. Invite teammates to evaluate on real PRs."
@@ -107,7 +107,7 @@ const fallbackUnlocks = (params: {
         key: "byok",
         title: "Connect BYOK",
         description:
-            "Use your AI key for trial reviews without consuming Kodus managed credits.",
+            "Use your AI key for trial reviews without spending Kodus credits.",
         rewardLabel: TRIAL_UNLOCK_BYOK_REWARD_LABEL,
         status: params.byok ? "completed" : "available",
         href: "/organization/byok",
@@ -131,7 +131,7 @@ const getBillingUnlockRewardLabel = (
         return `+${unlock.rewardCredits} reviews`;
     }
 
-    return fallbackRewardLabel ?? "Configured by billing";
+    return fallbackRewardLabel ?? "Extra credits";
 };
 
 export const getTrialUnlocks = (params: {
@@ -170,7 +170,7 @@ export const getTrialUnlocks = (params: {
                 title: unlock.title || "Trial unlock",
                 description:
                     unlock.description ||
-                    "This unlock is managed by billing for this trial.",
+                    "This unlock can add more review credits to this trial.",
                 rewardLabel: getBillingUnlockRewardLabel(unlock),
                 status: unlock.status,
             })) ?? [];

@@ -345,18 +345,18 @@ export default function App() {
                                 <Alert variant="info">
                                     <InfoIcon />
                                     <AlertTitle>
-                                        Team trial includes managed PR reviews
+                                        Your trial includes{" "}
+                                        {TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED}{" "}
+                                        PR reviews with Kodus credits
                                     </AlertTitle>
                                     <AlertDescription>
                                         <p>
-                                            Your {TRIAL_DAYS}-day Team trial
-                                            includes{" "}
-                                            {
-                                                TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED
-                                            }{" "}
-                                            managed AI PR reviews. BYOK reviews
-                                            use your AI key and do not consume
-                                            Kodus credits.
+                                            Kodus covers the AI cost for these
+                                            first reviews during your{" "}
+                                            {TRIAL_DAYS}-day Team trial. If you
+                                            connect BYOK, reviews use your AI
+                                            key instead and do not spend those
+                                            credits.
                                         </p>
                                     </AlertDescription>
                                 </Alert>

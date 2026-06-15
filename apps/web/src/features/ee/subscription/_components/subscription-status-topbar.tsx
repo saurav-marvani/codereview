@@ -24,7 +24,7 @@ const TrialExpiring = () => {
 const TrialExhausted = () => {
     return (
         <div className="bg-danger/30 py-2 text-center text-sm">
-            Your managed trial reviews are used.{" "}
+            Your Kodus trial review credits are used.{" "}
             <Link href="/organization/byok" className="font-bold">
                 Connect BYOK
             </Link>{" "}

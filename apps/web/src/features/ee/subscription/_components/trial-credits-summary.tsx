@@ -146,8 +146,8 @@ export const TrialCreditsSummary = ({
         codeHostMembersCount,
     });
     const liveBalanceLabel = balance.hasLiveData
-        ? `${balance.remaining} of ${balance.total} managed AI PR reviews remaining`
-        : `${balance.total} managed AI PR reviews included`;
+        ? `${balance.remaining} of ${balance.total} Kodus review credits left`
+        : `${balance.total} PR reviews included with Kodus credits`;
 
     return (
         <section className="flex flex-col gap-4">
@@ -197,10 +197,10 @@ export const TrialCreditsSummary = ({
 
                     <p className="text-text-tertiary mt-2 text-xs">
                         {byok
-                            ? "BYOK reviews do not consume Kodus managed trial credits."
+                            ? "BYOK reviews use your AI key and do not spend Kodus trial credits."
                             : balance.hasLiveData
-                              ? "Billing tracks credit usage before managed AI review execution."
-                              : "Live credit balance appears here once billing returns trial credit data."}
+                              ? "Kodus credits cover the AI cost for each review until they run out."
+                              : "Live credit balance appears here once trial credit data is available."}
                     </p>
                 </div>
             </div>
@@ -212,7 +212,7 @@ export const TrialCreditsSummary = ({
                             Unlock more evaluation capacity
                         </p>
                         <span className="text-text-tertiary text-xs">
-                            Billing confirms and grants credits
+                            Credits unlock automatically
                         </span>
                     </div>
 

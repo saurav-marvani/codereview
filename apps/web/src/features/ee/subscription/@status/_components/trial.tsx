@@ -81,8 +81,8 @@ export const Trial = ({
 
                 {!isTrial && (
                     <p className="text-text-secondary text-sm">
-                        Your Team trial has ended. Upgrade to keep managed PR
-                        reviews running.
+                        Your Team trial has ended. Upgrade to keep PR reviews
+                        running.
                     </p>
                 )}
             </CardHeader>

@@ -139,24 +139,22 @@ export default function App() {
                                         <AlertTitle>
                                             {hasBYOK
                                                 ? "This review uses your AI key"
-                                                : "Your trial includes managed reviews"}
+                                                : `Your trial includes ${TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED} PR reviews with Kodus credits`}
                                         </AlertTitle>
                                         <AlertDescription>
                                             {hasBYOK ? (
                                                 <p>
                                                     BYOK is configured, so this
                                                     PR uses your provider key
-                                                    and does not consume Kodus
-                                                    managed trial reviews.
+                                                    and does not spend your
+                                                    Kodus trial review credits.
                                                 </p>
                                             ) : (
                                                 <p>
-                                                    Reviewing now uses 1 of the{" "}
-                                                    {
-                                                        TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED
-                                                    }{" "}
-                                                    managed AI PR reviews
-                                                    included in your{" "}
+                                                    Kodus covers the AI cost for
+                                                    these first reviews.
+                                                    Reviewing this PR spends 1
+                                                    credit from your{" "}
                                                     {TRIAL_DAYS}-day Team trial.
                                                 </p>
                                             )}
