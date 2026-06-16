@@ -27,7 +27,21 @@ export type TrialUnlockViewModel = {
     description: string;
     rewardLabel: string;
     status: TrialUnlockStatus;
+    /**
+     * `signal` unlocks are evaluated automatically by Kodus and the user
+     * cannot trigger them directly (e.g. company email comes from the
+     * signup address). `action` unlocks expose something the user can do
+     * right now (invite teammates, manage the git connection, configure
+     * BYOK, request a manual extension).
+     */
+    kind: "signal" | "action";
     href?: string;
+    /** Label for the call-to-action button (action unlocks only). */
+    actionLabel?: string;
+    /** Special client-handled actions that don't navigate via href. */
+    actionType?: "request_extension";
+    /** Status label shown for a `signal` that has not qualified yet. */
+    pendingLabel?: string;
 };
 
 export const getTrialCreditBalance = (
@@ -73,43 +87,52 @@ export const getTrialTierLabel = (tier?: TrialCreditTier): string => {
 
 const fallbackUnlocks = (params: {
     byok?: boolean;
+    companyEmailVerified?: boolean;
     workspaceMembersCount?: number;
     codeHostMembersCount?: number;
 }): TrialUnlockViewModel[] => [
     {
         key: "company_email",
-        title: "Use a company email",
-        description:
-            "A confirmed work email helps us qualify the trial automatically.",
+        title: "Company email",
+        description: params.companyEmailVerified
+            ? "We detected a work email, so this signal is qualified."
+            : "Detected automatically from the email you signed up with. A work email (not a personal one) qualifies the trial — this only changes if you sign up again with a company address.",
         rewardLabel: `+${TRIAL_UNLOCK_COMPANY_EMAIL_REWARD} reviews`,
-        status: "locked",
+        status: params.companyEmailVerified ? "completed" : "locked",
+        kind: "signal",
+        pendingLabel: "Personal email",
+    },
+    {
+        key: "code_org_10_plus",
+        title: "10+ developer code org",
+        description:
+            params.codeHostMembersCount && params.codeHostMembersCount >= 10
+                ? "Your connected code org has at least 10 members."
+                : "Counts the members of the Git organization Kodus is connected to. Connect your org (not a personal account) — it qualifies automatically once it reaches 10 developers. Switching orgs requires reconnecting the integration.",
+        rewardLabel: `+${TRIAL_UNLOCK_CODE_ORG_REWARD} reviews`,
+        status:
+            params.codeHostMembersCount && params.codeHostMembersCount >= 10
+                ? "completed"
+                : "available",
+        kind: "action",
+        href: "/settings/git",
+        actionLabel: "Manage connection",
     },
     {
         key: "team_setup",
         title: "Invite 3 teammates",
         description:
             params.workspaceMembersCount && params.workspaceMembersCount >= 3
-                ? "Workspace has enough teammates for a real team evaluation."
+                ? "Your workspace already has enough teammates."
                 : "Add teammates so the trial reflects a real review workflow.",
         rewardLabel: `+${TRIAL_UNLOCK_TEAM_REWARD} reviews`,
         status:
             params.workspaceMembersCount && params.workspaceMembersCount >= 3
                 ? "completed"
-                : "locked",
+                : "available",
+        kind: "action",
         href: "/settings/subscription?tab=admins",
-    },
-    {
-        key: "code_org_10_plus",
-        title: "Connect a 10+ developer code org",
-        description:
-            params.codeHostMembersCount && params.codeHostMembersCount >= 10
-                ? "Connected code org has at least 10 members."
-                : "Connect the organization, not only a personal account, so we can evaluate team fit.",
-        rewardLabel: `+${TRIAL_UNLOCK_CODE_ORG_REWARD} reviews`,
-        status:
-            params.codeHostMembersCount && params.codeHostMembersCount >= 10
-                ? "completed"
-                : "locked",
+        actionLabel: "Invite teammates",
     },
     {
         key: "byok",
@@ -118,16 +141,20 @@ const fallbackUnlocks = (params: {
             "Use your own AI key. Reviews no longer use Kodus-paid PRs.",
         rewardLabel: TRIAL_UNLOCK_BYOK_REWARD_LABEL,
         status: params.byok ? "completed" : "available",
+        kind: "action",
         href: "/organization/byok",
+        actionLabel: "Configure BYOK",
     },
     {
         key: "manual_extension",
         title: "Request more trial PR reviews",
         description:
-            "Ask Kodus to review your trial signals and extend the evaluation manually.",
+            "Tell us about your team and we'll review your trial signals to extend the evaluation.",
         rewardLabel: "Manual review",
         status: "available",
-        href: "mailto:sales@kodus.io?subject=Trial%20PR%20review%20extension",
+        kind: "action",
+        actionLabel: "Request review",
+        actionType: "request_extension",
     },
 ];
 
@@ -145,6 +172,7 @@ const getBillingUnlockRewardLabel = (
 export const getTrialUnlocks = (params: {
     billingUnlocks?: TrialUnlock[];
     byok?: boolean;
+    companyEmailVerified?: boolean;
     workspaceMembersCount?: number;
     codeHostMembersCount?: number;
 }): TrialUnlockViewModel[] => {
@@ -173,15 +201,18 @@ export const getTrialUnlocks = (params: {
     const billingOnlyUnlocks =
         params.billingUnlocks
             ?.filter((unlock) => !fallbackKeys.has(unlock.key))
-            .map((unlock) => ({
-                key: unlock.key,
-                title: unlock.title || "Trial unlock",
-                description:
-                    unlock.description ||
-                    "This unlock can add more PR reviews to this trial.",
-                rewardLabel: getBillingUnlockRewardLabel(unlock),
-                status: unlock.status,
-            })) ?? [];
+            .map(
+                (unlock): TrialUnlockViewModel => ({
+                    key: unlock.key,
+                    title: unlock.title || "Trial unlock",
+                    description:
+                        unlock.description ||
+                        "This unlock can add more PR reviews to this trial.",
+                    rewardLabel: getBillingUnlockRewardLabel(unlock),
+                    status: unlock.status,
+                    kind: "action",
+                }),
+            ) ?? [];
 
     return [...mergedFallbackUnlocks, ...billingOnlyUnlocks];
 };

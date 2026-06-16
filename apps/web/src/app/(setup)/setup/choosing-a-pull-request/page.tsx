@@ -87,7 +87,7 @@ export default function App() {
     if (shouldSkipPullRequestSelection) return null;
 
     return (
-        <Page.Root className="flex h-full w-full flex-col items-center overflow-auto py-20">
+        <Page.Root className="flex min-h-full w-full flex-col items-center py-20">
             <MagicModalContext.Provider value={{ closeable: false }}>
                 <Dialog open>
                     <DialogContent className="gap-0 p-10">
@@ -139,29 +139,28 @@ export default function App() {
                                         <AlertTitle>
                                             {hasBYOK
                                                 ? "This review uses your AI key"
-                                                : `Your first ${TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED} PR reviews are on Kodus`}
+                                                : `Your first ${TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED} PR reviews are on us`}
                                         </AlertTitle>
                                         <AlertDescription>
                                             {hasBYOK ? (
                                                 <p>
-                                                    BYOK is configured, so this
-                                                    PR uses your provider key
-                                                    and does not count against
-                                                    the PR reviews paid by
-                                                    Kodus.
+                                                    Your AI key is connected, so
+                                                    this review runs on your key
+                                                    — unlimited, and it doesn't
+                                                    use your trial reviews.
                                                 </p>
                                             ) : (
                                                 <p>
                                                     During your {TRIAL_DAYS}-day
-                                                    Team trial, this review uses
-                                                    1 of the{" "}
+                                                    trial, this review uses 1 of
+                                                    the{" "}
                                                     {
                                                         TRIAL_MANAGED_REVIEW_CREDITS_INCLUDED
                                                     }{" "}
-                                                    PR reviews paid by Kodus.
-                                                    After that, connect BYOK or
-                                                    upgrade to keep reviewing
-                                                    PRs.
+                                                    we cover for you. After
+                                                    that, connect your AI key
+                                                    for unlimited reviews (free,
+                                                    on any plan).
                                                 </p>
                                             )}
                                         </AlertDescription>

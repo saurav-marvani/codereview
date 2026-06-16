@@ -1,4 +1,5 @@
 import { authorizedFetch } from "@services/fetch";
+import { getBYOK } from "@services/organizationParameters/fetch";
 import { SETUP_PATHS } from "@services/setup";
 import type { TeamMembersResponse } from "@services/setup/types";
 import { auth } from "src/core/config/auth";
@@ -19,13 +20,20 @@ const hasCompanyEmail = (email?: string | null) => {
 
 export default async function SubscriptionStatus() {
     const teamId = await getGlobalSelectedTeamId();
-    const [session, { members }, organizationMembers] = await Promise.all([
-        auth(),
-        authorizedFetch<TeamMembersResponse>(SETUP_PATHS.TEAM_MEMBERS, {
-            params: { teamId },
-        }),
-        getOrganizationMembers({ teamId }).catch(() => []),
-    ]);
+    const [session, { members }, organizationMembers, byokConfig] =
+        await Promise.all([
+            auth(),
+            authorizedFetch<TeamMembersResponse>(SETUP_PATHS.TEAM_MEMBERS, {
+                params: { teamId },
+            }),
+            getOrganizationMembers({ teamId }).catch(() => []),
+            getBYOK().catch(() => undefined),
+        ]);
+
+    // BYOK config lives in the API (org parameters), not in billing — so the
+    // billing license never knows a key was connected. Detect it here and use
+    // it both as a recalc signal and as the source of truth for `byok`.
+    const hasByok = Boolean(byokConfig?.main);
 
     const codeHostMembersCount = Array.isArray(organizationMembers)
         ? organizationMembers.length
@@ -36,12 +44,16 @@ export default async function SubscriptionStatus() {
             companyEmailVerified: hasCompanyEmail(session?.user?.email),
             workspaceMembersCount: members.length,
             codeHostMembersCount,
+            byok: hasByok,
         },
     }).catch(() => undefined);
     const trialLicense =
         recalculatedLicense?.valid &&
         recalculatedLicense.subscriptionStatus === "trial"
-            ? recalculatedLicense
+            ? {
+                  ...recalculatedLicense,
+                  byok: hasByok || recalculatedLicense.byok,
+              }
             : undefined;
 
     return (

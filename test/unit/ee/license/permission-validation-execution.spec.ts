@@ -114,6 +114,33 @@ describe('PermissionValidationService.validateExecutionPermissions', () => {
         expect(result.allowed).toBe(true);
     });
 
+    it('should NOT consume or gate a legacy trial that has no credit data (old behavior)', async () => {
+        const licenseService = createMockLicenseService({
+            subscriptionStatus: 'trial',
+            planType: 'trial',
+            // No trialReviewCredits* fields → legacy trial, pre-credit model.
+        });
+        const service = createService(
+            licenseService,
+            createMockOrgParamsService(),
+        );
+
+        const result = await service.validateExecutionPermissions(
+            orgData,
+            undefined,
+            'ValidatePrerequisitesStage',
+            {
+                consumeTrialReviewCredit: true,
+                trialReviewCreditUsageKey: 'repo-1:123',
+            },
+        );
+
+        expect(result.allowed).toBe(true);
+        expect(
+            licenseService.consumeTrialReviewCredit,
+        ).not.toHaveBeenCalled();
+    });
+
     it('should consume one managed trial credit when requested by review execution', async () => {
         const licenseService = createMockLicenseService({
             subscriptionStatus: 'trial',

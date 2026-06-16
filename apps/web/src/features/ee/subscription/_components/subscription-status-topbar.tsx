@@ -24,15 +24,11 @@ const TrialExpiring = () => {
 const TrialExhausted = () => {
     return (
         <div className="bg-danger/30 py-2 text-center text-sm">
-            You used all PR reviews paid by Kodus for this trial.{" "}
+            You've used all the free PR reviews included in your trial.{" "}
             <Link href="/organization/byok" className="font-bold">
-                Connect BYOK
+                Connect your own AI key
             </Link>{" "}
-            or{" "}
-            <Link href="/settings/subscription" className="font-bold">
-                upgrade
-            </Link>{" "}
-            to keep reviewing PRs.
+            to keep Kody reviewing — unlimited, on any plan.
         </div>
     );
 };

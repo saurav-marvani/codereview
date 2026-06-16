@@ -55,6 +55,17 @@ export type TrialReviewCredits = {
     tier?: TrialCreditTier;
 };
 
+export type TrialExtensionRequest = {
+    teamSize?: number;
+    message?: string;
+    contactEmail?: string;
+};
+
+export type TrialExtensionRequestResult = {
+    success: boolean;
+    message?: string;
+};
+
 export type TrialUnlockSignals = {
     companyEmailVerified?: boolean;
     workspaceMembersCount?: number;

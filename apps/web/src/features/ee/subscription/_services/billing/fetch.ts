@@ -7,6 +7,8 @@ import type {
     OrganizationLicense,
     Plan,
     PlanType,
+    TrialExtensionRequest,
+    TrialExtensionRequestResult,
     TrialUnlock,
     TrialUnlockSignals,
 } from "./types";
@@ -227,6 +229,38 @@ export const recalculateTrialUnlocks = async (params: {
             signals: params.signals,
         }),
     });
+};
+
+export const requestTrialExtension = async (params: {
+    teamId: string;
+    request: TrialExtensionRequest;
+}): Promise<TrialExtensionRequestResult> => {
+    // Goes through the API, which owns the Discord webhook secret and resolves
+    // the org + requesting user server-side from the JWT.
+    try {
+        const data = await authorizedFetch<TrialExtensionRequestResult>(
+            pathToApiUrl("/license/trial-extension-request"),
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    teamId: params.teamId,
+                    teamSize: params.request.teamSize,
+                    message: params.request.message,
+                }),
+            },
+        );
+
+        if (!data?.success) {
+            return {
+                success: false,
+                message: data?.message ?? "Request failed",
+            };
+        }
+
+        return data;
+    } catch {
+        return { success: false, message: "Request failed" };
+    }
 };
 
 export const migrateToFree = async (params: {

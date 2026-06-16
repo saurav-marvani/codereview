@@ -194,7 +194,16 @@ export class PermissionValidationService {
                     });
                 }
 
+                // Only trials created under the managed-credit model carry
+                // these fields. Legacy trials (started before this shipped)
+                // have no credit data — they must keep the old behaviour:
+                // unlimited reviews for the full trial, no consumption, no gate.
+                const usesTrialCredits =
+                    typeof validation.trialReviewCreditsTotal === 'number' ||
+                    typeof validation.trialReviewCreditsRemaining === 'number';
+
                 if (
+                    usesTrialCredits &&
                     !trialByokConfig &&
                     validation.trialReviewCreditsRemaining === 0
                 ) {
@@ -221,7 +230,11 @@ export class PermissionValidationService {
                     };
                 }
 
-                if (!trialByokConfig && options.consumeTrialReviewCredit) {
+                if (
+                    usesTrialCredits &&
+                    !trialByokConfig &&
+                    options.consumeTrialReviewCredit
+                ) {
                     const consumeResult =
                         await this.licenseService.consumeTrialReviewCredit(
                             organizationAndTeamData,

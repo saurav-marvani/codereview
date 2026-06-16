@@ -1,12 +1,18 @@
 "use client";
 
-import type { ComponentProps, ElementType } from "react";
-import { Badge } from "@components/ui/badge";
+import type { ElementType } from "react";
 import { Button } from "@components/ui/button";
 import { Link } from "@components/ui/link";
 import { Progress } from "@components/ui/progress";
 import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@components/ui/tooltip";
+import {
     Building2Icon,
+    CheckIcon,
     GitPullRequestIcon,
     KeyRoundIcon,
     MailCheckIcon,
@@ -22,10 +28,10 @@ import type {
 } from "../_services/billing/types";
 import {
     getTrialCreditBalance,
-    getTrialTierLabel,
     getTrialUnlocks,
     type TrialUnlockViewModel,
 } from "../_utils/trial";
+import { RequestExtensionPopover } from "./request-extension-popover";
 
 const unlockIconByKey: Record<string, ElementType> = {
     company_email: MailCheckIcon,
@@ -35,74 +41,66 @@ const unlockIconByKey: Record<string, ElementType> = {
     manual_extension: GitPullRequestIcon,
 };
 
-const statusLabelByStatus: Record<string, string> = {
-    locked: "Locked",
-    available: "Available",
-    completed: "Done",
-    claimed: "Done",
-};
+const isDoneStatus = (status: TrialUnlockViewModel["status"]) =>
+    status === "completed" || status === "claimed";
 
-const statusVariantByStatus: Record<
-    string,
-    ComponentProps<typeof Badge>["variant"]
-> = {
-    locked: "helper",
-    available: "tertiary",
-    completed: "success",
-    claimed: "success",
-};
-
-const TrialTierItem = ({ unlock }: { unlock: TrialUnlockViewModel }) => {
+const UnlockRow = ({ unlock }: { unlock: TrialUnlockViewModel }) => {
     const Icon = unlockIconByKey[unlock.key] ?? SparklesIcon;
-    const isAvailable = unlock.status === "available";
-    const isDone = unlock.status === "completed" || unlock.status === "claimed";
-    const statusLabel = statusLabelByStatus[unlock.status] ?? "Available";
-    const statusVariant = statusVariantByStatus[unlock.status] ?? "helper";
+    const done = isDoneStatus(unlock.status);
+
+    const cta = done ? (
+        <span className="text-success flex items-center gap-1 text-xs font-medium">
+            <CheckIcon className="size-3.5" />
+            Done
+        </span>
+    ) : unlock.kind === "signal" ? (
+        <span className="text-text-tertiary text-xs">
+            {unlock.pendingLabel ?? "Pending"}
+        </span>
+    ) : unlock.actionType === "request_extension" ? (
+        <RequestExtensionPopover triggerLabel={unlock.actionLabel} />
+    ) : unlock.href ? (
+        <Link href={unlock.href} noHoverUnderline>
+            <Button decorative size="xs" variant="helper">
+                {unlock.actionLabel ?? "Open"}
+            </Button>
+        </Link>
+    ) : null;
 
     return (
-        <div className="grid grid-cols-[auto_1fr] gap-3 md:grid-cols-[auto_1fr_auto]">
-            <Icon className="text-primary-light mt-0.5 size-4 shrink-0" />
+        <div className="flex items-center gap-3">
+            <Icon
+                className={`size-4 shrink-0 ${done ? "text-success" : "text-text-tertiary"}`}
+            />
             <div className="min-w-0 flex-1">
-                <p className="text-text-primary text-sm font-semibold">
-                    {unlock.title}
-                </p>
-                <p className="text-text-secondary mt-1 text-xs">
-                    {unlock.description}
-                </p>
-
-                {unlock.href && isAvailable && !isDone && (
-                    <Link
-                        href={unlock.href}
-                        className="mt-2 inline-flex"
-                        noHoverUnderline>
-                        <Button decorative size="xs" variant="tertiary">
-                            {unlock.key === "byok"
-                                ? "Configure BYOK"
-                                : unlock.key === "manual_extension"
-                                  ? "Request review"
-                                  : "Open setup"}
-                        </Button>
-                    </Link>
-                )}
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <p className="text-text-primary w-fit cursor-help text-sm decoration-dotted underline-offset-4 hover:underline">
+                            {unlock.title}
+                            <span className="text-text-tertiary ml-2 text-xs">
+                                {unlock.rewardLabel}
+                            </span>
+                        </p>
+                    </TooltipTrigger>
+                    <TooltipContent
+                        side="top"
+                        align="start"
+                        className="max-w-xs text-xs">
+                        {unlock.description}
+                    </TooltipContent>
+                </Tooltip>
             </div>
-            <div className="col-start-2 flex flex-wrap items-center gap-2 md:col-start-auto md:justify-end">
-                <Badge size="xs" variant={statusVariant}>
-                    {statusLabel}
-                </Badge>
-                <span className="text-primary-light text-xs font-semibold">
-                    {unlock.rewardLabel}
-                </span>
-            </div>
+            <div className="flex shrink-0 items-center">{cta}</div>
         </div>
     );
 };
 
 export const TrialCreditsSummary = ({
     credits,
-    trialCreditTier,
     trialUnlocks,
     byok,
     daysLeft,
+    companyEmailVerified,
     workspaceMembersCount,
     codeHostMembersCount,
     compact = false,
@@ -112,6 +110,7 @@ export const TrialCreditsSummary = ({
     trialUnlocks?: TrialUnlock[];
     byok?: boolean;
     daysLeft?: number;
+    companyEmailVerified?: boolean;
     workspaceMembersCount?: number;
     codeHostMembersCount?: number;
     compact?: boolean;
@@ -120,49 +119,76 @@ export const TrialCreditsSummary = ({
     const unlocks = getTrialUnlocks({
         billingUnlocks: trialUnlocks,
         byok,
+        companyEmailVerified,
         workspaceMembersCount,
         codeHostMembersCount,
     });
+    // Actionable items first, automatic signals last; done items sink within
+    // their group so the next thing to do is always on top.
+    const sortedUnlocks = [...unlocks].sort((a, b) => {
+        const rank = (u: TrialUnlockViewModel) =>
+            (u.kind === "action" ? 0 : 2) + (isDoneStatus(u.status) ? 1 : 0);
+        return rank(a) - rank(b);
+    });
     const daysLeftValue = typeof daysLeft === "number" ? daysLeft : TRIAL_DAYS;
+    // Legacy trials (started before the credit model shipped) have no live
+    // credit data — they keep the old "unlimited during the trial" behavior.
+    // The credit UI only shows for trials that actually carry credits.
+    const showCredits = !byok && balance.hasLiveData;
     const trialReviewCopy = byok
-        ? "BYOK active. Reviews use your AI key."
-        : `${balance.remaining} of ${balance.total} Kodus-paid PR reviews left.`;
+        ? "Unlimited reviews — they run on your key."
+        : showCredits
+          ? `${balance.remaining} of ${balance.total} free reviews left while you try.`
+          : "Unlimited reviews during your trial.";
 
     return (
         <section className="flex flex-col gap-5">
             <div className="flex flex-col gap-3">
                 <div>
                     <p className="text-text-primary text-base font-semibold">
-                        Team trial status
+                        {byok
+                            ? "You're all set — reviews are unlimited"
+                            : showCredits
+                              ? "You're trying Kody for free"
+                              : "You're on a Team trial"}
                     </p>
                     <p className="text-text-secondary mt-1 text-sm">
-                        Your Team plan trial and Kodus-paid PR reviews are
-                        separate limits.
+                        {byok
+                            ? `Reviews run on your AI key, so there's no review limit. Your ${TRIAL_DAYS}-day trial just unlocks the full Team features.`
+                            : showCredits
+                              ? `Reviews run on your AI key — free and unlimited, on any plan. To let you start with zero setup, we cover your first ${balance.total} reviews. Add your key anytime to keep going.`
+                              : `Reviews are unlimited during your ${TRIAL_DAYS}-day trial. Connect your AI key anytime to keep them unlimited after it ends.`}
                     </p>
                 </div>
 
                 <div className="border-card-lv3 grid grid-cols-1 gap-4 border-y py-3 md:grid-cols-2">
                     <div>
                         <p className="text-text-tertiary text-xs font-semibold uppercase">
-                            Team plan access
+                            Team trial
                         </p>
                         <p className="text-text-primary mt-1 text-xl font-semibold">
                             {daysLeftValue} days
                         </p>
                         <p className="text-text-secondary mt-1 text-xs">
-                            Full Team features during the {TRIAL_DAYS}-day
-                            trial.
+                            Full Team features for {daysLeftValue} more days.
                         </p>
                     </div>
 
                     <div>
                         <p className="text-text-tertiary text-xs font-semibold uppercase">
-                            PR reviews paid by Kodus
-                        </p>
-                        <p className="text-text-primary mt-1 text-xl font-semibold">
                             {byok
-                                ? "BYOK"
-                                : `${balance.remaining} of ${balance.total}`}
+                                ? "Your AI key"
+                                : showCredits
+                                  ? "Reviews on us"
+                                  : "Reviews"}
+                        </p>
+                        <p
+                            className={`mt-1 text-xl font-semibold ${showCredits ? "text-text-primary" : "text-success"}`}>
+                            {byok
+                                ? "Connected"
+                                : showCredits
+                                  ? `${balance.remaining} of ${balance.total}`
+                                  : "Unlimited"}
                         </p>
                         <p className="text-text-secondary mt-1 text-xs">
                             {trialReviewCopy}
@@ -170,17 +196,16 @@ export const TrialCreditsSummary = ({
                     </div>
                 </div>
 
-                {!byok ? (
-                    <div>
-                        <div className="mb-2 flex items-center justify-between gap-4 text-sm">
-                            <p className="text-text-secondary text-xs">
-                                {balance.used} used
-                            </p>
-                            <p className="text-text-secondary text-xs">
-                                {balance.total} total
-                            </p>
-                        </div>
-
+                {byok ? (
+                    <div className="bg-success/10 text-success flex items-start gap-2 rounded-lg p-3 text-sm">
+                        <SparklesIcon className="mt-0.5 size-4 shrink-0" />
+                        <p>
+                            Your AI key is connected, so reviews are unlimited —
+                            on any plan, even after the trial ends.
+                        </p>
+                    </div>
+                ) : showCredits ? (
+                    <div className="flex flex-col gap-2">
                         <Progress
                             value={balance.used}
                             max={balance.total}
@@ -188,42 +213,34 @@ export const TrialCreditsSummary = ({
                                 balance.remaining === 0 ? "tertiary" : "primary"
                             }
                         />
-                    </div>
-                ) : (
-                    <div className="bg-success/10 text-success flex items-start gap-2 rounded-lg p-3 text-sm">
-                        <SparklesIcon className="mt-0.5 size-4 shrink-0" />
-                        <p>
-                            BYOK is active, so the 14-day Team trial controls
-                            feature access. PR review volume depends on your AI
-                            provider key.
+                        <p className="text-text-tertiary text-xs">
+                            Trial reviews run on a model we pick for you.
+                            Connect your own key to run frontier models for the
+                            best quality.
                         </p>
                     </div>
-                )}
+                ) : null}
             </div>
 
-            {!compact && (
+            {!compact && showCredits && sortedUnlocks.length > 0 && (
                 <div className="border-card-lv3 flex flex-col gap-3 border-t pt-4">
-                    <div className="flex flex-col gap-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-text-primary text-sm font-semibold">
-                                Trial extension tiers
-                            </p>
-                            <Badge size="xs" variant="helper">
-                                Current: {getTrialTierLabel(trialCreditTier)}
-                            </Badge>
-                        </div>
-                        <p className="text-text-secondary text-xs">
-                            Automatic signals add more Kodus-paid PR reviews
-                            once. BYOK stays available and does not use these PR
-                            reviews.
+                    <div>
+                        <p className="text-text-primary text-sm font-semibold">
+                            Keep reviews running
+                        </p>
+                        <p className="text-text-secondary mt-1 text-xs">
+                            Connect your AI key for unlimited reviews (free, any
+                            plan), or earn a few more trial reviews on us.
                         </p>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-x-6 gap-y-4">
-                        {unlocks.map((unlock) => (
-                            <TrialTierItem key={unlock.key} unlock={unlock} />
-                        ))}
-                    </div>
+                    <TooltipProvider delayDuration={150}>
+                        <div className="flex flex-col gap-3.5">
+                            {sortedUnlocks.map((unlock) => (
+                                <UnlockRow key={unlock.key} unlock={unlock} />
+                            ))}
+                        </div>
+                    </TooltipProvider>
                 </div>
             )}
         </section>
