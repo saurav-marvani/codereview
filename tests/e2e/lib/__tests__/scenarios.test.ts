@@ -22,6 +22,7 @@ test("allScenarios: includes the registered release-gate scenarios", () => {
         "sso-cookie-domain",
         "sso-multi-user",
         "stripe-billing",
+        "trial-credits-consume",
         "trial-entitlement-gate",
         "trial-managed-review",
         "upgrade-n-1-to-n",

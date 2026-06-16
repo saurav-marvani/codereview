@@ -16,6 +16,7 @@ import rbacUiRender from './rbac-ui-render.js';
 import ssoCookieDomain from './sso-cookie-domain.js';
 import ssoMultiUser from './sso-multi-user.js';
 import stripeBilling from './stripe-billing.js';
+import trialCreditsConsume from './trial-credits-consume.js';
 import trialEntitlementGate from './trial-entitlement-gate.js';
 import trialManagedReview from './trial-managed-review.js';
 import upgradeNMinusOneToN from './upgrade.js';
@@ -38,6 +39,7 @@ export const allScenarios: Record<string, Scenario> = {
     [ssoCookieDomain.id]: ssoCookieDomain,
     [ssoMultiUser.id]: ssoMultiUser,
     [stripeBilling.id]: stripeBilling,
+    [trialCreditsConsume.id]: trialCreditsConsume,
     [trialEntitlementGate.id]: trialEntitlementGate,
     [trialManagedReview.id]: trialManagedReview,
     [upgradeNMinusOneToN.id]: upgradeNMinusOneToN,
@@ -73,6 +75,7 @@ export {
     ssoCookieDomain,
     ssoMultiUser,
     stripeBilling,
+    trialCreditsConsume,
     trialEntitlementGate,
     trialManagedReview,
     upgradeNMinusOneToN,

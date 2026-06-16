@@ -32,6 +32,7 @@ scenarios:
     # managed-review = throwaway repo + real managed-LLM review (the only
     # cell on Kodus-managed keys). See fast.yml for the full rationale.
     - trial-entitlement-gate
+    - trial-credits-consume
     - trial-managed-review
     # Per-seat gate: appliesTo restricts to self-hosted × github × license-paid
     # (one cell). Skipped automatically when SH_LICENSE_KEY_PATH (default
