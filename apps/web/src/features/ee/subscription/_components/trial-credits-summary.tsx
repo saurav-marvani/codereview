@@ -27,6 +27,7 @@ import type {
     TrialUnlock,
 } from "../_services/billing/types";
 import {
+    getTrialCardState,
     getTrialCreditBalance,
     getTrialUnlocks,
     type TrialUnlockViewModel,
@@ -134,7 +135,9 @@ export const TrialCreditsSummary = ({
     // Legacy trials (started before the credit model shipped) have no live
     // credit data — they keep the old "unlimited during the trial" behavior.
     // The credit UI only shows for trials that actually carry credits.
-    const showCredits = !byok && balance.hasLiveData;
+    const showCredits =
+        getTrialCardState({ byok, hasCredits: balance.hasLiveData }) ===
+        "credits";
     const trialReviewCopy = byok
         ? "Unlimited reviews — they run on your key."
         : showCredits
@@ -219,7 +222,13 @@ export const TrialCreditsSummary = ({
                             best quality.
                         </p>
                     </div>
-                ) : null}
+                ) : (
+                    <p className="text-text-tertiary text-xs">
+                        Trial reviews run on a model we pick for you. Connect
+                        your own key to run frontier models for the best
+                        quality.
+                    </p>
+                )}
             </div>
 
             {!compact && showCredits && sortedUnlocks.length > 0 && (

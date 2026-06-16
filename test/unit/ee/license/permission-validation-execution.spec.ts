@@ -240,6 +240,33 @@ describe('PermissionValidationService.validateExecutionPermissions', () => {
         expect(result.byokConfig).toEqual(byokConfig);
     });
 
+    it('should NOT consume a trial credit when BYOK is configured (key, not credits)', async () => {
+        const licenseService = createMockLicenseService({
+            subscriptionStatus: 'trial',
+            planType: 'trial',
+            trialReviewCreditsTotal: 5,
+            trialReviewCreditsUsed: 0,
+            trialReviewCreditsRemaining: 5,
+        });
+        const service = createService(
+            licenseService,
+            createMockOrgParamsService(byokConfig),
+        );
+
+        const result = await service.validateExecutionPermissions(
+            orgData,
+            undefined,
+            'ValidatePrerequisitesStage',
+            { consumeTrialReviewCredit: true, trialReviewCreditUsageKey: 'r:1' },
+        );
+
+        expect(result.allowed).toBe(true);
+        expect(result.byokConfig).toEqual(byokConfig);
+        expect(
+            licenseService.consumeTrialReviewCredit,
+        ).not.toHaveBeenCalled();
+    });
+
     // ─── free_byok ──────────────────────────────────────────────────
 
     describe('free_byok plan', () => {

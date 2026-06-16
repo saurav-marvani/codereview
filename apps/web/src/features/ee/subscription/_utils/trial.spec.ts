@@ -1,10 +1,35 @@
 import { describe, expect, it } from "@jest/globals";
 
 import {
+    getTrialCardState,
     getTrialCreditBalance,
     getTrialTierLabel,
     getTrialUnlocks,
 } from "./trial";
+
+describe("getTrialCardState", () => {
+    it("byok wins regardless of credit data", () => {
+        expect(getTrialCardState({ byok: true, hasCredits: true })).toBe(
+            "byok",
+        );
+        expect(getTrialCardState({ byok: true, hasCredits: false })).toBe(
+            "byok",
+        );
+    });
+
+    it("credits when no byok and live credit data", () => {
+        expect(getTrialCardState({ byok: false, hasCredits: true })).toBe(
+            "credits",
+        );
+    });
+
+    it("legacy when no byok and no credit data", () => {
+        expect(getTrialCardState({ byok: false, hasCredits: false })).toBe(
+            "legacy",
+        );
+        expect(getTrialCardState({ hasCredits: false })).toBe("legacy");
+    });
+});
 
 describe("trial subscription helpers", () => {
     it("uses the base managed review allowance when billing has not returned live credits", () => {

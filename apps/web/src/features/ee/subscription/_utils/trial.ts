@@ -44,6 +44,24 @@ export type TrialUnlockViewModel = {
     pendingLabel?: string;
 };
 
+/**
+ * Which trial view to render:
+ * - `byok`    → AI key connected, reviews unlimited.
+ * - `credits` → new trial on the credit model (show "X of N", progress, unlocks).
+ * - `legacy`  → trial started before the credit model (no live credit data) —
+ *               unlimited like the old trial, no credit UI.
+ */
+export type TrialCardState = "byok" | "credits" | "legacy";
+
+export const getTrialCardState = (params: {
+    byok?: boolean;
+    hasCredits: boolean;
+}): TrialCardState => {
+    if (params.byok) return "byok";
+    if (params.hasCredits) return "credits";
+    return "legacy";
+};
+
 export const getTrialCreditBalance = (
     credits?: TrialReviewCredits,
 ): TrialCreditBalance => {
