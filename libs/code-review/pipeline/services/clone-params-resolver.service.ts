@@ -25,7 +25,11 @@ export function parseGitRemoteUrl(
     const extract = (path: string) => {
         const fullName = path.replace(/\.git$/, '').replace(/\/+$/, '');
         const name = fullName.split('/').pop() || '';
-        if (!fullName || !name) return null;
+
+        if (!fullName || !name) {
+            return null;
+        }
+
         return { fullName, name };
     };
 

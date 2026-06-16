@@ -24,7 +24,6 @@ export default async function Route({
     const params = await searchParams;
 
     const initialPlugAndPlay = params.type === "plug-and-play";
-    const initialNeedMCPS = params.type === "mcp";
 
     const [teamId, buckets] = await Promise.all([
         getGlobalSelectedTeamId().catch(() => null),
@@ -41,17 +40,11 @@ export default async function Route({
     const [bucketRulesResponse, bucketPreviews] = await Promise.all([
         params.bucket
             ? getLibraryKodyRulesWithFeedback({
-                  page: 1,
-                  limit: 48,
-                  buckets: [params.bucket],
-                  plug_and_play: initialPlugAndPlay || undefined,
-                  needMCPS: initialNeedMCPS || undefined,
-                  debugLabel: initialNeedMCPS
-                      ? "server:browse:bucket:needMCPS"
-                      : initialPlugAndPlay
-                        ? "server:browse:bucket:plug_and_play"
-                        : undefined,
-              })
+                page: 1,
+                limit: 48,
+                buckets: [params.bucket],
+                plug_and_play: initialPlugAndPlay || undefined,
+            })
             : Promise.resolve(null),
         Promise.all(
             previewBuckets.map(async (bucket) => {
@@ -75,7 +68,6 @@ export default async function Route({
                 params.view === "browse" || params.type ? "browse" : undefined
             }
             initialPlugAndPlay={initialPlugAndPlay || undefined}
-            initialNeedMCPS={initialNeedMCPS || undefined}
             teamLanguage={orgLanguage?.language}
             initialRules={bucketRulesResponse?.data || []}
             pagination={{

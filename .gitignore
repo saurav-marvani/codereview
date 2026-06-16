@@ -3,6 +3,11 @@
 apps/*/dist
 /node_modules
 
+# pnpm's content-addressable store — should live in the global store
+# (~/Library/pnpm/store). A local copy here is an orphan from a stray
+# `pnpm install --store-dir .pnpm-store`; never commit it.
+/.pnpm-store/
+
 # selfhosted dev VM state (scripts/selfhosted/*.sh)
 .kodus-dev/
 # direnv config (optional, written by 'yarn selfhosted:setup')

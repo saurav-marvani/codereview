@@ -66,7 +66,7 @@ export class GetPullRequestFilesUseCase {
             organizationAndTeamData,
         );
 
-        let providerFiles: any[] = [];
+        let providerFiles: any[];
         try {
             providerFiles =
                 await this.codeManagementService.getFilesByPullRequestId({

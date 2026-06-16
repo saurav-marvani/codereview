@@ -44,12 +44,13 @@ export class CustomClient {
                 headers[this.integration.apiKeyHeader] =
                     this.integration.apiKey;
                 break;
-            case MCPIntegrationAuthType.BASIC:
+            case MCPIntegrationAuthType.BASIC: {
                 const basicAuth = Buffer.from(
                     `${this.integration.basicUser}:${this.integration.basicPassword || ''}`,
                 ).toString('base64');
                 headers['Authorization'] = `Basic ${basicAuth}`;
                 break;
+            }
             case MCPIntegrationAuthType.OAUTH2:
                 if (this.integration.tokens?.accessToken) {
                     headers['Authorization'] =
@@ -116,9 +117,9 @@ export class CustomClient {
                 warning: false,
             }));
         } catch (error) {
-            console.error(`Failed to fetch custom tools:`, error.message);
             throw new Error(
                 `Failed to fetch tools from custom integration: ${error.message}`,
+                { cause: error },
             );
         } finally {
             await this.disconnect();

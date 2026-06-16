@@ -306,7 +306,9 @@ export class TeamMemberService implements ITeamMemberService {
                 results,
             };
         } catch (error) {
-            throw new Error(error);
+            throw new Error('Error creating or updating team members', {
+                cause: error,
+            });
         }
     }
 

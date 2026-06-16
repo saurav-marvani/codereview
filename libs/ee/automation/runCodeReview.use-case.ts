@@ -228,15 +228,10 @@ export class RunCodeReviewAutomationUseCase implements IUseCase {
                 platformType: platformType,
                 origin: sanitizedPayload?.origin,
                 action,
-                //TODO: prcisa do byokauu
-                //byokConfig,
                 triggerCommentId: sanitizedPayload?.triggerCommentId,
                 userGitId,
                 workflowJobId,
                 correlationId,
-                // Job-level AbortSignal — strategies that reach the LLM call
-                // chain (agent-loop, plan-pass, etc.) listen to this and abort
-                // when the 1h45min job timeout fires.
                 signal,
             };
 

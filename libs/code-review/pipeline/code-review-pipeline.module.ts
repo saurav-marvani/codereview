@@ -8,7 +8,6 @@ import { CollectCrossFileContextStage } from './stages/collect-cross-file-contex
 import { CreateFileCommentsStage } from './stages/create-file-comments.stage';
 import { CreatePrLevelCommentsStage } from './stages/create-pr-level-comments.stage';
 import { FetchChangedFilesStage } from './stages/fetch-changed-files.stage';
-import { FileContextGateStage } from './stages/file-context-gate.stage';
 import { UpdateCommentsAndGenerateSummaryStage } from './stages/finish-comments.stage';
 import { NotificationModule } from '@libs/notifications/modules/notification.module';
 import { UserCoreModule } from '@libs/identity/modules/user-core.module';
@@ -66,7 +65,6 @@ import { ImplementationVerificationProcessor } from '../workflow/implementation-
 import { LOAD_EXTERNAL_CONTEXT_STAGE_TOKEN } from './stages/contracts/loadExternalContextStage.contract';
 import { ValidateSuggestionsStage } from './stages/validate-suggestions.stage';
 import { CodeReviewPipelineStrategy } from './strategy/code-review-pipeline.strategy';
-import { SelectReviewEngineStage } from './stages/select-review-engine.stage';
 
 // Sandbox (lease manager)
 import { SandboxModule } from '@libs/sandbox/modules/sandbox.module';
@@ -134,7 +132,6 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         ValidateNewCommitsStage,
         ValidatePrerequisitesStage,
         ResolveConfigStage,
-        SelectReviewEngineStage,
         ValidateConfigStage,
         FetchChangedFilesStage,
         {
@@ -143,7 +140,6 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         },
         LoadExternalContextStage,
         GatherDocumentationContextStage,
-        FileContextGateStage,
         InitialCommentStage,
         CollectCrossFileContextStage,
         ProcessFilesPrLevelReviewStage,

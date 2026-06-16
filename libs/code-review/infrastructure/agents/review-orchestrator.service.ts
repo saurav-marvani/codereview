@@ -15,10 +15,7 @@ import {
     ReviewAgentInput,
     ReviewAgentOutput,
 } from './base-code-review-agent.provider';
-import {
-    dedupReviewWarnings,
-    type ReviewWarning,
-} from './llm/review-warnings';
+import { dedupReviewWarnings, type ReviewWarning } from './llm/review-warnings';
 
 export interface OrchestratorInput extends ReviewAgentInput {
     reviewOptions: ReviewOptions;

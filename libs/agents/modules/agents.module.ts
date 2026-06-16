@@ -6,7 +6,6 @@ import { McpCoreModule } from '@libs/mcp-server/mcp-core.module';
 
 import { BusinessRulesValidationAgentUseCase } from '../application/use-cases/business-rules-validation-agent.use-case';
 import { ConversationAgentUseCase } from '../application/use-cases/conversation-agent.use-case';
-import { ContextEvidenceAgentProvider } from '../infrastructure/services/kodus-flow/contextEvidenceAgent.provider';
 import { BusinessRulesValidationAgentProvider } from '../infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
 import { ConversationAgentProvider } from '../infrastructure/services/kodus-flow/conversationAgent';
 import { LLMModule } from '@kodus/kodus-common/llm';
@@ -26,7 +25,6 @@ import { CapabilityResourcePlanService } from '../skills/runtime/capability-reso
     providers: [
         BusinessRulesValidationAgentUseCase,
         ConversationAgentUseCase,
-        ContextEvidenceAgentProvider,
         BusinessRulesValidationAgentProvider,
         ConversationAgentProvider,
         SkillLoaderService,
@@ -37,7 +35,6 @@ import { CapabilityResourcePlanService } from '../skills/runtime/capability-reso
     exports: [
         BusinessRulesValidationAgentUseCase,
         ConversationAgentUseCase,
-        ContextEvidenceAgentProvider,
         BusinessRulesValidationAgentProvider,
         ConversationAgentProvider,
         SkillLoaderService,

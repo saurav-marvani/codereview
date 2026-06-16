@@ -95,13 +95,9 @@ export class AutomationCodeReviewService implements Omit<
             action,
             triggerCommentId,
             userGitId,
-            // Job-level AbortSignal injected by RunCodeReviewAutomationUseCase.
-            // Plumbed through handlePullRequest → pipeline context → agent-loop
-            // so the router-level workflow timeout cancels the LLM call cleanly.
             signal,
         } = payload as Record<string, any>;
 
-        // Acquire distributed lock to prevent concurrent reviews of the same PR
         const orgId = organizationAndTeamData?.organizationId;
         const repoId = repository?.id;
         const prNumber = pullRequest?.number;
@@ -114,6 +110,27 @@ export class AutomationCodeReviewService implements Omit<
                 metadata: { orgId, repoId, prNumber },
             });
             return 'Error: Missing required identifiers for code review';
+        }
+
+        // Fail-fast precondition: if the org doesn't exist or is inactive there
+        // is nothing to review, so bail before taking a lock or querying for an
+        // existing execution. `organization` is reused below for the handler.
+        const organization = await this.organizationService.findOne({
+            uuid: orgId,
+            status: true,
+        });
+
+        if (!organization) {
+            this.logger.warn({
+                message: `No organization found with ID ${orgId}`,
+                context: AutomationCodeReviewService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    repository,
+                    pullRequestNumber: pullRequest?.number,
+                },
+            });
+            return 'No organization found for the provided ID';
         }
 
         const lockKey = `CODE_REVIEW:${orgId}:${repoId}:${prNumber}`;
@@ -154,15 +171,6 @@ export class AutomationCodeReviewService implements Omit<
         let execution: IAutomationExecution | null = null;
 
         try {
-            this.logger.log({
-                message: `Started Handling pull request for ${repository?.name} - ${branch} - PR#${pullRequest?.number}`,
-                context: AutomationCodeReviewService.name,
-                metadata: {
-                    organizationAndTeamData,
-                },
-            });
-
-            // Check for existing active execution (defense in depth)
             const existingExecution = await this.getActiveExecution(
                 teamAutomationId,
                 pullRequest?.number,
@@ -181,24 +189,6 @@ export class AutomationCodeReviewService implements Omit<
                     },
                 });
                 return 'Code review already in progress for this PR';
-            }
-
-            const organization = await this.organizationService.findOne({
-                uuid: organizationAndTeamData.organizationId,
-                status: true,
-            });
-
-            if (!organization) {
-                this.logger.warn({
-                    message: `No organization found with ID ${organizationAndTeamData.organizationId}`,
-                    context: AutomationCodeReviewService.name,
-                    metadata: {
-                        organizationAndTeamData,
-                        repository,
-                        pullRequestNumber: pullRequest?.number,
-                    },
-                });
-                return 'No organization found for the provided ID';
             }
 
             execution = await this.createAutomationExecution(

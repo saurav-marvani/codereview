@@ -22,7 +22,7 @@ ENV NODE_ENV=development
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 RUN corepack disable \
- && npm i -g pnpm@10.34.1
+ && npm i -g pnpm@11.7.0
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -60,7 +60,12 @@ RUN --mount=type=cache,target=/pnpm-store,sharing=shared \
   && pnpm install --store-dir /pnpm-store \
   && pnpm run build
 
-# Install dependencies and link local packages
+# Install dependencies and link local packages.
+# pnpm-workspace.yaml is copied HERE (not with the manifests above) so the
+# kodus-common / kodus-flow sub-builds don't see /usr/src/app as a workspace
+# root and install into it (`../..`). Only the root install below needs it —
+# it carries the `overrides` that must match the lockfile under --frozen-lockfile.
+COPY pnpm-workspace.yaml ./
 RUN --mount=type=cache,target=/pnpm-store,sharing=shared \
     pnpm install --frozen-lockfile --store-dir /pnpm-store
 RUN rm -rf node_modules/@kodus/kodus-common && cp -r packages/kodus-common node_modules/@kodus/kodus-common
@@ -69,4 +74,7 @@ RUN rm -rf node_modules/@kodus/flow && cp -r packages/kodus-flow node_modules/@k
 COPY --chmod=0755 docker/dev-entrypoint.sh /usr/local/bin/dev-entrypoint
 
 ENTRYPOINT ["/usr/local/bin/dev-entrypoint"]
-CMD ["pnpm", "run", "start:dev"]
+# Fallback only — each service in docker-compose.dev.yml overrides this with
+# its own `command:` (start:dev:api / :worker / :webhooks). There is no root
+# `start:dev` script; `start:dev:all` runs the three apps via concurrently.
+CMD ["pnpm", "run", "start:dev:all"]

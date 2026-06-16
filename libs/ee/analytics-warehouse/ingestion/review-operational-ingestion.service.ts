@@ -94,7 +94,7 @@ export class ReviewOperationalIngestionService {
         let scanned = 0;
         let upserted = 0;
         let newestUpdatedAt: string | null = watermark?.updatedAt ?? null;
-        let newestId: string | null = watermark?.id ?? null;
+        let newestId: string | null;
 
         try {
             while (true) {

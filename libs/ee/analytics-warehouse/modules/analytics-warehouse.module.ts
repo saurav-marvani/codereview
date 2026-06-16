@@ -82,4 +82,48 @@ export class AnalyticsWarehouseModule {
             ],
         };
     }
+
+    /**
+     * Feature-level registration for modules that run UNDER a root which has
+     * already established the analytics DataSource (e.g. CockpitModule under
+     * ApiModule). Same providers/exports as forRoot() but WITHOUT
+     * TypeOrmModule.forRootAsync — registering the named "analytics" connection
+     * a second time throws DuplicateDataSourceException in @nestjs/typeorm.
+     */
+    static forFeature(): DynamicModule {
+        return {
+            module: AnalyticsWarehouseModule,
+            imports: [
+                TypeOrmModule.forFeature(
+                    ANALYTICS_ENTITIES,
+                    ANALYTICS_DATA_SOURCE,
+                ),
+                MongooseModule.forFeature([
+                    {
+                        name: PullRequestsModel.name,
+                        schema: PullRequestsSchema,
+                    },
+                    {
+                        name: CodeReviewFeedbackModel.name,
+                        schema: CodeReviewFeedbackSchema,
+                    },
+                ]),
+            ],
+            providers: [
+                PullRequestIngestionService,
+                FeedbackIngestionService,
+                ReviewOperationalIngestionService,
+                BackfillOrchestratorService,
+                PullRequestClassifierService,
+            ],
+            exports: [
+                TypeOrmModule,
+                PullRequestIngestionService,
+                FeedbackIngestionService,
+                ReviewOperationalIngestionService,
+                BackfillOrchestratorService,
+                PullRequestClassifierService,
+            ],
+        };
+    }
 }

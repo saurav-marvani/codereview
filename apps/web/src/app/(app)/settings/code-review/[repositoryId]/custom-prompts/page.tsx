@@ -16,7 +16,6 @@ import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
 import { SaveIcon } from "lucide-react";
 import { Path, useFormContext, useWatch } from "react-hook-form";
-import { useMCPMentions } from "src/core/hooks/use-mcp-mentions";
 import { useUnsavedChangesGuard } from "src/core/hooks/use-unsaved-changes-guard";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { unformatConfig } from "src/core/utils/helpers";
@@ -136,7 +135,6 @@ function CustomPromptsContent() {
         ResourceType.CodeReviewSettings,
         repositoryId,
     );
-    const { mcpGroups, formatInsertByType } = useMCPMentions();
 
     const promptSections = useMemo(
         () => (defaults ? buildPromptSections(defaults) : []),
@@ -342,8 +340,8 @@ function CustomPromptsContent() {
                                         placeholder={field.placeholder}
                                         defaultValue={field.defaultValue}
                                         canEdit={canEdit}
-                                        groups={mcpGroups}
-                                        formatInsertByType={formatInsertByType}
+                                        groups={[]}
+                                        formatInsertByType={{}}
                                     />
                                 ))}
                             </div>

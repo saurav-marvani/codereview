@@ -5,7 +5,6 @@ import { GetCliReviewJobStatusUseCase } from '@libs/cli-review/application/use-c
 import { IngestSessionEventUseCase } from '@libs/cli-review/application/use-cases/ingest-session-event.use-case';
 import { SubmitCliSessionCaptureUseCase } from '@libs/cli-review/application/use-cases/submit-cli-session-capture.use-case';
 import { WaitForCliReviewJobUseCase } from '@libs/cli-review/application/use-cases/wait-for-cli-review-job.use-case';
-import { PublicPrFetchError } from '@libs/cli-review/infrastructure/services/github-public-pr.service';
 import { ListFeaturedPublicReviewsUseCase } from '@libs/cli-review/application/use-cases/list-featured-public-reviews.use-case';
 import { GetFeaturedPublicReviewUseCase } from '@libs/cli-review/application/use-cases/get-featured-public-review.use-case';
 import { ValidateCliKeyUseCase } from '@libs/cli-review/application/use-cases/validate-cli-key.use-case';

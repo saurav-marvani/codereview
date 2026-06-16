@@ -75,6 +75,18 @@ install_deps() {
 
   echo "▶ Installing deps (pnpm install --frozen-lockfile)…"
   pnpm install --frozen-lockfile
+
+  # pnpm's hoisted node-linker copies packages into node_modules, and the
+  # /pnpm-store cache lives on a SEPARATE docker volume (different filesystem),
+  # so pnpm can't hardlink — it copies, and the copy drops the +x bit on bin
+  # targets. Shebang execs (ts-node, nest, typeorm…) then die with
+  # "Permission denied". Restore +x on every file the .bin symlinks point to.
+  echo "▶ Restoring executable bit on node_modules/.bin targets…"
+  find node_modules/.bin -maxdepth 1 -type l 2>/dev/null | while read -r link; do
+    target=$(readlink -f "$link" 2>/dev/null) || continue
+    [ -f "$target" ] && chmod +x "$target" 2>/dev/null || true
+  done
+
   mkdir -p node_modules
   printf "%s" "$DEPS_FINGERPRINT" > "$DEPS_STAMP_FILE"
 

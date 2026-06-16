@@ -28,12 +28,12 @@ import {
     resolveAdaptiveProfile,
     type AdaptiveProfile,
 } from './llm/adaptive-fit';
+import { resolveLoopFn } from './resolve-loop-fn';
 import {
-    runAgentLoop,
     type AgentLoopSecrets,
     type VerificationTraceSummary,
     type AgentAnomalySummary,
-} from './llm/agent-loop';
+} from './review-agent.contract';
 import { propagateAttributes, startActiveObservation } from '@langfuse/tracing';
 import { shouldTrace } from '@libs/core/log/langfuse';
 import {
@@ -721,10 +721,7 @@ export abstract class BaseCodeReviewAgentProvider {
         // Track which adaptive strategies fired so they bubble up to the
         // orchestrator as ReviewWarning entries → end-review PR comment.
         const agentWarnings: ReviewWarning[] = [];
-        const emitWarning = (
-            kind: ReviewWarning['kind'],
-            detail?: string,
-        ) => {
+        const emitWarning = (kind: ReviewWarning['kind'], detail?: string) => {
             agentWarnings.push({
                 kind,
                 reason: 'small_context_window',
@@ -930,34 +927,34 @@ export abstract class BaseCodeReviewAgentProvider {
                 // set and runAgentLoop's own preflight + compressor
                 // will handle the rest.
             } else {
-            this.agentLogger.warn({
-                message: `[AGENT] ${identity.name} prompt exceeds context budget (${estimatedPromptTokens} tokens > ${promptBudget} budget), splitting into batches`,
-                context: identity.name,
-                metadata: {
-                    estimatedPromptTokens,
-                    promptBudget,
-                    chunkDiffBudget,
-                    contextWindow,
-                    filesCount: input.changedFiles.length,
-                },
-            });
+                this.agentLogger.warn({
+                    message: `[AGENT] ${identity.name} prompt exceeds context budget (${estimatedPromptTokens} tokens > ${promptBudget} budget), splitting into batches`,
+                    context: identity.name,
+                    metadata: {
+                        estimatedPromptTokens,
+                        promptBudget,
+                        chunkDiffBudget,
+                        contextWindow,
+                        filesCount: input.changedFiles.length,
+                    },
+                });
 
-            return this.executeChunked(input, {
-                identity,
-                agentCategory,
-                byokConfig,
-                model,
-                modelName,
-                startTime,
-                diffBudget: chunkDiffBudget,
-                // Parent-level warnings emitted before the chunk split
-                // (PROMPT_COMPACTED, DIFF_TRUNCATED, LOW_SIGNAL_FILES_DROPPED,
-                // HUNK_HEADERS_ONLY) — forward so they're preserved in the
-                // final aggregate. Each per-batch execute() resolves the
-                // profile again and may emit additional dedup-able copies;
-                // dedupReviewWarnings in the orchestrator folds them.
-                parentWarnings: agentWarnings,
-            });
+                return this.executeChunked(input, {
+                    identity,
+                    agentCategory,
+                    byokConfig,
+                    model,
+                    modelName,
+                    startTime,
+                    diffBudget: chunkDiffBudget,
+                    // Parent-level warnings emitted before the chunk split
+                    // (PROMPT_COMPACTED, DIFF_TRUNCATED, LOW_SIGNAL_FILES_DROPPED,
+                    // HUNK_HEADERS_ONLY) — forward so they're preserved in the
+                    // final aggregate. Each per-batch execute() resolves the
+                    // profile again and may emit additional dedup-able copies;
+                    // dedupReviewWarnings in the orchestrator folds them.
+                    parentWarnings: agentWarnings,
+                });
             } // end else (multi-chunk path)
         }
 
@@ -1082,34 +1079,47 @@ export abstract class BaseCodeReviewAgentProvider {
             };
 
             let agentResult;
+            // Strangler routing lives in the resolveLoopFn seam (NOT inline):
+            // the process runs on the agent-harness path; legacy carve-outs are
+            // added there, never by surgery here. baseIdentity.name is stable —
+            // identity.name can be overridden by agentRuntimeName in the batch
+            // path, which would misroute batched (large) PRs.
+            const { loopFn } = resolveLoopFn({
+                baseAgentName: baseIdentity.name,
+                hasSandbox: !!loopSecrets.remoteCommands,
+            });
+
             if (shouldTrace()) {
                 const traceMetadata: Record<string, string> = {};
-                const orgId = input.organizationAndTeamData?.organizationId;
-                const teamId = input.organizationAndTeamData?.teamId;
-                if (orgId) traceMetadata.organizationId = orgId;
-                if (teamId) traceMetadata.teamId = teamId;
-                if (input.prNumber !== undefined) {
+
+                traceMetadata.organizationId =
+                    input.organizationAndTeamData?.organizationId ||
+                    'unknown_org';
+                traceMetadata.teamId =
+                    input.organizationAndTeamData?.teamId || 'unknown_team';
+
+                if (input.prNumber) {
                     traceMetadata.prNumber = String(input.prNumber);
                     traceMetadata.pullRequestId = String(input.prNumber);
                 }
-                if (input.repositoryId)
+
+                if (input.repositoryId) {
                     traceMetadata.repositoryId = input.repositoryId;
+                }
+
                 agentResult = await propagateAttributes(
                     {
                         traceName: identity.name,
-                        sessionId: input.prNumber
-                            ? `${orgId ?? 'org'}:${input.repositoryId ?? 'repo'}:${input.prNumber}`
+                        sessionId: traceMetadata.prNumber
+                            ? `${traceMetadata.organizationId ?? 'org'}:${traceMetadata.repositoryId ?? 'repo'}:${traceMetadata.prNumber}`
                             : undefined,
-                        userId: orgId,
+                        userId: traceMetadata.organizationId,
                         metadata: traceMetadata,
                     },
                     () =>
                         startActiveObservation(
                             identity.name,
                             async (span: any) => {
-                                // Strip redundant `patch` from changedFiles —
-                                // `patchWithLinesStr` already carries the same content
-                                // with line numbers added.
                                 const { changedFiles, ...restParams } =
                                     loopParams as any;
                                 const safeInput = {
@@ -1124,7 +1134,7 @@ export abstract class BaseCodeReviewAgentProvider {
                                     }),
                                 };
                                 span.update({ input: safeInput });
-                                const result = await runAgentLoop(
+                                const result = await loopFn(
                                     loopParams,
                                     loopSecrets,
                                 );
@@ -1134,13 +1144,11 @@ export abstract class BaseCodeReviewAgentProvider {
                         ),
                 );
             } else {
-                agentResult = await runAgentLoop(loopParams, loopSecrets);
+                agentResult = await loopFn(loopParams, loopSecrets);
             }
 
             const durationMs = Date.now() - startTime;
 
-            // Record token usage to observability (MongoDB spans)
-            // Uses runInSpan to ensure proper span lifecycle and MongoDB persistence
             try {
                 const vUsage = agentResult.verificationUsage;
                 const mainInputTokens =
@@ -1259,13 +1267,6 @@ export abstract class BaseCodeReviewAgentProvider {
                 if (!s.suggestionContent) return false;
 
                 if (isKodyRules) {
-                    // Kody Rules suggestions MUST carry a ruleUuid that maps
-                    // to one of the rules we actually sent to the agent. The
-                    // prompt enforces this, but we guard here too: without a
-                    // valid ruleUuid we cannot render the rule link and the
-                    // finding would be mis-attributed to kody_rules while
-                    // being something else (e.g. a hallucinated generic
-                    // finding the kody-rules agent should not be reporting).
                     const ruleUuid =
                         typeof s.ruleUuid === 'string' ? s.ruleUuid.trim() : '';
                     if (!ruleUuid) {
@@ -1276,16 +1277,14 @@ export abstract class BaseCodeReviewAgentProvider {
                         });
                         return false;
                     }
-                    let resolvedRuleUuid = ruleUuid;
+                    const resolvedRuleUuid = ruleUuid;
+
                     if (!kodyRulesByUuid.has(resolvedRuleUuid)) {
-                        // LLMs occasionally corrupt a character when echoing
-                        // the 36-char UUID (observed: a dropped digit), which
-                        // would discard an otherwise-correct finding. Recover
-                        // only when it maps unambiguously to one known rule.
                         const recovered = recoverRuleUuid(
                             resolvedRuleUuid,
                             kodyRulesByUuid.keys(),
                         );
+
                         if (recovered) {
                             this.agentLogger.warn({
                                 message: `[AGENT] Recovered corrupted kody_rules ruleUuid=${resolvedRuleUuid} → ${recovered} (LLM UUID echo drift)`,
@@ -1294,7 +1293,7 @@ export abstract class BaseCodeReviewAgentProvider {
                             });
                             // Normalize so downstream rule-link rendering uses
                             // the real UUID.
-                            resolvedRuleUuid = recovered;
+                            //resolvedRuleUuid = recovered;
                             s.ruleUuid = recovered;
                         } else {
                             this.agentLogger.warn({
@@ -1517,10 +1516,7 @@ export abstract class BaseCodeReviewAgentProvider {
                 // Merge agent-loop-emitted warnings (currently none — the
                 // loop's warnings: [] is the PR1 placeholder) with the
                 // strategy warnings emitted in this provider above.
-                warnings: [
-                    ...agentWarnings,
-                    ...(agentResult.warnings ?? []),
-                ],
+                warnings: [...agentWarnings, ...(agentResult.warnings ?? [])],
             };
         } catch (error) {
             const durationMs = Date.now() - startTime;
@@ -1582,26 +1578,12 @@ export abstract class BaseCodeReviewAgentProvider {
         const {
             identity,
             agentCategory,
-            byokConfig,
-            model,
-            modelName,
             startTime,
             diffBudget,
             parentWarnings,
         } = ctx;
         const chunks = chunkFilesByTokenBudget(input.changedFiles, diffBudget);
 
-        // Defense-in-depth: the chunker may pack small files together
-        // into a single chunk (all files individually fit comfortably).
-        // The execute() pre-check above already detects this case and
-        // skips executeChunked, but if a caller bypassed the pre-check
-        // we still don't want to recurse — that would re-enter execute()
-        // with the same files at depth+1, trigger the same chunking
-        // decision, and hit MAX_RECURSION_DEPTH with an opaque error.
-        // Instead, just log and proceed; the inner agent loop's
-        // assertPromptFitsInContext preflight is the real gate when the
-        // prompt won't fit, and its mid-stream compressor handles
-        // marginal overflow.
         if (
             chunks.length === 1 &&
             chunks[0].length === input.changedFiles.length &&
@@ -1633,28 +1615,15 @@ export abstract class BaseCodeReviewAgentProvider {
         const allSuggestions: Partial<CodeSuggestion>[] = [];
         const allDiscardedBySeverity: Partial<CodeSuggestion>[] = [];
         const allDiscardedByVerify: Partial<CodeSuggestion>[] = [];
-        // Seed aggregate warnings with the parent-level entries so the
-        // chunker doesn't lose PROMPT_COMPACTED / DIFF_TRUNCATED etc.
         const allWarnings: ReviewWarning[] = [...(parentWarnings ?? [])];
         let totalTurns = 0;
-        // Track per-batch failures so a totally-failed chunked run can
-        // surface as an orchestrator failure instead of silently
-        // returning empty findings (a pre-fix benchmark caught this:
-        // every batch threw AGENT_PROMPT_OVERHEAD_EXCEEDS_BUDGET and the
-        // user got "review completed, 0 findings" with no signal).
         const batchErrors: Error[] = [];
 
         const batchTotal = chunks.length;
 
         for (let i = 0; i < batchTotal; i++) {
             const batchFiles = chunks[i];
-            const batchFileSet = new Set(batchFiles.map((f) => f.filename));
             const batchIndex = i + 1;
-            // Always use the unmodified getIdentity().name to build the label
-            // so recursive chunked runs do not accumulate
-            // " batch X/Y batch X/Y ..." suffixes in the agent name
-            // (logs grew unbounded — see the production smoking-gun trace
-            // captured in issue #1056).
             const batchLabel = `${this.getIdentity().name} batch ${batchIndex}/${batchTotal}`;
             const batchStartedAt = Date.now();
 

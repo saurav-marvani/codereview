@@ -127,7 +127,6 @@ const replacements = {
   tags: '{{tags}}',
   buckets: '{{buckets}}',
   plug_and_play: '{{plug_and_play}}',
-  needMCPS: '{{needMCPS}}',
   language: '{{language}}',
   sampleSize: '{{sampleSize}}',
   userEmail: '{{userEmail}}',

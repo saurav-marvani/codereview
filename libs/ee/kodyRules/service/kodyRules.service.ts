@@ -221,9 +221,7 @@ export class KodyRulesService implements IKodyRulesService {
      * repository/directory count badges without fetching each repo's full
      * rules array (and running enrichment) once per card.
      */
-    async countRulesByRepository(
-        organizationId: string,
-    ): Promise<
+    async countRulesByRepository(organizationId: string): Promise<
         Array<{
             repositoryId: string;
             directoryId: string | null;
@@ -922,17 +920,6 @@ export class KodyRulesService implements IKodyRulesService {
                         }
                     }
 
-                    // Filtro por needMCPS (required_mcps)
-                    if (filters.needMCPS === true) {
-                        const hasRequiredMcps =
-                            Array.isArray(rule.required_mcps) &&
-                            rule.required_mcps.length > 0;
-
-                        if (!hasRequiredMcps) {
-                            return false;
-                        }
-                    }
-
                     return true;
                 });
             }
@@ -1026,49 +1013,6 @@ export class KodyRulesService implements IKodyRulesService {
                 message: 'Error in getLibraryKodyRulesBuckets',
                 error: error,
                 context: KodyRulesService.name,
-            });
-            return [];
-        }
-    }
-
-    async getRecommendedRulesByMCP(
-        organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<LibraryKodyRule[]> {
-        try {
-            const mcpConnections = await this.mcpManagerService.getConnections(
-                organizationAndTeamData,
-                false,
-            );
-
-            if (!mcpConnections || mcpConnections.length === 0) {
-                return [];
-            }
-
-            const installedMCPs = mcpConnections.map((conn) => conn.appName);
-
-            const eligibleRules = (
-                libraryKodyRules as LibraryKodyRule[]
-            ).filter((rule) => {
-                if (!rule.required_mcps || rule.required_mcps.length === 0) {
-                    return false;
-                }
-
-                return rule.required_mcps.some((mcp) =>
-                    installedMCPs.some((installedMCP) =>
-                        installedMCP.toLowerCase().includes(mcp.toLowerCase()),
-                    ),
-                );
-            });
-
-            return eligibleRules;
-        } catch (error) {
-            this.logger.error({
-                message: 'Error in getRecommendedRulesByMCP',
-                error: error,
-                context: KodyRulesService.name,
-                metadata: {
-                    organizationId: organizationAndTeamData.organizationId,
-                },
             });
             return [];
         }
@@ -1410,12 +1354,11 @@ Analyze the suggestions and recommend the most relevant rules.`;
         };
 
         const ccp = await this.resolveCentralizedConfigPrService();
-        const memoryGroupFolderName =
-            await ccp.resolveDirectoryGroupFolderName(
-                organizationAndTeamData,
-                payload.repositoryId,
-                payload.directoryId,
-            );
+        const memoryGroupFolderName = await ccp.resolveDirectoryGroupFolderName(
+            organizationAndTeamData,
+            payload.repositoryId,
+            payload.directoryId,
+        );
         const centralizedPr = await ccp.createMutationPullRequestIfEnabled(
             buildKodyRuleCentralizedMutationRequest({
                 centralizedConfigPrService: ccp,

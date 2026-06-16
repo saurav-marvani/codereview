@@ -66,7 +66,9 @@ import {
  * GitHub only allows comments on lines that appear in the diff.
  */
 function extractValidDiffLines(patch?: string): Array<[number, number]> {
-    if (!patch) return [];
+    if (!patch) {
+        return [];
+    }
 
     const ranges: Array<[number, number]> = [];
     const lines = patch.split('\n');
@@ -231,13 +233,13 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
     }
 
     constructor(
-        private readonly reviewOrchestrator: ReviewOrchestratorService,
-        private readonly observabilityService: ObservabilityService,
         @Inject(AUTOMATION_EXECUTION_SERVICE_TOKEN)
         private readonly automationExecutionService: IAutomationExecutionService,
-        private readonly graphContext: GraphContextService,
         @Inject(REPOSITORY_SERVICE_TOKEN)
         private readonly repositoryService: IRepositoryService,
+        private readonly reviewOrchestrator: ReviewOrchestratorService,
+        private readonly observabilityService: ObservabilityService,
+        private readonly graphContext: GraphContextService,
     ) {
         super();
     }
@@ -288,8 +290,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
         // the org-level main.model when present — same resolution the agent
         // uses internally (`base-code-review-agent.provider.ts:541-551`).
         const mainByok = context.codeReviewConfig?.byokConfig?.main;
-        const overrideModel =
-            context.codeReviewConfig?.byokModel?.trim();
+        const overrideModel = context.codeReviewConfig?.byokModel?.trim();
         const byokWithOverride =
             overrideModel && mainByok
                 ? {
@@ -395,85 +396,87 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 emitStageWarning('CALLGRAPH_DROPPED');
             }
             if (shouldBuildCallGraph) {
-              try {
-                const sandboxType = context.sandboxHandle?.type ?? 'unknown';
-                const hasSandbox = !!context.sandboxHandle?.run;
-                this.logger.log({
-                    message: `[AGENT] sandboxHandle check: type=${sandboxType}, hasSandbox=${hasSandbox}, platform=${context.platformType}, repoId=${context.repository?.id}`,
-                    context: this.stageName,
-                    metadata: {
-                        sandboxType,
-                        hasSandbox,
-                        platform: context.platformType,
-                        repoExternalId: context.repository?.id,
-                    },
-                });
-
-                if (context.sandboxHandle?.run) {
-                    const repo = await this.repositoryService.findByExternalId(
-                        context.platformType,
-                        String(context.repository?.id || ''),
-                    );
-
+                try {
+                    const sandboxType =
+                        context.sandboxHandle?.type ?? 'unknown';
+                    const hasSandbox = !!context.sandboxHandle?.run;
                     this.logger.log({
-                        message: `[AGENT] repo lookup: found=${!!repo}, astGraphStatus=${repo?.astGraphStatus ?? 'N/A'}, uuid=${repo?.uuid ?? 'N/A'}`,
+                        message: `[AGENT] sandboxHandle check: type=${sandboxType}, hasSandbox=${hasSandbox}, platform=${context.platformType}, repoId=${context.repository?.id}`,
                         context: this.stageName,
                         metadata: {
+                            sandboxType,
+                            hasSandbox,
+                            platform: context.platformType,
                             repoExternalId: context.repository?.id,
-                            repoUuid: repo?.uuid,
-                            astGraphStatus: repo?.astGraphStatus,
                         },
                     });
 
-                    if (repo?.astGraphStatus === AstGraphStatus.READY) {
-                        callGraph = await this.graphContext.generateContext(
-                            context.sandboxHandle,
-                            changedFiles,
-                            repo.uuid,
-                        );
-                    } else {
+                    if (context.sandboxHandle?.run) {
+                        const repo =
+                            await this.repositoryService.findByExternalId(
+                                context.platformType,
+                                String(context.repository?.id || ''),
+                            );
+
                         this.logger.log({
-                            message: `[AGENT] No AST graph in DB for PR#${prNumber} (status=${repo?.astGraphStatus || 'not found'}), falling back to legacy (changed-files only)`,
+                            message: `[AGENT] repo lookup: found=${!!repo}, astGraphStatus=${repo?.astGraphStatus ?? 'N/A'}, uuid=${repo?.uuid ?? 'N/A'}`,
                             context: this.stageName,
+                            metadata: {
+                                repoExternalId: context.repository?.id,
+                                repoUuid: repo?.uuid,
+                                astGraphStatus: repo?.astGraphStatus,
+                            },
                         });
-                        callGraph =
-                            await this.graphContext.generateContextLegacy(
+
+                        if (repo?.astGraphStatus === AstGraphStatus.READY) {
+                            callGraph = await this.graphContext.generateContext(
                                 context.sandboxHandle,
                                 changedFiles,
-                                context.sandboxHandle?.baseBranch ||
-                                    context.pullRequest?.base?.ref ||
-                                    context.repository?.defaultBranch,
+                                repo.uuid,
                             );
+                        } else {
+                            this.logger.log({
+                                message: `[AGENT] No AST graph in DB for PR#${prNumber} (status=${repo?.astGraphStatus || 'not found'}), falling back to legacy (changed-files only)`,
+                                context: this.stageName,
+                            });
+                            callGraph =
+                                await this.graphContext.generateContextLegacy(
+                                    context.sandboxHandle,
+                                    changedFiles,
+                                    context.sandboxHandle?.baseBranch ||
+                                        context.pullRequest?.base?.ref ||
+                                        context.repository?.defaultBranch,
+                                );
+                        }
+                    } else {
+                        this.logger.warn({
+                            message: `[AGENT] No sandboxHandle object (type=${sandboxType}), skipping kodus-graph for PR#${prNumber}`,
+                            context: this.stageName,
+                        });
                     }
-                } else {
-                    this.logger.warn({
-                        message: `[AGENT] No sandboxHandle object (type=${sandboxType}), skipping kodus-graph for PR#${prNumber}`,
-                        context: this.stageName,
-                    });
-                }
 
-                if (callGraph) {
-                    this.logger.log({
-                        message: `[AGENT] kodus-graph context: ${callGraph.length} chars for PR#${prNumber}`,
+                    if (callGraph) {
+                        this.logger.log({
+                            message: `[AGENT] kodus-graph context: ${callGraph.length} chars for PR#${prNumber}`,
+                            context: this.stageName,
+                            metadata: {
+                                prNumber,
+                                callGraphChars: callGraph.length,
+                                callGraphPreview: callGraph.substring(0, 320),
+                            },
+                        });
+                    }
+                } catch (err) {
+                    this.logger.warn({
+                        message: `[AGENT] Call graph failed for PR#${prNumber}, proceeding without it`,
                         context: this.stageName,
+                        error: err,
                         metadata: {
-                            prNumber,
-                            callGraphChars: callGraph.length,
-                            callGraphPreview: callGraph.substring(0, 320),
+                            sandboxType: context.sandboxHandle?.type,
+                            hasSandbox: !!context.sandboxHandle?.run,
                         },
                     });
                 }
-            } catch (err) {
-                this.logger.warn({
-                    message: `[AGENT] Call graph failed for PR#${prNumber}, proceeding without it`,
-                    context: this.stageName,
-                    error: err,
-                    metadata: {
-                        sandboxType: context.sandboxHandle?.type,
-                        hasSandbox: !!context.sandboxHandle?.run,
-                    },
-                });
-            }
             } // end if (shouldBuildCallGraph)
 
             const result = await this.reviewOrchestrator.execute({
@@ -553,8 +556,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 // generateText calls that re-incur the full prompt overhead;
                 // on small windows they're guaranteed to refire the same
                 // preflight error. Don't override an explicit caller value.
-                skipHeavyPasses:
-                    adaptiveProfile.skipHeavyPasses || undefined,
+                skipHeavyPasses: adaptiveProfile.skipHeavyPasses || undefined,
                 // Forwarded from the workflow job timeout. The router builds
                 // an AbortController; here we pass it through so when the
                 // 1h45min budget fires, the agent-loop's local controller is
