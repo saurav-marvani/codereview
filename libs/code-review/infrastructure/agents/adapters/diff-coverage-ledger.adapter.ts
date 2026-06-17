@@ -17,7 +17,9 @@ import {
     buildCoverageLedger,
     formatCoverageDebt,
     getCoverageSummary,
+    isCoverageSatisfied,
     markCoverageFromToolCall,
+    TIERED_TOTAL_COVERAGE_THRESHOLD,
     type CoverageTarget,
     type CoverageTier,
 } from '../llm/coverage-ledger';
@@ -60,5 +62,17 @@ export class DiffCoverageLedger implements ProgressLedger {
     debtNote(): string | null {
         const debt = formatCoverageDebt(this.targets);
         return debt && debt.length > 0 ? debt : null;
+    }
+
+    /** Rich (tiered) satisfaction check — gates the coverage-recovery pass. */
+    isSatisfied(): boolean {
+        return isCoverageSatisfied(getCoverageSummary(this.targets));
+    }
+
+    /** Flat <70% check — gates the second/third-chance passes (legacy floor). */
+    isLowCoverage(): boolean {
+        const s = getCoverageSummary(this.targets);
+        if (s.totalTargets <= 0) return false;
+        return s.touchedTargets / s.totalTargets < TIERED_TOTAL_COVERAGE_THRESHOLD;
     }
 }

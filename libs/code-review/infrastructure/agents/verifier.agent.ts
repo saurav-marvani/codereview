@@ -25,6 +25,10 @@ import { InMemoryToolRegistry } from '@libs/agent-harness/infrastructure/tools/i
 
 import { buildVerifierPrompt } from './verifier-prompt';
 import type { FinderSuggestion } from './finder.agent';
+import {
+    buildLangfuseTelemetry,
+    type LangfuseTelemetryMetadata,
+} from '@libs/core/log/langfuse';
 
 export const VERIFY_DONE_TOOL = 'submitVerdict' as const;
 
@@ -53,6 +57,9 @@ export interface BuildVerifierSpecParams {
     maxSteps?: number;
     /** Provider options (reasoning/thinking config) forwarded to the model. */
     providerOptions?: Readonly<Record<string, unknown>>;
+    /** Provider options attached to the system message (e.g. Anthropic prompt
+     *  caching) so the verifier's system prompt is cached across steps. */
+    systemProviderOptions?: Readonly<Record<string, unknown>>;
 }
 
 export function buildVerifierAgentSpec(
@@ -76,6 +83,7 @@ export function buildVerifierAgentSpec(
         // RunState.artifacts — extractVerdict reads that, never re-scans steps.
         resultToolName: VERIFY_DONE_TOOL,
         providerOptions: params.providerOptions,
+        systemProviderOptions: params.systemProviderOptions,
     };
 }
 
@@ -131,6 +139,13 @@ export interface LlmVerifierParams {
     forceFull?: boolean;
     /** Provider options (reasoning/thinking config) forwarded to the model. */
     providerOptions?: Readonly<Record<string, unknown>>;
+    /** System-message provider options (e.g. Anthropic prompt caching). */
+    systemProviderOptions?: Readonly<Record<string, unknown>>;
+    /** Langfuse telemetry context (org/team/PR/repo) — each per-finding verify
+     *  run is named so the trace shows WHICH finding each verdict judged. */
+    telemetryMetadata?: LangfuseTelemetryMetadata;
+    /** Agent name (finder/security/...) — prefixes the verify observation name. */
+    agentName?: string;
 }
 
 /** The LLM-judge Verifier (HV2): runs a verifier AgentSpec once per finding on
@@ -163,12 +178,14 @@ export class LlmVerifier implements Verifier<FinderSuggestion> {
             tools: params.tools,
             maxSteps: params.lightMaxSteps ?? 5,
             providerOptions: params.providerOptions,
+            systemProviderOptions: params.systemProviderOptions,
         });
         this.fullSpec = buildVerifierAgentSpec({
             modelId: params.modelId,
             tools: params.tools,
             maxSteps: params.fullMaxSteps ?? 10,
             providerOptions: params.providerOptions,
+            systemProviderOptions: params.systemProviderOptions,
         });
     }
 
@@ -186,9 +203,21 @@ export class LlmVerifier implements Verifier<FinderSuggestion> {
             this.params.forceFull || (candidate.confidence ?? 5) < 5;
         const spec = useFull ? this.fullSpec : this.lightSpec;
 
+        // Per-finding observation name so the trace shows which finding each
+        // verdict judged (e.g. "finder/verify:src/x.ts#42").
+        const loc = candidate.relevantLinesStart
+            ? `#${candidate.relevantLinesStart}`
+            : '';
+        const fnId = `${this.params.agentName ?? 'agent'}/verify:${candidate.relevantFile}${loc}`;
         const state = await this.runner.run(
             spec,
-            { prompt: verifierPromptFor(candidate) },
+            {
+                prompt: verifierPromptFor(candidate),
+                telemetry: buildLangfuseTelemetry(
+                    fnId,
+                    this.params.telemetryMetadata,
+                ),
+            },
             ctx,
         );
         const u = state.usage;

@@ -5,12 +5,12 @@ import { ObservabilityService } from '@libs/core/log/observability.service';
 import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
 import { ByokErrorCounter } from '@libs/notifications/application/byok-error-counter.service';
 import { isFileMatchingGlob } from '@libs/common/utils/glob-utils';
+import { BaseCodeReviewAgentProvider } from './base-code-review-agent.provider';
 import {
-    BaseCodeReviewAgentProvider,
     ReviewAgentIdentity,
     ReviewAgentInput,
     ReviewAgentOutput,
-} from './base-code-review-agent.provider';
+} from './review-agent.contract';
 import {
     IKodyRule,
     KodyRulesScope,

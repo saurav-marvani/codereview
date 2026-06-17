@@ -5,11 +5,11 @@ import { ObservabilityService } from '@libs/core/log/observability.service';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
 import { ByokErrorCounter } from '@libs/notifications/application/byok-error-counter.service';
+import { BaseCodeReviewAgentProvider } from './base-code-review-agent.provider';
 import {
-    BaseCodeReviewAgentProvider,
     ReviewAgentIdentity,
     ReviewAgentInput,
-} from './base-code-review-agent.provider';
+} from './review-agent.contract';
 import { buildGeneralistReviewPrompt } from './review-prompt-blocks';
 
 @Injectable()

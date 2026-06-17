@@ -22,7 +22,8 @@ import { AiSdkAgentRunner } from '@libs/agent-harness/infrastructure/ai-sdk/ai-s
 import { ContextWindowCompressor } from './adapters/context-window-compressor.adapter';
 import { DiffCoverageLedger } from './adapters/diff-coverage-ledger.adapter';
 import { buildFinderToolRegistry } from './adapters/finder-tools.adapter';
-import { wrapByokModel } from './llm/byok-model-wrapper';
+import { wrapByokModel } from '@libs/llm/byok-model-wrapper';
+import { anthropicSystemCacheControl } from '@libs/llm/system-cache';
 import { buildFinderAgentSpec, runFinderWithVerify } from './finder.agent';
 import {
     type AgentLoopInput,
@@ -30,14 +31,12 @@ import {
     type AgentLoopSecrets,
     type VerificationTraceSummary,
 } from './review-agent.contract';
-// buildAgentAnomalies/buildProviderOptions/AGENT_TIMEOUT_MS still live in the
-// legacy file (entangled with its helpers) — imported honestly, pending extraction.
-import {
-    AGENT_TIMEOUT_MS,
-    buildAgentAnomalies,
-    buildProviderOptions,
-} from './llm/agent-loop';
-import { composeAbortSignal } from './llm/parent-signal-compose';
+import { AGENT_TIMEOUT_MS } from '@libs/llm/llm-call';
+import { buildProviderOptions } from '@libs/llm/reasoning-options';
+// buildAgentAnomalies is review-specific (anomaly summary shapes) — stays in
+// the code-review agent module.
+import { buildAgentAnomalies } from './llm/agent-loop';
+import { composeAbortSignal } from '@libs/common/utils/parent-signal-compose';
 import {
     buildCoverageLedger,
     getCoverageSummary,
@@ -90,6 +89,23 @@ export async function runAgentLoopViaCore(
         },
     );
 
+    // Anthropic prompt caching for the (large, static) system prompt — ported
+    // from the legacy `withAnthropicCacheControl`. Cached across the loop's many
+    // steps + every verifier run, so Claude models don't re-pay the system
+    // prompt's input tokens each step. No-op for non-Anthropic models.
+    const systemProviderOptions = anthropicSystemCacheControl(
+        (input as any).model,
+    );
+
+    // Recall-pass gating — ported from the legacy loop: skip the heavy passes in
+    // fast mode, self-contained (no tools) trial flow, or when the caller asks.
+    const isSelfContained = tools.list().length === 0;
+    const skipHeavyPasses =
+        (input as any).reviewMode === 'fast' ||
+        isSelfContained ||
+        !!(input as any).skipHeavyPasses;
+    const skipSynthesisRescue = !!(input as any).skipSynthesisRescue;
+
     const contextWindowTokens = (input as any).contextWindowTokens;
     const finderSpec = buildFinderAgentSpec({
         systemPrompt: (input as any).systemPrompt,
@@ -101,6 +117,7 @@ export async function runAgentLoopViaCore(
             : undefined,
         maxSteps: (input as any).maxSteps ?? 20,
         providerOptions,
+        systemProviderOptions,
     });
 
     // Hard timeout + cancellation: a local controller that aborts on the parent
@@ -116,7 +133,19 @@ export async function runAgentLoopViaCore(
     };
 
     const r = await runFinderWithVerify(
-        { runner, finderSpec, modelId: 'resolved', tools, providerOptions },
+        {
+            runner,
+            finderSpec,
+            modelId: 'resolved',
+            tools,
+            providerOptions,
+            systemProviderOptions,
+            coverageLedger,
+            skipHeavyPasses,
+            skipSynthesisRescue,
+            telemetryMetadata: (input as any).telemetryMetadata,
+            agentName: (input as any).agentName,
+        },
         { prompt: (input as any).userPrompt },
         ctx,
     ).finally(() => {
@@ -145,10 +174,14 @@ export async function runAgentLoopViaCore(
     // implicit-cache providers (Gemini/Moonshot) don't report write tokens.
     const fu = r.finderState.usage;
     const vu = r.verifyUsage;
-    const inputTokens = (fu.inputTokens ?? 0) + vu.inputTokens;
-    const outputTokens = (fu.outputTokens ?? 0) + vu.outputTokens;
-    const reasoningTokens = (fu.reasoningTokens ?? 0) + vu.reasoningTokens;
-    const cacheReadTokens = (fu.cacheReadTokens ?? 0) + vu.cacheReadTokens;
+    const ru = r.recallUsage; // extra finder runs (recovery/chances/synthesis)
+    const inputTokens = (fu.inputTokens ?? 0) + vu.inputTokens + ru.inputTokens;
+    const outputTokens =
+        (fu.outputTokens ?? 0) + vu.outputTokens + ru.outputTokens;
+    const reasoningTokens =
+        (fu.reasoningTokens ?? 0) + vu.reasoningTokens + ru.reasoningTokens;
+    const cacheReadTokens =
+        (fu.cacheReadTokens ?? 0) + vu.cacheReadTokens + ru.cacheReadTokens;
 
     // Verify funnel made observable: before = kept + dropped, after = kept.
     const verifiedBefore = r.kept.length + r.droppedByVerify.length;

@@ -1,5 +1,5 @@
 import {
-    ReviewErrorCategory,
+    LlmErrorCategory,
     attachClassification,
     classifyLLMError,
     getClassification,
@@ -21,21 +21,21 @@ describe('classifyLLMError', () => {
         it.each([401, 403])('maps %i → AUTH_INVALID', (status) => {
             const err = errorWithStatus('not authorized', status);
             expect(classifyLLMError(err).category).toBe(
-                ReviewErrorCategory.AUTH_INVALID,
+                LlmErrorCategory.AUTH_INVALID,
             );
         });
 
         it('maps 402 → QUOTA_EXCEEDED', () => {
             const err = errorWithStatus('payment required', 402);
             expect(classifyLLMError(err).category).toBe(
-                ReviewErrorCategory.QUOTA_EXCEEDED,
+                LlmErrorCategory.QUOTA_EXCEEDED,
             );
         });
 
         it('maps 404 → MODEL_NOT_FOUND', () => {
             const err = errorWithStatus('not found', 404);
             expect(classifyLLMError(err).category).toBe(
-                ReviewErrorCategory.MODEL_NOT_FOUND,
+                LlmErrorCategory.MODEL_NOT_FOUND,
             );
         });
 
@@ -53,7 +53,7 @@ describe('classifyLLMError', () => {
                 }),
             });
             expect(classifyLLMError(err, 'google_vertex').category).toBe(
-                ReviewErrorCategory.MODEL_ACCESS_DENIED,
+                LlmErrorCategory.MODEL_ACCESS_DENIED,
             );
         });
 
@@ -64,7 +64,7 @@ describe('classifyLLMError', () => {
             );
             const info = classifyLLMError(err, 'google_vertex');
             expect(info.category).toBe(
-                ReviewErrorCategory.MODEL_ACCESS_DENIED,
+                LlmErrorCategory.MODEL_ACCESS_DENIED,
             );
             expect(info.friendlyMessage).toMatch(/Model Garden/i);
         });
@@ -75,21 +75,21 @@ describe('classifyLLMError', () => {
                 429,
             );
             expect(classifyLLMError(err).category).toBe(
-                ReviewErrorCategory.QUOTA_EXCEEDED,
+                LlmErrorCategory.QUOTA_EXCEEDED,
             );
         });
 
         it('treats plain 429 → RATE_LIMIT', () => {
             const err = errorWithStatus('too many requests', 429);
             expect(classifyLLMError(err).category).toBe(
-                ReviewErrorCategory.RATE_LIMIT,
+                LlmErrorCategory.RATE_LIMIT,
             );
         });
 
         it.each([500, 502, 503, 504])('maps %i → TRANSIENT', (status) => {
             const err = errorWithStatus('upstream error', status);
             expect(classifyLLMError(err).category).toBe(
-                ReviewErrorCategory.TRANSIENT,
+                LlmErrorCategory.TRANSIENT,
             );
         });
 
@@ -98,7 +98,7 @@ describe('classifyLLMError', () => {
                 response: { status: 401 },
             });
             expect(classifyLLMError(err).category).toBe(
-                ReviewErrorCategory.AUTH_INVALID,
+                LlmErrorCategory.AUTH_INVALID,
             );
         });
 
@@ -107,7 +107,7 @@ describe('classifyLLMError', () => {
                 cause: { statusCode: 429 },
             });
             expect(classifyLLMError(err).category).toBe(
-                ReviewErrorCategory.RATE_LIMIT,
+                LlmErrorCategory.RATE_LIMIT,
             );
         });
     });
@@ -118,7 +118,7 @@ describe('classifyLLMError', () => {
                 'You exceeded your current quota. error code: insufficient_quota',
             );
             expect(classifyLLMError(err).category).toBe(
-                ReviewErrorCategory.QUOTA_EXCEEDED,
+                LlmErrorCategory.QUOTA_EXCEEDED,
             );
         });
 
@@ -127,28 +127,28 @@ describe('classifyLLMError', () => {
                 'Your credit balance is too low (code: credit_balance_too_low)',
             );
             expect(classifyLLMError(err).category).toBe(
-                ReviewErrorCategory.QUOTA_EXCEEDED,
+                LlmErrorCategory.QUOTA_EXCEEDED,
             );
         });
 
         it('invalid_api_key → AUTH_INVALID', () => {
             const err = new Error('Error code: invalid_api_key');
             expect(classifyLLMError(err).category).toBe(
-                ReviewErrorCategory.AUTH_INVALID,
+                LlmErrorCategory.AUTH_INVALID,
             );
         });
 
         it('permission_denied → AUTH_INVALID', () => {
             const err = new Error('permission_denied: cannot access resource');
             expect(classifyLLMError(err).category).toBe(
-                ReviewErrorCategory.AUTH_INVALID,
+                LlmErrorCategory.AUTH_INVALID,
             );
         });
 
         it('rate limit phrasing → RATE_LIMIT', () => {
             const err = new Error('Rate limit reached, retry after 5s');
             expect(classifyLLMError(err).category).toBe(
-                ReviewErrorCategory.RATE_LIMIT,
+                LlmErrorCategory.RATE_LIMIT,
             );
         });
 
@@ -157,7 +157,7 @@ describe('classifyLLMError', () => {
                 'The model `gpt-5-turbo` does not exist or you do not have access to it',
             );
             expect(classifyLLMError(err).category).toBe(
-                ReviewErrorCategory.MODEL_NOT_FOUND,
+                LlmErrorCategory.MODEL_NOT_FOUND,
             );
         });
 
@@ -166,7 +166,7 @@ describe('classifyLLMError', () => {
                 'This model has a maximum context length of 128000 tokens',
             );
             expect(classifyLLMError(err).category).toBe(
-                ReviewErrorCategory.CONTEXT_OVERFLOW,
+                LlmErrorCategory.CONTEXT_OVERFLOW,
             );
         });
 
@@ -179,26 +179,26 @@ describe('classifyLLMError', () => {
         ])('network/timeout pattern "%s" → TRANSIENT', (msg) => {
             const err = new Error(msg);
             expect(classifyLLMError(err).category).toBe(
-                ReviewErrorCategory.TRANSIENT,
+                LlmErrorCategory.TRANSIENT,
             );
         });
 
         it('unrecognized message → UNKNOWN', () => {
             const err = new Error('something weird happened in the SDK');
             expect(classifyLLMError(err).category).toBe(
-                ReviewErrorCategory.UNKNOWN,
+                LlmErrorCategory.UNKNOWN,
             );
         });
 
         it('non-Error inputs do not throw', () => {
             expect(classifyLLMError(null).category).toBe(
-                ReviewErrorCategory.UNKNOWN,
+                LlmErrorCategory.UNKNOWN,
             );
             expect(classifyLLMError(undefined).category).toBe(
-                ReviewErrorCategory.UNKNOWN,
+                LlmErrorCategory.UNKNOWN,
             );
             expect(classifyLLMError('plain string error').category).toBe(
-                ReviewErrorCategory.UNKNOWN,
+                LlmErrorCategory.UNKNOWN,
             );
         });
     });
@@ -210,7 +210,7 @@ describe('classifyLLMError', () => {
         });
 
         it('renders a non-empty friendly message for every category', () => {
-            for (const category of Object.values(ReviewErrorCategory)) {
+            for (const category of Object.values(LlmErrorCategory)) {
                 const message = classifyLLMError(
                     Object.assign(new Error(`raw for ${category}`), {
                         status: 0,
@@ -285,19 +285,19 @@ describe('classifyLLMError', () => {
 
 describe('isTerminalCategory', () => {
     it.each([
-        ReviewErrorCategory.AUTH_INVALID,
-        ReviewErrorCategory.QUOTA_EXCEEDED,
-        ReviewErrorCategory.MODEL_NOT_FOUND,
-        ReviewErrorCategory.MODEL_ACCESS_DENIED,
+        LlmErrorCategory.AUTH_INVALID,
+        LlmErrorCategory.QUOTA_EXCEEDED,
+        LlmErrorCategory.MODEL_NOT_FOUND,
+        LlmErrorCategory.MODEL_ACCESS_DENIED,
     ])('%s is terminal', (cat) => {
         expect(isTerminalCategory(cat)).toBe(true);
     });
 
     it.each([
-        ReviewErrorCategory.RATE_LIMIT,
-        ReviewErrorCategory.CONTEXT_OVERFLOW,
-        ReviewErrorCategory.TRANSIENT,
-        ReviewErrorCategory.UNKNOWN,
+        LlmErrorCategory.RATE_LIMIT,
+        LlmErrorCategory.CONTEXT_OVERFLOW,
+        LlmErrorCategory.TRANSIENT,
+        LlmErrorCategory.UNKNOWN,
     ])('%s is not terminal', (cat) => {
         expect(isTerminalCategory(cat)).toBe(false);
     });
@@ -314,7 +314,7 @@ describe('attachClassification / getClassification', () => {
 
         const retrieved = getClassification(err);
         expect(retrieved).toBeDefined();
-        expect(retrieved?.category).toBe(ReviewErrorCategory.QUOTA_EXCEEDED);
+        expect(retrieved?.category).toBe(LlmErrorCategory.QUOTA_EXCEEDED);
         expect(retrieved?.provider).toBe('anthropic');
     });
 

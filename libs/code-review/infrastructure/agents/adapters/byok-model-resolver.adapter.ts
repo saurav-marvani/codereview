@@ -16,7 +16,7 @@ import type { BYOKConfig } from '@kodus/kodus-common/llm';
 import {
     byokToVercelModel,
     type ByokModelOptions,
-} from '../llm/byok-to-vercel';
+} from '@libs/llm/byok-to-vercel';
 
 type ModelFactory = (
     byokConfig?: BYOKConfig,

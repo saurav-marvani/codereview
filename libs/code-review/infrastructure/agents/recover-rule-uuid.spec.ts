@@ -1,4 +1,4 @@
-import { recoverRuleUuid } from './base-code-review-agent.provider';
+import { recoverRuleUuid } from './finding-mapper';
 
 /**
  * Regression guard for #1170: the kody_rules agent dropped an otherwise

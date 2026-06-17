@@ -4,10 +4,10 @@ import {
 } from './errors';
 
 /**
- * Canonical categories for LLM/provider errors surfaced during a code review.
+ * Canonical categories for LLM/provider errors surfaced when calling a model.
  *
- * Why canonical instead of raw provider errors: callers (AgentReviewStage,
- * UI dashboards, end-review message) need to react to error meaning, not
+ * Why canonical instead of raw provider errors: callers (pipeline stages,
+ * UI dashboards, end-of-run messages) need to react to error meaning, not
  * provider-specific strings. The 4 BYOK provider families return errors in
  * different shapes — this enum is the agnostic contract.
  *
@@ -15,7 +15,7 @@ import {
  * mean the review cannot succeed without user action — caller may short-
  * circuit remaining stages. TRANSIENT/RATE_LIMIT means "retry-worthy".
  */
-export enum ReviewErrorCategory {
+export enum LlmErrorCategory {
     AUTH_INVALID = 'AUTH_INVALID',
     QUOTA_EXCEEDED = 'QUOTA_EXCEEDED',
     RATE_LIMIT = 'RATE_LIMIT',
@@ -33,7 +33,7 @@ export enum ReviewErrorCategory {
 }
 
 export interface ClassifiedErrorInfo {
-    category: ReviewErrorCategory;
+    category: LlmErrorCategory;
     provider?: string;
     rawMessage: string;
     httpStatus?: number;
@@ -45,7 +45,7 @@ const CLASSIFICATION_KEY = Symbol('reviewErrorClassification');
 
 /**
  * Attach classification metadata to an Error so downstream catch blocks
- * (e.g. AgentReviewStage iterating `result.failures`) can read it without
+ * (e.g. a pipeline stage iterating `result.failures`) can read it without
  * re-classifying. The property is non-enumerable so it doesn't leak into
  * JSON.stringify or span recordings.
  */
@@ -98,7 +98,7 @@ export function classifyLLMError(
     const httpStatus = extractHttpStatus(err);
 
     let category = matchByHttpStatus(httpStatus, lower);
-    if (category === ReviewErrorCategory.UNKNOWN) {
+    if (category === LlmErrorCategory.UNKNOWN) {
         category = matchByMessage(lower);
     }
 
@@ -113,7 +113,7 @@ export function classifyLLMError(
         // and can hand the admin concrete next steps. For raw provider
         // 400s without a typed error, the generic fallback applies.
         friendlyMessage:
-            category === ReviewErrorCategory.CONTEXT_OVERFLOW
+            category === LlmErrorCategory.CONTEXT_OVERFLOW
                 ? buildContextOverflowMessage(err, provider)
                 : buildFriendlyMessage(category, provider),
     };
@@ -123,12 +123,12 @@ export function classifyLLMError(
  * Returns true for categories where retrying without user intervention is
  * pointless: the user must fix billing/auth/config first.
  */
-export function isTerminalCategory(category: ReviewErrorCategory): boolean {
+export function isTerminalCategory(category: LlmErrorCategory): boolean {
     return (
-        category === ReviewErrorCategory.AUTH_INVALID ||
-        category === ReviewErrorCategory.QUOTA_EXCEEDED ||
-        category === ReviewErrorCategory.MODEL_NOT_FOUND ||
-        category === ReviewErrorCategory.MODEL_ACCESS_DENIED
+        category === LlmErrorCategory.AUTH_INVALID ||
+        category === LlmErrorCategory.QUOTA_EXCEEDED ||
+        category === LlmErrorCategory.MODEL_NOT_FOUND ||
+        category === LlmErrorCategory.MODEL_ACCESS_DENIED
     );
 }
 
@@ -182,19 +182,19 @@ function extractHttpStatus(err: unknown): number | undefined {
 function matchByHttpStatus(
     status: number | undefined,
     lowerMessage: string,
-): ReviewErrorCategory {
-    if (status === undefined) return ReviewErrorCategory.UNKNOWN;
+): LlmErrorCategory {
+    if (status === undefined) return LlmErrorCategory.UNKNOWN;
     if (status === 401 || status === 403) {
-        return ReviewErrorCategory.AUTH_INVALID;
+        return LlmErrorCategory.AUTH_INVALID;
     }
     if (status === 402) {
-        return ReviewErrorCategory.QUOTA_EXCEEDED;
+        return LlmErrorCategory.QUOTA_EXCEEDED;
     }
     if (status === 429) {
         // 429 is ambiguous: rate limit OR billing quota. Disambiguate via message.
         return looksLikeQuota(lowerMessage)
-            ? ReviewErrorCategory.QUOTA_EXCEEDED
-            : ReviewErrorCategory.RATE_LIMIT;
+            ? LlmErrorCategory.QUOTA_EXCEEDED
+            : LlmErrorCategory.RATE_LIMIT;
     }
     if (status === 404) {
         // Vertex returns 404 when the project isn't entitled to a publisher
@@ -202,15 +202,15 @@ function matchByHttpStatus(
         // it"). That's an enablement problem (Model Garden), not a bad model
         // name — classify it distinctly so the user gets the right fix.
         if (looksLikeModelAccessDenied(lowerMessage)) {
-            return ReviewErrorCategory.MODEL_ACCESS_DENIED;
+            return LlmErrorCategory.MODEL_ACCESS_DENIED;
         }
         // Most other provider 404s on the inference endpoint are model-not-found.
-        return ReviewErrorCategory.MODEL_NOT_FOUND;
+        return LlmErrorCategory.MODEL_NOT_FOUND;
     }
     if (status >= 500 && status < 600) {
-        return ReviewErrorCategory.TRANSIENT;
+        return LlmErrorCategory.TRANSIENT;
     }
-    return ReviewErrorCategory.UNKNOWN;
+    return LlmErrorCategory.UNKNOWN;
 }
 
 function looksLikeQuota(lower: string): boolean {
@@ -237,7 +237,7 @@ function looksLikeModelAccessDenied(lower: string): boolean {
     );
 }
 
-function matchByMessage(lower: string): ReviewErrorCategory {
+function matchByMessage(lower: string): LlmErrorCategory {
     if (
         lower.includes('insufficient_quota') ||
         lower.includes('insufficient quota') ||
@@ -247,7 +247,7 @@ function matchByMessage(lower: string): ReviewErrorCategory {
         lower.includes('billing') ||
         lower.includes('payment required')
     ) {
-        return ReviewErrorCategory.QUOTA_EXCEEDED;
+        return LlmErrorCategory.QUOTA_EXCEEDED;
     }
     if (
         lower.includes('invalid_api_key') ||
@@ -257,17 +257,17 @@ function matchByMessage(lower: string): ReviewErrorCategory {
         lower.includes('authentication failed') ||
         lower.includes('permission_denied')
     ) {
-        return ReviewErrorCategory.AUTH_INVALID;
+        return LlmErrorCategory.AUTH_INVALID;
     }
     if (
         lower.includes('rate_limit') ||
         lower.includes('rate limit') ||
         lower.includes('too many requests')
     ) {
-        return ReviewErrorCategory.RATE_LIMIT;
+        return LlmErrorCategory.RATE_LIMIT;
     }
     if (looksLikeModelAccessDenied(lower)) {
-        return ReviewErrorCategory.MODEL_ACCESS_DENIED;
+        return LlmErrorCategory.MODEL_ACCESS_DENIED;
     }
     if (
         lower.includes('model_not_found') ||
@@ -275,7 +275,7 @@ function matchByMessage(lower: string): ReviewErrorCategory {
         lower.includes('no such model') ||
         lower.includes('does not exist')
     ) {
-        return ReviewErrorCategory.MODEL_NOT_FOUND;
+        return LlmErrorCategory.MODEL_NOT_FOUND;
     }
     if (
         lower.includes('context length') ||
@@ -284,7 +284,7 @@ function matchByMessage(lower: string): ReviewErrorCategory {
         lower.includes('token limit') ||
         lower.includes('too many tokens')
     ) {
-        return ReviewErrorCategory.CONTEXT_OVERFLOW;
+        return LlmErrorCategory.CONTEXT_OVERFLOW;
     }
     if (
         lower.includes('econnreset') ||
@@ -295,35 +295,35 @@ function matchByMessage(lower: string): ReviewErrorCategory {
         lower.includes('timeout') ||
         lower.includes('aborted')
     ) {
-        return ReviewErrorCategory.TRANSIENT;
+        return LlmErrorCategory.TRANSIENT;
     }
-    return ReviewErrorCategory.UNKNOWN;
+    return LlmErrorCategory.UNKNOWN;
 }
 
 function buildFriendlyMessage(
-    category: ReviewErrorCategory,
+    category: LlmErrorCategory,
     provider?: string,
 ): string {
     const providerLabel = provider ? ` (${provider})` : '';
     switch (category) {
-        case ReviewErrorCategory.AUTH_INVALID:
+        case LlmErrorCategory.AUTH_INVALID:
             return `The configured API key${providerLabel} appears invalid or lacks permission. Check the key in your settings.`;
-        case ReviewErrorCategory.QUOTA_EXCEEDED:
+        case LlmErrorCategory.QUOTA_EXCEEDED:
             return `The configured API key${providerLabel} is out of credits or has hit its billing limit. Top up the account or adjust the plan.`;
-        case ReviewErrorCategory.RATE_LIMIT:
+        case LlmErrorCategory.RATE_LIMIT:
             return `Rate limit reached on the provider${providerLabel}. Try again in a few minutes.`;
-        case ReviewErrorCategory.MODEL_NOT_FOUND:
+        case LlmErrorCategory.MODEL_NOT_FOUND:
             return `The configured model is not available on the provider${providerLabel}. Verify the model name in your settings.`;
-        case ReviewErrorCategory.MODEL_ACCESS_DENIED:
+        case LlmErrorCategory.MODEL_ACCESS_DENIED:
             return (provider || '').toLowerCase().includes('vertex')
                 ? `Your Google Cloud project doesn't have access to the configured model on Vertex AI. Enable it in the project's Vertex AI Model Garden (open the model and accept the provider's terms), then comment \`@kody review\` to retry. The model id and region are fine — this is a one-time per-model enablement in Google Cloud.`
                 : `Your account doesn't have access to the configured model${providerLabel}. Enable or request access to it on the provider, then retry.`;
-        case ReviewErrorCategory.CONTEXT_OVERFLOW:
+        case LlmErrorCategory.CONTEXT_OVERFLOW:
             // Generic fallback only — typed AgentContextWindowTooSmallError /
             // AgentPromptTooLargeError go through buildContextOverflowMessage
             // with the specific numbers and actionable options.
             return `The PR exceeded the maximum context size accepted by the model${providerLabel}.`;
-        case ReviewErrorCategory.TRANSIENT:
+        case LlmErrorCategory.TRANSIENT:
             return `Transient error reaching the provider${providerLabel}. Try again.`;
         default:
             return `Unexpected error while running the code review${providerLabel}.`;

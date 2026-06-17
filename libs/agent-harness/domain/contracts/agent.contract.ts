@@ -28,6 +28,12 @@ export interface AgentSpec {
      *  thinking config). The harness does not interpret these — the domain
      *  builds them (provider-specific) and the runner passes them through. */
     readonly providerOptions?: Readonly<Record<string, unknown>>;
+    /** Opaque provider options attached to the SYSTEM message specifically
+     *  (e.g. Anthropic `cacheControl: ephemeral` so a long system prompt is
+     *  cached across the loop's steps). When set, the runner sends the system
+     *  prompt as a system message carrying these options instead of a bare
+     *  string. Domain-built; the harness does not interpret them. */
+    readonly systemProviderOptions?: Readonly<Record<string, unknown>>;
     /** Name of the "final tool" whose call IS the run's structured output.
      *  When set, the runner materializes each call to it into
      *  `RunState.artifacts` (the "result tool" convention) — so the domain
@@ -53,6 +59,11 @@ export interface AgentRunInput {
     readonly prompt: string;
     /** Optional seed messages (prior context). */
     readonly seedMessages?: readonly { role: 'user' | 'assistant'; content: string }[];
+    /** Opaque per-run telemetry forwarded to the model call as the AI SDK's
+     *  `experimental_telemetry` (the harness does not interpret it). Per-RUN so
+     *  each call — finder, each recall pass, each per-finding verify — can carry
+     *  its own observation name; the domain builds it (e.g. Langfuse). */
+    readonly telemetry?: Readonly<Record<string, unknown>>;
 }
 
 /** Adapter that exposes an AgentSpec AS A TOOL (sub-agent-as-tool pattern).

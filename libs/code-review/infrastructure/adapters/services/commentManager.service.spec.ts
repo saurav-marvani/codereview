@@ -42,7 +42,7 @@ jest.mock(
 // tracedGenerateText) instead of the v2 BYOKPromptRunnerService builder, so
 // Claude-on-Vertex works. Mock that path: capture the system/user prompts
 // (Bug E) and return a deterministic summary (Bug A).
-jest.mock('@libs/code-review/infrastructure/agents/llm/byok-to-vercel', () => ({
+jest.mock('@libs/llm/byok-to-vercel', () => ({
     byokToVercelModel: jest.fn(() => ({ __mockModel: true })),
 }));
 jest.mock('@libs/code-review/infrastructure/agents/llm/agent-loop', () => ({

@@ -8,7 +8,7 @@ import {
 } from '@libs/sandbox/domain/contracts/sandbox.provider';
 import { IPullRequestMessages } from '@libs/code-review/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import { CollectCrossFileContextsResult } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
-import { ReviewErrorCategory } from '@libs/code-review/infrastructure/agents/llm/error-classifier';
+import { LlmErrorCategory } from '@libs/llm/error-classifier';
 import type { ReviewWarning } from '@libs/code-review/infrastructure/agents/llm/review-warnings';
 import { PlatformType } from '@libs/core/domain/enums';
 import {
@@ -231,7 +231,7 @@ export interface CodeReviewPipelineContext extends PipelineContext {
      * this only exists to interpolate the user-facing reason.
      */
     lastReviewError?: {
-        category: ReviewErrorCategory;
+        category: LlmErrorCategory;
         provider?: string;
         friendlyMessage: string;
         agentName?: string;

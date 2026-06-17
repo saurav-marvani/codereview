@@ -16,7 +16,10 @@ import type {
 import type { Compressor } from '@libs/agent-harness/domain/contracts/compression.contract';
 import type { ProgressLedger } from '@libs/agent-harness/domain/contracts/progress.contract';
 import type { JSONSchema } from '@libs/agent-harness/domain/contracts/json-schema.contract';
-import type { RunState } from '@libs/agent-harness/domain/contracts/run-state.contract';
+import type {
+    RunState,
+    TokenUsage,
+} from '@libs/agent-harness/domain/contracts/run-state.contract';
 import type {
     AgentTool,
     ToolContext,
@@ -30,6 +33,11 @@ import { ForceFinalizePolicy } from '@libs/agent-harness/infrastructure/policies
 import { InMemoryToolRegistry } from '@libs/agent-harness/infrastructure/tools/in-memory-tool-registry';
 
 import { LlmVerifier } from './verifier.agent';
+import type { DiffCoverageLedger } from './adapters/diff-coverage-ledger.adapter';
+import {
+    buildLangfuseTelemetry,
+    type LangfuseTelemetryMetadata,
+} from '@libs/core/log/langfuse';
 // Domain helper still living in the legacy file (Zod validation of findings).
 import { sanitizeFindingsResult } from './llm/agent-loop';
 
@@ -113,6 +121,9 @@ export interface BuildFinderSpecParams {
     maxSteps?: number;
     /** Provider options (reasoning/thinking config) forwarded to the model. */
     providerOptions?: Readonly<Record<string, unknown>>;
+    /** Provider options attached to the system message (e.g. Anthropic prompt
+     *  caching) so the long system prompt is cached across the loop's steps. */
+    systemProviderOptions?: Readonly<Record<string, unknown>>;
 }
 
 export function buildFinderAgentSpec(params: BuildFinderSpecParams): AgentSpec {
@@ -147,6 +158,7 @@ export function buildFinderAgentSpec(params: BuildFinderSpecParams): AgentSpec {
         // doneToolName concern — same tool, distinct roles.
         resultToolName: FINDER_DONE_TOOL,
         providerOptions: params.providerOptions,
+        systemProviderOptions: params.systemProviderOptions,
     };
 }
 
@@ -229,6 +241,21 @@ export interface RunFinderWithVerifyParams {
     concurrency?: number;
     /** Provider options (reasoning/thinking config) forwarded to verifier runs. */
     providerOptions?: Readonly<Record<string, unknown>>;
+    /** System-message provider options (e.g. Anthropic prompt caching), forwarded
+     *  to the finder spec and the verifier runs. */
+    systemProviderOptions?: Readonly<Record<string, unknown>>;
+    /** The shared coverage ledger — gates the recall passes (recovery/chances).
+     *  When omitted, coverage-gated recall passes are skipped. */
+    coverageLedger?: DiffCoverageLedger;
+    /** Skip the heavy recall passes entirely (fast mode / self-contained trial). */
+    skipHeavyPasses?: boolean;
+    /** Skip ONLY the synthesis-rescue pass (coverage passes still run). */
+    skipSynthesisRescue?: boolean;
+    /** Langfuse telemetry context (org/team/PR/repo) — names the finder, recall
+     *  and per-finding verify observations so the trace is attributable. */
+    telemetryMetadata?: LangfuseTelemetryMetadata;
+    /** Agent name (finder/security/...) — prefixes every observation name. */
+    agentName?: string;
 }
 
 export interface VerifyUsage {
@@ -248,6 +275,10 @@ export interface FinderWithVerifyResult {
      *  finder's own usage is in finderState.usage; this is reported separately
      *  so callers can attribute cost — it is NOT in finderState. */
     verifyUsage: VerifyUsage;
+    /** Token usage of the recall passes (extra finder runs: coverage recovery,
+     *  second/third chance, synthesis rescue). NOT in finderState — summed here
+     *  so the caller can add it to the finder cost. */
+    recallUsage: VerifyUsage;
 }
 
 const ZERO_VERIFY_USAGE: VerifyUsage = {
@@ -267,8 +298,41 @@ export async function runFinderWithVerify(
     input: { prompt: string },
     ctx: ToolContext,
 ): Promise<FinderWithVerifyResult> {
-    const finderState = await params.runner.run(params.finderSpec, input, ctx);
-    const { reasoning, suggestions } = extractFindings(finderState);
+    const finderState = await params.runner.run(
+        params.finderSpec,
+        {
+            ...input,
+            telemetry: buildLangfuseTelemetry(
+                params.agentName ?? 'finder',
+                params.telemetryMetadata,
+            ),
+        },
+        ctx,
+    );
+    const base = extractFindings(finderState);
+
+    // RECALL PASSES (ported from the legacy loop): coverage recovery + second/
+    // third chance + synthesis rescue — extra finder runs that expand recall
+    // BEFORE verify filters. They share the coverage ledger (so they keep
+    // steering toward uncovered files) and dedup-merge into the candidate set.
+    const recall = await runRecallPasses(
+        base,
+        {
+            runner: params.runner,
+            finderSpec: params.finderSpec,
+            coverageLedger: params.coverageLedger,
+            finderState,
+            userPrompt: input.prompt,
+            skipHeavyPasses: params.skipHeavyPasses,
+            skipSynthesisRescue: params.skipSynthesisRescue,
+            telemetryMetadata: params.telemetryMetadata,
+            agentName: params.agentName,
+        },
+        ctx,
+    );
+    const reasoning = recall.findings.reasoning;
+    const suggestions = recall.findings.suggestions;
+    const recallUsage = recall.usage;
 
     if (suggestions.length === 0) {
         return {
@@ -277,6 +341,7 @@ export async function runFinderWithVerify(
             droppedByVerify: [],
             finderState,
             verifyUsage: ZERO_VERIFY_USAGE,
+            recallUsage,
         };
     }
 
@@ -286,6 +351,9 @@ export async function runFinderWithVerify(
         modelId: params.modelId,
         tools: params.tools,
         providerOptions: params.providerOptions,
+        systemProviderOptions: params.systemProviderOptions,
+        telemetryMetadata: params.telemetryMetadata,
+        agentName: params.agentName,
     });
     const pass = await runVerificationPass<FinderSuggestion>(
         { candidates: suggestions, verifier, concurrency: params.concurrency },
@@ -309,6 +377,9 @@ export async function runFinderWithVerify(
             tools: params.tools,
             forceFull: true,
             providerOptions: params.providerOptions,
+            systemProviderOptions: params.systemProviderOptions,
+            telemetryMetadata: params.telemetryMetadata,
+            agentName: params.agentName,
         });
         const gate = await runVerificationPass<FinderSuggestion>(
             {
@@ -334,6 +405,7 @@ export async function runFinderWithVerify(
         })),
         finderState,
         verifyUsage: sumVerifyUsage(verifier.usage, gateUsage),
+        recallUsage,
     };
 }
 
@@ -375,4 +447,234 @@ function sumVerifyUsage(a: VerifyUsage, b: VerifyUsage): VerifyUsage {
         reasoningTokens: a.reasoningTokens + b.reasoningTokens,
         cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens,
     };
+}
+
+// ─── Recall passes (ported from the legacy runAgentLoop) ─────────────────────
+// The legacy loop ran, after the main finder pass, up to three coverage passes
+// (recovery + second + third chance) and a synthesis-rescue pass, merging any
+// ADDITIONAL findings before verify. Here they are composition: extra runs of
+// the SAME finder spec (shared coverage ledger keeps steering toward uncovered
+// files), dedup-merged. Gated exactly like the legacy: skip in fast/trial mode.
+
+type FinderFindings = { reasoning: string; suggestions: FinderSuggestion[] };
+
+interface RecallPassesParams {
+    runner: AgentRunner;
+    finderSpec: AgentSpec;
+    coverageLedger?: DiffCoverageLedger;
+    finderState: RunState;
+    /** The original review prompt — reused by the synthesis-rescue pass. */
+    userPrompt: string;
+    skipHeavyPasses?: boolean;
+    skipSynthesisRescue?: boolean;
+    telemetryMetadata?: LangfuseTelemetryMetadata;
+    agentName?: string;
+}
+
+const ZERO_RECALL_USAGE: VerifyUsage = {
+    inputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    cacheReadTokens: 0,
+};
+
+/** Maximum coverage second/third-chance passes after the initial recovery
+ *  pass — matches the legacy (recovery + 2 chances). */
+const MAX_COVERAGE_CHANCES = 2;
+
+export async function runRecallPasses(
+    base: FinderFindings,
+    params: RecallPassesParams,
+    ctx: ToolContext,
+): Promise<{ findings: FinderFindings; usage: VerifyUsage }> {
+    let findings = base;
+    let usage = ZERO_RECALL_USAGE;
+    if (params.skipHeavyPasses) return { findings, usage };
+
+    const toolCalls = collectToolCalls(params.finderState);
+    const ledger = params.coverageLedger;
+
+    // Re-run the finder with a focused prompt; merge its ADDITIONAL findings.
+    // `label` names the observation so each pass is distinct in the trace.
+    const runPass = async (prompt: string, label: string): Promise<void> => {
+        const state = await params.runner.run(
+            params.finderSpec,
+            {
+                prompt,
+                telemetry: buildLangfuseTelemetry(
+                    `${params.agentName ?? 'finder'}-${label}`,
+                    params.telemetryMetadata,
+                ),
+            },
+            ctx,
+        );
+        usage = sumVerifyUsage(usage, usageOf(state.usage));
+        toolCalls.push(...collectToolCalls(state));
+        findings = mergeSuggestions(findings, extractFindings(state));
+    };
+
+    // 1. Coverage recovery — only if the main pass left targets uncovered AND it
+    //    actually investigated (no tool calls => model didn't engage; recovery
+    //    would just repeat). Mirrors the legacy gate.
+    if (ledger && !ledger.isSatisfied() && toolCalls.length > 0) {
+        await runPass(
+            buildCoveragePrompt(ledger.debtNote(), toolCalls, 'recovery'),
+            'coverage-recovery',
+        );
+    }
+
+    // 2 & 3. Second/third chance — while coverage stays below the 70% floor.
+    for (
+        let i = 0;
+        i < MAX_COVERAGE_CHANCES && ledger?.isLowCoverage();
+        i++
+    ) {
+        await runPass(
+            buildCoveragePrompt(ledger.debtNote(), toolCalls, 'second-chance'),
+            'coverage-second-chance',
+        );
+    }
+
+    // 4. Synthesis rescue — re-think from the evidence already gathered, surface
+    //    concrete MISSED bugs (no new variants/speculation). Always unless skipped.
+    if (!params.skipSynthesisRescue) {
+        const inspected = strongFilesFromRun(params.finderState);
+        await runPass(
+            buildSynthesisPrompt(
+                params.userPrompt,
+                inspected,
+                toolCalls,
+                findings.suggestions,
+            ),
+            'synthesis-rescue',
+        );
+    }
+
+    return { findings, usage };
+}
+
+/** Dedup-merge extra findings into the base set (ported from legacy
+ *  mergeFindings): key = file::startLine::endLine::content. */
+function mergeSuggestions(
+    baseF: FinderFindings,
+    extraF: FinderFindings,
+): FinderFindings {
+    const keyOf = (s: FinderSuggestion) =>
+        [
+            s.relevantFile,
+            s.relevantLinesStart ?? '',
+            s.relevantLinesEnd ?? '',
+            s.suggestionContent,
+        ].join('::');
+    const seen = new Set(baseF.suggestions.map(keyOf));
+    const additions = extraF.suggestions.filter((s) => {
+        const k = keyOf(s);
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+    });
+    return {
+        reasoning: [baseF.reasoning, extraF.reasoning]
+            .filter(Boolean)
+            .join('\n\n'),
+        suggestions: [...baseF.suggestions, ...additions],
+    };
+}
+
+function collectToolCalls(
+    state: RunState,
+): Array<{ tool: string; args: unknown }> {
+    return state.steps.flatMap((s) =>
+        (s.message.toolCalls ?? []).map((tc) => ({
+            tool: tc.name,
+            args: tc.input ?? {},
+        })),
+    );
+}
+
+function usageOf(u: TokenUsage | undefined): VerifyUsage {
+    return {
+        inputTokens: u?.inputTokens ?? 0,
+        outputTokens: u?.outputTokens ?? 0,
+        reasoningTokens: u?.reasoningTokens ?? 0,
+        cacheReadTokens: u?.cacheReadTokens ?? 0,
+    };
+}
+
+function investigationSummary(
+    toolCalls: Array<{ tool: string; args: unknown }>,
+): string {
+    return toolCalls
+        .slice(-20)
+        .map((tc) => {
+            const args =
+                typeof tc.args === 'string' ? tc.args : JSON.stringify(tc.args);
+            return `${tc.tool}(${(args ?? '').substring(0, 150)})`;
+        })
+        .join('\n');
+}
+
+function buildCoveragePrompt(
+    debtNote: string | null,
+    toolCalls: Array<{ tool: string; args: unknown }>,
+    kind: 'recovery' | 'second-chance',
+): string {
+    const lead =
+        kind === 'recovery'
+            ? 'You already investigated this review, but some changed files are still uncovered.'
+            : 'Your previous review finished with low changed-file coverage.';
+    return `${lead}
+
+<RecentInvestigation>
+${investigationSummary(toolCalls) || 'No prior tool calls captured.'}
+</RecentInvestigation>
+
+<RemainingCoverage>
+${debtNote ?? 'No coverage debt reported.'}
+</RemainingCoverage>
+
+Instructions:
+- Focus only on the remaining uncovered changed files.
+- Use readFile on those files before responding.
+- Be surgical: inspect remaining files, then submit ADDITIONAL findings only.
+- If the remaining files are safe, submit an empty suggestions array.`;
+}
+
+function buildSynthesisPrompt(
+    userPrompt: string,
+    inspected: Set<string>,
+    toolCalls: Array<{ tool: string; args: unknown }>,
+    current: FinderSuggestion[],
+): string {
+    const inspectedList = inspected.size
+        ? [...inspected].join('\n')
+        : 'No files recorded as inspected.';
+    const currentSummary = current.length
+        ? current
+              .map(
+                  (s) =>
+                      `- ${s.relevantFile}: ${s.suggestionContent.substring(0, 120)}`,
+              )
+              .join('\n')
+        : 'No findings reported yet.';
+    return `${userPrompt}
+
+<AlreadyInspectedFiles>
+${inspectedList}
+</AlreadyInspectedFiles>
+
+<RecentInvestigation>
+${investigationSummary(toolCalls) || 'No tool calls captured.'}
+</RecentInvestigation>
+
+<CurrentFindings>
+${currentSummary}
+</CurrentFindings>
+
+Your task:
+- Re-think the review based on the context above.
+- Do not add variants or restatements of existing findings.
+- Do not add speculative risks.
+- If there are concrete missed bugs, submit them.
+- If there is no clearly missed bug, submit an empty suggestions array.`;
 }

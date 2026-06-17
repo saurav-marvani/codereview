@@ -2,7 +2,7 @@ import {
     AgentContextWindowTooSmallError,
     AgentPromptTooLargeError,
 } from './errors';
-import { classifyLLMError, ReviewErrorCategory } from './error-classifier';
+import { classifyLLMError, LlmErrorCategory } from './error-classifier';
 
 describe('AgentContextWindowTooSmallError', () => {
     it('classifies as CONTEXT_OVERFLOW via existing message-substring matcher', () => {
@@ -12,7 +12,7 @@ describe('AgentContextWindowTooSmallError', () => {
             modelName: 'meta-llama/Llama-3.3-70B-Instruct',
         });
         expect(classifyLLMError(err).category).toBe(
-            ReviewErrorCategory.CONTEXT_OVERFLOW,
+            LlmErrorCategory.CONTEXT_OVERFLOW,
         );
     });
 
@@ -36,7 +36,7 @@ describe('AgentPromptTooLargeError', () => {
             modelName: 'llama',
         });
         expect(classifyLLMError(err).category).toBe(
-            ReviewErrorCategory.CONTEXT_OVERFLOW,
+            LlmErrorCategory.CONTEXT_OVERFLOW,
         );
     });
 

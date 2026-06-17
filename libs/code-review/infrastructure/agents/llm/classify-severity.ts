@@ -11,8 +11,8 @@ import { z } from 'zod';
 import { createLogger } from '@kodus/flow';
 import type { BYOKConfig } from '@kodus/kodus-common/llm';
 import type { CodeReviewConfig } from '@libs/core/infrastructure/config/types/general/codeReview.type';
-import { getInternalModel } from './byok-to-vercel';
-import { tracedGenerateText as generateText } from './agent-loop';
+import { getInternalModel } from '@libs/llm/byok-to-vercel';
+import { tracedGenerateText as generateText } from '@libs/llm/llm-call';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 
 const logger = createLogger('SeverityClassifier');

@@ -1,8 +1,8 @@
 import { createLogger } from '@kodus/flow';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { BYOKConfig } from '@kodus/kodus-common/llm';
-import { getInternalModel } from './byok-to-vercel';
-import { tracedGenerateText as generateText } from './agent-loop';
+import { getInternalModel } from '@libs/llm/byok-to-vercel';
+import { tracedGenerateText as generateText } from '@libs/llm/llm-call';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 
 const logger = createLogger('SuggestionFormatter');

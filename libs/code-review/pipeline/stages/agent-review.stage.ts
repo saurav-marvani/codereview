@@ -3,9 +3,9 @@ import * as crypto from 'crypto';
 import { createLogger } from '@kodus/flow';
 import { Output, jsonSchema } from 'ai';
 import { Inject, Injectable } from '@nestjs/common';
-import { tracedGenerateText } from '@libs/code-review/infrastructure/agents/llm/agent-loop';
+import { tracedGenerateText } from '@libs/llm/llm-call';
 import { resolveAdaptiveProfile } from '@libs/code-review/infrastructure/agents/llm/adaptive-fit';
-import { resolveContextWindow } from '@libs/code-review/infrastructure/agents/llm/model-context-window';
+import { resolveContextWindow } from '@libs/llm/model-context-window';
 import {
     dedupReviewWarnings,
     type ReviewWarning,
@@ -14,7 +14,7 @@ import {
     withStructuredOutputFallback,
     NoStructuredFallbackModelError,
     getModelName,
-} from '@libs/code-review/infrastructure/agents/llm/byok-to-vercel';
+} from '@libs/llm/byok-to-vercel';
 import { buildKodyRuleLink } from '@libs/code-review/utils/build-kody-rule-link';
 import {
     buildLangfuseTelemetry,
@@ -32,7 +32,7 @@ import {
     IAutomationExecutionService,
 } from '@libs/automation/domain/automationExecution/contracts/automation-execution.service';
 import { AutomationStatus } from '@libs/automation/domain/automation/enum/automation-status';
-import { AgentProgressEvent } from '@libs/code-review/infrastructure/agents/base-code-review-agent.provider';
+import { AgentProgressEvent } from '@libs/code-review/infrastructure/agents/review-agent.contract';
 
 import { GraphContextService } from '@libs/code-review/infrastructure/adapters/services/graph/graph-context.service';
 import {
@@ -52,10 +52,10 @@ import {
 } from '../context/code-review-pipeline.context';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
 import {
-    ReviewErrorCategory,
+    LlmErrorCategory,
     classifyLLMError,
     getClassification,
-} from '@libs/code-review/infrastructure/agents/llm/error-classifier';
+} from '@libs/llm/error-classifier';
 
 /**
  * Extract valid line ranges from a unified diff patch.
@@ -251,10 +251,6 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
         const changedFiles = context.changedFiles;
 
         if (!changedFiles?.length) {
-            this.logger.log({
-                message: `[AGENT] Skipping agent review: no changed files for PR#${prNumber}`,
-                context: this.stageName,
-            });
             return context;
         }
 
@@ -263,8 +259,9 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
         // single-shot analysis on the diff content inlined in the user
         // prompt. The orchestrator/agent-loop detect the empty tools case
         // and switch to a self-contained system/user prompt variant.
-        const hasSandbox = !!context.sandboxHandle?.remoteCommands;
-        if (!hasSandbox) {
+        //const hasSandbox = !!context.sandboxHandle?.remoteCommands;
+
+        if (!context.sandboxHandle?.remoteCommands) {
             this.logger.log({
                 message: `[AGENT] Running self-contained agent review for PR#${prNumber} (no sandbox available)`,
                 context: this.stageName,
@@ -348,7 +345,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
         const startTime = Date.now();
 
-        this.logger.log({
+        this.logger.debug({
             message: `[AGENT] Starting agent review for PR#${prNumber} with ${changedFiles.length} files`,
             context: this.stageName,
             metadata: {
@@ -388,6 +385,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             // prompt. `light+` profiles always skip it. The agent still has
             // grep/readFile to investigate cross-file relationships on demand.
             const shouldBuildCallGraph = !adaptiveProfile.dropCallGraph;
+
             if (!shouldBuildCallGraph) {
                 this.logger.log({
                     message: `[AGENT] adaptive-fit (${adaptiveProfile.kind}): skipping callGraph build to fit context window`,
@@ -395,38 +393,15 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 });
                 emitStageWarning('CALLGRAPH_DROPPED');
             }
+
             if (shouldBuildCallGraph) {
                 try {
-                    const sandboxType =
-                        context.sandboxHandle?.type ?? 'unknown';
-                    const hasSandbox = !!context.sandboxHandle?.run;
-                    this.logger.log({
-                        message: `[AGENT] sandboxHandle check: type=${sandboxType}, hasSandbox=${hasSandbox}, platform=${context.platformType}, repoId=${context.repository?.id}`,
-                        context: this.stageName,
-                        metadata: {
-                            sandboxType,
-                            hasSandbox,
-                            platform: context.platformType,
-                            repoExternalId: context.repository?.id,
-                        },
-                    });
-
                     if (context.sandboxHandle?.run) {
                         const repo =
                             await this.repositoryService.findByExternalId(
                                 context.platformType,
                                 String(context.repository?.id || ''),
                             );
-
-                        this.logger.log({
-                            message: `[AGENT] repo lookup: found=${!!repo}, astGraphStatus=${repo?.astGraphStatus ?? 'N/A'}, uuid=${repo?.uuid ?? 'N/A'}`,
-                            context: this.stageName,
-                            metadata: {
-                                repoExternalId: context.repository?.id,
-                                repoUuid: repo?.uuid,
-                                astGraphStatus: repo?.astGraphStatus,
-                            },
-                        });
 
                         if (repo?.astGraphStatus === AstGraphStatus.READY) {
                             callGraph = await this.graphContext.generateContext(
@@ -435,10 +410,6 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                                 repo.uuid,
                             );
                         } else {
-                            this.logger.log({
-                                message: `[AGENT] No AST graph in DB for PR#${prNumber} (status=${repo?.astGraphStatus || 'not found'}), falling back to legacy (changed-files only)`,
-                                context: this.stageName,
-                            });
                             callGraph =
                                 await this.graphContext.generateContextLegacy(
                                     context.sandboxHandle,
@@ -448,23 +419,6 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                                         context.repository?.defaultBranch,
                                 );
                         }
-                    } else {
-                        this.logger.warn({
-                            message: `[AGENT] No sandboxHandle object (type=${sandboxType}), skipping kodus-graph for PR#${prNumber}`,
-                            context: this.stageName,
-                        });
-                    }
-
-                    if (callGraph) {
-                        this.logger.log({
-                            message: `[AGENT] kodus-graph context: ${callGraph.length} chars for PR#${prNumber}`,
-                            context: this.stageName,
-                            metadata: {
-                                prNumber,
-                                callGraphChars: callGraph.length,
-                                callGraphPreview: callGraph.substring(0, 320),
-                            },
-                        });
                     }
                 } catch (err) {
                     this.logger.warn({
@@ -477,14 +431,11 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                         },
                     });
                 }
-            } // end if (shouldBuildCallGraph)
+            }
 
             const result = await this.reviewOrchestrator.execute({
                 organizationAndTeamData: context.organizationAndTeamData,
                 changedFiles,
-                // remoteCommands is undefined when no sandbox is available
-                // (e.g. trial mode). The agent loop detects the empty tools
-                // case and switches to a self-contained analysis variant.
                 remoteCommands: context.sandboxHandle?.remoteCommands as any,
                 prNumber,
                 repositoryId,
@@ -592,7 +543,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             const durationMs = Date.now() - startTime;
 
-            this.logger.log({
+            this.logger.debug({
                 message: `[TIMING] AgentReviewStage completed for PR#${prNumber}: ${result.suggestions.length} suggestions in ${durationMs}ms`,
                 context: this.stageName,
                 metadata: {
@@ -623,10 +574,12 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 'security',
                 'performance',
             ]);
+
             for (const failure of result.failures || []) {
                 const severity = CRITICAL_AGENTS.has(failure.agentName)
                     ? 'critical'
                     : 'partial';
+
                 context = this.updateContext(context, (draft) => {
                     draft.errors.push({
                         pipelineId: context.pipelineMetadata?.pipelineId,
@@ -651,6 +604,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             // UNKNOWN) classification wins; fall back to any critical, then
             // any failure.
             const failures = result.failures ?? [];
+
             if (failures.length > 0) {
                 const reviewProvider =
                     typeof context.codeReviewConfig?.byokConfig?.main
@@ -670,10 +624,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 ranked.sort((a, b) => {
                     const aMapped =
                         classifyFailure(a).category !==
-                        ReviewErrorCategory.UNKNOWN;
+                        LlmErrorCategory.UNKNOWN;
                     const bMapped =
                         classifyFailure(b).category !==
-                        ReviewErrorCategory.UNKNOWN;
+                        LlmErrorCategory.UNKNOWN;
                     if (aMapped === bMapped) return 0;
                     return aMapped ? -1 : 1;
                 });
@@ -690,7 +644,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     };
                 });
 
-                this.logger.log({
+                this.logger.debug({
                     message: `[AGENT] Review failures: ${failures.length} (critical=${criticalFailures.length}, category=${classification.category})`,
                     context: this.stageName,
                     metadata: {
@@ -1708,9 +1662,7 @@ ${summaries}`,
                 event,
                 label,
                 agentToolCalls,
-            ).catch(() => {
-                // Best effort — don't fail the review if timeline write fails
-            });
+            );
         };
     }
 
@@ -1856,9 +1808,6 @@ ${summaries}`,
                 coverage: event.coverage,
                 verification: event.verification,
                 anomalies: event.anomalies,
-                // Error details surfaced so the UI (or a copy-paste into a
-                // bug report) has the failure reason without needing docker
-                // logs access.
                 ...(event.status === 'error' && {
                     error: {
                         name: event.errorName,

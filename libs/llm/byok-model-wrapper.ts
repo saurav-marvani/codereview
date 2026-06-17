@@ -1,19 +1,17 @@
 /**
- * code-review (domain) — wrap a model so every generate goes through the BYOK
- * concurrency limiter (process-wide rate limit) AND reports BYOK failures
- * (drives the `byok.llm_errors_threshold` notification).
+ * Wrap a model so every generate goes through the BYOK concurrency limiter
+ * (process-wide rate limit) AND reports BYOK failures (drives the
+ * `byok.llm_errors_threshold` notification).
  *
- * This ports the legacy `throttledGenerateText` + `reportByokError` into the new
- * harness path — but at the MODEL level (AI SDK `wrapLanguageModel`), so the
- * harness runner stays model-agnostic and we don't need the legacy's private
- * AsyncLocalStorage (the reporter is passed in directly).
+ * Done at the MODEL level (AI SDK `wrapLanguageModel`) so any agent runner stays
+ * model-agnostic — the failure reporter is injected directly (no AsyncLocalStorage).
  */
 import { wrapLanguageModel, type LanguageModel } from 'ai';
 
 import { BYOKConfig } from '@kodus/kodus-common/llm';
 
-import { runWithBYOKLimiter, type BYOKLimiterRole } from './byok-to-vercel';
-import { attachClassification, classifyLLMError } from './error-classifier';
+import { runWithBYOKLimiter, type BYOKLimiterRole } from '@libs/llm/byok-to-vercel';
+import { attachClassification, classifyLLMError } from '@libs/llm/error-classifier';
 
 export interface WrapByokModelOptions {
     byokConfig?: BYOKConfig;

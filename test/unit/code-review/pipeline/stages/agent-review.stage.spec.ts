@@ -339,6 +339,7 @@ describe('AgentReviewStage', () => {
                 ],
                 failures: [],
                 totalDurationMs: 1000,
+                warnings: [],
             });
 
             const context = createBaseContext({
@@ -412,6 +413,7 @@ describe('AgentReviewStage', () => {
         });
 
         it('should handle undefined agentResults without throwing', async () => {
+            // Deliberately malformed (undefined agentResults) to test resilience.
             mockOrchestrator.execute.mockResolvedValue({
                 suggestions: [
                     {
@@ -424,8 +426,10 @@ describe('AgentReviewStage', () => {
                     },
                 ],
                 agentResults: undefined,
+                failures: [],
                 totalDurationMs: 1000,
-            });
+                warnings: [],
+            } as any);
 
             const context = createBaseContext({
                 changedFiles: [{ filename: 'src/auth.ts' } as any],

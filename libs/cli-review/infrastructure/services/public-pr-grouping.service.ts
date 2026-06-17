@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { createLogger } from '@kodus/flow';
 import { generateObject } from 'ai';
 import { z } from 'zod';
-import { byokToVercelModel } from '@libs/code-review/infrastructure/agents/llm/byok-to-vercel';
+import { byokToVercelModel } from '@libs/llm/byok-to-vercel';
 import type { IPublicPrGroupingService } from '@libs/cli-review/domain/contracts/public-pr-grouping.service.contract';
 import type { PublicPrMetadata } from './github-public-pr.service';
 

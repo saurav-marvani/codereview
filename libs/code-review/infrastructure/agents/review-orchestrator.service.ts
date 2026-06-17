@@ -14,7 +14,7 @@ import { KodyRulesAgentProvider } from './kody-rules-agent.provider';
 import {
     ReviewAgentInput,
     ReviewAgentOutput,
-} from './base-code-review-agent.provider';
+} from './review-agent.contract';
 import { dedupReviewWarnings, type ReviewWarning } from './llm/review-warnings';
 
 export interface OrchestratorInput extends ReviewAgentInput {
@@ -310,101 +310,101 @@ export class ReviewOrchestratorService {
         return Math.min(base + extra, ADAPTIVE_CAP);
     }
 
-    /**
-     * Deduplicate suggestions from different agents that target the same
-     * file + overlapping line range + same category. Only removes true
-     * duplicates (same category, high line overlap). Keeps suggestions
-     * from different categories even if they overlap in lines — a bug
-     * and a security issue on the same line are different findings.
-     */
-    private deduplicateSuggestions(
-        suggestions: Partial<CodeSuggestion>[],
-    ): Partial<CodeSuggestion>[] {
-        if (suggestions.length <= 1) return suggestions;
+    // /**
+    //  * Deduplicate suggestions from different agents that target the same
+    //  * file + overlapping line range + same category. Only removes true
+    //  * duplicates (same category, high line overlap). Keeps suggestions
+    //  * from different categories even if they overlap in lines — a bug
+    //  * and a security issue on the same line are different findings.
+    //  */
+    // private deduplicateSuggestions(
+    //     suggestions: Partial<CodeSuggestion>[],
+    // ): Partial<CodeSuggestion>[] {
+    //     if (suggestions.length <= 1) return suggestions;
 
-        const severityOrder: Record<string, number> = {
-            critical: 4,
-            high: 3,
-            medium: 2,
-            low: 1,
-        };
+    //     const severityOrder: Record<string, number> = {
+    //         critical: 4,
+    //         high: 3,
+    //         medium: 2,
+    //         low: 1,
+    //     };
 
-        // Group by file
-        const byFile = new Map<string, Partial<CodeSuggestion>[]>();
-        for (const s of suggestions) {
-            const file = s.relevantFile || '';
-            if (!byFile.has(file)) byFile.set(file, []);
-            byFile.get(file)!.push(s);
-        }
+    //     // Group by file
+    //     const byFile = new Map<string, Partial<CodeSuggestion>[]>();
+    //     for (const s of suggestions) {
+    //         const file = s.relevantFile || '';
+    //         if (!byFile.has(file)) byFile.set(file, []);
+    //         byFile.get(file)!.push(s);
+    //     }
 
-        const result: Partial<CodeSuggestion>[] = [];
+    //     const result: Partial<CodeSuggestion>[] = [];
 
-        for (const [, fileSuggestions] of byFile) {
-            // Sort by severity descending so higher severity is kept
-            fileSuggestions.sort(
-                (a, b) =>
-                    (severityOrder[b.severity || 'medium'] || 2) -
-                    (severityOrder[a.severity || 'medium'] || 2),
-            );
+    //     for (const [, fileSuggestions] of byFile) {
+    //         // Sort by severity descending so higher severity is kept
+    //         fileSuggestions.sort(
+    //             (a, b) =>
+    //                 (severityOrder[b.severity || 'medium'] || 2) -
+    //                 (severityOrder[a.severity || 'medium'] || 2),
+    //         );
 
-            const kept: Partial<CodeSuggestion>[] = [];
+    //         const kept: Partial<CodeSuggestion>[] = [];
 
-            for (const candidate of fileSuggestions) {
-                const isDuplicate = kept.some(
-                    (existing) =>
-                        this.sameCategory(existing, candidate) &&
-                        this.highLineOverlap(existing, candidate),
-                );
-                if (!isDuplicate) {
-                    kept.push(candidate);
-                }
-            }
+    //         for (const candidate of fileSuggestions) {
+    //             const isDuplicate = kept.some(
+    //                 (existing) =>
+    //                     this.sameCategory(existing, candidate) &&
+    //                     this.highLineOverlap(existing, candidate),
+    //             );
+    //             if (!isDuplicate) {
+    //                 kept.push(candidate);
+    //             }
+    //         }
 
-            result.push(...kept);
-        }
+    //         result.push(...kept);
+    //     }
 
-        return result;
-    }
+    //     return result;
+    // }
 
-    /**
-     * Check if two suggestions are from the same category (bug, security, performance).
-     * Different categories = different findings, even on the same lines.
-     */
-    private sameCategory(
-        a: Partial<CodeSuggestion>,
-        b: Partial<CodeSuggestion>,
-    ): boolean {
-        const catA = (a.label || '').toLowerCase();
-        const catB = (b.label || '').toLowerCase();
-        if (!catA || !catB) return true; // If no label, assume same to be safe
-        return catA === catB;
-    }
+    // /**
+    //  * Check if two suggestions are from the same category (bug, security, performance).
+    //  * Different categories = different findings, even on the same lines.
+    //  */
+    // private sameCategory(
+    //     a: Partial<CodeSuggestion>,
+    //     b: Partial<CodeSuggestion>,
+    // ): boolean {
+    //     const catA = (a.label || '').toLowerCase();
+    //     const catB = (b.label || '').toLowerCase();
+    //     if (!catA || !catB) return true; // If no label, assume same to be safe
+    //     return catA === catB;
+    // }
 
-    /**
-     * Check if two suggestions have >70% line overlap.
-     * Small overlaps (e.g., adjacent functions) are not duplicates.
-     */
-    private highLineOverlap(
-        a: Partial<CodeSuggestion>,
-        b: Partial<CodeSuggestion>,
-    ): boolean {
-        const aStart = a.relevantLinesStart ?? 0;
-        const aEnd = a.relevantLinesEnd ?? aStart;
-        const bStart = b.relevantLinesStart ?? 0;
-        const bEnd = b.relevantLinesEnd ?? bStart;
+    // /**
+    //  * Check if two suggestions have >70% line overlap.
+    //  * Small overlaps (e.g., adjacent functions) are not duplicates.
+    //  */
+    // private highLineOverlap(
+    //     a: Partial<CodeSuggestion>,
+    //     b: Partial<CodeSuggestion>,
+    // ): boolean {
+    //     const aStart = a.relevantLinesStart ?? 0;
+    //     const aEnd = a.relevantLinesEnd ?? aStart;
+    //     const bStart = b.relevantLinesStart ?? 0;
+    //     const bEnd = b.relevantLinesEnd ?? bStart;
 
-        if (aStart === 0 || bStart === 0) return false;
+    //     if (aStart === 0 || bStart === 0) return false;
 
-        // No overlap at all
-        if (aStart > bEnd || bStart > aEnd) return false;
+    //     // No overlap at all
+    //     if (aStart > bEnd || bStart > aEnd) return false;
 
-        // Calculate overlap percentage
-        const overlapStart = Math.max(aStart, bStart);
-        const overlapEnd = Math.min(aEnd, bEnd);
-        const overlapSize = overlapEnd - overlapStart + 1;
-        const smallerRange = Math.min(aEnd - aStart + 1, bEnd - bStart + 1);
+    //     // Calculate overlap percentage
+    //     const overlapStart = Math.max(aStart, bStart);
+    //     const overlapEnd = Math.min(aEnd, bEnd);
+    //     const overlapSize = overlapEnd - overlapStart + 1;
+    //     const smallerRange = Math.min(aEnd - aStart + 1, bEnd - bStart + 1);
 
-        // Only deduplicate if >70% of the smaller range overlaps
-        return overlapSize / smallerRange > 0.7;
-    }
+    //     // Only deduplicate if >70% of the smaller range overlaps
+    //     return overlapSize / smallerRange > 0.7;
+    // }
 }

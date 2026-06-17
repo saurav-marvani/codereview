@@ -3,7 +3,7 @@ import {
     LLM_CALL_TIMEOUT_MS,
     hardTimeout,
     timeoutSignal,
-} from './agent-loop';
+} from '@libs/llm/llm-call';
 
 describe('agent-loop timeout primitives', () => {
     describe('AGENT_TIMEOUT_MS contract', () => {

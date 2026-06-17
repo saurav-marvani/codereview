@@ -102,7 +102,16 @@ export class AiSdkAgentRunner implements AgentRunner {
         try {
             result = await generateText({
                 model: this.models.resolve(spec.modelId),
-                system: spec.systemPrompt,
+                // When the domain supplies systemProviderOptions (e.g. Anthropic
+                // prompt caching), send the system prompt as a system message
+                // carrying those options; otherwise a plain string.
+                system: spec.systemProviderOptions
+                    ? ({
+                          role: 'system',
+                          content: spec.systemPrompt,
+                          providerOptions: spec.systemProviderOptions,
+                      } as any)
+                    : spec.systemPrompt,
                 messages,
                 tools: toolMap,
                 // Cancellation / timeout: forwarded from the caller (the domain
@@ -111,6 +120,11 @@ export class AiSdkAgentRunner implements AgentRunner {
                 // Opaque provider options (reasoning/thinking config) — domain-built.
                 ...(spec.providerOptions
                     ? { providerOptions: spec.providerOptions as any }
+                    : {}),
+                // Opaque per-run telemetry (e.g. Langfuse experimental_telemetry)
+                // — domain-built, forwarded verbatim. Self-disables when off.
+                ...(input.telemetry
+                    ? { experimental_telemetry: input.telemetry as any }
                     : {}),
                 // shouldStop seam: stop if ANY policy says so; hard fail-open at maxSteps.
                 stopWhen: [

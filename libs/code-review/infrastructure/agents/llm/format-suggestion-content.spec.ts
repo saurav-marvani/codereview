@@ -14,7 +14,7 @@ jest.mock('@ai-sdk/google', () => ({
     createGoogleGenerativeAI: () => () => ({ __mock: 'google-model' }),
 }));
 
-jest.mock('./byok-to-vercel', () => ({
+jest.mock('@libs/llm/byok-to-vercel', () => ({
     getInternalModel: () => ({ __mock: 'byok-model' }),
 }));
 

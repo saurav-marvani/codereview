@@ -5,7 +5,7 @@ import {
     buildReasoningProviderOptions,
     EFFORT_TO_BUDGET,
     type ReasoningEffort,
-} from './agent-loop';
+} from '@libs/llm/reasoning-options';
 
 describe('buildReasoningProviderOptions', () => {
     describe('returns {} when reasoning is off or provider is missing', () => {

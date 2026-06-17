@@ -4,10 +4,8 @@ import { PermissionValidationService } from '@libs/ee/shared/services/permission
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
 import { ByokErrorCounter } from '@libs/notifications/application/byok-error-counter.service';
-import {
-    BaseCodeReviewAgentProvider,
-    ReviewAgentIdentity,
-} from './base-code-review-agent.provider';
+import { BaseCodeReviewAgentProvider } from './base-code-review-agent.provider';
+import { ReviewAgentIdentity } from './review-agent.contract';
 import { buildCategoryReviewPrompt } from './review-prompt-blocks';
 
 @Injectable()

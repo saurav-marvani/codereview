@@ -1,5 +1,5 @@
-import { assertContextWindowFitsOverhead } from './base-code-review-agent.provider';
-import { AgentContextWindowTooSmallError } from './llm/errors';
+import { assertContextWindowFitsOverhead } from './context-fit-planner';
+import { AgentContextWindowTooSmallError } from '@libs/llm/errors';
 import { resolveAdaptiveProfile } from './llm/adaptive-fit';
 
 describe('assertContextWindowFitsOverhead', () => {

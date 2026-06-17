@@ -1,5 +1,5 @@
-import { assertPromptFitsInContext } from './agent-loop';
-import { AgentPromptTooLargeError } from './errors';
+import { assertPromptFitsInContext } from '@libs/llm/preflight-context';
+import { AgentPromptTooLargeError } from '@libs/llm/errors';
 
 describe('assertPromptFitsInContext', () => {
     it('does not throw when prompt is well below contextWindow', () => {

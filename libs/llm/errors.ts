@@ -5,7 +5,7 @@
  *
  * Both messages intentionally include the substring "context length" so
  * that classifyLLMError() (error-classifier.ts) maps them to
- * ReviewErrorCategory.CONTEXT_OVERFLOW without needing a new category —
+ * LlmErrorCategory.CONTEXT_OVERFLOW without needing a new category —
  * the existing message-substring matcher already covers this case for
  * provider-emitted errors.
  */

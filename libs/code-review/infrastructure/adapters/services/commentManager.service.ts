@@ -41,8 +41,8 @@ import {
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
-import { byokToVercelModel } from '@libs/code-review/infrastructure/agents/llm/byok-to-vercel';
-import { tracedGenerateText } from '@libs/code-review/infrastructure/agents/llm/agent-loop';
+import { byokToVercelModel } from '@libs/llm/byok-to-vercel';
+import { tracedGenerateText } from '@libs/llm/llm-call';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 import {
     getTranslationsForLanguageByCategory,

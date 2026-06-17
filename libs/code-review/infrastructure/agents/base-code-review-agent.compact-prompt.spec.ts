@@ -8,11 +8,11 @@
  */
 
 import { resolveAdaptiveProfile } from './llm/adaptive-fit';
+import { BaseCodeReviewAgentProvider } from './base-code-review-agent.provider';
 import {
-    BaseCodeReviewAgentProvider,
     type ReviewAgentInput,
     type ReviewAgentIdentity,
-} from './base-code-review-agent.provider';
+} from './review-agent.contract';
 
 class TestAgent extends BaseCodeReviewAgentProvider {
     constructor() {
