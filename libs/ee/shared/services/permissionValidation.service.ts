@@ -178,12 +178,14 @@ export class PermissionValidationService {
             // billing-managed review credits when those fields are present.
             if (validation.subscriptionStatus === 'trial') {
                 let trialByokConfig: BYOKConfig | null = null;
+                let byokLookupFailed = false;
 
                 try {
                     trialByokConfig = await this.getBYOKConfig(
                         organizationAndTeamData,
                     );
                 } catch (error) {
+                    byokLookupFailed = true;
                     this.logger.warn({
                         message:
                             'Could not resolve BYOK config for trial; continuing with managed trial validation',
@@ -193,6 +195,12 @@ export class PermissionValidationService {
                         error,
                     });
                 }
+
+                // Only enforce the credit gate when we're CONFIDENT there's no
+                // BYOK. If the lookup threw we can't rule out a connected key,
+                // so a user who burned their credits and then connected BYOK
+                // must not be blocked by a flaky read — fail open on BYOK.
+                const noByok = !trialByokConfig && !byokLookupFailed;
 
                 // Only trials created under the managed-credit model carry
                 // these fields. Legacy trials (started before this shipped)
@@ -204,7 +212,7 @@ export class PermissionValidationService {
 
                 if (
                     usesTrialCredits &&
-                    !trialByokConfig &&
+                    noByok &&
                     validation.trialReviewCreditsRemaining === 0
                 ) {
                     this.logger.warn({
@@ -232,7 +240,7 @@ export class PermissionValidationService {
 
                 if (
                     usesTrialCredits &&
-                    !trialByokConfig &&
+                    noByok &&
                     options.consumeTrialReviewCredit
                 ) {
                     const consumeResult =

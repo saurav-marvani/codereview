@@ -267,6 +267,35 @@ describe('PermissionValidationService.validateExecutionPermissions', () => {
         ).not.toHaveBeenCalled();
     });
 
+    it('does NOT block an exhausted trial when the BYOK lookup fails (fail open)', async () => {
+        // A user who burned their 5 credits and then connected BYOK must not
+        // be gated by a flaky BYOK-config read. When getBYOKConfig throws we
+        // can't rule out a key, so we neither block nor consume.
+        const licenseService = createMockLicenseService({
+            subscriptionStatus: 'trial',
+            planType: 'trial',
+            trialReviewCreditsTotal: 5,
+            trialReviewCreditsUsed: 5,
+            trialReviewCreditsRemaining: 0,
+        });
+        const flakyOrgParams = {
+            findByKey: jest.fn().mockRejectedValue(new Error('flaky DB')),
+        };
+        const service = createService(licenseService, flakyOrgParams);
+
+        const result = await service.validateExecutionPermissions(
+            orgData,
+            undefined,
+            'ValidatePrerequisitesStage',
+            { consumeTrialReviewCredit: true, trialReviewCreditUsageKey: 'r:1' },
+        );
+
+        expect(result.allowed).toBe(true);
+        expect(
+            licenseService.consumeTrialReviewCredit,
+        ).not.toHaveBeenCalled();
+    });
+
     // ─── free_byok ──────────────────────────────────────────────────
 
     describe('free_byok plan', () => {
