@@ -6,6 +6,7 @@ test("allScenarios: includes the registered release-gate scenarios", () => {
     const ids = Object.keys(allScenarios).sort();
     assert.deepEqual(ids, [
         "centralized-config-sync",
+        "cockpit-analytics",
         "code-review-basic",
         "code-review-vertex-byok",
         "command-review",

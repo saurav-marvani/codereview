@@ -1379,7 +1379,9 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         oldDelta: Record<string, any>;
         nextDelta: Record<string, any>;
     }): Record<string, any> {
-        const clonedExisting = deepMerge({}, params.existingScopedConfig || {});
+        const clonedExisting = JSON.parse(
+            JSON.stringify(params.existingScopedConfig || {}),
+        );
 
         this.pruneRemovedDeltaKeysRecursively(
             clonedExisting,
@@ -1446,15 +1448,38 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         existingScopedConfig: Record<string, any> | null | undefined,
         nextScopedConfig: Record<string, any>,
     ): boolean {
-        const existing = existingScopedConfig || {};
-        const next = nextScopedConfig || {};
-
-        const forwardDelta = deepDifference(existing, next);
-        const backwardDelta = deepDifference(next, existing);
-
-        return (
-            this.isDeepEmpty(forwardDelta) && this.isDeepEmpty(backwardDelta)
+        return this.isDeepEqualIgnoringEmpty(
+            existingScopedConfig || {},
+            nextScopedConfig || {},
         );
+    }
+
+    private isDeepEqualIgnoringEmpty(a: unknown, b: unknown): boolean {
+        if (this.isDeepEmpty(a) && this.isDeepEmpty(b)) {
+            return true;
+        }
+
+        if (this.isPlainObject(a) && this.isPlainObject(b)) {
+            const objA = a as Record<string, unknown>;
+            const objB = b as Record<string, unknown>;
+            const keys = new Set([...Object.keys(objA), ...Object.keys(objB)]);
+            for (const key of keys) {
+                if (!this.isDeepEqualIgnoringEmpty(objA[key], objB[key])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        if (Array.isArray(a) && Array.isArray(b)) {
+            if (a.length !== b.length) return false;
+            for (let i = 0; i < a.length; i++) {
+                if (!this.isDeepEqualIgnoringEmpty(a[i], b[i])) return false;
+            }
+            return true;
+        }
+
+        return a === b;
     }
 
     private isDeepEmpty(value: unknown): boolean {

@@ -368,13 +368,17 @@ export class CentralizedConfigDownloadUseCase {
             });
         }
 
-        const rules =
+        const fetchedRules =
             (await this.findRulesInOrganizationByRuleFilterKodyRulesUseCase.execute(
                 organizationId,
                 options.markRulesAsPendingWithSourcePath
                     ? {}
                     : { status: KodyRulesStatus.ACTIVE },
             )) as IKodyRule[];
+
+        const rules = fetchedRules.filter(
+            (rule) => rule.status !== KodyRulesStatus.DELETED,
+        );
 
         if (rules.length === 0) {
             this.logger.log({

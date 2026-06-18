@@ -1,5 +1,6 @@
 import type { Scenario } from '../lib/types.js';
 import centralizedConfigSync from './centralized-config-sync.js';
+import cockpitAnalytics from './cockpit-analytics.js';
 import codeReviewBasic from './code-review-basic.js';
 import codeReviewVertexByok from './code-review-vertex-byok.js';
 import conversationVertexByok from './conversation-vertex-byok.js';
@@ -26,6 +27,7 @@ export const allScenarios: Record<string, Scenario> = {
     [conversationVertexByok.id]: conversationVertexByok,
     [centralizedConfigSync.id]: centralizedConfigSync,
     [commandReview.id]: commandReview,
+    [cockpitAnalytics.id]: cockpitAnalytics,
     [kodyRulesCreateAndApply.id]: kodyRulesCreateAndApply,
     [licenseAttribution.id]: licenseAttribution,
     [perSeatLicenseToggle.id]: perSeatLicenseToggle,
@@ -55,6 +57,7 @@ export function resolveScenarios(ids: string[]): Scenario[] {
 
 export {
     centralizedConfigSync,
+    cockpitAnalytics,
     codeReviewBasic,
     codeReviewVertexByok,
     conversationVertexByok,
