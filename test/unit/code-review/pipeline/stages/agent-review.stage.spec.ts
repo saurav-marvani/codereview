@@ -675,6 +675,9 @@ describe('AgentReviewStage', () => {
             expect(
                 mockAutomationService.updateCodeReview.mock.calls[0][1].status,
             ).toBe('error');
+        });
+    });
+
     describe('deduplicateSuggestions - NaN index handling (three-layer protection)', () => {
         const makeSuggestions = (count: number) =>
             Array.from({ length: count }, (_, i) => ({
