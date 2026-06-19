@@ -1,4 +1,4 @@
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { Injectable } from '@nestjs/common';
 
 const DEFAULT_ENDPOINT = 'https://telemetry.kodus.io/v1/heartbeat';

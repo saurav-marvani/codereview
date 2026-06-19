@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { generateObject } from 'ai';
 import { z } from 'zod';
 import { byokToVercelModel } from '@libs/llm/byok-to-vercel';

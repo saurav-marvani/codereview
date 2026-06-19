@@ -26,8 +26,8 @@ ENV npm_config_fetch_timeout=600000
 # repeated apt-get runs don't re-download the same .deb packages. The
 # `docker-clean` apt hook (ships in debian-slim) would delete the cache
 # after each install, defeating the mount — remove it first.
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
+    --mount=type=cache,target=/var/lib/apt,sharing=private \
     rm -f /etc/apt/apt.conf.d/docker-clean \
   && apt-get update \
   && apt-get install -y --no-install-recommends \
@@ -97,7 +97,7 @@ RUN sed -e "s/__CLOUD_MODE__/${API_CLOUD_MODE}/g" \
 # webpack.config.js) across builds via a BuildKit cache mount. Without this the
 # `COPY . .` above invalidates the layer on every source change and webpack
 # recompiles all 6 apps from scratch (~3min). With it, only the changed modules
-# rebuild → seconds. sharing=locked because build:apps runs the 6 nest builds in
+# rebuild → seconds. sharing=private because build:apps runs the 6 nest builds in
 # parallel against one shared cache dir.
 RUN --mount=type=cache,target=/usr/src/app/node_modules/.cache,sharing=locked \
     pnpm run build:apps && pnpm run build:migrations
@@ -167,8 +167,8 @@ ENV RELEASE_VERSION=${RELEASE_VERSION}
 ENV SENTRY_RELEASE=${RELEASE_VERSION}
 ENV PATH="/home/node/.bun/bin:${PATH}"
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
+    --mount=type=cache,target=/var/lib/apt,sharing=private \
     rm -f /etc/apt/apt.conf.d/docker-clean \
   && apt-get update \
   && apt-get install -y --no-install-recommends \

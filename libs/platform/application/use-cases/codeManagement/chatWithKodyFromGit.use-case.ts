@@ -1,4 +1,5 @@
-import { createLogger, createThreadId } from '@kodus/flow';
+import { createThreadId } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { Inject, Injectable } from '@nestjs/common';
 
 import { BusinessRulesValidationAgentUseCase } from '@libs/agents/application/use-cases/business-rules-validation-agent.use-case';

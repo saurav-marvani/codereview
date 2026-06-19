@@ -1,4 +1,5 @@
-import { createLogger, createThreadId } from '@kodus/flow';
+import { createThreadId } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 

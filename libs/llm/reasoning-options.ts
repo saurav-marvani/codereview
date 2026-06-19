@@ -7,7 +7,7 @@
  * top. No review/agent shapes — any caller building a model request can use it.
  */
 import { BYOKProvider } from '@kodus/kodus-common/llm';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import type { LangfuseTelemetryMetadata } from '@libs/core/log/langfuse';
 
 const logger = createLogger('ReasoningOptions');

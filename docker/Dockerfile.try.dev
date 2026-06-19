@@ -16,7 +16,7 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 COPY package*.json yarn.lock ./
 
-RUN --mount=type=cache,target=/yarn-cache,sharing=locked \
+RUN --mount=type=cache,target=/yarn-cache,sharing=private \
     YARN_CACHE_FOLDER=/yarn-cache \
     yarn install --frozen-lockfile
 

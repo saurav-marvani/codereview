@@ -1,11 +1,15 @@
-import { getObservability, IdGenerator, StorageEnum } from '@kodus/flow';
+import {
+    getObservability,
+    IdGenerator,
+    StorageEnum,
+} from '@libs/core/observability';
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ConnectionString } from 'connection-string';
 
 import { DatabaseConnection } from '@libs/core/infrastructure/config/types';
 
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { TokenTrackingHandler, BYOKConfig } from '@kodus/kodus-common/llm';
 import { CallbackHandler as LangfuseCallbackHandler } from '@langfuse/langchain';
 import { shouldTrace } from './langfuse';

@@ -1,7 +1,7 @@
 import {
     sanitizeFindingsResult,
     type FindingsOutput,
-} from './agent-loop';
+} from '../findings-schema';
 
 describe('sanitizeFindingsResult', () => {
     it('returns null when given null', () => {

@@ -12,15 +12,16 @@ import { CodeReviewVersion } from '@/core/domain/enums/code-review.enum';
 const mockTracedGenerateText = jest.fn();
 const mockWithStructuredOutputFallback = jest.fn();
 
-jest.mock(
-    '@libs/code-review/infrastructure/agents/llm/agent-loop',
-    () => ({
-        tracedGenerateText: (...args: any[]) => mockTracedGenerateText(...args),
-    }),
-);
+// tracedGenerateText was relocated from the legacy agent-loop to @libs/llm/llm-call
+// during the llm migration; mock it there so the stage's dedup LLM call is
+// intercepted (preserve the module's other exports, e.g. AGENT_TIMEOUT_MS).
+jest.mock('@libs/llm/llm-call', () => ({
+    ...jest.requireActual('@libs/llm/llm-call'),
+    tracedGenerateText: (...args: any[]) => mockTracedGenerateText(...args),
+}));
 
 jest.mock(
-    '@libs/code-review/infrastructure/agents/llm/byok-to-vercel',
+    '@libs/llm/byok-to-vercel',
     () => ({
         withStructuredOutputFallback: (...args: any[]) =>
             mockWithStructuredOutputFallback(...args),
@@ -42,7 +43,7 @@ jest.mock('ai', () => ({
     tool: (opts: any) => opts,
 }));
 
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
         error: jest.fn(),

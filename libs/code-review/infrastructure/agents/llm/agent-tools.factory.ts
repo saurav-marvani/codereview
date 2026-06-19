@@ -1,6 +1,6 @@
 import { jsonSchema } from 'ai';
 import * as path from 'node:path';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { RemoteCommands } from '../../adapters/services/collectCrossFileContexts.service';
 
 const logger = createLogger('AgentTools');

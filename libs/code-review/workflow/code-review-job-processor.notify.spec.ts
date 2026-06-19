@@ -4,7 +4,7 @@ import { NotificationEvent } from '@libs/notifications/domain/catalog/events';
 
 import { CodeReviewJobProcessorService } from './code-review-job-processor.service';
 
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
         warn: jest.fn(),

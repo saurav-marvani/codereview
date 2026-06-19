@@ -1,4 +1,5 @@
-import { createLogger, createThreadId } from '@kodus/flow';
+import { createThreadId } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
 import { LabelType } from '@libs/common/utils/codeManagement/labels';
 import { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';

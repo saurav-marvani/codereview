@@ -11,7 +11,7 @@ import { DeliveryStatus } from '@/platformData/domain/pullRequests/enums/deliver
 import { ClusteringType } from '@/core/infrastructure/config/types/general/codeReview.type';
 
 // Mock logger to silence logs during tests
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
         error: jest.fn(),

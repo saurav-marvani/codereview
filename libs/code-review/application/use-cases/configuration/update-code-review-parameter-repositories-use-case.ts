@@ -2,7 +2,7 @@ import { CreateOrUpdateParametersUseCase } from '@libs/organization/application/
 import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,

@@ -33,9 +33,9 @@ import {
 } from './review-agent.contract';
 import { AGENT_TIMEOUT_MS } from '@libs/llm/llm-call';
 import { buildProviderOptions } from '@libs/llm/reasoning-options';
-// buildAgentAnomalies is review-specific (anomaly summary shapes) — stays in
-// the code-review agent module.
-import { buildAgentAnomalies } from './llm/agent-loop';
+// buildAgentAnomalies is review-specific (anomaly summary shapes) — lives in its
+// own module (relocated out of the legacy llm/agent-loop.ts).
+import { buildAgentAnomalies } from './agent-anomalies';
 import { composeAbortSignal } from '@libs/common/utils/parent-signal-compose';
 import {
     buildCoverageLedger,

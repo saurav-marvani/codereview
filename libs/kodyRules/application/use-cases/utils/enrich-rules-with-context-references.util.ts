@@ -1,4 +1,4 @@
-import { SimpleLogger } from '@kodus/flow/dist/observability/logger';
+import { SimpleLogger } from '@libs/core/log/logger';
 
 import type { IContextReferenceService } from '@libs/ai-engine/domain/contextReference/contracts/context-reference.service.contract';
 import type { ContextReferenceEntity } from '@libs/ai-engine/domain/contextReference/entities/context-reference.entity';

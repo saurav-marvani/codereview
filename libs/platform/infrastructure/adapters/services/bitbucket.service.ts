@@ -11,7 +11,7 @@ import {
 import { BitbucketCloudService } from './bitbucket/bitbucket-cloud.service';
 import { BitbucketDataCenterService } from './bitbucket/bitbucket-data-center.service';
 import { BitbucketAuthDetail } from '@libs/integrations/domain/authIntegrations/types/bitbucket-auth-detail.type';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import {
     INTEGRATION_CONFIG_SERVICE_TOKEN,
     IIntegrationConfigService,

@@ -5,7 +5,7 @@ import { ILoadExternalContextStage } from './contracts/loadExternalContextStage.
 import { BasePipelineStage } from '@libs/core/infrastructure/pipeline/abstracts/base-stage.abstract';
 import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-visibility.enum';
 
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 import {
     IPromptExternalReferenceManagerService,

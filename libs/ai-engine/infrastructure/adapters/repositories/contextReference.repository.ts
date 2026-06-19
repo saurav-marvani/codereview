@@ -5,7 +5,7 @@ import { ContextReferenceModel } from './schemas/contextReference.model';
 import { ContextReferenceEntity } from '@libs/ai-engine/domain/contextReference/entities/context-reference.entity';
 import { IContextReference } from '@libs/ai-engine/domain/contextReference/interfaces/context-reference.interface';
 import { IContextReferenceRepository } from '@libs/ai-engine/domain/contextReference/contracts/context-reference.repository.contract';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 
 function modelToEntity(model: ContextReferenceModel): ContextReferenceEntity {
     return ContextReferenceEntity.create({

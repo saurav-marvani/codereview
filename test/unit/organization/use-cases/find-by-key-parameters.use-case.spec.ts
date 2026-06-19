@@ -33,7 +33,7 @@ const mockConfigService = {
 };
 
 // Mock @kodus/flow createLogger
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => mockLogger,
 }));
 

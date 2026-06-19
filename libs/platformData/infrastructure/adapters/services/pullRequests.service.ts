@@ -24,7 +24,7 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { v4 as uuidv4 } from 'uuid';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 
 @Injectable()
 export class PullRequestsService implements IPullRequestsService {

@@ -24,8 +24,13 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN corepack disable \
  && npm i -g pnpm@11.7.0
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+# sharing=private (not locked): the dev images build sequentially, so there is
+# never legitimate concurrent apt access. With sharing=locked, a build killed
+# mid-apt (Ctrl-C/OOM) leaves the cache lock held in buildkitd, and the next
+# build blocks forever waiting for it. private gives each build its own cache
+# instance and sidesteps that deadlock entirely.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
+    --mount=type=cache,target=/var/lib/apt,sharing=private \
     rm -f /etc/apt/apt.conf.d/docker-clean \
   && apt-get update \
   && apt-get install -y --no-install-recommends \

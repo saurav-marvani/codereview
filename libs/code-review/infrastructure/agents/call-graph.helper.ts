@@ -1,4 +1,4 @@
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { RemoteCommands } from '../adapters/services/collectCrossFileContexts.service';
 import { shSingleQuote } from '../adapters/services/shell-quote';
 import * as fs from 'fs';

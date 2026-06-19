@@ -38,8 +38,8 @@ import {
     buildLangfuseTelemetry,
     type LangfuseTelemetryMetadata,
 } from '@libs/core/log/langfuse';
-// Domain helper still living in the legacy file (Zod validation of findings).
-import { sanitizeFindingsResult } from './llm/agent-loop';
+// Domain helper relocated out of the legacy file (Zod validation of findings).
+import { sanitizeFindingsResult } from './findings-schema';
 
 export const FINDER_DONE_TOOL = 'submitResult' as const;
 

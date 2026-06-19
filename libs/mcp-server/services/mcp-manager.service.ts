@@ -1,4 +1,5 @@
-import { MCPServerConfig, createLogger } from '@kodus/flow';
+import { MCPServerConfig } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { TransportType } from '@kodus/flow/dist/core/types/allTypes';
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';

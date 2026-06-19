@@ -6,7 +6,8 @@ import type {
     ContextDomain,
     ContextRequirement,
 } from '@kodus/flow';
-import { MCPServerConfig, createLogger } from '@kodus/flow';
+import { MCPServerConfig } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { BYOKConfig } from '@kodus/kodus-common/llm';
 import { Inject, Injectable } from '@nestjs/common';
 import {

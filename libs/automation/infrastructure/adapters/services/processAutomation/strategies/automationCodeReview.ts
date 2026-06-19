@@ -1,4 +1,5 @@
-import { createLogger, getObservability } from '@kodus/flow';
+import { getObservability } from '@libs/core/observability';
+import { createLogger } from '@libs/core/log/logger';
 import { Inject, Injectable } from '@nestjs/common';
 import { MoreThanOrEqual } from 'typeorm';
 

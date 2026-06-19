@@ -9,7 +9,7 @@ import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
 
 import { Inject, Injectable } from '@nestjs/common';
 import { getMappedPlatform } from '@libs/common/utils/webhooks';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { EnqueueCodeReviewJobInput } from '@libs/core/workflow/application/use-cases/enqueue-code-review-job.use-case';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 

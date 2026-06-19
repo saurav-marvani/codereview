@@ -298,7 +298,7 @@ import type { ReasoningEffort } from '@libs/llm/reasoning-options';
 // }
 import { z } from 'zod';
 import { BYOKProvider } from '@kodus/kodus-common/llm';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 
 // export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high';
 
@@ -667,35 +667,35 @@ const logger = createLogger('AgentLoop');
 //     ]).finally(() => clearTimeout(timer));
 // }
 
-/** Schema for structured output */
-const suggestionSchema = z.object({
-    relevantFile: z.string(),
-    language: z.string().optional(),
-    label: z.enum(['bug', 'security', 'performance']).optional(),
-    suggestionContent: z.string(),
-    existingCode: z.string(),
-    improvedCode: z.string(),
-    oneSentenceSummary: z.string().optional(),
-    relevantLinesStart: z.number().optional(),
-    relevantLinesEnd: z.number().optional(),
-    severity: z.enum(['critical', 'high', 'medium', 'low']).optional(), // V2 compat
-    confidence: z.number().min(1).max(10).optional(), // 1-10: how confident the agent is in this finding
-    ruleUuid: z.string().optional(), // Kody Rules: UUID of the violated rule
-});
-
-const _findingsSchema = z.object({
-    reasoning: z.string(),
-    suggestions: z.array(suggestionSchema),
-});
-
-export type FindingsOutput = z.infer<typeof _findingsSchema>;
-
-const _verificationSchema = z.object({
-    index: z.number(),
-    keep: z.boolean(),
-    rationale: z.string(),
-    confidence: z.enum(['high', 'medium', 'low']).optional(),
-});
+// /** Schema for structured output */
+// const suggestionSchema = z.object({
+//     relevantFile: z.string(),
+//     language: z.string().optional(),
+//     label: z.enum(['bug', 'security', 'performance']).optional(),
+//     suggestionContent: z.string(),
+//     existingCode: z.string(),
+//     improvedCode: z.string(),
+//     oneSentenceSummary: z.string().optional(),
+//     relevantLinesStart: z.number().optional(),
+//     relevantLinesEnd: z.number().optional(),
+//     severity: z.enum(['critical', 'high', 'medium', 'low']).optional(), // V2 compat
+//     confidence: z.number().min(1).max(10).optional(), // 1-10: how confident the agent is in this finding
+//     ruleUuid: z.string().optional(), // Kody Rules: UUID of the violated rule
+// });
+// 
+// const _findingsSchema = z.object({
+//     reasoning: z.string(),
+//     suggestions: z.array(suggestionSchema),
+// });
+// 
+// export type FindingsOutput = z.infer<typeof _findingsSchema>;
+// 
+// const _verificationSchema = z.object({
+//     index: z.number(),
+//     keep: z.boolean(),
+//     rationale: z.string(),
+//     confidence: z.enum(['high', 'medium', 'low']).optional(),
+// });
 
 // ─── Done-tool infrastructure ───────────────────────────────────────────────
 // A "done tool" is a tool WITHOUT an `execute` function.  When the model
@@ -851,235 +851,235 @@ const DONE_TOOL_NAME = 'submitResult' as const;
 //     return null;
 // }
 
-/**
- * Validate and sanitize a done-tool result against the FindingsOutput schema.
- * Returns null if the result is null or fails validation, ensuring downstream
- * code never receives a FindingsOutput with missing `suggestions`.
- */
-export function sanitizeFindingsResult(
-    raw: FindingsOutput | null,
-): FindingsOutput | null {
-    if (!raw) return null;
-    const parsed = _findingsSchema.safeParse(raw);
-    if (parsed.success) return parsed.data;
-    logger.warn({
-        message:
-            '[DONE-TOOL] FindingsOutput failed Zod validation, falling back to text parsing',
-        context: 'AgentLoop',
-        metadata: {
-            zodErrors: parsed.error.issues.map(
-                (i) => `${i.path.join('.')}: ${i.message}`,
-            ),
-            rawKeys: Object.keys(raw),
-            hasSuggestions: Array.isArray((raw as any).suggestions),
-        },
-    });
-    // Attempt partial recovery: if suggestions is an array, keep it;
-    // otherwise fall back to text parsing (return null).
-    if (Array.isArray((raw as any).suggestions)) {
-        return {
-            reasoning: (raw as any).reasoning ?? '',
-            suggestions: (raw as any).suggestions,
-        };
-    }
-    return null;
-}
+// /**
+//  * Validate and sanitize a done-tool result against the FindingsOutput schema.
+//  * Returns null if the result is null or fails validation, ensuring downstream
+//  * code never receives a FindingsOutput with missing `suggestions`.
+//  */
+// export function sanitizeFindingsResult(
+//     raw: FindingsOutput | null,
+// ): FindingsOutput | null {
+//     if (!raw) return null;
+//     const parsed = _findingsSchema.safeParse(raw);
+//     if (parsed.success) return parsed.data;
+//     logger.warn({
+//         message:
+//             '[DONE-TOOL] FindingsOutput failed Zod validation, falling back to text parsing',
+//         context: 'AgentLoop',
+//         metadata: {
+//             zodErrors: parsed.error.issues.map(
+//                 (i) => `${i.path.join('.')}: ${i.message}`,
+//             ),
+//             rawKeys: Object.keys(raw),
+//             hasSuggestions: Array.isArray((raw as any).suggestions),
+//         },
+//     });
+//     // Attempt partial recovery: if suggestions is an array, keep it;
+//     // otherwise fall back to text parsing (return null).
+//     if (Array.isArray((raw as any).suggestions)) {
+//         return {
+//             reasoning: (raw as any).reasoning ?? '',
+//             suggestions: (raw as any).suggestions,
+//         };
+//     }
+//     return null;
+// }
 
-export interface AgentLoopInput {
-    model: LanguageModel;
-    systemPrompt: string;
-    userPrompt: string;
-    agentName?: string; // e.g. 'kodus-bug-review-agent' — used as Langfuse observation name
-    telemetryMetadata?: LangfuseTelemetryMetadata;
-    maxSteps?: number;
-    onStepFinish?: (event: any) => void;
-    changedFiles?: any[];
-    prNumber?: number;
-    repositoryFullName?: string;
-    /** Base branch of the PR (e.g. "main"). Used by git diff tools. */
-    baseBranch?: string;
-    /** Pre-computed call graph shared by reviewers and verifier. */
-    callGraph?: string;
-    /** Map of normalized filename to tier ('critical' | 'warm' | 'optional').
-     *  When present, the coverage ledger runs in tiered mode: critical
-     *  files must be covered; warm/optional count toward the 70% total
-     *  floor. When absent, coverage stays flat (legacy 100%-all-files). */
-    fileTiers?: Map<string, CoverageTier>;
-    /** Review mode: 'fast' skips heavy passes and caps steps; 'normal' skips verify only for very-high-confidence findings; 'deep' verifies everything. */
-    reviewMode?: 'fast' | 'normal' | 'deep';
-    /** Model context window in tokens. Used to trigger context compression when the message history grows too large. */
-    contextWindowTokens?: number;
-    /** When true, skip recovery/rescue/second-chance passes. Used by rule-checking agents that don't benefit from open-ended exploration. */
-    skipHeavyPasses?: boolean;
-    /** When true, skip ONLY the synthesis-rescue pass while still running
-     *  coverage-recovery and coverage-second-chance. Useful for agents
-     *  that benefit from re-investigating uncovered files but don't need
-     *  the open-ended "rethink the review" pass — typically rule-checking
-     *  agents where rules are explicit and synthesis just re-words the
-     *  same findings, leading to dedup churn and duplicate comments. */
-    skipSynthesisRescue?: boolean;
-    /** Reasoning effort level from BYOK config. Mapped to provider-specific
-     *  providerOptions (anthropic.thinking, google.thinkingConfig, etc). */
-    reasoningEffort?: ReasoningEffort;
-    /** Raw JSON override for reasoning config — takes precedence over effort preset. */
-    reasoningConfigOverride?: string;
-    /** BYOK provider type — needed to map reasoning effort to the correct
-     *  provider-specific format in providerOptions. */
-    byokProvider?: BYOKProvider | string;
-    /** Pin OpenRouter requests to specific upstream providers (in order).
-     *  Ignored when byokProvider !== 'openrouter'. */
-    openrouterProviderOrder?: string[];
-    /** Allow OpenRouter to fall back to other upstreams when the preferred
-     *  order is unavailable. Defaults to OpenRouter's default (true) when
-     *  undefined; set to false to hard-fail if the pinned providers aren't
-     *  available. */
-    openrouterAllowFallbacks?: boolean;
-    /** Parent (job-level) AbortSignal. When it aborts, the local
-     *  AGENT_TIMEOUT_MS controller is aborted too, propagating cancellation
-     *  to the underlying generateText call (which respects abortSignal). */
-    parentSignal?: AbortSignal;
-}
-
-/**
- * Secrets and service references that must NEVER be serialized into
- * tracing spans or LLM payloads. Extracted from the old AgentLoopInput
- * to prevent accidental leaks (NestJS ConfigService carries all env vars).
- */
-export interface AgentLoopSecrets {
-    /**
-     * Remote commands for the E2B sandbox. When undefined, the agent runs
-     * in self-contained mode (no tools, single-shot analysis on the diffs
-     * inlined in the user prompt). Used by the CLI trial flow where there
-     * is no sandbox available.
-     */
-    remoteCommands: RemoteCommands | undefined;
-    byokConfig?: BYOKConfig;
-    gitHubToken?: string;
-    /**
-     * External documentation search adapter (Exa-backed). When provided,
-     * registers the `searchDocs` tool on the agent so it can verify
-     * framework/library behavior against official docs. Required for the
-     * verifier to validate findings about third-party APIs.
-     */
-    documentationSearchService?: DocumentationSearchAdapter;
-    /** Options forwarded to the documentation search adapter on each call. */
-    documentationSearchOptions?: Record<string, unknown>;
-    /**
-     * Queue timeout passed to runWithBYOKLimiter for all LLM calls in this loop.
-     * When undefined, falls back to DEFAULT_LIMITER_QUEUE_TIMEOUT_MS (0 = infinite).
-     * Conversation callers set this to 60_000 to fail fast if review holds the slot.
-     * MAINT-02: This is a generic field — not conversation-specific; review callers
-     * can also set it if they need bounded queue behavior.
-     */
-    byokQueueTimeoutMs?: number;
-    /**
-     * Optional sink for BYOK LLM failures. Called once per failed
-     * `generateText` call inside the loop; safe to omit. Used to drive
-     * the `byok.llm_errors_threshold` notification — caller wires it to
-     * `ByokErrorCounter.record`.
-     */
-    byokErrorReporter?: (input: {
-        organizationId?: string;
-        provider: string;
-        errorMessage: string;
-    }) => void;
-}
-
-export interface AgentLoopOutput {
-    findings: FindingsOutput;
-    text: string;
-    steps: number;
-    toolCalls: Array<{
-        tool: string;
-        toolName?: string;
-        args: Record<string, unknown>;
-        result?: string;
-    }>;
-    finishReason: string;
-    /** Whether findings came from direct JSON parse or fallback generateObject */
-    source: 'json-parse' | 'generate-object' | 'empty';
-    usage: {
-        /** Total input tokens sent to the model (includes cached). */
-        inputTokens: number;
-        /** Portion of input tokens served from provider cache (Gemini/OpenAI/
-         *  Moonshot/DeepSeek implicit cache, Anthropic ephemeral reads). */
-        cacheReadTokens: number;
-        /** Portion of input tokens written to cache on this request (pays
-         *  Anthropic's write premium; 0 for implicit-cache providers). */
-        cacheWriteTokens: number;
-        outputTokens: number;
-        reasoningTokens: number;
-        totalTokens: number;
-    };
-    /** Suggestions discarded by severity filter (before verify). */
-    discardedBySeverity?: FindingsOutput['suggestions'];
-    /** Suggestions discarded by the verifier. */
-    droppedByVerify?: FindingsOutput['suggestions'];
-    /** Token usage for the verification sub-step only (included in total usage). */
-    verificationUsage?: {
-        inputTokens: number;
-        cacheReadTokens: number;
-        cacheWriteTokens: number;
-        outputTokens: number;
-        reasoningTokens: number;
-    };
-    coverage: CoverageSummary;
-    verification?: VerificationTraceSummary | null;
-    anomalies: AgentAnomalySummary;
-    /** Fidelity warnings emitted during the loop (small context window
-     *  forced compact prompt, dropped callGraph, etc). Always present;
-     *  empty array when no adaptive strategy fired. */
-    warnings: ReviewWarning[];
-}
-
-interface SuggestionVerificationDecision {
-    index: number;
-    keep: boolean;
-    rationale: string;
-    confidence?: 'high' | 'medium' | 'low';
-}
-
-interface ToolEvidenceSummary {
-    strongFiles: string[];
-    weakFiles: string[];
-}
-
-interface VerificationDecisionTrace {
-    index: number;
-    relevantFile: string;
-    action: 'keep' | 'drop' | 'refine';
-    parseMode: 'direct' | 'fallback-llm' | 'default-keep';
-    rationale: string;
-    confidence?: 'high' | 'medium' | 'low';
-    verifierEvidence: ToolEvidenceSummary;
-    rawTextPreview?: string;
-}
-
-interface SuggestionEvidenceBundle {
-    bundle: string;
-    relevantInvestigationLog: string;
-    relevantInvestigationCount: number;
-    callGraphHint: string;
-}
-
-export interface VerificationTraceSummary {
-    beforeCount: number;
-    afterCount: number;
-    droppedByVerifier: number;
-    /** @deprecated Always 0 — evidence gate now forces verification instead of dropping. Kept for backwards compatibility. */
-    droppedByEvidenceFilter: number;
-    sentToEvidenceGate?: number;
-    decisions: VerificationDecisionTrace[];
-}
-
-export interface AgentAnomalySummary {
-    stepsLe2: boolean;
-    zeroToolCalls: boolean;
-    zeroStrongEvidenceFiles: boolean;
-    zeroCoverage: boolean;
-    lowCoverage: boolean;
-    lowStrongEvidenceFiles: boolean;
-}
+// export interface AgentLoopInput {
+//     model: LanguageModel;
+//     systemPrompt: string;
+//     userPrompt: string;
+//     agentName?: string; // e.g. 'kodus-bug-review-agent' — used as Langfuse observation name
+//     telemetryMetadata?: LangfuseTelemetryMetadata;
+//     maxSteps?: number;
+//     onStepFinish?: (event: any) => void;
+//     changedFiles?: any[];
+//     prNumber?: number;
+//     repositoryFullName?: string;
+//     /** Base branch of the PR (e.g. "main"). Used by git diff tools. */
+//     baseBranch?: string;
+//     /** Pre-computed call graph shared by reviewers and verifier. */
+//     callGraph?: string;
+//     /** Map of normalized filename to tier ('critical' | 'warm' | 'optional').
+//      *  When present, the coverage ledger runs in tiered mode: critical
+//      *  files must be covered; warm/optional count toward the 70% total
+//      *  floor. When absent, coverage stays flat (legacy 100%-all-files). */
+//     fileTiers?: Map<string, CoverageTier>;
+//     /** Review mode: 'fast' skips heavy passes and caps steps; 'normal' skips verify only for very-high-confidence findings; 'deep' verifies everything. */
+//     reviewMode?: 'fast' | 'normal' | 'deep';
+//     /** Model context window in tokens. Used to trigger context compression when the message history grows too large. */
+//     contextWindowTokens?: number;
+//     /** When true, skip recovery/rescue/second-chance passes. Used by rule-checking agents that don't benefit from open-ended exploration. */
+//     skipHeavyPasses?: boolean;
+//     /** When true, skip ONLY the synthesis-rescue pass while still running
+//      *  coverage-recovery and coverage-second-chance. Useful for agents
+//      *  that benefit from re-investigating uncovered files but don't need
+//      *  the open-ended "rethink the review" pass — typically rule-checking
+//      *  agents where rules are explicit and synthesis just re-words the
+//      *  same findings, leading to dedup churn and duplicate comments. */
+//     skipSynthesisRescue?: boolean;
+//     /** Reasoning effort level from BYOK config. Mapped to provider-specific
+//      *  providerOptions (anthropic.thinking, google.thinkingConfig, etc). */
+//     reasoningEffort?: ReasoningEffort;
+//     /** Raw JSON override for reasoning config — takes precedence over effort preset. */
+//     reasoningConfigOverride?: string;
+//     /** BYOK provider type — needed to map reasoning effort to the correct
+//      *  provider-specific format in providerOptions. */
+//     byokProvider?: BYOKProvider | string;
+//     /** Pin OpenRouter requests to specific upstream providers (in order).
+//      *  Ignored when byokProvider !== 'openrouter'. */
+//     openrouterProviderOrder?: string[];
+//     /** Allow OpenRouter to fall back to other upstreams when the preferred
+//      *  order is unavailable. Defaults to OpenRouter's default (true) when
+//      *  undefined; set to false to hard-fail if the pinned providers aren't
+//      *  available. */
+//     openrouterAllowFallbacks?: boolean;
+//     /** Parent (job-level) AbortSignal. When it aborts, the local
+//      *  AGENT_TIMEOUT_MS controller is aborted too, propagating cancellation
+//      *  to the underlying generateText call (which respects abortSignal). */
+//     parentSignal?: AbortSignal;
+// }
+// 
+// /**
+//  * Secrets and service references that must NEVER be serialized into
+//  * tracing spans or LLM payloads. Extracted from the old AgentLoopInput
+//  * to prevent accidental leaks (NestJS ConfigService carries all env vars).
+//  */
+// export interface AgentLoopSecrets {
+//     /**
+//      * Remote commands for the E2B sandbox. When undefined, the agent runs
+//      * in self-contained mode (no tools, single-shot analysis on the diffs
+//      * inlined in the user prompt). Used by the CLI trial flow where there
+//      * is no sandbox available.
+//      */
+//     remoteCommands: RemoteCommands | undefined;
+//     byokConfig?: BYOKConfig;
+//     gitHubToken?: string;
+//     /**
+//      * External documentation search adapter (Exa-backed). When provided,
+//      * registers the `searchDocs` tool on the agent so it can verify
+//      * framework/library behavior against official docs. Required for the
+//      * verifier to validate findings about third-party APIs.
+//      */
+//     documentationSearchService?: DocumentationSearchAdapter;
+//     /** Options forwarded to the documentation search adapter on each call. */
+//     documentationSearchOptions?: Record<string, unknown>;
+//     /**
+//      * Queue timeout passed to runWithBYOKLimiter for all LLM calls in this loop.
+//      * When undefined, falls back to DEFAULT_LIMITER_QUEUE_TIMEOUT_MS (0 = infinite).
+//      * Conversation callers set this to 60_000 to fail fast if review holds the slot.
+//      * MAINT-02: This is a generic field — not conversation-specific; review callers
+//      * can also set it if they need bounded queue behavior.
+//      */
+//     byokQueueTimeoutMs?: number;
+//     /**
+//      * Optional sink for BYOK LLM failures. Called once per failed
+//      * `generateText` call inside the loop; safe to omit. Used to drive
+//      * the `byok.llm_errors_threshold` notification — caller wires it to
+//      * `ByokErrorCounter.record`.
+//      */
+//     byokErrorReporter?: (input: {
+//         organizationId?: string;
+//         provider: string;
+//         errorMessage: string;
+//     }) => void;
+// }
+// 
+// export interface AgentLoopOutput {
+//     findings: FindingsOutput;
+//     text: string;
+//     steps: number;
+//     toolCalls: Array<{
+//         tool: string;
+//         toolName?: string;
+//         args: Record<string, unknown>;
+//         result?: string;
+//     }>;
+//     finishReason: string;
+//     /** Whether findings came from direct JSON parse or fallback generateObject */
+//     source: 'json-parse' | 'generate-object' | 'empty';
+//     usage: {
+//         /** Total input tokens sent to the model (includes cached). */
+//         inputTokens: number;
+//         /** Portion of input tokens served from provider cache (Gemini/OpenAI/
+//          *  Moonshot/DeepSeek implicit cache, Anthropic ephemeral reads). */
+//         cacheReadTokens: number;
+//         /** Portion of input tokens written to cache on this request (pays
+//          *  Anthropic's write premium; 0 for implicit-cache providers). */
+//         cacheWriteTokens: number;
+//         outputTokens: number;
+//         reasoningTokens: number;
+//         totalTokens: number;
+//     };
+//     /** Suggestions discarded by severity filter (before verify). */
+//     discardedBySeverity?: FindingsOutput['suggestions'];
+//     /** Suggestions discarded by the verifier. */
+//     droppedByVerify?: FindingsOutput['suggestions'];
+//     /** Token usage for the verification sub-step only (included in total usage). */
+//     verificationUsage?: {
+//         inputTokens: number;
+//         cacheReadTokens: number;
+//         cacheWriteTokens: number;
+//         outputTokens: number;
+//         reasoningTokens: number;
+//     };
+//     coverage: CoverageSummary;
+//     verification?: VerificationTraceSummary | null;
+//     anomalies: AgentAnomalySummary;
+//     /** Fidelity warnings emitted during the loop (small context window
+//      *  forced compact prompt, dropped callGraph, etc). Always present;
+//      *  empty array when no adaptive strategy fired. */
+//     warnings: ReviewWarning[];
+// }
+// 
+// interface SuggestionVerificationDecision {
+//     index: number;
+//     keep: boolean;
+//     rationale: string;
+//     confidence?: 'high' | 'medium' | 'low';
+// }
+// 
+// interface ToolEvidenceSummary {
+//     strongFiles: string[];
+//     weakFiles: string[];
+// }
+// 
+// interface VerificationDecisionTrace {
+//     index: number;
+//     relevantFile: string;
+//     action: 'keep' | 'drop' | 'refine';
+//     parseMode: 'direct' | 'fallback-llm' | 'default-keep';
+//     rationale: string;
+//     confidence?: 'high' | 'medium' | 'low';
+//     verifierEvidence: ToolEvidenceSummary;
+//     rawTextPreview?: string;
+// }
+// 
+// interface SuggestionEvidenceBundle {
+//     bundle: string;
+//     relevantInvestigationLog: string;
+//     relevantInvestigationCount: number;
+//     callGraphHint: string;
+// }
+// 
+// export interface VerificationTraceSummary {
+//     beforeCount: number;
+//     afterCount: number;
+//     droppedByVerifier: number;
+//     /** @deprecated Always 0 — evidence gate now forces verification instead of dropping. Kept for backwards compatibility. */
+//     droppedByEvidenceFilter: number;
+//     sentToEvidenceGate?: number;
+//     decisions: VerificationDecisionTrace[];
+// }
+// 
+// export interface AgentAnomalySummary {
+//     stepsLe2: boolean;
+//     zeroToolCalls: boolean;
+//     zeroStrongEvidenceFiles: boolean;
+//     zeroCoverage: boolean;
+//     lowCoverage: boolean;
+//     lowStrongEvidenceFiles: boolean;
+// }
 
 /**
  * Run the agent loop with native function calling.
@@ -3849,106 +3849,106 @@ export interface AgentAnomalySummary {
 //     };
 // }
 
-function buildToolEvidenceSummary(
-    toolCalls: AgentLoopOutput['toolCalls'],
-): ToolEvidenceSummary {
-    const strongFiles = new Set<string>();
-    const weakFiles = new Set<string>();
-
-    for (const toolCall of toolCalls) {
-        const normalizedTool = (toolCall.toolName || toolCall.tool || '')
-            .trim()
-            .toLowerCase();
-        const args = (toolCall.args || {}) as Record<string, unknown>;
-
-        if (normalizedTool === 'readfile' || normalizedTool === 'checktypes') {
-            const explicitPath =
-                (args.path as string) ||
-                (args.filePath as string) ||
-                (args.file as string) ||
-                '';
-            const normalizedPath = normalizeFilePath(explicitPath);
-            if (normalizedPath) {
-                strongFiles.add(normalizedPath);
-            }
-        }
-
-        if (normalizedTool === 'grep' && typeof toolCall.result === 'string') {
-            for (const resultLine of toolCall.result.split('\n')) {
-                const match = resultLine.match(/^([^:]+):\d+:/);
-                if (!match?.[1]) continue;
-                const normalizedPath = normalizeFilePath(match[1]);
-                if (normalizedPath) {
-                    weakFiles.add(normalizedPath);
-                }
-            }
-        }
-    }
-
-    return {
-        strongFiles: [...strongFiles],
-        weakFiles: [...weakFiles],
-    };
-}
-
-export function buildAgentAnomalies(params: {
-    steps: number;
-    toolCalls: AgentLoopOutput['toolCalls'];
-    coverage: CoverageSummary;
-}): AgentAnomalySummary {
-    const { steps, toolCalls, coverage } = params;
-    const evidence = buildToolEvidenceSummary(toolCalls);
-    const touchedTargets = coverage?.touchedTargets || 0;
-    const totalTargets = coverage?.totalTargets || 0;
-    const coveragePct = totalTargets > 0 ? touchedTargets / totalTargets : 0;
-
-    return {
-        stepsLe2: steps <= 2,
-        zeroToolCalls: toolCalls.length === 0,
-        zeroStrongEvidenceFiles: evidence.strongFiles.length === 0,
-        zeroCoverage: touchedTargets === 0,
-        lowCoverage: totalTargets > 0 && coveragePct < 0.7,
-        lowStrongEvidenceFiles:
-            totalTargets >= 2 && evidence.strongFiles.length < 2,
-    };
-}
-
-function hasEvidenceForRelevantFile(
-    evidence: ToolEvidenceSummary | undefined,
-    relevantFile: string,
-): boolean {
-    if (!evidence || !relevantFile) return false;
-
-    return [...evidence.strongFiles, ...evidence.weakFiles].some((candidate) =>
-        pathsReferToSameFile(candidate, relevantFile),
-    );
-}
-
-function normalizeFilePath(filePath: string): string {
-    if (!filePath) return '';
-    return filePath
-        .replace(/\\/g, '/')
-        .replace(/^\.\//, '')
-        .replace(/^\/+/, '')
-        .trim()
-        .toLowerCase();
-}
-
-function pathsReferToSameFile(
-    candidate: string,
-    relevantFile: string,
-): boolean {
-    const normalizedCandidate = normalizeFilePath(candidate);
-    const normalizedRelevant = normalizeFilePath(relevantFile);
-
-    if (!normalizedCandidate || !normalizedRelevant) return false;
-    if (normalizedCandidate === normalizedRelevant) return true;
-
-    return (
-        normalizedCandidate.endsWith(`/${normalizedRelevant}`) ||
-        normalizedRelevant.endsWith(`/${normalizedCandidate}`)
-    );
-}
+// function buildToolEvidenceSummary(
+//     toolCalls: AgentLoopOutput['toolCalls'],
+// ): ToolEvidenceSummary {
+//     const strongFiles = new Set<string>();
+//     const weakFiles = new Set<string>();
+// 
+//     for (const toolCall of toolCalls) {
+//         const normalizedTool = (toolCall.toolName || toolCall.tool || '')
+//             .trim()
+//             .toLowerCase();
+//         const args = (toolCall.args || {}) as Record<string, unknown>;
+// 
+//         if (normalizedTool === 'readfile' || normalizedTool === 'checktypes') {
+//             const explicitPath =
+//                 (args.path as string) ||
+//                 (args.filePath as string) ||
+//                 (args.file as string) ||
+//                 '';
+//             const normalizedPath = normalizeFilePath(explicitPath);
+//             if (normalizedPath) {
+//                 strongFiles.add(normalizedPath);
+//             }
+//         }
+// 
+//         if (normalizedTool === 'grep' && typeof toolCall.result === 'string') {
+//             for (const resultLine of toolCall.result.split('\n')) {
+//                 const match = resultLine.match(/^([^:]+):\d+:/);
+//                 if (!match?.[1]) continue;
+//                 const normalizedPath = normalizeFilePath(match[1]);
+//                 if (normalizedPath) {
+//                     weakFiles.add(normalizedPath);
+//                 }
+//             }
+//         }
+//     }
+// 
+//     return {
+//         strongFiles: [...strongFiles],
+//         weakFiles: [...weakFiles],
+//     };
+// }
+// 
+// export function buildAgentAnomalies(params: {
+//     steps: number;
+//     toolCalls: AgentLoopOutput['toolCalls'];
+//     coverage: CoverageSummary;
+// }): AgentAnomalySummary {
+//     const { steps, toolCalls, coverage } = params;
+//     const evidence = buildToolEvidenceSummary(toolCalls);
+//     const touchedTargets = coverage?.touchedTargets || 0;
+//     const totalTargets = coverage?.totalTargets || 0;
+//     const coveragePct = totalTargets > 0 ? touchedTargets / totalTargets : 0;
+// 
+//     return {
+//         stepsLe2: steps <= 2,
+//         zeroToolCalls: toolCalls.length === 0,
+//         zeroStrongEvidenceFiles: evidence.strongFiles.length === 0,
+//         zeroCoverage: touchedTargets === 0,
+//         lowCoverage: totalTargets > 0 && coveragePct < 0.7,
+//         lowStrongEvidenceFiles:
+//             totalTargets >= 2 && evidence.strongFiles.length < 2,
+//     };
+// }
+// 
+// function hasEvidenceForRelevantFile(
+//     evidence: ToolEvidenceSummary | undefined,
+//     relevantFile: string,
+// ): boolean {
+//     if (!evidence || !relevantFile) return false;
+// 
+//     return [...evidence.strongFiles, ...evidence.weakFiles].some((candidate) =>
+//         pathsReferToSameFile(candidate, relevantFile),
+//     );
+// }
+// 
+// function normalizeFilePath(filePath: string): string {
+//     if (!filePath) return '';
+//     return filePath
+//         .replace(/\\/g, '/')
+//         .replace(/^\.\//, '')
+//         .replace(/^\/+/, '')
+//         .trim()
+//         .toLowerCase();
+// }
+// 
+// function pathsReferToSameFile(
+//     candidate: string,
+//     relevantFile: string,
+// ): boolean {
+//     const normalizedCandidate = normalizeFilePath(candidate);
+//     const normalizedRelevant = normalizeFilePath(relevantFile);
+// 
+//     if (!normalizedCandidate || !normalizedRelevant) return false;
+//     if (normalizedCandidate === normalizedRelevant) return true;
+// 
+//     return (
+//         normalizedCandidate.endsWith(`/${normalizedRelevant}`) ||
+//         normalizedRelevant.endsWith(`/${normalizedCandidate}`)
+//     );
+// }
 
 // function extractRelevantCallGraphContext(
 //     callGraph: string | undefined,

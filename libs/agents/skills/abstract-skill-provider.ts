@@ -1,4 +1,5 @@
-import { Thread, createLogger } from '@kodus/flow';
+import { Thread } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { PromptRunnerService } from '@kodus/kodus-common/llm';
 
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';

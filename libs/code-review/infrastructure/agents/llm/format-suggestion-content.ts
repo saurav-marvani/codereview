@@ -1,4 +1,4 @@
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { BYOKConfig } from '@kodus/kodus-common/llm';
 import { getInternalModel } from '@libs/llm/byok-to-vercel';

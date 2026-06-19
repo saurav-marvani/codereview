@@ -22,21 +22,18 @@ import {
 import { RemoteCommands } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import { IKodyRule } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 
+import type { LanguageModel } from 'ai';
+import { BYOKProvider, BYOKConfig } from '@kodus/kodus-common/llm';
+import type { LangfuseTelemetryMetadata } from '@libs/core/log/langfuse';
+import type { ReasoningEffort } from '@libs/llm/reasoning-options';
+
 import { CoverageSummary, CoverageTier } from './llm/coverage-ledger';
 import { type AdaptiveProfile } from './llm/adaptive-fit';
 import type { ReviewWarning } from './llm/review-warnings';
-import type {
-    VerificationTraceSummary,
-    AgentAnomalySummary,
-} from './llm/agent-loop';
+import type { DocumentationSearchAdapter } from './llm/agent-tools.factory';
+import type { FindingsOutput } from './findings-schema';
 
-export type {
-    AgentLoopInput,
-    AgentLoopOutput,
-    AgentLoopSecrets,
-    VerificationTraceSummary,
-    AgentAnomalySummary,
-} from './llm/agent-loop';
+export type { FindingsOutput } from './findings-schema';
 
 /**
  * Category-specific agent configuration provided by each concrete subclass.
@@ -248,4 +245,192 @@ export interface ReviewAgentOutput {
      *  forced compact prompt, dropped callGraph, etc). Empty when no
      *  adaptive strategy fired. */
     warnings?: ReviewWarning[];
+}
+
+// ─── Agent-loop contracts (the low-level harness/agent boundary) ─────────────
+// Relocated from the legacy llm/agent-loop.ts so the new agent path
+// (core-agent-loop.adapter, finder.agent, agent-anomalies) speaks these shapes
+// without importing them from the 4.5k-line legacy file. The originals there are
+// now commented out.
+
+export interface AgentLoopInput {
+    model: LanguageModel;
+    systemPrompt: string;
+    userPrompt: string;
+    agentName?: string; // e.g. 'kodus-bug-review-agent' — used as Langfuse observation name
+    telemetryMetadata?: LangfuseTelemetryMetadata;
+    maxSteps?: number;
+    onStepFinish?: (event: any) => void;
+    changedFiles?: any[];
+    prNumber?: number;
+    repositoryFullName?: string;
+    /** Base branch of the PR (e.g. "main"). Used by git diff tools. */
+    baseBranch?: string;
+    /** Pre-computed call graph shared by reviewers and verifier. */
+    callGraph?: string;
+    /** Map of normalized filename to tier ('critical' | 'warm' | 'optional').
+     *  When present, the coverage ledger runs in tiered mode: critical
+     *  files must be covered; warm/optional count toward the 70% total
+     *  floor. When absent, coverage stays flat (legacy 100%-all-files). */
+    fileTiers?: Map<string, CoverageTier>;
+    /** Review mode: 'fast' skips heavy passes and caps steps; 'normal' skips verify only for very-high-confidence findings; 'deep' verifies everything. */
+    reviewMode?: 'fast' | 'normal' | 'deep';
+    /** Model context window in tokens. Used to trigger context compression when the message history grows too large. */
+    contextWindowTokens?: number;
+    /** When true, skip recovery/rescue/second-chance passes. Used by rule-checking agents that don't benefit from open-ended exploration. */
+    skipHeavyPasses?: boolean;
+    /** When true, skip ONLY the synthesis-rescue pass while still running
+     *  coverage-recovery and coverage-second-chance. Useful for agents
+     *  that benefit from re-investigating uncovered files but don't need
+     *  the open-ended "rethink the review" pass — typically rule-checking
+     *  agents where rules are explicit and synthesis just re-words the
+     *  same findings, leading to dedup churn and duplicate comments. */
+    skipSynthesisRescue?: boolean;
+    /** Reasoning effort level from BYOK config. Mapped to provider-specific
+     *  providerOptions (anthropic.thinking, google.thinkingConfig, etc). */
+    reasoningEffort?: ReasoningEffort;
+    /** Raw JSON override for reasoning config — takes precedence over effort preset. */
+    reasoningConfigOverride?: string;
+    /** BYOK provider type — needed to map reasoning effort to the correct
+     *  provider-specific format in providerOptions. */
+    byokProvider?: BYOKProvider | string;
+    /** Pin OpenRouter requests to specific upstream providers (in order).
+     *  Ignored when byokProvider !== 'openrouter'. */
+    openrouterProviderOrder?: string[];
+    /** Allow OpenRouter to fall back to other upstreams when the preferred
+     *  order is unavailable. Defaults to OpenRouter's default (true) when
+     *  undefined; set to false to hard-fail if the pinned providers aren't
+     *  available. */
+    openrouterAllowFallbacks?: boolean;
+    /** Parent (job-level) AbortSignal. When it aborts, the local
+     *  AGENT_TIMEOUT_MS controller is aborted too, propagating cancellation
+     *  to the underlying generateText call (which respects abortSignal). */
+    parentSignal?: AbortSignal;
+}
+
+/**
+ * Secrets and service references that must NEVER be serialized into
+ * tracing spans or LLM payloads. Extracted from the old AgentLoopInput
+ * to prevent accidental leaks (NestJS ConfigService carries all env vars).
+ */
+export interface AgentLoopSecrets {
+    /**
+     * Remote commands for the E2B sandbox. When undefined, the agent runs
+     * in self-contained mode (no tools, single-shot analysis on the diffs
+     * inlined in the user prompt). Used by the CLI trial flow where there
+     * is no sandbox available.
+     */
+    remoteCommands: RemoteCommands | undefined;
+    byokConfig?: BYOKConfig;
+    gitHubToken?: string;
+    /**
+     * External documentation search adapter (Exa-backed). When provided,
+     * registers the `searchDocs` tool on the agent so it can verify
+     * framework/library behavior against official docs. Required for the
+     * verifier to validate findings about third-party APIs.
+     */
+    documentationSearchService?: DocumentationSearchAdapter;
+    /** Options forwarded to the documentation search adapter on each call. */
+    documentationSearchOptions?: Record<string, unknown>;
+    /**
+     * Queue timeout passed to runWithBYOKLimiter for all LLM calls in this loop.
+     * When undefined, falls back to DEFAULT_LIMITER_QUEUE_TIMEOUT_MS (0 = infinite).
+     * Conversation callers set this to 60_000 to fail fast if review holds the slot.
+     * MAINT-02: This is a generic field — not conversation-specific; review callers
+     * can also set it if they need bounded queue behavior.
+     */
+    byokQueueTimeoutMs?: number;
+    /**
+     * Optional sink for BYOK LLM failures. Called once per failed
+     * `generateText` call inside the loop; safe to omit. Used to drive
+     * the `byok.llm_errors_threshold` notification — caller wires it to
+     * `ByokErrorCounter.record`.
+     */
+    byokErrorReporter?: (input: {
+        organizationId?: string;
+        provider: string;
+        errorMessage: string;
+    }) => void;
+}
+
+export interface AgentLoopOutput {
+    findings: FindingsOutput;
+    text: string;
+    steps: number;
+    toolCalls: Array<{
+        tool: string;
+        toolName?: string;
+        args: Record<string, unknown>;
+        result?: string;
+    }>;
+    finishReason: string;
+    /** Whether findings came from direct JSON parse or fallback generateObject */
+    source: 'json-parse' | 'generate-object' | 'empty';
+    usage: {
+        /** Total input tokens sent to the model (includes cached). */
+        inputTokens: number;
+        /** Portion of input tokens served from provider cache (Gemini/OpenAI/
+         *  Moonshot/DeepSeek implicit cache, Anthropic ephemeral reads). */
+        cacheReadTokens: number;
+        /** Portion of input tokens written to cache on this request (pays
+         *  Anthropic's write premium; 0 for implicit-cache providers). */
+        cacheWriteTokens: number;
+        outputTokens: number;
+        reasoningTokens: number;
+        totalTokens: number;
+    };
+    /** Suggestions discarded by severity filter (before verify). */
+    discardedBySeverity?: FindingsOutput['suggestions'];
+    /** Suggestions discarded by the verifier. */
+    droppedByVerify?: FindingsOutput['suggestions'];
+    /** Token usage for the verification sub-step only (included in total usage). */
+    verificationUsage?: {
+        inputTokens: number;
+        cacheReadTokens: number;
+        cacheWriteTokens: number;
+        outputTokens: number;
+        reasoningTokens: number;
+    };
+    coverage: CoverageSummary;
+    verification?: VerificationTraceSummary | null;
+    anomalies: AgentAnomalySummary;
+    /** Fidelity warnings emitted during the loop (small context window
+     *  forced compact prompt, dropped callGraph, etc). Always present;
+     *  empty array when no adaptive strategy fired. */
+    warnings: ReviewWarning[];
+}
+
+export interface ToolEvidenceSummary {
+    strongFiles: string[];
+    weakFiles: string[];
+}
+
+export interface VerificationDecisionTrace {
+    index: number;
+    relevantFile: string;
+    action: 'keep' | 'drop' | 'refine';
+    parseMode: 'direct' | 'fallback-llm' | 'default-keep';
+    rationale: string;
+    confidence?: 'high' | 'medium' | 'low';
+    verifierEvidence: ToolEvidenceSummary;
+    rawTextPreview?: string;
+}
+
+export interface VerificationTraceSummary {
+    beforeCount: number;
+    afterCount: number;
+    droppedByVerifier: number;
+    /** @deprecated Always 0 — evidence gate now forces verification instead of dropping. Kept for backwards compatibility. */
+    droppedByEvidenceFilter: number;
+    sentToEvidenceGate?: number;
+    decisions: VerificationDecisionTrace[];
+}
+
+export interface AgentAnomalySummary {
+    stepsLe2: boolean;
+    zeroToolCalls: boolean;
+    zeroStrongEvidenceFiles: boolean;
+    zeroCoverage: boolean;
+    lowCoverage: boolean;
+    lowStrongEvidenceFiles: boolean;
 }

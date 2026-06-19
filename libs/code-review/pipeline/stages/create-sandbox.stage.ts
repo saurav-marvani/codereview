@@ -1,5 +1,5 @@
 import { CloneParamsResolverService } from '../services/clone-params-resolver.service';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { Inject, Injectable } from '@nestjs/common';
 
 import {

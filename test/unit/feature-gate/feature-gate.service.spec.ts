@@ -1,6 +1,6 @@
 import type { FeaturesSnapshot } from '@libs/feature-gate/domain/snapshot.types';
 
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
         error: jest.fn(),

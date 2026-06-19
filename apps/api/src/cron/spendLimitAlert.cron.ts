@@ -1,4 +1,4 @@
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { SpendLimitAlertService } from '@libs/analytics/application/spend-limit/spend-limit-alert.service';
 import { SpendLimitConfigService } from '@libs/analytics/application/spend-limit/spend-limit-config.service';
 import {
