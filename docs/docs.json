@@ -1557,8 +1557,8 @@
         }
     },
     "integrations": {
-        "ga4": {
-            "measurementId": "G-ZQTM352G3Y"
+        "gtm": {
+            "tagId": "GTM-5MWMVQDC"
         },
         "posthog": {
             "apiKey": "phc_eXdASBHYhvHzYCLktmceTdRKmF3jMLnrH4iCXXUGjJI"
