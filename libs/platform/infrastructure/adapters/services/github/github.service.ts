@@ -774,7 +774,9 @@ export class GithubService
                         files: files.map((f) => f.path),
                     },
                 });
-                return null;
+                throw new Error(
+                    `Failed to upload files to "${repository.name}" for the pull request.`,
+                );
             }
 
             const prResponse = await octokit.rest.pulls.create({
@@ -810,7 +812,9 @@ export class GithubService
                     },
                 });
 
-                return null;
+                throw new Error(
+                    `GitHub rejected the pull request creation (status ${prResponse.status}).`,
+                );
             }
         } catch (error) {
             this.logger.error({
@@ -827,7 +831,9 @@ export class GithubService
                 },
             });
 
-            return null;
+            // Propagate the real cause (empty repo, permissions, etc.) so the
+            // caller can surface it instead of a generic "failed" message.
+            throw error;
         }
     }
 
@@ -990,8 +996,7 @@ export class GithubService
                 const droppedPaths = effectiveTreeItems
                     .filter(
                         (item) =>
-                            item.sha === null &&
-                            !existingPaths.has(item.path),
+                            item.sha === null && !existingPaths.has(item.path),
                     )
                     .map((item) => item.path);
 
@@ -1038,13 +1043,12 @@ export class GithubService
                 });
 
                 effectiveTreeItems = filtered;
-                const { data: retryTree } =
-                    await octokit.rest.git.createTree({
-                        owner,
-                        repo: repository.name,
-                        tree: effectiveTreeItems,
-                        base_tree: parentSha,
-                    });
+                const { data: retryTree } = await octokit.rest.git.createTree({
+                    owner,
+                    repo: repository.name,
+                    tree: effectiveTreeItems,
+                    base_tree: parentSha,
+                });
                 createdTreeSha = retryTree.sha;
             }
 
@@ -1115,7 +1119,7 @@ export class GithubService
     // default-branch ref; in that case we create an initial commit so it can be
     // branched from. A no-op when the branch already exists.
     private async ensureBaseBranchExists(params: {
-        octokit: any;
+        octokit: Octokit;
         owner: string;
         repo: string;
         baseBranch: string;
@@ -1136,39 +1140,17 @@ export class GithubService
             }
         }
 
-        const { data: blob } = await octokit.rest.git.createBlob({
+        // The Contents API initializes a commit-less repository in a single
+        // call — it creates the file, the initial commit, and the branch. The
+        // low-level git data API (blobs/trees/commits) rejects an empty repo
+        // with "Git Repository is empty".
+        await octokit.rest.repos.createOrUpdateFileContents({
             owner,
             repo,
-            content: Buffer.from(EMPTY_REPO_SEED_CONTENT).toString('base64'),
-            encoding: 'base64',
-        });
-
-        const { data: tree } = await octokit.rest.git.createTree({
-            owner,
-            repo,
-            tree: [
-                {
-                    path: EMPTY_REPO_SEED_PATH,
-                    mode: '100644',
-                    type: 'blob',
-                    sha: blob.sha,
-                },
-            ],
-        });
-
-        const { data: commit } = await octokit.rest.git.createCommit({
-            owner,
-            repo,
+            path: EMPTY_REPO_SEED_PATH,
             message: EMPTY_REPO_SEED_COMMIT_MESSAGE,
-            tree: tree.sha,
-            parents: [],
-        });
-
-        await octokit.rest.git.createRef({
-            owner,
-            repo,
-            ref: `refs/heads/${baseBranch}`,
-            sha: commit.sha,
+            content: Buffer.from(EMPTY_REPO_SEED_CONTENT).toString('base64'),
+            branch: baseBranch,
         });
 
         this.logger.log({
@@ -1338,14 +1320,19 @@ export class GithubService
 
             const aliasFields = batch.map((login) => {
                 const alias = `u${aliasCounter++}`;
-                const safeLogin = login.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                const safeLogin = login
+                    .replace(/\\/g, '\\\\')
+                    .replace(/"/g, '\\"');
                 return `${alias}: user(login: "${safeLogin}") { suspendedAt }`;
             });
 
             const query = `query { ${aliasFields.join('\n')} }`;
 
             try {
-                const response = await octokit.graphql(query) as Record<string, { suspendedAt: string | null } | null>;
+                const response = (await octokit.graphql(query)) as Record<
+                    string,
+                    { suspendedAt: string | null } | null
+                >;
 
                 batch.forEach((login, idx) => {
                     const alias = `u${aliasCounter - batch.length + idx}`;
@@ -1376,7 +1363,9 @@ export class GithubService
 
         if (!members || members.length === 0) return [];
 
-        const octokit = await this.instanceOctokit(params.organizationAndTeamData);
+        const octokit = await this.instanceOctokit(
+            params.organizationAndTeamData,
+        );
         const logins = members.map((user) => user.login);
         const activeMap = await this.getSuspendedStatusBatch(octokit, logins);
 
@@ -3562,9 +3551,8 @@ export class GithubService
             ? `gh:pr-files:${organizationAndTeamData?.organizationId ?? 'no-org'}:${repository?.id ?? repository?.name}:${prNumber}:${headSha}`
             : null;
         if (cacheKey) {
-            const cached = await this.cacheService.getFromCache<any[]>(
-                cacheKey,
-            );
+            const cached =
+                await this.cacheService.getFromCache<any[]>(cacheKey);
             if (cached) return cached;
         }
 
@@ -4427,9 +4415,8 @@ This is an experimental feature that generates committable changes. Review the d
                 ? `gh:contents:${githubAuthDetail?.org}/${repository.name}:${file.sha}:${file.filename}`
                 : undefined;
             if (cacheKey) {
-                const cached = await this.cacheService.getFromCache<any>(
-                    cacheKey,
-                );
+                const cached =
+                    await this.cacheService.getFromCache<any>(cacheKey);
                 if (cached) return cached;
             }
 
@@ -4561,8 +4548,9 @@ This is an experimental feature that generates committable changes. Review the d
         //    up to ~100 aliases but 50 keeps payloads small and limits
         //    blast radius on transient errors)
         if (batchable.length > 0) {
-            const graphqlClient =
-                await this.instanceGraphQL(organizationAndTeamData);
+            const graphqlClient = await this.instanceGraphQL(
+                organizationAndTeamData,
+            );
             const BATCH_SIZE = 50;
 
             for (let i = 0; i < batchable.length; i += BATCH_SIZE) {
@@ -4597,10 +4585,7 @@ This is an experimental feature that generates committable changes. Review the d
                 `;
 
                 try {
-                    const response: any = await graphqlClient(
-                        query,
-                        variables,
-                    );
+                    const response: any = await graphqlClient(query, variables);
                     const repoNode = response?.repository;
 
                     // Temporary instrumentation: log the actual GraphQL
@@ -4613,8 +4598,7 @@ This is an experimental feature that generates committable changes. Review the d
                             message: `[GRAPHQL_BATCH_COST] files=${batch.length} cost=${rl.cost} remaining=${rl.remaining} limit=${rl.limit} resetAt=${rl.resetAt}`,
                             context: GithubService.name,
                             metadata: {
-                                instrumentation:
-                                    'graphql_batch_content_cost',
+                                instrumentation: 'graphql_batch_content_cost',
                                 batchSize: batch.length,
                                 cost: rl.cost,
                                 remaining: rl.remaining,
@@ -4704,14 +4688,12 @@ This is an experimental feature that generates committable changes. Review the d
                             batch.map(({ file }) =>
                                 limit(async () => {
                                     const fallback =
-                                        await this.getRepositoryContentFile(
-                                            {
-                                                organizationAndTeamData,
-                                                repository,
-                                                file,
-                                                pullRequest,
-                                            },
-                                        );
+                                        await this.getRepositoryContentFile({
+                                            organizationAndTeamData,
+                                            repository,
+                                            file,
+                                            pullRequest,
+                                        });
                                     if (fallback)
                                         result.set(file.filename, fallback);
                                 }),
@@ -4763,9 +4745,8 @@ This is an experimental feature that generates committable changes. Review the d
             ? `gh:pr-commits:${organizationAndTeamData?.organizationId ?? 'no-org'}:${repository?.id ?? repository?.name}:${prNumber}:${headSha}`
             : null;
         if (cacheKey) {
-            const cached = await this.cacheService.getFromCache<any[]>(
-                cacheKey,
-            );
+            const cached =
+                await this.cacheService.getFromCache<any[]>(cacheKey);
             if (cached) return cached;
         }
 
@@ -6191,9 +6172,7 @@ This is an experimental feature that generates committable changes. Review the d
         const BATCH_SIZE = 50;
         let graphqlClient: any;
         try {
-            graphqlClient = await this.instanceGraphQL(
-                organizationAndTeamData,
-            );
+            graphqlClient = await this.instanceGraphQL(organizationAndTeamData);
         } catch (err) {
             this.logger.warn({
                 message:

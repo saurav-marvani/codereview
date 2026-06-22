@@ -469,7 +469,8 @@ export class GitlabService implements Omit<
                 error,
                 metadata: params,
             });
-            return null;
+            // Propagate the real cause so the caller can surface it.
+            throw error;
         }
     }
 

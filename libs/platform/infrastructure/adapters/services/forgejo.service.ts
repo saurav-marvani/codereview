@@ -397,7 +397,8 @@ export class ForgejoService implements Omit<
                 error,
                 metadata: { params },
             });
-            return null;
+            // Propagate the real cause so the caller can surface it.
+            throw error;
         }
     }
 
@@ -510,7 +511,8 @@ export class ForgejoService implements Omit<
                             ? ('update' as const)
                             : ('create' as const),
                         path: file.path,
-                        content: file.content,
+                        // Forgejo's change-files API requires base64 content.
+                        content: Buffer.from(file.content).toString('base64'),
                     } as any;
                 })
                 .filter((change): change is NonNullable<typeof change> =>
@@ -623,7 +625,11 @@ export class ForgejoService implements Omit<
                     {
                         operation: 'create',
                         path: EMPTY_REPO_SEED_PATH,
-                        content: EMPTY_REPO_SEED_CONTENT,
+                        // Forgejo's change-files API requires base64 content.
+                        content:
+                            Buffer.from(EMPTY_REPO_SEED_CONTENT).toString(
+                                'base64',
+                            ),
                     },
                 ] as any,
                 message: EMPTY_REPO_SEED_COMMIT_MESSAGE,
