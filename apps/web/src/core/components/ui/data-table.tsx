@@ -50,6 +50,8 @@ export function DataTable<TData>({
     onRowClick,
     searchable,
     searchPlaceholder = "Search…",
+    searchValue,
+    onSearchChange,
     pageSize,
     ...tableProps
 }: Omit<TableOptions<TData>, "data" | "columns" | "getCoreRowModel"> &
@@ -62,10 +64,24 @@ export function DataTable<TData>({
         /** Show a global search box that filters across all columns. */
         searchable?: boolean;
         searchPlaceholder?: string;
+        /**
+         * Controlled search value. When provided (with `onSearchChange`),
+         * the caller owns the search state — e.g. to mirror it into the
+         * URL. Otherwise the search box is internally uncontrolled.
+         */
+        searchValue?: string;
+        onSearchChange?: (value: string) => void;
         /** Enable client-side pagination at this page size. */
         pageSize?: number;
     }) {
-    const [globalFilter, setGlobalFilter] = useState("");
+    const [internalFilter, setInternalFilter] = useState("");
+    const controlledSearch = searchValue !== undefined;
+    const globalFilter = controlledSearch ? searchValue : internalFilter;
+    const setGlobalFilter = (updater: string | ((prev: string) => string)) => {
+        const next =
+            typeof updater === "function" ? updater(globalFilter) : updater;
+        (controlledSearch ? onSearchChange! : setInternalFilter)(next);
+    };
     const enablePagination = typeof pageSize === "number";
 
     const table = useReactTable({

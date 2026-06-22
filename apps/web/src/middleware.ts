@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { UserStatus } from "@enums";
 
 import { auth } from "./core/config/auth";
-import { CURRENT_PATH_HEADER } from "./core/utils/headers";
+import {
+    CURRENT_PATH_HEADER,
+    CURRENT_SEARCH_HEADER,
+} from "./core/utils/headers";
 import { handleAuthenticated } from "./core/utils/permissions";
 
 // Public routes that don't need authentication
@@ -53,6 +56,10 @@ export default auth(async (req) => {
     // add a new header which can be used on Server Components
     const headers = new Headers(req.headers);
     headers.set(CURRENT_PATH_HEADER, pathname);
+    // Mirror the query string too so server components can treat URL
+    // params as the source of truth (e.g. Cockpit's shareable filter
+    // state) without prop-drilling `searchParams` from every page/slot.
+    headers.set(CURRENT_SEARCH_HEADER, req.nextUrl.search);
 
     const next = NextResponse.next({ request: { headers } });
 
