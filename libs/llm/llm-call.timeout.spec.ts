@@ -5,7 +5,7 @@ import {
     timeoutSignal,
 } from '@libs/llm/llm-call';
 
-describe('agent-loop timeout primitives', () => {
+describe('llm-call timeout primitives', () => {
     describe('AGENT_TIMEOUT_MS contract', () => {
         it('caps a single agent at exactly 30 minutes', () => {
             expect(AGENT_TIMEOUT_MS).toBe(30 * 60 * 1000);
