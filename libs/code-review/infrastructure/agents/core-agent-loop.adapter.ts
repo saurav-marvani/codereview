@@ -13,9 +13,11 @@
  *    reasoning tokens (cacheWrite stays 0 — implicit-cache providers don't
  *    report writes). verificationUsage carries the verify sub-step alone.
  *  - verification trace is reconstructed: before/after/dropped counts + a
- *    per-finding keep/drop decision list (verifierEvidence is empty — the new
- *    verify path doesn't compute per-finding tool evidence).
- *  - still downstream/best-effort: discardedBySeverity ([]); hypothesisLedger.
+ *    per-finding keep/drop decision list with verifierEvidence — the files the
+ *    verifier itself read/grepped while judging each finding (threaded from the
+ *    verifier RunState through Verdict.toolCalls).
+ *  - discardedBySeverity is [] by design: the new path has no severity
+ *    pre-filter — verify alone decides keep/drop.
  */
 import { AiSdkAgentRunner } from '@libs/agent-harness/infrastructure/ai-sdk/ai-sdk-agent-runner';
 
@@ -43,12 +45,12 @@ export async function runAgentLoopViaCore(
     input: AgentLoopInput,
     secrets: AgentLoopSecrets,
 ): Promise<AgentLoopOutput> {
-    const model = wrapByokModel((input as any).model, {
+    const model = wrapByokModel(input.model, {
         byokConfig: secrets.byokConfig,
-        organizationId: (input as any).telemetryMetadata?.organizationId,
+        organizationId: input.telemetryMetadata?.organizationId,
         provider:
-            typeof (input as any).byokProvider === 'string'
-                ? (input as any).byokProvider
+            typeof input.byokProvider === 'string'
+                ? input.byokProvider
                 : undefined,
         queueTimeoutMs: secrets.byokQueueTimeoutMs,
         reporter: secrets.byokErrorReporter,
@@ -58,26 +60,26 @@ export async function runAgentLoopViaCore(
 
     const tools = buildFinderToolRegistry({
         remoteCommands: secrets.remoteCommands,
-        repositoryFullName: (input as any).repositoryFullName,
-        callGraph: (input as any).callGraph,
+        repositoryFullName: input.repositoryFullName,
+        callGraph: input.callGraph,
     });
 
     const coverageLedger = new DiffCoverageLedger({
-        changedFiles: (input as any).changedFiles,
-        fileTiers: (input as any).fileTiers,
+        changedFiles: input.changedFiles,
+        fileTiers: input.fileTiers,
     });
 
     // Reasoning/thinking config (provider-specific) → providerOptions, forwarded
     // to every model call (finder + verifier). Ported from the legacy loop.
     const providerOptions = buildProviderOptions(
-        (input as any).agentName ?? 'finder',
-        (input as any).telemetryMetadata,
+        input.agentName ?? 'finder',
+        input.telemetryMetadata,
         {
-            reasoningEffort: (input as any).reasoningEffort,
-            reasoningConfigOverride: (input as any).reasoningConfigOverride,
-            byokProvider: (input as any).byokProvider,
-            openrouterProviderOrder: (input as any).openrouterProviderOrder,
-            openrouterAllowFallbacks: (input as any).openrouterAllowFallbacks,
+            reasoningEffort: input.reasoningEffort,
+            reasoningConfigOverride: input.reasoningConfigOverride,
+            byokProvider: input.byokProvider,
+            openrouterProviderOrder: input.openrouterProviderOrder,
+            openrouterAllowFallbacks: input.openrouterAllowFallbacks,
         },
     );
 
@@ -86,28 +88,28 @@ export async function runAgentLoopViaCore(
     // steps + every verifier run, so Claude models don't re-pay the system
     // prompt's input tokens each step. No-op for non-Anthropic models.
     const systemProviderOptions = anthropicSystemCacheControl(
-        (input as any).model,
+        input.model,
     );
 
     // Recall-pass gating — ported from the legacy loop: skip the heavy passes in
     // fast mode, self-contained (no tools) trial flow, or when the caller asks.
     const isSelfContained = tools.list().length === 0;
     const skipHeavyPasses =
-        (input as any).reviewMode === 'fast' ||
+        input.reviewMode === 'fast' ||
         isSelfContained ||
-        !!(input as any).skipHeavyPasses;
-    const skipSynthesisRescue = !!(input as any).skipSynthesisRescue;
+        !!input.skipHeavyPasses;
+    const skipSynthesisRescue = !!input.skipSynthesisRescue;
 
-    const contextWindowTokens = (input as any).contextWindowTokens;
+    const contextWindowTokens = input.contextWindowTokens;
     const finderSpec = buildFinderAgentSpec({
-        systemPrompt: (input as any).systemPrompt,
+        systemPrompt: input.systemPrompt,
         modelId: 'resolved',
         tools,
         coverageLedger,
         compressor: contextWindowTokens
             ? new ContextWindowCompressor(contextWindowTokens)
             : undefined,
-        maxSteps: (input as any).maxSteps ?? 20,
+        maxSteps: input.maxSteps ?? 20,
         providerOptions,
         systemProviderOptions,
     });
@@ -116,11 +118,11 @@ export async function runAgentLoopViaCore(
     // job signal OR after AGENT_TIMEOUT_MS — ported from the legacy loop so a
     // stuck agent can't run forever (the runner forwards ctx.signal to the model).
     const controller = new AbortController();
-    const detach = composeAbortSignal((input as any).parentSignal, controller);
+    const detach = composeAbortSignal(input.parentSignal, controller);
     const timeout = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS);
 
     const ctx = {
-        runId: `${(input as any).prNumber ?? 'pr'}:${(input as any).agentName ?? 'finder'}`,
+        runId: `${input.prNumber ?? 'pr'}:${input.agentName ?? 'finder'}`,
         signal: controller.signal,
     };
 
@@ -135,10 +137,10 @@ export async function runAgentLoopViaCore(
             coverageLedger,
             skipHeavyPasses,
             skipSynthesisRescue,
-            telemetryMetadata: (input as any).telemetryMetadata,
-            agentName: (input as any).agentName,
+            telemetryMetadata: input.telemetryMetadata,
+            agentName: input.agentName,
         },
-        { prompt: (input as any).userPrompt },
+        { prompt: input.userPrompt },
         ctx,
     ).finally(() => {
         clearTimeout(timeout);
@@ -156,8 +158,8 @@ export async function runAgentLoopViaCore(
                     : {},
         })),
     );
-    const covTargets = buildCoverageLedger((input as any).changedFiles, {
-        fileTiers: (input as any).fileTiers,
+    const covTargets = buildCoverageLedger(input.changedFiles, {
+        fileTiers: input.fileTiers,
     });
     const coverage = getCoverageSummary(covTargets);
 
@@ -192,7 +194,10 @@ export async function runAgentLoopViaCore(
                           action: 'keep' as const,
                           parseMode: 'direct' as const,
                           rationale: '',
-                          verifierEvidence: { strongFiles: [], weakFiles: [] },
+                          verifierEvidence: r.keptEvidence[i] ?? {
+                              strongFiles: [],
+                              weakFiles: [],
+                          },
                       })),
                       ...r.droppedByVerify.map((d, i) => ({
                           index: r.kept.length + i,
@@ -200,7 +205,7 @@ export async function runAgentLoopViaCore(
                           action: 'drop' as const,
                           parseMode: 'direct' as const,
                           rationale: d.evidence ?? '',
-                          verifierEvidence: { strongFiles: [], weakFiles: [] },
+                          verifierEvidence: d.verifierEvidence,
                       })),
                   ],
               };

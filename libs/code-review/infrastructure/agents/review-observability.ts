@@ -134,6 +134,10 @@ export async function recordAgentUsageSpans(
                 }),
                 'gen_ai.response.model': p.modelName,
                 'gen_ai.run.name': `code-review-${p.categoryLabel}`,
+                // agent.name/agent.phase populate the observability_telemetry
+                // agentName/phase columns (see @kodus/flow mongodb-exporter).
+                'agent.name': p.identityName,
+                'agent.phase': 'review',
                 'type': typeTag,
                 'organizationId': p.organizationId,
                 'teamId': p.teamId,
@@ -170,6 +174,8 @@ export async function recordAgentUsageSpans(
                     }),
                     'gen_ai.response.model': p.modelName,
                     'gen_ai.run.name': `code-review-${p.categoryLabel}-verify`,
+                    'agent.name': p.identityName,
+                    'agent.phase': 'verify',
                     'type': typeTag,
                     'organizationId': p.organizationId,
                     'teamId': p.teamId,

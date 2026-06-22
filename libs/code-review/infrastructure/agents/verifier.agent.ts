@@ -107,6 +107,11 @@ export function verifierPromptFor(finding: FinderSuggestion): string {
  *  artifacts (the "result tool" convention — same as the finder). Default KEEP
  *  (refute-to-drop): only an explicit keep:false drops the finding. */
 export function extractVerdict(state: RunState): Verdict {
+    // The verifier's investigation tools for THIS finding — carried on the
+    // verdict so the domain can attribute per-finding verifier evidence (which
+    // files it read/grepped) to the observability trace. submitVerdict itself
+    // is excluded (it's the result tool, not investigation).
+    const toolCalls = collectVerifierToolCalls(state);
     for (let i = state.artifacts.length - 1; i >= 0; i--) {
         const artifact = state.artifacts[i];
         if (artifact.type !== VERIFY_DONE_TOOL) continue;
@@ -121,10 +126,39 @@ export function extractVerdict(state: RunState): Verdict {
                 keep: obj.keep,
                 rationale: obj.rationale,
                 confidence: obj.confidence,
+                toolCalls,
             };
         }
     }
-    return { keep: true, rationale: 'no parseable verdict — kept by default' };
+    return {
+        keep: true,
+        rationale: 'no parseable verdict — kept by default',
+        toolCalls,
+    };
+}
+
+/** Flatten the verifier run's investigation tool calls into the generic
+ *  Verdict.toolCalls shape (name/args/result). */
+function collectVerifierToolCalls(state: RunState): Verdict['toolCalls'] {
+    const out: Array<{
+        name: string;
+        args?: Record<string, unknown>;
+        result?: string;
+    }> = [];
+    for (const step of state.steps) {
+        for (const tc of step.message.toolCalls ?? []) {
+            if (tc.name === VERIFY_DONE_TOOL) continue;
+            out.push({
+                name: tc.name,
+                args:
+                    tc.input && typeof tc.input === 'object'
+                        ? (tc.input as Record<string, unknown>)
+                        : undefined,
+                result: tc.output,
+            });
+        }
+    }
+    return out;
 }
 
 export interface LlmVerifierParams {

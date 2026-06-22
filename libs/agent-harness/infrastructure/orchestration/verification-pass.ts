@@ -29,6 +29,10 @@ export interface VerificationPassParams<T> {
 export interface VerificationPassResult<T> {
     readonly kept: T[];
     readonly dropped: Array<{ candidate: T; verdict: Verdict }>;
+    /** The verdict for each KEPT candidate, in the same order as `kept`. Lets
+     *  callers attribute per-candidate verifier evidence/rationale to survivors
+     *  (the dropped already carry their verdict). */
+    readonly keptVerdicts: Verdict[];
 }
 
 export async function runVerificationPass<T>(
@@ -39,6 +43,7 @@ export async function runVerificationPass<T>(
     const concurrency = Math.max(1, params.concurrency ?? 4);
 
     const kept: T[] = [];
+    const keptVerdicts: Verdict[] = [];
     const dropped: Array<{ candidate: T; verdict: Verdict }> = [];
 
     for (let i = 0; i < candidates.length; i += concurrency) {
@@ -54,10 +59,12 @@ export async function runVerificationPass<T>(
             }),
         );
         for (const { candidate, verdict } of verdicts) {
-            if (verdict.keep) kept.push(candidate);
-            else dropped.push({ candidate, verdict });
+            if (verdict.keep) {
+                kept.push(candidate);
+                keptVerdicts.push(verdict);
+            } else dropped.push({ candidate, verdict });
         }
     }
 
-    return { kept, dropped };
+    return { kept, keptVerdicts, dropped };
 }

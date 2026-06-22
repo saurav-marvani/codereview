@@ -28,6 +28,15 @@ export interface Verdict {
     readonly confidence?: 'high' | 'medium' | 'low';
     readonly rationale?: string;
     readonly dimensions?: readonly VerdictDimension[];
+    /** Tools the verifier invoked while judging this candidate (generic —
+     *  name/args/result, no domain shape). Lets a domain attribute per-candidate
+     *  verifier evidence (e.g. which files it read) for the observability trace.
+     *  Empty/absent when the verifier didn't (or couldn't) use tools. */
+    readonly toolCalls?: ReadonlyArray<{
+        readonly name: string;
+        readonly args?: Record<string, unknown>;
+        readonly result?: string;
+    }>;
 }
 
 export interface Verifier<T> {

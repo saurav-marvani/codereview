@@ -33,6 +33,9 @@ import { ForceFinalizePolicy } from '@libs/agent-harness/infrastructure/policies
 import { InMemoryToolRegistry } from '@libs/agent-harness/infrastructure/tools/in-memory-tool-registry';
 
 import { LlmVerifier } from './verifier.agent';
+import { buildToolEvidenceSummary } from './agent-anomalies';
+import type { ToolEvidenceSummary } from './review-agent.contract';
+import type { Verdict } from '@libs/agent-harness/domain/contracts/verifier.contract';
 import type { DiffCoverageLedger } from './adapters/diff-coverage-ledger.adapter';
 import {
     buildLangfuseTelemetry,
@@ -269,7 +272,15 @@ export interface VerifyUsage {
 export interface FinderWithVerifyResult {
     reasoning: string;
     kept: FinderSuggestion[];
-    droppedByVerify: Array<{ finding: FinderSuggestion; evidence?: string }>;
+    /** Per-finding verifier tool evidence for the KEPT findings (same order as
+     *  `kept`): which files the verifier itself read/grepped while judging each.
+     *  Empty summary when the verifier used no tools for that finding. */
+    keptEvidence: ToolEvidenceSummary[];
+    droppedByVerify: Array<{
+        finding: FinderSuggestion;
+        evidence?: string;
+        verifierEvidence: ToolEvidenceSummary;
+    }>;
     /** The finder's RunState (for usage/steps/trace mapping by callers). */
     finderState: RunState;
     /** Token usage of the verify sub-step (sum across verifier runs). The
@@ -339,6 +350,7 @@ export async function runFinderWithVerify(
         return {
             reasoning,
             kept: [],
+            keptEvidence: [],
             droppedByVerify: [],
             finderState,
             verifyUsage: ZERO_VERIFY_USAGE,
@@ -365,6 +377,12 @@ export async function runFinderWithVerify(
     let dropped = pass.dropped;
     let gateUsage: VerifyUsage = ZERO_VERIFY_USAGE;
 
+    // Per-finding verifier verdict (carries the verifier's investigation tool
+    // calls) so we can attribute per-finding verifier evidence to the trace.
+    const verdictByFinding = new Map<FinderSuggestion, Verdict>();
+    pass.kept.forEach((f, i) => verdictByFinding.set(f, pass.keptVerdicts[i]));
+    pass.dropped.forEach((d) => verdictByFinding.set(d.candidate, d.verdict));
+
     // EVIDENCE GATE (ported from legacy): a finding kept WITHOUT the finder
     // having investigated its file is not trusted blindly — it gets a thorough
     // FULL re-verify, which may then drop it.
@@ -390,19 +408,39 @@ export async function runFinderWithVerify(
             },
             ctx,
         );
+        // The gate's re-verify is the more thorough look — its verdict (and tool
+        // evidence) supersedes the first pass for the re-checked findings.
+        gate.kept.forEach((f, i) =>
+            verdictByFinding.set(f, gate.keptVerdicts[i]),
+        );
+        gate.dropped.forEach((d) => verdictByFinding.set(d.candidate, d.verdict));
         const stillDropped = new Set(gate.dropped.map((d) => d.candidate));
         kept = kept.filter((f) => !stillDropped.has(f));
         dropped = [...dropped, ...gate.dropped];
         gateUsage = { ...fullVerifier.usage };
     }
 
+    // Map the generic verdict.toolCalls (name/args/result) into the review
+    // ToolEvidenceSummary (strong=readFile/checkTypes files, weak=grep hits).
+    const evidenceOf = (f: FinderSuggestion): ToolEvidenceSummary =>
+        buildToolEvidenceSummary(
+            (verdictByFinding.get(f)?.toolCalls ?? []).map((tc) => ({
+                tool: tc.name,
+                toolName: tc.name,
+                args: tc.args ?? {},
+                result: tc.result,
+            })),
+        );
+
     // The harness speaks neutral "candidate"; code-review's own term is "finding".
     return {
         reasoning,
         kept,
+        keptEvidence: kept.map(evidenceOf),
         droppedByVerify: dropped.map((d) => ({
             finding: d.candidate,
             evidence: d.verdict.rationale,
+            verifierEvidence: evidenceOf(d.candidate),
         })),
         finderState,
         verifyUsage: sumVerifyUsage(verifier.usage, gateUsage),

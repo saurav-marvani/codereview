@@ -34,6 +34,35 @@ describe('runVerificationPass (refute-to-drop)', () => {
         expect(r.dropped[0].verdict.rationale).toBe('refuted');
     });
 
+    it('exposes a verdict per kept candidate (aligned with kept) carrying toolCalls', async () => {
+        const verifier: Verifier<string> = {
+            verify: async (candidate) => ({
+                keep: !candidate.includes('drop'),
+                rationale: candidate.includes('drop') ? 'refuted' : 'kept',
+                // per-candidate verifier evidence rides on the verdict so the
+                // domain can attribute it (e.g. which file the verifier read).
+                toolCalls: [{ name: 'readFile', args: { path: `${candidate}.ts` } }],
+            }),
+        };
+        const r = await runVerificationPass<string>(
+            { candidates: ['keep-a', 'drop-b', 'keep-c'], verifier },
+            ctx,
+        );
+        expect(r.kept).toEqual(['keep-a', 'keep-c']);
+        // keptVerdicts is 1:1 and same-order as kept
+        expect(r.keptVerdicts).toHaveLength(r.kept.length);
+        expect(r.keptVerdicts.map((v) => v.rationale)).toEqual(['kept', 'kept']);
+        // the verifier's per-candidate tool evidence is carried for survivors
+        expect(r.keptVerdicts[0].toolCalls).toEqual([
+            { name: 'readFile', args: { path: 'keep-a.ts' } },
+        ]);
+        expect(r.keptVerdicts[1].toolCalls?.[0].args).toEqual({
+            path: 'keep-c.ts',
+        });
+        // dropped still carry their verdict (unchanged contract)
+        expect(r.dropped.map((d) => d.candidate)).toEqual(['drop-b']);
+    });
+
     it('fails OPEN: a checker error keeps the candidate (never silent-drop)', async () => {
         const r = await runVerificationPass<string>(
             { candidates: ['x'], verifier: predicateVerifier(() => 'throw') },

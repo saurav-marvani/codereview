@@ -21,7 +21,7 @@ function normalizeFilePath(filePath: string): string {
         .toLowerCase();
 }
 
-function buildToolEvidenceSummary(
+export function buildToolEvidenceSummary(
     toolCalls: AgentLoopOutput['toolCalls'],
 ): ToolEvidenceSummary {
     const strongFiles = new Set<string>();
