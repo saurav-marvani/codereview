@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import {
     ApiBearerAuth,
     ApiOkResponse,
@@ -7,6 +7,15 @@ import {
     ApiTags,
 } from '@nestjs/swagger';
 
+import {
+    Action,
+    ResourceType,
+} from '@libs/identity/domain/permissions/enums/permissions.enum';
+import {
+    CheckPolicies,
+    PolicyGuard,
+} from '@libs/identity/infrastructure/adapters/services/permissions/policy.guard';
+import { checkPermissions } from '@libs/identity/infrastructure/adapters/services/permissions/policy.handlers';
 import { GetIntegrationGithubUseCase } from '@libs/platform/application/use-cases/github/get-integration-github';
 import { GetOrganizationNameUseCase as GetGithubOrganizationNameUseCase } from '@libs/platform/application/use-cases/github/getOrganizationName.use-case';
 
@@ -24,6 +33,13 @@ export class GithubController {
     ) {}
 
     @Get('/integration')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.GitSettings,
+        }),
+    )
     @ApiOperation({
         summary: 'Get GitHub installation status by installId',
         description:
@@ -35,6 +51,13 @@ export class GithubController {
     }
 
     @Get('/organization-name')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.GitSettings,
+        }),
+    )
     @ApiOperation({
         summary: 'Get the GitHub organization/account name for the current org',
         description:
