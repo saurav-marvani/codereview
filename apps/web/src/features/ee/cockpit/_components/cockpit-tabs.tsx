@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Tabs } from "@components/ui/tabs";
 
@@ -24,14 +23,13 @@ export const CockpitTabs = ({ defaultTab, visibleTabs, children }: Props) => {
     const pathname = usePathname();
     const searchParams = useSearchParams();
 
-    const [value, setValue] = useState<TabValue>(() => {
-        const urlTab = searchParams.get(COCKPIT_PARAM.tab) as TabValue | null;
-        return urlTab && visibleTabs.includes(urlTab) ? urlTab : defaultTab;
-    });
+    // Derive the active tab from the URL every render so it stays in sync
+    // with browser back/forward and shared links (URL is source of truth).
+    const urlTab = searchParams.get(COCKPIT_PARAM.tab) as TabValue | null;
+    const value: TabValue =
+        urlTab && visibleTabs.includes(urlTab) ? urlTab : defaultTab;
 
     const onValueChange = (next: string) => {
-        setValue(next as TabValue);
-
         // Build from the live query string so a concurrent shallow filter
         // update isn't clobbered (see useShallowParam).
         const params = new URLSearchParams(window.location.search);
