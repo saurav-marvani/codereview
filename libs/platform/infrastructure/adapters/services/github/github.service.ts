@@ -291,6 +291,26 @@ export class GithubService
         const required = [
             'API_GITHUB_APP_ID',
             'API_GITHUB_PRIVATE_KEY',
+        ] as const;
+
+        const missing = required.filter(
+            (key) => !this.configService.get<string>(key)?.trim(),
+        );
+
+        if (missing.length > 0) {
+            const message = `GitHub App is not configured. Missing required env var(s): ${missing.join(', ')}. Populate them from your GitHub App settings (https://github.com/settings/apps/<your-app>) and restart the API.`;
+            this.logger.error({
+                message,
+                context: GithubService.name,
+            });
+            throw new BadRequestException(message);
+        }
+    }
+
+    // OAuth web-flow specific check — only relevant when exchanging an
+    // installation code for tokens via authenticateWithCodeOauth.
+    private assertGithubOAuthEnv(): void {
+        const required = [
             'GLOBAL_GITHUB_CLIENT_ID',
             'API_GITHUB_CLIENT_SECRET',
         ] as const;
@@ -300,7 +320,7 @@ export class GithubService
         );
 
         if (missing.length > 0) {
-            const message = `GitHub App is not configured. Missing required env var(s): ${missing.join(', ')}. Populate them from your GitHub App settings (https://github.com/settings/apps/<your-app>) and restart the API.`;
+            const message = `GitHub OAuth is not configured. Missing required env var(s): ${missing.join(', ')}. Populate them from your GitHub App settings (https://github.com/settings/apps/<your-app>) and restart the API.`;
             this.logger.error({
                 message,
                 context: GithubService.name,
@@ -481,6 +501,7 @@ export class GithubService
         params: any,
     ): Promise<{ success: boolean; status?: CreateAuthIntegrationStatus }> {
         try {
+            this.assertGithubOAuthEnv();
             const appOctokit = this.createOctokitInstance();
 
             const installationAuthentication = await appOctokit.auth({
