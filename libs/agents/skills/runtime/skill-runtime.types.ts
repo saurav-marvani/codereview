@@ -1,17 +1,27 @@
-import { Thread } from '@kodus/flow';
-
 import {
     SkillCapabilityDefinition,
     SkillContracts,
     SkillFetcherPolicy,
 } from '../skill-loader.service';
 
+/**
+ * Thread identifier carried through the skills runtime for log/trace
+ * correlation. Structurally compatible with the legacy `@kodus/flow` `Thread`
+ * ({ id, metadata }) but typed locally so the skills layer carries no
+ * `@kodus/flow` dependency (the agent loop runs on the harness now). This is
+ * the single canonical definition — other skill files import it from here.
+ */
+export interface AgentThread {
+    id?: unknown;
+    metadata?: Record<string, unknown>;
+}
+
 export interface ToolExecutionResponse {
     result?: unknown;
 }
 
 export interface AgentCallOptions {
-    thread?: Thread;
+    thread?: AgentThread;
     userContext?: {
         organizationAndTeamData?: {
             organizationId: string;

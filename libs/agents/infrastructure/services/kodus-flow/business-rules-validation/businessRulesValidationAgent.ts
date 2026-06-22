@@ -1,12 +1,11 @@
-import {
-    AgentInputEnum,
-    LLMAdapter,
-    LLMRequest,
-    Thread,
-    createLogger,
-} from '@kodus/flow';
 import { LLMModelProvider, PromptRunnerService } from '@kodus/kodus-common/llm';
+import { generateText } from 'ai';
 import { Injectable, Inject, Optional } from '@nestjs/common';
+
+import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
+import { createLogger } from '@libs/core/log/logger';
+import { byokToVercelModel } from '@libs/llm/byok-to-vercel';
+import { buildProviderOptions } from '@libs/llm/reasoning-options';
 
 import { ParametersKey } from '@libs/core/domain/enums/parameters-key.enum';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
@@ -27,7 +26,6 @@ import {
     SkillCapabilityRuntimeConfig,
     ToolCaller,
 } from '../../../../skills/runtime/skill-runtime.types';
-import { asRecord } from '../../../../skills/runtime/value-utils';
 import {
     isMcpConnectivityError,
     McpConnectionUnavailableError,
@@ -38,6 +36,7 @@ import {
     buildMcpConnectionFailureFeedback,
 } from './required-mcp-feedback';
 import {
+    AgentThread,
     BusinessRulesContext,
     BusinessRulesPrepareContext,
     ValidationResult,
@@ -58,7 +57,23 @@ const DEFAULT_NEEDS_MORE_INFO_MESSAGE =
     '## 🤔 Need Task Information\n\nPlease provide task context.';
 const PARSER_FALLBACK_FRAGMENT = 'error parsing validation result';
 
-type AnalyzerAdapter = Pick<LLMAdapter, 'call'>;
+/**
+ * Chat message for the analyzer LLM call. Replaces `@kodus/flow`'s
+ * `LLMRequest['messages']` + `AgentInputEnum` — typed locally so this agent
+ * has no `@kodus/flow` dependency.
+ */
+type AnalyzerMessage = { role: 'system' | 'user'; content: string };
+
+/** Result shape of a single analyzer LLM call (mirrors the legacy adapter's
+ *  `{ content, usage }`). */
+interface AnalyzerCallResult {
+    content: string;
+    usage?: {
+        inputTokens?: number;
+        outputTokens?: number;
+        totalTokens?: number;
+    };
+}
 
 /** Re-exported for backward compatibility with callers that imported from here */
 export type { ValidationResult };
@@ -127,7 +142,7 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
     protected createInitialContext(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         prepareContext?: BusinessRulesPrepareContext;
-        thread?: Thread;
+        thread?: AgentThread;
         userLanguage: string;
     }): BusinessRulesContext {
         return {
@@ -278,15 +293,10 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
                 SKILL_NAME,
                 analyzerContext,
             );
-        const analyzerAdapter = super.createLLMAdapter(
-            'BusinessRulesValidation',
-            'businessRulesAnalyzer',
-        );
         const prompt = buildBusinessRulesAnalysisPrompt(ctx);
         const maxAttempts = Math.max(1, executionPolicy.analyzerMaxIterations);
         const validationResult = await this.executeAnalyzerWithRetries({
             ctx,
-            analyzerAdapter,
             analyzerInstructions,
             prompt,
             maxAttempts,
@@ -374,7 +384,6 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
 
     private async executeAnalyzerWithRetries(params: {
         ctx: BusinessRulesContext;
-        analyzerAdapter: AnalyzerAdapter;
         analyzerInstructions: string;
         prompt: string;
         maxAttempts: number;
@@ -386,7 +395,6 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
             try {
                 const validationResult = await this.executeAnalyzerAttempt({
                     ctx: params.ctx,
-                    analyzerAdapter: params.analyzerAdapter,
                     analyzerInstructions: params.analyzerInstructions,
                     prompt: params.prompt,
                     attempt,
@@ -412,23 +420,28 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
 
     private async executeAnalyzerAttempt(params: {
         ctx: BusinessRulesContext;
-        analyzerAdapter: AnalyzerAdapter;
         analyzerInstructions: string;
         prompt: string;
         attempt: number;
         timeoutMs: number;
     }): Promise<ValidationResult> {
         const analysisResult = await this.withTimeout(
-            params.analyzerAdapter.call({
-                messages: this.buildAnalyzerMessages(
+            this.callLLM(
+                this.buildAnalyzerMessages(
                     params.analyzerInstructions,
                     params.prompt,
                 ),
-                temperature: this.defaultLLMConfig.temperature,
-                maxTokens: this.defaultLLMConfig.maxTokens,
-                maxReasoningTokens: this.defaultLLMConfig.maxReasoningTokens,
-                stop: this.defaultLLMConfig.stop,
-            }),
+                {
+                    temperature: this.defaultLLMConfig.temperature,
+                    maxTokens: this.defaultLLMConfig.maxTokens,
+                },
+                'businessRulesAnalyzer',
+                {
+                    organizationId:
+                        params.ctx.organizationAndTeamData?.organizationId?.toString(),
+                    teamId: params.ctx.organizationAndTeamData?.teamId?.toString(),
+                },
+            ),
             params.timeoutMs,
             `business-rules-analyzer-attempt-${params.attempt}`,
         );
@@ -438,17 +451,78 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
         return this.parseValidationResult(analysisResult.content);
     }
 
+    /**
+     * Run a single LLM completion on the Vercel AI SDK. Replaces the legacy
+     * `super.createLLMAdapter(...).call(...)` (the `@kodus/flow` LLM bridge):
+     * `byokToVercelModel` resolves the BYOK model and `generateText` runs a
+     * plain (no-tools) completion. Langfuse parity via `buildLangfuseTelemetry`.
+     */
+    private async callLLM(
+        messages: AnalyzerMessage[],
+        options: { temperature?: number; maxTokens?: number },
+        functionId: string,
+        metadata?: { organizationId?: string; teamId?: string },
+    ): Promise<AnalyzerCallResult> {
+        const model = byokToVercelModel(this.byokConfig);
+        const system = messages.find((m) => m.role === 'system')?.content;
+        const conversation = messages
+            .filter((m) => m.role !== 'system')
+            .map((m) => ({ role: m.role, content: m.content }));
+
+        // Thinking/reasoning budget — replaces the legacy
+        // `maxReasoningTokens: 1024` the flow LLM bridge passed through.
+        const providerOptions = buildProviderOptions(functionId, undefined, {
+            reasoningEffort: 'low',
+            byokProvider: this.byokConfig?.main?.provider,
+            modelName: this.byokConfig?.main?.model,
+        });
+
+        // Wrapped in a billing span so token usage reaches the Mongo
+        // `observability_telemetry` cost dataset (parity with the legacy flow
+        // LLM bridge); `experimental_telemetry` feeds Langfuse separately.
+        const result = await this.observabilityService.runAiSdkLLMInSpan({
+            spanName: `BusinessRulesValidation::${functionId}`,
+            runName: functionId,
+            model: this.byokConfig?.main?.model,
+            attrs: {
+                type: 'system',
+                organizationId: metadata?.organizationId,
+                teamId: metadata?.teamId,
+            },
+            exec: () =>
+                generateText({
+                    model,
+                    ...(system ? { system } : {}),
+                    messages: conversation,
+                    temperature: options.temperature ?? 0,
+                    ...(options.maxTokens
+                        ? { maxOutputTokens: options.maxTokens }
+                        : {}),
+                    ...(Object.keys(providerOptions).length
+                        ? { providerOptions }
+                        : {}),
+                    experimental_telemetry: buildLangfuseTelemetry(functionId, {
+                        organizationId: metadata?.organizationId,
+                        teamId: metadata?.teamId,
+                        provider: this.byokConfig?.main?.provider,
+                    }),
+                }),
+        });
+
+        return { content: result.text, usage: result.usage };
+    }
+
     private buildAnalyzerMessages(
         analyzerInstructions: string,
         prompt: string,
-    ): LLMRequest['messages'] {
+    ): AnalyzerMessage[] {
         return [
             {
-                role: AgentInputEnum.SYSTEM,
+                role: 'system',
                 content: analyzerInstructions,
             },
             {
-                role: AgentInputEnum.USER,
+                role: 'user',
                 content: prompt,
             },
         ];
@@ -457,19 +531,12 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
     private logAnalyzerUsage(
         ctx: BusinessRulesContext,
         attempt: number,
-        analysisResult: { usage?: unknown },
+        analysisResult: AnalyzerCallResult,
     ): void {
-        const usage = asRecord(analysisResult.usage);
-        const tokensIn =
-            typeof usage.promptTokens === 'number' ? usage.promptTokens : 0;
-        const tokensOut =
-            typeof usage.completionTokens === 'number'
-                ? usage.completionTokens
-                : 0;
-        const totalTokens =
-            typeof usage.totalTokens === 'number'
-                ? usage.totalTokens
-                : tokensIn + tokensOut;
+        const usage = analysisResult.usage;
+        const tokensIn = usage?.inputTokens ?? 0;
+        const tokensOut = usage?.outputTokens ?? 0;
+        const totalTokens = usage?.totalTokens ?? tokensIn + tokensOut;
 
         this.logger.log({
             message: 'Business rules analyzer token usage',
@@ -602,27 +669,21 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
         }
 
         try {
-            const adapter = super.createLLMAdapter(
-                'BusinessRulesValidation',
-                'businessRulesUserFacingFormatter',
-            );
-            const formatted = await adapter.call({
-                messages: [
+            const formatted = await this.callLLM(
+                [
                     {
-                        role: AgentInputEnum.SYSTEM,
+                        role: 'system',
                         content:
                             'Rewrite the provided markdown for the end user in the requested USER LANGUAGE. Preserve markdown structure, code spans, links, and bullet lists. Preserve quoted requirement text exactly when it is explicitly quoted from task context. Do not add new information.',
                     },
                     {
-                        role: AgentInputEnum.USER,
+                        role: 'user',
                         content: `USER LANGUAGE: ${userLanguage}\nMODE: ${mode}\n\nMESSAGE:\n${message}`,
                     },
                 ],
-                temperature: 0,
-                maxTokens: 1200,
-                maxReasoningTokens: 1024,
-                stop: undefined,
-            });
+                { temperature: 0, maxTokens: 1200 },
+                'businessRulesUserFacingFormatter',
+            );
 
             return typeof formatted.content === 'string' &&
                 formatted.content.trim().length > 0

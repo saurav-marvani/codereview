@@ -1,0 +1,175 @@
+/**
+ * Skills engine — bridge from the legacy `@kodus/flow` orchestration to the
+ * **agent-harness** (`AiSdkAgentRunner`). This is the first non-code-review
+ * consumer of the harness: the generic skill "fetcher" (a REACT agent that
+ * gathers task context via MCP tools) now runs on the same one-and-only agent
+ * loop the code-review finder/verifier use.
+ *
+ * MCP stays on the flow adapter (`createMCPAdapter`) — this only wraps the
+ * adapter's tools as harness `AgentTool`s and runs the loop on the AI SDK.
+ */
+import { type BYOKConfig } from '@kodus/kodus-common/llm';
+import { type MCPAdapter } from '@kodus/flow';
+import { type LanguageModel } from 'ai';
+
+import { AiSdkAgentRunner } from '@libs/agent-harness/infrastructure/ai-sdk/ai-sdk-agent-runner';
+import type {
+    AgentSpec,
+    AgentTool,
+    JSONSchema,
+    RunState,
+    ToolRegistry,
+} from '@libs/agent-harness/domain/contracts';
+import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
+import { byokToVercelModel } from '@libs/llm/byok-to-vercel';
+
+/**
+ * Wrap a connected flow `MCPAdapter`'s tools as a harness `ToolRegistry`.
+ * Tool names are kept verbatim; execution routes back through
+ * `adapter.executeTool(name, args)`. Tool failures are surfaced to the model
+ * as `{ isError: true }` (the harness convention) instead of throwing.
+ */
+export async function buildMcpAgentToolRegistry(
+    adapter: MCPAdapter,
+): Promise<ToolRegistry> {
+    const tools = new Map<string, AgentTool>();
+    const mcpTools = await adapter.getTools();
+
+    for (const mcpTool of mcpTools) {
+        const name = mcpTool.name;
+        tools.set(name, {
+            name,
+            description: mcpTool.description ?? '',
+            inputSchema: (mcpTool.inputSchema ?? {
+                type: 'object',
+                properties: {},
+            }) as JSONSchema,
+            execute: async (input) => {
+                try {
+                    const result = await adapter.executeTool(
+                        name,
+                        (input ?? {}) as Record<string, unknown>,
+                    );
+                    return {
+                        output:
+                            typeof result === 'string'
+                                ? result
+                                : JSON.stringify(result ?? null),
+                    };
+                } catch (error) {
+                    return {
+                        output:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                        isError: true,
+                    };
+                }
+            },
+        });
+    }
+
+    return {
+        get: (toolName: string) => tools.get(toolName),
+        list: () => [...tools.values()],
+    };
+}
+
+export interface FetcherRunResult {
+    /** Final assistant text — the fetcher's structured JSON answer. */
+    text: string;
+    /** Full run state (steps, usage, trace) for billing/observability. */
+    state: RunState;
+    /**
+     * Token usage in the AI-SDK shape (with `totalTokens` computed) so the
+     * caller can feed `ObservabilityService.runAiSdkLLMInSpan` for Mongo billing.
+     */
+    usage: {
+        inputTokens?: number;
+        outputTokens?: number;
+        totalTokens?: number;
+        reasoningTokens?: number;
+    };
+}
+
+/**
+ * Run a skill fetcher agent on the harness. Builds a fixed-model
+ * `AgentSpec` + `AiSdkAgentRunner` (BYOK model resolved once, returned for any
+ * `modelId`) and returns the final text plus the `RunState`.
+ *
+ * The result is the LAST assistant step's text — matching the legacy fetcher
+ * contract of returning a JSON string the capabilities parse. Langfuse parity
+ * is via `input.telemetry` (forwarded to `experimental_telemetry`); Mongo
+ * billing is emitted by the caller from `state.usage`.
+ */
+export async function runMcpFetcherAgent(params: {
+    byokConfig?: BYOKConfig;
+    agentId: string;
+    systemPrompt: string;
+    prompt: string;
+    tools: ToolRegistry;
+    maxSteps: number;
+    providerOptions?: Record<string, unknown>;
+    runId: string;
+    signal?: AbortSignal;
+    telemetry?: {
+        functionId: string;
+        organizationId?: string;
+        teamId?: string;
+        provider?: string;
+    };
+}): Promise<FetcherRunResult> {
+    const model: LanguageModel = byokToVercelModel(params.byokConfig);
+    const runner = new AiSdkAgentRunner({ resolve: () => model });
+
+    const spec: AgentSpec = {
+        id: params.agentId,
+        systemPrompt: params.systemPrompt,
+        modelId: 'resolved',
+        tools: params.tools,
+        policies: [],
+        maxSteps: params.maxSteps,
+        ...(params.providerOptions
+            ? { providerOptions: params.providerOptions }
+            : {}),
+    };
+
+    const telemetry = params.telemetry
+        ? buildLangfuseTelemetry(params.telemetry.functionId, {
+              organizationId: params.telemetry.organizationId,
+              teamId: params.telemetry.teamId,
+              provider: params.telemetry.provider,
+          })
+        : undefined;
+
+    const state = await runner.run(
+        spec,
+        { prompt: params.prompt, ...(telemetry ? { telemetry } : {}) },
+        { runId: params.runId, signal: params.signal },
+    );
+
+    const inputTokens = state.usage?.inputTokens;
+    const outputTokens = state.usage?.outputTokens;
+
+    return {
+        text: extractFinalText(state),
+        state,
+        usage: {
+            inputTokens,
+            outputTokens,
+            totalTokens: (inputTokens ?? 0) + (outputTokens ?? 0),
+            reasoningTokens: state.usage?.reasoningTokens,
+        },
+    };
+}
+
+/** The fetcher's answer is the last assistant step carrying non-empty text. */
+function extractFinalText(state: RunState): string {
+    for (let i = state.steps.length - 1; i >= 0; i--) {
+        const content = state.steps[i]?.message?.content;
+        if (typeof content === 'string' && content.trim()) {
+            return content;
+        }
+    }
+    return '';
+}

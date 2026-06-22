@@ -61,6 +61,16 @@ minimumReleaseAgeExclude:
   - '@typescript-eslint/utils@8.61.1'
   - '@typescript-eslint/visitor-keys@8.61.1'
   - ai@6.0.206
-  - e2b@2.30.0
-  - ts-loader@9.6.1
   - typescript-eslint@8.61.1
+  - '@morphllm/morphsdk@0.2.183'
+  - '@posthog/core@1.35.3'
+  - '@posthog/types@1.390.2'
+  - '@types/ramda@0.32.0'
+  - e2b@2.30.4
+  - posthog-node@5.38.2
+  - uuid@14.0.1
+  - '@ai-sdk/amazon-bedrock@4.0.120'
+  - '@ai-sdk/google-vertex@4.0.148'
+  - '@ai-sdk/openai@3.0.74'
+  - smol-toml@1.7.0
+  - ts-loader@9.6.2

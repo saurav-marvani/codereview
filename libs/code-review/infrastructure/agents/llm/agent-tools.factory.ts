@@ -194,14 +194,18 @@ export function buildAgentTools(
                     ) || '.';
                 const namesOnly = args.namesOnly ?? false;
                 const excludeTests = args.excludeTests ?? false;
-                if (!pattern) return 'Error: pattern is required';
+                if (!pattern) {
+                    return 'Error: pattern is required';
+                }
 
                 // Use rg directly in sandbox for richer output (-n, -C 5)
                 if (remoteCommands.exec) {
                     try {
                         const safePattern = pattern.replace(/'/g, "'\\''");
                         const safePath = searchPath.replace(/'/g, "'\\''");
-                        const safeGlob = glob ? glob.replace(/'/g, "'\\''") : '';
+                        const safeGlob = glob
+                            ? glob.replace(/'/g, "'\\''")
+                            : '';
                         const globArg = safeGlob ? ` --glob '${safeGlob}'` : '';
                         const excludeTestsArgs = excludeTests
                             ? ` --glob '!*test*' --glob '!*Test*' --glob '!*spec*' --glob '!*Spec*' --glob '!*__tests__*'`
@@ -224,8 +228,9 @@ export function buildAgentTools(
                             throw new Error('rg error');
                         }
                         // exit code 1 = no matches (not an error)
-                        if (exitCode === 1 || !stdout.trim())
+                        if (exitCode === 1 || !stdout.trim()) {
                             return 'No matches found.';
+                        }
                         if (exitCode === 0) {
                             const raw = stdout.trim();
                             if (namesOnly) {
@@ -319,7 +324,9 @@ export function buildAgentTools(
                 const endLine = args.endLine || args.end_line || 0;
                 // Strip leading slash — paths are relative to repo root
                 filePath = filePath.replace(/^\/+/, '');
-                if (!filePath) return 'Error: path is required';
+                if (!filePath) {
+                    return 'Error: path is required';
+                }
                 let result: string;
                 try {
                     result = await remoteCommands.read(
@@ -343,7 +350,9 @@ export function buildAgentTools(
                             .map((l) => l.trim())
                             .filter(Boolean)
                             .filter((name) => {
-                                const b = (name.split('/').pop() || '').toLowerCase();
+                                const b = (
+                                    name.split('/').pop() || ''
+                                ).toLowerCase();
                                 return (
                                     b.length > 0 &&
                                     (b.includes(wanted) || wanted.includes(b))
@@ -457,7 +466,9 @@ export function buildAgentTools(
             },
             async (args: any) => {
                 const pattern = args.pattern || '';
-                if (!pattern) return 'Error: pattern is required';
+                if (!pattern) {
+                    return 'Error: pattern is required';
+                }
                 const searchPath =
                     (args.path || '.').replace(/^\/+/, '') || '.';
                 const ext = args.extension || args.ext || '';
@@ -478,7 +489,9 @@ export function buildAgentTools(
                                     : `*${safePattern}*`;
                             const fdCmd = `fd --glob '${globPattern}'${extArg} '${safePath}' --type f --max-results 30`;
                             const { stdout } = await remoteCommands.exec(fdCmd);
-                            if (stdout && stdout.trim()) return stdout.trim();
+                            if (stdout && stdout.trim()) {
+                                return stdout.trim();
+                            }
                         } catch {
                             // fd not available, try find
                         }
@@ -521,8 +534,10 @@ export function buildAgentTools(
                                     .includes(pattern.toLowerCase()) &&
                                 (!ext || f.endsWith(`.${ext}`)),
                         );
-                    if (matching.length === 0)
+                    if (matching.length === 0) {
                         return `No files matching "${pattern}" in ${searchPath}`;
+                    }
+
                     if (matching.length > 30) {
                         return (
                             matching.slice(0, 30).join('\n') +
@@ -1074,7 +1089,10 @@ fi
             const isChild = /^\s+[←→]/.test(line) || /^\s+\(no /.test(line);
             if (isChild && blocks.length > 0) {
                 blocks[blocks.length - 1].lines.push(line.trim());
-            } else if (!/^Changed functions/i.test(line) && !line.startsWith(' ')) {
+            } else if (
+                !/^Changed functions/i.test(line) &&
+                !line.startsWith(' ')
+            ) {
                 blocks.push({ header: line.trim(), lines: [] });
             }
         }

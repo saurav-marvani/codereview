@@ -1,7 +1,8 @@
-import { Thread } from '@kodus/flow';
-
 import type { TaskContextNormalized } from '@libs/agents/skills/capabilities';
-import { CapabilityExecutionTrace } from '@libs/agents/skills/runtime/skill-runtime.types';
+import {
+    AgentThread,
+    CapabilityExecutionTrace,
+} from '@libs/agents/skills/runtime/skill-runtime.types';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { BlueprintContext } from '@libs/shared/blueprint/blueprint.types';
 
@@ -73,6 +74,9 @@ export interface ValidationResult {
 }
 export type { TaskContextNormalized };
 
+/** Re-export the local thread type so this skill's files import it from here. */
+export type { AgentThread };
+
 /**
  * Typed context for the Business Rules Validation skill.
  * Extends BlueprintContext with step-specific fields.
@@ -80,7 +84,7 @@ export type { TaskContextNormalized };
  */
 export interface BusinessRulesContext extends BlueprintContext {
     organizationAndTeamData: OrganizationAndTeamData;
-    thread?: Thread;
+    thread?: AgentThread;
     prepareContext?: BusinessRulesPrepareContext;
     /** Raw PR diff text fetched by fetchPRContext step */
     prDiff?: string;

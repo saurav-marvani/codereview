@@ -10,8 +10,14 @@ import { wrapLanguageModel, type LanguageModel } from 'ai';
 
 import { BYOKConfig } from '@kodus/kodus-common/llm';
 
-import { runWithBYOKLimiter, type BYOKLimiterRole } from '@libs/llm/byok-to-vercel';
-import { attachClassification, classifyLLMError } from '@libs/llm/error-classifier';
+import {
+    runWithBYOKLimiter,
+    type BYOKLimiterRole,
+} from '@libs/llm/byok-to-vercel';
+import {
+    attachClassification,
+    classifyLLMError,
+} from '@libs/llm/error-classifier';
 
 export interface WrapByokModelOptions {
     byokConfig?: BYOKConfig;
@@ -32,8 +38,6 @@ export function wrapByokModel(
 ): LanguageModel {
     return wrapLanguageModel({
         model: model as any,
-        // Param typed `any`: the AI SDK middleware generic (v2/v3) is finicky;
-        // the body is verified against the documented wrapGenerate shape.
         middleware: {
             specificationVersion: 'v3',
             wrapGenerate: async ({ doGenerate, params }: any) => {
@@ -64,6 +68,7 @@ export function wrapByokModel(
                         throw err;
                     }
                 };
+
                 return runWithBYOKLimiter(
                     {
                         byokConfig: opts.byokConfig,

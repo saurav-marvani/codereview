@@ -1,4 +1,4 @@
-import { createThreadId } from '@kodus/flow';
+import { createThreadId } from '@libs/common/utils/thread-id';
 import { createLogger } from '@libs/core/log/logger';
 import { Inject, Injectable } from '@nestjs/common';
 

@@ -1,4 +1,4 @@
-import { Thread } from '@kodus/flow';
+import type { AgentThread } from './runtime/skill-runtime.types';
 import { createLogger } from '@libs/core/log/logger';
 import { PromptRunnerService } from '@kodus/kodus-common/llm';
 
@@ -32,7 +32,7 @@ import {
 export interface SkillExecutionContext<TPrepareContext = unknown> {
     organizationAndTeamData: OrganizationAndTeamData;
     prepareContext?: TPrepareContext;
-    thread?: Thread;
+    thread?: AgentThread;
     /**
      * Per-repository/directory BYOK model override resolved by the code
      * review pipeline (`codeReviewConfig.byokModel`). When set, the skill's
@@ -93,7 +93,7 @@ export abstract class AbstractSkillProvider<
     protected abstract createInitialContext(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         prepareContext?: TPrepareContext;
-        thread?: Thread;
+        thread?: AgentThread;
         userLanguage: string;
     }): TContext;
 
@@ -236,10 +236,7 @@ export abstract class AbstractSkillProvider<
                 runtime:
                     await this.genericSkillRunner.createFetcherOrchestration(
                         this.skillName,
-                        super.createLLMAdapter(
-                            this.constructor.name,
-                            `${this.skillName}-fetcher`,
-                        ),
+                        this.byokConfig,
                         organizationAndTeamData,
                     ),
             };

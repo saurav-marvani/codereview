@@ -207,7 +207,8 @@ function findingsFromText(state: RunState): {
             if (clean) {
                 return {
                     reasoning: clean.reasoning ?? '',
-                    suggestions: (clean.suggestions ?? []) as FinderSuggestion[],
+                    suggestions: (clean.suggestions ??
+                        []) as FinderSuggestion[],
                 };
             }
         } catch {
@@ -416,26 +417,36 @@ function strongFilesFromRun(state: RunState): Set<string> {
     const out = new Set<string>();
     for (const step of state.steps) {
         for (const tc of step.message.toolCalls ?? []) {
-            if (tc.name !== 'readFile' && tc.name !== 'checkTypes') continue;
+            if (tc.name !== 'readFile' && tc.name !== 'checkTypes') {
+                continue;
+            }
             const input = tc.input as Record<string, unknown> | undefined;
             const p =
                 (input?.path as string) ??
                 (input?.filePath as string) ??
                 (input?.file as string);
-            if (typeof p === 'string' && p) out.add(normalizePath(p));
+
+            if (typeof p === 'string' && p) {
+                out.add(normalizePath(p));
+            }
         }
     }
     return out;
 }
 
 function normalizePath(p: string): string {
-    return p.replace(/\\/g, '/').replace(/^\.?\/+/, '').toLowerCase();
+    return p
+        .replace(/\\/g, '/')
+        .replace(/^\.?\/+/, '')
+        .toLowerCase();
 }
 
 function fileWasInvestigated(investigated: Set<string>, file: string): boolean {
     const f = normalizePath(file);
     for (const s of investigated) {
-        if (s === f || s.endsWith('/' + f) || f.endsWith('/' + s)) return true;
+        if (s === f || s.endsWith('/' + f) || f.endsWith('/' + s)) {
+            return true;
+        }
     }
     return false;
 }
@@ -489,7 +500,9 @@ export async function runRecallPasses(
 ): Promise<{ findings: FinderFindings; usage: VerifyUsage }> {
     let findings = base;
     let usage = ZERO_RECALL_USAGE;
-    if (params.skipHeavyPasses) return { findings, usage };
+    if (params.skipHeavyPasses) {
+        return { findings, usage };
+    }
 
     const toolCalls = collectToolCalls(params.finderState);
     const ledger = params.coverageLedger;
@@ -524,11 +537,7 @@ export async function runRecallPasses(
     }
 
     // 2 & 3. Second/third chance — while coverage stays below the 70% floor.
-    for (
-        let i = 0;
-        i < MAX_COVERAGE_CHANCES && ledger?.isLowCoverage();
-        i++
-    ) {
+    for (let i = 0; i < MAX_COVERAGE_CHANCES && ledger?.isLowCoverage(); i++) {
         await runPass(
             buildCoveragePrompt(ledger.debtNote(), toolCalls, 'second-chance'),
             'coverage-second-chance',

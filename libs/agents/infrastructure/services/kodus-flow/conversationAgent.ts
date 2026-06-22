@@ -1,13 +1,5 @@
-import {
-    createLogger,
-    createMCPAdapter,
-    createOrchestration,
-    LLMAdapter,
-    PlannerType,
-    Thread,
-} from '@kodus/flow';
-import { SDKOrchestrator } from '@kodus/flow/dist/orchestration';
-import { LLMModelProvider, PromptRunnerService } from '@kodus/kodus-common/llm';
+import { BYOKConfig } from '@kodus/kodus-common/llm';
+import { generateText, stepCountIs, type Tool } from 'ai';
 import { Inject, Injectable } from '@nestjs/common';
 
 import { ParametersKey } from '@libs/core/domain/enums/parameters-key.enum';
@@ -18,223 +10,167 @@ import {
     PARAMETERS_SERVICE_TOKEN,
 } from '@libs/organization/domain/parameters/contracts/parameters.service.contract';
 
+import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
+import { createLogger } from '@libs/core/log/logger';
 import { ObservabilityService } from '@libs/core/log/observability.service';
+import { byokToVercelModel } from '@libs/llm/byok-to-vercel';
+import { buildProviderOptions } from '@libs/llm/reasoning-options';
 import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service';
 import { SandboxInstance } from '@libs/sandbox/domain/contracts/sandbox.provider';
-import { BaseAgentProvider } from './base-agent.provider';
+
+import { connectMcpTools } from '../ai-sdk/mcp-tools';
+import { buildNativeTools } from '../ai-sdk/native-tools';
 import {
     CONVERSATION_FALLBACK_MESSAGE,
     normalizeConversationResponse,
 } from './conversation-response.util';
-import { buildNativeToolConfigs } from './native-tools.factory';
 
+/**
+ * Upper bound on the ReAct tool-calling loop. Replaces the legacy
+ * `replanPolicy.maxReplans` — the AI SDK runs native tool calling and we stop
+ * after this many steps (`stepCountIs`). Generous enough for multi-tool repo
+ * exploration, bounded so a stuck loop can't run away.
+ */
+const CONVERSATION_MAX_STEPS = 12;
+
+/**
+ * Thread identifier passed by the caller. Structurally compatible with the
+ * legacy `@kodus/flow` `Thread` ({ id, metadata }) but typed locally so this
+ * agent has no `@kodus/flow` dependency. Used only for log correlation now —
+ * the conversation history travels in `prepareContext` (rebuilt from the PR
+ * comment thread), not in any flow-managed session store.
+ */
+interface ConversationThread {
+    id?: unknown;
+    metadata?: Record<string, unknown>;
+}
+
+/**
+ * Conversation agent ("chat with Kody") rebuilt on the Vercel AI SDK.
+ *
+ * Replaces the former `@kodus/flow` orchestration (createOrchestration +
+ * REACT planner + createMCPAdapter + createTool + callAgent) with a thin
+ * native loop: `byokToVercelModel` resolves the BYOK model, MCP + sandbox
+ * tools are exposed as AI SDK tools, and `generateText` runs the tool-calling
+ * loop until it answers or hits `CONVERSATION_MAX_STEPS`.
+ */
 @Injectable()
-export class ConversationAgentProvider extends BaseAgentProvider {
+export class ConversationAgentProvider {
     private readonly logger = createLogger(ConversationAgentProvider.name);
-    private orchestration: SDKOrchestrator;
-    private mcpAdapter: ReturnType<typeof createMCPAdapter>;
-    private llmAdapter: LLMAdapter;
-    protected readonly defaultLLMConfig = {
-        llmProvider: LLMModelProvider.GEMINI_2_5_PRO,
+
+    private readonly defaultLLMConfig = {
         temperature: 0,
         maxTokens: 20000,
-        maxReasoningTokens: 1024,
-        stop: undefined as string[] | undefined,
     };
 
     constructor(
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
-        promptRunnerService: PromptRunnerService,
-        permissionValidationService: PermissionValidationService,
-        observabilityService: ObservabilityService,
+        private readonly permissionValidationService: PermissionValidationService,
+        private readonly observabilityService: ObservabilityService,
         private readonly mcpManagerService?: MCPManagerService,
-    ) {
-        super(
-            promptRunnerService,
-            permissionValidationService,
-            observabilityService,
-        );
-    }
+    ) {}
 
-    protected async createMCPAdapter(
-        organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<void> {
-        const mcpManagerServers = await this.mcpManagerService.getConnections(
-            organizationAndTeamData,
-        );
-
-        if (!mcpManagerServers?.length) {
-            this.logger.warn({
-                message:
-                    'ConversationAgent: no MCP connections available for this organization/team. Skipping MCP adapter initialization.',
-                context: ConversationAgentProvider.name,
-                metadata: {
-                    organizationId: organizationAndTeamData?.organizationId,
-                    teamId: organizationAndTeamData?.teamId,
-                },
-            });
-            this.mcpAdapter = undefined;
-            return;
-        }
-
-        const servers = [...mcpManagerServers];
-
-        this.mcpAdapter = createMCPAdapter({
-            servers,
-            defaultTimeout: 60_000,
-            maxRetries: 1,
-            onError: (err) => {
-                this.logger.warn({
-                    message:
-                        'ConversationAgent: MCP execution failed, continuing.',
-                    context: ConversationAgentProvider.name,
-                    error: new Error(err.message),
-                });
-            },
-        });
-    }
-
-    private async createOrchestration() {
-        this.llmAdapter = super.createLLMAdapter(
-            'ConversationalAgent',
-            'conversationAgent',
-        );
-
-        this.orchestration = await createOrchestration({
-            tenantId: 'kodus-agent-conversation',
-            llmAdapter: this.llmAdapter,
-            mcpAdapter: this.mcpAdapter,
-            observability:
-                this.observabilityService.getAgentObservabilityConfig(
-                    'kodus-flow',
-                ),
-            storage: this.observabilityService.getStorageConfig(),
-        });
-    }
-
-    private async initialize(
-        organizationAndTeamData: OrganizationAndTeamData,
-        userLanguage: string,
-        sandbox?: SandboxInstance,
-    ) {
-        await this.createMCPAdapter(organizationAndTeamData);
-        await this.createOrchestration();
-
-        try {
-            await this.orchestration.connectMCP();
-            await this.orchestration.registerMCPTools();
-        } catch (error) {
-            this.logger.warn({
-                message: 'MCP offline, prosseguindo.',
-                context: ConversationAgentProvider.name,
-                error,
-            });
-        }
-
-        // Register native tools (grep, readFile, listDir, exec) backed by the
-        // sandbox. Sandbox is captured by closure so each tool call hits the
-        // sandbox provided in this request — concurrent @kody requests on
-        // different PRs share NO sandbox state.
-        if (sandbox) {
-            const nativeTools = buildNativeToolConfigs(sandbox);
-            for (const cfg of nativeTools) {
-                this.orchestration.createTool(cfg);
-            }
-            this.logger.log({
-                message: 'Native sandbox tools registered',
-                context: ConversationAgentProvider.name,
-                metadata: {
-                    sandboxType: sandbox.type,
-                    toolCount: nativeTools.length,
-                    toolNames: nativeTools.map((t) => t.name),
-                },
-            });
-        }
-
-        await this.orchestration.createAgent({
-            name: 'kodus-conversational-agent',
-            identity: {
-                description:
-                    'Intelligent conversation agent for user interactions.',
-                goal: 'Engage in natural, helpful conversations while respecting user language preferences',
-                language: userLanguage,
-                languageInstructions: `LANGUAGE REQUIREMENTS:
-- Respond in the user's preferred language: ${userLanguage}
-- Default to English if no language preference is configured
-- Maintain consistent language throughout conversation
-- Use appropriate terminology and formatting for the selected language
-- Adapt communication style to the target language conventions`,
-            },
-            plannerOptions: {
-                type: PlannerType.REACT,
-                replanPolicy: {
-                    toolUnavailable: 'replan',
-                    maxReplans: 3,
-                },
-            },
-        });
-    }
-
-    // -------------------------------------------------------------------------
     async execute(
         prompt: string,
         context?: {
             organizationAndTeamData: OrganizationAndTeamData;
             prepareContext?: any;
-            thread?: Thread;
+            thread?: ConversationThread;
             sandbox?: SandboxInstance;
         },
-    ) {
+    ): Promise<string> {
         const { organizationAndTeamData, prepareContext, thread, sandbox } =
             context || ({} as any);
-        try {
-            if (
-                !organizationAndTeamData ||
-                !organizationAndTeamData.organizationId
-            ) {
-                throw new Error(
-                    'Organization and team data with organizationId is required.',
-                );
-            }
 
-            if (!thread) {
-                throw new Error('thread and team data is required.');
-            }
-
-            const userLanguage = await this.getLanguage(
-                organizationAndTeamData,
+        if (!organizationAndTeamData?.organizationId) {
+            throw new Error(
+                'Organization and team data with organizationId is required.',
             );
+        }
 
-            this.logger.log({
-                message: 'Starting conversation agent execution',
-                context: ConversationAgentProvider.name,
-                serviceName: ConversationAgentProvider.name,
-                metadata: { organizationAndTeamData, thread, userLanguage },
-            });
+        if (!thread) {
+            throw new Error('thread and team data is required.');
+        }
 
-            await this.fetchBYOKConfig(organizationAndTeamData);
+        const userLanguage = await this.getLanguage(organizationAndTeamData);
 
-            await this.initialize(organizationAndTeamData, userLanguage, sandbox);
+        this.logger.log({
+            message: 'Starting conversation agent execution',
+            context: ConversationAgentProvider.name,
+            serviceName: ConversationAgentProvider.name,
+            metadata: { organizationAndTeamData, thread, userLanguage },
+        });
 
-            const preparedPrompt = this.buildPromptWithMemoryBootstrap(
+        const byokConfig = await this.resolveBYOKConfig(organizationAndTeamData);
+        const model = byokToVercelModel(byokConfig);
+
+        // Thinking/reasoning budget. Replaces the legacy
+        // `maxReasoningTokens: 1024`, which the flow LLM bridge passed through.
+        // `buildProviderOptions` maps an effort tier to the right per-provider
+        // shape (Gemini thinkingBudget/thinkingLevel, Anthropic thinking,
+        // OpenAI reasoningEffort) — the repo-standard reasoning path.
+        const providerOptions = buildProviderOptions('conversationAgent', undefined, {
+            reasoningEffort: 'low',
+            byokProvider: byokConfig?.main?.provider,
+            modelName: byokConfig?.main?.model,
+        });
+
+        // Tools: MCP (memory, integrations) + native sandbox tools (grep,
+        // readFile, listDir, exec). Both are plain AI SDK tools now.
+        const mcp = await this.connectMcp(organizationAndTeamData);
+        const tools: Record<string, Tool> = {
+            ...mcp.tools,
+            ...(sandbox ? buildNativeTools(sandbox) : {}),
+        };
+
+        try {
+            const preparedPrompt = this.buildUserPrompt(
                 prompt,
                 prepareContext,
                 organizationAndTeamData,
                 sandbox,
             );
 
-            const result = await this.orchestration.callAgent(
-                'kodus-conversational-agent',
-                preparedPrompt,
-                {
-                    thread: thread,
-                    userContext: {
-                        organizationAndTeamData: organizationAndTeamData,
-                        additional_information: prepareContext,
-                    },
+            // Wrapped in a billing span so token usage reaches the Mongo
+            // `observability_telemetry` cost dataset (parity with the legacy
+            // flow LLM bridge); `experimental_telemetry` feeds Langfuse.
+            const result = await this.observabilityService.runAiSdkLLMInSpan({
+                spanName: 'ConversationalAgent::conversationAgent',
+                runName: 'conversationAgent',
+                model: byokConfig?.main?.model,
+                attrs: {
+                    type: 'system',
+                    organizationId: organizationAndTeamData.organizationId,
+                    teamId: organizationAndTeamData.teamId,
                 },
-            );
+                exec: () =>
+                    generateText({
+                        model,
+                        system: this.buildSystemPrompt(userLanguage),
+                        messages: [
+                            { role: 'user', content: preparedPrompt },
+                        ],
+                        tools,
+                        temperature: this.defaultLLMConfig.temperature,
+                        maxOutputTokens: this.defaultLLMConfig.maxTokens,
+                        ...(Object.keys(providerOptions).length
+                            ? { providerOptions }
+                            : {}),
+                        stopWhen: stepCountIs(CONVERSATION_MAX_STEPS),
+                        experimental_telemetry: buildLangfuseTelemetry(
+                            'conversationAgent',
+                            {
+                                organizationId:
+                                    organizationAndTeamData.organizationId?.toString(),
+                                teamId: organizationAndTeamData.teamId?.toString(),
+                                repositoryId:
+                                    prepareContext?.repository?.id?.toString(),
+                                provider: byokConfig?.main?.provider,
+                            },
+                        ),
+                    }),
+            });
 
             this.logger.log({
                 message: 'Finish conversation agent execution',
@@ -243,15 +179,12 @@ export class ConversationAgentProvider extends BaseAgentProvider {
                 metadata: {
                     organizationAndTeamData,
                     thread,
-                    result: {
-                        correlationId: result.context.correlationId ?? null,
-                        threadId: result.context.threadId ?? null,
-                        sessionId: result.context.sessionId ?? null,
-                    },
+                    steps: result.steps?.length ?? 0,
+                    usage: result.usage,
                 },
             });
 
-            const response = normalizeConversationResponse(result.result);
+            const response = normalizeConversationResponse(result.text);
 
             if (response === null) {
                 this.logger.warn({
@@ -261,8 +194,7 @@ export class ConversationAgentProvider extends BaseAgentProvider {
                     metadata: {
                         organizationAndTeamData,
                         thread,
-                        rawResult: result.result,
-                        rawResultType: typeof result.result,
+                        rawResult: result.text,
                     },
                 });
                 return CONVERSATION_FALLBACK_MESSAGE;
@@ -277,10 +209,81 @@ export class ConversationAgentProvider extends BaseAgentProvider {
                 metadata: { error, organizationAndTeamData, thread },
             });
             throw error;
+        } finally {
+            await mcp.close();
         }
     }
 
-    private buildPromptWithMemoryBootstrap(
+    /**
+     * Resolve the BYOK config for the org. Mirrors the legacy base provider's
+     * `fetchBYOKConfig` (without the `byokModelOverride`, which the
+     * conversation path never set).
+     */
+    private async resolveBYOKConfig(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<BYOKConfig | undefined> {
+        return this.permissionValidationService.getBYOKConfig(
+            organizationAndTeamData,
+        );
+    }
+
+    /**
+     * Connect to the org's MCP servers and expose their tools. Never throws:
+     * if MCP is offline the agent proceeds with sandbox/no tools (parity with
+     * the legacy "MCP offline, prosseguindo" path).
+     */
+    private async connectMcp(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<{ tools: Record<string, Tool>; close: () => Promise<void> }> {
+        const servers =
+            (await this.mcpManagerService?.getConnections(
+                organizationAndTeamData,
+            )) ?? [];
+
+        if (!servers.length) {
+            this.logger.warn({
+                message:
+                    'ConversationAgent: no MCP connections available for this organization/team.',
+                context: ConversationAgentProvider.name,
+                metadata: {
+                    organizationId: organizationAndTeamData?.organizationId,
+                    teamId: organizationAndTeamData?.teamId,
+                },
+            });
+            return { tools: {}, close: async () => undefined };
+        }
+
+        return connectMcpTools(servers, {
+            onError: (error, serverName) => {
+                this.logger.warn({
+                    message: `ConversationAgent: MCP server '${serverName}' failed to connect, continuing.`,
+                    context: ConversationAgentProvider.name,
+                    error,
+                });
+            },
+        });
+    }
+
+    private buildSystemPrompt(userLanguage: string): string {
+        return [
+            'You are Kodus, an intelligent conversation agent for user interactions.',
+            'Goal: engage in natural, helpful conversations while respecting the user language preference.',
+            '',
+            'LANGUAGE REQUIREMENTS:',
+            `- Respond in the user's preferred language: ${userLanguage}`,
+            '- Default to English if no language preference is configured',
+            '- Maintain consistent language throughout conversation',
+            '- Use appropriate terminology and formatting for the selected language',
+            '- Adapt communication style to the target language conventions',
+        ].join('\n');
+    }
+
+    /**
+     * Assemble the user turn: the conversation context (rebuilt from the PR
+     * comment thread), the mandatory memory bootstrap, the available repo
+     * tools, and finally the user's prompt.
+     */
+    private buildUserPrompt(
         prompt: string,
         prepareContext: any,
         organizationAndTeamData: OrganizationAndTeamData,
@@ -298,18 +301,25 @@ export class ConversationAgentProvider extends BaseAgentProvider {
             limit: 20,
         };
 
-        const sections: string[] = [
+        const sections: string[] = [];
+
+        const contextBlock = this.buildContextBlock(prepareContext);
+        if (contextBlock) {
+            sections.push(contextBlock, '');
+        }
+
+        sections.push(
             'CRITICAL FIRST ACTION (MANDATORY):',
             '- Before any reasoning, analysis, or other tool call, invoke KODUS_FIND_MEMORIES.',
             '- Use this exact payload as your first memory lookup:',
             JSON.stringify(memoryPayload, null, 2),
             '- If the tool fails, is unavailable, or returns no matches, continue normally.',
             '- If matches are found, treat them as high-priority context constraints for your response.',
-        ];
+        );
 
-        // When a sandbox is available, the orchestration has registered native
-        // repo-aware tools (grep, readFile, listDir, exec). Tell the agent so
-        // it actually uses them instead of guessing from the prompt alone.
+        // When a sandbox is available, native repo-aware tools (grep, readFile,
+        // listDir, exec) are registered. Tell the agent so it grounds answers
+        // in real code instead of guessing from the prompt alone.
         if (sandbox && sandbox.type !== 'null') {
             sections.push(
                 '',
@@ -324,9 +334,75 @@ export class ConversationAgentProvider extends BaseAgentProvider {
 
         sections.push('', 'USER PROMPT:', prompt);
 
-        const instructions = sections.join('\n');
+        return sections.join('\n');
+    }
 
-        return instructions;
+    /**
+     * Render the conversation context carried in `prepareContext` (the PR
+     * comment thread) into the prompt. In the legacy flow this travelled as
+     * `userContext.additional_information`; the AI SDK is stateless, so we make
+     * it explicit here. Every field is optional — only present ones render.
+     */
+    private buildContextBlock(prepareContext: any): string {
+        if (!prepareContext) {
+            return '';
+        }
+
+        const lines: string[] = [];
+        const pr = prepareContext.pullRequest;
+        const repo = prepareContext.repository;
+        const cmc = prepareContext.codeManagementContext;
+
+        if (pr?.pullRequestNumber || repo?.name) {
+            const head = pr?.headRef ? ` (${pr.headRef} → ${pr?.baseRef})` : '';
+            lines.push(
+                `## Conversation context`,
+                `Pull request #${pr?.pullRequestNumber ?? '?'}${head}` +
+                    (repo?.name ? ` in ${repo.name}` : ''),
+            );
+        }
+
+        if (prepareContext.pullRequestDescription) {
+            lines.push('', String(prepareContext.pullRequestDescription));
+        }
+
+        const original = cmc?.originalComment;
+        if (original?.suggestionText) {
+            lines.push(
+                '',
+                '### Original Kody suggestion (under discussion)',
+                ...(original.suggestionFilePath
+                    ? [`File: ${original.suggestionFilePath}`]
+                    : []),
+                String(original.suggestionText),
+                ...(original.diffHunk
+                    ? ['Diff:', '```', String(original.diffHunk), '```']
+                    : []),
+            );
+        }
+
+        const replies: Array<{ historyConversationText?: string }> =
+            cmc?.othersReplies ?? [];
+        const history = replies
+            .map((r) => r?.historyConversationText)
+            .filter((t): t is string => typeof t === 'string' && t.length > 0);
+        if (history.length) {
+            lines.push(
+                '',
+                '### Conversation so far',
+                ...history.map((t) => `- ${t}`),
+            );
+        }
+
+        if (prepareContext.customInstructions) {
+            lines.push(
+                '',
+                '### Custom instructions',
+                String(prepareContext.customInstructions),
+            );
+        }
+
+        return lines.join('\n');
     }
 
     private async getLanguage(

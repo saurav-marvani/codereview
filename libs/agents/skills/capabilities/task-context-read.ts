@@ -1,4 +1,4 @@
-import { Thread } from '@kodus/flow';
+import type { AgentThread } from '../runtime/skill-runtime.types';
 import { createLogger } from '@libs/core/log/logger';
 
 import {
@@ -46,7 +46,7 @@ export interface TaskContextReadParams {
     taskUrl?: string;
     taskReference?: string;
     userLanguage?: string;
-    thread?: Thread;
+    thread?: AgentThread;
     excludedTools?: string[];
     taskContextResolutionMode?: ResolutionMode;
     enableAgenticFallback?: boolean;

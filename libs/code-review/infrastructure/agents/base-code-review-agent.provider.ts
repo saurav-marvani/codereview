@@ -4,7 +4,6 @@ import { Injectable, Optional } from '@nestjs/common';
 import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
 import { ByokErrorCounter } from '@libs/notifications/application/byok-error-counter.service';
 
-import { CodeSuggestion } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import { assignFileTiers, computeFileScores } from './llm/file-priority-scorer';
@@ -611,7 +610,8 @@ export abstract class BaseCodeReviewAgentProvider {
             const agentResult = await runAgentWithTrace(
                 {
                     traceName: identity.name,
-                    organizationId: input.organizationAndTeamData?.organizationId,
+                    organizationId:
+                        input.organizationAndTeamData?.organizationId,
                     teamId: input.organizationAndTeamData?.teamId,
                     prNumber: input.prNumber,
                     repositoryId: input.repositoryId,
@@ -702,7 +702,8 @@ export abstract class BaseCodeReviewAgentProvider {
                               100,
                       )
                     : 0;
-            this.agentLogger.log({
+
+            this.agentLogger.debug({
                 message: `[AGENT] ${identity.name} completed for PR#${input.prNumber}: ${suggestions.length} suggestions in ${durationMs}ms (source=${agentResult.source}, steps=${agentResult.steps}, tools=${agentResult.toolCalls.length}, input=${agentResult.usage.inputTokens} [cacheRead=${cacheReadTokens}, hit=${cacheHitRate}%], output=${agentResult.usage.outputTokens}, total=${agentResult.usage.totalTokens})`,
                 context: identity.name,
                 metadata: {
@@ -798,4 +799,3 @@ export abstract class BaseCodeReviewAgentProvider {
         return buildUserPromptFor(input, this.promptMeta(input));
     }
 }
-

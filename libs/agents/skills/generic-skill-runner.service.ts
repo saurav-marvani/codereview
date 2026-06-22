@@ -1,23 +1,26 @@
 import {
     createMCPAdapter,
-    createOrchestration,
-    LLMAdapter,
     MCPAdapter,
     MCPServerConfig,
-    PlannerType,
-    Thread,
 } from '@kodus/flow';
-import { SDKOrchestrator } from '@kodus/flow/dist/orchestration';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 
+import { BYOKConfig } from '@kodus/kodus-common/llm';
+
+import type { ToolRegistry } from '@libs/agent-harness/domain/contracts';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { MetricsCollectorService } from '@libs/core/infrastructure/metrics/metrics-collector.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
+import { buildProviderOptions } from '@libs/llm/reasoning-options';
 import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service';
 
+import {
+    buildMcpAgentToolRegistry,
+    runMcpFetcherAgent,
+} from './runtime/ai-sdk-fetcher.adapter';
 import { BoundedMap } from './runtime/bounded-map';
 import {
-    AgentCallOptions,
+    AgentThread,
     SkillCapabilityRuntimeConfig,
     SkillFetcherRuntime,
     ToolCaller,
@@ -44,7 +47,7 @@ export interface SkillFetcherResult {
 
 export interface SkillRunInput {
     organizationAndTeamData: OrganizationAndTeamData;
-    thread?: Thread;
+    thread?: AgentThread;
     fetcherPrompt: string;
     analyzerPrompt: string;
 }
@@ -108,7 +111,7 @@ export class GenericSkillRunnerService {
      */
     async createFetcherOrchestration(
         skillName: string,
-        llmAdapter: LLMAdapter,
+        byokConfig: BYOKConfig | undefined,
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<SkillFetcherRuntime> {
         const startedAt = Date.now();
@@ -187,23 +190,21 @@ export class GenericSkillRunnerService {
                 }
             }
 
-            const orchestration = await createOrchestration({
-                tenantId: `kodus-skill-fetcher-${skillName}`,
-                llmAdapter,
-                mcpAdapter,
-                observability:
-                    this.observabilityService.getAgentObservabilityConfig(
-                        `kodus-${skillName}-fetcher`,
-                    ),
-                storage: this.observabilityService.getStorageConfig(),
-            });
-
+            // Connect the flow MCP adapter (transport/auth/retry stays on flow,
+            // per the migration directive) and expose its tools as harness
+            // AgentTools. The agent loop now runs on the AI SDK via
+            // AiSdkAgentRunner — no `@kodus/flow` orchestration / REACT planner.
+            let toolRegistry: ToolRegistry = {
+                get: () => undefined,
+                list: () => [],
+            };
             if (mcpAdapter) {
                 try {
-                    await orchestration.connectMCP();
-                    await orchestration.registerMCPTools();
+                    await mcpAdapter.connect();
+                    toolRegistry =
+                        await buildMcpAgentToolRegistry(mcpAdapter);
 
-                    const registeredTools = orchestration.getRegisteredTools();
+                    const registeredTools = toolRegistry.list();
                     this.logger.log({
                         message: `[GenericSkillRunner] MCP tools registered for skill '${skillName}'`,
                         context: 'createFetcherOrchestration',
@@ -211,7 +212,7 @@ export class GenericSkillRunnerService {
                             skillName,
                             registeredToolCount: registeredTools.length,
                             registeredToolNames: registeredTools.map(
-                                (t: { name?: string }) => t.name,
+                                (t) => t.name,
                             ),
                         },
                     });
@@ -247,54 +248,89 @@ export class GenericSkillRunnerService {
                 }
             }
 
-            let fetcherAgentInitialized = false;
-            const ensureFetcherAgent = async (): Promise<void> => {
-                if (fetcherAgentInitialized) {
-                    return;
-                }
-                await orchestration.createAgent({
-                    name: `kodus-${skillName}-fetcher`,
-                    identity: {
-                        goal: `Fetch all relevant context for the ${skillName} skill using available tools. Return structured JSON with the gathered data.`,
-                        description: `Context fetcher for ${skillName}.`,
-                        language: 'en-US',
-                    },
-                    maxIterations: executionPolicy.fetcherMaxIterations,
-                    timeout: executionPolicy.fetcherTimeoutMs,
-                    plannerOptions: { type: PlannerType.REACT },
-                });
-                fetcherAgentInitialized = true;
-            };
+            const fetcherSystemPrompt =
+                `Context fetcher for ${skillName}.\n\n` +
+                `Goal: Fetch all relevant context for the ${skillName} skill ` +
+                `using available tools. Return structured JSON with the ` +
+                `gathered data.`;
 
             const toolCaller: ToolCaller = {
                 callTool: async (toolName, args) =>
                     this.normalizeToolExecutionResponse(
-                        await orchestration.callTool(toolName, args),
+                        mcpAdapter
+                            ? await mcpAdapter.executeTool(toolName, args)
+                            : undefined,
                     ),
-                callAgent: async (agentName, prompt, options) => {
-                    await ensureFetcherAgent();
-                    return this.normalizeToolExecutionResponse(
-                        await orchestration.callAgent(
-                            agentName,
-                            prompt,
-                            options as AgentCallOptions,
-                        ),
+                callAgent: async (agentName, prompt) => {
+                    // Per-call timeout → AbortSignal (replaces the flow agent
+                    // `timeout`); the runner forwards it to the model call.
+                    const controller = new AbortController();
+                    const timer = setTimeout(
+                        () => controller.abort(),
+                        executionPolicy.fetcherTimeoutMs,
                     );
+                    try {
+                        // Wrapped in a billing span so token usage reaches the
+                        // Mongo `observability_telemetry` cost dataset (parity
+                        // with the legacy flow path).
+                        const result =
+                            await this.observabilityService.runAiSdkLLMInSpan({
+                                spanName: `SkillFetcher::${skillName}`,
+                                runName: `kodus-${skillName}-fetcher`,
+                                model: byokConfig?.main?.model,
+                                attrs: {
+                                    type: 'agent',
+                                    organizationId:
+                                        organizationAndTeamData?.organizationId,
+                                    teamId: organizationAndTeamData?.teamId,
+                                    skill: skillName,
+                                },
+                                exec: () =>
+                                    runMcpFetcherAgent({
+                                        byokConfig,
+                                        agentId: `kodus-${skillName}-fetcher`,
+                                        systemPrompt: fetcherSystemPrompt,
+                                        prompt,
+                                        tools: toolRegistry,
+                                        maxSteps:
+                                            executionPolicy.fetcherMaxIterations,
+                                        providerOptions: buildProviderOptions(
+                                            `kodus-${skillName}-fetcher`,
+                                            undefined,
+                                            {
+                                                reasoningEffort: 'low',
+                                                byokProvider:
+                                                    byokConfig?.main?.provider,
+                                                modelName:
+                                                    byokConfig?.main?.model,
+                                            },
+                                        ),
+                                        runId: `${skillName}:${agentName}`,
+                                        signal: controller.signal,
+                                        telemetry: {
+                                            functionId: `kodus-${skillName}-fetcher`,
+                                            organizationId:
+                                                organizationAndTeamData?.organizationId,
+                                            teamId: organizationAndTeamData?.teamId,
+                                            provider:
+                                                byokConfig?.main?.provider,
+                                        },
+                                    }),
+                            });
+                        return this.normalizeToolExecutionResponse(
+                            result.text,
+                        );
+                    } finally {
+                        clearTimeout(timer);
+                    }
                 },
-                getRegisteredTools: () => orchestration.getRegisteredTools(),
-                getToolsForLLM: () => {
-                    const getter = (
-                        orchestration as unknown as {
-                            getToolsForLLM?: () => Array<{
-                                name?: string;
-                                parameters?: unknown;
-                            }>;
-                        }
-                    ).getToolsForLLM;
-                    return typeof getter === 'function'
-                        ? getter.call(orchestration)
-                        : [];
-                },
+                getRegisteredTools: () =>
+                    toolRegistry.list().map((t) => ({ name: t.name })),
+                getToolsForLLM: () =>
+                    toolRegistry.list().map((t) => ({
+                        name: t.name,
+                        parameters: t.inputSchema,
+                    })),
             };
 
             const capabilityRuntime = this.getCapabilityRuntimeConfig(
@@ -311,69 +347,6 @@ export class GenericSkillRunnerService {
             };
         } catch (error) {
             this.recordSetupMetric(skillName, 'fetcher', 'failed', startedAt);
-            throw error;
-        }
-    }
-
-    /**
-     * Creates a ready-to-use analyzer orchestration for a skill.
-     * Loads instructions from SKILL.md (body + references).
-     *
-     * @deprecated Use `getExecutionPolicy()` + direct LLM adapter calls instead.
-     * The production path (BusinessRulesValidationAgentProvider.runAnalyzer) no longer
-     * calls this method — it uses getExecutionPolicy() with withTimeout and retry.
-     * Kept for backward compatibility with existing tests.
-     */
-    async createAnalyzerOrchestration(
-        skillName: string,
-        llmAdapter: LLMAdapter,
-        options?: {
-            organizationAndTeamData?: OrganizationAndTeamData;
-            customInstructions?: string;
-        },
-    ): Promise<SDKOrchestrator> {
-        const startedAt = Date.now();
-        try {
-            const meta = this.getSkillMeta(skillName);
-            this.validateSkillSchema(meta, skillName);
-            const fetcherPolicy = this.resolveFetcherPolicy(meta.fetcherPolicy);
-            const executionPolicy = this.resolveExecutionPolicy(
-                meta.executionPolicy,
-                fetcherPolicy,
-            );
-            const instructions = this.getSkillInstructions(skillName, {
-                organizationId:
-                    options?.organizationAndTeamData?.organizationId,
-                teamId: options?.organizationAndTeamData?.teamId,
-                customInstructions: options?.customInstructions,
-            });
-
-            const orchestration = await createOrchestration({
-                tenantId: `kodus-skill-analyzer-${skillName}`,
-                llmAdapter,
-                observability:
-                    this.observabilityService.getAgentObservabilityConfig(
-                        `kodus-${skillName}-analyzer`,
-                    ),
-                storage: this.observabilityService.getStorageConfig(),
-            });
-
-            await orchestration.createAgent({
-                name: `kodus-${skillName}-analyzer`,
-                identity: {
-                    goal: instructions,
-                    description: `${skillName} analyzer. No tool access. Receives structured context. Returns analysis.`,
-                    language: 'en-US',
-                },
-                maxIterations: executionPolicy.analyzerMaxIterations,
-                timeout: executionPolicy.analyzerTimeoutMs,
-                plannerOptions: { type: PlannerType.REACT },
-            });
-
-            this.recordSetupMetric(skillName, 'analyzer', 'success', startedAt);
-            return orchestration;
-        } catch (error) {
-            this.recordSetupMetric(skillName, 'analyzer', 'failed', startedAt);
             throw error;
         }
     }

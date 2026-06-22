@@ -329,6 +329,69 @@ export class ObservabilityService implements OnModuleInit {
         });
     }
 
+    /**
+     * Wrap a Vercel AI SDK call (`generateText`/`streamText`) in an LLM billing
+     * span so its token usage lands in `observability_telemetry` — the Mongo
+     * billing dataset keyed by org/team/PR. This is the parity bridge for agents
+     * migrated off the `@kodus/flow` LLM adapter: the AI SDK's
+     * `experimental_telemetry` feeds Langfuse, while this feeds the internal
+     * cost pipeline. A span carrying `gen_ai.usage.total_tokens` is treated as
+     * billing-critical (synchronously flushed) by the telemetry engine.
+     *
+     * Usage attributes are read from the AI SDK result's `usage`
+     * ({ inputTokens, outputTokens, totalTokens, reasoningTokens }) and set
+     * before the span ends.
+     */
+    async runAiSdkLLMInSpan<
+        T extends {
+            usage?: {
+                inputTokens?: number;
+                outputTokens?: number;
+                totalTokens?: number;
+                reasoningTokens?: number;
+            };
+        },
+    >(params: {
+        spanName: string;
+        runName?: string;
+        model?: string;
+        attrs?: Record<string, any>;
+        exec: () => Promise<T>;
+    }): Promise<T> {
+        return this.runInSpan(
+            params.spanName,
+            async (span) => {
+                const result = await params.exec();
+                const usage = result?.usage;
+                span?.setAttributes?.({
+                    ...(params.runName
+                        ? { 'gen_ai.run.name': params.runName }
+                        : {}),
+                    ...(params.model
+                        ? { 'gen_ai.response.model': params.model }
+                        : {}),
+                    ...(usage?.inputTokens != null
+                        ? { 'gen_ai.usage.input_tokens': usage.inputTokens }
+                        : {}),
+                    ...(usage?.outputTokens != null
+                        ? { 'gen_ai.usage.output_tokens': usage.outputTokens }
+                        : {}),
+                    ...(usage?.totalTokens != null
+                        ? { 'gen_ai.usage.total_tokens': usage.totalTokens }
+                        : {}),
+                    ...(usage?.reasoningTokens
+                        ? {
+                              'gen_ai.usage.reasoning_tokens':
+                                  usage.reasoningTokens,
+                          }
+                        : {}),
+                });
+                return result;
+            },
+            params.attrs,
+        );
+    }
+
     // ---------- Integrated LLM tracking ----------
 
     createLLMTracking(runName?: string) {
@@ -351,10 +414,6 @@ export class ObservabilityService implements OnModuleInit {
             metadata?: Record<string, any>;
             runName?: string;
             reset?: boolean;
-            // Accepts the narrowed safe view (provider + model only). Callers
-            // that pass a full BYOKConfig must project through
-            // `toSafeByokView` first — see `runLLMInSpan`. Keeping the type
-            // narrow here prevents API keys from entering this scope at all.
             byokConfig?: BYOKConfigSafeView;
         } = {}) => {
             const obs = this.getObsInstance();
@@ -434,10 +493,6 @@ export class ObservabilityService implements OnModuleInit {
             byokConfig: spanByokConfig,
             exec,
         } = params;
-        // Scrub the BYOK config immediately so nothing downstream in this
-        // span scope — including future debug logs or span attributes —
-        // can see the customer's API key. Only provider + model names ride
-        // through to `finalize`, which is all the model-name resolver needs.
         const safeByokView = toSafeByokView(spanByokConfig);
         const obs = this.getObsInstance();
         const span = obs.startSpan(spanName);
@@ -450,12 +505,8 @@ export class ObservabilityService implements OnModuleInit {
 
             const { callbacks, finalize } = this.createLLMTracking(runName);
 
-            // Execute the LLM operation and finalize usage BEFORE span.end() is called by withSpan
-            // Note: withSpan handles errors that occur INSIDE the callback (recordException, setStatus, span.end())
             const { result, usage } = await obs.withSpan(span, async () => {
                 const result = await exec(callbacks);
-                // CRITICAL: finalize() must be called BEFORE withSpan's finally block
-                // ends the span, so gen_ai.usage.* attributes are captured
                 const usage = await finalize({
                     metadata: attrs,
                     reset: true,
@@ -466,9 +517,6 @@ export class ObservabilityService implements OnModuleInit {
 
             return { result, usage };
         } catch (error) {
-            // If error occurs BEFORE withSpan is called, we need to end the span
-            // If error occurs INSIDE withSpan, it already called span.end()
-            // So we check if span is still recording before calling end()
             if (span?.isRecording?.()) {
                 span.end();
             }
@@ -658,7 +706,9 @@ export class ObservabilityService implements OnModuleInit {
         };
     }
 
-    private redactConnectionString(value: string | undefined): string | undefined {
+    private redactConnectionString(
+        value: string | undefined,
+    ): string | undefined {
         if (!value) return value;
         return value.replace(
             /\b(mongodb(?:\+srv)?:\/\/)[^\s:@/]+:[^\s@/]+@/gi,
