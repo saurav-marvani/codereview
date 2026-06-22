@@ -37,7 +37,10 @@ RUN corepack disable \
   && npm i -g pnpm@10.34.1
 
 FROM base AS deps
-COPY package.json pnpm-lock.yaml .npmrc ./
+# pnpm-workspace.yaml carries overrides/catalog/nodeLinker since the pnpm 11
+# migration moved them out of package.json/.npmrc. Without it here, the frozen
+# install sees empty overrides and aborts (ERR_PNPM_LOCKFILE_CONFIG_MISMATCH).
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY packages/kodus-common ./packages/kodus-common
 COPY packages/kodus-flow ./packages/kodus-flow
 
@@ -104,7 +107,9 @@ RUN --mount=type=cache,target=/usr/src/app/node_modules/.cache,sharing=locked \
 
 # Install production dependencies only
 FROM base AS prod-deps
-COPY package.json pnpm-lock.yaml .npmrc ./
+# See deps stage: pnpm-workspace.yaml must be present for overrides/catalog to
+# resolve under --frozen-lockfile.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY packages/kodus-common ./packages/kodus-common
 COPY packages/kodus-flow ./packages/kodus-flow
 
