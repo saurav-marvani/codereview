@@ -74,11 +74,11 @@ import { SandboxModule } from '@libs/sandbox/modules/sandbox.module';
 // V3 Agent-First
 import { CreateSandboxStage } from './stages/create-sandbox.stage';
 import { AgentReviewStage } from './stages/agent-review.stage';
-import { BugAgentProvider } from '../infrastructure/agents/bug-agent.provider';
-import { SecurityAgentProvider } from '../infrastructure/agents/security-agent.provider';
-import { PerformanceAgentProvider } from '../infrastructure/agents/performance-agent.provider';
-import { GeneralistAgentProvider } from '../infrastructure/agents/generalist-agent.provider';
-import { KodyRulesAgentProvider } from '../infrastructure/agents/kody-rules-agent.provider';
+import { BugAgentProvider } from '../infrastructure/agents/providers/bug-agent.provider';
+import { SecurityAgentProvider } from '../infrastructure/agents/providers/security-agent.provider';
+import { PerformanceAgentProvider } from '../infrastructure/agents/providers/performance-agent.provider';
+import { GeneralistAgentProvider } from '../infrastructure/agents/providers/generalist-agent.provider';
+import { KodyRulesAgentProvider } from '../infrastructure/agents/providers/kody-rules-agent.provider';
 // ReflectionAgentProvider removed — verify/discover was hurting recall
 import { ReviewOrchestratorService } from '../infrastructure/agents/review-orchestrator.service';
 

@@ -6,13 +6,13 @@ import {
     ReviewOptions,
 } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { IKodyRule } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
-import { BugAgentProvider } from './bug-agent.provider';
-import { SecurityAgentProvider } from './security-agent.provider';
-import { PerformanceAgentProvider } from './performance-agent.provider';
-import { GeneralistAgentProvider } from './generalist-agent.provider';
-import { KodyRulesAgentProvider } from './kody-rules-agent.provider';
-import { ReviewAgentInput, ReviewAgentOutput } from './review-agent.contract';
-import { dedupReviewWarnings, type ReviewWarning } from './llm/review-warnings';
+import { BugAgentProvider } from '@libs/code-review/infrastructure/agents/providers/bug-agent.provider';
+import { SecurityAgentProvider } from '@libs/code-review/infrastructure/agents/providers/security-agent.provider';
+import { PerformanceAgentProvider } from '@libs/code-review/infrastructure/agents/providers/performance-agent.provider';
+import { GeneralistAgentProvider } from '@libs/code-review/infrastructure/agents/providers/generalist-agent.provider';
+import { KodyRulesAgentProvider } from '@libs/code-review/infrastructure/agents/providers/kody-rules-agent.provider';
+import { ReviewAgentInput, ReviewAgentOutput } from '@libs/code-review/infrastructure/agents/review-agent.contract';
+import { dedupReviewWarnings, type ReviewWarning } from '@libs/code-review/infrastructure/agents/engine/review-warnings';
 
 export interface OrchestratorInput extends ReviewAgentInput {
     reviewOptions: ReviewOptions;

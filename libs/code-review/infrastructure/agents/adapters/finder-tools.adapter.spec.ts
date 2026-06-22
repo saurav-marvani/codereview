@@ -7,12 +7,12 @@
  */
 import { jsonSchema } from 'ai';
 
-jest.mock('../llm/agent-tools.factory', () => ({
+jest.mock('../engine/agent-tools.factory', () => ({
     buildAgentTools: jest.fn(),
 }));
 
-import { buildAgentTools } from '../llm/agent-tools.factory';
-import { buildFinderToolRegistry } from './finder-tools.adapter';
+import { buildAgentTools } from '@libs/code-review/infrastructure/agents/engine/agent-tools.factory';
+import { buildFinderToolRegistry } from '@libs/code-review/infrastructure/agents/adapters/finder-tools.adapter';
 
 const ctx = { runId: 'r' } as any;
 

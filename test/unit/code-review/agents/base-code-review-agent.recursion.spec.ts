@@ -65,7 +65,7 @@ jest.mock('@libs/core/log/langfuse', () => ({
 // execute() runs the agent via runAgentLoopViaCore (the harness adapter) — stub
 // that boundary so the recursion/chunking logic under test runs with real
 // estimatePromptTokens/chunkFilesByTokenBudget, but no real LLM.
-jest.mock('@/code-review/infrastructure/agents/core-agent-loop.adapter', () => ({
+jest.mock('@/code-review/infrastructure/agents/core/core-agent-loop.adapter', () => ({
     runAgentLoopViaCore: jest.fn(async () => ({
         findings: { suggestions: [] },
         text: '',
@@ -111,7 +111,7 @@ jest.mock('@/code-review/infrastructure/agents/core-agent-loop.adapter', () => (
     })),
 }));
 
-import { BaseCodeReviewAgentProvider } from '@/code-review/infrastructure/agents/base-code-review-agent.provider';
+import { BaseCodeReviewAgentProvider } from '@/code-review/infrastructure/agents/providers/base-code-review-agent.provider';
 import {
     type ReviewAgentIdentity,
     type ReviewAgentInput,

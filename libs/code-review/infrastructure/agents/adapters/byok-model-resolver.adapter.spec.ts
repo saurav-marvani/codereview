@@ -2,7 +2,7 @@
  * ByokModelResolver unit tests — deterministic, no real provider.
  * Proves the L0 adapter wires modelId -> the BYOK model factory correctly.
  */
-import { ByokModelResolver } from './byok-model-resolver.adapter';
+import { ByokModelResolver } from '@libs/code-review/infrastructure/agents/adapters/byok-model-resolver.adapter';
 
 describe('ByokModelResolver', () => {
     it('passes modelId through as the default-model override', () => {

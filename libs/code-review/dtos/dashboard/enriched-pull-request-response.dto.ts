@@ -1,5 +1,5 @@
 import { AutomationStatus } from '@libs/automation/domain/automation/enum/automation-status';
-import type { ReviewWarning } from '@libs/code-review/infrastructure/agents/llm/review-warnings';
+import type { ReviewWarning } from '@libs/code-review/infrastructure/agents/engine/review-warnings';
 
 export interface CodeReviewExecutionTimeline {
     uuid: string;

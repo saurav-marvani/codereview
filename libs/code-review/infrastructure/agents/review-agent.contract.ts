@@ -27,13 +27,13 @@ import { BYOKProvider, BYOKConfig } from '@kodus/kodus-common/llm';
 import type { LangfuseTelemetryMetadata } from '@libs/core/log/langfuse';
 import type { ReasoningEffort } from '@libs/llm/reasoning-options';
 
-import { CoverageSummary, CoverageTier } from './llm/coverage-ledger';
-import { type AdaptiveProfile } from './llm/adaptive-fit';
-import type { ReviewWarning } from './llm/review-warnings';
-import type { DocumentationSearchAdapter } from './llm/agent-tools.factory';
-import type { FindingsOutput } from './findings-schema';
+import { CoverageSummary, CoverageTier } from '@libs/code-review/infrastructure/agents/engine/coverage-ledger';
+import { type AdaptiveProfile } from '@libs/code-review/infrastructure/agents/engine/adaptive-fit';
+import type { ReviewWarning } from '@libs/code-review/infrastructure/agents/engine/review-warnings';
+import type { DocumentationSearchAdapter } from '@libs/code-review/infrastructure/agents/engine/agent-tools.factory';
+import type { FindingsOutput } from '@libs/code-review/infrastructure/agents/core/findings-schema';
 
-export type { FindingsOutput } from './findings-schema';
+export type { FindingsOutput } from '@libs/code-review/infrastructure/agents/core/findings-schema';
 
 /**
  * Category-specific agent configuration provided by each concrete subclass.

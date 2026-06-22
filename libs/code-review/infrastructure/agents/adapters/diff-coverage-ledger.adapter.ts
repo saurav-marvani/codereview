@@ -22,7 +22,7 @@ import {
     TIERED_TOTAL_COVERAGE_THRESHOLD,
     type CoverageTarget,
     type CoverageTier,
-} from '../llm/coverage-ledger';
+} from '@libs/code-review/infrastructure/agents/engine/coverage-ledger';
 
 export interface DiffCoverageLedgerParams {
     changedFiles?: any[];

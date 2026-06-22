@@ -20,7 +20,7 @@ import {
     compressMessages,
     estimateMessagesTokens,
     shouldCompress,
-} from '../llm/context-compressor';
+} from '@libs/code-review/infrastructure/agents/engine/context-compressor';
 
 export class ContextWindowCompressor implements Compressor {
     constructor(private readonly contextWindowTokens: number) {}

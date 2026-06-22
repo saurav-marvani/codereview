@@ -4,12 +4,12 @@ import { createLogger } from '@libs/core/log/logger';
 import { Output, jsonSchema } from 'ai';
 import { Inject, Injectable } from '@nestjs/common';
 import { tracedGenerateText } from '@libs/llm/llm-call';
-import { resolveAdaptiveProfile } from '@libs/code-review/infrastructure/agents/llm/adaptive-fit';
+import { resolveAdaptiveProfile } from '@libs/code-review/infrastructure/agents/engine/adaptive-fit';
 import { resolveContextWindow } from '@libs/llm/model-context-window';
 import {
     dedupReviewWarnings,
     type ReviewWarning,
-} from '@libs/code-review/infrastructure/agents/llm/review-warnings';
+} from '@libs/code-review/infrastructure/agents/engine/review-warnings';
 import {
     withStructuredOutputFallback,
     NoStructuredFallbackModelError,
@@ -869,7 +869,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             try {
                 const {
                     classifySeverity,
-                } = require('@libs/code-review/infrastructure/agents/llm/classify-severity');
+                } = require('@libs/code-review/infrastructure/agents/engine/classify-severity');
                 const severityMap = await classifySeverity(
                     deduped.map((s) => ({
                         relevantFile: s.relevantFile || '',
@@ -962,7 +962,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             try {
                 const {
                     formatSuggestionContent,
-                } = require('@libs/code-review/infrastructure/agents/llm/format-suggestion-content');
+                } = require('@libs/code-review/infrastructure/agents/engine/format-suggestion-content');
                 const formatted = await formatSuggestionContent(
                     deduped.map((s) => ({
                         suggestionContent: s.suggestionContent || '',

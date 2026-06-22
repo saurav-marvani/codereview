@@ -9,7 +9,7 @@ import {
 import { IPullRequestMessages } from '@libs/code-review/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import { CollectCrossFileContextsResult } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import { LlmErrorCategory } from '@libs/llm/error-classifier';
-import type { ReviewWarning } from '@libs/code-review/infrastructure/agents/llm/review-warnings';
+import type { ReviewWarning } from '@libs/code-review/infrastructure/agents/engine/review-warnings';
 import { PlatformType } from '@libs/core/domain/enums';
 import {
     AnalysisContext,

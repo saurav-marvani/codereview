@@ -23,8 +23,8 @@ import { InMemoryToolRegistry } from '@libs/agent-harness/infrastructure/tools/i
 import {
     buildAgentTools,
     type DocumentationSearchAdapter,
-} from '../llm/agent-tools.factory';
-import type { RemoteCommands } from '../../adapters/services/collectCrossFileContexts.service';
+} from '@libs/code-review/infrastructure/agents/engine/agent-tools.factory';
+import type { RemoteCommands } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 
 /** Recover the raw JSON schema from whatever buildAgentTools produced
  *  (AI SDK jsonSchema() wrapper exposes `.jsonSchema`; fall back to as-is). */

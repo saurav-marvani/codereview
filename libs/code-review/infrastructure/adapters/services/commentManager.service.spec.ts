@@ -45,7 +45,7 @@ jest.mock(
 jest.mock('@libs/llm/byok-to-vercel', () => ({
     byokToVercelModel: jest.fn(() => ({ __mockModel: true })),
 }));
-jest.mock('@libs/code-review/infrastructure/agents/llm/agent-loop', () => ({
+jest.mock('@libs/code-review/infrastructure/agents/engine/agent-loop', () => ({
     tracedGenerateText: jest.fn(
         async ({ system, prompt }: { system?: string; prompt?: string }) => {
             if (system) {
