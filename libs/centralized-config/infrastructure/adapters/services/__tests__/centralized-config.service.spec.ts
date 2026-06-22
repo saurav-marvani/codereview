@@ -1029,6 +1029,84 @@ describe('CentralizedConfigService', () => {
             );
         });
 
+        it('should NOT resurrect a rejected rule when sourcePath matches', async () => {
+            const ruleFiles: any[] = [
+                {
+                    centralizedDirectoryPath: '.kody-rules/review',
+                    repositoryId: undefined,
+                    directoryPath: undefined,
+                    ruleType: 'standard' as any,
+                    ruleFilePath: '.kody-rules/review/rejected.yml',
+                    path: '.kody-rules/review/rejected.yml',
+                },
+            ];
+
+            const mockRuleContent = {
+                title: 'Rejected Rule',
+                rule: 'Should stay hidden',
+                examples: [],
+                inheritance: { inheritable: true, exclude: [], include: [] },
+            };
+
+            mockCodeManagementService.getRepositoryTree.mockResolvedValue([]);
+            mockCodeManagementService.getDefaultBranch.mockResolvedValue(
+                'main',
+            );
+            mockCodeManagementService.getRepositoryContentFile.mockResolvedValue(
+                {
+                    data: {
+                        content: Buffer.from(
+                            yaml.dump(mockRuleContent),
+                        ).toString('base64'),
+                        encoding: 'base64',
+                    },
+                },
+            );
+
+            mockParametersService.findByKey.mockResolvedValue({
+                configValue: {
+                    repository: { name: 'central-repo', id: 'central-repo-id' },
+                },
+            });
+
+            mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue(
+                [],
+            );
+            mockKodyRulesService.findByOrganizationId.mockResolvedValue({
+                rules: [
+                    {
+                        uuid: 'rejected-rule-uuid',
+                        status: 'rejected',
+                        centralizedConfig: {
+                            path: '.kody-rules/review/rejected.yml',
+                            status: 'synced',
+                        },
+                    },
+                ],
+            });
+            mockCreateOrUpdateKodyRulesUseCase.execute.mockResolvedValue({
+                uuid: 'rejected-rule-uuid',
+            });
+
+            await service.synchronizeKodyRules({
+                organizationAndTeamData,
+                ruleFiles,
+                actor,
+            });
+
+            expect(
+                mockCreateOrUpdateKodyRulesUseCase.execute,
+            ).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    uuid: 'rejected-rule-uuid',
+                    status: 'rejected',
+                }),
+                'org-1',
+                expect.any(Object),
+                true,
+            );
+        });
+
         it('should update existing active rule when sourcePath matches', async () => {
             const ruleFiles: any[] = [
                 {

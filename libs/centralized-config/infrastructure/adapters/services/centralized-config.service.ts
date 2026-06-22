@@ -1946,14 +1946,21 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                         getSourcePathLookupKey(ruleFileMeta.path),
                     );
 
-                    // Sync mirrors content, not the approval lifecycle. A rule
-                    // awaiting approval must stay PENDING — otherwise merging
-                    // the centralized-config PR silently approves every pending
-                    // rule. Likewise, keep an existing rule's origin instead of
-                    // reclassifying it as a repo-file sync.
+                    // Sync mirrors content, not the approval lifecycle. Only
+                    // already-approved rules (ACTIVE/PAUSED) follow the YAML's
+                    // `enabled` flag. A rule in any other lifecycle state
+                    // (PENDING approval, REJECTED, ...) keeps its status, so
+                    // merging the centralized-config PR can't silently approve
+                    // a pending rule or resurrect a rejected one. Likewise,
+                    // keep an existing rule's origin instead of reclassifying
+                    // it as a repo-file sync.
+                    const existingStatus = existingMatch?.status;
+                    const isExistingApproved =
+                        existingStatus === KodyRulesStatus.ACTIVE ||
+                        existingStatus === KodyRulesStatus.PAUSED;
                     const resolvedStatus =
-                        existingMatch?.status === KodyRulesStatus.PENDING
-                            ? KodyRulesStatus.PENDING
+                        existingStatus && !isExistingApproved
+                            ? existingStatus
                             : enabled === false
                               ? KodyRulesStatus.PAUSED
                               : KodyRulesStatus.ACTIVE;

@@ -377,8 +377,13 @@ export class CentralizedConfigDownloadUseCase {
                     : { status: KodyRulesStatus.ACTIVE },
             )) as IKodyRule[];
 
+        // Only approved rules belong in the centralized config: exporting a
+        // PENDING (awaiting approval) or REJECTED rule would resurrect it as
+        // ACTIVE when the PR is merged and synced back.
         const rules = fetchedRules.filter(
-            (rule) => rule.status !== KodyRulesStatus.DELETED,
+            (rule) =>
+                rule.status === KodyRulesStatus.ACTIVE ||
+                rule.status === KodyRulesStatus.PAUSED,
         );
 
         if (rules.length === 0) {
