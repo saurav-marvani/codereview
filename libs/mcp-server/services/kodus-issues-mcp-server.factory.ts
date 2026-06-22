@@ -4,7 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
-import { GithubIssuesTools } from '../tools/githubIssues.tools';
+import { KodusIssuesTools } from '../tools/kodusIssues.tools';
 import { toShape } from '../types/mcp-tool.interface';
 import { executeLoggedTool } from '../utils/mcp-protocol.utils';
 import type { StatelessMcpRequestHandler } from './mcp-server.factory';
@@ -24,16 +24,16 @@ type RegisteredToolDefinition = {
 };
 
 @Injectable()
-export class GithubIssuesMcpServerFactory {
-    private readonly logger = createLogger(GithubIssuesMcpServerFactory.name);
+export class KodusIssuesMcpServerFactory {
+    private readonly logger = createLogger(KodusIssuesMcpServerFactory.name);
     private registeredToolsCache?: RegisteredToolDefinition[];
 
-    constructor(private readonly githubIssuesTools: GithubIssuesTools) {}
+    constructor(private readonly kodusIssuesTools: KodusIssuesTools) {}
 
     async create(): Promise<StatelessMcpRequestHandler> {
         const server = new McpServer(
             {
-                name: 'github-issues-by-kodus',
+                name: 'issues-by-kodus',
                 version: '1.0.0',
             },
             {
@@ -68,7 +68,7 @@ export class GithubIssuesMcpServerFactory {
             return this.registeredToolsCache;
         }
 
-        this.registeredToolsCache = this.githubIssuesTools
+        this.registeredToolsCache = this.kodusIssuesTools
             .getAllTools()
             .map((tool) => {
                 const inputSchema = toShape(tool.inputSchema);

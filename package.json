@@ -258,7 +258,6 @@
         "@ai-sdk/openai": "^3.0.74",
         "@ai-sdk/openai-compatible": "^2.0.51",
         "@casl/ability": "^7.0.0",
-        "@composio/core": "^0.1.36-next.2",
         "@fastify/cors": "^11.2.0",
         "@gitbeaker/rest": "^43.8.0",
         "@golevelup/nestjs-rabbitmq": "^9.0.2",

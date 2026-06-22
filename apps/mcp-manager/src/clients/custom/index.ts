@@ -115,6 +115,7 @@ export class CustomClient {
                 provider:
                     this.integration.providerType || MCPProviderType.CUSTOM,
                 warning: false,
+                readOnly: Boolean(tool.annotations?.readOnlyHint),
             }));
         } catch (error) {
             throw new Error(
