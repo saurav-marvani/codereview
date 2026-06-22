@@ -515,7 +515,11 @@ env_set() {
     fi
 }
 env_set IMAGE_TAG "$IMAGE_TAG"
-env_set WEB_HOSTNAME_API "kodus-api"
+# "localhost" is the sentinel the web reads (helpers.ts): it makes the proxy
+# resolve the API via GLOBAL_API_CONTAINER_NAME (the actual container name,
+# now "kodus_api"). Hardcoding "kodus-api" here broke web->api DNS after the
+# kodus-api -> kodus_api container rename (EAI_AGAIN kodus-api).
+env_set WEB_HOSTNAME_API "localhost"
 env_set WEB_PORT_API "3001"
 env_set NEXTAUTH_URL "http://$SERVER_IP:3000"
 # Per-provider webhook URLs. Note the mismatched prefixes match what
