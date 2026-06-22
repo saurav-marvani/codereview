@@ -76,6 +76,10 @@ import {
     buildDefaultSourceBranchName,
     DEFAULT_COMMIT_MESSAGE,
     DEFAULT_PR_TITLE,
+    EMPTY_REPO_DEFAULT_BRANCH,
+    EMPTY_REPO_SEED_COMMIT_MESSAGE,
+    EMPTY_REPO_SEED_CONTENT,
+    EMPTY_REPO_SEED_PATH,
 } from '../code-management-defaults.constants';
 
 @Injectable()
@@ -201,7 +205,8 @@ export class BitbucketCloudService implements Omit<
                 (await this.getDefaultBranch({
                     organizationAndTeamData,
                     repository,
-                }));
+                })) ||
+                EMPTY_REPO_DEFAULT_BRANCH;
             const resolvedBaseBranch = baseBranch || resolvedTargetBranch;
 
             const bitbucketAuthDetail = await this.getAuthDetails(
@@ -226,6 +231,17 @@ export class BitbucketCloudService implements Omit<
                     'Failed to get workspace from repository',
                 );
             }
+
+            // An empty repository has no default-branch ref yet, so branch
+            // creation and the PR below fail. Seed an initial commit so the
+            // base branch exists. No-op when the branch is already there.
+            await this.ensureBaseBranchExists({
+                bitbucketAPI,
+                workspace,
+                repositoryId: repository.id,
+                baseBranch: resolvedBaseBranch,
+                author,
+            });
 
             const uploadResult = await this.uploadFiles({
                 organizationAndTeamData,
@@ -430,6 +446,55 @@ export class BitbucketCloudService implements Omit<
     }): Promise<boolean> {
         const head = await this.getBitbucketBranchHeadHash(params);
         return Boolean(head);
+    }
+
+    // Seeds an empty repository with an initial commit so the base branch
+    // exists for the branch + PR flow. A no-op when the branch already exists.
+    private async ensureBaseBranchExists(params: {
+        bitbucketAPI: any;
+        workspace: string;
+        repositoryId: string;
+        baseBranch: string;
+        author?: { name: string; email?: string };
+    }): Promise<void> {
+        const { bitbucketAPI, workspace, repositoryId, baseBranch, author } =
+            params;
+
+        const exists = await this.checkBitbucketBranchExists({
+            bitbucketAPI,
+            workspace,
+            repositoryId,
+            branchName: baseBranch,
+        });
+        if (exists) {
+            return;
+        }
+
+        // Committing to /src with a `branch` and no `parents` creates the
+        // first commit on an empty repository.
+        const form = new FormData();
+        form.append('branch', baseBranch);
+        form.append('message', EMPTY_REPO_SEED_COMMIT_MESSAGE);
+        if (author?.name) {
+            form.append(
+                'author',
+                `${author.name} <${author.email || 'kody@kodus.io'}>`,
+            );
+        }
+        form.append(`/${EMPTY_REPO_SEED_PATH}`, EMPTY_REPO_SEED_CONTENT);
+
+        await bitbucketAPI.source.createFileCommit({
+            workspace: `{${workspace}}`,
+            repo_slug: `{${repositoryId}}`,
+            _body: form,
+        });
+
+        this.logger.log({
+            message:
+                'Seeded empty Bitbucket repository with an initial commit for centralized config',
+            context: BitbucketCloudService.name,
+            metadata: { repositoryId, baseBranch },
+        });
     }
 
     private async getBitbucketBranchHeadHash(params: {

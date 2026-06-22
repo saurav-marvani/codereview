@@ -106,6 +106,9 @@ import {
     buildDefaultSourceBranchName,
     DEFAULT_COMMIT_MESSAGE,
     DEFAULT_PR_TITLE,
+    EMPTY_REPO_SEED_COMMIT_MESSAGE,
+    EMPTY_REPO_SEED_CONTENT,
+    EMPTY_REPO_SEED_PATH,
 } from '../code-management-defaults.constants';
 
 interface GitHubAuthResponse {
@@ -726,6 +729,28 @@ export class GithubService
             commitMessage?.trim() || DEFAULT_COMMIT_MESSAGE;
 
         try {
+            const githubAuthDetail = await this.getGithubAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const octokit = await this.instanceOctokit(
+                organizationAndTeamData,
+                githubAuthDetail,
+            );
+
+            const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
+
+            // A freshly created repository has no ref for its default branch
+            // yet, so branch creation and the PR below fail with "Git
+            // Repository is empty". Seed an initial commit first so there is a
+            // base branch to branch from and target.
+            await this.ensureBaseBranchExists({
+                octokit,
+                owner,
+                repo: repository.name,
+                baseBranch: resolvedBaseBranch,
+            });
+
             const uploadResult = await this.uploadFiles({
                 organizationAndTeamData,
                 repository,
@@ -751,17 +776,6 @@ export class GithubService
                 });
                 return null;
             }
-
-            const githubAuthDetail = await this.getGithubAuthDetails(
-                organizationAndTeamData,
-            );
-
-            const octokit = await this.instanceOctokit(
-                organizationAndTeamData,
-                githubAuthDetail,
-            );
-
-            const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
 
             const prResponse = await octokit.rest.pulls.create({
                 owner,
@@ -1080,6 +1094,89 @@ export class GithubService
 
             return false;
         }
+    }
+
+    // GitHub answers ref/branch reads on a commit-less repository with a 409
+    // "Git Repository is empty" instead of a 404.
+    private isEmptyRepositoryError(error: unknown): boolean {
+        const { status, message } = (error ?? {}) as {
+            status?: number;
+            message?: string;
+        };
+        return (
+            status === 409 &&
+            typeof message === 'string' &&
+            message.toLowerCase().includes('empty')
+        );
+    }
+
+    // Ensures the base branch exists so the branch + PR flow has something to
+    // target. A brand-new repository has no commits and therefore no
+    // default-branch ref; in that case we create an initial commit so it can be
+    // branched from. A no-op when the branch already exists.
+    private async ensureBaseBranchExists(params: {
+        octokit: any;
+        owner: string;
+        repo: string;
+        baseBranch: string;
+    }): Promise<void> {
+        const { octokit, owner, repo, baseBranch } = params;
+
+        try {
+            await octokit.rest.git.getRef({
+                owner,
+                repo,
+                ref: `heads/${baseBranch}`,
+            });
+            return;
+        } catch (error) {
+            const status = (error as { status?: number })?.status;
+            if (status !== 404 && !this.isEmptyRepositoryError(error)) {
+                throw error;
+            }
+        }
+
+        const { data: blob } = await octokit.rest.git.createBlob({
+            owner,
+            repo,
+            content: Buffer.from(EMPTY_REPO_SEED_CONTENT).toString('base64'),
+            encoding: 'base64',
+        });
+
+        const { data: tree } = await octokit.rest.git.createTree({
+            owner,
+            repo,
+            tree: [
+                {
+                    path: EMPTY_REPO_SEED_PATH,
+                    mode: '100644',
+                    type: 'blob',
+                    sha: blob.sha,
+                },
+            ],
+        });
+
+        const { data: commit } = await octokit.rest.git.createCommit({
+            owner,
+            repo,
+            message: EMPTY_REPO_SEED_COMMIT_MESSAGE,
+            tree: tree.sha,
+            parents: [],
+        });
+
+        await octokit.rest.git.createRef({
+            owner,
+            repo,
+            ref: `refs/heads/${baseBranch}`,
+            sha: commit.sha,
+        });
+
+        this.logger.log({
+            message:
+                'Seeded empty repository with an initial commit for centralized config',
+            context: GithubService.name,
+            metadata: { repo, baseBranch },
+        });
     }
 
     private isBadObjectStateError(error: unknown): boolean {
