@@ -55,16 +55,49 @@ describe('GetKodyRulesHealthUseCase', () => {
         endDate: '2026-06-01',
     };
 
-    const mkUseCase = (usageRows: unknown[], rulesDoc: unknown) => {
+    const mkUseCase = (
+        usageRows: unknown[],
+        rulesDoc: unknown,
+        repoNames: Map<string, string> = new Map(),
+        directories: Array<{
+            id: string;
+            name?: string;
+            folders?: Array<{ path: string }>;
+        }> = [],
+        configRepos: Array<{
+            id: string;
+            name?: string;
+            full_name?: string;
+        }> = [],
+    ) => {
         const reviewAnalytics = {
             getKodyRulesUsage: jest.fn().mockResolvedValue(usageRows),
+            getRepositoryNames: jest.fn().mockResolvedValue(repoNames),
         };
         const kodyRulesService = {
             findByOrganizationId: jest.fn().mockResolvedValue(rulesDoc),
         };
+        const teamService = {
+            find: jest.fn().mockResolvedValue([{ uuid: 'team-1' }]),
+        };
+        const parametersService = {
+            findByKey: jest.fn().mockResolvedValue({
+                configValue: {
+                    repositories: [{ directories }],
+                },
+            }),
+        };
+        const integrationConfigService = {
+            findIntegrationConfigFormatted: jest
+                .fn()
+                .mockResolvedValue(configRepos),
+        };
         return new GetKodyRulesHealthUseCase(
             reviewAnalytics as never,
             kodyRulesService as never,
+            teamService as never,
+            parametersService as never,
+            integrationConfigService as never,
         );
     };
 
@@ -150,5 +183,109 @@ describe('GetKodyRulesHealthUseCase', () => {
     it('handles orgs without a kodyRules doc', async () => {
         const useCase = mkUseCase([], null);
         await expect(useCase.execute(baseQuery)).resolves.toEqual([]);
+    });
+
+    it('labels scope: global sentinel → null, repo → resolved name, folder → resolved directory name', async () => {
+        const useCase = mkUseCase(
+            [],
+            {
+                rules: [
+                    {
+                        uuid: 'g',
+                        title: 'Global rule',
+                        repositoryId: 'global',
+                        status: KodyRulesStatus.ACTIVE,
+                    },
+                    {
+                        uuid: 'r',
+                        title: 'Repo rule',
+                        repositoryId: '670345891',
+                        // a file glob is NOT folder scope — must read as Repo
+                        path: '**/*.ts',
+                        status: KodyRulesStatus.ACTIVE,
+                    },
+                    {
+                        uuid: 'f',
+                        title: 'Folder rule',
+                        repositoryId: '670345891',
+                        directoryId: 'dir-1',
+                        path: '**/*.ts',
+                        status: KodyRulesStatus.ACTIVE,
+                    },
+                    {
+                        uuid: 'm',
+                        title: 'Multi-folder rule',
+                        repositoryId: '670345891',
+                        directoryId: 'dir-2',
+                        status: KodyRulesStatus.ACTIVE,
+                    },
+                ],
+            },
+            new Map([['670345891', 'kodustech/kodus-ai']]),
+            [
+                { id: 'dir-1', folders: [{ path: '/apps/api' }] },
+                {
+                    id: 'dir-2',
+                    folders: [{ path: '/apps/api' }, { path: '/apps/web' }],
+                },
+            ],
+        );
+
+        const rows = await useCase.execute(baseQuery);
+        const byId = Object.fromEntries(rows.map((r) => [r.ruleId, r]));
+
+        // global sentinel collapses to null → frontend reads it as "Global"
+        expect(byId.g).toMatchObject({
+            repositoryId: null,
+            repositoryName: null,
+            directoryId: null,
+            directoryFolders: null,
+        });
+        // repo-scoped: id kept, name resolved; a file glob does NOT make it a folder
+        expect(byId.r).toMatchObject({
+            repositoryId: '670345891',
+            repositoryName: 'kodustech/kodus-ai',
+            directoryId: null,
+            directoryFolders: null,
+        });
+        // folder-scoped: directoryId drives scope, folder path resolved from config
+        expect(byId.f).toMatchObject({
+            repositoryName: 'kodustech/kodus-ai',
+            directoryId: 'dir-1',
+            directoryFolders: ['/apps/api'],
+        });
+        // multi-folder directory: all folder paths surfaced for the UI's +N
+        expect(byId.m).toMatchObject({
+            directoryId: 'dir-2',
+            directoryFolders: ['/apps/api', '/apps/web'],
+        });
+    });
+
+    it('resolves repo name from the integration config when the warehouse has no PRs for it', async () => {
+        const useCase = mkUseCase(
+            [],
+            {
+                rules: [
+                    {
+                        uuid: 'noPr',
+                        title: 'Repo rule on a repo with no reviewed PRs',
+                        repositoryId: '670345891',
+                        status: KodyRulesStatus.ACTIVE,
+                    },
+                ],
+            },
+            // warehouse knows nothing about this repo (0 triggers → no row)
+            new Map(),
+            [],
+            // ...but the code-management integration does
+            [{ id: '670345891', full_name: 'kodustech/kodus-ai' }],
+        );
+
+        const rows = await useCase.execute(baseQuery);
+
+        expect(rows[0]).toMatchObject({
+            repositoryId: '670345891',
+            repositoryName: 'kodustech/kodus-ai',
+        });
     });
 });

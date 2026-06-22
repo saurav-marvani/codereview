@@ -39,6 +39,18 @@ type MCPData = {
     items: MCPItem[];
 };
 
+export type MCPIntegrationItem = {
+    id: string;
+    name: string;
+    appName: string;
+    provider: string;
+    isConnected?: boolean;
+    active?: boolean;
+    isDefault?: boolean;
+    baseUrl?: string;
+    allowedTools?: string[];
+};
+
 enum MCPIntegrationAuthType {
     NONE = 'none',
     API_KEY = 'api_key',
@@ -230,6 +242,30 @@ export class MCPManagerService {
         } catch (error) {
             this.logger.error({
                 message: 'Error fetching MCP connections',
+                context: MCPManagerService.name,
+                error: error,
+                metadata: { organizationAndTeamData },
+            });
+            return [];
+        }
+    }
+
+    public async getIntegrations(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<MCPIntegrationItem[]> {
+        try {
+            const data = await this.axiosMCPManagerService.get(
+                'mcp/integrations',
+                {
+                    headers: this.getAuthHeaders(organizationAndTeamData),
+                    params: { page: 1, pageSize: 100 },
+                },
+            );
+
+            return Array.isArray(data) ? data : [];
+        } catch (error) {
+            this.logger.error({
+                message: 'Error fetching MCP integrations',
                 context: MCPManagerService.name,
                 error: error,
                 metadata: { organizationAndTeamData },

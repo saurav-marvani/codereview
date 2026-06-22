@@ -292,8 +292,52 @@ export class GithubService
         }) as unknown as Octokit;
     }
 
+    private assertGithubAppEnv(): void {
+        const required = [
+            'API_GITHUB_APP_ID',
+            'API_GITHUB_PRIVATE_KEY',
+        ] as const;
+
+        const missing = required.filter(
+            (key) => !this.configService.get<string>(key)?.trim(),
+        );
+
+        if (missing.length > 0) {
+            const message = `GitHub App is not configured. Missing required env var(s): ${missing.join(', ')}. Populate them from your GitHub App settings (https://github.com/settings/apps/<your-app>) and restart the API.`;
+            this.logger.error({
+                message,
+                context: GithubService.name,
+            });
+            throw new BadRequestException(message);
+        }
+    }
+
+    // OAuth web-flow specific check — only relevant when exchanging an
+    // installation code for tokens via authenticateWithCodeOauth.
+    private assertGithubOAuthEnv(): void {
+        const required = [
+            'GLOBAL_GITHUB_CLIENT_ID',
+            'API_GITHUB_CLIENT_SECRET',
+        ] as const;
+
+        const missing = required.filter(
+            (key) => !this.configService.get<string>(key)?.trim(),
+        );
+
+        if (missing.length > 0) {
+            const message = `GitHub OAuth is not configured. Missing required env var(s): ${missing.join(', ')}. Populate them from your GitHub App settings (https://github.com/settings/apps/<your-app>) and restart the API.`;
+            this.logger.error({
+                message,
+                context: GithubService.name,
+            });
+            throw new BadRequestException(message);
+        }
+    }
+
     // Helper functions
     private createOctokitInstance(): Octokit {
+        this.assertGithubAppEnv();
+
         let privateKey = this.configService.get<string>(
             'API_GITHUB_PRIVATE_KEY',
         );
@@ -462,6 +506,7 @@ export class GithubService
         params: any,
     ): Promise<{ success: boolean; status?: CreateAuthIntegrationStatus }> {
         try {
+            this.assertGithubOAuthEnv();
             const appOctokit = this.createOctokitInstance();
 
             const installationAuthentication = await appOctokit.auth({
@@ -523,7 +568,10 @@ export class GithubService
                 githubStatus?.installationStatus === InstallationStatus.PENDING
             ) {
                 await this.updateInstallationItems(
-                    { installationStatus: InstallationStatus.SUCCESS },
+                    {
+                        installationStatus: InstallationStatus.SUCCESS,
+                        organizationName: accountLogin,
+                    },
                     params.organizationAndTeamData,
                 );
             }
@@ -533,6 +581,7 @@ export class GithubService
                 status: CreateAuthIntegrationStatus.SUCCESS,
             };
         } catch (err) {
+            if (err instanceof BadRequestException) throw err;
             throw new BadRequestException(
                 err.message || 'Error authenticating with OAUTH.',
             );
@@ -933,18 +982,117 @@ export class GithubService
                 }),
             );
 
-            const { data: tree } = await octokit.rest.git.createTree({
-                owner,
-                repo: repository.name,
-                tree: treeItems,
-                base_tree: parentSha,
-            });
+            // GitHub's createTree fails atomically with GitRPC::BadObjectState
+            // when any delete op targets a path that doesn't exist in
+            // base_tree. Filter and retry once before giving up — this covers
+            // DB/repo drift (e.g., a directory group with kody-rules but no
+            // kodus-config.yml override never produced a config file on disk).
+            let effectiveTreeItems = treeItems;
+            let createdTreeSha: string;
+            try {
+                const { data: tree } = await octokit.rest.git.createTree({
+                    owner,
+                    repo: repository.name,
+                    tree: effectiveTreeItems,
+                    base_tree: parentSha,
+                });
+                createdTreeSha = tree.sha;
+            } catch (treeError) {
+                if (!this.isBadObjectStateError(treeError)) {
+                    throw treeError;
+                }
+
+                const existingPaths = await this.fetchTreeBlobPaths(
+                    octokit,
+                    owner,
+                    repository.name,
+                    parentSha,
+                );
+
+                if (existingPaths === null) {
+                    // Couldn't reliably enumerate the tree — don't risk a
+                    // false-positive filter. Rethrow original error.
+                    throw treeError;
+                }
+
+                const filtered = effectiveTreeItems.filter((item) => {
+                    if (item.sha === null) {
+                        return existingPaths.has(item.path);
+                    }
+                    return true;
+                });
+
+                if (filtered.length === effectiveTreeItems.length) {
+                    // Nothing to drop — error came from something else.
+                    throw treeError;
+                }
+
+                const droppedPaths = effectiveTreeItems
+                    .filter(
+                        (item) =>
+                            item.sha === null &&
+                            !existingPaths.has(item.path),
+                    )
+                    .map((item) => item.path);
+
+                if (filtered.length === 0) {
+                    // Updating an existing tracked PR is fine — the branch
+                    // already has whatever it had before. For a fresh branch
+                    // there's nothing to commit and no branch to attach a PR
+                    // to, so signal failure to the caller.
+                    if (branchAlreadyExists) {
+                        this.logger.warn({
+                            message:
+                                'All requested file operations were no-ops on an existing branch; skipping commit',
+                            context: GithubService.name,
+                            metadata: {
+                                repository: repository.name,
+                                branchName: resolvedBranchName,
+                                droppedPaths,
+                            },
+                        });
+                        return true;
+                    }
+                    this.logger.warn({
+                        message:
+                            'All requested deletes targeted non-existent paths and no upserts remain; nothing to commit on a new branch',
+                        context: GithubService.name,
+                        metadata: {
+                            repository: repository.name,
+                            branchName: resolvedBranchName,
+                            droppedPaths,
+                        },
+                    });
+                    return false;
+                }
+
+                this.logger.warn({
+                    message:
+                        'Retrying tree creation after dropping deletes for non-existent paths',
+                    context: GithubService.name,
+                    metadata: {
+                        repository: repository.name,
+                        branchName: resolvedBranchName,
+                        droppedPaths,
+                    },
+                });
+
+                effectiveTreeItems = filtered;
+                const { data: retryTree } =
+                    await octokit.rest.git.createTree({
+                        owner,
+                        repo: repository.name,
+                        tree: effectiveTreeItems,
+                        base_tree: parentSha,
+                    });
+                createdTreeSha = retryTree.sha;
+            }
 
             const { data: commit } = await octokit.rest.git.createCommit({
                 owner,
                 repo: repository.name,
                 message: resolvedMessage,
-                tree: tree.sha,
+                tree: createdTreeSha,
                 parents: [parentSha],
                 ...(tokenAuthorIdentity
                     ? {
@@ -985,6 +1133,51 @@ export class GithubService
             });
 
             return false;
+        }
+    }
+
+    private isBadObjectStateError(error: unknown): boolean {
+        if (!error) {
+            return false;
+        }
+        const message =
+            (error as { message?: unknown })?.message ?? String(error);
+        return typeof message === 'string'
+            ? message.toLowerCase().includes('badobjectstate')
+            : false;
+    }
+
+    private async fetchTreeBlobPaths(
+        octokit: any,
+        owner: string,
+        repo: string,
+        commitOrTreeSha: string,
+    ): Promise<Set<string> | null> {
+        try {
+            // The commit SHA resolves to its tree via `getTree` — GitHub's API
+            // accepts either a commit SHA or a tree SHA on this endpoint.
+            const { data } = await octokit.rest.git.getTree({
+                owner,
+                repo,
+                tree_sha: commitOrTreeSha,
+                recursive: 'true',
+            });
+
+            // Truncated responses can't be trusted for filtering — a missing
+            // path could still be present in a chunk we didn't see.
+            if (data.truncated) {
+                return null;
+            }
+
+            const paths = new Set<string>();
+            for (const node of data.tree ?? []) {
+                if (node.type === 'blob' && typeof node.path === 'string') {
+                    paths.add(node.path);
+                }
+            }
+            return paths;
+        } catch {
+            return null;
         }
     }
 

@@ -11,17 +11,20 @@ import { ParametersConfigKey } from "@services/parameters/types";
 import { getTeams } from "@services/teams/fetch";
 import { Team } from "@services/teams/types";
 import { auth } from "src/core/config/auth";
-import { getCurrentPathnameOnServerComponents } from "src/core/utils/headers";
 import { SupportDropdown } from "src/core/layout/navbar/_components/support";
 import { AllTeamsProvider } from "src/core/providers/all-teams-context";
 import { AuthProvider } from "src/core/providers/auth.provider";
 import { SelectedTeamProvider } from "src/core/providers/selected-team-context";
 import { TEAM_STATUS } from "src/core/types";
+import { getCurrentPathnameOnServerComponents } from "src/core/utils/headers";
 import { OrganizationProvider } from "src/features/organization/_providers/organization-context";
 
 import { SetupGithubStars } from "./_components/setup-github-stars";
 import { SetupUserNav } from "./_components/setup-user-nav";
 import { SetupProgressSaver } from "./setup/_components/setup-step-tracker";
+
+/** OAuth providers redirect here after authorization; must run even when onboarding is finished. */
+const MCP_OAUTH_CALLBACK_PATH = "/setup/mcp/oauth";
 
 export default async function Layout(props: React.PropsWithChildren) {
     const [teams, organizationId, organizationName, session] =
@@ -40,16 +43,10 @@ export default async function Layout(props: React.PropsWithChildren) {
         redirect("/confirm-email");
     }
 
-    // The MCP OAuth callback lands under this (setup) route group. Onboarded
-    // users would otherwise be bounced to "/" before the callback can complete
-    // the OAuth exchange — so skip the onboarding redirect for that route only.
-    const currentPath = (await getCurrentPathnameOnServerComponents()) ?? "";
-    const isMcpOauthCallback = currentPath.startsWith("/setup/mcp/oauth");
-
     const candidateTeamId = teams?.find(
         (t: Team) => t.status === TEAM_STATUS.ACTIVE,
     )?.uuid;
-    if (candidateTeamId && !isMcpOauthCallback) {
+    if (candidateTeamId) {
         const platformConfigs = await getTeamParametersNoCache<{
             configValue: { finishOnboard?: boolean };
         }>({
@@ -57,7 +54,14 @@ export default async function Layout(props: React.PropsWithChildren) {
             teamId: candidateTeamId,
         }).catch(() => null);
         if (platformConfigs?.configValue?.finishOnboard) {
-            redirect("/");
+            const currentPath = await getCurrentPathnameOnServerComponents();
+            const isMcpOauthCallback =
+                currentPath === MCP_OAUTH_CALLBACK_PATH ||
+                currentPath?.startsWith(`${MCP_OAUTH_CALLBACK_PATH}/`);
+
+            if (!isMcpOauthCallback) {
+                redirect("/");
+            }
         }
     }
 
@@ -83,7 +87,13 @@ export default async function Layout(props: React.PropsWithChildren) {
                                     <SetupUserNav />
                                 </div>
                             </div>
-                            <div className="pt-16">{props.children}</div>
+                            {/* Single scroll container for every setup page:
+                                exactly the viewport area below the fixed 4rem
+                                topbar, so any page taller than the screen gets
+                                a scrollbar instead of clipping its CTA. */}
+                            <div className="mt-16 h-[calc(100dvh-4rem)] overflow-y-auto">
+                                {props.children}
+                            </div>
                         </div>
                         <MagicModalPortal />
                     </SelectedTeamProvider>
