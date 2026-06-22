@@ -1,11 +1,4 @@
-jest.mock('@kodus/flow', () => ({
-    createLogger: () => ({
-        log: jest.fn(),
-        error: jest.fn(),
-        warn: jest.fn(),
-        debug: jest.fn(),
-        info: jest.fn(),
-    }),
+jest.mock('@libs/common/utils/thread-id', () => ({
     createThreadId: jest.fn(() => ({
         id: 'TR-vbl-test',
         metadata: {},

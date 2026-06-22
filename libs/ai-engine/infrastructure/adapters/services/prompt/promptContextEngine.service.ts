@@ -1,4 +1,4 @@
-import { ContextDependency, ContextRequirement } from '@kodus/flow';
+import { ContextDependency, ContextRequirement } from '@libs/ai-engine/infrastructure/adapters/services/context/context-pack';
 import { createLogger } from '@libs/core/log/logger';
 import { BYOKConfig } from '@kodus/kodus-common/llm';
 import { Inject, Injectable } from '@nestjs/common';

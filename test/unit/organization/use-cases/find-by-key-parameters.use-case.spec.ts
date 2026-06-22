@@ -32,7 +32,6 @@ const mockConfigService = {
     get: jest.fn().mockReturnValue(60000), // Default TTL
 };
 
-// Mock @kodus/flow createLogger
 jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => mockLogger,
 }));

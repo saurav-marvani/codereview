@@ -1,4 +1,4 @@
-import { createMCPAdapter } from '@kodus/flow';
+import { createMCPAdapter } from '@libs/mcp-server/mcp-adapter';
 
 import { GenericSkillRunnerService } from '@libs/agents/skills/generic-skill-runner.service';
 import {
@@ -18,7 +18,7 @@ import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service
 // ai-sdk-fetcher adapter — both are mocked here so the unit tests exercise the
 // engine's orchestration logic (skill meta, preflight, filtering, policies,
 // metrics) without a real MCP server or LLM call.
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/mcp-server/mcp-adapter', () => ({
     createMCPAdapter: jest.fn(),
 }));
 jest.mock('@libs/agents/skills/runtime/ai-sdk-fetcher.adapter', () => ({

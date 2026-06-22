@@ -8,20 +8,6 @@ import { PerformanceAgentProvider } from '@/code-review/infrastructure/agents/pr
 import { GeneralistAgentProvider } from '@/code-review/infrastructure/agents/providers/generalist-agent.provider';
 import { resolveSuggestionLabel } from '@/code-review/infrastructure/agents/collaborators/finding-mapper';
 
-jest.mock('@kodus/flow', () => ({
-    createLogger: () => ({
-        log: jest.fn(),
-        error: jest.fn(),
-        warn: jest.fn(),
-        debug: jest.fn(),
-        info: jest.fn(),
-    }),
-    createOrchestration: jest.fn(),
-    createThreadId: jest.fn(),
-    PlannerType: { REACT: 'react' },
-    EnhancedJSONParser: { parse: jest.fn() },
-}));
-
 function createAgent<T>(AgentClass: new (...args: any[]) => T): T {
     return Object.create(AgentClass.prototype);
 }

@@ -154,9 +154,6 @@ else
   echo "▶ Skipping Seeds (RUN_SEEDS=$RUN_SEEDS)"
 fi
 
-# 3. Yalc Check
-[ -d ".yalc/@kodus/flow" ] && echo "▶ yalc detected: using .yalc/@kodus/flow"
-
 # 4. Execute container command (Full flexibility)
 # If no command is passed, use nodemon as fallback
 if [ $# -eq 0 ]; then

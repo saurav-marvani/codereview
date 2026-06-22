@@ -1,4 +1,4 @@
-import { createMCPAdapter, MCPAdapter } from '@kodus/flow';
+import { createMCPAdapter, MCPAdapter } from '@libs/mcp-server/mcp-adapter';
 import { MCPIntegrationAuthType } from '../../modules/integrations/enums/integration.enum';
 import { MCPIntegrationInterface } from '../../modules/integrations/interfaces/mcp-integration.interface';
 import {

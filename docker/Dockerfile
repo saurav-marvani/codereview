@@ -77,7 +77,6 @@ RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
     if [ -s /run/secrets/github_token ]; then export GITHUB_TOKEN="$(cat /run/secrets/github_token)"; fi \
  && pnpm install --frozen-lockfile --store-dir /pnpm-store
 RUN rm -rf node_modules/@kodus/kodus-common && cp -r packages/kodus-common node_modules/@kodus/kodus-common
-RUN rm -rf node_modules/@kodus/flow && cp -r packages/kodus-flow node_modules/@kodus/flow
 
 FROM deps AS build
 ARG API_CLOUD_MODE=false
@@ -144,7 +143,6 @@ RUN rm -rf packages/kodus-common/node_modules packages/kodus-flow/node_modules \
            packages/kodus-common/src packages/kodus-flow/src \
            packages/kodus-common/test packages/kodus-flow/test
 RUN rm -rf node_modules/@kodus/kodus-common && cp -r packages/kodus-common node_modules/@kodus/kodus-common
-RUN rm -rf node_modules/@kodus/flow && cp -r packages/kodus-flow node_modules/@kodus/flow
 
 # Dedicated stage for the bun binary. Using the official oven/bun image
 # instead of `curl bun.sh/install | bash` because:

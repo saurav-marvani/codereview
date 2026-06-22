@@ -16,20 +16,9 @@ if (!process.env.API_LOG_LEVEL) {
     process.env.API_LOG_LEVEL = 'error';
 }
 
-// Mock logger globally to silence logs during tests
-jest.mock('@kodus/flow', () => ({
-    createLogger: () => ({
-        log: jest.fn(),
-        error: jest.fn(),
-        warn: jest.fn(),
-        debug: jest.fn(),
-        info: jest.fn(),
-    }),
-}));
-
-// createLogger was moved out of @kodus/flow into libs/core/log — silence it
-// there too so the many specs that previously relied on the @kodus/flow mock
-// stay quiet (and don't spin up pino's worker-thread transport under jest).
+// Mock logger globally to silence logs during tests. createLogger lives in
+// libs/core/log now — silence it there so specs stay quiet (and don't spin up
+// pino's worker-thread transport under jest).
 jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
@@ -40,10 +29,10 @@ jest.mock('@libs/core/log/logger', () => ({
     }),
 }));
 
-// The observability/tracing subsystem was ported out of @kodus/flow into
+// The observability/tracing subsystem was ported out of into
 // libs/core/observability. The real module connects to MongoDB and arms flush
 // timers (open handles) on init — previously it was unreachable under tests
-// because the global @kodus/flow mock above left getObservability undefined.
+// because the global mock above left getObservability undefined.
 // Stub it with a no-op observability so specs don't open real connections or
 // leak timers (which made the suite hang for minutes).
 jest.mock('@libs/core/observability', () => {

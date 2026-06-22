@@ -1,11 +1,4 @@
-jest.mock('@kodus/flow', () => ({
-    createLogger: () => ({
-        log: jest.fn(),
-        error: jest.fn(),
-        warn: jest.fn(),
-        debug: jest.fn(),
-        info: jest.fn(),
-    }),
+jest.mock('@libs/common/utils/thread-id', () => ({
     createThreadId: jest.fn(() => ({
         id: 'TR-vbl-integration',
         metadata: {},
@@ -15,7 +8,6 @@ jest.mock('@kodus/flow', () => ({
 import { BusinessRulesValidationAgentUseCase } from '@libs/agents/application/use-cases/business-rules-validation-agent.use-case';
 import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
 import { buildBusinessRulesAnalysisPrompt } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/analysis-prompt.builder';
-import { BaseAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/base-agent.provider';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { ChatWithKodyFromGitUseCase } from '@libs/platform/application/use-cases/codeManagement/chatWithKodyFromGit.use-case';
 import {
@@ -168,13 +160,6 @@ describe('ChatWithKodyFromGitUseCase business-logic integration', () => {
                 recordHistogram: jest.fn(),
             } as any,
         );
-
-        jest.spyOn(
-            BaseAgentProvider.prototype as any,
-            'createLLMAdapter',
-        ).mockReturnValue({
-            call: jest.fn(),
-        });
 
         genericSkillRunner.createFetcherOrchestration.mockResolvedValue({
             toolCaller: createMockToolCaller({

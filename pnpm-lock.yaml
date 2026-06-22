@@ -61,9 +61,6 @@ importers:
       '@google/generative-ai':
         specifier: ^0.24.1
         version: 0.24.1
-      '@kodus/flow':
-        specifier: 0.1.55
-        version: 0.1.55(@cfworker/json-schema@4.1.1)(@opentelemetry/api@1.9.1)(ws@8.18.3)
       '@kodus/kodus-common':
         specifier: 1.3.20
         version: 1.3.20(18183ee1c808529d0bfa94c33cff435d)
@@ -1895,15 +1892,6 @@ packages:
 
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
-
-  '@kodus/flow@0.1.55':
-    resolution: {integrity: sha512-agKRG/8VP998meVJHhSD1kH5kaphNx2D517qxSQv1r+RwAGjaaMCeYpmqFcVYZzJwSw0lHGw2ZIfm5lD8XJSEw==, tarball: https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/flow/-/@kodus/flow-0.1.55.tgz}
-    engines: {node: '>=18.0.0'}
-    peerDependencies:
-      '@opentelemetry/api': ^1.9.1
-    peerDependenciesMeta:
-      '@opentelemetry/api':
-        optional: true
 
   '@kodus/kodus-common@1.3.20':
     resolution: {integrity: sha512-fP25Mht20G2DRukdqFyP4SAUmijasNEPIQDv9rxufc7pbmvRvKw5R1ZEK47LcAZKH0Mvw7W2nnyOiHQhdVm8sQ==, tarball: https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/kodus-common/-/@kodus/kodus-common-1.3.20.tgz}
@@ -6785,10 +6773,6 @@ packages:
     resolution: {integrity: sha512-p/nXbhSEcu3pZRdkW1OfJhpsVtW1gd4Wa1fnQc9YLiTfAjn0312eMKimbdIQzuZl9aa9xUGaRlP9T/CJE/ditQ==}
     engines: {node: '>=0.10.0'}
 
-  jsonrepair@3.14.0:
-    resolution: {integrity: sha512-tWPGKMZf/8UPim+fcW2EfcQ/d/7aKUrP6IECz9G3Tu6Q5dX0orSleqJ9z6sSw7qrQkjF8/Edo4DvsWBZ8H+HNg==}
-    hasBin: true
-
   jsonwebtoken@9.0.3:
     resolution: {integrity: sha512-MT/xP0CrubFRNLNKvxJ2BYfy53Zkm++5bX9dtuPbqAeQpTVe0MQTFhao8+Cp//EmJp244xt6Drw/GVEGCUj40g==}
     engines: {node: '>=12', npm: '>=6'}
@@ -9305,9 +9289,6 @@ packages:
     resolution: {integrity: sha512-dSvYKdvLsAHCDqPOhIwk/q5CvuWtTB3Dgpoe0uVEFjTzIOAmsQpprX25InCvrvJsirEbu1OHyy67n/kAj1Sw/w==}
     engines: {node: '>=18'}
 
-  zod-from-json-schema@0.5.2:
-    resolution: {integrity: sha512-/dNaicfdhJTOuUd4RImbLUE2g5yrSzzDjI/S6C2vO2ecAGZzn9UcRVgtyLSnENSmAOBRiSpUdzDS6fDWX3Z35g==}
-
   zod-to-json-schema@3.25.2:
     resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
     peerDependencies:
@@ -10741,36 +10722,6 @@ snapshots:
       jsep: 1.4.0
 
   '@keyv/serialize@1.1.1': {}
-
-  '@kodus/flow@0.1.55(@cfworker/json-schema@4.1.1)(@opentelemetry/api@1.9.1)(ws@8.18.3)':
-    dependencies:
-      '@google/generative-ai': 0.24.1
-      '@modelcontextprotocol/sdk': 1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3)
-      ajv: 8.20.0
-      ajv-formats: 3.0.1(ajv@8.20.0)
-      dotenv: 17.4.2
-      jose: 6.2.3
-      json5: 2.2.3
-      jsonrepair: 3.14.0
-      mongodb: 7.2.0
-      openai: 6.42.0(ws@8.18.3)(zod@4.4.3)
-      pino: 10.3.1
-      tslib: 2.8.1
-      zod: 4.4.3
-      zod-from-json-schema: 0.5.2
-    optionalDependencies:
-      '@opentelemetry/api': 1.9.1
-    transitivePeerDependencies:
-      - '@aws-sdk/credential-providers'
-      - '@cfworker/json-schema'
-      - '@mongodb-js/zstd'
-      - gcp-metadata
-      - kerberos
-      - mongodb-client-encryption
-      - snappy
-      - socks
-      - supports-color
-      - ws
 
   '@kodus/kodus-common@1.3.20(18183ee1c808529d0bfa94c33cff435d)':
     dependencies:
@@ -16466,8 +16417,6 @@ snapshots:
 
   jsonpointer@5.0.1: {}
 
-  jsonrepair@3.14.0: {}
-
   jsonwebtoken@9.0.3:
     dependencies:
       jws: 4.0.1
@@ -19044,10 +18993,6 @@ snapshots:
       compress-commons: 7.0.1
       normalize-path: 3.0.0
       readable-stream: 4.7.0
-
-  zod-from-json-schema@0.5.2:
-    dependencies:
-      zod: 4.4.3
 
   zod-to-json-schema@3.25.2(zod@3.25.76):
     dependencies:

@@ -590,7 +590,7 @@ fi
 
 # ---------- wait for the review pipeline (RabbitMQ workflow queue) ----------
 # The HTTP checks above only prove web/api/webhooks ANSWER. The code-review
-# pipeline runs through RabbitMQ (@kodus/flow): the webhooks service
+# pipeline runs through RabbitMQ: the webhooks service
 # publishes a job to `workflow.jobs.code_review.queue` and the worker
 # consumes it. On a cold boot the worker declares + binds that queue only
 # after its (slow) NestJS init; until then the producer hits

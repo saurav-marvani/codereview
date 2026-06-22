@@ -35,8 +35,8 @@ const CONVERSATION_MAX_STEPS = 12;
 
 /**
  * Thread identifier passed by the caller. Structurally compatible with the
- * legacy `@kodus/flow` `Thread` ({ id, metadata }) but typed locally so this
- * agent has no `@kodus/flow` dependency. Used only for log correlation now —
+ * legacy flow engine's `Thread` ({ id, metadata }) but typed locally so this
+ * agent has no flow-engine dependency. Used only for log correlation now —
  * the conversation history travels in `prepareContext` (rebuilt from the PR
  * comment thread), not in any flow-managed session store.
  */
@@ -48,7 +48,7 @@ interface ConversationThread {
 /**
  * Conversation agent ("chat with Kody") rebuilt on the Vercel AI SDK.
  *
- * Replaces the former `@kodus/flow` orchestration (createOrchestration +
+ * Replaces the former flow-engine orchestration (createOrchestration +
  * REACT planner + createMCPAdapter + createTool + callAgent) with a thin
  * native loop: `byokToVercelModel` resolves the BYOK model, MCP + sandbox
  * tools are exposed as AI SDK tools, and `generateText` runs the tool-calling

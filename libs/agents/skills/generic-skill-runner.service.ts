@@ -2,7 +2,7 @@ import {
     createMCPAdapter,
     MCPAdapter,
     MCPServerConfig,
-} from '@kodus/flow';
+} from '@libs/mcp-server/mcp-adapter';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 
 import { BYOKConfig } from '@kodus/kodus-common/llm';
@@ -190,10 +190,10 @@ export class GenericSkillRunnerService {
                 }
             }
 
-            // Connect the flow MCP adapter (transport/auth/retry stays on flow,
-            // per the migration directive) and expose its tools as harness
+            // Connect the local MCP adapter (transport/auth/retry stays in the
+            // local adapter, per the migration directive) and expose its tools as harness
             // AgentTools. The agent loop now runs on the AI SDK via
-            // AiSdkAgentRunner — no `@kodus/flow` orchestration / REACT planner.
+            // AiSdkAgentRunner — no flow-engine orchestration / REACT planner.
             let toolRegistry: ToolRegistry = {
                 get: () => undefined,
                 list: () => [],

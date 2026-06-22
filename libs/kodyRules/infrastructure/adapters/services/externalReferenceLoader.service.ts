@@ -75,7 +75,6 @@ export class ExternalReferenceLoaderService {
                 contextReferenceId: rule.contextReferenceId,
                 repository: context.repository,
                 pullRequest: context.pullRequest,
-                executeMCPDependencies: false,
             });
 
             const layers = result.pack?.layers ?? [];

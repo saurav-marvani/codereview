@@ -7,8 +7,8 @@ import { SandboxInstance } from '@libs/sandbox/domain/contracts/sandbox.provider
 
 /**
  * Thread identifier passed through to the conversation agent. Structurally
- * compatible with the legacy `@kodus/flow` `Thread` ({ id, metadata }) but
- * typed locally so this use-case carries no `@kodus/flow` dependency.
+ * compatible with the legacy flow engine's `Thread` ({ id, metadata }) but
+ * typed locally so this use-case carries no flow-engine dependency.
  */
 interface ConversationThread {
     id?: unknown;

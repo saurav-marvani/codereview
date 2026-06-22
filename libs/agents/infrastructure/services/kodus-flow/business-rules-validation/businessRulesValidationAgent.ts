@@ -58,9 +58,9 @@ const DEFAULT_NEEDS_MORE_INFO_MESSAGE =
 const PARSER_FALLBACK_FRAGMENT = 'error parsing validation result';
 
 /**
- * Chat message for the analyzer LLM call. Replaces `@kodus/flow`'s
+ * Chat message for the analyzer LLM call. Replaces the legacy flow engine's
  * `LLMRequest['messages']` + `AgentInputEnum` — typed locally so this agent
- * has no `@kodus/flow` dependency.
+ * has no flow-engine dependency.
  */
 type AnalyzerMessage = { role: 'system' | 'user'; content: string };
 
@@ -453,7 +453,7 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
 
     /**
      * Run a single LLM completion on the Vercel AI SDK. Replaces the legacy
-     * `super.createLLMAdapter(...).call(...)` (the `@kodus/flow` LLM bridge):
+     * `super.createLLMAdapter(...).call(...)` (the legacy flow-engine LLM bridge):
      * `byokToVercelModel` resolves the BYOK model and `generateText` runs a
      * plain (no-tools) completion. Langfuse parity via `buildLangfuseTelemetry`.
      */

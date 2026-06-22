@@ -7,7 +7,7 @@ import { buildNativeToolConfigs } from '../kodus-flow/native-tools.factory';
 /**
  * Wrap the sandbox-backed native tool configs (grep, readFile, listDir, exec)
  * as Vercel AI SDK tools — the replacement for registering them on a
- * `@kodus/flow` orchestration via `orchestration.createTool(cfg)`.
+ * legacy flow-engine orchestration via `orchestration.createTool(cfg)`.
  *
  * `buildNativeToolConfigs` already returns AI-SDK-shaped entries
  * (`{ name, description, inputSchema: ZodSchema, execute }`); the AI SDK accepts

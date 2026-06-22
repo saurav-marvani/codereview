@@ -47,7 +47,6 @@ RUN cd packages/kodus-flow \
 
 RUN pnpm install --frozen-lockfile
 RUN rm -rf node_modules/@kodus/kodus-common && cp -r packages/kodus-common node_modules/@kodus/kodus-common
-RUN rm -rf node_modules/@kodus/flow && cp -r packages/kodus-flow node_modules/@kodus/flow
 
 FROM deps AS build
 ARG API_CLOUD_MODE=false
@@ -89,7 +88,6 @@ RUN rm -rf packages/kodus-common/node_modules packages/kodus-flow/node_modules \
            packages/kodus-common/src packages/kodus-flow/src \
            packages/kodus-common/test packages/kodus-flow/test
 RUN rm -rf node_modules/@kodus/kodus-common && cp -r packages/kodus-common node_modules/@kodus/kodus-common
-RUN rm -rf node_modules/@kodus/flow && cp -r packages/kodus-flow node_modules/@kodus/flow
 
 # Runtime stage — single stage, service selected via SERVICE_TYPE
 FROM docker.io/library/node:22.22.2-slim

@@ -1,9 +1,9 @@
 /**
- * Deterministic thread-id generator — a flow-free port of `@kodus/flow`'s
+ * Deterministic thread-id generator — a flow-free port of the legacy flow engine's
  * `createThreadId`. Produces a stable `TR-[prefix-]hash` id (≤ 32 chars) from
  * 1–5 identifiers, so the same PR / user / issue always maps to the same thread
  * for log/trace correlation. The agents that consume the thread now run on the
- * harness (no `@kodus/flow`), so the id only needs to be stable — this keeps
+ * harness (no flow engine), so the id only needs to be stable — this keeps
  * the exact format/behavior of the legacy helper.
  */
 

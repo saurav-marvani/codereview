@@ -1,4 +1,4 @@
-import { createMCPAdapter, type MCPServerConfig } from '@kodus/flow';
+import { createMCPAdapter, type MCPServerConfig } from '@libs/mcp-server/mcp-adapter';
 import { jsonSchema, tool, type Tool } from 'ai';
 
 export type { MCPServerConfig };
@@ -6,19 +6,20 @@ export type { MCPServerConfig };
 export interface ConnectedMcpTools {
     /** Tool map ready to spread into `generateText({ tools })`. */
     tools: Record<string, Tool>;
-    /** Disconnects the underlying flow MCP adapter. Always call in a finally. */
+    /** Disconnects the underlying local MCP adapter. Always call in a finally. */
     close: () => Promise<void>;
 }
 
 /**
  * Connect to a set of MCP servers and expose their tools as Vercel AI SDK
- * tools, **backed by `@kodus/flow`'s MCP adapter** (`createMCPAdapter`).
+ * tools, **backed by the local MCP adapter** (`@libs/mcp-server/mcp-adapter`'s
+ * `createMCPAdapter`).
  *
- * The flow adapter stays the MCP transport/auth/retry layer — it is
+ * The local MCP adapter is the MCP transport/auth/retry layer — it is
  * battle-tested for the kodus servers (HTTP/SSE, bearer/api-key/basic auth,
  * connection routing). This helper is just the thin bridge that turns the
  * adapter's tools into AI SDK `tool()` entries so the migrated agents run their
- * loop on the AI SDK while MCP keeps going through the flow adapter.
+ * loop on the AI SDK while MCP keeps going through the local adapter.
  *
  * Tool names are kept verbatim (no server prefix) to match the legacy
  * orchestration behavior — prompts reference bare names like

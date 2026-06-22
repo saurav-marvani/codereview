@@ -5,7 +5,6 @@ import { ContextReferenceDetectionService } from '../infrastructure/adapters/ser
 import { ContextReferenceService } from '../infrastructure/adapters/services/context/context-reference.service';
 import { ContextReferenceRepository } from '../infrastructure/adapters/repositories/contextReference.repository';
 import { ContextReferenceModel } from '../infrastructure/adapters/repositories/schemas/contextReference.model';
-import { MCPToolArgResolverAgentService } from '../infrastructure/adapters/services/context/mcp-tool-arg-resolver-agent.service';
 import { IntegrationConfigModule } from '@libs/integrations/modules/config.module';
 import { PlatformModule } from '@libs/platform/modules/platform.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -56,7 +55,6 @@ import { PermissionValidationModule } from '@libs/ee/shared/permission-validatio
         CodeReviewContextPackService,
         ContextReferenceDetectionService,
         ContextReferenceService,
-        MCPToolArgResolverAgentService,
     ],
     exports: [
         ReferenceDetectorService,
@@ -67,7 +65,6 @@ import { PermissionValidationModule } from '@libs/ee/shared/permission-validatio
         CodeReviewContextPackService,
         ContextReferenceDetectionService,
         ContextReferenceService,
-        MCPToolArgResolverAgentService,
     ],
 })
 export class AIEngineModule {}

@@ -1,4 +1,4 @@
-import { createThreadId } from '@kodus/flow';
+import { createThreadId } from '@libs/common/utils/thread-id';
 import { ConversationAgentUseCase } from '@libs/agents/application/use-cases/conversation-agent.use-case';
 import { OrganizationAndTeamDataDto } from '@libs/core/domain/dtos/organizationAndTeamData.dto';
 import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';

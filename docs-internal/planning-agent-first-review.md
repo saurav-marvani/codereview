@@ -141,13 +141,13 @@ Substituir a geração standard por **agentes com tools** que investigam antes d
 
 Existem dois agent loops no codebase com patterns completamente diferentes:
 
-1. **ConversationAgent** (`libs/agents/infrastructure/services/kodus-flow/conversationAgent.ts`): usa `@kodus/flow` com `SDKOrchestrator`, ReAct planner, MCP adapter, thread/memory. Mais robusto.
+1. **ConversationAgent** (`libs/agents/infrastructure/services/kodus-flow/conversationAgent.ts`): padrão legado baseado em `SDKOrchestrator` / ReAct planner / MCP adapter / thread-memory (era o mais robusto). Substituído pelo agent-harness.
 
 2. **Safeguard Agent** (`libs/code-review/infrastructure/adapters/services/safeguardPipeline.service.ts`): loop manual (`for turn < MAX_TURNS`), parse de JSON na mão, tools hardcoded, conversa montada como array de messages. Funcional mas frágil.
 
 ### Decisão
 
-Padronizar em `@kodus/flow`. Já tem: agent loop, ReAct planner, tools registration, observability, BYOK. Não faz sentido manter dois patterns.
+Padronizar no **agent-harness** (`@libs/agent-harness`). Já tem: agent loop (`AiSdkAgentRunner` sobre Vercel AI SDK), policies (budget / compression / completion-gate / force-finalize), tool registry, verifier (HV2), observability via telemetry, BYOK. Não faz sentido manter dois patterns.
 
 ### O que criar
 
@@ -167,7 +167,7 @@ Os agentes novos **devem** respeitar tudo que o pipeline atual já respeita:
 - **BYOK**: usar `BYOKPromptRunnerService` como hoje. Cliente com chave própria usa o provider dele, senão usa o default. `BaseAgentProvider` já faz isso via `fetchBYOKConfig()`. O campo `executeMode` (`'byok'` | `'system'`) vai nos metadata dos spans pra saber se usou chave do cliente.
 - **Self-hosted**: funcionar sem depender de serviços externos que não existem em self-hosted (ex: se E2B não disponível, fallback sem sandbox).
 - **Token tracking**: todas as LLM calls dos agentes devem passar pelo `observabilityService.runLLMInSpan()`. Ele captura por span: `gen_ai.usage.total_tokens`, `input_tokens`, `output_tokens`, `reasoning_tokens`, `response.model`, `run.id`, `run.name`. Gravado em MongoDB com batch flush (75 items / 3s). O `BaseAgentProvider.createLLMAdapter()` já faz isso.
-- **Logs estruturados**: usar `createLogger` do `@kodus/flow`. Pattern obrigatório: `{ message, context: ClassName.name, metadata: { correlationId, organizationId, teamId, prNumber, ... } }`.
+- **Logs estruturados**: usar `createLogger` do `@libs/core/log/logger`. Pattern obrigatório: `{ message, context: ClassName.name, metadata: { correlationId, organizationId, teamId, prNumber, ... } }`.
 - **Logs de pipeline**: o `PipelineExecutor` já loga início/fim de cada stage com duração em ms e grava métricas via `metricsCollector.recordHistogram('pipeline_stage_duration_ms', ...)`. O `AgentReviewStage` novo deve funcionar igual.
 - **Logs de agent**: seguir o pattern de tags do safeguard pra facilitar filtro:
   - `[TIMING]` — duração de cada step e totais
@@ -185,7 +185,7 @@ Os agentes novos **devem** respeitar tudo que o pipeline atual já respeita:
 
 - Base: `libs/agents/infrastructure/services/kodus-flow/base-agent.provider.ts`
 - Exemplo: `libs/agents/infrastructure/services/kodus-flow/conversationAgent.ts`
-- Framework: `@kodus/flow` (createOrchestration, SDKOrchestrator, PlannerType.REACT)
+- Framework: `@libs/agent-harness` (`AgentRunner`/`AiSdkAgentRunner` + policies + `Verifier`)
 
 ---
 
@@ -341,7 +341,7 @@ Referência: `libs/code-review/infrastructure/adapters/services/suggestion.servi
 ```
 1. Infra base
    ├─ CreateSandboxStage (separar criação do sandbox)
-   ├─ Tools como adapters pro @kodus/flow (grep, readFile, listDir, astGrep, shell, searchDocs)
+   ├─ Tools como adapters pro harness (`ToolRegistry`: grep, readFile, listDir, astGrep, shell, searchDocs)
    ├─ Base agent provider pra code review (herda BaseAgentProvider, configura sandbox + tools)
    └─ Feature flag na config
 
@@ -427,7 +427,7 @@ Referência: `libs/code-review/infrastructure/adapters/services/suggestion.servi
 
 - BaseAgentProvider: `libs/agents/infrastructure/services/kodus-flow/base-agent.provider.ts`
 - ConversationAgent (referência): `libs/agents/infrastructure/services/kodus-flow/conversationAgent.ts`
-- Framework: `@kodus/flow` (createOrchestration, SDKOrchestrator, PlannerType.REACT)
+- Framework: `@libs/agent-harness` (`AgentRunner`/`AiSdkAgentRunner` + policies + `Verifier`)
 
 ### Services (referência pra reutilizar)
 

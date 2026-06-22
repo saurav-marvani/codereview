@@ -60,6 +60,6 @@ export { OtlpTraceExporter } from './exporters/otlp-exporter';
 export { MongoDBExporter } from './exporters/mongodb-exporter';
 
 // Re-exported so consumers (ObservabilityService, automationCodeReview) get the
-// same surface they previously imported from '@kodus/flow'.
+// same surface they previously imported from the legacy flow engine.
 export { IdGenerator } from '@libs/core/utils/id-generator';
 export { StorageEnum } from './flow-types';

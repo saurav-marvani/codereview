@@ -6,9 +6,9 @@ import {
 
 /**
  * Thread identifier carried through the skills runtime for log/trace
- * correlation. Structurally compatible with the legacy `@kodus/flow` `Thread`
+ * correlation. Structurally compatible with the legacy flow engine's `Thread`
  * ({ id, metadata }) but typed locally so the skills layer carries no
- * `@kodus/flow` dependency (the agent loop runs on the harness now). This is
+ * flow-engine dependency (the agent loop runs on the harness now). This is
  * the single canonical definition — other skill files import it from here.
  */
 export interface AgentThread {

@@ -195,11 +195,9 @@ export default {
         '^@apps/(.*)$': '<rootDir>/apps/$1/src',
         '^@kodus/kodus-common/(.*)$': '<rootDir>/packages/kodus-common/src/$1',
         '^@kodus/kodus-common$': '<rootDir>/packages/kodus-common/src',
-        '^@kodus/flow/(.*)$': '<rootDir>/packages/kodus-flow/src/$1',
-        '^@kodus/flow$': '<rootDir>/packages/kodus-flow/src',
     },
     transformIgnorePatterns: [
-        'node_modules/(?!(@octokit|universal-user-agent|p-limit|@kodus/flow|uuid|universal-github-app-jwt|before-after-hook|yocto-queue)/)',
+        'node_modules/(?!(@octokit|universal-user-agent|p-limit|uuid|universal-github-app-jwt|before-after-hook|yocto-queue)/)',
     ],
     modulePathIgnorePatterns: [
         '<rootDir>/dist',

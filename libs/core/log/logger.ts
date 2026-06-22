@@ -2,10 +2,10 @@ import { trace } from '@opentelemetry/api';
 import pino from 'pino';
 
 /**
- * Structured application logger — ported out of `@kodus/flow`'s observability
+ * Structured application logger — ported out of the legacy flow engine's observability
  * module so app code (`libs/*`, `apps/*`) depends on `libs/core` instead of the
  * standalone flow package. Public API is intentionally byte-compatible with the
- * previous `createLogger` from `@kodus/flow`:
+ * previous `createLogger` from the legacy flow engine:
  *
  *   const logger = createLogger(MyService.name);
  *   logger.error({ message, context, metadata, error });

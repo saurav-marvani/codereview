@@ -1,5 +1,5 @@
 /**
- * Types extracted from `@kodus/flow`'s `core/types/allTypes` for the ported
+ * Types extracted from the legacy flow engine's `core/types/allTypes` for the ported
  * observability subsystem. Branded ID types are plain `string` aliases in flow,
  * so they are inlined here as `string` (no runtime brand). `LogLevel` is
  * re-exported from the already-ported core logger to keep a single source.

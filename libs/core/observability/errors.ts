@@ -1,5 +1,5 @@
 /**
- * Minimal replacement for `@kodus/flow`'s `isEnhancedError`. In flow this was an
+ * Minimal replacement for the legacy flow engine's `isEnhancedError`. In flow this was an
  * `instanceof` check against EnhancedAgentError / EnhancedToolError /
  * EnhancedKernelError. Those classes live inside flow's engine and are not
  * ported here, so this duck-types on the distinctive structured `context`

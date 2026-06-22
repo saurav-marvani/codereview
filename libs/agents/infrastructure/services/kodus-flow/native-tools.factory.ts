@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { SandboxInstance } from '@libs/sandbox/domain/contracts/sandbox.provider';
 
 /**
- * Shape of a `@kodus/flow` tool config — locally typed to avoid importing from
+ * Shape of a legacy flow-engine tool config — locally typed to avoid importing from
  * a non-public path of the package. Matches `ToolConfig` from the SDK at the
  * fields actually consumed by `orchestration.createTool(...)`.
  */
@@ -16,7 +16,7 @@ type ToolConfig = {
 
 /**
  * Native tools backed by the sandbox `RemoteCommands` contract. These are
- * registered into a `@kodus/flow` orchestration via `orchestration.createTool`.
+ * registered into the legacy flow-engine orchestration via `orchestration.createTool`.
  *
  * Sandbox is captured by closure — `ToolContext` does not propagate `userContext`
  * down to tools, so each `@kody` request creates its own ephemeral orchestration
