@@ -37,18 +37,12 @@ import { buildProviderOptions } from '@libs/llm/reasoning-options';
 // own module (relocated out of the legacy llm/agent-loop.ts).
 import { buildAgentAnomalies } from './agent-anomalies';
 import { composeAbortSignal } from '@libs/common/utils/parent-signal-compose';
-import {
-    buildCoverageLedger,
-    getCoverageSummary,
-} from './llm/coverage-ledger';
+import { buildCoverageLedger, getCoverageSummary } from './llm/coverage-ledger';
 
 export async function runAgentLoopViaCore(
     input: AgentLoopInput,
     secrets: AgentLoopSecrets,
 ): Promise<AgentLoopOutput> {
-    // The model is already resolved (BYOK applied upstream). Wrap it so every
-    // call goes through the BYOK concurrency limiter + reports BYOK failures —
-    // the runner stays model-agnostic.
     const model = wrapByokModel((input as any).model, {
         byokConfig: secrets.byokConfig,
         organizationId: (input as any).telemetryMetadata?.organizationId,
@@ -59,16 +53,14 @@ export async function runAgentLoopViaCore(
         queueTimeoutMs: secrets.byokQueueTimeoutMs,
         reporter: secrets.byokErrorReporter,
     });
+
     const runner = new AiSdkAgentRunner({ resolve: () => model });
 
-    const tools = buildFinderToolRegistry(
-        secrets.remoteCommands,
-        undefined,
-        (input as any).repositoryFullName,
-        undefined,
-        undefined,
-        (input as any).callGraph,
-    );
+    const tools = buildFinderToolRegistry({
+        remoteCommands: secrets.remoteCommands,
+        repositoryFullName: (input as any).repositoryFullName,
+        callGraph: (input as any).callGraph,
+    });
 
     const coverageLedger = new DiffCoverageLedger({
         changedFiles: (input as any).changedFiles,

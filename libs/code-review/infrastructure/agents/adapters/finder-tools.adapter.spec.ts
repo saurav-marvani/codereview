@@ -30,7 +30,7 @@ describe('buildFinderToolRegistry', () => {
             },
         });
 
-        const reg = buildFinderToolRegistry(undefined as any);
+        const reg = buildFinderToolRegistry({ remoteCommands: undefined });
         const grep = reg.get('grep')!;
 
         expect(grep.name).toBe('grep');
@@ -55,7 +55,7 @@ describe('buildFinderToolRegistry', () => {
             },
         });
 
-        const reg = buildFinderToolRegistry(undefined as any);
+        const reg = buildFinderToolRegistry({ remoteCommands: undefined });
         const r = await reg.get('readFile')!.execute({}, ctx);
         expect(r.isError).toBe(true);
         expect(r.output).toContain('file not found');

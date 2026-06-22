@@ -20,7 +20,11 @@ import type {
 import type { JSONSchema } from '@libs/agent-harness/domain/contracts/json-schema.contract';
 import { InMemoryToolRegistry } from '@libs/agent-harness/infrastructure/tools/in-memory-tool-registry';
 
-import { buildAgentTools } from '../llm/agent-tools.factory';
+import {
+    buildAgentTools,
+    type DocumentationSearchAdapter,
+} from '../llm/agent-tools.factory';
+import type { RemoteCommands } from '../../adapters/services/collectCrossFileContexts.service';
 
 /** Recover the raw JSON schema from whatever buildAgentTools produced
  *  (AI SDK jsonSchema() wrapper exposes `.jsonSchema`; fall back to as-is). */
@@ -35,10 +39,29 @@ function rawSchema(inputSchema: any): JSONSchema {
     return (inputSchema ?? { type: 'object', properties: {} }) as JSONSchema;
 }
 
+/** Named options for the finder tool registry — same fields buildAgentTools
+ *  takes positionally, but callers pass only what they need instead of
+ *  threading `undefined` placeholders. */
+export interface FinderToolRegistryOptions {
+    remoteCommands: RemoteCommands | undefined;
+    gitHubToken?: string;
+    repositoryFullName?: string;
+    documentationSearchService?: DocumentationSearchAdapter;
+    documentationSearchOptions?: Record<string, unknown>;
+    callGraph?: string;
+}
+
 export function buildFinderToolRegistry(
-    ...args: Parameters<typeof buildAgentTools>
+    options: FinderToolRegistryOptions,
 ): ToolRegistry {
-    const raw = buildAgentTools(...args);
+    const raw = buildAgentTools(
+        options.remoteCommands,
+        options.gitHubToken,
+        options.repositoryFullName,
+        options.documentationSearchService,
+        options.documentationSearchOptions,
+        options.callGraph,
+    );
 
     const tools: AgentTool[] = Object.entries(raw).map(
         ([name, def]: [string, any]) => ({
