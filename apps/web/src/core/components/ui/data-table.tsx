@@ -64,16 +64,21 @@ export function DataTable<TData>({
         /** Show a global search box that filters across all columns. */
         searchable?: boolean;
         searchPlaceholder?: string;
-        /**
-         * Controlled search value. When provided (with `onSearchChange`),
-         * the caller owns the search state — e.g. to mirror it into the
-         * URL. Otherwise the search box is internally uncontrolled.
-         */
-        searchValue?: string;
-        onSearchChange?: (value: string) => void;
         /** Enable client-side pagination at this page size. */
         pageSize?: number;
-    }) {
+    } & (
+        | { searchValue?: undefined; onSearchChange?: undefined }
+        | {
+              /**
+               * Controlled search value. When provided, the caller owns the
+               * search state (e.g. to mirror it into the URL) and the
+               * matching `onSearchChange` handler is required — the union
+               * prevents passing one without the other.
+               */
+              searchValue: string;
+              onSearchChange: (value: string) => void;
+          }
+    )) {
     const [internalFilter, setInternalFilter] = useState("");
     const controlledSearch = searchValue !== undefined;
     const globalFilter = controlledSearch ? searchValue : internalFilter;

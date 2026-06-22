@@ -32,7 +32,9 @@ export const CockpitTabs = ({ defaultTab, visibleTabs, children }: Props) => {
     const onValueChange = (next: string) => {
         setValue(next as TabValue);
 
-        const params = new URLSearchParams(searchParams.toString());
+        // Build from the live query string so a concurrent shallow filter
+        // update isn't clobbered (see useShallowParam).
+        const params = new URLSearchParams(window.location.search);
         params.set(COCKPIT_PARAM.tab, next);
         window.history.replaceState(
             null,

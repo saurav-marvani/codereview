@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
 /**
@@ -10,8 +10,10 @@ import { usePathname, useSearchParams } from "next/navigation";
  * `history.replaceState` — no server round-trip, since these filters act
  * on already-loaded data.
  *
- * The URL is the source of truth on first render; the param is dropped
- * from the URL when it equals the default, keeping shared links clean.
+ * The URL is the single source of truth: the value is derived from
+ * `searchParams` every render, so browser back/forward (and any other URL
+ * change) stay in sync. The param is dropped from the URL when it equals
+ * the default, keeping shared links clean.
  *
  * `allowed` guards against a hand-edited/stale param selecting an invalid
  * option — it falls back to the default instead.
@@ -24,18 +26,17 @@ export function useShallowParam<T extends string>(
     const pathname = usePathname();
     const searchParams = useSearchParams();
 
-    const [value, setValue] = useState<T>(() => {
-        const raw = searchParams.get(key) as T | null;
-        if (!raw) return defaultValue;
-        if (allowed && !allowed.includes(raw)) return defaultValue;
-        return raw;
-    });
+    const raw = searchParams.get(key) as T | null;
+    const value: T =
+        raw && (!allowed || allowed.includes(raw)) ? raw : defaultValue;
 
     const set = useCallback(
         (next: T) => {
-            setValue(next);
-
-            const params = new URLSearchParams(searchParams.toString());
+            // Build from the LIVE query string, not a captured
+            // `searchParams` snapshot: other shallow updates in the same
+            // render cycle would otherwise be clobbered, breaking the
+            // combined shareable link.
+            const params = new URLSearchParams(window.location.search);
             if (next === defaultValue) params.delete(key);
             else params.set(key, next);
 
@@ -46,7 +47,7 @@ export function useShallowParam<T extends string>(
                 qs ? `${pathname}?${qs}` : pathname,
             );
         },
-        [key, defaultValue, pathname, searchParams],
+        [key, defaultValue, pathname],
     );
 
     return [value, set];
