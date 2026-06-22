@@ -11,6 +11,7 @@ import {
     Action,
     ResourceType,
 } from '@libs/identity/domain/permissions/enums/permissions.enum';
+import { Public } from '@libs/identity/infrastructure/adapters/services/auth/public.decorator';
 import {
     CheckPolicies,
     PolicyGuard,
@@ -32,14 +33,16 @@ export class GithubController {
         private readonly getGithubOrganizationNameUseCase: GetGithubOrganizationNameUseCase,
     ) {}
 
+    // Public on purpose: this endpoint is the GitHub App install callback
+    // handshake. The user lands here after a cross-domain redirect from
+    // github.com and the NextAuth session may not be re-established yet, so
+    // requiring auth would intermittently 403 the handshake. The path is
+    // already listed in JwtAuthGuard.excludePaths (jwt-auth.guard.ts) for the
+    // same reason; @Public() makes that decision explicit at the handler.
+    // The response only exposes the GitHub-side install status and the GitHub
+    // org login bound to the installId — no Kodus-side data, no tokens.
+    @Public()
     @Get('/integration')
-    @UseGuards(PolicyGuard)
-    @CheckPolicies(
-        checkPermissions({
-            action: Action.Read,
-            resource: ResourceType.GitSettings,
-        }),
-    )
     @ApiOperation({
         summary: 'Get GitHub installation status by installId',
         description:

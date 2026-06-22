@@ -561,17 +561,6 @@
     }
   },
   {
-    "key": "github.controller.ts#getIntegration",
-    "httpMethod": "GET",
-    "urlPath": "/github/integration",
-    "expected": {
-      "owner": "allow",
-      "billing_manager": "allow",
-      "repo_admin": "allow",
-      "contributor": "allow"
-    }
-  },
-  {
     "key": "github.controller.ts#getOrganizationName",
     "httpMethod": "GET",
     "urlPath": "/github/organization-name",
