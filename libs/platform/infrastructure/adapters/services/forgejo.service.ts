@@ -58,6 +58,11 @@ import {
     PullRequestFileChange,
 } from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
 import { GitCloneParams } from '@libs/platform/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
+import {
+    CodeManagementIssue,
+    GetIssueParams,
+    ListIssuesParams,
+} from '@libs/platform/domain/platformIntegrations/types/codeManagement/issues.type';
 import { Organization } from '@libs/platform/domain/platformIntegrations/types/codeManagement/organization.type';
 import {
     OneSentenceSummaryItem,
@@ -96,7 +101,9 @@ import {
     issueDeleteIssueReaction,
     issueEditComment,
     issueGetComments,
+    issueGetIssue,
     issueGetIssueReactions,
+    issueListIssues,
     issuePostCommentReaction,
     issuePostIssueReaction,
     orgListCurrentUserOrgs,
@@ -212,6 +219,88 @@ export class ForgejoService implements Omit<
                 username: comment.user?.login ?? '',
                 name: comment.user?.full_name ?? comment.user?.login ?? '',
             },
+        };
+    }
+
+    async listIssues(params: ListIssuesParams): Promise<CodeManagementIssue[]> {
+        const { organizationAndTeamData, repository, filters = {} } = params;
+
+        const authDetail = await this.getAuthDetails(organizationAndTeamData);
+        if (!authDetail) {
+            return [];
+        }
+
+        const client = this.createForgejoClient(authDetail);
+
+        const result = await issueListIssues({
+            client,
+            path: { owner: repository.owner, repo: repository.name },
+            query: {
+                type: 'issues',
+                state: filters.state ?? 'open',
+                labels: filters.labels?.length
+                    ? filters.labels.join(',')
+                    : undefined,
+                page: filters.page,
+                limit: filters.perPage,
+            },
+        });
+
+        return (result.data ?? [])
+            .filter((issue) => !issue.pull_request)
+            .map((issue) => this.mapForgejoIssue(issue));
+    }
+
+    async getIssue(
+        params: GetIssueParams,
+    ): Promise<CodeManagementIssue | null> {
+        const { organizationAndTeamData, repository, issueNumber } = params;
+
+        const authDetail = await this.getAuthDetails(organizationAndTeamData);
+        if (!authDetail) {
+            return null;
+        }
+
+        const client = this.createForgejoClient(authDetail);
+
+        const result = await issueGetIssue({
+            client,
+            path: {
+                owner: repository.owner,
+                repo: repository.name,
+                index: issueNumber,
+            },
+        });
+
+        const issue = result.data;
+        if (!issue || issue.pull_request) {
+            return null;
+        }
+
+        return this.mapForgejoIssue(issue);
+    }
+
+    private mapForgejoIssue(issue: any): CodeManagementIssue {
+        return {
+            id: String(issue.id),
+            number: issue.number,
+            title: issue.title,
+            body: issue.body ?? null,
+            state: issue.state === 'closed' ? 'closed' : 'open',
+            url: issue.html_url,
+            labels: (issue.labels ?? [])
+                .map((label: any) => label?.name)
+                .filter((name: unknown): name is string => Boolean(name)),
+            assignees: (issue.assignees ?? [])
+                .map((assignee: any) => assignee?.login)
+                .filter((login: unknown): login is string => Boolean(login)),
+            author: issue.user
+                ? { username: issue.user.login, id: String(issue.user.id) }
+                : null,
+            createdAt: issue.created_at,
+            updatedAt: issue.updated_at,
+            closedAt: issue.closed_at ?? null,
+            platform: PlatformType.FORGEJO,
         };
     }
 

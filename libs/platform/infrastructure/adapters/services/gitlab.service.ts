@@ -70,6 +70,11 @@ import {
 } from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
 import { GitCloneParams } from '@libs/platform/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 import {
+    CodeManagementIssue,
+    GetIssueParams,
+    ListIssuesParams,
+} from '@libs/platform/domain/platformIntegrations/types/codeManagement/issues.type';
+import {
     PullRequest,
     PullRequestAuthor,
     PullRequestCodeReviewTime,
@@ -302,6 +307,97 @@ export class GitlabService implements Omit<
             queryTimeout: 600000,
             camelize: false,
         });
+    }
+
+    async listIssues(
+        params: ListIssuesParams,
+    ): Promise<CodeManagementIssue[]> {
+        const { organizationAndTeamData, repository, filters = {} } = params;
+
+        const authDetail = await this.getAuthDetails(organizationAndTeamData);
+        if (!authDetail) {
+            return [];
+        }
+
+        const gitlabAPI = this.instanceGitlabApi(authDetail);
+        const projectId = `${repository.owner}/${repository.name}`;
+
+        const stateMap = { open: 'opened', closed: 'closed' } as const;
+
+        const issues = await gitlabAPI.Issues.all({
+            projectId,
+            state:
+                filters.state && filters.state !== 'all'
+                    ? stateMap[filters.state]
+                    : undefined,
+            labels: filters.labels?.length
+                ? filters.labels.join(',')
+                : undefined,
+            assigneeUsername: filters.assignee
+                ? [filters.assignee]
+                : undefined,
+            updatedAfter: filters.since,
+            page: filters.page,
+            perPage: Math.min(Math.max(1, filters.perPage ?? 30), 100),
+        });
+
+        return issues.map((issue) => this.mapGitlabIssue(issue));
+    }
+
+    async getIssue(
+        params: GetIssueParams,
+    ): Promise<CodeManagementIssue | null> {
+        const { organizationAndTeamData, repository, issueNumber } = params;
+
+        const authDetail = await this.getAuthDetails(organizationAndTeamData);
+        if (!authDetail) {
+            return null;
+        }
+
+        const gitlabAPI = this.instanceGitlabApi(authDetail);
+        const projectId = `${repository.owner}/${repository.name}`;
+
+        try {
+            const issue = await gitlabAPI.Issues.show(issueNumber, {
+                projectId,
+            });
+            return issue ? this.mapGitlabIssue(issue) : null;
+        } catch (error) {
+            if (
+                (error as { cause?: { response?: { status?: number } } })?.cause
+                    ?.response?.status === 404
+            ) {
+                return null;
+            }
+            throw error;
+        }
+    }
+
+    private mapGitlabIssue(issue: any): CodeManagementIssue {
+        return {
+            id: String(issue.id),
+            number: issue.iid,
+            title: issue.title,
+            body: issue.description ?? null,
+            state: issue.state === 'closed' ? 'closed' : 'open',
+            url: issue.web_url,
+            labels: Array.isArray(issue.labels) ? issue.labels : [],
+            assignees: (issue.assignees ?? [])
+                .map((assignee: any) => assignee?.username)
+                .filter((username: unknown): username is string =>
+                    Boolean(username),
+                ),
+            author: issue.author
+                ? {
+                      username: issue.author.username,
+                      id: String(issue.author.id),
+                  }
+                : null,
+            createdAt: issue.created_at,
+            updatedAt: issue.updated_at,
+            closedAt: issue.closed_at ?? null,
+            platform: PlatformType.GITLAB,
+        };
     }
 
     private normalizeGitlabHost(host?: string): string | undefined {

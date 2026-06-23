@@ -1,65 +1,68 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
-import { GithubIssuesService } from '@libs/platform/infrastructure/adapters/services/github/github-issues.service';
+import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 
 import { BaseResponse, McpToolDefinition } from '../types/mcp-tool.interface';
 import { wrapToolHandler } from '../utils/mcp-protocol.utils';
 
-const GitHubIssueSchema = z.strictObject({
-    id: z.number(),
-    nodeId: z.string(),
+const IssueSchema = z.strictObject({
+    id: z.string(),
     number: z.number(),
     title: z.string(),
     body: z.string().nullable(),
     state: z.enum(['open', 'closed']),
-    locked: z.boolean(),
-    htmlUrl: z.string(),
-    comments: z.number(),
+    url: z.string(),
     labels: z.array(z.string()),
     assignees: z.array(z.string()),
-    user: z
+    author: z
         .strictObject({
-            login: z.string(),
-            id: z.number(),
-            avatarUrl: z.string().optional(),
-            htmlUrl: z.string().optional(),
+            username: z.string(),
+            id: z.string().optional(),
         })
         .nullable(),
     createdAt: z.string(),
     updatedAt: z.string(),
     closedAt: z.string().nullable(),
+    platform: z.string(),
 });
 
-interface ListGitHubIssuesResponse extends BaseResponse {
-    data: z.infer<typeof GitHubIssueSchema>[];
+const repositorySchema = z.strictObject({
+    owner: z.string(),
+    name: z.string(),
+});
+
+interface ListIssuesResponse extends BaseResponse {
+    data: z.infer<typeof IssueSchema>[];
 }
 
-interface GetGitHubIssueResponse extends BaseResponse {
-    data: z.infer<typeof GitHubIssueSchema> | null;
+interface GetIssueResponse extends BaseResponse {
+    data: z.infer<typeof IssueSchema> | null;
 }
 
+/**
+ * Provider-agnostic issue tools. The host (GitHub / GitLab / Bitbucket /
+ * Forgejo) is resolved from the team's connected code-management integration;
+ * the agent passes `owner`/`name` and reads issues to verify a PR against its
+ * issue.
+ */
 @Injectable()
-export class GithubIssuesTools {
-    constructor(private readonly githubIssuesService: GithubIssuesService) {}
+export class KodusIssuesTools {
+    constructor(
+        private readonly codeManagementService: CodeManagementService,
+    ) {}
 
-    listGithubIssues(): McpToolDefinition {
+    listIssues(): McpToolDefinition {
         const inputSchema = z.object({
             organizationId: z.string(),
             teamId: z.string(),
-            repository: z.strictObject({
-                owner: z.string(),
-                name: z.string(),
-            }),
+            repository: repositorySchema,
             filters: z
                 .strictObject({
                     state: z.enum(['open', 'closed', 'all']).optional(),
                     labels: z.array(z.string()).optional(),
                     assignee: z.string().optional(),
-                    creator: z.string().optional(),
                     since: z.string().optional(),
-                    sort: z.enum(['created', 'updated', 'comments']).optional(),
-                    direction: z.enum(['asc', 'desc']).optional(),
                     page: z.number().int().positive().optional(),
                     perPage: z.number().int().positive().max(100).optional(),
                 })
@@ -69,14 +72,14 @@ export class GithubIssuesTools {
         type InputType = z.infer<typeof inputSchema>;
 
         return {
-            name: 'KODUS_LIST_GITHUB_ISSUES',
+            name: 'KODUS_LIST_ISSUES',
             description:
-                'List GitHub repository issues using the team GitHub integration credentials.',
+                "List issues from the repository's issue tracker (GitHub, GitLab, Bitbucket, or Forgejo) using the team's code-management integration.",
             inputSchema,
             outputSchema: z.object({
                 success: z.boolean(),
                 count: z.number(),
-                data: z.array(GitHubIssueSchema),
+                data: z.array(IssueSchema),
             }),
             annotations: {
                 readOnlyHint: true,
@@ -85,15 +88,16 @@ export class GithubIssuesTools {
                 openWorldHint: true,
             },
             execute: wrapToolHandler(
-                async (args: InputType): Promise<ListGitHubIssuesResponse> => {
-                    const issues = await this.githubIssuesService.listIssues({
-                        organizationAndTeamData: {
-                            organizationId: args.organizationId,
-                            teamId: args.teamId,
-                        },
-                        repository: args.repository,
-                        filters: args.filters,
-                    });
+                async (args: InputType): Promise<ListIssuesResponse> => {
+                    const issues =
+                        await this.codeManagementService.listIssues({
+                            organizationAndTeamData: {
+                                organizationId: args.organizationId,
+                                teamId: args.teamId,
+                            },
+                            repository: args.repository,
+                            filters: args.filters,
+                        });
 
                     return {
                         success: true,
@@ -101,33 +105,30 @@ export class GithubIssuesTools {
                         data: issues,
                     };
                 },
-                'KODUS_LIST_GITHUB_ISSUES',
+                'KODUS_LIST_ISSUES',
                 () => ({ success: false, count: 0, data: [] }),
             ),
         };
     }
 
-    getGithubIssue(): McpToolDefinition {
+    getIssue(): McpToolDefinition {
         const inputSchema = z.object({
             organizationId: z.string(),
             teamId: z.string(),
-            repository: z.strictObject({
-                owner: z.string(),
-                name: z.string(),
-            }),
+            repository: repositorySchema,
             issueNumber: z.number().int().positive(),
         });
 
         type InputType = z.infer<typeof inputSchema>;
 
         return {
-            name: 'KODUS_GET_GITHUB_ISSUE',
+            name: 'KODUS_GET_ISSUE',
             description:
-                'Get a single GitHub repository issue by issue number using team integration credentials.',
+                "Get a single issue by number from the repository's issue tracker using the team's code-management integration.",
             inputSchema,
             outputSchema: z.object({
                 success: z.boolean(),
-                data: GitHubIssueSchema.nullable(),
+                data: IssueSchema.nullable(),
             }),
             annotations: {
                 readOnlyHint: true,
@@ -136,8 +137,8 @@ export class GithubIssuesTools {
                 openWorldHint: true,
             },
             execute: wrapToolHandler(
-                async (args: InputType): Promise<GetGitHubIssueResponse> => {
-                    const issue = await this.githubIssuesService.getIssue({
+                async (args: InputType): Promise<GetIssueResponse> => {
+                    const issue = await this.codeManagementService.getIssue({
                         organizationAndTeamData: {
                             organizationId: args.organizationId,
                             teamId: args.teamId,
@@ -151,13 +152,13 @@ export class GithubIssuesTools {
                         data: issue,
                     };
                 },
-                'KODUS_GET_GITHUB_ISSUE',
+                'KODUS_GET_ISSUE',
                 () => ({ success: false, data: null }),
             ),
         };
     }
 
     getAllTools(): McpToolDefinition[] {
-        return [this.listGithubIssues(), this.getGithubIssue()];
+        return [this.listIssues(), this.getIssue()];
     }
 }

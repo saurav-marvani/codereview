@@ -46,6 +46,7 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from "@components/ui/tooltip";
+import { KODY_RULES_PATHS } from "@services/kodyRules";
 import {
     createOrUpdateKodyRule,
     getRecommendedKodyRules,
@@ -78,6 +79,7 @@ import {
     XIcon,
 } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { cn } from "src/core/utils/components";
 
@@ -349,6 +351,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
 }) => {
     const { toast } = useToast();
     const { teamId } = useSelectedTeamId();
+    const queryClient = useQueryClient();
 
     const initialScope = rule?.scope ?? "file";
 
@@ -503,6 +506,8 @@ export const KodyRuleAddOrUpdateItemModal = ({
     const handleDisableInherited = async (val: boolean) => {
         magicModal.lock();
 
+        setIsInheritanceDisabled(val);
+
         const targetId = directory?.id || repositoryId;
 
         const excludeList = rule?.inheritance?.exclude
@@ -545,6 +550,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
             );
 
             if (isCentralizedPrResponse(mutationResult)) {
+                setIsInheritanceDisabled(!val);
                 toast(
                     getCentralizedPrToastPayload(
                         mutationResult,
@@ -554,7 +560,13 @@ export const KodyRuleAddOrUpdateItemModal = ({
                 return;
             }
 
-            setIsInheritanceDisabled(val);
+            queryClient.invalidateQueries({
+                predicate: (query) =>
+                    query.queryKey[0] ===
+                        KODY_RULES_PATHS.FIND_BY_ORGANIZATION_ID_AND_FILTER ||
+                    query.queryKey[0] ===
+                        KODY_RULES_PATHS.GET_INHERITED_RULES,
+            });
 
             const toastData = {
                 title: val ? "Disabled inheritance" : "Enabled inheritance",
@@ -566,6 +578,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
 
             toast(toastData);
         } catch {
+            setIsInheritanceDisabled(!val);
             toast({
                 variant: "alert",
                 description:

@@ -72,6 +72,11 @@ import {
 import { IntegrationEntity } from '@libs/integrations/domain/integrations/entities/integration.entity';
 import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service';
 import { IGithubService } from '@libs/platform/domain/github/contracts/github.service.contract';
+import {
+    CodeManagementIssue,
+    GetIssueParams,
+    ListIssuesParams,
+} from '@libs/platform/domain/platformIntegrations/types/codeManagement/issues.type';
 import { AuthMode } from '@libs/platform/domain/platformIntegrations/enums/codeManagement/authMode.enum';
 import {
     CodeManagementConnectionStatus,
@@ -290,8 +295,52 @@ export class GithubService
         }) as unknown as Octokit;
     }
 
+    private assertGithubAppEnv(): void {
+        const required = [
+            'API_GITHUB_APP_ID',
+            'API_GITHUB_PRIVATE_KEY',
+        ] as const;
+
+        const missing = required.filter(
+            (key) => !this.configService.get<string>(key)?.trim(),
+        );
+
+        if (missing.length > 0) {
+            const message = `GitHub App is not configured. Missing required env var(s): ${missing.join(', ')}. Populate them from your GitHub App settings (https://github.com/settings/apps/<your-app>) and restart the API.`;
+            this.logger.error({
+                message,
+                context: GithubService.name,
+            });
+            throw new BadRequestException(message);
+        }
+    }
+
+    // OAuth web-flow specific check — only relevant when exchanging an
+    // installation code for tokens via authenticateWithCodeOauth.
+    private assertGithubOAuthEnv(): void {
+        const required = [
+            'GLOBAL_GITHUB_CLIENT_ID',
+            'API_GITHUB_CLIENT_SECRET',
+        ] as const;
+
+        const missing = required.filter(
+            (key) => !this.configService.get<string>(key)?.trim(),
+        );
+
+        if (missing.length > 0) {
+            const message = `GitHub OAuth is not configured. Missing required env var(s): ${missing.join(', ')}. Populate them from your GitHub App settings (https://github.com/settings/apps/<your-app>) and restart the API.`;
+            this.logger.error({
+                message,
+                context: GithubService.name,
+            });
+            throw new BadRequestException(message);
+        }
+    }
+
     // Helper functions
     private createOctokitInstance(): Octokit {
+        this.assertGithubAppEnv();
+
         let privateKey = this.configService.get<string>(
             'API_GITHUB_PRIVATE_KEY',
         );
@@ -460,6 +509,7 @@ export class GithubService
         params: any,
     ): Promise<{ success: boolean; status?: CreateAuthIntegrationStatus }> {
         try {
+            this.assertGithubOAuthEnv();
             const appOctokit = this.createOctokitInstance();
 
             const installationAuthentication = await appOctokit.auth({
@@ -521,7 +571,10 @@ export class GithubService
                 githubStatus?.installationStatus === InstallationStatus.PENDING
             ) {
                 await this.updateInstallationItems(
-                    { installationStatus: InstallationStatus.SUCCESS },
+                    {
+                        installationStatus: InstallationStatus.SUCCESS,
+                        organizationName: accountLogin,
+                    },
                     params.organizationAndTeamData,
                 );
             }
@@ -531,6 +584,7 @@ export class GithubService
                 status: CreateAuthIntegrationStatus.SUCCESS,
             };
         } catch (err) {
+            if (err instanceof BadRequestException) throw err;
             throw new BadRequestException(
                 err.message || 'Error authenticating with OAUTH.',
             );
@@ -2593,6 +2647,103 @@ export class GithubService
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<Octokit> {
         return this.instanceOctokit(organizationAndTeamData);
+    }
+
+    async listIssues(
+        params: ListIssuesParams,
+    ): Promise<CodeManagementIssue[]> {
+        const { organizationAndTeamData, repository, filters = {} } = params;
+
+        const page = Math.max(1, filters.page ?? 1);
+        const perPage = Math.min(Math.max(1, filters.perPage ?? 30), 100);
+
+        const octokit = await this.getAuthenticatedOctokit(
+            organizationAndTeamData,
+        );
+
+        const response = await octokit.rest.issues.listForRepo({
+            owner: repository.owner,
+            repo: repository.name,
+            state: filters.state,
+            labels: filters.labels?.join(','),
+            assignee: filters.assignee,
+            since: filters.since,
+            page,
+            per_page: perPage,
+        });
+
+        // GitHub returns PRs in the issues list; keep only real issues.
+        return response.data
+            .filter((item) => !item.pull_request)
+            .map((item) => this.mapGithubIssue(item));
+    }
+
+    async getIssue(
+        params: GetIssueParams,
+    ): Promise<CodeManagementIssue | null> {
+        const { organizationAndTeamData, repository, issueNumber } = params;
+
+        const octokit = await this.getAuthenticatedOctokit(
+            organizationAndTeamData,
+        );
+
+        try {
+            const response = await octokit.rest.issues.get({
+                owner: repository.owner,
+                repo: repository.name,
+                issue_number: issueNumber,
+            });
+
+            if ((response.data as { pull_request?: unknown }).pull_request) {
+                return null;
+            }
+
+            return this.mapGithubIssue(response.data);
+        } catch (error) {
+            if ((error as { status?: number })?.status === 404) {
+                return null;
+            }
+            throw error;
+        }
+    }
+
+    private mapGithubIssue(item: {
+        id: number;
+        number: number;
+        title: string;
+        body?: string | null;
+        state: string;
+        html_url: string;
+        labels?: Array<string | { name?: string }>;
+        assignees?: Array<{ login?: string }>;
+        user?: { login: string; id: number } | null;
+        created_at: string;
+        updated_at: string;
+        closed_at?: string | null;
+    }): CodeManagementIssue {
+        return {
+            id: String(item.id),
+            number: item.number,
+            title: item.title,
+            body: item.body ?? null,
+            state: item.state === 'closed' ? 'closed' : 'open',
+            url: item.html_url,
+            labels: (item.labels ?? [])
+                .map((label) =>
+                    typeof label === 'string' ? label : label?.name,
+                )
+                .filter((name): name is string => Boolean(name)),
+            assignees: (item.assignees ?? [])
+                .map((assignee) => assignee?.login)
+                .filter((login): login is string => Boolean(login)),
+            author: item.user
+                ? { username: item.user.login, id: String(item.user.id) }
+                : null,
+            createdAt: item.created_at,
+            updatedAt: item.updated_at,
+            closedAt: item.closed_at ?? null,
+            platform: PlatformType.GITHUB,
+        };
     }
 
     private async instanceOctokit(

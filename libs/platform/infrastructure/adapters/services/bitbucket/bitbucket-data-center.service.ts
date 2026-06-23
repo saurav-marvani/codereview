@@ -48,6 +48,10 @@ import {
     EMPTY_REPO_SEED_CONTENT,
     EMPTY_REPO_SEED_PATH,
 } from '../code-management-defaults.constants';
+    CodeManagementIssue,
+    GetIssueParams,
+    ListIssuesParams,
+} from '@libs/platform/domain/platformIntegrations/types/codeManagement/issues.type';
 
 @Injectable()
 export class BitbucketDataCenterService implements Omit<
@@ -88,6 +92,28 @@ export class BitbucketDataCenterService implements Omit<
         private readonly configService: ConfigService,
         private readonly mcpManagerService?: MCPManagerService,
     ) {}
+
+    // Bitbucket Data Center / Server has no built-in issue tracker (issues are a
+    // Bitbucket Cloud-only feature; Server users track work in Jira). These
+    // satisfy the contract for the routing wrapper and return empty so the
+    // generic issues MCP degrades gracefully on Server.
+    async listIssues(_params: ListIssuesParams): Promise<CodeManagementIssue[]> {
+        this.logger.warn({
+            message:
+                'listIssues called on Bitbucket Data Center, which has no issue tracker',
+            context: BitbucketDataCenterService.name,
+        });
+        return [];
+    }
+
+    async getIssue(_params: GetIssueParams): Promise<CodeManagementIssue | null> {
+        this.logger.warn({
+            message:
+                'getIssue called on Bitbucket Data Center, which has no issue tracker',
+            context: BitbucketDataCenterService.name,
+        });
+        return null;
+    }
 
     /**
      * Helper to create a pre-configured Axios instance for Bitbucket Data Center

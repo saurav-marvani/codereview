@@ -781,6 +781,11 @@ const KodyRulesPageContent = () => {
             queryClient.invalidateQueries({
                 predicate: (query) =>
                     query.queryKey[0] ===
+                    KODY_RULES_PATHS.GET_INHERITED_RULES,
+            }),
+            queryClient.invalidateQueries({
+                predicate: (query) =>
+                    query.queryKey[0] ===
                     KODY_RULES_PATHS.GET_KODY_RULES_TOTAL_QUANTITY,
             }),
         ]);

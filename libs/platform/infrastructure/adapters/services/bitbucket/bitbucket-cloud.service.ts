@@ -53,6 +53,11 @@ import { AuthMode } from '@libs/platform/domain/platformIntegrations/enums/codeM
 import { ICodeManagementService } from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
 import { GitCloneParams } from '@libs/platform/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 import {
+    CodeManagementIssue,
+    GetIssueParams,
+    ListIssuesParams,
+} from '@libs/platform/domain/platformIntegrations/types/codeManagement/issues.type';
+import {
     OneSentenceSummaryItem,
     PullRequest,
     PullRequestAuthor,
@@ -3241,6 +3246,103 @@ export class BitbucketCloudService implements Omit<
             });
             throw error;
         }
+    }
+
+    async listIssues(
+        params: ListIssuesParams,
+    ): Promise<CodeManagementIssue[]> {
+        const { organizationAndTeamData, repository, filters = {} } = params;
+
+        const authDetail = await this.getAuthDetails(organizationAndTeamData);
+        if (!authDetail) {
+            return [];
+        }
+
+        const bitbucketAPI = this.instanceBitbucketApi(authDetail);
+
+        const { data } = await bitbucketAPI.repositories.listIssues({
+            workspace: repository.owner,
+            repo_slug: repository.name,
+            pagelen: Math.min(Math.max(1, filters.perPage ?? 30), 100),
+            ...(filters.page ? { page: String(filters.page) } : {}),
+        });
+
+        let issues = (data?.values ?? []).map((issue) =>
+            this.mapBitbucketIssue(issue),
+        );
+
+        // Bitbucket filters via BBQL; keep state filtering client-side for a
+        // simple, robust mapping.
+        if (filters.state && filters.state !== 'all') {
+            issues = issues.filter((issue) => issue.state === filters.state);
+        }
+
+        return issues;
+    }
+
+    async getIssue(
+        params: GetIssueParams,
+    ): Promise<CodeManagementIssue | null> {
+        const { organizationAndTeamData, repository, issueNumber } = params;
+
+        const authDetail = await this.getAuthDetails(organizationAndTeamData);
+        if (!authDetail) {
+            return null;
+        }
+
+        const bitbucketAPI = this.instanceBitbucketApi(authDetail);
+
+        try {
+            const { data } = await bitbucketAPI.repositories.getIssue({
+                workspace: repository.owner,
+                repo_slug: repository.name,
+                issue_id: String(issueNumber),
+            });
+            return data ? this.mapBitbucketIssue(data) : null;
+        } catch (error) {
+            if ((error as { status?: number })?.status === 404) {
+                return null;
+            }
+            throw error;
+        }
+    }
+
+    private mapBitbucketIssue(issue: any): CodeManagementIssue {
+        const closedStates = new Set([
+            'resolved',
+            'closed',
+            'invalid',
+            'duplicate',
+            'wontfix',
+        ]);
+
+        const reporter = issue.reporter;
+        const assignee = issue.assignee;
+
+        return {
+            id: String(issue.id),
+            number: issue.id,
+            title: issue.title,
+            body: issue.content?.raw ?? null,
+            state: closedStates.has(issue.state) ? 'closed' : 'open',
+            url: issue.links?.html?.href ?? '',
+            labels: [],
+            assignees: assignee
+                ? [assignee.nickname ?? assignee.display_name].filter(
+                      (name): name is string => Boolean(name),
+                  )
+                : [],
+            author: reporter
+                ? {
+                      username: reporter.nickname ?? reporter.display_name,
+                      id: reporter.account_id,
+                  }
+                : null,
+            createdAt: issue.created_on,
+            updatedAt: issue.updated_on,
+            closedAt: null,
+            platform: PlatformType.BITBUCKET,
+        };
     }
 
     async getAuthDetails(
