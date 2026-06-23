@@ -29,6 +29,7 @@
     "exports": {
         "./types": "./dist/types/index.js",
         "./llm": "./dist/llm/index.js",
+        "./llm/curated-models": "./dist/llm/curated-models/index.js",
         "./utils": "./dist/utils/index.js",
         "./interfaces": "./dist/interfaces/index.js",
         "./package.json": "./package.json"
@@ -40,6 +41,9 @@
             ],
             "llm": [
                 "./dist/llm"
+            ],
+            "llm/curated-models": [
+                "./dist/llm/curated-models"
             ],
             "utils": [
                 "./dist/utils"

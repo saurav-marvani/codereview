@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "src/core/utils/components";
 
-import type { CuratedModel } from "@kodus/kodus-common/llm";
+import type { CuratedModel } from "@kodus/kodus-common/llm/curated-models";
 
 const SPEED_LABELS: Record<string, string> = {
     fast: "Fast",

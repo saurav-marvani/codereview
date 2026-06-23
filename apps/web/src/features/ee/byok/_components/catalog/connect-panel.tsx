@@ -23,7 +23,7 @@ import {
 import { Controller, FormProvider, useForm } from "react-hook-form";
 import { z } from "zod";
 
-import type { CuratedModel, ModelVariant } from "@kodus/kodus-common/llm";
+import type { CuratedModel, ModelVariant } from "@kodus/kodus-common/llm/curated-models";
 import type { BYOKConfig } from "../../_types";
 import { ByokAdvancedSettings } from "../_modals/edit-key/_components/advanced-settings";
 import type { EditKeyForm } from "../_modals/edit-key/_types";

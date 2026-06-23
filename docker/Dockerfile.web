@@ -30,6 +30,21 @@ RUN --mount=type=cache,target=/yarn-cache,sharing=locked \
     YARN_CACHE_FOLDER=/yarn-cache \
     cd apps/web && yarn install --frozen-lockfile --production=false
 
+# Build @kodus/kodus-common from the monorepo source and overlay it into
+# apps/web's node_modules. The web consumes this package from the repo (NOT
+# the published npm version) to stay consistent with the api/worker build
+# (docker/Dockerfile), which vendors the same local package. Without this the
+# web would resolve the stale published catalog and miss in-repo changes
+# (e.g. the BYOK curated-models that now live in @kodus/kodus-common/llm).
+COPY packages/kodus-common ./packages/kodus-common
+RUN --mount=type=cache,target=/pnpm-store,sharing=shared \
+    corepack enable \
+ && cd packages/kodus-common \
+ && pnpm install --store-dir /pnpm-store \
+ && pnpm run prepack
+RUN rm -rf apps/web/node_modules/@kodus/kodus-common \
+ && cp -r packages/kodus-common apps/web/node_modules/@kodus/kodus-common
+
 # Copy only what the Next build actually needs:
 #   - apps/web — the app itself
 #   - libs/feature-gate — imported via `@libs/*` tsconfig path

@@ -31,7 +31,7 @@ import {
     catalog,
     getAnnotationForModel,
     type CuratedModelsCatalog,
-} from "@kodus/kodus-common/llm";
+} from "@kodus/kodus-common/llm/curated-models";
 
 const annotations = (catalog as CuratedModelsCatalog).annotations;
 

@@ -14,7 +14,7 @@ import {
     TrashIcon,
 } from "lucide-react";
 
-import { catalog as curatedCatalog, type CuratedModel } from "@kodus/kodus-common/llm";
+import { catalog as curatedCatalog, type CuratedModel } from "@kodus/kodus-common/llm/curated-models";
 import type { BYOKConfig } from "../_types";
 import { maskKey } from "../_utils";
 import { PROVIDER_LABELS } from "./catalog/model-card";
