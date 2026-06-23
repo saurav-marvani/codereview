@@ -724,9 +724,13 @@ export class E2BSandboxService implements ISandboxProvider {
                         context: E2BSandboxService.name,
                     });
                 }
-                // Return stderr if stdout is empty (e.g. "No such file or directory")
+                // THROW (not return a string) when the read failed — empty
+                // stdout + stderr means "No such file or directory" / permission
+                // denied. Returning the error as if it were file content
+                // bypassed the readFile tool's catch block (which runs the
+                // near-miss path suggestion) and caused retry cascades.
                 if (!result.stdout && result.stderr) {
-                    return `Error: ${result.stderr}`;
+                    throw new Error(result.stderr.trim());
                 }
                 return result.stdout;
             },

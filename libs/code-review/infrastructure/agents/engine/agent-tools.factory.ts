@@ -682,11 +682,11 @@ fi
                 ) => {
                     const output = rawOutput?.trim();
                     // Tool not present in the sandbox: the check did NOT run.
-                    if (
-                        output &&
-                        (output.includes('command not found') ||
-                            output.includes('not found'))
-                    ) {
+                    // Match ONLY the shell "command not found" form — a bare
+                    // "not found" also shows up in REAL diagnostics ("Module not
+                    // found", "Cannot resolve ... not found"); discarding those
+                    // both loses the finding and falsely reports no checker ran.
+                    if (output && output.includes('command not found')) {
                         return;
                     }
                     // We got here because the compiler/linter actually ran
