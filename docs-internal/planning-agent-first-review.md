@@ -141,7 +141,7 @@ Substituir a geração standard por **agentes com tools** que investigam antes d
 
 Existem dois agent loops no codebase com patterns completamente diferentes:
 
-1. **ConversationAgent** (`libs/agents/infrastructure/services/kodus-flow/conversationAgent.ts`): padrão legado baseado em `SDKOrchestrator` / ReAct planner / MCP adapter / thread-memory (era o mais robusto). Substituído pelo agent-harness.
+1. **ConversationAgent** (`libs/agents/infrastructure/services/agents/conversationAgent.ts`): padrão legado baseado em `SDKOrchestrator` / ReAct planner / MCP adapter / thread-memory (era o mais robusto). Substituído pelo agent-harness.
 
 2. **Safeguard Agent** (`libs/code-review/infrastructure/adapters/services/safeguardPipeline.service.ts`): loop manual (`for turn < MAX_TURNS`), parse de JSON na mão, tools hardcoded, conversa montada como array de messages. Funcional mas frágil.
 
@@ -183,8 +183,8 @@ Os agentes novos **devem** respeitar tudo que o pipeline atual já respeita:
 
 ### Referências
 
-- Base: `libs/agents/infrastructure/services/kodus-flow/base-agent.provider.ts`
-- Exemplo: `libs/agents/infrastructure/services/kodus-flow/conversationAgent.ts`
+- Base: `libs/agents/infrastructure/services/agents/base-agent.provider.ts`
+- Exemplo: `libs/agents/infrastructure/services/agents/conversationAgent.ts`
 - Framework: `@libs/agent-harness` (`AgentRunner`/`AiSdkAgentRunner` + policies + `Verifier`)
 
 ---
@@ -425,8 +425,8 @@ Referência: `libs/code-review/infrastructure/adapters/services/suggestion.servi
 
 ### Agent infra (base pra novos agentes)
 
-- BaseAgentProvider: `libs/agents/infrastructure/services/kodus-flow/base-agent.provider.ts`
-- ConversationAgent (referência): `libs/agents/infrastructure/services/kodus-flow/conversationAgent.ts`
+- BaseAgentProvider: `libs/agents/infrastructure/services/agents/base-agent.provider.ts`
+- ConversationAgent (referência): `libs/agents/infrastructure/services/agents/conversationAgent.ts`
 - Framework: `@libs/agent-harness` (`AgentRunner`/`AiSdkAgentRunner` + policies + `Verifier`)
 
 ### Services (referência pra reutilizar)

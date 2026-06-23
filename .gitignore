@@ -127,7 +127,6 @@ yalc.lock
 docker-compose.prod-local.yml
 # packages
 # .packages
-#packages/kodus-flow/
 .test.json
 
 # Temporary JSON files

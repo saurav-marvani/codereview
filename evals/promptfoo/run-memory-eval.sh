@@ -25,10 +25,6 @@ for arg in "$@"; do
 done
 
 cd "$SCRIPT_DIR"
-cd "$PROJECT_ROOT/packages/kodus-flow"
-node --loader ts-node/esm "$PROJECT_ROOT/evals/promptfoo/generate-memory-prompt.js"
-
-cd "$SCRIPT_DIR"
 node convert-memory-dataset.js "${CONVERT_ARGS[@]}"
 
 npx promptfoo eval -c promptfoo.memory.yaml -j 10 "${PROMPTFOO_ARGS[@]}"

@@ -42,7 +42,7 @@ export class OtlpTraceExporter implements SpanExporter {
      * Reconstructs and reports a completed TraceItem to OTel
      */
     private reportToOtel(item: TraceItem): void {
-        const tracer = this.adapter.getTracer('kodus-flow');
+        const tracer = this.adapter.getTracer('kodus-ai');
 
         // We can't really "insert" a past span into OTel easily without a custom SpanProcessor.
         // But we can create a span with explicit start/end times.

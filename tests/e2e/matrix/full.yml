@@ -82,7 +82,7 @@ scenarios:
     # absent, so runners without Vertex wired stay green.
     #   * code-review-vertex-byok: the v5 (Vercel SDK) review path. Needs
     #     VERTEX_SA_JSON (+ optional VERTEX_REGION/VERTEX_MODEL).
-    #   * conversation-vertex-byok: the v2 (langchain) path via the kodus-flow
+    #   * conversation-vertex-byok: the v2 (langchain) path via the legacy
     #     conversation agent — @kody mention. Also needs CONVERSATION_USER_TOKEN
     #     (a non-"kody/kodus" GitHub account with PR R/W on the fixture repo).
     - code-review-vertex-byok

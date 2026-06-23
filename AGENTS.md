@@ -9,7 +9,6 @@ AI-powered code review platform. Monorepo with 4 NestJS/Next.js apps, 20 shared 
 - `apps/worker/` - RabbitMQ consumer (webhook processing, code review execution, suggestion checks, monitoring crons)
 - `apps/webhooks/` - Webhook ingestion (GitHub, GitLab, Azure Repos, Bitbucket, Forgejo). Fire-and-forget with outbox pattern
 - `libs/` - 20 NestJS domain modules (core, code-review, ai-engine, agents, integrations, platform, identity, organization, etc.)
-- `packages/kodus-flow/` - Published npm SDK for AI agent orchestration (5-layer architecture)
 - `packages/kodus-common/` - Published npm package with LLM abstraction layer (OpenAI, Anthropic, Gemini, Vertex AI, Novita)
 
 ## Stack

@@ -1,5 +1,5 @@
 /**
- * Loads the memory-eval prompt generated from kodus-flow conversation prompts.
+ * Loads the memory-eval prompt from the generated artifact.
  */
 
 const fs = require('fs');

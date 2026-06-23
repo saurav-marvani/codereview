@@ -1,6 +1,11 @@
 import { BYOKConfig } from '@kodus/kodus-common/llm';
-import { generateText, stepCountIs, type Tool } from 'ai';
+import { type Tool } from 'ai';
 import { Inject, Injectable } from '@nestjs/common';
+
+import type { AgentSpec } from '@libs/agent-harness/domain/contracts/agent.contract';
+import { AiSdkAgentRunner } from '@libs/agent-harness/infrastructure/ai-sdk/ai-sdk-agent-runner';
+import { AiSdkToolRegistry } from '@libs/agent-harness/infrastructure/ai-sdk/ai-sdk-tool-registry';
+import { finalText } from '@libs/agent-harness/domain/run-state.util';
 
 import { ParametersKey } from '@libs/core/domain/enums/parameters-key.enum';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
@@ -117,13 +122,33 @@ export class ConversationAgentProvider {
         });
 
         // Tools: MCP (memory, integrations) + native sandbox tools (grep,
-        // readFile, listDir, exec). Both are plain AI SDK tools now.
+        // readFile, listDir, exec). Both are plain AI SDK tools, carried into
+        // the harness as-is by AiSdkToolRegistry (no schema round-trip).
         const mcp = await this.connectMcp(organizationAndTeamData);
         const tools: Record<string, Tool> = {
             ...mcp.tools,
             ...(sandbox ? buildNativeTools(sandbox) : {}),
         };
 
+        // Single runtime: the conversation runs as an AgentSpec on the harness
+        // AiSdkAgentRunner — the SAME loop/policies/observability seam as the
+        // code-review finder. No `resultToolName` (free-form chat answer); the
+        // final text is the last assistant turn in RunState. maxSteps applies
+        // the ReAct stop bound the legacy `stopWhen: stepCountIs` did.
+        const runner = new AiSdkAgentRunner({ resolve: () => model });
+        const spec: AgentSpec = {
+            id: 'conversation',
+            systemPrompt: this.buildSystemPrompt(userLanguage),
+            modelId: 'resolved',
+            tools: new AiSdkToolRegistry(tools),
+            policies: [],
+            maxSteps: CONVERSATION_MAX_STEPS,
+            temperature: this.defaultLLMConfig.temperature,
+            maxOutputTokens: this.defaultLLMConfig.maxTokens,
+            ...(Object.keys(providerOptions).length ? { providerOptions } : {}),
+        };
+
+        const startedAt = Date.now();
         try {
             const preparedPrompt = this.buildUserPrompt(
                 prompt,
@@ -132,45 +157,48 @@ export class ConversationAgentProvider {
                 sandbox,
             );
 
-            // Wrapped in a billing span so token usage reaches the Mongo
-            // `observability_telemetry` cost dataset (parity with the legacy
-            // flow LLM bridge); `experimental_telemetry` feeds Langfuse.
-            const result = await this.observabilityService.runAiSdkLLMInSpan({
+            const state = await runner.run(
+                spec,
+                {
+                    prompt: preparedPrompt,
+                    // experimental_telemetry feeds Langfuse (forwarded verbatim
+                    // by the runner).
+                    telemetry: buildLangfuseTelemetry('conversationAgent', {
+                        organizationId:
+                            organizationAndTeamData.organizationId?.toString(),
+                        teamId: organizationAndTeamData.teamId?.toString(),
+                        repositoryId: prepareContext?.repository?.id?.toString(),
+                        provider: byokConfig?.main?.provider,
+                    }),
+                },
+                {
+                    runId: `conversation:${organizationAndTeamData.organizationId}`,
+                },
+            );
+
+            // Cost -> Mongo `observability_telemetry` via the canonical emitter,
+            // so the billing schema (agentName/phase/type/gen_ai.usage.*) is
+            // identical to the code-review agents. Replaces the bespoke
+            // runAiSdkLLMInSpan wrapper.
+            await this.observabilityService.recordAgentRunUsage({
+                agentName: 'ConversationalAgent',
+                phase: 'conversation',
                 spanName: 'ConversationalAgent::conversationAgent',
                 runName: 'conversationAgent',
                 model: byokConfig?.main?.model,
-                attrs: {
-                    type: 'system',
-                    organizationId: organizationAndTeamData.organizationId,
-                    teamId: organizationAndTeamData.teamId,
-                },
-                exec: () =>
-                    generateText({
-                        model,
-                        system: this.buildSystemPrompt(userLanguage),
-                        messages: [
-                            { role: 'user', content: preparedPrompt },
-                        ],
-                        tools,
-                        temperature: this.defaultLLMConfig.temperature,
-                        maxOutputTokens: this.defaultLLMConfig.maxTokens,
-                        ...(Object.keys(providerOptions).length
-                            ? { providerOptions }
-                            : {}),
-                        stopWhen: stepCountIs(CONVERSATION_MAX_STEPS),
-                        experimental_telemetry: buildLangfuseTelemetry(
-                            'conversationAgent',
-                            {
-                                organizationId:
-                                    organizationAndTeamData.organizationId?.toString(),
-                                teamId: organizationAndTeamData.teamId?.toString(),
-                                repositoryId:
-                                    prepareContext?.repository?.id?.toString(),
-                                provider: byokConfig?.main?.provider,
-                            },
-                        ),
-                    }),
+                // Real billing source: a BYOK org runs on its own key -> 'byok'.
+                // (The legacy code hardcoded 'system', misattributing BYOK cost.)
+                isByok: !!byokConfig,
+                usage: state.usage,
+                organizationId: organizationAndTeamData.organizationId,
+                teamId: organizationAndTeamData.teamId,
+                steps: state.steps.length,
+                finishReason: state.stopReason ?? state.status,
+                source: 'harness',
+                durationMs: Date.now() - startedAt,
             });
+
+            const answer = finalText(state);
 
             this.logger.log({
                 message: 'Finish conversation agent execution',
@@ -179,12 +207,12 @@ export class ConversationAgentProvider {
                 metadata: {
                     organizationAndTeamData,
                     thread,
-                    steps: result.steps?.length ?? 0,
-                    usage: result.usage,
+                    steps: state.steps.length,
+                    usage: state.usage,
                 },
             });
 
-            const response = normalizeConversationResponse(result.text);
+            const response = normalizeConversationResponse(answer);
 
             if (response === null) {
                 this.logger.warn({
@@ -194,7 +222,7 @@ export class ConversationAgentProvider {
                     metadata: {
                         organizationAndTeamData,
                         thread,
-                        rawResult: result.text,
+                        rawResult: answer,
                     },
                 });
                 return CONVERSATION_FALLBACK_MESSAGE;

@@ -25,7 +25,6 @@ for arg in "$@"; do
 done
 
 cd "$SCRIPT_DIR"
-node generate-memory-quality-prompt.js
 node convert-memory-quality-dataset.js "${CONVERT_ARGS[@]}"
 
 npx promptfoo eval -c promptfoo.memory-quality.yaml -j 10 "${PROMPTFOO_ARGS[@]}"

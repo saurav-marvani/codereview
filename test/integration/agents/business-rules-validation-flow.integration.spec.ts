@@ -1,7 +1,7 @@
 import { BusinessRulesValidationAgentUseCase } from '@libs/agents/application/use-cases/business-rules-validation-agent.use-case';
-import { buildBusinessRulesAnalysisPrompt } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/analysis-prompt.builder';
-import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
-import { BaseAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/base-agent.provider';
+import { buildBusinessRulesAnalysisPrompt } from '@libs/agents/infrastructure/services/agents/business-rules-validation/analysis-prompt.builder';
+import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/agents/business-rules-validation/businessRulesValidationAgent';
+import { BaseAgentProvider } from '@libs/agents/infrastructure/services/agents/base-agent.provider';
 import {
     SkillCapabilityRuntimeConfig,
     ToolCaller,

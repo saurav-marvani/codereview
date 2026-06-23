@@ -1,7 +1,10 @@
 import { LLMModelProvider, PromptRunnerService } from '@kodus/kodus-common/llm';
-import { generateText } from 'ai';
 import { Injectable, Inject, Optional } from '@nestjs/common';
 
+import type { AgentSpec } from '@libs/agent-harness/domain/contracts/agent.contract';
+import { finalText } from '@libs/agent-harness/domain/run-state.util';
+import { AiSdkAgentRunner } from '@libs/agent-harness/infrastructure/ai-sdk/ai-sdk-agent-runner';
+import { InMemoryToolRegistry } from '@libs/agent-harness/infrastructure/tools/in-memory-tool-registry';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 import { createLogger } from '@libs/core/log/logger';
 import { byokToVercelModel } from '@libs/llm/byok-to-vercel';
@@ -465,9 +468,7 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
     ): Promise<AnalyzerCallResult> {
         const model = byokToVercelModel(this.byokConfig);
         const system = messages.find((m) => m.role === 'system')?.content;
-        const conversation = messages
-            .filter((m) => m.role !== 'system')
-            .map((m) => ({ role: m.role, content: m.content }));
+        const userTurns = messages.filter((m) => m.role !== 'system');
 
         // Thinking/reasoning budget — replaces the legacy
         // `maxReasoningTokens: 1024` the flow LLM bridge passed through.
@@ -477,39 +478,69 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
             modelName: this.byokConfig?.main?.model,
         });
 
-        // Wrapped in a billing span so token usage reaches the Mongo
-        // `observability_telemetry` cost dataset (parity with the legacy flow
-        // LLM bridge); `experimental_telemetry` feeds Langfuse separately.
-        const result = await this.observabilityService.runAiSdkLLMInSpan({
-            spanName: `BusinessRulesValidation::${functionId}`,
+        // Single runtime: the analysis runs on the harness AiSdkAgentRunner, same
+        // engine as code-review/conversation (and as the skill fetcher that
+        // gathered the context). No tools, single-shot (maxSteps 1) — a plain
+        // completion, but observable as RunState and on one engine. The free-form
+        // answer is the last assistant turn (`finalText`).
+        const runner = new AiSdkAgentRunner({ resolve: () => model });
+        const spec: AgentSpec = {
+            id: 'business-rules-analyzer',
+            systemPrompt: system ?? '',
+            modelId: 'resolved',
+            tools: new InMemoryToolRegistry([]),
+            policies: [],
+            maxSteps: 1,
+            temperature: options.temperature ?? 0,
+            ...(options.maxTokens ? { maxOutputTokens: options.maxTokens } : {}),
+            ...(Object.keys(providerOptions).length ? { providerOptions } : {}),
+        };
+        const last = userTurns[userTurns.length - 1];
+        // userTurns are non-system, i.e. all 'user' (AnalyzerMessage is system|user).
+        const seedMessages = userTurns
+            .slice(0, -1)
+            .map((m) => ({ role: 'user' as const, content: m.content }));
+
+        const state = await runner.run(
+            spec,
+            {
+                prompt: last?.content ?? '',
+                ...(seedMessages.length ? { seedMessages } : {}),
+                // experimental_telemetry feeds Langfuse (forwarded by the runner).
+                telemetry: buildLangfuseTelemetry(functionId, {
+                    organizationId: metadata?.organizationId,
+                    teamId: metadata?.teamId,
+                    provider: this.byokConfig?.main?.provider,
+                }),
+            },
+            { runId: `business-rules:${functionId}` },
+        );
+
+        const usage = {
+            inputTokens: state.usage.inputTokens,
+            outputTokens: state.usage.outputTokens,
+            totalTokens:
+                (state.usage.inputTokens ?? 0) + (state.usage.outputTokens ?? 0),
+        };
+
+        // Cost -> Mongo `observability_telemetry` via the canonical emitter, so
+        // the billing schema (agentName/phase/type/gen_ai.usage.*) is identical
+        // to the conversation + code-review agents. Span name parity:
+        // `${agentName}::${phase}` == the former `BusinessRulesValidation::${functionId}`.
+        await this.observabilityService.recordAgentRunUsage({
+            agentName: 'BusinessRulesValidation',
+            phase: functionId,
             runName: functionId,
             model: this.byokConfig?.main?.model,
-            attrs: {
-                type: 'system',
-                organizationId: metadata?.organizationId,
-                teamId: metadata?.teamId,
-            },
-            exec: () =>
-                generateText({
-                    model,
-                    ...(system ? { system } : {}),
-                    messages: conversation,
-                    temperature: options.temperature ?? 0,
-                    ...(options.maxTokens
-                        ? { maxOutputTokens: options.maxTokens }
-                        : {}),
-                    ...(Object.keys(providerOptions).length
-                        ? { providerOptions }
-                        : {}),
-                    experimental_telemetry: buildLangfuseTelemetry(functionId, {
-                        organizationId: metadata?.organizationId,
-                        teamId: metadata?.teamId,
-                        provider: this.byokConfig?.main?.provider,
-                    }),
-                }),
+            // Real billing source: a BYOK org runs on its own key -> 'byok'.
+            // (The legacy code hardcoded 'system', misattributing BYOK cost.)
+            isByok: !!this.byokConfig,
+            usage: { ...usage, reasoningTokens: state.usage.reasoningTokens, cacheReadTokens: state.usage.cacheReadTokens },
+            organizationId: metadata?.organizationId,
+            teamId: metadata?.teamId,
         });
 
-        return { content: result.text, usage: result.usage };
+        return { content: finalText(state), usage };
     }
 
     private buildAnalyzerMessages(

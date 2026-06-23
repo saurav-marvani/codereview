@@ -42,7 +42,6 @@ FROM base AS deps
 # install sees empty overrides and aborts (ERR_PNPM_LOCKFILE_CONFIG_MISMATCH).
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY packages/kodus-common ./packages/kodus-common
-COPY packages/kodus-flow ./packages/kodus-flow
 
 # `--store-dir` points pnpm at a BuildKit cache mount so the
 # content-addressable store survives across builds. pnpm's store is safe
@@ -60,11 +59,6 @@ RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
     cd packages/kodus-common \
   && pnpm install --store-dir /pnpm-store \
   && pnpm run prepack
-RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
-    --mount=type=cache,target=/pnpm-store,sharing=shared \
-    cd packages/kodus-flow \
-  && pnpm install --store-dir /pnpm-store \
-  && pnpm run build
 
 # Install dependencies and link local packages.
 # github_token (optional) authenticates @vscode/ripgrep's postinstall
@@ -110,18 +104,12 @@ FROM base AS prod-deps
 # resolve under --frozen-lockfile.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY packages/kodus-common ./packages/kodus-common
-COPY packages/kodus-flow ./packages/kodus-flow
 
 RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
     --mount=type=cache,target=/pnpm-store,sharing=shared \
     cd packages/kodus-common \
   && pnpm install --store-dir /pnpm-store \
   && pnpm run prepack
-RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
-    --mount=type=cache,target=/pnpm-store,sharing=shared \
-    cd packages/kodus-flow \
-  && pnpm install --store-dir /pnpm-store \
-  && pnpm run build
 
 # --prod skips devDependencies (TypeScript, Nest CLI, Jest, ESLint, etc.)
 # since the `build` stage already produced the compiled output in
@@ -139,9 +127,9 @@ RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
 # needed for `pnpm run prepack` but not at runtime — keeping them would
 # duplicate ~450MB inside the final image for no benefit. `dist/` and
 # `package.json` are what Node actually resolves.
-RUN rm -rf packages/kodus-common/node_modules packages/kodus-flow/node_modules \
-           packages/kodus-common/src packages/kodus-flow/src \
-           packages/kodus-common/test packages/kodus-flow/test
+RUN rm -rf packages/kodus-common/node_modules \
+           packages/kodus-common/src \
+           packages/kodus-common/test
 RUN rm -rf node_modules/@kodus/kodus-common && cp -r packages/kodus-common node_modules/@kodus/kodus-common
 
 # Dedicated stage for the bun binary. Using the official oven/bun image

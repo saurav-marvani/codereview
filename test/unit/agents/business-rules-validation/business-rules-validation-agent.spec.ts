@@ -1,5 +1,4 @@
-import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
-import { BaseAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/base-agent.provider';
+import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/agents/business-rules-validation/businessRulesValidationAgent';
 
 function createProvider(): BusinessRulesValidationAgentProvider {
     return new BusinessRulesValidationAgentProvider(
@@ -262,9 +261,6 @@ describe('BusinessRulesValidationAgentProvider.formatValidationResponse', () => 
 
 describe('BusinessRulesValidationAgentProvider analyzer execution', () => {
     it('awaits async formatting before writing formattedResponse into context', async () => {
-        const createLLMAdapterSpy = jest
-            .spyOn(BaseAgentProvider.prototype as any, 'createLLMAdapter')
-            .mockReturnValue({} as any);
         const provider = new BusinessRulesValidationAgentProvider(
             {} as any,
             {} as any,
@@ -312,7 +308,6 @@ describe('BusinessRulesValidationAgentProvider analyzer execution', () => {
 
         expect(result.formattedResponse).toBe('## Business Rules Validation');
         expect(result.formattedResponse).not.toBeInstanceOf(Promise);
-        createLLMAdapterSpy.mockRestore();
     });
 
     it('parses analyzer JSON and applies eligibility defaults from the pipeline context', () => {

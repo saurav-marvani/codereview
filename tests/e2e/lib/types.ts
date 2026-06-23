@@ -1,21 +1,21 @@
-export type Target = "cloud" | "self-hosted";
+export type Target = 'cloud' | 'self-hosted';
 
 export type ProviderName =
-    | "github"
-    | "github-app"
-    | "gitlab"
-    | "bitbucket"
-    | "azure-devops";
+    | 'github'
+    | 'github-app'
+    | 'gitlab'
+    | 'bitbucket'
+    | 'azure-devops';
 
 export type LicenseMode =
-    | "free"
-    | "trial"
-    | "paid"
-    | "community-byok" // free plan with the org's own LLM API key configured
-    | "license-paid"
-    | "license-free";
+    | 'free'
+    | 'trial'
+    | 'paid'
+    | 'community-byok' // free plan with the org's own LLM API key configured
+    | 'license-paid'
+    | 'license-free';
 
-export type Priority = "P0" | "P1" | "P2";
+export type Priority = 'P0' | 'P1' | 'P2';
 
 export interface TargetContext {
     target: Target;
@@ -77,7 +77,7 @@ export interface ReviewSignal {
     // license/trial/BYOK-prompt comment from Kody on the PR.
     licenseBlockedNotice?: {
         message: string;
-        kind: "trial-ended" | "byok-required" | "no-license" | "other";
+        kind: 'trial-ended' | 'byok-required' | 'no-license' | 'other';
     };
 }
 
@@ -149,7 +149,6 @@ export interface Provider {
         token: string,
     ): Promise<{ id: string }>;
     // Optional: polls for Kody's conversational reply to an `@kody <question>`
-    // comment (kodus-flow ConversationAgent → v2/BYOK path). Returns the first
     // new non-trigger, non-code-review comment, or null at timeout. Only GitHub
     // is wired; the conversation scenario gates on its presence.
     pollForKodyReply?(
@@ -159,7 +158,7 @@ export interface Provider {
     // Optional: merges a PR (falls back to close). Drives the closed/merged-PR
     // webhook that triggers kody-issues generation (v2/BYOK path).
     mergePR?(pr: OpenedPR): Promise<void>;
-    authMode(): "token" | "oauth" | "app-password";
+    authMode(): 'token' | 'oauth' | 'app-password';
     authToken(): string;
     // Provider-specific extra body fields for POST /code-management/auth-integration.
     // Azure DevOps needs `orgUrl` + `orgName`; everything else returns {}.
@@ -258,17 +257,13 @@ export interface RunContext {
 // `failed`. Plain Error subclasses won't match (we check by name
 // to survive a bundler dropping prototype-chain identity).
 export class ScenarioSkipError extends Error {
-    readonly name = "ScenarioSkipError";
+    readonly name = 'ScenarioSkipError';
     constructor(reason: string) {
         super(reason);
     }
 }
 
-export type ScenarioStatus =
-    | "passed"
-    | "failed"
-    | "skipped"
-    | "blocked";
+export type ScenarioStatus = 'passed' | 'failed' | 'skipped' | 'blocked';
 
 export interface ScenarioResult {
     scenarioId: string;

@@ -46,7 +46,6 @@ COPY package.json pnpm-lock.yaml .npmrc ./
 COPY nest-cli.json tsconfig*.json ./
 
 COPY packages/kodus-common ./packages/kodus-common
-COPY packages/kodus-flow ./packages/kodus-flow
 
 # Build local packages first. Shared pnpm store mount survives across
 # rebuilds so dependency changes don't trigger a full re-download.
@@ -60,14 +59,10 @@ RUN --mount=type=cache,target=/pnpm-store,sharing=shared \
     cd packages/kodus-common \
   && pnpm install --store-dir /pnpm-store \
   && pnpm run prepack
-RUN --mount=type=cache,target=/pnpm-store,sharing=shared \
-    cd packages/kodus-flow \
-  && pnpm install --store-dir /pnpm-store \
-  && pnpm run build
 
 # Install dependencies and link local packages.
 # pnpm-workspace.yaml is copied HERE (not with the manifests above) so the
-# kodus-common / kodus-flow sub-builds don't see /usr/src/app as a workspace
+# kodus-common sub-build doesn't see /usr/src/app as a workspace
 # root and install into it (`../..`). Only the root install below needs it —
 # it carries the `overrides` that must match the lockfile under --frozen-lockfile.
 COPY pnpm-workspace.yaml ./

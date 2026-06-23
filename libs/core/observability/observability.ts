@@ -54,7 +54,7 @@ export class ObservabilitySystem {
     constructor(config: Partial<ObservabilityConfig> = {}) {
         this.config = {
             enabled: config.enabled ?? true,
-            serviceName: config.serviceName || 'kodus-flow',
+            serviceName: config.serviceName || 'kodus-ai',
             environment: config.environment || 'development',
             logging: {
                 level: config.logging?.level || 'info',
@@ -62,7 +62,7 @@ export class ObservabilitySystem {
             },
             telemetry: {
                 enabled: config.telemetry?.enabled ?? true,
-                serviceName: config.serviceName || 'kodus-flow',
+                serviceName: config.serviceName || 'kodus-ai',
                 sampling: config.telemetry?.sampling || {
                     rate: 1.0,
                     strategy: 'probabilistic' as const,

@@ -205,7 +205,7 @@ export default {
         '<rootDir>/.worktrees',
         '<rootDir>/worktrees',
         // Claude Code agent worktrees: isolated checkouts under here carry a
-        // second copy of packages/kodus-flow and test/__mocks__, which collide
+        // second copy of the local packages and test/__mocks__, which collide
         // in jest's Haste map ("looked up in the Haste module map ... several
         // different files") and break every suite. Never load modules from them.
         '<rootDir>/.claude/worktrees',

@@ -17,7 +17,7 @@ import {
     LLMStep,
 } from '@libs/shared/blueprint/blueprint.types';
 
-import { BaseAgentProvider } from '../infrastructure/services/kodus-flow/base-agent.provider';
+import { BaseAgentProvider } from '../infrastructure/services/agents/base-agent.provider';
 import { GenericSkillRunnerService } from './generic-skill-runner.service';
 import { buildCapabilityHooks } from './runtime/capability-hooks.factory';
 import { CapabilityResourcePlanService } from './runtime/capability-resource-plan.service';

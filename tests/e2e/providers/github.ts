@@ -6,21 +6,21 @@ import type {
     ProviderRepoRef,
     ReviewSignal,
     WebhookInfo,
-} from "../lib/types.js";
-import { randomUUID } from "node:crypto";
-import type { Target } from "../lib/types.js";
+} from '../lib/types.js';
+import { randomUUID } from 'node:crypto';
+import type { Target } from '../lib/types.js';
 import {
     BaseProvider,
     nowIso,
     pollUntil,
     requireEnv,
     resolveTargetRepo,
-} from "./base.js";
-import { ensureOk, http } from "../lib/http.js";
-import { prepareBranch } from "../lib/git.js";
-import { logger } from "../lib/log.js";
+} from './base.js';
+import { ensureOk, http } from '../lib/http.js';
+import { prepareBranch } from '../lib/git.js';
+import { logger } from '../lib/log.js';
 
-const log = logger("provider:github");
+const log = logger('provider:github');
 
 // Map a Kody license-block notification body to a discriminator the
 // scenario layer can assert on. Loose keyword match so we can tell
@@ -28,23 +28,23 @@ const log = logger("provider:github");
 // committing to exact copy that may change.
 function classifyLicenseNotice(
     body: string,
-): "trial-ended" | "byok-required" | "no-license" | "other" {
+): 'trial-ended' | 'byok-required' | 'no-license' | 'other' {
     const b = body.toLowerCase();
-    if (/trial.*(ended|expired|over)/.test(b)) return "trial-ended";
-    if (/byok|own (api )?key|api[ -]?key/.test(b)) return "byok-required";
+    if (/trial.*(ended|expired|over)/.test(b)) return 'trial-ended';
+    if (/byok|own (api )?key|api[ -]?key/.test(b)) return 'byok-required';
     if (/(no|invalid).*license|activate.*plan|subscribe/.test(b))
-        return "no-license";
-    return "other";
+        return 'no-license';
+    return 'other';
 }
 
 export class GitHubProvider extends BaseProvider {
-    readonly name: ProviderName = "github";
-    readonly integrationType = "GITHUB";
-    readonly webhookPath = "/github/webhook";
+    readonly name: ProviderName = 'github';
+    readonly integrationType = 'GITHUB';
+    readonly webhookPath = '/github/webhook';
 
     protected readonly token: string;
     protected readonly repoFullName: string;
-    protected readonly apiBase = "https://api.github.com";
+    protected readonly apiBase = 'https://api.github.com';
     protected readonly existingPrNumber?: number;
 
     constructor(opts?: {
@@ -56,7 +56,7 @@ export class GitHubProvider extends BaseProvider {
         // tokenOverride is the round-robin token the matrix runner assigns
         // from the bot-account pool (see lib/github-token-pool.ts). Falls back
         // to the single GH_TEST_TOKEN when no pool is configured.
-        this.token = opts?.tokenOverride || requireEnv("GH_TEST_TOKEN");
+        this.token = opts?.tokenOverride || requireEnv('GH_TEST_TOKEN');
         // Subclasses (notably GitHubAppProvider) need to target a
         // DIFFERENT repo than the PAT-driven default — the GitHub App
         // is installed scope-limited to that other repo, so any PR we
@@ -66,16 +66,16 @@ export class GitHubProvider extends BaseProvider {
         // listing) to the App-bound repo.
         this.repoFullName =
             opts?.repoOverride ??
-            resolveTargetRepo("GH_TEST_REPO", opts?.target ?? "self-hosted");
+            resolveTargetRepo('GH_TEST_REPO', opts?.target ?? 'self-hosted');
         const existing = process.env.GH_TEST_PR_NUMBER;
         if (existing) this.existingPrNumber = Number(existing);
     }
 
     private headers(): Record<string, string> {
         return {
-            Authorization: `Bearer ${this.token}`,
-            Accept: "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
+            'Authorization': `Bearer ${this.token}`,
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
         };
     }
 
@@ -84,11 +84,14 @@ export class GitHubProvider extends BaseProvider {
     }
 
     async repoRef(): Promise<ProviderRepoRef> {
-        const resp = await http<{ id: number; full_name: string; name: string }>(
-            `${this.apiBase}/repos/${this.repoFullName}`,
-            { headers: this.headers() },
-        );
-        ensureOk(resp, "github:repoRef");
+        const resp = await http<{
+            id: number;
+            full_name: string;
+            name: string;
+        }>(`${this.apiBase}/repos/${this.repoFullName}`, {
+            headers: this.headers(),
+        });
+        ensureOk(resp, 'github:repoRef');
         return {
             id: resp.body.id,
             full_name: resp.body.full_name,
@@ -100,35 +103,35 @@ export class GitHubProvider extends BaseProvider {
         const resp = await http<{ id: number }>(
             `${this.apiBase}/repos/${this.repoFullName}/hooks`,
             {
-                method: "POST",
+                method: 'POST',
                 headers: this.headers(),
                 body: {
-                    name: "web",
+                    name: 'web',
                     active: true,
                     events: [
-                        "pull_request",
-                        "push",
-                        "issue_comment",
-                        "pull_request_review",
-                        "pull_request_review_comment",
+                        'pull_request',
+                        'push',
+                        'issue_comment',
+                        'pull_request_review',
+                        'pull_request_review_comment',
                     ],
                     config: {
                         url: webhookUrl,
-                        content_type: "json",
-                        insecure_ssl: "0",
+                        content_type: 'json',
+                        insecure_ssl: '0',
                     },
                 },
             },
         );
-        ensureOk(resp, "github:createWebhook");
+        ensureOk(resp, 'github:createWebhook');
         return { id: String(resp.body.id) };
     }
 
     async deleteWebhook(id: string): Promise<void> {
-        await http(
-            `${this.apiBase}/repos/${this.repoFullName}/hooks/${id}`,
-            { method: "DELETE", headers: this.headers() },
-        );
+        await http(`${this.apiBase}/repos/${this.repoFullName}/hooks/${id}`, {
+            method: 'DELETE',
+            headers: this.headers(),
+        });
     }
 
     async listWebhooks(): Promise<WebhookInfo[]> {
@@ -142,10 +145,10 @@ export class GitHubProvider extends BaseProvider {
         >(`${this.apiBase}/repos/${this.repoFullName}/hooks?per_page=100`, {
             headers: this.headers(),
         });
-        ensureOk(resp, "github:listWebhooks");
+        ensureOk(resp, 'github:listWebhooks');
         return (resp.body ?? []).map((h) => ({
             id: String(h.id),
-            url: h.config?.url ?? "",
+            url: h.config?.url ?? '',
             active: Boolean(h.active),
             events: h.events ?? [],
         }));
@@ -163,7 +166,7 @@ export class GitHubProvider extends BaseProvider {
             const resp = await http<{ number: number; html_url: string }>(
                 `${this.apiBase}/repos/${this.repoFullName}/pulls`,
                 {
-                    method: "POST",
+                    method: 'POST',
                     headers: this.headers(),
                     body: {
                         title: args.title,
@@ -173,7 +176,7 @@ export class GitHubProvider extends BaseProvider {
                     },
                 },
             );
-            ensureOk(resp, "github:openPR");
+            ensureOk(resp, 'github:openPR');
             return {
                 number: resp.body.number,
                 url: resp.body.html_url,
@@ -198,7 +201,10 @@ export class GitHubProvider extends BaseProvider {
                 return await this.openPRFromBranchesOnce(args);
             } catch (err) {
                 lastErr = err;
-                if (!/HTTP 5\d\d/.test((err as Error).message) || attempt === 3) {
+                if (
+                    !/HTTP 5\d\d/.test((err as Error).message) ||
+                    attempt === 3
+                ) {
                     throw err;
                 }
                 await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
@@ -222,20 +228,20 @@ export class GitHubProvider extends BaseProvider {
             `${this.apiBase}/repos/${this.repoFullName}/git/ref/heads/${args.head}`,
             { headers: this.headers() },
         );
-        ensureOk(tip, "github:openPRFromBranches:resolveHead");
+        ensureOk(tip, 'github:openPRFromBranches:resolveHead');
         const headSha = tip.body.object.sha;
         const commitInfo = await http<{ tree: { sha: string } }>(
             `${this.apiBase}/repos/${this.repoFullName}/git/commits/${headSha}`,
             { headers: this.headers() },
         );
-        ensureOk(commitInfo, "github:openPRFromBranches:resolveTree");
+        ensureOk(commitInfo, 'github:openPRFromBranches:resolveTree');
 
         const uid = randomUUID().slice(0, 8);
-        const throwaway = `e2e/${args.head.replace(/[^a-zA-Z0-9._-]+/g, "-")}-${uid}`;
+        const throwaway = `e2e/${args.head.replace(/[^a-zA-Z0-9._-]+/g, '-')}-${uid}`;
         const commit = await http<{ sha: string }>(
             `${this.apiBase}/repos/${this.repoFullName}/git/commits`,
             {
-                method: "POST",
+                method: 'POST',
                 headers: this.headers(),
                 body: {
                     message: `[e2e] throwaway head for ${args.head} (${uid})`,
@@ -244,11 +250,11 @@ export class GitHubProvider extends BaseProvider {
                 },
             },
         );
-        ensureOk(commit, "github:openPRFromBranches:commit");
+        ensureOk(commit, 'github:openPRFromBranches:commit');
         const ref = await http(
             `${this.apiBase}/repos/${this.repoFullName}/git/refs`,
             {
-                method: "POST",
+                method: 'POST',
                 headers: this.headers(),
                 body: {
                     ref: `refs/heads/${throwaway}`,
@@ -256,12 +262,12 @@ export class GitHubProvider extends BaseProvider {
                 },
             },
         );
-        ensureOk(ref, "github:openPRFromBranches:ref");
+        ensureOk(ref, 'github:openPRFromBranches:ref');
 
         const resp = await http<{ number: number; html_url: string }>(
             `${this.apiBase}/repos/${this.repoFullName}/pulls`,
             {
-                method: "POST",
+                method: 'POST',
                 headers: this.headers(),
                 body: {
                     title: args.title,
@@ -271,7 +277,7 @@ export class GitHubProvider extends BaseProvider {
                 },
             },
         );
-        ensureOk(resp, "github:openPRFromBranches");
+        ensureOk(resp, 'github:openPRFromBranches');
         return {
             number: resp.body.number,
             url: resp.body.html_url,
@@ -286,7 +292,7 @@ export class GitHubProvider extends BaseProvider {
         base: string,
     ): Promise<void> {
         // GitHub's list-PRs `head` filter expects `owner:branch` form.
-        const owner = this.repoFullName.split("/")[0];
+        const owner = this.repoFullName.split('/')[0];
         const headRef = `${owner}:${head}`;
         const resp = await http<Array<{ number: number; state: string }>>(
             `${this.apiBase}/repos/${this.repoFullName}/pulls?state=open&head=${encodeURIComponent(headRef)}&base=${encodeURIComponent(base)}&per_page=10`,
@@ -296,9 +302,9 @@ export class GitHubProvider extends BaseProvider {
             await http(
                 `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}`,
                 {
-                    method: "PATCH",
+                    method: 'PATCH',
                     headers: this.headers(),
-                    body: { state: "closed" },
+                    body: { state: 'closed' },
                 },
             );
         }
@@ -310,18 +316,24 @@ export class GitHubProvider extends BaseProvider {
         // is enough in practice; the loop guards against future drift.
         let closed = 0;
         for (let page = 1; page <= 5; page += 1) {
-            const resp = await http<Array<{ number: number; title: string; head: { ref: string } }>>(
+            const resp = await http<
+                Array<{ number: number; title: string; head: { ref: string } }>
+            >(
                 `${this.apiBase}/repos/${this.repoFullName}/pulls?state=open&per_page=100&page=${page}`,
                 { headers: this.headers() },
             );
-            ensureOk(resp, "github:cleanupStale:list");
+            ensureOk(resp, 'github:cleanupStale:list');
             const batch = resp.body ?? [];
             if (batch.length === 0) break;
             for (const pr of batch) {
-                if (!(pr.title ?? "").startsWith("[e2e]")) continue;
+                if (!(pr.title ?? '').startsWith('[e2e]')) continue;
                 await http(
                     `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}`,
-                    { method: "PATCH", headers: this.headers(), body: { state: "closed" } },
+                    {
+                        method: 'PATCH',
+                        headers: this.headers(),
+                        body: { state: 'closed' },
+                    },
                 );
                 closed += 1;
             }
@@ -334,15 +346,15 @@ export class GitHubProvider extends BaseProvider {
         await http(
             `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}`,
             {
-                method: "PATCH",
+                method: 'PATCH',
                 headers: this.headers(),
-                body: { state: "closed" },
+                body: { state: 'closed' },
             },
         );
         if (pr.keepBranchOnClose) return;
         await http(
             `${this.apiBase}/repos/${this.repoFullName}/git/refs/heads/${pr.branch}`,
-            { method: "DELETE", headers: this.headers() },
+            { method: 'DELETE', headers: this.headers() },
         );
     }
 
@@ -350,16 +362,17 @@ export class GitHubProvider extends BaseProvider {
         prNumber: number,
     ): Promise<{ triggerId: string; sinceIso: string }> {
         const target = prNumber || this.existingPrNumber;
-        if (!target) throw new Error("github:triggerReview requires GH_TEST_PR_NUMBER");
+        if (!target)
+            throw new Error('github:triggerReview requires GH_TEST_PR_NUMBER');
         const resp = await http<{ id: number; created_at: string }>(
             `${this.apiBase}/repos/${this.repoFullName}/issues/${target}/comments`,
             {
-                method: "POST",
+                method: 'POST',
                 headers: this.headers(),
-                body: { body: "@kody review" },
+                body: { body: '@kody review' },
             },
         );
-        ensureOk(resp, "github:triggerReview");
+        ensureOk(resp, 'github:triggerReview');
         return {
             triggerId: String(resp.body.id),
             sinceIso: resp.body.created_at,
@@ -373,22 +386,27 @@ export class GitHubProvider extends BaseProvider {
         const since = encodeURIComponent(opts.sinceIso);
         const result = await pollUntil(
             async () => {
-                const [reviewComments, issueComments, reviews] = await Promise.all([
-                    http<{ id: number; body: string }[]>(
-                        `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}/comments?since=${since}`,
-                        { headers: this.headers() },
-                    ),
-                    http<{ id: number; body: string }[]>(
-                        `${this.apiBase}/repos/${this.repoFullName}/issues/${pr.number}/comments?since=${since}`,
-                        { headers: this.headers() },
-                    ),
-                    http<
-                        { submitted_at?: string; created_at?: string; body?: string }[]
-                    >(
-                        `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}/reviews`,
-                        { headers: this.headers() },
-                    ),
-                ]);
+                const [reviewComments, issueComments, reviews] =
+                    await Promise.all([
+                        http<{ id: number; body: string }[]>(
+                            `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}/comments?since=${since}`,
+                            { headers: this.headers() },
+                        ),
+                        http<{ id: number; body: string }[]>(
+                            `${this.apiBase}/repos/${this.repoFullName}/issues/${pr.number}/comments?since=${since}`,
+                            { headers: this.headers() },
+                        ),
+                        http<
+                            {
+                                submitted_at?: string;
+                                created_at?: string;
+                                body?: string;
+                            }[]
+                        >(
+                            `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}/reviews`,
+                            { headers: this.headers() },
+                        ),
+                    ]);
                 // Kody posts three distinct comment shapes that all carry
                 // the `<!-- kody-codereview -->` discriminator:
                 //
@@ -407,9 +425,10 @@ export class GitHubProvider extends BaseProvider {
                 //      docs.kodus.io footer. Keep as a review signal.
                 const classify = (
                     body: string,
-                ): "started" | "license-block" | "review" => {
-                    if (!body.includes("<!-- kody-codereview")) return "review";
-                    if (body.includes("kody-codereview-completed")) return "review";
+                ): 'started' | 'license-block' | 'review' => {
+                    if (!body.includes('<!-- kody-codereview')) return 'review';
+                    if (body.includes('kody-codereview-completed'))
+                        return 'review';
                     // Trial / BYOK / plan-activation prompts. Stable
                     // markers: the "Your trial has ended" and "activate
                     // your plan" / "BYOK" wording. Loose match so minor
@@ -419,22 +438,24 @@ export class GitHubProvider extends BaseProvider {
                             body,
                         )
                     ) {
-                        return "license-block";
+                        return 'license-block';
                     }
-                    return "started";
+                    return 'started';
                 };
-                const filterNonTrigger = <T extends { id: number; body: string }>(
+                const filterNonTrigger = <
+                    T extends { id: number; body: string },
+                >(
                     items: T[],
                 ): { reviews: T[]; licenseNotice?: T } => {
                     const reviews: T[] = [];
                     let licenseNotice: T | undefined;
                     for (const c of items) {
                         if (String(c.id) === opts.triggerId) continue;
-                        const body = c.body ?? "";
-                        if (body.toLowerCase().startsWith("@kody")) continue;
+                        const body = c.body ?? '';
+                        if (body.toLowerCase().startsWith('@kody')) continue;
                         const kind = classify(body);
-                        if (kind === "started") continue;
-                        if (kind === "license-block") {
+                        if (kind === 'started') continue;
+                        if (kind === 'license-block') {
                             licenseNotice ??= c;
                             continue;
                         }
@@ -445,11 +466,11 @@ export class GitHubProvider extends BaseProvider {
                 const rcRes = filterNonTrigger(reviewComments.body ?? []);
                 const icRes = filterNonTrigger(issueComments.body ?? []);
                 const reviewsList = (reviews.body ?? []).filter((r) => {
-                    const ts = r.submitted_at ?? r.created_at ?? "";
+                    const ts = r.submitted_at ?? r.created_at ?? '';
                     if (ts <= opts.sinceIso) return false;
-                    const body = r.body ?? "";
-                    if (body.toLowerCase().startsWith("@kody")) return false;
-                    return classify(body) === "review";
+                    const body = r.body ?? '';
+                    if (body.toLowerCase().startsWith('@kody')) return false;
+                    return classify(body) === 'review';
                 });
                 // Surface any license-block notice we found via comments,
                 // even when no real review fired. Lets the scenario layer
@@ -468,7 +489,7 @@ export class GitHubProvider extends BaseProvider {
                         rcRes.reviews[0]?.body ??
                         icRes.reviews[0]?.body ??
                         reviewsList[0]?.body ??
-                        "";
+                        '';
                     return {
                         reviewComments: rcRes.reviews.length,
                         issueComments: icRes.reviews.length,
@@ -478,7 +499,9 @@ export class GitHubProvider extends BaseProvider {
                             ? {
                                   licenseBlockedNotice: {
                                       message: licenseNotice.slice(0, 240),
-                                      kind: classifyLicenseNotice(licenseNotice),
+                                      kind: classifyLicenseNotice(
+                                          licenseNotice,
+                                      ),
                                   },
                               }
                             : {}),
@@ -536,12 +559,12 @@ export class GitHubProvider extends BaseProvider {
                     { headers: this.headers() },
                 );
                 const hit = (resp.body ?? []).find((c) =>
-                    (c.body ?? "").includes("<!-- kody-codereview"),
+                    (c.body ?? '').includes('<!-- kody-codereview'),
                 );
                 if (!hit) return null;
                 return {
                     startedAt: hit.created_at,
-                    sample: (hit.body ?? "").slice(0, 240),
+                    sample: (hit.body ?? '').slice(0, 240),
                 };
             },
             { timeoutSec: opts.timeoutSec, intervalSec: 3 },
@@ -554,19 +577,16 @@ export class GitHubProvider extends BaseProvider {
         return result;
     }
 
-    async postComment(
-        prNumber: number,
-        body: string,
-    ): Promise<{ id: string }> {
+    async postComment(prNumber: number, body: string): Promise<{ id: string }> {
         const resp = await http<{ id: number }>(
             `${this.apiBase}/repos/${this.repoFullName}/issues/${prNumber}/comments`,
             {
-                method: "POST",
+                method: 'POST',
                 headers: this.headers(),
                 body: { body },
             },
         );
-        ensureOk(resp, "github:postComment");
+        ensureOk(resp, 'github:postComment');
         return { id: String(resp.body.id) };
     }
 
@@ -583,16 +603,16 @@ export class GitHubProvider extends BaseProvider {
         const resp = await http<{ id: number }>(
             `${this.apiBase}/repos/${this.repoFullName}/issues/${prNumber}/comments`,
             {
-                method: "POST",
+                method: 'POST',
                 headers: {
-                    Authorization: `Bearer ${token}`,
-                    Accept: "application/vnd.github+json",
-                    "X-GitHub-Api-Version": "2022-11-28",
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github+json',
+                    'X-GitHub-Api-Version': '2022-11-28',
                 },
                 body: { body },
             },
         );
-        ensureOk(resp, "github:postCommentAs");
+        ensureOk(resp, 'github:postCommentAs');
         return { id: String(resp.body.id) };
     }
 
@@ -608,40 +628,39 @@ export class GitHubProvider extends BaseProvider {
         token: string,
     ): Promise<{ id: string }> {
         const h = {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
         };
         const pr = await http<{ head: { sha: string } }>(
             `${this.apiBase}/repos/${this.repoFullName}/pulls/${prNumber}`,
             { headers: h },
         );
-        ensureOk(pr, "github:postReviewCommentAs:getPR");
+        ensureOk(pr, 'github:postReviewCommentAs:getPR');
         const files = await http<{ filename: string }[]>(
             `${this.apiBase}/repos/${this.repoFullName}/pulls/${prNumber}/files`,
             { headers: h },
         );
-        ensureOk(files, "github:postReviewCommentAs:getFiles");
+        ensureOk(files, 'github:postReviewCommentAs:getFiles');
         const path = files.body?.[0]?.filename;
         const resp = await http<{ id: number }>(
             `${this.apiBase}/repos/${this.repoFullName}/pulls/${prNumber}/comments`,
             {
-                method: "POST",
+                method: 'POST',
                 headers: h,
                 body: {
                     body,
                     commit_id: pr.body.head.sha,
                     path,
-                    subject_type: "file",
+                    subject_type: 'file',
                 },
             },
         );
-        ensureOk(resp, "github:postReviewCommentAs");
+        ensureOk(resp, 'github:postReviewCommentAs');
         return { id: String(resp.body.id) };
     }
 
     // Polls for Kody's conversational reply to an `@kody <question>` review
-    // comment (the kodus-flow ConversationAgent path → v2/BYOK). Kody replies
     // via createReplyForReviewComment, so the answer lands in the PR's REVIEW
     // comments. Returns the first NEW review comment that is neither ours
     // (`@kody …`) nor a code-review finding (those carry the
@@ -661,11 +680,11 @@ export class GitHubProvider extends BaseProvider {
                 );
                 for (const c of comments.body ?? []) {
                     if (String(c.id) === opts.triggerId) continue;
-                    const body = c.body ?? "";
-                    if (body.toLowerCase().startsWith("@kody")) continue;
+                    const body = c.body ?? '';
+                    if (body.toLowerCase().startsWith('@kody')) continue;
                     // Skip code-review status/findings — conversation replies
                     // don't carry the review discriminator.
-                    if (body.includes("<!-- kody-codereview")) continue;
+                    if (body.includes('<!-- kody-codereview')) continue;
                     if (!body.trim()) continue;
                     return { id: String(c.id), body: body.slice(0, 600) };
                 }
@@ -681,7 +700,11 @@ export class GitHubProvider extends BaseProvider {
     async mergePR(pr: OpenedPR): Promise<void> {
         const resp = await http(
             `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}/merge`,
-            { method: "PUT", headers: this.headers(), body: { merge_method: "squash" } },
+            {
+                method: 'PUT',
+                headers: this.headers(),
+                body: { merge_method: 'squash' },
+            },
         );
         if (resp.status < 200 || resp.status >= 300) {
             log.info(
@@ -695,8 +718,8 @@ export class GitHubProvider extends BaseProvider {
     // GitHubAppProvider (which extends this class) can override and
     // return "oauth" without TS complaining about variance — the App
     // path identifies the integration by installationId, not a PAT.
-    authMode(): "token" | "oauth" | "app-password" {
-        return "token";
+    authMode(): 'token' | 'oauth' | 'app-password' {
+        return 'token';
     }
 
     authToken(): string {
@@ -708,12 +731,12 @@ export class GitHubProvider extends BaseProvider {
             `${this.apiBase}/user`,
             { headers: this.headers(), timeoutMs: 15_000 },
         );
-        ensureOk(resp, "github:currentUserId");
+        ensureOk(resp, 'github:currentUserId');
         return String(resp.body.id);
     }
 
     licenseGitTool(): string {
-        return "github";
+        return 'github';
     }
 
     async pollForLicenseBlock(
@@ -732,7 +755,7 @@ export class GitHubProvider extends BaseProvider {
                     { headers: this.headers() },
                 );
                 if (resp.status < 200 || resp.status >= 300) return null;
-                return (resp.body ?? []).some((r) => r.content === "-1")
+                return (resp.body ?? []).some((r) => r.content === '-1')
                     ? true
                     : null;
             },

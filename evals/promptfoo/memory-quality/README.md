@@ -59,8 +59,8 @@ Constraints enforced by converter:
 ## Files in this suite
 
 - `convert-memory-quality-dataset.js` - Converts v2 dataset to promptfoo tests
-- `generate-memory-quality-prompt.js` - Generates local prompt artifact from the same kodus-flow strategy/tools used by the base memory eval, then injects `contextSnippets`
-- `generate-memory-quality-prompt.js` - Generates local prompt artifact from the same kodus-flow strategy/tools used by the base memory eval (no custom prompt augmentation)
+- `generate-memory-quality-prompt.js` - Generates local prompt artifact from the same memory strategy/tools used by the base memory eval, then injects `contextSnippets`
+- `generate-memory-quality-prompt.js` - Generates local prompt artifact from the same memory strategy/tools used by the base memory eval (no custom prompt augmentation)
 - `memory-quality-prompt-loader.js` - Loads generated prompt
 - `memory-quality-tool-call-assertion.js` - Deterministic checks
 - `memory-quality-llm-judge-assertion.js` - Semantic LLM judge

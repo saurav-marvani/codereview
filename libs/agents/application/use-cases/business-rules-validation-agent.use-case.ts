@@ -2,11 +2,11 @@ import { Injectable } from '@nestjs/common';
 
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
-import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
+import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/agents/business-rules-validation/businessRulesValidationAgent';
 import {
     AgentThread,
     BusinessRulesPrepareContext,
-} from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/types';
+} from '@libs/agents/infrastructure/services/agents/business-rules-validation/types';
 
 @Injectable()
 export class BusinessRulesValidationAgentUseCase implements IUseCase {

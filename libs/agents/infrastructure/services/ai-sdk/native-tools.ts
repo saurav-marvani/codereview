@@ -2,7 +2,7 @@ import { tool, type Tool } from 'ai';
 
 import type { SandboxInstance } from '@libs/sandbox/domain/contracts/sandbox.provider';
 
-import { buildNativeToolConfigs } from '../kodus-flow/native-tools.factory';
+import { buildNativeToolConfigs } from '../agents/native-tools.factory';
 
 /**
  * Wrap the sandbox-backed native tool configs (grep, readFile, listDir, exec)
