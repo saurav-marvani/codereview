@@ -150,6 +150,7 @@ describe('AgentReviewStage', () => {
                     provide: ObservabilityService,
                     useValue: {
                         runInSpan: jest.fn((_name: string, fn: any) => fn()),
+                        recordAgentRunUsage: jest.fn(),
                     },
                 },
                 {

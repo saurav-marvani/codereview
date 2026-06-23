@@ -104,6 +104,12 @@ export async function recordAgentUsageSpans(
     p: RecordAgentUsageParams,
 ): Promise<void> {
     const { agentResult, observability } = p;
+    // Best-effort: observability must never break a review. When no service is
+    // wired (trial/CLI paths, or tests that don't inject one), skip silently
+    // instead of dereferencing a null and throwing out of the review.
+    if (!observability) {
+        return;
+    }
     const vUsage = agentResult.verificationUsage;
     const mainInputTokens =
         agentResult.usage.inputTokens - (vUsage?.inputTokens ?? 0);
