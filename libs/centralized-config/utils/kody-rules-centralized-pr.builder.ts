@@ -82,7 +82,10 @@ export function buildKodyRuleCentralizedFilePath(params: {
         return normalizedPath;
     }
 
-    const fileName = `${params.centralizedConfigPrService.sanitizeFileName(params.ruleContent.title, 'rule')}.yml`;
+    const fileName = params.centralizedConfigPrService.buildRuleFileName(
+        params.ruleContent.title,
+        params.ruleContent.uuid,
+    );
 
     if (params.groupFolderName) {
         return params.centralizedConfigPrService.buildDirectoryGroupRulesPath(

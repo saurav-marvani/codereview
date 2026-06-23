@@ -342,6 +342,15 @@ export class CreateOrUpdateKodyRulesUseCase {
         const effectiveRule = {
             ...existingRule,
             ...kodyRule,
+            // The incoming DTO carries `centralizedConfig` as an own (null)
+            // property even when the caller didn't send it, so a plain spread
+            // would clobber the rule's real path. Keep the existing path unless
+            // the payload explicitly provides one.
+            centralizedConfig:
+                kodyRule.centralizedConfig ??
+                (existingRule
+                    ? (existingRule as Partial<IKodyRule>).centralizedConfig
+                    : undefined),
         };
 
         if (!effectiveRule.title || !effectiveRule.repositoryId) {
@@ -377,7 +386,10 @@ export class CreateOrUpdateKodyRulesUseCase {
             const rulesDirectory =
                 ruleType === KodyRulesType.MEMORY ? 'memories' : 'review';
 
-            const fileName = `${this.centralizedConfigPrService.sanitizeFileName(effectiveRule.title, 'rule')}.yml`;
+            const fileName = this.centralizedConfigPrService.buildRuleFileName(
+                effectiveRule.title,
+                effectiveRule.uuid,
+            );
 
             const centralizedPath = groupFolderName
                 ? this.centralizedConfigPrService.buildDirectoryGroupRulesPath(

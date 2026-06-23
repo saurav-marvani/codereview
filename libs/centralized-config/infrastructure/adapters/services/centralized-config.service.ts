@@ -2138,6 +2138,15 @@ export class CentralizedConfigService implements ICentralizedConfigService {
             for (const rule of existingRules) {
                 const sourcePath = rule.centralizedConfig?.path;
 
+                // Only rules that were actually synced from a centralized file
+                // can go stale. A rule without a path was never exported (e.g.
+                // a pending/rejected rule, or a manual rule created while the
+                // centralized PR is open) — deleting it here would wipe data
+                // the centralized config never owned.
+                if (!sourcePath) {
+                    continue;
+                }
+
                 if (!currentSourcePaths.has(sourcePath)) {
                     try {
                         await this.deleteRuleInOrganizationByIdKodyRulesUseCase.execute(

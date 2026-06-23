@@ -124,7 +124,11 @@ export class DeleteRuleInOrganizationByIdKodyRulesUseCase {
                             ? 'memories'
                             : 'review';
 
-                    const fileName = `${this.centralizedConfigPrService.sanitizeFileName(existingRule.title, 'rule')}.yml`;
+                    const fileName =
+                        this.centralizedConfigPrService.buildRuleFileName(
+                            existingRule.title,
+                            existingRule.uuid,
+                        );
 
                     const centralizedPath =
                         existingRule.centralizedConfig?.path ||

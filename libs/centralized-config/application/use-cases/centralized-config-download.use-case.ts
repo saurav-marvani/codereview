@@ -861,13 +861,10 @@ export class CentralizedConfigDownloadUseCase {
     }
 
     private getRuleFileName(rule: IKodyRule): string {
-        const preferredName =
-            this.centralizedConfigPrService.sanitizeFileName(
-                rule.title,
-                'rule',
-            ) + (rule.uuid ? `-${rule.uuid.slice(0, 8)}` : '');
-
-        return `${preferredName}.yml`;
+        return this.centralizedConfigPrService.buildRuleFileName(
+            rule.title,
+            rule.uuid,
+        );
     }
 
     private getRuleEntryPath(
@@ -881,6 +878,20 @@ export class CentralizedConfigDownloadUseCase {
             }
         >,
     ): string | null {
+        // Reuse the rule's existing centralized path so re-exporting an
+        // already-synced rule keeps the same file. Otherwise a rule that was
+        // created via a mutation (title-only name) would be re-exported under
+        // a different (title+uuid) name, orphaning the old file and creating a
+        // duplicate on the next sync.
+        const existingPath = rule.centralizedConfig?.path?.trim();
+        if (
+            existingPath &&
+            !existingPath.startsWith('/') &&
+            !existingPath.includes('..')
+        ) {
+            return existingPath;
+        }
+
         const rulesDirectory =
             rule.type === KodyRulesType.MEMORY ? 'memories' : 'review';
         const fileName = this.getRuleFileName(rule);

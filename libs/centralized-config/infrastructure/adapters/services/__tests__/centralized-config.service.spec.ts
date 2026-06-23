@@ -1265,5 +1265,51 @@ describe('CentralizedConfigService', () => {
                 mockDeleteRuleInOrganizationByIdKodyRulesUseCase.execute,
             ).toHaveBeenCalledWith('pending-merge-rule-1', actor);
         });
+
+        it('should NOT delete rules that were never part of the centralized config', async () => {
+            // Pending/rejected/manual rules have no centralizedConfig.path —
+            // they aren't exported, so the stale-cleanup must leave them alone
+            // instead of treating a missing path as "stale".
+            mockKodyRulesService.findByOrganizationId.mockResolvedValue({
+                toJson: () => ({
+                    rules: [
+                        { uuid: 'pending-rule', status: 'pending' },
+                        { uuid: 'rejected-rule', status: 'rejected' },
+                        {
+                            uuid: 'manual-rule',
+                            status: 'active',
+                            centralizedConfig: null,
+                        },
+                        {
+                            uuid: 'synced-rule',
+                            status: 'active',
+                            centralizedConfig: {
+                                path: '.kody-rules/review/kept.yml',
+                                status: 'synced',
+                            },
+                        },
+                    ],
+                }),
+            });
+
+            mockDeleteRuleInOrganizationByIdKodyRulesUseCase.execute.mockResolvedValue(
+                true,
+            );
+
+            const result = await service.removeStaleKodyRules({
+                organizationAndTeamData,
+                actor,
+                ruleFiles: [
+                    { path: '.kody-rules/review/kept.yml' } as any,
+                ],
+            });
+
+            expect(result.success).toBe(true);
+            // The synced rule is still present in the files → not deleted.
+            // None of the path-less rules are deleted either.
+            expect(
+                mockDeleteRuleInOrganizationByIdKodyRulesUseCase.execute,
+            ).not.toHaveBeenCalled();
+        });
     });
 });
