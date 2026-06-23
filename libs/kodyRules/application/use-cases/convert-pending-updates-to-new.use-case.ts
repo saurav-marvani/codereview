@@ -22,9 +22,9 @@ import { CreateOrUpdateKodyRulesUseCase } from './create-or-update.use-case';
 import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from './find-rules-in-organization-by-filter.use-case';
 
 @Injectable()
-export class ConvertPendingUpdatesToMemoriesUseCase {
+export class ConvertPendingUpdatesToNewUseCase {
     private readonly logger = createLogger(
-        ConvertPendingUpdatesToMemoriesUseCase.name,
+        ConvertPendingUpdatesToNewUseCase.name,
     );
 
     constructor(
@@ -153,8 +153,8 @@ export class ConvertPendingUpdatesToMemoriesUseCase {
                 .filter(Boolean);
         } catch (error) {
             this.logger.error({
-                message: 'Could not convert pending updates to new memories',
-                context: ConvertPendingUpdatesToMemoriesUseCase.name,
+                message: 'Could not convert pending updates to new rules/memories',
+                context: ConvertPendingUpdatesToNewUseCase.name,
                 error,
                 metadata: {
                     organizationId,

@@ -4,7 +4,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CentralizedConfigPrService } from '@libs/centralized-config/infrastructure/adapters/services/centralized-config-pr.service';
 import { AuthorizationService } from '@libs/identity/infrastructure/adapters/services/permissions/authorization.service';
 import { ChangeStatusKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/change-status-kody-rules.use-case';
-import { ConvertPendingUpdatesToMemoriesUseCase } from '@libs/kodyRules/application/use-cases/convert-pending-updates-to-memories.use-case';
+import { ConvertPendingUpdatesToNewUseCase } from '@libs/kodyRules/application/use-cases/convert-pending-updates-to-new.use-case';
 import { CreateOrUpdateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/create-or-update.use-case';
 import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/find-rules-in-organization-by-filter.use-case';
 import { KodyRulesStatus } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
@@ -18,8 +18,8 @@ jest.mock('@kodus/flow', () => ({
     }),
 }));
 
-describe('ConvertPendingUpdatesToMemoriesUseCase', () => {
-    let useCase: ConvertPendingUpdatesToMemoriesUseCase;
+describe('ConvertPendingUpdatesToNewUseCase', () => {
+    let useCase: ConvertPendingUpdatesToNewUseCase;
     let createOrUpdateUseCaseMock: { execute: jest.Mock };
     let findRulesUseCaseMock: { execute: jest.Mock };
     let changeStatusUseCaseMock: { execute: jest.Mock };
@@ -62,7 +62,7 @@ describe('ConvertPendingUpdatesToMemoriesUseCase', () => {
 
         const module: TestingModule = await Test.createTestingModule({
             providers: [
-                ConvertPendingUpdatesToMemoriesUseCase,
+                ConvertPendingUpdatesToNewUseCase,
                 {
                     provide: CreateOrUpdateKodyRulesUseCase,
                     useValue: createOrUpdateUseCaseMock,
@@ -91,7 +91,7 @@ describe('ConvertPendingUpdatesToMemoriesUseCase', () => {
             ],
         }).compile();
 
-        useCase = module.get(ConvertPendingUpdatesToMemoriesUseCase);
+        useCase = module.get(ConvertPendingUpdatesToNewUseCase);
     });
 
     it('throws when organization id is missing', async () => {
@@ -120,7 +120,7 @@ describe('ConvertPendingUpdatesToMemoriesUseCase', () => {
                 status: KodyRulesStatus.PENDING,
                 type: 'memory',
                 origin: 'generated',
-                requestType: 'memory_update',
+                requestType: 'update',
                 targetRuleUuid: 'target-1',
                 resolvedAt: new Date('2026-01-01T00:00:00.000Z'),
                 resolvedBy: 'user-2',
