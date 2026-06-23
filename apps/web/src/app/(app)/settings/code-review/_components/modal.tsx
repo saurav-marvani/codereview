@@ -411,7 +411,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
             goodExample:
                 rule?.examples?.find(({ isCorrect }) => isCorrect)?.snippet ??
                 "",
-            origin: rule?.origin ?? KodyRulesOrigin.USER,
+            origin: rule?.origin ?? KodyRulesOrigin.MANUAL,
             status: rule?.status ?? KodyRulesStatus.ACTIVE,
             type: rule?.type ?? ruleType,
             inheritable: rule?.inheritance?.inheritable ?? true,
@@ -451,7 +451,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
                     scope: isMemory ? "file" : config.scope,
                     uuid: rule?.uuid,
                     examples: examples,
-                    origin: config.origin ?? KodyRulesOrigin.USER,
+                    origin: config.origin ?? KodyRulesOrigin.MANUAL,
                     status: config.status ?? KodyRulesStatus.ACTIVE,
                     type: config.type ?? ruleType,
                     centralizedConfig: rule?.centralizedConfig,
@@ -531,7 +531,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
                     scope: rule?.scope,
                     uuid: rule?.uuid,
                     examples: rule?.examples,
-                    origin: rule?.origin ?? KodyRulesOrigin.USER,
+                    origin: rule?.origin ?? KodyRulesOrigin.MANUAL,
                     status: rule?.status ?? KodyRulesStatus.ACTIVE,
                     type: rule?.type ?? ruleType,
                     centralizedConfig: rule?.centralizedConfig,

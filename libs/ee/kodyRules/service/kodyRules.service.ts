@@ -73,8 +73,8 @@ import {
     IKodyRules,
     KodyRuleCentralizedStatus,
     KodyRuleRequestType,
-    KodyRulesOrigin,
     KodyRulesScope,
+    KodyRulesOrigin,
     KodyRulesStatus,
     KodyRulesType,
 } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
@@ -85,6 +85,8 @@ import {
 } from '@libs/platformData/domain/pullRequests/contracts/pullRequests.repository';
 import { KodyRulesValidationService } from './kody-rules-validation.service';
 import { buildKodyRuleAppLink } from '../utils/build-rule-link';
+import { isGeneratedKodyRuleOrigin } from '@libs/common/utils/kody-rules/resolve-origin';
+import { requiresKnowledgeApproval } from '@libs/common/utils/kody-rules/knowledge-approval';
 import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
@@ -343,7 +345,7 @@ export class KodyRulesService implements IKodyRulesService {
                 repositoryId: kodyRule?.repositoryId,
                 directoryId: kodyRule?.directoryId,
                 examples: kodyRule?.examples,
-                origin: kodyRule?.origin ?? KodyRulesOrigin.USER,
+                origin: kodyRule?.origin ?? KodyRulesOrigin.MANUAL,
                 scope: kodyRule?.scope ?? KodyRulesScope.FILE,
                 inheritance: {
                     inheritable: kodyRule?.inheritance?.inheritable ?? true,
@@ -422,7 +424,7 @@ export class KodyRulesService implements IKodyRulesService {
                 repositoryId: kodyRule?.repositoryId,
                 directoryId: kodyRule?.directoryId,
                 examples: kodyRule?.examples,
-                origin: kodyRule?.origin,
+                origin: kodyRule?.origin ?? KodyRulesOrigin.MANUAL,
                 scope: kodyRule?.scope ?? KodyRulesScope.FILE,
                 inheritance: {
                     inheritable: kodyRule?.inheritance?.inheritable ?? true,
@@ -563,11 +565,10 @@ export class KodyRulesService implements IKodyRulesService {
         }
 
         try {
-            const codeReviewConfig =
-                await parametersService.findByKey(
-                    ParametersKey.CODE_REVIEW_CONFIG,
-                    organizationAndTeamData,
-                );
+            const codeReviewConfig = await parametersService.findByKey(
+                ParametersKey.CODE_REVIEW_CONFIG,
+                organizationAndTeamData,
+            );
 
             if (!codeReviewConfig?.configValue) {
                 return;
@@ -591,9 +592,7 @@ export class KodyRulesService implements IKodyRulesService {
                         organizationAndTeamData,
                     );
 
-                const matched = repos?.find(
-                    (r) => r.id === rule.repositoryId,
-                );
+                const matched = repos?.find((r) => r.id === rule.repositoryId);
                 if (matched?.name) {
                     repositoryName = matched.name;
                 }
@@ -1384,10 +1383,11 @@ Analyze the suggestions and recommend the most relevant rules.`;
                 resolution?.action === 'update'
                     ? resolution.targetMemory
                     : null;
-            const isTargetUserOrigin =
-                targetMemory?.origin === KodyRulesOrigin.USER;
+            const isTargetUserOrigin = !isGeneratedKodyRuleOrigin(
+                targetMemory?.origin,
+            );
             const isTargetGeneratedNeedsApproval =
-                targetMemory?.origin === KodyRulesOrigin.GENERATED &&
+                isGeneratedKodyRuleOrigin(targetMemory?.origin) &&
                 requiresApproval;
 
             if (
@@ -1398,7 +1398,7 @@ Analyze the suggestions and recommend the most relevant rules.`;
                     organizationAndTeamData,
                     memoryToPersist,
                     userInfo,
-                    KodyRuleRequestType.MEMORY_UPDATE,
+                    KodyRuleRequestType.UPDATE,
                     targetMemory.uuid,
                 );
             }
@@ -1408,7 +1408,7 @@ Analyze the suggestions and recommend the most relevant rules.`;
                     organizationAndTeamData,
                     memoryToPersist,
                     userInfo,
-                    KodyRuleRequestType.MEMORY_CREATE,
+                    KodyRuleRequestType.CREATE,
                 );
             }
 
@@ -1567,7 +1567,7 @@ Analyze the suggestions and recommend the most relevant rules.`;
         memory: IKodyRuleMemory,
     ): Promise<boolean> {
         if (
-            memory.origin !== KodyRulesOrigin.GENERATED ||
+            !memory.origin ||
             !organizationAndTeamData?.organizationId ||
             !organizationAndTeamData?.teamId
         ) {
@@ -1584,11 +1584,14 @@ Analyze the suggestions and recommend the most relevant rules.`;
                     },
                 );
 
-            return mergedConfig.llmGeneratedMemoriesRequireApproval === true;
+            return requiresKnowledgeApproval(
+                mergedConfig.kodyKnowledgeApproval,
+                memory.origin,
+            );
         } catch (error) {
             this.logger.error({
                 message:
-                    'Error resolving llmGeneratedMemoriesRequireApproval, defaulting to active memories',
+                    'Error resolving kodyKnowledgeApproval, defaulting to active memories',
                 error,
                 context: KodyRulesService.name,
                 metadata: {
@@ -1620,7 +1623,7 @@ Analyze the suggestions and recommend the most relevant rules.`;
           }
         | null
     > {
-        if (memory.origin !== KodyRulesOrigin.GENERATED || memory.uuid) {
+        if (!isGeneratedKodyRuleOrigin(memory.origin) || memory.uuid) {
             return null;
         }
 
@@ -1735,7 +1738,7 @@ Analyze the suggestions and recommend the most relevant rules.`;
         return {
             ...memory,
             path: memory.path || null,
-            origin: memory.origin || KodyRulesOrigin.USER,
+            origin: memory.origin ?? KodyRulesOrigin.MANUAL,
             severity: KodyRuleSeverity.MEDIUM,
             examples: [],
             inheritance: {

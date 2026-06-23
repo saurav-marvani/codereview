@@ -80,6 +80,10 @@ import {
     buildDefaultSourceBranchName,
     DEFAULT_COMMIT_MESSAGE,
     DEFAULT_PR_TITLE,
+    EMPTY_REPO_DEFAULT_BRANCH,
+    EMPTY_REPO_SEED_COMMIT_MESSAGE,
+    EMPTY_REPO_SEED_CONTENT,
+    EMPTY_REPO_SEED_PATH,
 } from './code-management-defaults.constants';
 
 import { Reaction } from '@libs/code-review/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
@@ -405,7 +409,8 @@ export class ForgejoService implements Omit<
                 (await this.getDefaultBranch({
                     organizationAndTeamData,
                     repository,
-                }));
+                })) ||
+                EMPTY_REPO_DEFAULT_BRANCH;
             const resolvedBaseBranch = baseBranch || resolvedTargetBranch;
 
             const authDetail = await this.getAuthDetails(
@@ -426,6 +431,16 @@ export class ForgejoService implements Omit<
             }
 
             const client = this.createForgejoClient(authDetail);
+
+            // An empty repository has no default-branch ref yet, so branch
+            // creation and the PR below fail. Seed an initial commit so the
+            // base branch exists. No-op when the branch is already there.
+            await this.ensureBaseBranchExists({
+                client,
+                repoInfo,
+                baseBranch: resolvedBaseBranch,
+                author,
+            });
 
             const uploadResult = await this.uploadFiles({
                 organizationAndTeamData,
@@ -471,7 +486,8 @@ export class ForgejoService implements Omit<
                 error,
                 metadata: { params },
             });
-            return null;
+            // Propagate the real cause so the caller can surface it.
+            throw error;
         }
     }
 
@@ -584,7 +600,8 @@ export class ForgejoService implements Omit<
                             ? ('update' as const)
                             : ('create' as const),
                         path: file.path,
-                        content: file.content,
+                        // Forgejo's change-files API requires base64 content.
+                        content: Buffer.from(file.content).toString('base64'),
                     } as any;
                 })
                 .filter((change): change is NonNullable<typeof change> =>
@@ -661,6 +678,69 @@ export class ForgejoService implements Omit<
 
             throw error;
         }
+    }
+
+    // Seeds an empty repository with an initial commit so the base branch
+    // exists for the branch + PR flow. A no-op when the branch already exists.
+    private async ensureBaseBranchExists(params: {
+        client: Client;
+        repoInfo: { owner: string; repo: string };
+        baseBranch: string;
+        author?: { name: string; email?: string };
+    }): Promise<void> {
+        const { client, repoInfo, baseBranch, author } = params;
+
+        const exists = await this.checkForgejoBranchExists(
+            client,
+            repoInfo,
+            baseBranch,
+        );
+        if (exists) {
+            return;
+        }
+
+        const identity = author?.name
+            ? {
+                  name: author.name,
+                  email: author.email || 'kody@kodus.io',
+              }
+            : undefined;
+
+        const res = await repoChangeFiles({
+            client,
+            path: repoInfo,
+            body: {
+                files: [
+                    {
+                        operation: 'create',
+                        path: EMPTY_REPO_SEED_PATH,
+                        // Forgejo's change-files API requires base64 content.
+                        content:
+                            Buffer.from(EMPTY_REPO_SEED_CONTENT).toString(
+                                'base64',
+                            ),
+                    },
+                ] as any,
+                message: EMPTY_REPO_SEED_COMMIT_MESSAGE,
+                branch: baseBranch,
+                ...(identity
+                    ? { author: identity, committer: identity }
+                    : {}),
+            },
+        });
+
+        if (!res || res.status >= 300) {
+            throw new Error(
+                `Failed to initialize empty repository: ${res?.status}`,
+            );
+        }
+
+        this.logger.log({
+            message:
+                'Seeded empty Forgejo repository with an initial commit for centralized config',
+            context: ForgejoService.name,
+            metadata: { repo: repoInfo.repo, baseBranch },
+        });
     }
 
     private async checkForgejoFileExists(

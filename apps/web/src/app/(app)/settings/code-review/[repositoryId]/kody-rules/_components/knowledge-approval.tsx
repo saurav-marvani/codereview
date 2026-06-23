@@ -22,7 +22,7 @@ import { getCentralizedPrToastPayload } from "../../../_utils/centralized-pr-fee
 import { useCodeReviewConfig } from "../../../../_components/context";
 import { useCodeReviewRouteParams } from "../../../../_hooks";
 
-export const GeneratedMemoriesApprovalSetting = () => {
+export const KodyKnowledgeApprovalSetting = () => {
     const config = useCodeReviewConfig();
     const { teamId } = useSelectedTeamId();
     const { repositoryId, directoryId } = useCodeReviewRouteParams();
@@ -36,13 +36,13 @@ export const GeneratedMemoriesApprovalSetting = () => {
     );
 
     const currentValue =
-        config?.llmGeneratedMemoriesRequireApproval?.value ?? false;
+        config?.kodyKnowledgeApproval?.enabled?.value ?? false;
 
     const [handleToggle, { loading }] = useAsyncAction(async () => {
         try {
             const mutationResult = await createOrUpdateCodeReviewParameter(
                 {
-                    llmGeneratedMemoriesRequireApproval: !currentValue,
+                    kodyKnowledgeApproval: { enabled: !currentValue },
                 },
                 teamId,
                 repositoryId,
@@ -109,13 +109,14 @@ export const GeneratedMemoriesApprovalSetting = () => {
                             <Section.Header>
                                 <div className="flex items-center gap-2">
                                     <Section.Title>
-                                        LLM-generated memories approval
+                                        Kody knowledge approval
                                     </Section.Title>
-                                    {config?.llmGeneratedMemoriesRequireApproval !==
+                                    {config?.kodyKnowledgeApproval?.enabled !==
                                         undefined && (
                                         <OverrideIndicator
                                             initialState={
-                                                config.llmGeneratedMemoriesRequireApproval
+                                                config.kodyKnowledgeApproval
+                                                    .enabled
                                             }
                                             currentValue={currentValue}
                                             handleRevert={handleRevert}
@@ -125,9 +126,9 @@ export const GeneratedMemoriesApprovalSetting = () => {
                             </Section.Header>
 
                             <Section.Content className="text-text-secondary text-sm font-normal">
-                                When enabled, LLM-generated memories are created
-                                as pending and require approval before becoming
-                                active. When disabled, generated memories are
+                                When enabled, Kody-generated rules and memories
+                                are created as pending and require approval
+                                before becoming active. When disabled, they are
                                 active by default.
                             </Section.Content>
                         </Section.Root>
