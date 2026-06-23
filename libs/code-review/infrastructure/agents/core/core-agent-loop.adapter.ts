@@ -28,6 +28,11 @@ import { wrapByokModel } from '@libs/llm/byok-model-wrapper';
 import { anthropicSystemCacheControl } from '@libs/llm/system-cache';
 import { buildFinderAgentSpec, runFinderWithVerify } from '@libs/code-review/infrastructure/agents/core/finder.agent';
 import {
+    buildFindingsFromVerify,
+    summarizeFunnel,
+} from '@libs/code-review/infrastructure/agents/core/review-finding';
+import { createLogger } from '@libs/core/log/logger';
+import {
     type AgentLoopInput,
     type AgentLoopOutput,
     type AgentLoopSecrets,
@@ -40,6 +45,8 @@ import { buildProviderOptions } from '@libs/llm/reasoning-options';
 import { buildAgentAnomalies } from '@libs/code-review/infrastructure/agents/core/agent-anomalies';
 import { composeAbortSignal } from '@libs/common/utils/parent-signal-compose';
 import { buildCoverageLedger, getCoverageSummary } from '@libs/code-review/infrastructure/agents/engine/coverage-ledger';
+
+const funnelLogger = createLogger('review-funnel');
 
 export async function runAgentLoopViaCore(
     input: AgentLoopInput,
@@ -144,6 +151,30 @@ export async function runAgentLoopViaCore(
     ).finally(() => {
         clearTimeout(timeout);
         detach();
+    });
+
+    // --- recall funnel made observable (ReviewFinding lifecycle) ---
+    // Slice 1: the VERIFY gate — where recall dies most (verify drops the
+    // majority of candidates). Building the lifecycle here (richest data: kept +
+    // evidence + dropped + reason, all aligned) turns "30% recall" into an
+    // attributable, per-severity/per-category dataset for the ratchet. Additive:
+    // pure derivation + a structured log, zero behavior change.
+    const findings = buildFindingsFromVerify(r, {
+        agent: input.agentName ?? 'finder',
+        pass: 'initial',
+    });
+    const funnel = summarizeFunnel(findings);
+    funnelLogger.log({
+        message: 'review recall funnel (verify gate)',
+        context: 'review-funnel',
+        metadata: {
+            organizationId: input.telemetryMetadata?.organizationId,
+            teamId: input.telemetryMetadata?.teamId,
+            pullRequestId: input.telemetryMetadata?.pullRequestId,
+            repositoryId: input.telemetryMetadata?.repositoryId,
+            agent: input.agentName ?? 'finder',
+            funnel,
+        },
     });
 
     // --- map RunState -> AgentLoopOutput (essential fields faithful) ---

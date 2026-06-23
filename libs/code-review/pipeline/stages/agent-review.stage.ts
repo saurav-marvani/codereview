@@ -1442,31 +1442,27 @@ ${summaries}`,
                 );
             }
 
-            // Track token usage
-            try {
-                const dedupUsage = dedupResult.usage ?? dedupResult.totalUsage;
-                if (dedupUsage) {
-                    await this.observabilityService.runInSpan(
-                        'dedup-suggestions',
-                        async () => dedupResult,
-                        {
-                            'gen_ai.usage.input_tokens':
-                                dedupUsage.inputTokens ?? 0,
-                            'gen_ai.usage.output_tokens':
-                                dedupUsage.outputTokens ?? 0,
-                            'gen_ai.usage.total_tokens':
-                                dedupUsage.totalTokens ??
-                                (dedupUsage.inputTokens ?? 0) +
-                                    (dedupUsage.outputTokens ?? 0),
-                            'gen_ai.response.model': 'internal-dedup',
-                            'gen_ai.run.name': 'code-review-dedup',
-                            'type': 'system',
-                            'prNumber': prNumber,
-                        },
-                    );
-                }
-            } catch {
-                // Observability is best-effort
+            // Track token usage — via the canonical emitter so the dedup pass'
+            // cost lands in `observability_telemetry` with the SAME schema
+            // (agentName/phase/type/gen_ai.usage.*) as the review agents.
+            const dedupUsage = dedupResult.usage ?? dedupResult.totalUsage;
+            if (dedupUsage) {
+                await this.observabilityService.recordAgentRunUsage({
+                    agentName: 'code-review',
+                    phase: 'dedup',
+                    spanName: 'dedup-suggestions',
+                    runName: 'code-review-dedup',
+                    model: 'internal-dedup',
+                    // Real billing source: the Google system key path is
+                    // 'system'; the else branch runs on the org's BYOK config.
+                    isByok: !googleKey,
+                    usage: {
+                        inputTokens: dedupUsage.inputTokens,
+                        outputTokens: dedupUsage.outputTokens,
+                        totalTokens: dedupUsage.totalTokens,
+                    },
+                    prNumber,
+                });
             }
 
             const dedupOutput =

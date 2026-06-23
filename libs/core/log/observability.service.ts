@@ -98,6 +98,80 @@ export interface ObservabilityConfig {
     };
 }
 
+interface UsageSpanInput {
+    runName?: string;
+    model?: string;
+    /** -> `agent.name` column. */
+    agentName?: string;
+    /** -> `agent.phase` column. */
+    phase?: string;
+    /** -> `type` column ('system' | 'byok' | 'agent' | ...). */
+    type?: string;
+    usage: {
+        inputTokens?: number;
+        outputTokens?: number;
+        totalTokens?: number;
+        reasoningTokens?: number;
+        cacheReadTokens?: number;
+        cacheWriteTokens?: number;
+    };
+    organizationId?: string;
+    teamId?: string;
+    prNumber?: number;
+    steps?: number;
+    toolCalls?: number;
+    finishReason?: string;
+    source?: string;
+    durationMs?: number;
+    extraAttributes?: Record<string, any>;
+}
+
+/**
+ * THE single source of truth for the `observability_telemetry` cost-span
+ * attribute schema (`gen_ai.usage.*` + `agent.name`/`agent.phase`/`type` +
+ * cache tokens). Both entry points — `recordAgentRunUsage` (post-hoc) and
+ * `runAiSdkLLMInSpan` (wrap-exec) — project through here, so the Mongo columns
+ * are identical regardless of how the span is produced. Add a billing
+ * attribute ONCE, here. A span carrying `gen_ai.usage.total_tokens` is
+ * billing-critical (WAL-backed) per the exporter's `isCriticalSpan`.
+ */
+function buildUsageSpanAttributes(p: UsageSpanInput): Record<string, any> {
+    const u = p.usage;
+    const inputTokens = u.inputTokens ?? 0;
+    const outputTokens = u.outputTokens ?? 0;
+    const totalTokens = u.totalTokens ?? inputTokens + outputTokens;
+    const cacheRead = u.cacheReadTokens ?? 0;
+    const cacheWrite = u.cacheWriteTokens ?? 0;
+    return {
+        'gen_ai.usage.input_tokens': inputTokens,
+        'gen_ai.usage.output_tokens': outputTokens,
+        'gen_ai.usage.total_tokens': totalTokens,
+        ...(cacheRead > 0 && {
+            'gen_ai.usage.cache_read_input_tokens': cacheRead,
+        }),
+        ...(cacheWrite > 0 && {
+            'gen_ai.usage.cache_creation_input_tokens': cacheWrite,
+        }),
+        ...((u.reasoningTokens ?? 0) > 0 && {
+            'gen_ai.usage.reasoning_tokens': u.reasoningTokens,
+        }),
+        ...(p.model && { 'gen_ai.response.model': p.model }),
+        ...(p.runName && { 'gen_ai.run.name': p.runName }),
+        ...(p.agentName && { 'agent.name': p.agentName }),
+        ...(p.phase && { 'agent.phase': p.phase }),
+        ...(p.type && { type: p.type }),
+        ...(p.organizationId && { organizationId: p.organizationId }),
+        ...(p.teamId && { teamId: p.teamId }),
+        ...(p.prNumber != null && { prNumber: p.prNumber }),
+        ...(p.steps != null && { steps: p.steps }),
+        ...(p.toolCalls != null && { toolCalls: p.toolCalls }),
+        ...(p.finishReason && { finishReason: p.finishReason }),
+        ...(p.source && { source: p.source }),
+        ...(p.durationMs != null && { durationMs: p.durationMs }),
+        ...(p.extraAttributes ?? {}),
+    };
+}
+
 @Injectable()
 export class ObservabilityService implements OnModuleInit {
     private readonly instances = new Map<
@@ -338,9 +412,12 @@ export class ObservabilityService implements OnModuleInit {
      * cost pipeline. A span carrying `gen_ai.usage.total_tokens` is treated as
      * billing-critical (synchronously flushed) by the telemetry engine.
      *
-     * Usage attributes are read from the AI SDK result's `usage`
-     * ({ inputTokens, outputTokens, totalTokens, reasoningTokens }) and set
-     * before the span ends.
+     * Usage attributes are read from the AI SDK result's `usage` and projected
+     * through `buildUsageSpanAttributes` — the SAME schema `recordAgentRunUsage`
+     * uses. `agent.name`/`agent.phase` are derived from `spanName` ('A::B'); the
+     * caller's `attrs` (type/org/team/...) are applied by `runInSpan` at span
+     * start. Prefer `recordAgentRunUsage` for new harness agents; this wrapper
+     * stays for call sites that need to time/guard the exec itself.
      */
     async runAiSdkLLMInSpan<
         T extends {
@@ -358,38 +435,115 @@ export class ObservabilityService implements OnModuleInit {
         attrs?: Record<string, any>;
         exec: () => Promise<T>;
     }): Promise<T> {
+        const [agentName, phase] = params.spanName.split('::');
         return this.runInSpan(
             params.spanName,
             async (span) => {
                 const result = await params.exec();
                 const usage = result?.usage;
-                span?.setAttributes?.({
-                    ...(params.runName
-                        ? { 'gen_ai.run.name': params.runName }
-                        : {}),
-                    ...(params.model
-                        ? { 'gen_ai.response.model': params.model }
-                        : {}),
-                    ...(usage?.inputTokens != null
-                        ? { 'gen_ai.usage.input_tokens': usage.inputTokens }
-                        : {}),
-                    ...(usage?.outputTokens != null
-                        ? { 'gen_ai.usage.output_tokens': usage.outputTokens }
-                        : {}),
-                    ...(usage?.totalTokens != null
-                        ? { 'gen_ai.usage.total_tokens': usage.totalTokens }
-                        : {}),
-                    ...(usage?.reasoningTokens
-                        ? {
-                              'gen_ai.usage.reasoning_tokens':
-                                  usage.reasoningTokens,
-                          }
-                        : {}),
-                });
+                span?.setAttributes?.(
+                    buildUsageSpanAttributes({
+                        runName: params.runName,
+                        model: params.model,
+                        agentName,
+                        phase,
+                        usage: {
+                            inputTokens: usage?.inputTokens,
+                            outputTokens: usage?.outputTokens,
+                            totalTokens: usage?.totalTokens,
+                            reasoningTokens: usage?.reasoningTokens,
+                            cacheReadTokens: (
+                                usage as
+                                    | { cachedInputTokens?: number }
+                                    | undefined
+                            )?.cachedInputTokens,
+                        },
+                    }),
+                );
                 return result;
             },
             params.attrs,
         );
+    }
+
+    /**
+     * Canonical agent-run cost span — the SINGLE source of truth for the
+     * `observability_telemetry` billing schema (Mongo). Every agent built on
+     * the harness (`AiSdkAgentRunner`) calls this once per logical phase after
+     * the run, passing the usage read from `RunState.usage`, so the columns the
+     * `mongodb-exporter` projects (`agentName`, `phase`, `type`, the
+     * `gen_ai.usage.*` family, cache tokens) are populated identically for
+     * code-review, conversation, business-rules and any future agent.
+     *
+     * Boundary note: this method is deliberately domain-agnostic — it takes
+     * plain fields, never a review/conversation shape. The harness stays free
+     * of observability and the domain stays free of the span schema; both meet
+     * here. A span carrying `gen_ai.usage.total_tokens` is billing-critical
+     * (WAL-backed, never dropped) per the exporter's `isCriticalSpan`.
+     *
+     * Best-effort: observability must never break an agent run, so all failures
+     * are swallowed.
+     */
+    async recordAgentRunUsage(params: {
+        /** Logical agent identity -> `agent.name` column. */
+        agentName: string;
+        /** Run sub-phase -> `agent.phase` column (e.g. 'review','verify','conversation','business-rules'). */
+        phase: string;
+        /** Span NAME (the `name` column). Defaults to `${agentName}::${phase}`.
+         *  Override to preserve an existing span name that dashboards query. */
+        spanName?: string;
+        /** Human label -> `gen_ai.run.name`. Defaults to `${agentName}-${phase}`. */
+        runName?: string;
+        /** Resolved model -> `gen_ai.response.model`. */
+        model?: string;
+        /** byok config present -> `type: 'byok'`, else `'system'`. */
+        isByok: boolean;
+        usage: {
+            inputTokens?: number;
+            outputTokens?: number;
+            totalTokens?: number;
+            reasoningTokens?: number;
+            cacheReadTokens?: number;
+            cacheWriteTokens?: number;
+        };
+        organizationId?: string;
+        teamId?: string;
+        prNumber?: number;
+        steps?: number;
+        toolCalls?: number;
+        finishReason?: string;
+        source?: string;
+        durationMs?: number;
+        /** Escape hatch for domain-specific low-cardinality attributes. */
+        extraAttributes?: Record<string, any>;
+    }): Promise<void> {
+        try {
+            await this.runInSpan(
+                params.spanName ?? `${params.agentName}::${params.phase}`,
+                async () => undefined,
+                buildUsageSpanAttributes({
+                    runName:
+                        params.runName ??
+                        `${params.agentName}-${params.phase}`,
+                    model: params.model,
+                    agentName: params.agentName,
+                    phase: params.phase,
+                    type: params.isByok ? 'byok' : 'system',
+                    usage: params.usage,
+                    organizationId: params.organizationId,
+                    teamId: params.teamId,
+                    prNumber: params.prNumber,
+                    steps: params.steps,
+                    toolCalls: params.toolCalls,
+                    finishReason: params.finishReason,
+                    source: params.source,
+                    durationMs: params.durationMs,
+                    extraAttributes: params.extraAttributes,
+                }),
+            );
+        } catch {
+            // Observability is best-effort — never break an agent run.
+        }
     }
 
     // ---------- Integrated LLM tracking ----------

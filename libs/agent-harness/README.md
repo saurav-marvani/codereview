@@ -1,53 +1,158 @@
 # agent-harness
 
-Harness de agentes **agnóstico de domínio**. Code-review, business-rules,
-docs-qa, etc. são **aplicações** construídas em cima daqui — este pacote
-não sabe o que é um PR, um diff ou um Finding.
+> `Agent = Model + Harness`. Este pacote é a metade **engine** — o **único loop
+> de agent** + controle + observabilidade que transforma um modelo num agent.
+> É **agnóstico de domínio**: code-review, conversation, business-rules e skills
+> são *aplicações* construídas em cima daqui, não fazem parte dele.
+
+NÃO é a "disciplina harness" inteira (prompts, sandbox, MCP, evals vivem em
+volta). É o runtime: *"um sistema que roda tools num loop pra atingir um
+objetivo"* + os pontos de controle + o registro observável de cada execução.
 
 ## Regra de dependência (inviolável)
 
 ```
-domínio (libs/code-review, ...)  ──depende──▶  @libs/agent-harness
-@libs/agent-harness                 ──NUNCA──▶   domínio
+domínio (libs/code-review, libs/agents, ...)  ──depende──▶  @libs/agent-harness
+@libs/agent-harness                              ──NUNCA──▶   domínio
 ```
 
-`agent-harness` não importa nada de lib de domínio. Se precisar de algo do
-domínio, isso entra via **injeção** (ToolContext.services, AgentSpec,
-policies fornecidas pela aplicação) — nunca por import. É ports-and-adapters:
+`domain/contracts/index.ts` não importa nada de lib de domínio. Se precisar de
+algo do domínio, entra via **injeção** (`ToolContext.services`, `AgentSpec`,
+policies/verifiers fornecidos pela aplicação) — nunca por import. Ports & adapters:
 o core define as portas (contracts), a infra/domínio fornece os adapters.
 
-## As camadas
+## Os primitivos (lista fechada — `domain/contracts/`)
 
-| camada | o que é | onde |
+| Primitivo | Papel | Uma frase |
 |---|---|---|
-| L0 model | acesso model-agnostic (BYOK + Vercel AI SDK) | infra |
-| **L1 runtime** | **AgentRunner (1 loop) · Tool · Policy · AgentSpec · RunState** | `domain/contracts` |
-| L2 orquestração | sequential · parallel · sub-agente-como-tool | (a construir) |
-| L3 aplicação | code-review (Finding, stages, prompts, tools) | `libs/code-review` |
+| `AgentSpec` | o agent como **dado** | systemPrompt + tools + policies + maxSteps + modelId (+ temperature, providerOptions, resultToolName) |
+| `AgentRunner` | o **único loop** | `run(spec, input, ctx) → RunState` |
+| `RunState` (+ `trace`) | registro **observável por construção** | steps, usage, status, stopReason, artifacts, trace |
+| `AgentTool` / `ToolRegistry` / `ToolContext` | **capacidade** + conjunto + contexto por-run | o que o modelo chama no loop. Erros são valores (`ToolResult.isError`), não exceptions |
+| `AgentPolicy` | controle **in-loop, por step** | `prepareStep` (steer) + `shouldStop` (parar) |
+| `Verifier<T>` (+ `Verdict`) | avaliador **pós-run, por candidato** | o padrão Splits: gerador ≠ avaliador |
+| `ModelResolver<TModel>` | abstrai o modelo / BYOK | `resolve(modelId) → model` |
+| `Compressor`, `ProgressLedger` | **portas** que policies injetam | compaction / cobertura |
 
-## Os primitivos (L1)
+### Policy vs Verifier (a distinção que importa)
 
-- **Tool** — capacidade isolada `{name, schema, execute}`. Erros são valores, não exceptions.
-- **ToolRegistry** — conjunto de tools; suporta `subset()` (gate de activeTools).
-- **Policy** — interceptor composável (substitui os hooks inlined). Seams:
-  `shouldStop` (=stopWhen), `prepareStep` (=prepareStep), lifecycle (=before/after).
-  Cada policy é unit-testável sem LLM: alimenta um `StepView`, asserta o `StepDirectives`.
-- **AgentSpec** — papel = **config** (prompt + tools + policies + model). Não classe.
-- **AgentRunner** — o **único** loop. finder, verifier, réplicas: todos passam aqui.
-- **SubAgentFactory** — expõe um AgentSpec **como tool** (isolamento de contexto, retorna resumo destilado).
-- **RunState** — registro **observável por construção** (steps, artifacts, trace). Mata o "funil reconstruído por heurística".
+| Eixo | `AgentPolicy` | `Verifier<T>` |
+|---|---|---|
+| Quando | durante o loop, **a cada step** | **depois** do run |
+| Sobre o quê | a **trajetória** (`StepView`) | a **saída** (candidatos) |
+| Granularidade | por step | por candidato |
+| É um agent? | não, é um hook | pode ser (sub-agent, chamada única, ou check determinístico tipo `tsc`) |
 
-## Princípios (da pesquisa SOTA 2024-2026)
+Policy guia UMA execução; verifier julga a SAÍDA dela. São pontos de controle
+diferentes — **verify não é policy.**
+
+## Implementações (`infrastructure/`)
+
+| Peça | O que é |
+|---|---|
+| `ai-sdk/ai-sdk-agent-runner` → `AiSdkAgentRunner` | a **única** impl de `AgentRunner` (sobre Vercel AI SDK) |
+| `ai-sdk/ai-sdk-tool-registry` → `AiSdkToolRegistry` | carrega tools nativos do AI SDK (MCP/Zod) sem round-trip de schema |
+| `tools/in-memory-tool-registry` → `InMemoryToolRegistry` | registry de `AgentTool` (JSON-Schema) |
+| `policies/` → `BudgetPolicy`, `CompressionPolicy`, `CompletionGatePolicy`, `ForceFinalizePolicy` | Budget + Compression genéricas; CompletionGate + ForceFinalize são do padrão "result-tool" |
+| `orchestration/verification-pass` → `runVerificationPass<T>` | driver do `Verifier<T>` sobre um conjunto de candidatos |
+| `orchestration/sub-agent.factory` → `DefaultSubAgentFactory` | sub-agent-como-tool |
+
+## Capacidades do `AiSdkAgentRunner`
+
+- **Tools**: 2 caminhos — `AgentTool → aiTool()`, ou passthrough nativo via `AiSdkToolRegistry`.
+- **System prompt**: string, ou com `systemProviderOptions` (cache Anthropic).
+- **Config de chamada**: `temperature`, `maxOutputTokens`, `providerOptions`.
+- **Telemetria**: `input.telemetry` → `experimental_telemetry` (Langfuse).
+- **Cancelamento**: `ctx.signal` → `abortSignal`.
+- **Parada**: `policy.shouldStop` (OR) + `stepCountIs(maxSteps)` fail-open.
+- **Steer por step**: diretivas de `policy.prepareStep` mescladas; `sanitizeNoSystem`.
+
+## Dois modos de saída
+
+1. **Estruturado ("result tool")** — setar `spec.resultToolName`; o runner
+   materializa cada chamada nele em `RunState.artifacts`. O domínio lê
+   `state.artifacts` (ex.: findings do finder). Nunca re-escaneia `steps` na mão.
+2. **Free-form** — sem `resultToolName`; a resposta é o último turno assistant.
+   Use o helper `finalText(state)` (`domain/run-state.util`). Usado por
+   conversation e business-rules.
+
+## Uso mínimo
+
+```ts
+const model  = byokToVercelModel(byokConfig);
+const runner = new AiSdkAgentRunner({ resolve: () => model });
+
+const spec: AgentSpec = {
+  id: 'my-agent',
+  systemPrompt,
+  modelId: 'resolved',
+  tools: new AiSdkToolRegistry({ ...mcp.tools }),  // ou InMemoryToolRegistry([...AgentTool])
+  policies: [new BudgetPolicy()],                  // o domínio adiciona o que precisar
+  maxSteps: 12,
+  temperature: 0,
+};
+
+const state = await runner.run(
+  spec,
+  { prompt, telemetry: buildLangfuseTelemetry('my-agent', meta) },
+  { runId, signal },
+);
+
+// saída: state.artifacts (estruturado) OU último step assistant (free-form)
+// custo: observability.recordAgentRunUsage({ agentName, phase, usage: state.usage, ... })
+```
+
+## Fronteira
+
+- Harness é **genérico** — contracts não importam domínio.
+- O **domínio** fornece os concretos: finder tools, `LlmVerifier`, o `Finding`/
+  funil de review, `DiffCoverageLedger`. Mapeia `Artifact` → seu shape.
+- **Observabilidade** (`recordAgentRunUsage`, schema único de custo) mora em
+  `@libs/core/log/observability.service` — compartilhada, alimentada por
+  `RunState.usage`. Fora do harness de propósito (acoplaria o engine ao pipeline de custo).
+
+## Consumidores hoje
+
+| Consumidor | No runner? | Tools | Policies | Saída | Verifier |
+|---|---|---|---|---|---|
+| **code-review** (finder/verify) | ✅ | `InMemoryToolRegistry` | Budget + Compression + CompletionGate + ForceFinalize | `resultToolName` | ✅ `runVerificationPass` (LLM) |
+| **skills** (fetcher) | ✅ | registry MCP | `[]` | free-form | ❌ |
+| **conversation** | ✅ | `AiSdkToolRegistry` | `[]` | free-form (`finalText`) | ❌ |
+| **business-rules** | ✅ | — (fetch via skill) | `[]` | free-form (`finalText`) | ❌ |
+
+`business-rules` roda **todo no harness**: a fase de **fetch** é uma skill cujo
+fetcher é um agent do runner (com MCP); a **análise** é single-shot no runner
+(`maxSteps:1`, sem tools). Os 3 (+skills) estão no mesmo engine.
+
+## Não-objetivos conscientes (decisões, não dívida)
+
+- **Hooks de lifecycle** (after-edit / pre-commit / auto-format) — miram agents
+  que **escrevem**; os nossos são sensores read-only. Isolamento do sandbox +
+  `abortSignal` + `ToolResult` (erros-como-valor) + `activeTools` já cobrem o
+  sliver aplicável. Cross-cutting por-tool (redação de secret, telemetria por-tool)
+  vira um **decorator de `AgentTool`**, não um sistema de hooks.
+- **Verifier computacional** (tsc/jest back-pressure) — adiado; encaixa no
+  `Verifier<T>` quando voltarmos.
+- **Tool-call offloading / progressive disclosure / planning** — não necessários
+  pros 3 usos atuais.
+- **Git-as-durable-state / commits** — só relevante se criarmos um agent que escreve.
+
+## Princípios (pesquisa SOTA + harness-engineering 2024-2026)
 
 1. **Loop fino + seams** — concern não mora no loop, mora numa Policy composável.
 2. **Papel = config, não fork** — um runner só; varia prompt+tools (prática Anthropic).
-3. **Sub-agente = tool** — orquestração (réplicas, parent/child) é compor o mesmo runner.
-4. **Determinístico testável** — separar o scaffold determinístico do comportamento estocástico do modelo; mockar o model (`ai/test`) e testar policies isoladas.
+3. **Sub-agent = tool** — orquestração (réplicas, parent/child) é compor o mesmo runner.
+4. **Splits** — gerador (finder) ≠ avaliador (verifier); evita o viés de auto-correção.
+5. **Observável por construção** — `RunState`/`trace` mata o "funil reconstruído por heurística".
+6. **Determinístico testável** — mockar o model (`ai/test`), testar policies isoladas.
 
 ## Estado
 
 - [x] L1 contracts (`domain/contracts`)
-- [ ] L1 infra: AgentRunner sobre Vercel AI SDK (mapeia stopWhen/prepareStep/wrapLanguageModel)
-- [ ] Policies extraídas do loop legado (budget, coverage, compression, verify)
-- [ ] L2 orquestração
-- [ ] Migração strangler do code-review pro core
+- [x] L1 infra: `AiSdkAgentRunner` sobre Vercel AI SDK (stopWhen/prepareStep/tools/telemetry)
+- [x] Policies: Budget, Compression, CompletionGate, ForceFinalize
+- [x] Verifier + `runVerificationPass` (Splits) · `SubAgentFactory`
+- [x] `AiSdkToolRegistry` (tools nativos AI SDK sem round-trip)
+- [x] `finalText(state)` helper (`domain/run-state.util`) — usado por conversation + business
+- [x] Consumidores: code-review (full), skills (fetcher), conversation, **business (todo no harness)**
+- [ ] **Próxima passada:** estender o funil de review (gates dedup G1 / severity G3); avaliar policies pra conversation/business se precisarem

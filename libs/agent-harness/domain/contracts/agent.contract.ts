@@ -24,6 +24,12 @@ export interface AgentSpec {
     readonly policies: readonly AgentPolicy[];
     /** Hard ceiling — the runner's fail-open even if no policy stops. */
     readonly maxSteps: number;
+    /** Sampling temperature for the model call. Omitted -> provider default.
+     *  Generic model-call config (not provider-specific), so it lives on the
+     *  spec rather than in `providerOptions`. */
+    readonly temperature?: number;
+    /** Hard cap on output tokens PER model call. Omitted -> provider default. */
+    readonly maxOutputTokens?: number;
     /** Opaque provider options forwarded to the model call (e.g. reasoning /
      *  thinking config). The harness does not interpret these — the domain
      *  builds them (provider-specific) and the runner passes them through. */

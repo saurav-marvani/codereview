@@ -40,6 +40,7 @@ import type {
     TraceEvent,
 } from '../../domain/contracts/run-state.contract';
 import type { ToolContext } from '../../domain/contracts/tool.contract';
+import { isAiSdkToolSource } from './ai-sdk-tool-registry';
 
 export class AiSdkAgentRunner implements AgentRunner {
     constructor(private readonly models: ModelResolver<LanguageModel>) {}
@@ -54,17 +55,24 @@ export class AiSdkAgentRunner implements AgentRunner {
         const emit = (source: string, e: Omit<TraceEvent, 'at' | 'source'>) =>
             trace.push({ at: Date.now(), source, ...e });
 
-        // --- tools: AgentTool -> AI SDK tool ---
+        // --- tools ---
+        // Prefer native AI SDK tools when the registry carries them
+        // (AiSdkToolRegistry) — avoids a lossy JSON-Schema/Zod round-trip for
+        // MCP + native tool packs. Otherwise convert AgentTool -> AI SDK tool.
         const toolMap: Record<string, any> = {};
-        for (const t of spec.tools.list()) {
-            toolMap[t.name] = aiTool({
-                description: t.description,
-                inputSchema: jsonSchema(t.inputSchema as any),
-                execute: async (args: unknown) => {
-                    const r = await t.execute(args, ctx);
-                    return r.isError ? `ERROR: ${r.output}` : r.output;
-                },
-            });
+        if (isAiSdkToolSource(spec.tools)) {
+            Object.assign(toolMap, spec.tools.toAiSdkToolMap());
+        } else {
+            for (const t of spec.tools.list()) {
+                toolMap[t.name] = aiTool({
+                    description: t.description,
+                    inputSchema: jsonSchema(t.inputSchema as any),
+                    execute: async (args: unknown) => {
+                        const r = await t.execute(args, ctx);
+                        return r.isError ? `ERROR: ${r.output}` : r.output;
+                    },
+                });
+            }
         }
 
         // --- seed messages ---
@@ -114,6 +122,13 @@ export class AiSdkAgentRunner implements AgentRunner {
                     : spec.systemPrompt,
                 messages,
                 tools: toolMap,
+                // Generic model-call config (omit -> provider default).
+                ...(spec.temperature != null
+                    ? { temperature: spec.temperature }
+                    : {}),
+                ...(spec.maxOutputTokens != null
+                    ? { maxOutputTokens: spec.maxOutputTokens }
+                    : {}),
                 // Cancellation / timeout: forwarded from the caller (the domain
                 // composes parent-job signal + a hard per-agent timeout into it).
                 abortSignal: ctx.signal,

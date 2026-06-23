@@ -93,97 +93,78 @@ export interface RecordAgentUsageParams {
 }
 
 /**
- * Record two spans: the main review usage (finder, net of verify) and — when
- * present — a separate verify span. Token splits mirror the legacy provider.
+ * Record two cost spans: the main review usage (finder, net of verify) and —
+ * when present — a separate verify span. Token splits mirror the legacy
+ * provider. Both delegate to the canonical `recordAgentRunUsage` emitter so the
+ * `observability_telemetry` schema is identical across every harness agent
+ * (DRY: this file owns the review-specific main/verify split, the
+ * ObservabilityService owns the span/attribute schema).
  */
 export async function recordAgentUsageSpans(
     p: RecordAgentUsageParams,
 ): Promise<void> {
     const { agentResult, observability } = p;
-    const typeTag = p.isByok ? 'byok' : 'system';
-    try {
-        const vUsage = agentResult.verificationUsage;
-        const mainInputTokens =
-            agentResult.usage.inputTokens - (vUsage?.inputTokens ?? 0);
-        const mainOutputTokens =
-            agentResult.usage.outputTokens - (vUsage?.outputTokens ?? 0);
-        const vCacheRead = (vUsage as any)?.cacheReadTokens ?? 0;
-        const vCacheWrite = (vUsage as any)?.cacheWriteTokens ?? 0;
-        const mainCacheRead =
-            ((agentResult.usage as any).cacheReadTokens ?? 0) - vCacheRead;
-        const mainCacheWrite =
-            ((agentResult.usage as any).cacheWriteTokens ?? 0) - vCacheWrite;
+    const vUsage = agentResult.verificationUsage;
+    const mainInputTokens =
+        agentResult.usage.inputTokens - (vUsage?.inputTokens ?? 0);
+    const mainOutputTokens =
+        agentResult.usage.outputTokens - (vUsage?.outputTokens ?? 0);
+    const vCacheRead = (vUsage as any)?.cacheReadTokens ?? 0;
+    const vCacheWrite = (vUsage as any)?.cacheWriteTokens ?? 0;
+    const mainCacheRead =
+        ((agentResult.usage as any).cacheReadTokens ?? 0) - vCacheRead;
+    const mainCacheWrite =
+        ((agentResult.usage as any).cacheWriteTokens ?? 0) - vCacheWrite;
 
-        await observability.runInSpan(
-            `${p.identityName}::review`,
-            async () => agentResult,
-            {
-                'gen_ai.usage.input_tokens': mainInputTokens,
-                'gen_ai.usage.output_tokens': mainOutputTokens,
-                'gen_ai.usage.total_tokens': mainInputTokens + mainOutputTokens,
-                ...(mainCacheRead > 0 && {
-                    'gen_ai.usage.cache_read_input_tokens': mainCacheRead,
-                }),
-                ...(mainCacheWrite > 0 && {
-                    'gen_ai.usage.cache_creation_input_tokens': mainCacheWrite,
-                }),
-                ...(agentResult.usage.reasoningTokens > 0 && {
-                    'gen_ai.usage.reasoning_tokens':
-                        agentResult.usage.reasoningTokens -
-                        (vUsage?.reasoningTokens ?? 0),
-                }),
-                'gen_ai.response.model': p.modelName,
-                'gen_ai.run.name': `code-review-${p.categoryLabel}`,
-                // agent.name/agent.phase populate the observability_telemetry
-                // agentName/phase columns (see the legacy flow-engine mongodb-exporter).
-                'agent.name': p.identityName,
-                'agent.phase': 'review',
-                'type': typeTag,
-                'organizationId': p.organizationId,
-                'teamId': p.teamId,
-                'prNumber': p.prNumber,
-                'steps': agentResult.steps,
-                'toolCalls': agentResult.toolCalls.length,
-                'finishReason': agentResult.finishReason,
-                'source': agentResult.source,
-                'durationMs': p.durationMs,
+    await observability.recordAgentRunUsage({
+        agentName: p.identityName,
+        phase: 'review',
+        runName: `code-review-${p.categoryLabel}`,
+        model: p.modelName,
+        isByok: p.isByok,
+        usage: {
+            inputTokens: mainInputTokens,
+            outputTokens: mainOutputTokens,
+            totalTokens: mainInputTokens + mainOutputTokens,
+            reasoningTokens:
+                agentResult.usage.reasoningTokens -
+                (vUsage?.reasoningTokens ?? 0),
+            cacheReadTokens: mainCacheRead,
+            cacheWriteTokens: mainCacheWrite,
+        },
+        organizationId: p.organizationId,
+        teamId: p.teamId,
+        prNumber: p.prNumber,
+        steps: agentResult.steps,
+        toolCalls: agentResult.toolCalls.length,
+        finishReason: agentResult.finishReason,
+        source: agentResult.source,
+        durationMs: p.durationMs,
+    });
+
+    // Separate span for verification tokens
+    if (
+        vUsage &&
+        ((vUsage.inputTokens ?? 0) > 0 || (vUsage.outputTokens ?? 0) > 0)
+    ) {
+        await observability.recordAgentRunUsage({
+            agentName: p.identityName,
+            phase: 'verify',
+            runName: `code-review-${p.categoryLabel}-verify`,
+            model: p.modelName,
+            isByok: p.isByok,
+            usage: {
+                inputTokens: vUsage.inputTokens ?? 0,
+                outputTokens: vUsage.outputTokens ?? 0,
+                totalTokens:
+                    (vUsage.inputTokens ?? 0) + (vUsage.outputTokens ?? 0),
+                reasoningTokens: vUsage.reasoningTokens ?? 0,
+                cacheReadTokens: vCacheRead,
+                cacheWriteTokens: vCacheWrite,
             },
-        );
-
-        // Separate span for verification tokens
-        if (vUsage && ((vUsage.inputTokens ?? 0) > 0 || (vUsage.outputTokens ?? 0) > 0)) {
-            await observability.runInSpan(
-                `${p.identityName}::verify`,
-                async () => agentResult,
-                {
-                    'gen_ai.usage.input_tokens': vUsage.inputTokens ?? 0,
-                    'gen_ai.usage.output_tokens': vUsage.outputTokens ?? 0,
-                    'gen_ai.usage.total_tokens':
-                        (vUsage.inputTokens ?? 0) + (vUsage.outputTokens ?? 0),
-                    ...((vUsage as any).cacheReadTokens > 0 && {
-                        'gen_ai.usage.cache_read_input_tokens': (vUsage as any)
-                            .cacheReadTokens,
-                    }),
-                    ...((vUsage as any).cacheWriteTokens > 0 && {
-                        'gen_ai.usage.cache_creation_input_tokens': (
-                            vUsage as any
-                        ).cacheWriteTokens,
-                    }),
-                    ...((vUsage.reasoningTokens ?? 0) > 0 && {
-                        'gen_ai.usage.reasoning_tokens': vUsage.reasoningTokens,
-                    }),
-                    'gen_ai.response.model': p.modelName,
-                    'gen_ai.run.name': `code-review-${p.categoryLabel}-verify`,
-                    'agent.name': p.identityName,
-                    'agent.phase': 'verify',
-                    'type': typeTag,
-                    'organizationId': p.organizationId,
-                    'teamId': p.teamId,
-                    'prNumber': p.prNumber,
-                },
-            );
-        }
-    } catch {
-        // Observability is best-effort
+            organizationId: p.organizationId,
+            teamId: p.teamId,
+            prNumber: p.prNumber,
+        });
     }
 }
