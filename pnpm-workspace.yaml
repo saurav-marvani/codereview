@@ -74,3 +74,9 @@ minimumReleaseAgeExclude:
   - '@ai-sdk/openai@3.0.74'
   - smol-toml@1.7.0
   - ts-loader@9.6.2
+  - '@langchain/anthropic@1.5.1'
+  - '@langchain/core@1.2.1'
+  - '@langchain/openai@1.5.2'
+  - '@langfuse/client@5.6.0'
+  - '@langfuse/core@5.6.0'
+  - '@langfuse/tracing@5.6.0'
