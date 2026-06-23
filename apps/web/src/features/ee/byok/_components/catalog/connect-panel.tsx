@@ -125,7 +125,7 @@ export function CuratedConnectPanel({
         resolver: zodResolver(connectSchema) as any,
         defaultValues: {
             provider: variant?.provider ?? model.provider,
-            model: model.id,
+            model: model.apiModel ?? model.id,
             apiKey: "",
             baseURL: initialBaseURL,
             temperature:

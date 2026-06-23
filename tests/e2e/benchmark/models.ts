@@ -15,6 +15,7 @@ const BENCH_CATALOG = CATALOG as { models: CuratedModelRaw[] };
 
 export interface CuratedModelRaw {
     id: string;
+    apiModel?: string;
     displayName: string;
     provider: string; // anthropic | openai | google_gemini | openai_compatible
     providerDisplayName?: string;
@@ -73,6 +74,9 @@ function resolveKeyEnv(provider: string, baseURL?: string): string {
             if (hostIn("z.ai", "bigmodel.cn")) {
                 return "BYOK_ZHIPU_API_KEY";
             }
+            if (hostIn("together.ai")) {
+                return "BYOK_TOGETHER_API_KEY";
+            }
             throw new Error(
                 `openai_compatible model with unrecognized baseURL "${u}" (host ${host}) — add a key mapping in resolveKeyEnv`,
             );
@@ -109,7 +113,7 @@ export function loadTier0Models(): BenchModel[] {
         const keyEnv = resolveKeyEnv(m.provider, baseURL);
         return {
             slug: modelSlug(m.id),
-            id: m.id,
+            id: m.apiModel ?? m.id,
             displayName: m.displayName,
             provider: m.provider,
             baseURL,

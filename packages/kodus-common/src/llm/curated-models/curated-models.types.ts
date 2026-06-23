@@ -18,6 +18,8 @@ export type ModelVariant = {
 
 export type CuratedModel = {
     id: string;
+    /** Model ID sent to the provider API. Defaults to {@link id} when omitted. */
+    apiModel?: string;
     displayName: string;
     provider: string;
     providerDisplayName?: string;

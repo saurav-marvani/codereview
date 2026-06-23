@@ -142,13 +142,76 @@
             "docsUrl": "https://docs.kodus.io/knowledge_base/en/how-to-use-moonshot-with-kodus"
         },
         {
+            "id": "glm-5.2",
+            "displayName": "GLM 5.2",
+            "provider": "openai_compatible",
+            "providerDisplayName": "Z.ai",
+            "tier": "recommended",
+            "benchmarkScore": 87,
+            "description": "Z.ai's flagship with 1M context and 128K output. Supports reasoning_effort control and accepts any temperature in [0, 1].",
+            "speed": "medium",
+            "contextWindow": "1M",
+            "costTier": "$",
+            "strengths": [],
+            "weaknesses": [],
+            "apiKeyUrl": "https://z.ai/manage-apikey/apikey-list",
+            "defaults": {
+                "temperature": 0,
+                "maxOutputTokens": 16384,
+                "baseURL": "https://api.z.ai/api/paas/v4/",
+                "reasoningEffort": "medium"
+            },
+            "variants": [
+                {
+                    "id": "paas",
+                    "label": "Developer API",
+                    "description": "Pay-per-token. Keys from the Z.ai API console.",
+                    "baseURL": "https://api.z.ai/api/paas/v4/",
+                    "apiKeyUrl": "https://z.ai/manage-apikey/apikey-list"
+                },
+                {
+                    "id": "coding-plan",
+                    "label": "Coding Plan",
+                    "description": "Flat-rate subscription. Lite/Pro tiers typically allow only 1 concurrent request — bump this in advanced settings if you're on Max.",
+                    "baseURL": "https://api.z.ai/api/coding/paas/v4",
+                    "apiKeyUrl": "https://z.ai/subscribe",
+                    "maxConcurrentRequests": 1
+                }
+            ],
+            "defaultVariantId": "paas",
+            "docsUrl": "https://docs.z.ai/guides/llm/glm-5.2"
+        },
+        {
+            "id": "glm-5.2-together",
+            "apiModel": "zai-org/GLM-5.2",
+            "displayName": "GLM 5.2 (Together)",
+            "provider": "openai_compatible",
+            "providerDisplayName": "Together AI",
+            "tier": "recommended",
+            "benchmarkScore": 87,
+            "description": "GLM 5.2 hosted on Together AI. Same model, faster inference throughput. Context limited to 256K by Together's endpoint.",
+            "speed": "fast",
+            "contextWindow": "256K",
+            "costTier": "$",
+            "strengths": [],
+            "weaknesses": [],
+            "apiKeyUrl": "https://api.together.ai/settings/projects/~current/api-keys",
+            "defaults": {
+                "temperature": 0,
+                "maxOutputTokens": 16384,
+                "baseURL": "https://api.together.ai/v1",
+                "reasoningEffort": "medium"
+            },
+            "docsUrl": "https://docs.together.ai/docs/serverless-models"
+        },
+        {
             "id": "glm-5.1",
             "displayName": "GLM 5.1",
             "provider": "openai_compatible",
             "providerDisplayName": "Z.ai",
             "tier": "recommended",
             "benchmarkScore": 84,
-            "description": "Z.ai's latest. Connects directly to Z.ai — pick your plan below.",
+            "description": "Previous Z.ai flagship. Superseded by GLM 5.2.",
             "speed": "medium",
             "contextWindow": "200K",
             "costTier": "$",
