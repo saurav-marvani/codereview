@@ -34,7 +34,7 @@ type SlotState = "idle" | "editing";
 
 /**
  * Providers represented in the curated catalog at
- * `_data/curated-models.json`. Configs created against any other provider
+ * `@kodus/kodus-common/llm`. Configs created against any other provider
  * (Bedrock, Vertex, Novita) can't be re-rendered through the catalog UI,
  * so editing them has to skip straight to the manual wizard.
  */

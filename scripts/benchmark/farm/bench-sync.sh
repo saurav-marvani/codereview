@@ -86,6 +86,71 @@ if [ -n "${BENCH_TEMPERATURE:-}" ]; then
     farm_ssh "$SLOT" "echo 'API_LLM_TEMPERATURE_OVERRIDE=${BENCH_TEMPERATURE}' >> '${REMOTE_SRC}/.env.local'"
 fi
 
+# Finder-uncensored experiment: BENCH_UNCENSORED -> engine's
+# CODE_REVIEW_FINDER_UNCENSORED (lifts the prompt's class-block rules).
+# Empty -> OFF (current prompt). Lets two slots benchmark the same branch
+# differing only in this flag (control vs uncensored).
+if [ -n "${BENCH_UNCENSORED:-}" ]; then
+    log "Enabling CODE_REVIEW_FINDER_UNCENSORED=${BENCH_UNCENSORED} (finder-uncensored treatment)"
+    farm_ssh "$SLOT" "echo 'CODE_REVIEW_FINDER_UNCENSORED=${BENCH_UNCENSORED}' >> '${REMOTE_SRC}/.env.local'"
+fi
+
+# Open-reasoning experiment: BENCH_OPENREASON -> CODE_REVIEW_FINDER_OPENREASON
+# (swaps PHASE 2 checklist for open deep reasoning). Empty -> checklist (control).
+if [ -n "${BENCH_OPENREASON:-}" ]; then
+    log "Enabling CODE_REVIEW_FINDER_OPENREASON=${BENCH_OPENREASON} (open-reasoning treatment)"
+    farm_ssh "$SLOT" "echo 'CODE_REVIEW_FINDER_OPENREASON=${BENCH_OPENREASON}' >> '${REMOTE_SRC}/.env.local'"
+fi
+
+# Heavy mode experiment: BENCH_HEAVY -> CODE_REVIEW_HEAVY_N (re-run finder N times,
+# union findings). Empty/1 -> single pass (control). N>1 makes each PR's review
+# ~N× slower — pair with a longer FARM_REVIEW_WAIT_SEC on the run side.
+if [ -n "${BENCH_HEAVY:-}" ]; then
+    log "Enabling CODE_REVIEW_HEAVY_N=${BENCH_HEAVY} (heavy-mode treatment, ~${BENCH_HEAVY}x review time)"
+    farm_ssh "$SLOT" "echo 'CODE_REVIEW_HEAVY_N=${BENCH_HEAVY}' >> '${REMOTE_SRC}/.env.local'"
+fi
+
+# Re-reason ensemble experiment: BENCH_REREASON -> CODE_REVIEW_REREASON_N
+# (explore once, reason N times over gathered context). Empty/1 -> single pass.
+if [ -n "${BENCH_REREASON:-}" ]; then
+    log "Enabling CODE_REVIEW_REREASON_N=${BENCH_REREASON} (re-reason ensemble treatment)"
+    farm_ssh "$SLOT" "echo 'CODE_REVIEW_REREASON_N=${BENCH_REREASON}' >> '${REMOTE_SRC}/.env.local'"
+fi
+
+# Verify N-vote experiment: BENCH_VERIFY_VOTES -> CODE_REVIEW_VERIFY_VOTES.
+# Each finding is verified by K independent refuters; dropped only if a MAJORITY
+# refute (denoises the single-verifier coin-flip). Empty/1 -> current behavior.
+if [ -n "${BENCH_VERIFY_VOTES:-}" ]; then
+    log "Enabling CODE_REVIEW_VERIFY_VOTES=${BENCH_VERIFY_VOTES} (N-vote majority verify)"
+    farm_ssh "$SLOT" "echo 'CODE_REVIEW_VERIFY_VOTES=${BENCH_VERIFY_VOTES}' >> '${REMOTE_SRC}/.env.local'"
+fi
+
+# Coverage-soft experiment: BENCH_COVERAGE_SOFT -> CODE_REVIEW_COVERAGE_SOFT.
+# Stops forcing breadth (read every hunk) — prompt goes depth-first + skips the
+# coverage-debt nudge and the recovery/2nd/3rd-chance passes. Single-pass test.
+if [ -n "${BENCH_COVERAGE_SOFT:-}" ]; then
+    log "Enabling CODE_REVIEW_COVERAGE_SOFT=${BENCH_COVERAGE_SOFT} (depth-first, no coverage mandate)"
+    farm_ssh "$SLOT" "echo 'CODE_REVIEW_COVERAGE_SOFT=${BENCH_COVERAGE_SOFT}' >> '${REMOTE_SRC}/.env.local'"
+fi
+
+# Anchor-fix experiment: BENCH_ANCHOR_FIX -> CODE_REVIEW_ANCHOR_FIX.
+# Makes the <Scope> anchoring rule operational for cross-file findings (anchor on
+# the changed trigger line, never a placeholder path) so verify-kept findings stop
+# being dropped at the @@PATH_MISMATCH@@ filter before reaching Mongo.
+if [ -n "${BENCH_ANCHOR_FIX:-}" ]; then
+    log "Enabling CODE_REVIEW_ANCHOR_FIX=${BENCH_ANCHOR_FIX} (operational cross-file anchoring, no placeholder paths)"
+    farm_ssh "$SLOT" "echo 'CODE_REVIEW_ANCHOR_FIX=${BENCH_ANCHOR_FIX}' >> '${REMOTE_SRC}/.env.local'"
+fi
+
+# Graph-navigation experiment: BENCH_GRAPH_FULL -> CODE_REVIEW_GRAPH_TOOL_FULL.
+# Backs the getCallers tool with the FULL precomputed call graph (any function,
+# untruncated callers/callees) instead of the changed-function summary already
+# in the prompt — the actual navigable-graph test. Empty -> current behavior.
+if [ -n "${BENCH_GRAPH_FULL:-}" ]; then
+    log "Enabling CODE_REVIEW_GRAPH_TOOL_FULL=${BENCH_GRAPH_FULL} (full-graph getCallers)"
+    farm_ssh "$SLOT" "echo 'CODE_REVIEW_GRAPH_TOOL_FULL=${BENCH_GRAPH_FULL}' >> '${REMOTE_SRC}/.env.local'"
+fi
+
 # --- 3. build + (re)start the compiled stack ---
 # API_CLOUD_MODE=false: the droplet is a true self-contained self-hosted stack.
 # Cloud mode routes /api/proxy/billing to a separate kodus-service-billing micro-

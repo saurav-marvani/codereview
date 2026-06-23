@@ -1,7 +1,7 @@
 // Tier-0 model list for the per-model code-review benchmark.
 //
 // SOURCE OF TRUTH is the BYOK tool's own catalog
-// (apps/web/src/features/ee/byok/_data/curated-models.json, tier="recommended").
+// (@kodus/kodus-common/llm, tier="recommended").
 // We read it directly so the benchmark stays in sync with what the product
 // actually offers — no hand-maintained model list to drift.
 //
@@ -9,22 +9,9 @@
 // The apiKey comes from a per-provider env var (BYOK_*_API_KEY); see
 // resolveKeyEnv. baseURL comes from the catalog's defaults for
 // openai_compatible providers (Moonshot/Kimi, Z.ai/GLM).
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { catalog as CATALOG } from "@kodus/kodus-common/llm";
 
-const CATALOG = join(
-    process.cwd(),
-    "..",
-    "..",
-    "apps",
-    "web",
-    "src",
-    "features",
-    "ee",
-    "byok",
-    "_data",
-    "curated-models.json",
-);
+const BENCH_CATALOG = CATALOG as { models: CuratedModelRaw[] };
 
 export interface CuratedModelRaw {
     id: string;
@@ -109,13 +96,12 @@ export function modelSlug(id: string): string {
 
 /** Load the tier-0 (recommended) models from the BYOK catalog. */
 export function loadTier0Models(): BenchModel[] {
-    const raw = JSON.parse(readFileSync(CATALOG, "utf8")) as {
-        models: CuratedModelRaw[];
-    };
-    const recommended = raw.models.filter((m) => m.tier === "recommended");
+    const recommended = BENCH_CATALOG.models.filter(
+        (m) => m.tier === "recommended",
+    );
     if (recommended.length === 0) {
         throw new Error(
-            `No tier="recommended" models in the BYOK catalog at ${CATALOG}`,
+            `No tier="recommended" models in the BYOK catalog`,
         );
     }
     return recommended.map((m) => {

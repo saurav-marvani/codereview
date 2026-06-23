@@ -14,6 +14,7 @@ import {
     PromptRunnerService,
 } from './promptRunner.service';
 import { BYOKProvider } from './byokProvider.service';
+import { resolveModelTemperature } from './curated-models';
 
 export enum ParserType {
     STRING = 'string',
@@ -458,10 +459,11 @@ export class ConfigurablePromptBuilder<
             PromptRunnerParams<Payload, OutputType>['temperature']
         >,
     ): this {
-        const byokTemp = this.params.byokConfig?.main?.temperature;
-
-        this.params.temperature =
-            byokTemp !== undefined ? byokTemp : temperature;
+        this.params.temperature = resolveModelTemperature(
+            this.params.byokConfig?.main?.model,
+            this.params.byokConfig?.main?.temperature,
+            temperature,
+        );
         return this;
     }
 

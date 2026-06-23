@@ -5,8 +5,7 @@ import { Button } from "@components/ui/button";
 import { SettingsIcon } from "lucide-react";
 import Link from "next/link";
 
-import curatedCatalog from "../../_data/curated-models.json";
-import type { CuratedModel } from "../../_data/curated-models.types";
+import { catalog as curatedCatalog, type CuratedModel } from "@kodus/kodus-common/llm";
 import type { BYOKConfig } from "../../_types";
 import { CuratedConnectPanel } from "./connect-panel";
 import { CuratedModelCard } from "./model-card";

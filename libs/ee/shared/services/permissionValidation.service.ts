@@ -435,14 +435,19 @@ export class PermissionValidationService {
                 organizationAndTeamData,
             );
 
-        // No license or invalid → Community Edition, allow everything
+        const byokConfig = await this.getBYOKConfig(organizationAndTeamData);
+
+        // No license or invalid → Community Edition, allow everything.
+        // Still propagate BYOK config so the review pipeline can use it when
+        // one is configured (e.g. self-hosted benchmark slots that save a
+        // BYOK config but run without a managed license).
         if (!validation?.valid) {
-            return { allowed: true };
+            return { allowed: true, byokConfig };
         }
 
         // Licensed self-hosted: enforce seat validation
         if (!userGitId) {
-            return { allowed: true };
+            return { allowed: true, byokConfig };
         }
 
         const users = await this.licenseService.getAllUsersWithLicense(
@@ -468,7 +473,7 @@ export class PermissionValidationService {
             };
         }
 
-        return { allowed: true };
+        return { allowed: true, byokConfig };
     }
 
     /**

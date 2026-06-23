@@ -27,11 +27,11 @@ import { Controller, useFormContext } from "react-hook-form";
 import { ArrayHelpers } from "src/core/utils/array";
 
 import type { EditKeyForm } from "../_types";
-import catalog from "../../../../_data/curated-models.json";
 import {
+    catalog,
     getAnnotationForModel,
     type CuratedModelsCatalog,
-} from "../../../../_data/curated-models.types";
+} from "@kodus/kodus-common/llm";
 
 const annotations = (catalog as CuratedModelsCatalog).annotations;
 

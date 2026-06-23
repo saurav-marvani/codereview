@@ -12,6 +12,7 @@ import {
     getChatVertexAI,
 } from './helper';
 import { supportsJsonMode } from './providerAdapters';
+import { getModelRequiredTemperature } from './curated-models';
 
 export type LLMProviderOptions = FactoryArgs & {
     model: LLMModelProvider | string;
@@ -92,18 +93,18 @@ export class LLMProviderService {
                 //      that demand `temperature=1`) and they don't want to
                 //      patch each prompt. Empty / unparseable values fall
                 //      through.
-                //   2. Auto-clamp for known reasoning models — Moonshot's
-                //      `kimi-k2.6` and `kimi-k2-thinking*` reject any
-                //      temperature ≠ 1 with HTTP 400. Most Kodus review
-                //      prompts pin `setTemperature(0)` for determinism, so
-                //      without this clamp the pipeline 400s mid-review.
+                //   2. Auto-clamp from the BYOK curated catalog — models such
+                //      as Moonshot's `kimi-k2.6`, `kimi-k2-thinking*` and
+                //      `kimi-k2.7-code` reject temperatures other than the
+                //      catalog default with HTTP 400. Most Kodus review prompts
+                //      pin `setTemperature(0)` for determinism, so without this
+                //      clamp the pipeline 400s mid-review.
                 //   3. Whatever the caller passed via `setTemperature()`.
                 //
-                // Operators who hit a similar restriction on a model not
-                // in the auto-clamp regex can bypass it with
-                // `API_LLM_TEMPERATURE_OVERRIDE=1` (or any other value
-                // their provider accepts).
-                const REASONING_TEMP_ONE = /^kimi-k2(\.6|-thinking)/i;
+                // Operators who hit a similar restriction on a model not yet
+                // in the catalog can bypass it with
+                // `API_LLM_TEMPERATURE_OVERRIDE=1` (or any other value their
+                // provider accepts).
                 const overrideRaw = process.env.API_LLM_TEMPERATURE_OVERRIDE;
                 const overrideTemp =
                     overrideRaw !== undefined && overrideRaw !== ''
@@ -111,9 +112,8 @@ export class LLMProviderService {
                         : Number.NaN;
                 const effectiveTemperature = !Number.isNaN(overrideTemp)
                     ? overrideTemp
-                    : REASONING_TEMP_ONE.test(envMode)
-                      ? 1
-                      : options.temperature;
+                    : (getModelRequiredTemperature(envMode) ??
+                          options.temperature);
 
                 const llm = getChatGPT({
                     ...options,

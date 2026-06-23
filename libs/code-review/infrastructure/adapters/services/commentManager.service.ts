@@ -4,6 +4,7 @@ import {
     ParserType,
     PromptRole,
     PromptRunnerService,
+    resolveModelTemperature,
 } from '@kodus/kodus-common/llm';
 import { Inject, Injectable } from '@nestjs/common';
 import { IPullRequestMessages } from '@libs/code-review/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
@@ -126,7 +127,17 @@ export class CommentManagerService implements ICommentManagerService {
                         model: model as any,
                         system: systemPrompt,
                         prompt: userPrompt,
-                        temperature: byokConfig?.main?.temperature ?? 0,
+                        // Honor the BYOK model's configured temperature when
+                        // available, otherwise fall back to the curated catalog
+                        // default and finally 0. Models like Kimi (Moonshot)
+                        // reject temperatures other than their catalog default
+                        // with a 400, which was failing the whole summary step
+                        // (Max retries exceeded) → 0 findings.
+                        temperature: resolveModelTemperature(
+                            byokConfig?.main?.model,
+                            byokConfig?.main?.temperature,
+                            0,
+                        ),
                         experimental_telemetry: buildLangfuseTelemetry(
                             runName,
                             metadata,

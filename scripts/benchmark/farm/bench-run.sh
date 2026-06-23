@@ -81,13 +81,13 @@ fi
 # .env.local from BENCH_TEMPERATURE below.
 if [ -n "${BENCH_MODEL:-}" ]; then
     export BENCH_TEMPERATURE="$(BENCH_MODEL="$BENCH_MODEL" node -e '
-        const fs=require("fs");
         const slug=process.env.BENCH_MODEL;
         const ms=id=>id.replace(/^claude-/,"").replace(/-preview/g,"").replace(/[^a-zA-Z0-9]+/g,"-").replace(/-+$/,"").toLowerCase();
-        try { const cat=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
-            const m=(cat.models||[]).filter(x=>x.tier==="recommended").find(x=>ms(x.id)===slug);
+        try {
+            const { catalog } = require("@kodus/kodus-common/llm");
+            const m=(catalog.models||[]).filter(x=>x.tier==="recommended").find(x=>ms(x.id)===slug);
             if(m&&m.defaults&&m.defaults.temperature!==undefined)process.stdout.write(String(m.defaults.temperature));
-        } catch(e){}' "${REPO_ROOT}/apps/web/src/features/ee/byok/_data/curated-models.json" 2>/dev/null || true)"
+        } catch(e){}' 2>/dev/null || true)"
     [ -n "${BENCH_TEMPERATURE:-}" ] && log "[${RUN_ID}] model ${BENCH_MODEL} -> API_LLM_TEMPERATURE_OVERRIDE=${BENCH_TEMPERATURE}"
 fi
 
