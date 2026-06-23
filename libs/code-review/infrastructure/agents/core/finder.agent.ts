@@ -36,7 +36,6 @@ import { LlmVerifier } from '@libs/code-review/infrastructure/agents/core/verifi
 import { buildToolEvidenceSummary } from '@libs/code-review/infrastructure/agents/core/agent-anomalies';
 import type { ToolEvidenceSummary } from '@libs/code-review/infrastructure/agents/review-agent.contract';
 import type { Verdict } from '@libs/agent-harness/domain/contracts/verifier.contract';
-import type { DiffCoverageLedger } from '@libs/code-review/infrastructure/agents/adapters/diff-coverage-ledger.adapter';
 import {
     buildLangfuseTelemetry,
     type LangfuseTelemetryMetadata,
@@ -248,12 +247,9 @@ export interface RunFinderWithVerifyParams {
     /** System-message provider options (e.g. Anthropic prompt caching), forwarded
      *  to the finder spec and the verifier runs. */
     systemProviderOptions?: Readonly<Record<string, unknown>>;
-    /** The shared coverage ledger — gates the recall passes (recovery/chances).
-     *  When omitted, coverage-gated recall passes are skipped. */
-    coverageLedger?: DiffCoverageLedger;
-    /** Skip the heavy recall passes entirely (fast mode / self-contained trial). */
+    /** Skip the recall pass entirely (fast mode / self-contained trial). */
     skipHeavyPasses?: boolean;
-    /** Skip ONLY the synthesis-rescue pass (coverage passes still run). */
+    /** Skip ONLY the synthesis-rescue pass. */
     skipSynthesisRescue?: boolean;
     /** Langfuse telemetry context (org/team/PR/repo) — names the finder, recall
      *  and per-finding verify observations so the trace is attributable. */
@@ -287,9 +283,9 @@ export interface FinderWithVerifyResult {
      *  finder's own usage is in finderState.usage; this is reported separately
      *  so callers can attribute cost — it is NOT in finderState. */
     verifyUsage: VerifyUsage;
-    /** Token usage of the recall passes (extra finder runs: coverage recovery,
-     *  second/third chance, synthesis rescue). NOT in finderState — summed here
-     *  so the caller can add it to the finder cost. */
+    /** Token usage of the recall pass (the extra synthesis-rescue finder run).
+     *  NOT in finderState — summed here so the caller can add it to the finder
+     *  cost. */
     recallUsage: VerifyUsage;
 }
 
@@ -323,16 +319,16 @@ export async function runFinderWithVerify(
     );
     const base = extractFindings(finderState);
 
-    // RECALL PASSES (ported from the legacy loop): coverage recovery + second/
-    // third chance + synthesis rescue — extra finder runs that expand recall
-    // BEFORE verify filters. They share the coverage ledger (so they keep
-    // steering toward uncovered files) and dedup-merge into the candidate set.
+    // RECALL PASS: synthesis rescue — one extra finder run that re-thinks from
+    // the evidence already gathered and surfaces concrete MISSED bugs BEFORE
+    // verify filters, dedup-merged into the candidate set. (Soft coverage: the
+    // coverage-recovery + 2nd/3rd-chance passes were removed to match the
+    // validated depth-first engine — main pass only, no coverage-forced re-runs.)
     const recall = await runRecallPasses(
         base,
         {
             runner: params.runner,
             finderSpec: params.finderSpec,
-            coverageLedger: params.coverageLedger,
             finderState,
             userPrompt: input.prompt,
             skipHeavyPasses: params.skipHeavyPasses,
@@ -498,19 +494,17 @@ function sumVerifyUsage(a: VerifyUsage, b: VerifyUsage): VerifyUsage {
     };
 }
 
-// ─── Recall passes (ported from the legacy runAgentLoop) ─────────────────────
-// The legacy loop ran, after the main finder pass, up to three coverage passes
-// (recovery + second + third chance) and a synthesis-rescue pass, merging any
-// ADDITIONAL findings before verify. Here they are composition: extra runs of
-// the SAME finder spec (shared coverage ledger keeps steering toward uncovered
-// files), dedup-merged. Gated exactly like the legacy: skip in fast/trial mode.
+// ─── Recall pass (synthesis rescue) ──────────────────────────────────────────
+// After the main finder pass, one extra synthesis-rescue run re-thinks from the
+// evidence already gathered and surfaces concrete MISSED bugs, dedup-merged
+// before verify. (Soft coverage: the legacy coverage-recovery + 2nd/3rd-chance
+// passes were removed — no coverage-forced re-runs.) Skipped in fast/trial mode.
 
 type FinderFindings = { reasoning: string; suggestions: FinderSuggestion[] };
 
 interface RecallPassesParams {
     runner: AgentRunner;
     finderSpec: AgentSpec;
-    coverageLedger?: DiffCoverageLedger;
     finderState: RunState;
     /** The original review prompt — reused by the synthesis-rescue pass. */
     userPrompt: string;
@@ -527,10 +521,6 @@ const ZERO_RECALL_USAGE: VerifyUsage = {
     cacheReadTokens: 0,
 };
 
-/** Maximum coverage second/third-chance passes after the initial recovery
- *  pass — matches the legacy (recovery + 2 chances). */
-const MAX_COVERAGE_CHANCES = 2;
-
 export async function runRecallPasses(
     base: FinderFindings,
     params: RecallPassesParams,
@@ -543,8 +533,6 @@ export async function runRecallPasses(
     }
 
     const toolCalls = collectToolCalls(params.finderState);
-    const ledger = params.coverageLedger;
-
     // Re-run the finder with a focused prompt; merge its ADDITIONAL findings.
     // `label` names the observation so each pass is distinct in the trace.
     const runPass = async (prompt: string, label: string): Promise<void> => {
@@ -564,26 +552,11 @@ export async function runRecallPasses(
         findings = mergeSuggestions(findings, extractFindings(state));
     };
 
-    // 1. Coverage recovery — only if the main pass left targets uncovered AND it
-    //    actually investigated (no tool calls => model didn't engage; recovery
-    //    would just repeat). Mirrors the legacy gate.
-    if (ledger && !ledger.isSatisfied() && toolCalls.length > 0) {
-        await runPass(
-            buildCoveragePrompt(ledger.debtNote(), toolCalls, 'recovery'),
-            'coverage-recovery',
-        );
-    }
-
-    // 2 & 3. Second/third chance — while coverage stays below the 70% floor.
-    for (let i = 0; i < MAX_COVERAGE_CHANCES && ledger?.isLowCoverage(); i++) {
-        await runPass(
-            buildCoveragePrompt(ledger.debtNote(), toolCalls, 'second-chance'),
-            'coverage-second-chance',
-        );
-    }
-
-    // 4. Synthesis rescue — re-think from the evidence already gathered, surface
-    //    concrete MISSED bugs (no new variants/speculation). Always unless skipped.
+    // Synthesis rescue — re-think from the evidence already gathered, surface
+    // concrete MISSED bugs (no new variants/speculation). Always unless skipped.
+    // Soft coverage: the coverage-recovery + 2nd/3rd-chance passes (and the
+    // coverage-debt nudge) were removed — the main pass goes depth-first, with
+    // no coverage-forced re-runs.
     if (!params.skipSynthesisRescue) {
         const inspected = strongFilesFromRun(params.finderState);
         await runPass(
@@ -659,32 +632,6 @@ function investigationSummary(
             return `${tc.tool}(${(args ?? '').substring(0, 150)})`;
         })
         .join('\n');
-}
-
-function buildCoveragePrompt(
-    debtNote: string | null,
-    toolCalls: Array<{ tool: string; args: unknown }>,
-    kind: 'recovery' | 'second-chance',
-): string {
-    const lead =
-        kind === 'recovery'
-            ? 'You already investigated this review, but some changed files are still uncovered.'
-            : 'Your previous review finished with low changed-file coverage.';
-    return `${lead}
-
-<RecentInvestigation>
-${investigationSummary(toolCalls) || 'No prior tool calls captured.'}
-</RecentInvestigation>
-
-<RemainingCoverage>
-${debtNote ?? 'No coverage debt reported.'}
-</RemainingCoverage>
-
-Instructions:
-- Focus only on the remaining uncovered changed files.
-- Use readFile on those files before responding.
-- Be surgical: inspect remaining files, then submit ADDITIONAL findings only.
-- If the remaining files are safe, submit an empty suggestions array.`;
 }
 
 function buildSynthesisPrompt(

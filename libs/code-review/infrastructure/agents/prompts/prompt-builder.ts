@@ -24,6 +24,17 @@ import {
     normalizeFilenameForTier,
 } from '@libs/code-review/infrastructure/agents/collaborators/context-fit-planner';
 
+/**
+ * Operational cross-file anchoring rule appended to the finder <Scope> block.
+ * Without it the model anchors cross-file findings on the UNCHANGED symptom file
+ * or a placeholder path, and they get dropped at the relevantFile-not-in-diff
+ * filter before reaching Mongo. This keeps the anchor on the changed trigger
+ * line so verify-kept findings survive.
+ */
+const SCOPE_CROSS_FILE_EXTRA = `
+    CROSS-FILE: when the bug spans files, set relevantFile/relevantLinesStart/relevantLinesEnd to the CHANGED line that TRIGGERS it (the modified call, usage, import, or signature) — NOT the unchanged file where the symptom surfaces — and explain the cross-file effect in suggestionContent.
+    NEVER emit a placeholder, guessed, "unknown", or non-diff path for relevantFile. If you cannot anchor the finding to a specific changed line present in this diff, OMIT the finding entirely.`;
+
 export interface PromptAgentMeta {
     /** The agent's identity (name/description) — from getIdentity(). */
     identity: ReviewAgentIdentity;
@@ -173,7 +184,7 @@ export function buildSystemPrompt(input: ReviewAgentInput, meta: PromptAgentMeta
   <Scope>
     Root cause must be in lines added or modified by this PR.
     relevantFile/relevantLinesStart/relevantLinesEnd must point to the changed lines.
-    Trace impact through callers — symptom can appear elsewhere, but the cause must be in the diff.
+    Trace impact through callers — symptom can appear elsewhere, but the cause must be in the diff.${SCOPE_CROSS_FILE_EXTRA}
   </Scope>
 
 ${overridesSection}
@@ -206,7 +217,7 @@ export function buildCompactSystemPrompt(input: ReviewAgentInput, meta: PromptAg
   <Role>You are ${identity.name}, a ${categoryLabel} code reviewer.${langLine}</Role>
   <Mindset>Assume each change is broken until you can name the input that proves it safe. Default to reporting when you have code-backed suspicion.</Mindset>
   <Workflow>For each changed function: grep callers and callees with the tools, read enough to confirm or dismiss, then submit via the submitResult tool.</Workflow>
-  <Scope>Root cause must be in lines added or modified by this PR. Trace impact through callers but anchor the finding to a changed line.</Scope>
+  <Scope>Root cause must be in lines added or modified by this PR. Trace impact through callers but anchor the finding to a changed line — for cross-file bugs anchor on the changed trigger line, never a placeholder or non-diff path; if you can't anchor it to a changed line, omit it.</Scope>
 ${overridesSection}
 ${memoryRulesSection}
 </CodeReviewAgent>`;
@@ -301,12 +312,7 @@ ${mixedLabelTaskGuidance}
   </Task>
 
   <CoverageContract>
-    ${
-        input.fileTiers
-            ? 'You must readFile EVERY hunk of every CRITICAL file below before finalizing — a file with multiple hunks is only fully covered when each listed line range has been read. Warm files contribute to the 70% total coverage requirement — readFile their hunks if budget allows. Optional files appear with hunk headers only; do not spend steps on them unless a concrete hypothesis points to one.'
-            : 'You must readFile EVERY hunk of every changed file below before finalizing. A file with multiple hunks is only fully covered when each listed line range has been read; reading the first hunk of a multi-hunk file does NOT cover the rest.'
-    }
-    grep, findFile, and listDir help navigation, but they do not count as coverage.
+    Below are the changed hunks. Go DEEP on the ones that can hide a bug — trace callers, read the surrounding logic, challenge each with adversarial questions. SKIP trivial hunks (renames, formatting, comments, config/lockfiles). You do NOT need to read every hunk: fully reasoning about the few suspicious ones beats skimming all of them. Depth of analysis over breadth of reading.
 ${coverageTargets ? `${coverageTargets}\n` : ''}
   </CoverageContract>
 
@@ -314,15 +320,15 @@ ${coverageTargets ? `${coverageTargets}\n` : ''}
     - Root cause must be in lines added or modified by this PR.
     - Pre-existing issues: report only if this PR makes them worse or newly reachable.
     - "Looks correct" is not a valid reason to dismiss — explain the specific reason it is safe.
-    - Before finalizing, make sure you have inspected every ${input.fileTiers ? 'CRITICAL' : 'changed'} file listed above.
+    - Before finalizing, make sure you went DEEP on the suspicious hunks — skipping trivial ones is fine.
     - Reporting threshold (high-recall): report any defect the changed code makes you suspect, as long as you (1) anchor it to a specific changed line and (2) name the kind of failure — wrong output, crash, broken contract, wrong target or branch, lost side effect, or broken caller/callee assumption. You do NOT need to prove the exact triggering input or rule out every safe explanation; a later verifier filters unsupported claims. Only pure speculation with no anchor in the changed code is out.
-    - Do not report generic resource exhaustion, shell injection, bypass, or performance theories unless the modified code directly creates or worsens that path.
-    - Clear local defects in the diff should still be reported immediately. Cross-file claims require at least one confirming reference from a caller, callee, test, or nearby state transition.
+    - Resource-exhaustion, injection, bypass, or performance concerns: report them when the changed code makes you suspect them — anchor to a changed line and let the verifier filter; do not pre-suppress by class.
+    - Clear local defects in the diff should still be reported immediately. Cross-file claims are welcome — anchor to a changed line and name the other site to check; the verifier confirms.
     - Before every readFile call, identify the exact unanswered question that this read will answer.
     - Do not reread the same or highly overlapping range just to gain confidence. Confidence-seeking rereads are a mistake.
     - Treat redundant readFile calls as a mistake. Only reread overlapping lines if a newly discovered symbol, caller/callee, or branch creates a new concrete question that the previous read did not answer.
-    - Do NOT report generic efficiency concerns (O(N), N+1, redundant calls, missing pagination, missing timeouts) as bugs. Report them only when the changed code creates a concrete, material slowdown or resource blowup, and then label them as performance.
-    - Do NOT report missing defensive measures (missing CSRF, missing rate limiting, missing input validation) unless you can demonstrate a specific exploit path in the changed code.
+    - Performance concerns (O(N), N+1, redundant calls, missing pagination/timeouts): report them when the changed code makes you suspect a real slowdown — label as performance and let the verifier filter; do not pre-suppress by class.
+    - Missing defensive measures (CSRF, rate limiting, input validation): report them when the changed code plausibly exposes the gap — anchor to a changed line and let the verifier judge exploitability; do not pre-suppress by class.
     - Concrete findings include build-time and contract failures too. If the diff introduces a signature mismatch, wrong delegate call, impossible method call, or dropped required side effect, you may report it even without a runtime trace.
     - For wrappers, middleware, providers, caches, and adapters, verify both behavior and wiring: the changed code may be wrong because it calls the wrong target, preserves the wrong cached semantics, or silently stops propagating tracing/logging/metrics/auth state.
     - For security flows, challenge any value that became static, shared, or reused across requests/users when it should be per-request, per-session, or per-principal.
@@ -403,14 +409,14 @@ export function buildCompactUserPrompt(input: ReviewAgentInput, meta: PromptAgen
 ${diffsSection}
   </Diffs>
 ${callGraphSection}
-  <Task>Review this PR for real ${categoryLabel} issues introduced by the diff. For each changed function: grep callers, read enough to confirm, then submit.${labelHint}</Task>
-  <CoverageContract>readFile every hunk of every changed file below before submitting. grep does not count as coverage.
+  <Task>Review this PR for real ${categoryLabel} issues introduced by the diff. For each changed function: grep callers, read enough to confirm. Report any defect you suspect — anchor it to a changed line and let the verifier filter unsupported claims.${labelHint}</Task>
+  <CoverageContract>Go DEEP on hunks that can hide a bug (trace callers, read surrounding logic); SKIP trivial ones (renames, formatting, comments, config). Depth of reasoning over breadth of reading — you need not read every hunk.
 ${coverageTargets ?? ''}</CoverageContract>
   <Rules>
     - Root cause must be in lines added or modified by this PR.
-    - Report only with a concrete failure path: name the input, the wrong behavior, and the changed line that causes it.
+    - Reporting threshold (high-recall): report any defect the changed code makes you suspect — anchor it to a changed line and name the failure kind (wrong output, crash, broken contract/branch, lost side effect, broken caller/callee assumption). You need not prove the exact triggering input; the verifier filters. Only pure speculation with no anchor is out.
+    - Resource-exhaustion, injection, bypass, perf (O(N)/N+1), and missing-defensive (CSRF/rate-limit/validation) concerns: report when the changed code makes you suspect them — anchor + let the verifier judge; do not pre-suppress by class.
     - "Looks correct" is not a dismissal — explain why it cannot fail.
-    - No speculative findings (missing rate-limiting, generic N+1, defensive measures) unless the diff creates the exploit/slowdown.
     - Assign confidence 1–10. Be honest: ≥9 only when both caller and callee read; ≤4 = speculative, do not report below 5.
     - Submit via the submitResult tool; do not print free-form JSON.
   </Rules>

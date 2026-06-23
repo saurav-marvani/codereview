@@ -134,7 +134,6 @@ export async function runAgentLoopViaCore(
             tools,
             providerOptions,
             systemProviderOptions,
-            coverageLedger,
             skipHeavyPasses,
             skipSynthesisRescue,
             telemetryMetadata: input.telemetryMetadata,
