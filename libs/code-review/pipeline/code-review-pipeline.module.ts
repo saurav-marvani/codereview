@@ -4,7 +4,6 @@ import { McpCoreModule } from '@libs/mcp-server/mcp-core.module';
 
 // Stages
 import { AggregateResultsStage } from './stages/aggregate-result.stage';
-import { CollectCrossFileContextStage } from './stages/collect-cross-file-context.stage';
 import { CreateFileCommentsStage } from './stages/create-file-comments.stage';
 import { CreatePrLevelCommentsStage } from './stages/create-pr-level-comments.stage';
 import { FetchChangedFilesStage } from './stages/fetch-changed-files.stage';
@@ -13,7 +12,6 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
 import { UserCoreModule } from '@libs/identity/modules/user-core.module';
 
 import { RequestChangesOrApproveStage } from './stages/finish-process-review.stage';
-import { GatherDocumentationContextStage } from './stages/gather-documentation-context.stage';
 import { InitialCommentStage } from './stages/initial-comment.stage';
 import { LoadExternalContextStage } from './stages/load-external-context.stage';
 import { ProcessFilesPrLevelReviewStage } from './stages/process-files-pr-level-review.stage';
@@ -142,9 +140,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
             useExisting: LoadExternalContextStage,
         },
         LoadExternalContextStage,
-        GatherDocumentationContextStage,
         InitialCommentStage,
-        CollectCrossFileContextStage,
         ProcessFilesPrLevelReviewStage,
         BusinessLogicValidationStage,
         ProcessFilesReview,
@@ -206,8 +202,6 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         ValidatePrerequisitesStage,
         FetchChangedFilesStage,
         InitialCommentStage,
-        CollectCrossFileContextStage,
-        GatherDocumentationContextStage,
         AggregateResultsStage,
         LoadExternalContextStage,
         LOAD_EXTERNAL_CONTEXT_STAGE_TOKEN,
