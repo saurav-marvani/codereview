@@ -76,31 +76,63 @@ diferentes — **verify não é policy.**
    Use o helper `finalText(state)` (`domain/run-state.util`). Usado por
    conversation e business-rules.
 
-## Uso mínimo
+## Recipe — como criar um agente novo
+
+Todo agente segue **os mesmos 6 passos**, usando os helpers compartilhados (é o
+padrão que code-review, conversation, business e skills já seguem). Composição
+explícita — sem fábrica. Cada passo tem UM helper:
 
 ```ts
-const model  = byokToVercelModel(byokConfig);
+// 1. MODELO — resolve BYOK + wrap de concorrência + reporter de falha (1 helper)
+const model = resolveAgentModel(byokConfig, {
+  organizationId, provider: byokConfig?.main?.provider,
+  reporter: byokErrorCounter ? (e) => void byokErrorCounter.record(e) : undefined,
+});
 const runner = new AiSdkAgentRunner({ resolve: () => model });
 
+// 2. TOOLS — AiSdkToolRegistry (tools nativos AI SDK: MCP/Zod) OU InMemoryToolRegistry (AgentTool JSON-Schema)
+const tools = new AiSdkToolRegistry({ ...mcp.tools, ...native });
+
+// 3. SPEC — o agente como dado
 const spec: AgentSpec = {
   id: 'my-agent',
   systemPrompt,
   modelId: 'resolved',
-  tools: new AiSdkToolRegistry({ ...mcp.tools }),  // ou InMemoryToolRegistry([...AgentTool])
-  policies: [new BudgetPolicy()],                  // o domínio adiciona o que precisar
+  tools,
+  policies: [],                 // BudgetPolicy/CompressionPolicy... se precisar
   maxSteps: 12,
-  temperature: 0,
+  temperature: 0,               // opcional
+  // resultToolName: 'submit',  // SÓ se a saída for estruturada (artifacts)
 };
 
-const state = await runner.run(
-  spec,
-  { prompt, telemetry: buildLangfuseTelemetry('my-agent', meta) },
-  { runId, signal },
-);
+// 4. CONTEXT — signal + timeout duro (1 helper). cleanup no finally.
+const { ctx, cleanup } = createAgentRunContext({ runId, parentSignal });
 
-// saída: state.artifacts (estruturado) OU último step assistant (free-form)
-// custo: observability.recordAgentRunUsage({ agentName, phase, usage: state.usage, ... })
+// 5. RUN
+try {
+  const state = await runner.run(
+    spec,
+    { prompt, telemetry: buildLangfuseTelemetry('my-agent', meta) },
+    ctx,
+  );
+
+  // 6. SAÍDA + CUSTO
+  const answer = finalText(state);          // free-form (chat/análise)
+  // const findings = state.artifacts;      // estruturado (result-tool)
+  await observability.recordAgentRunUsage({
+    agentName: 'MyAgent', phase: 'run', model: byokConfig?.main?.model,
+    isByok: !!byokConfig, usage: state.usage, organizationId, teamId,
+  });
+  return answer;
+} finally {
+  cleanup();
+}
 ```
+
+Regra: **os passos 1, 4 e 6 são idênticos em todo agente** (helpers compartilhados:
+`resolveAgentModel`, `createAgentRunContext`, `recordAgentRunUsage`); só **2 (tools),
+3 (spec/prompt) e a saída** mudam por domínio. Se precisar de verificação
+(gerador≠avaliador), componha um `Verifier<T>` via `runVerificationPass`.
 
 ## Fronteira
 
