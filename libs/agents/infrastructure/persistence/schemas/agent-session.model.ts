@@ -41,6 +41,11 @@ interface PersistedSessionData {
 @Schema({
     collection: 'kodus-agent-sessions',
     timestamps: true,
+    // autoIndex on boot is the repo convention (no Mongo index migration
+    // mechanism exists for mongoose models here). Safe because the indexes
+    // below are NON-UNIQUE and background: building them over the existing
+    // legacy `@kodus/flow` documents cannot fail on duplicate threadIds and
+    // does not block startup. (A unique build WOULD have failed — see below.)
     autoIndex: true,
 })
 export class AgentSessionModel extends CoreDocument {
@@ -105,10 +110,14 @@ export class AgentSessionModel extends CoreDocument {
 
 export const AgentSessionSchema = SchemaFactory.createForClass(AgentSessionModel);
 
-// One active session document per thread — the upsert key.
+// Upsert/lookup key. Deliberately NOT unique: the legacy flow engine could
+// write multiple documents per threadId (a new session per TTL window), so a
+// unique build would fail on the existing collection. Uniqueness is best-effort
+// via the upsert filter; under a concurrent first-insert two docs may appear,
+// which is acceptable for a best-effort record.
 AgentSessionSchema.index(
     { threadId: 1 },
-    { name: 'idx_thread', unique: true, background: true },
+    { name: 'idx_thread', background: true },
 );
 
 // Common BI/support filters by tenant.

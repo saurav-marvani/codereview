@@ -38,18 +38,32 @@ export class AgentController {
         body: {
             prompt: string;
             organizationAndTeamData: OrganizationAndTeamDataDto;
+            /** Optional client-supplied conversation id. When provided, scopes
+             *  the thread (and its persisted session) to a single conversation
+             *  instead of falling back to a per-user thread. */
+            conversationId?: string;
         },
     ) {
         const organizationId = this.request?.user?.organization?.uuid;
+        const userId = this.request?.user?.uuid;
 
         if (!organizationId) {
             throw new Error('Organization ID missing in user request');
         }
 
+        // Thread granularity matters: it keys both log/trace correlation and the
+        // persisted `kodus-agent-sessions` record. With only org+team, every
+        // user and conversation of a team would collapse onto one thread/record,
+        // so we add the user (and an optional conversation id) to keep distinct
+        // chats from bleeding into the same session document.
         const thread = createThreadId(
             {
                 organizationId,
                 teamId: body.organizationAndTeamData.teamId,
+                ...(userId ? { userId } : {}),
+                ...(body.conversationId
+                    ? { conversationId: body.conversationId }
+                    : {}),
             },
             {
                 prefix: 'cmc', // Code Management Chat
