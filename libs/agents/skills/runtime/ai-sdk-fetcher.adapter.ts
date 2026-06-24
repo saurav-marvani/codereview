@@ -22,6 +22,7 @@ import type {
 } from '@libs/agent-harness/domain/contracts';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 import { byokToVercelModel } from '@libs/llm/byok-to-vercel';
+import { wrapByokModel } from '@libs/llm/byok-model-wrapper';
 
 /**
  * Wrap a connected flow `MCPAdapter`'s tools as a harness `ToolRegistry`.
@@ -119,7 +120,18 @@ export async function runMcpFetcherAgent(params: {
         provider?: string;
     };
 }): Promise<FetcherRunResult> {
-    const model: LanguageModel = byokToVercelModel(params.byokConfig);
+    // Same as code-review/conversation/business: wrap the model in the BYOK
+    // concurrency limiter so this 4th harness consumer also respects the
+    // customer's rate limit instead of bypassing the gate.
+    const model: LanguageModel = wrapByokModel(
+        byokToVercelModel(params.byokConfig),
+        {
+            byokConfig: params.byokConfig,
+            organizationId: params.telemetry?.organizationId,
+            provider:
+                params.byokConfig?.main?.provider ?? params.telemetry?.provider,
+        },
+    );
     const runner = new AiSdkAgentRunner({ resolve: () => model });
 
     const spec: AgentSpec = {

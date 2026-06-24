@@ -8,6 +8,8 @@ import { InMemoryToolRegistry } from '@libs/agent-harness/infrastructure/tools/i
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 import { createLogger } from '@libs/core/log/logger';
 import { byokToVercelModel } from '@libs/llm/byok-to-vercel';
+import { wrapByokModel } from '@libs/llm/byok-model-wrapper';
+import { createAgentRunContext } from '@libs/llm/agent-run-context';
 import { buildProviderOptions } from '@libs/llm/reasoning-options';
 
 import { ParametersKey } from '@libs/core/domain/enums/parameters-key.enum';
@@ -466,7 +468,13 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
         functionId: string,
         metadata?: { organizationId?: string; teamId?: string },
     ): Promise<AnalyzerCallResult> {
-        const model = byokToVercelModel(this.byokConfig);
+        // Same as code-review/conversation: wrap the model in the BYOK
+        // concurrency limiter so the analysis respects the customer's rate limit.
+        const model = wrapByokModel(byokToVercelModel(this.byokConfig), {
+            byokConfig: this.byokConfig,
+            organizationId: metadata?.organizationId,
+            provider: this.byokConfig?.main?.provider,
+        });
         const system = messages.find((m) => m.role === 'system')?.content;
         const userTurns = messages.filter((m) => m.role !== 'system');
 
@@ -501,20 +509,30 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
             .slice(0, -1)
             .map((m) => ({ role: 'user' as const, content: m.content }));
 
-        const state = await runner.run(
-            spec,
-            {
-                prompt: last?.content ?? '',
-                ...(seedMessages.length ? { seedMessages } : {}),
-                // experimental_telemetry feeds Langfuse (forwarded by the runner).
-                telemetry: buildLangfuseTelemetry(functionId, {
-                    organizationId: metadata?.organizationId,
-                    teamId: metadata?.teamId,
-                    provider: this.byokConfig?.main?.provider,
-                }),
-            },
-            { runId: `business-rules:${functionId}` },
-        );
+        // Standard run context: signal + hard timeout, same guarantee as the
+        // code-review and conversation agents.
+        const { ctx, cleanup } = createAgentRunContext({
+            runId: `business-rules:${functionId}`,
+        });
+        let state;
+        try {
+            state = await runner.run(
+                spec,
+                {
+                    prompt: last?.content ?? '',
+                    ...(seedMessages.length ? { seedMessages } : {}),
+                    // experimental_telemetry feeds Langfuse (forwarded by the runner).
+                    telemetry: buildLangfuseTelemetry(functionId, {
+                        organizationId: metadata?.organizationId,
+                        teamId: metadata?.teamId,
+                        provider: this.byokConfig?.main?.provider,
+                    }),
+                },
+                ctx,
+            );
+        } finally {
+            cleanup();
+        }
 
         const usage = {
             inputTokens: state.usage.inputTokens,

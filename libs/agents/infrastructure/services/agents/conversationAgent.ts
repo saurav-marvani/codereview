@@ -19,6 +19,8 @@ import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 import { createLogger } from '@libs/core/log/logger';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import { byokToVercelModel } from '@libs/llm/byok-to-vercel';
+import { wrapByokModel } from '@libs/llm/byok-model-wrapper';
+import { createAgentRunContext } from '@libs/llm/agent-run-context';
 import { buildProviderOptions } from '@libs/llm/reasoning-options';
 import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service';
 import { SandboxInstance } from '@libs/sandbox/domain/contracts/sandbox.provider';
@@ -108,7 +110,13 @@ export class ConversationAgentProvider {
         });
 
         const byokConfig = await this.resolveBYOKConfig(organizationAndTeamData);
-        const model = byokToVercelModel(byokConfig);
+        // Same as code-review: wrap the model in the BYOK concurrency limiter so
+        // this agent respects the customer's rate limit instead of bypassing it.
+        const model = wrapByokModel(byokToVercelModel(byokConfig), {
+            byokConfig,
+            organizationId: organizationAndTeamData.organizationId?.toString(),
+            provider: byokConfig?.main?.provider,
+        });
 
         // Thinking/reasoning budget. Replaces the legacy
         // `maxReasoningTokens: 1024`, which the flow LLM bridge passed through.
@@ -148,6 +156,12 @@ export class ConversationAgentProvider {
             ...(Object.keys(providerOptions).length ? { providerOptions } : {}),
         };
 
+        // Standard run context: signal + hard timeout, same guarantee as the
+        // code-review and business agents (a stuck run can't run forever).
+        const { ctx, cleanup } = createAgentRunContext({
+            runId: `conversation:${organizationAndTeamData.organizationId}`,
+        });
+
         const startedAt = Date.now();
         try {
             const preparedPrompt = this.buildUserPrompt(
@@ -171,9 +185,7 @@ export class ConversationAgentProvider {
                         provider: byokConfig?.main?.provider,
                     }),
                 },
-                {
-                    runId: `conversation:${organizationAndTeamData.organizationId}`,
-                },
+                ctx,
             );
 
             // Cost -> Mongo `observability_telemetry` via the canonical emitter,
@@ -238,6 +250,7 @@ export class ConversationAgentProvider {
             });
             throw error;
         } finally {
+            cleanup();
             await mcp.close();
         }
     }

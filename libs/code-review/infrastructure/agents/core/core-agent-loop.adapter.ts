@@ -38,12 +38,11 @@ import {
     type AgentLoopSecrets,
     type VerificationTraceSummary,
 } from '@libs/code-review/infrastructure/agents/review-agent.contract';
-import { AGENT_TIMEOUT_MS } from '@libs/llm/llm-call';
+import { createAgentRunContext } from '@libs/llm/agent-run-context';
 import { buildProviderOptions } from '@libs/llm/reasoning-options';
 // buildAgentAnomalies is review-specific (anomaly summary shapes) — lives in its
 // own module (relocated out of the legacy llm/agent-loop.ts).
 import { buildAgentAnomalies } from '@libs/code-review/infrastructure/agents/core/agent-anomalies';
-import { composeAbortSignal } from '@libs/common/utils/parent-signal-compose';
 import { buildCoverageLedger, getCoverageSummary } from '@libs/code-review/infrastructure/agents/engine/coverage-ledger';
 
 const funnelLogger = createLogger('review-funnel');
@@ -121,17 +120,13 @@ export async function runAgentLoopViaCore(
         systemProviderOptions,
     });
 
-    // Hard timeout + cancellation: a local controller that aborts on the parent
-    // job signal OR after AGENT_TIMEOUT_MS — ported from the legacy loop so a
-    // stuck agent can't run forever (the runner forwards ctx.signal to the model).
-    const controller = new AbortController();
-    const detach = composeAbortSignal(input.parentSignal, controller);
-    const timeout = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS);
-
-    const ctx = {
+    // Standard agent run context: runId + a signal that aborts on the parent job
+    // signal OR after the hard per-agent timeout. Shared with conversation +
+    // business so every agent has the same cancellation/timeout guarantee.
+    const { ctx, cleanup } = createAgentRunContext({
         runId: `${input.prNumber ?? 'pr'}:${input.agentName ?? 'finder'}`,
-        signal: controller.signal,
-    };
+        parentSignal: input.parentSignal,
+    });
 
     const r = await runFinderWithVerify(
         {
@@ -148,10 +143,7 @@ export async function runAgentLoopViaCore(
         },
         { prompt: input.userPrompt },
         ctx,
-    ).finally(() => {
-        clearTimeout(timeout);
-        detach();
-    });
+    ).finally(cleanup);
 
     // --- recall funnel made observable (ReviewFinding lifecycle) ---
     // Slice 1: the VERIFY gate — where recall dies most (verify drops the
