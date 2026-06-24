@@ -12,6 +12,7 @@ import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/
 import { MetricsCollectorService } from '@libs/core/infrastructure/metrics/metrics-collector.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import { buildProviderOptions } from '@libs/llm/reasoning-options';
+import { ByokErrorCounter } from '@libs/notifications/application/byok-error-counter.service';
 import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service';
 
 import {
@@ -103,6 +104,7 @@ export class GenericSkillRunnerService {
         private readonly observabilityService: ObservabilityService,
         private readonly mcpManagerService?: MCPManagerService,
         @Optional() private readonly metricsCollector?: MetricsCollectorService,
+        @Optional() private readonly byokErrorCounter?: ByokErrorCounter,
     ) {}
 
     /**
@@ -307,6 +309,12 @@ export class GenericSkillRunnerService {
                                         ),
                                         runId: `${skillName}:${agentName}`,
                                         signal: controller.signal,
+                                        reporter: this.byokErrorCounter
+                                            ? (e) =>
+                                                  void this.byokErrorCounter!.record(
+                                                      e,
+                                                  )
+                                            : undefined,
                                         telemetry: {
                                             functionId: `kodus-${skillName}-fetcher`,
                                             organizationId:

@@ -21,8 +21,7 @@ import type {
     ToolRegistry,
 } from '@libs/agent-harness/domain/contracts';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
-import { byokToVercelModel } from '@libs/llm/byok-to-vercel';
-import { wrapByokModel } from '@libs/llm/byok-model-wrapper';
+import { resolveAgentModel } from '@libs/llm/agent-model';
 
 /**
  * Wrap a connected flow `MCPAdapter`'s tools as a harness `ToolRegistry`.
@@ -113,6 +112,12 @@ export async function runMcpFetcherAgent(params: {
     providerOptions?: Record<string, unknown>;
     runId: string;
     signal?: AbortSignal;
+    /** BYOK failure reporter (ByokErrorCounter.record) — same as every agent. */
+    reporter?: (input: {
+        organizationId?: string;
+        provider: string;
+        errorMessage: string;
+    }) => void;
     telemetry?: {
         functionId: string;
         organizationId?: string;
@@ -120,18 +125,13 @@ export async function runMcpFetcherAgent(params: {
         provider?: string;
     };
 }): Promise<FetcherRunResult> {
-    // Same as code-review/conversation/business: wrap the model in the BYOK
-    // concurrency limiter so this 4th harness consumer also respects the
-    // customer's rate limit instead of bypassing the gate.
-    const model: LanguageModel = wrapByokModel(
-        byokToVercelModel(params.byokConfig),
-        {
-            byokConfig: params.byokConfig,
-            organizationId: params.telemetry?.organizationId,
-            provider:
-                params.byokConfig?.main?.provider ?? params.telemetry?.provider,
-        },
-    );
+    // Standard model setup (same helper as every agent): BYOK resolve +
+    // concurrency limiter + failure reporter.
+    const model: LanguageModel = resolveAgentModel(params.byokConfig, {
+        organizationId: params.telemetry?.organizationId,
+        provider: params.byokConfig?.main?.provider ?? params.telemetry?.provider,
+        reporter: params.reporter,
+    });
     const runner = new AiSdkAgentRunner({ resolve: () => model });
 
     const spec: AgentSpec = {

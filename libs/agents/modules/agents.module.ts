@@ -3,6 +3,7 @@ import { PermissionValidationModule } from '@libs/ee/shared/permission-validatio
 import { OrganizationModule } from '@libs/organization/modules/organization.module';
 import { ParametersModule } from '@libs/organization/modules/parameters.module';
 import { McpCoreModule } from '@libs/mcp-server/mcp-core.module';
+import { NotificationModule } from '@libs/notifications/modules/notification.module';
 
 import { BusinessRulesValidationAgentUseCase } from '../application/use-cases/business-rules-validation-agent.use-case';
 import { ConversationAgentUseCase } from '../application/use-cases/conversation-agent.use-case';
@@ -21,6 +22,9 @@ import { CapabilityResourcePlanService } from '../skills/runtime/capability-reso
         forwardRef(() => ParametersModule),
         LLMModule,
         forwardRef(() => McpCoreModule),
+        // Provides ByokErrorCounter so conversation/business report BYOK failures
+        // (byok.llm_errors_threshold) — parity with code-review.
+        forwardRef(() => NotificationModule),
     ],
     providers: [
         BusinessRulesValidationAgentUseCase,

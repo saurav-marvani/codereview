@@ -1,6 +1,6 @@
 import { BYOKConfig } from '@kodus/kodus-common/llm';
 import { type Tool } from 'ai';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 
 import type { AgentSpec } from '@libs/agent-harness/domain/contracts/agent.contract';
 import { AiSdkAgentRunner } from '@libs/agent-harness/infrastructure/ai-sdk/ai-sdk-agent-runner';
@@ -18,10 +18,10 @@ import {
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 import { createLogger } from '@libs/core/log/logger';
 import { ObservabilityService } from '@libs/core/log/observability.service';
-import { byokToVercelModel } from '@libs/llm/byok-to-vercel';
-import { wrapByokModel } from '@libs/llm/byok-model-wrapper';
+import { resolveAgentModel } from '@libs/llm/agent-model';
 import { createAgentRunContext } from '@libs/llm/agent-run-context';
 import { buildProviderOptions } from '@libs/llm/reasoning-options';
+import { ByokErrorCounter } from '@libs/notifications/application/byok-error-counter.service';
 import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service';
 import { SandboxInstance } from '@libs/sandbox/domain/contracts/sandbox.provider';
 
@@ -76,6 +76,7 @@ export class ConversationAgentProvider {
         private readonly permissionValidationService: PermissionValidationService,
         private readonly observabilityService: ObservabilityService,
         private readonly mcpManagerService?: MCPManagerService,
+        @Optional() private readonly byokErrorCounter?: ByokErrorCounter,
     ) {}
 
     async execute(
@@ -110,12 +111,14 @@ export class ConversationAgentProvider {
         });
 
         const byokConfig = await this.resolveBYOKConfig(organizationAndTeamData);
-        // Same as code-review: wrap the model in the BYOK concurrency limiter so
-        // this agent respects the customer's rate limit instead of bypassing it.
-        const model = wrapByokModel(byokToVercelModel(byokConfig), {
-            byokConfig,
+        // Standard model setup (same as every agent): BYOK resolve + concurrency
+        // limiter + failure reporter.
+        const model = resolveAgentModel(byokConfig, {
             organizationId: organizationAndTeamData.organizationId?.toString(),
             provider: byokConfig?.main?.provider,
+            reporter: this.byokErrorCounter
+                ? (e) => void this.byokErrorCounter!.record(e)
+                : undefined,
         });
 
         // Thinking/reasoning budget. Replaces the legacy

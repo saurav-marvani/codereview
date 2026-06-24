@@ -7,10 +7,10 @@ import { AiSdkAgentRunner } from '@libs/agent-harness/infrastructure/ai-sdk/ai-s
 import { InMemoryToolRegistry } from '@libs/agent-harness/infrastructure/tools/in-memory-tool-registry';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 import { createLogger } from '@libs/core/log/logger';
-import { byokToVercelModel } from '@libs/llm/byok-to-vercel';
-import { wrapByokModel } from '@libs/llm/byok-model-wrapper';
+import { resolveAgentModel } from '@libs/llm/agent-model';
 import { createAgentRunContext } from '@libs/llm/agent-run-context';
 import { buildProviderOptions } from '@libs/llm/reasoning-options';
+import { ByokErrorCounter } from '@libs/notifications/application/byok-error-counter.service';
 
 import { ParametersKey } from '@libs/core/domain/enums/parameters-key.enum';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
@@ -117,6 +117,7 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
         @Optional() capabilityStrategyService?: CapabilityStrategyService,
         @Optional()
         capabilityResourcePlanService?: CapabilityResourcePlanService,
+        @Optional() private readonly byokErrorCounter?: ByokErrorCounter,
     ) {
         super(
             promptRunnerService,
@@ -468,12 +469,14 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
         functionId: string,
         metadata?: { organizationId?: string; teamId?: string },
     ): Promise<AnalyzerCallResult> {
-        // Same as code-review/conversation: wrap the model in the BYOK
-        // concurrency limiter so the analysis respects the customer's rate limit.
-        const model = wrapByokModel(byokToVercelModel(this.byokConfig), {
-            byokConfig: this.byokConfig,
+        // Standard model setup (same as every agent): BYOK resolve + concurrency
+        // limiter + failure reporter.
+        const model = resolveAgentModel(this.byokConfig, {
             organizationId: metadata?.organizationId,
             provider: this.byokConfig?.main?.provider,
+            reporter: this.byokErrorCounter
+                ? (e) => void this.byokErrorCounter!.record(e)
+                : undefined,
         });
         const system = messages.find((m) => m.role === 'system')?.content;
         const userTurns = messages.filter((m) => m.role !== 'system');
