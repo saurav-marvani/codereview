@@ -1,5 +1,5 @@
 import { createLogger } from '@libs/core/log/logger';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, forwardRef } from '@nestjs/common';
 import pLimit from 'p-limit';
 
 import {
