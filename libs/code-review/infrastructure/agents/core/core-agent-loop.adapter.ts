@@ -1,10 +1,12 @@
 /**
- * code-review (domain) — runAgentLoopViaCore: drop-in for runAgentLoop that
- * runs the GENERALIST finder + verify on the new agent-harness harness.
+ * code-review (domain) — runAgentLoopViaCore: runs a review finder + verify on
+ * the agent-harness engine.
  *
- * Same signature/return as the legacy runAgentLoop, so the call site can route
- * to it for the generalist while kody-rules / deep agents stay on the legacy
- * loop (they have different behavior and must NOT be swapped wholesale).
+ * This is THE engine for EVERY review agent (bug / security / performance /
+ * generalist / kody-rules) — the legacy in-house loop was removed, and all
+ * providers route here via BaseCodeReviewAgentProvider (`loopFn =
+ * runAgentLoopViaCore`, unconditional). The per-agent difference is the
+ * AgentSpec (prompt + tools), not a forked loop.
  *
  * Fidelity notes:
  *  - recall/FP fields are faithful: findings.suggestions = verified-kept,
