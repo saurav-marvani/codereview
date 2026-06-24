@@ -94,6 +94,16 @@ module.exports = async (output, context) => {
 
     const candidates = findings.map(findingText);
     const corpus = corpusText(context && context.vars);
+
+    // Loop fidelity (replay hit-rate): of the tool calls the agent actually made,
+    // how many could the replay serve? Low hit-rate = the agent explored beyond the
+    // recording and reflected on empty results → that PR's recall is unreliable.
+    const trace = parsed.trace || {};
+    const unserved = Array.isArray(trace.unexpectedToolCalls) ? trace.unexpectedToolCalls.length : 0;
+    // Denominator = the replay's OWN total calls (served + unserved), not the
+    // agent's toolCalls array (which undercounts → could go negative).
+    const totalCalls = typeof trace.replayCalls === 'number' ? trace.replayCalls : unserved;
+    const hitRate = totalCalls ? Math.max(0, (totalCalls - unserved) / totalCalls) : 1;
     let matched = 0;
     const missed = [];
     for (const g of goldens) {
@@ -124,6 +134,7 @@ module.exports = async (output, context) => {
     const reason =
         `recall ${matched}/${goldens.length} (${Math.round(recall * 100)}%) · ` +
         `fair ${matched}/${fairDenom} (${Math.round(fairRecall * 100)}%) · ` +
+        `loop-fidelity ${Math.round(hitRate * 100)}% (${totalCalls - unserved}/${totalCalls} tool calls served) · ` +
         `findings=${findings.length}` +
         (missed.length
             ? ` · missed[real=${realMiss} artifact=${artifact} untestable=${untestable}]: ` +
@@ -133,6 +144,6 @@ module.exports = async (output, context) => {
         pass: recall >= RECALL_THRESHOLD,
         score: recall,
         reason,
-        metadata: { recall, fairRecall, matched, goldens: goldens.length, realMiss, artifact, untestable, findings: findings.length },
+        metadata: { recall, fairRecall, hitRate, totalCalls, unserved, matched, goldens: goldens.length, realMiss, artifact, untestable, findings: findings.length },
     };
 };

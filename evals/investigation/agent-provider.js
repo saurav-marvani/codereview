@@ -454,6 +454,12 @@ function serializeResult(caseId, agentResult, remoteCommands) {
                 args: call.args || {},
             })),
             unexpectedToolCalls: remoteCommands.unexpectedCalls,
+            // Total calls the replay actually fielded (served + unserved) — the
+            // correct denominator for the replay hit-rate. The agent's toolCalls
+            // array undercounts (no retries/internal reads), so don't use it.
+            replayCalls: Array.isArray(remoteCommands.calls)
+                ? remoteCommands.calls.length
+                : null,
         },
     };
 }
