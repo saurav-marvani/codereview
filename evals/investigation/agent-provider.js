@@ -162,7 +162,9 @@ function buildOpenAICompatibleConfig(config, apiKey, defaultName) {
 
 async function createModel(config) {
     const provider = config.provider || 'google';
-    const model = config.model;
+    // RECALL_MODEL overrides the yaml model so any model can be A/B'd from one
+    // config (e.g. RECALL_MODEL=gemini-3.5-flash) without a per-model yaml.
+    const model = process.env.RECALL_MODEL || config.model;
     const apiKeyEnv = config.apiKeyEnv || defaultApiKeyEnv(provider);
     const apiKey = config.apiKey || process.env[apiKeyEnv];
 

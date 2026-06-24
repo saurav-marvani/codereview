@@ -8,6 +8,8 @@
 #
 # Needs: API_GOOGLE_AI_API_KEY (the finder) + ANTHROPIC_API_KEY (the Sonnet judge).
 # Scope: defaults to one PR per repo. RECALL_ALL=1 for every case.
+# Model: defaults to the `model` below; override with RECALL_MODEL=<id> to A/B any
+# model from this one config (e.g. RECALL_MODEL=gemini-3.5-flash).
 #
 # ALWAYS run with PROMPTFOO_DISABLE_TEMPLATING=1 — the case payload embeds real
 # diffs whose code contains `#{...}` / `{{ }}` (Ruby/JS interpolation), which
