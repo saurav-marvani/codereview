@@ -293,6 +293,27 @@ describe('CockpitReportsService', () => {
             });
         });
 
+        it('bails before the heavy fan-out for an org with no activity', async () => {
+            review.getReviewOperationalMetrics.mockResolvedValue(
+                opsMetrics(0),
+            );
+
+            const report = await service.buildOrgReport(
+                ORG,
+                'Acme',
+                START,
+                END,
+            );
+
+            expect(report.reviews).toBe(0);
+            expect(report.repoRanking).toEqual([]);
+            expect(report.rulesNeedingAttention).toEqual([]);
+            // Did not pay for the ~12-query warehouse fan-out.
+            expect(codeHealth.getImplementationRate).not.toHaveBeenCalled();
+            expect(review.getRepositoriesHealth).not.toHaveBeenCalled();
+            expect(review.getKodyRulesUsage).not.toHaveBeenCalled();
+        });
+
         it('ranks only repos with >=10 reviews, by implementation rate', async () => {
             review.getRepositoriesHealth.mockResolvedValue([
                 {

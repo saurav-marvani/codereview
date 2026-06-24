@@ -32,6 +32,7 @@ import {
     ImplementationRateByCategoryRow,
     KodyRuleUsageRow,
     NegativeFeedbackByCategoryRow,
+    RepositoryHealthRow,
 } from '../../domain/types';
 import {
     COCKPIT_CODE_HEALTH_SERVICE_TOKEN,
@@ -242,8 +243,15 @@ export class CockpitReportsService implements ICockpitReportsService {
         const q: CockpitRangeQuery = { organizationId, startDate, endDate };
         const prev = computePreviousPeriod(startDate, endDate);
 
+        // Activity gate first: the org cron runs across EVERY active org, so
+        // an org with no reviews in the window must stay cheap — bail here
+        // before the ~12-query fan-out below instead of paying for all of it.
+        const ops = await this.review.getReviewOperationalMetrics(q);
+        if (ops.currentPeriod.processedReviews <= 0) {
+            return emptyOrgReport(company, startDate, endDate);
+        }
+
         const [
-            ops,
             implCur,
             implPrev,
             severity,
@@ -252,7 +260,6 @@ export class CockpitReportsService implements ICockpitReportsService {
             rulesUsage,
             ruleTitles,
         ] = await Promise.all([
-            this.review.getReviewOperationalMetrics(q),
             this.codeHealth.getImplementationRate({
                 organizationId,
                 startDate,
@@ -285,7 +292,9 @@ export class CockpitReportsService implements ICockpitReportsService {
 
         const [evolution, highlights] = await Promise.all([
             this.buildImplementationRateEvolution(organizationId, endDate),
-            this.buildHighlights(organizationId, startDate, endDate, prev),
+            // Reuse the current-period repo health already fetched above
+            // instead of re-querying it inside buildHighlights.
+            this.buildHighlights(organizationId, prev, repos),
         ]);
 
         return {
@@ -363,22 +372,14 @@ export class CockpitReportsService implements ICockpitReportsService {
 
     private async buildHighlights(
         organizationId: string,
-        startDate: string,
-        endDate: string,
         prev: { startDate: string; endDate: string },
+        current: RepositoryHealthRow[],
     ): Promise<ReportHighlight[]> {
-        const [current, previous] = await Promise.all([
-            this.review.getRepositoriesHealth({
-                organizationId,
-                startDate,
-                endDate,
-            }),
-            this.review.getRepositoriesHealth({
-                organizationId,
-                startDate: prev.startDate,
-                endDate: prev.endDate,
-            }),
-        ]);
+        const previous = await this.review.getRepositoriesHealth({
+            organizationId,
+            startDate: prev.startDate,
+            endDate: prev.endDate,
+        });
 
         const prevByRepo = new Map(
             previous.map((r) => [r.repository, r.implementationRate]),
@@ -548,6 +549,35 @@ function stateRank(state: RuleHealthState): number {
         default:
             return 5;
     }
+}
+
+/** Zeroed org report for an org with no activity — the use-case skips it. */
+function emptyOrgReport(
+    company: string,
+    startDate: string,
+    endDate: string,
+): OrgReportData {
+    return {
+        company,
+        startDate,
+        endDate,
+        reviews: 0,
+        reviewsTrend: 'unchanged',
+        reviewsChangePct: 0,
+        implementationRate: 0,
+        implementationRateTrend: 'unchanged',
+        implementationRatePpChange: 0,
+        suggestionsImplemented: 0,
+        criticalImplemented: 0,
+        prCycleTimeHours: 0,
+        prCycleTimeTrend: 'unchanged',
+        prCycleTimeChangePct: 0,
+        implementationRateEvolution: [],
+        repoRanking: [],
+        highlights: [],
+        rulesNeedingAttention: [],
+        rulesNeedingAttentionMore: 0,
+    };
 }
 
 function toRanking(
