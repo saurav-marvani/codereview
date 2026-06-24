@@ -21,6 +21,16 @@ import { EOL, tmpdir } from 'os';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 
+/** Severity order for the Mongo log store, matching Pino's. Used to honor the
+ *  SAME `API_LOG_LEVEL` the console respects, so the store doesn't fill with
+ *  debug noise (~75% of entries were level=debug). */
+const LOG_LEVEL_RANK: Record<string, number> = {
+    debug: 0,
+    info: 1,
+    warn: 2,
+    error: 3,
+};
+
 export class MongoDBExporter implements LogProcessor, ObservabilityExporter {
     public readonly name = 'MongoDBExporter';
     private config: MongoDBExporterConfig;
@@ -859,8 +869,18 @@ export class MongoDBExporter implements LogProcessor, ObservabilityExporter {
         context?: LogContext,
         error?: Error,
     ) {
-        // MongoDB saves all logs for complete history/audit trail
-        // Console logging respects API_LOG_LEVEL via Pino
+        // Honor the SAME threshold the console uses (API_LOG_LEVEL, default
+        // 'info') so the Mongo log store mirrors what's logged instead of
+        // persisting everything — debug was ~75% of the collection (e.g.
+        // "Executing Query", "Execution context set"). info/warn/error still
+        // persist for audit.
+        const minLevel = process.env.API_LOG_LEVEL || 'info';
+        if (
+            (LOG_LEVEL_RANK[level] ?? 1) < (LOG_LEVEL_RANK[minLevel] ?? 1)
+        ) {
+            return;
+        }
+
         // Prevent buffer overflow
         if (this.logBuffer.length >= this.maxBufferSize) {
             // Drop oldest logs to make space for new ones
