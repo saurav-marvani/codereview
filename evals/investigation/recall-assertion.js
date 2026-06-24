@@ -104,20 +104,33 @@ module.exports = async (output, context) => {
     // agent's toolCalls array (which undercounts → could go negative).
     const totalCalls = typeof trace.replayCalls === 'number' ? trace.replayCalls : unserved;
     const hitRate = totalCalls ? Math.max(0, (totalCalls - unserved) / totalCalls) : 1;
-    let matched = 0;
-    const missed = [];
-    for (const g of goldens) {
-        const goldenText = typeof g === 'string' ? g : g.comment;
-        let hit = false;
-        for (const c of candidates) {
+    // Judge every (golden, finding) pair so we get BOTH:
+    //   recall    — goldens covered by >=1 finding  (did we catch the real bugs?)
+    //   precision — findings that hit >=1 golden     (is what we post real, not noise?)
+    // Skip a pair only when both sides are already decided.
+    const goldenHit = new Array(goldens.length).fill(false);
+    const findingHit = new Array(candidates.length).fill(false);
+    for (let gi = 0; gi < goldens.length; gi++) {
+        const goldenText = typeof goldens[gi] === 'string' ? goldens[gi] : goldens[gi].comment;
+        for (let fi = 0; fi < candidates.length; fi++) {
+            if (goldenHit[gi] && findingHit[fi]) continue;
             // eslint-disable-next-line no-await-in-loop
-            if (await matchComment(apiKey, goldenText, c)) {
-                hit = true;
-                break;
+            if (await matchComment(apiKey, goldenText, candidates[fi])) {
+                goldenHit[gi] = true;
+                findingHit[fi] = true;
             }
         }
-        if (hit) matched++;
-        else missed.push({ text: String(goldenText), fair: codeInCorpus(goldenText, corpus) });
+    }
+
+    const matched = goldenHit.filter(Boolean).length; // goldens covered (recall TP)
+    const tpFindings = findingHit.filter(Boolean).length; // findings that hit a golden
+    const fpFindings = candidates.length - tpFindings; // findings that hit nothing
+
+    const missed = [];
+    for (let gi = 0; gi < goldens.length; gi++) {
+        if (goldenHit[gi]) continue;
+        const t = typeof goldens[gi] === 'string' ? goldens[gi] : goldens[gi].comment;
+        missed.push({ text: String(t), fair: codeInCorpus(t, corpus) });
     }
 
     // Fairness: of the missed goldens, how many had their code in the corpus the
@@ -126,16 +139,20 @@ module.exports = async (output, context) => {
     const realMiss = missed.filter((m) => m.fair.present === true).length;
     const artifact = missed.filter((m) => m.fair.present === false).length;
     const untestable = missed.filter((m) => m.fair.present === null).length;
-    // Fair recall = TP / (TP + recognition-misses) — excludes artifacts from the denominator.
+
     const recall = matched / goldens.length;
+    const precision = candidates.length ? tpFindings / candidates.length : 0;
+    const f1 = recall + precision ? (2 * recall * precision) / (recall + precision) : 0;
+    // Fair recall = TP / (TP + recognition-misses) — excludes replay artifacts.
     const fairDenom = matched + realMiss + untestable;
     const fairRecall = fairDenom ? matched / fairDenom : recall;
 
     const reason =
         `recall ${matched}/${goldens.length} (${Math.round(recall * 100)}%) · ` +
-        `fair ${matched}/${fairDenom} (${Math.round(fairRecall * 100)}%) · ` +
-        `loop-fidelity ${Math.round(hitRate * 100)}% (${totalCalls - unserved}/${totalCalls} tool calls served) · ` +
-        `findings=${findings.length}` +
+        `precision ${tpFindings}/${candidates.length} (${Math.round(precision * 100)}%) · ` +
+        `F1 ${f1.toFixed(2)} · ` +
+        `fair-recall ${Math.round(fairRecall * 100)}% · ` +
+        `loop-fidelity ${Math.round(hitRate * 100)}% (${totalCalls - unserved}/${totalCalls} served)` +
         (missed.length
             ? ` · missed[real=${realMiss} artifact=${artifact} untestable=${untestable}]: ` +
               missed.map((m) => `${m.text.slice(0, 55)}${m.fair.present === false ? ' «not-in-corpus»' : m.fair.present === null ? ' «no-tokens»' : ''}`).join(' | ')
@@ -144,6 +161,6 @@ module.exports = async (output, context) => {
         pass: recall >= RECALL_THRESHOLD,
         score: recall,
         reason,
-        metadata: { recall, fairRecall, hitRate, totalCalls, unserved, matched, goldens: goldens.length, realMiss, artifact, untestable, findings: findings.length },
+        metadata: { recall, precision, f1, fairRecall, hitRate, totalCalls, unserved, matched, goldens: goldens.length, tpFindings, fpFindings, findings: candidates.length, realMiss, artifact, untestable },
     };
 };
