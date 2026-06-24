@@ -3,6 +3,8 @@ import { type Tool } from 'ai';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 
 import type { AgentSpec } from '@libs/agent-harness/domain/contracts/agent.contract';
+import type { ConversationStore } from '@libs/agent-harness/domain/contracts';
+import { CONVERSATION_STORE_TOKEN } from '@libs/agents/infrastructure/persistence/mongo-conversation-store';
 import { AiSdkAgentRunner } from '@libs/agent-harness/infrastructure/ai-sdk/ai-sdk-agent-runner';
 import { AiSdkToolRegistry } from '@libs/agent-harness/infrastructure/ai-sdk/ai-sdk-tool-registry';
 import { finalText } from '@libs/agent-harness/domain/run-state.util';
@@ -77,6 +79,11 @@ export class ConversationAgentProvider {
         private readonly observabilityService: ObservabilityService,
         private readonly mcpManagerService?: MCPManagerService,
         @Optional() private readonly byokErrorCounter?: ByokErrorCounter,
+        // Conversation record (kodus-agent-sessions). Optional so callers that
+        // don't bind it (tests, lean wirings) still construct the agent.
+        @Optional()
+        @Inject(CONVERSATION_STORE_TOKEN)
+        private readonly conversationStore?: ConversationStore,
     ) {}
 
     async execute(
@@ -243,6 +250,18 @@ export class ConversationAgentProvider {
                 return CONVERSATION_FALLBACK_MESSAGE;
             }
 
+            // Persist the exchange to `kodus-agent-sessions` (best-effort —
+            // never blocks the reply). Keeps the conversation record alive after
+            // the flow removal, keyed by the caller's thread id. The user turn
+            // is the RAW prompt (not the assembled context block).
+            await this.persistConversationTurn(
+                thread,
+                prompt,
+                response,
+                organizationAndTeamData,
+                prepareContext,
+            );
+
             return response;
         } catch (error) {
             this.logger.error({
@@ -256,6 +275,48 @@ export class ConversationAgentProvider {
             cleanup();
             await mcp.close();
         }
+    }
+
+    /**
+     * Append the user/assistant exchange to the conversation record
+     * (`kodus-agent-sessions`) keyed by the thread id. Best-effort and fully
+     * isolated: the store swallows its own errors, and this wrapper guards the
+     * no-store / no-thread-id cases so a record failure can never affect the
+     * reply that was already produced.
+     */
+    private async persistConversationTurn(
+        thread: ConversationThread,
+        userPrompt: string,
+        assistantResponse: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+        prepareContext: any,
+    ): Promise<void> {
+        if (!this.conversationStore) {
+            return;
+        }
+
+        const threadId =
+            thread?.id != null ? String(thread.id) : '';
+        if (!threadId) {
+            return;
+        }
+
+        const channel = thread?.metadata?.channel;
+
+        await this.conversationStore.append(
+            threadId,
+            [
+                { role: 'user', content: userPrompt },
+                { role: 'assistant', content: assistantResponse },
+            ],
+            {
+                organizationId:
+                    organizationAndTeamData?.organizationId?.toString(),
+                teamId: organizationAndTeamData?.teamId?.toString(),
+                repositoryId: prepareContext?.repository?.id?.toString(),
+                channel: typeof channel === 'string' ? channel : undefined,
+            },
+        );
     }
 
     /**

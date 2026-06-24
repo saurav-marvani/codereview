@@ -43,3 +43,8 @@ export type {
     Compressor,
     CompressionResult,
 } from './compression.contract';
+export type {
+    ConversationStore,
+    ConversationMessage,
+    ConversationAppendMeta,
+} from './conversation-store.contract';
