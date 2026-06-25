@@ -71,7 +71,10 @@ import { CommentManagerService } from './commentManager.service';
 describe('CommentManagerService.generateSummaryPR', () => {
     let service: CommentManagerService;
     let codeManagementService: { getPullRequestByNumber: jest.Mock };
-    let observabilityService: { runLLMInSpan: jest.Mock };
+    let observabilityService: {
+        runLLMInSpan: jest.Mock;
+        runAiSdkLLMInSpan: jest.Mock;
+    };
     let parametersService: any;
     let messageProcessor: any;
     let promptRunnerService: any;
@@ -103,6 +106,9 @@ describe('CommentManagerService.generateSummaryPR', () => {
                 const result = await exec(() => {});
                 return { result };
             }),
+            // generateSummaryPR now uses runAiSdkLLMInSpan (AI SDK usage path).
+            // It returns the exec result directly; the caller reads `.text`.
+            runAiSdkLLMInSpan: jest.fn(async ({ exec }) => exec()),
         };
 
         parametersService = {};

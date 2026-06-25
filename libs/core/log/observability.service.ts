@@ -590,32 +590,36 @@ export class ObservabilityService implements OnModuleInit {
                 : undefined;
 
             if (span) {
-                span.setAttributes({
-                    'gen_ai.usage.total_tokens': s.totalTokens,
-                    'gen_ai.usage.input_tokens': s.inputTokens,
-                    'gen_ai.usage.output_tokens': s.outputTokens,
-                    ...(s.reasoningTokens > 0 && {
-                        'gen_ai.usage.reasoning_tokens': s.reasoningTokens,
+                // Same schema as the AI SDK / harness paths — project through the
+                // single source of truth (buildUsageSpanAttributes) so the Mongo
+                // cost columns are identical regardless of capture method. Only
+                // the LangChain-specific extras (run.id / runIds / names) and the
+                // caller metadata go through extraAttributes.
+                span.setAttributes(
+                    buildUsageSpanAttributes({
+                        runName: explicitName ?? runName ?? resolvedName,
+                        model: resolvedModel,
+                        usage: {
+                            inputTokens: s.inputTokens,
+                            outputTokens: s.outputTokens,
+                            totalTokens: s.totalTokens,
+                            reasoningTokens: s.reasoningTokens,
+                        },
+                        extraAttributes: {
+                            ...(runKey && { 'gen_ai.run.id': runKey }),
+                            ...(s.runIdsArr.length && {
+                                runIds: s.runIdsArr.join(','),
+                            }),
+                            ...(s.parentRunIdsArr.length && {
+                                parentRunIds: s.parentRunIdsArr.join(','),
+                            }),
+                            ...(s.runNamesArr.length && {
+                                runNames: s.runNamesArr.join(','),
+                            }),
+                            ...(metadata ?? {}),
+                        },
                     }),
-                    ...(resolvedModel && {
-                        'gen_ai.response.model': resolvedModel,
-                    }),
-                    ...(runKey && { 'gen_ai.run.id': runKey }),
-                    ...((explicitName ?? runName ?? resolvedName) && {
-                        'gen_ai.run.name':
-                            explicitName ?? runName ?? resolvedName,
-                    }),
-                    ...(s.runIdsArr.length && {
-                        runIds: s.runIdsArr.join(','),
-                    }),
-                    ...(s.parentRunIdsArr.length && {
-                        parentRunIds: s.parentRunIdsArr.join(','),
-                    }),
-                    ...(s.runNamesArr.length && {
-                        runNames: s.runNamesArr.join(','),
-                    }),
-                    ...(metadata ?? {}),
-                });
+                );
             }
 
             if (reset) {

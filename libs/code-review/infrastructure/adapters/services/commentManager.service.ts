@@ -109,35 +109,36 @@ export class CommentManagerService implements ICommentManagerService {
             metadata,
         } = params;
 
-        const { result } = await this.observabilityService.runLLMInSpan<string>(
-            {
-                spanName,
-                runName,
-                attrs,
-                byokConfig: byokConfig ?? undefined,
-                exec: async () => {
-                    const model = byokToVercelModel(
-                        byokConfig ?? undefined,
-                        'main',
-                        {},
-                        'gemini-2.5-flash',
-                    );
-                    const res: any = await tracedGenerateText({
-                        model: model as any,
-                        system: systemPrompt,
-                        prompt: userPrompt,
-                        temperature: byokConfig?.main?.temperature ?? 0,
-                        experimental_telemetry: buildLangfuseTelemetry(
-                            runName,
-                            metadata,
-                        ),
-                    });
-                    return (res?.text as string) ?? '';
-                },
+        // This is an AI SDK call (tracedGenerateText), so use runAiSdkLLMInSpan —
+        // it reads token usage from result.usage. runLLMInSpan is the
+        // LangChain-callback path (TokenTrackingHandler) and can't see AI SDK
+        // usage, which is why summary spans were recorded with 0 tokens.
+        const result = await this.observabilityService.runAiSdkLLMInSpan<any>({
+            spanName,
+            runName,
+            model: byokConfig?.main?.model ?? 'gemini-2.5-flash',
+            attrs,
+            exec: async () => {
+                const model = byokToVercelModel(
+                    byokConfig ?? undefined,
+                    'main',
+                    {},
+                    'gemini-2.5-flash',
+                );
+                return await tracedGenerateText({
+                    model: model as any,
+                    system: systemPrompt,
+                    prompt: userPrompt,
+                    temperature: byokConfig?.main?.temperature ?? 0,
+                    experimental_telemetry: buildLangfuseTelemetry(
+                        runName,
+                        metadata,
+                    ),
+                });
             },
-        );
+        });
 
-        return result;
+        return (result?.text as string) ?? '';
     }
 
     async generateSummaryPR(
