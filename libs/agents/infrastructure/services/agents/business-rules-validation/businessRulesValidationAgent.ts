@@ -481,10 +481,21 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
         const system = messages.find((m) => m.role === 'system')?.content;
         const userTurns = messages.filter((m) => m.role !== 'system');
 
-        // Thinking/reasoning budget — replaces the legacy
-        // `maxReasoningTokens: 1024` the flow LLM bridge passed through.
+        // Per-call model params come from the org's saved BYOK config — NOT
+        // hardcoded. A fixed `temperature: 0` overrode the config and broke
+        // models that only accept their configured value (e.g. kimi-k2.7-code
+        // wants 1). For a BYOK model we honor the config (omit when unset →
+        // provider default); for a system model we keep the call's option.
+        const temperature = this.byokConfig?.main
+            ? this.byokConfig.main.temperature
+            : options.temperature;
+        const maxOutputTokens =
+            this.byokConfig?.main?.maxOutputTokens ?? options.maxTokens;
+
+        // Thinking/reasoning budget — the effort tier also comes from the BYOK
+        // config (the org configured it); fall back to 'low' when unset.
         const providerOptions = buildProviderOptions(functionId, undefined, {
-            reasoningEffort: 'low',
+            reasoningEffort: this.byokConfig?.main?.reasoningEffort ?? 'low',
             byokProvider: this.byokConfig?.main?.provider,
             modelName: this.byokConfig?.main?.model,
         });
@@ -502,8 +513,8 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
             tools: new InMemoryToolRegistry([]),
             policies: [],
             maxSteps: 1,
-            temperature: options.temperature ?? 0,
-            ...(options.maxTokens ? { maxOutputTokens: options.maxTokens } : {}),
+            ...(typeof temperature === 'number' ? { temperature } : {}),
+            ...(maxOutputTokens ? { maxOutputTokens } : {}),
             ...(Object.keys(providerOptions).length ? { providerOptions } : {}),
         };
         const last = userTurns[userTurns.length - 1];

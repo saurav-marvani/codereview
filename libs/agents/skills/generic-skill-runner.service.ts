@@ -300,7 +300,12 @@ export class GenericSkillRunnerService {
                                             `kodus-${skillName}-fetcher`,
                                             undefined,
                                             {
-                                                reasoningEffort: 'low',
+                                                // Effort tier from the org's
+                                                // BYOK config; 'low' fallback.
+                                                reasoningEffort:
+                                                    byokConfig?.main
+                                                        ?.reasoningEffort ??
+                                                    'low',
                                                 byokProvider:
                                                     byokConfig?.main?.provider,
                                                 modelName:
