@@ -1393,16 +1393,16 @@ export const KodyRuleAddOrUpdateItemModal = ({
                                                         )
                                                     }
                                                     className={cn({
-                                                        "[--slider-marker-background-active:#119DE4]":
+                                                        "[--slider-marker-background-active:var(--color-info)]":
                                                             field.value ===
                                                             "low",
-                                                        "[--slider-marker-background-active:#115EE4]":
+                                                        "[--slider-marker-background-active:var(--color-alert)]":
                                                             field.value ===
                                                             "medium",
-                                                        "[--slider-marker-background-active:#6A57A4]":
+                                                        "[--slider-marker-background-active:var(--color-warning)]":
                                                             field.value ===
                                                             "high",
-                                                        "[--slider-marker-background-active:#EF4B4B]":
+                                                        "[--slider-marker-background-active:var(--color-danger)]":
                                                             field.value ===
                                                             "critical",
                                                     })}
