@@ -26,17 +26,17 @@ importers:
   .:
     dependencies:
       '@ai-sdk/amazon-bedrock':
-        specifier: ^4.0.120
-        version: 4.0.120(zod@4.4.3)
+        specifier: ^4.0.121
+        version: 4.0.121(zod@4.4.3)
       '@ai-sdk/anthropic':
-        specifier: ^3.0.85
-        version: 3.0.85(zod@4.4.3)
+        specifier: ^3.0.86
+        version: 3.0.86(zod@4.4.3)
       '@ai-sdk/google':
         specifier: ^3.0.83
         version: 3.0.83(zod@4.4.3)
       '@ai-sdk/google-vertex':
-        specifier: ^4.0.148
-        version: 4.0.148(zod@4.4.3)
+        specifier: ^4.0.149
+        version: 4.0.149(zod@4.4.3)
       '@ai-sdk/openai':
         specifier: ^3.0.74
         version: 3.0.74(zod@4.4.3)
@@ -80,20 +80,20 @@ importers:
         specifier: 1.5.3
         version: 1.5.3(@langchain/core@1.2.1(@opentelemetry/api@1.9.1)(@opentelemetry/exporter-trace-otlp-proto@0.219.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))(openai@6.44.0(ws@8.18.3)(zod@4.4.3))(ws@8.18.3))(ws@8.18.3)
       '@langfuse/client':
-        specifier: ^5.6.0
-        version: 5.6.0(@opentelemetry/api@1.9.1)
+        specifier: ^5.7.0
+        version: 5.7.0(@opentelemetry/api@1.9.1)
       '@langfuse/core':
-        specifier: ^5.6.0
-        version: 5.6.0(@opentelemetry/api@1.9.1)
+        specifier: ^5.7.0
+        version: 5.7.0(@opentelemetry/api@1.9.1)
       '@langfuse/langchain':
-        specifier: ^5.6.0
-        version: 5.6.0(@langchain/core@1.2.1(@opentelemetry/api@1.9.1)(@opentelemetry/exporter-trace-otlp-proto@0.219.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))(openai@6.44.0(ws@8.18.3)(zod@4.4.3))(ws@8.18.3))(@opentelemetry/api@1.9.1)
+        specifier: ^5.7.0
+        version: 5.7.0(@langchain/core@1.2.1(@opentelemetry/api@1.9.1)(@opentelemetry/exporter-trace-otlp-proto@0.219.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))(openai@6.44.0(ws@8.18.3)(zod@4.4.3))(ws@8.18.3))(@opentelemetry/api@1.9.1)
       '@langfuse/otel':
-        specifier: ^5.6.0
-        version: 5.6.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.219.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))
+        specifier: ^5.7.0
+        version: 5.7.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.219.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))
       '@langfuse/tracing':
-        specifier: ^5.6.0
-        version: 5.6.0(@opentelemetry/api@1.9.1)
+        specifier: ^5.7.0
+        version: 5.7.0(@opentelemetry/api@1.9.1)
       '@llamaduck/forgejo-ts':
         specifier: 14.0.2-4
         version: 14.0.2-4
@@ -338,8 +338,8 @@ importers:
         specifier: ^13.1.3
         version: 13.1.3
       posthog-node:
-        specifier: ^5.38.3
-        version: 5.38.3(rxjs@7.8.2)
+        specifier: ^5.38.4
+        version: 5.38.4(rxjs@7.8.2)
       ramda:
         specifier: ^0.32.0
         version: 0.32.0
@@ -563,14 +563,14 @@ importers:
 
 packages:
 
-  '@ai-sdk/amazon-bedrock@4.0.120':
-    resolution: {integrity: sha512-eRbkUIylAGkItMh4Q0iokRwHVypPLd7RiGHh1jcqgf0PjI04wTitJOCwDSVe2TI9NnFVqpaBOQMe5bNF7lYw6w==}
+  '@ai-sdk/amazon-bedrock@4.0.121':
+    resolution: {integrity: sha512-osyum0QGdIHvd/Z9dQHhouXQnd9NX0cUSX5De5MgHpn5oER61/qkJ8MUD5I+PaWeTYUYOAPrY1QHkbwqSNWa9Q==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/anthropic@3.0.85':
-    resolution: {integrity: sha512-fNeDB644l5wbRNQU0FnI+F7UTtOenMnPtACfMPUJaS2zJfuBlseEa1TMg+otHkETZgaJB+6Na51NQEv0+m7czw==}
+  '@ai-sdk/anthropic@3.0.86':
+    resolution: {integrity: sha512-IVUaTOz46dNniRaALEvphV5WOqPfKTJRZlJhJabz3kaXk1QiwdnzWQhKMKLiprD+872E9YHqmmyFNFFH1MfnBQ==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -581,8 +581,8 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/google-vertex@4.0.148':
-    resolution: {integrity: sha512-H8hRzNyK5Ok3f/ktfSKb9sFWnWQiObc/dcN6GoGaTDsp01AyFZDPoTdLSPPEZCCUYutclUdhYG6OjO7j5P+NvQ==}
+  '@ai-sdk/google-vertex@4.0.149':
+    resolution: {integrity: sha512-iDs0SlIO3sHzWn0MG9JYlHBn5UNPyo4ZB7LWqdhvBYwmlr6wU4uLaj9JmJ1jVIrU5Fpv5wTQuBspxDEYx7KcxA==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -2326,24 +2326,24 @@ packages:
     peerDependencies:
       '@langchain/core': ^1.0.0
 
-  '@langfuse/client@5.6.0':
-    resolution: {integrity: sha512-vFs9dBY7C4lQMO9QqIoZwVlBMqjAsgrtcgCAZrhrHQNj7irGka1ySiyPciJ9rciAkXXcwaT11DjQ5OzFq4nAKg==}
+  '@langfuse/client@5.7.0':
+    resolution: {integrity: sha512-Ky68wGiNtW/axdkZ0Z2/55VrErDkB5XWDd1YqQcu1kyehBMip+EJiENv2TfJzMbxnfW+V2WmBKFuv666itD45Q==}
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
 
-  '@langfuse/core@5.6.0':
-    resolution: {integrity: sha512-R190bzXEqTaYJUPZWdvXr6ZIsx4JQlC9awD4Zlb056WQRXhLK42NxLk6UV9CltYIY0gRusWyVZb6q4MyIZyu2A==}
+  '@langfuse/core@5.7.0':
+    resolution: {integrity: sha512-kLFYagw3Js5QDesQbMLOzV4L4/0hYndSmAX6em6zDCmA4qMKfdRJMZ5F/fpl9LONFMTu7pU6WGLyUxM80hjYVQ==}
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
 
-  '@langfuse/langchain@5.6.0':
-    resolution: {integrity: sha512-YGylHNg4yE77GvU+NisN294wnTkwPx07VmWrva5bMezPLTam7A9/ZnOHf2SDFrE6QIX35mgxX87rDKXbCppeVQ==}
+  '@langfuse/langchain@5.7.0':
+    resolution: {integrity: sha512-bALp9DmuXgTgmiYpzuOi+eLlZcZ5gc8iD/gwXx/wS4Vqv6hZjydRyQBKPPLe6nhpCexIXtXowwlmffwMQ9/Ggg==}
     peerDependencies:
       '@langchain/core': '>=0.3.8'
       '@opentelemetry/api': ^1.9.0
 
-  '@langfuse/otel@5.6.0':
-    resolution: {integrity: sha512-tK6+OWrI78R0L0TEVbTHyBqrTaAF2/Z+2Wpsf7pAD8J5zvfFJkbExe709mosIykU3TmeS1HJpo3dZS3SEm8jdA==}
+  '@langfuse/otel@5.7.0':
+    resolution: {integrity: sha512-x5HANvvDV23btbTijz9eW2DzvX/sZ4orsahYXuwsCApOzEWSgEzd0ZrpHPSz4+epytps1RBe3M6e5gm2EgaAmA==}
     engines: {node: '>=20'}
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
@@ -2351,8 +2351,8 @@ packages:
       '@opentelemetry/exporter-trace-otlp-http': '>=0.202.0 <1.0.0'
       '@opentelemetry/sdk-trace-base': ^2.0.1
 
-  '@langfuse/tracing@5.6.0':
-    resolution: {integrity: sha512-eC+/tACOyZf6UMCMgs/936HyW7+C7z7HvRufVsURhFSRzaJGeyRB6hK8OXxxp0mhKHURfVB9C+D2UAeuoRkHYg==}
+  '@langfuse/tracing@5.7.0':
+    resolution: {integrity: sha512-FCroWXE0510BUt2vHCEk64Wb+nywc3WVdx3+zaWyW1CI8mSa9i/yX+Oe2a956QRLPhVCeFgO27Y8Zlg7RaDWig==}
     engines: {node: '>=20'}
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
@@ -3238,8 +3238,8 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  '@posthog/core@1.37.0':
-    resolution: {integrity: sha512-hTSJVKEQ4dYhJLGggr0F6oZ+AwKSlDXr4PPeHfNvcBJ5S1rxoQXFA612zK1ODakuw8J9YSKShVm5yC0HdRvJ4g==}
+  '@posthog/core@1.37.1':
+    resolution: {integrity: sha512-KRBuxF/XBm3tNpqWlXpWE82XxsYsJb0jSyEic14LMXMvqDv5iApK1jfV0+seikDb9SpPs3tPkWUfHdwaUtFBtQ==}
 
   '@posthog/types@1.391.0':
     resolution: {integrity: sha512-oJ6jkqVMq+T4ax9F0rUllJc0KHpSgpaMwTNYWkE70iBiyXDVyhcNBmYnNKzSODgpzsaQNI6VfK8JrRYbkSJZZw==}
@@ -7761,8 +7761,8 @@ packages:
     resolution: {integrity: sha512-9ZhXKM/rw350N1ovuWHbGxnGh/SNJ4cnxHiM0rxE4VN41wsg8P8zWn9hv/buK00RP4WvlOyr/RBDiptyxVbkZQ==}
     engines: {node: '>=0.10.0'}
 
-  posthog-node@5.38.3:
-    resolution: {integrity: sha512-sO+SQzpdC7bXzV7JM6f5iyqiq4su96iGeHlLDuFcB5iwEw06GR5WrakWmI3/KKwnwHTT8bLT9HLsFMM888BeQw==}
+  posthog-node@5.38.4:
+    resolution: {integrity: sha512-Jti056f+5C9y1MXb5yhxwwYBITxypWZHWcAp+UevcZ7/AKEQdSB9FiJP3WzEznw4vH3Bz0IlRKVgsofizRAoEA==}
     engines: {node: ^20.20.0 || >=22.22.0}
     peerDependencies:
       rxjs: ^7.0.0
@@ -9259,9 +9259,9 @@ packages:
 
 snapshots:
 
-  '@ai-sdk/amazon-bedrock@4.0.120(zod@4.4.3)':
+  '@ai-sdk/amazon-bedrock@4.0.121(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/anthropic': 3.0.85(zod@4.4.3)
+      '@ai-sdk/anthropic': 3.0.86(zod@4.4.3)
       '@ai-sdk/openai': 3.0.74(zod@4.4.3)
       '@ai-sdk/provider': 3.0.10
       '@ai-sdk/provider-utils': 4.0.30(zod@4.4.3)
@@ -9270,7 +9270,7 @@ snapshots:
       aws4fetch: 1.0.20
       zod: 4.4.3
 
-  '@ai-sdk/anthropic@3.0.85(zod@4.4.3)':
+  '@ai-sdk/anthropic@3.0.86(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 3.0.10
       '@ai-sdk/provider-utils': 4.0.30(zod@4.4.3)
@@ -9283,9 +9283,9 @@ snapshots:
       '@vercel/oidc': 3.2.0
       zod: 4.4.3
 
-  '@ai-sdk/google-vertex@4.0.148(zod@4.4.3)':
+  '@ai-sdk/google-vertex@4.0.149(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/anthropic': 3.0.85(zod@4.4.3)
+      '@ai-sdk/anthropic': 3.0.86(zod@4.4.3)
       '@ai-sdk/google': 3.0.83(zod@4.4.3)
       '@ai-sdk/openai-compatible': 2.0.51(zod@4.4.3)
       '@ai-sdk/provider': 3.0.10
@@ -10808,35 +10808,35 @@ snapshots:
       '@langchain/core': 1.2.1(@opentelemetry/api@1.9.1)(@opentelemetry/exporter-trace-otlp-proto@0.219.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))(openai@6.44.0(ws@8.18.3)(zod@4.4.3))(ws@8.18.3)
       js-tiktoken: 1.0.21
 
-  '@langfuse/client@5.6.0(@opentelemetry/api@1.9.1)':
+  '@langfuse/client@5.7.0(@opentelemetry/api@1.9.1)':
     dependencies:
-      '@langfuse/core': 5.6.0(@opentelemetry/api@1.9.1)
-      '@langfuse/tracing': 5.6.0(@opentelemetry/api@1.9.1)
+      '@langfuse/core': 5.7.0(@opentelemetry/api@1.9.1)
+      '@langfuse/tracing': 5.7.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/api': 1.9.1
       mustache: 4.2.0
 
-  '@langfuse/core@5.6.0(@opentelemetry/api@1.9.1)':
+  '@langfuse/core@5.7.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
 
-  '@langfuse/langchain@5.6.0(@langchain/core@1.2.1(@opentelemetry/api@1.9.1)(@opentelemetry/exporter-trace-otlp-proto@0.219.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))(openai@6.44.0(ws@8.18.3)(zod@4.4.3))(ws@8.18.3))(@opentelemetry/api@1.9.1)':
+  '@langfuse/langchain@5.7.0(@langchain/core@1.2.1(@opentelemetry/api@1.9.1)(@opentelemetry/exporter-trace-otlp-proto@0.219.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))(openai@6.44.0(ws@8.18.3)(zod@4.4.3))(ws@8.18.3))(@opentelemetry/api@1.9.1)':
     dependencies:
       '@langchain/core': 1.2.1(@opentelemetry/api@1.9.1)(@opentelemetry/exporter-trace-otlp-proto@0.219.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))(openai@6.44.0(ws@8.18.3)(zod@4.4.3))(ws@8.18.3)
-      '@langfuse/core': 5.6.0(@opentelemetry/api@1.9.1)
-      '@langfuse/tracing': 5.6.0(@opentelemetry/api@1.9.1)
+      '@langfuse/core': 5.7.0(@opentelemetry/api@1.9.1)
+      '@langfuse/tracing': 5.7.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/api': 1.9.1
 
-  '@langfuse/otel@5.6.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.219.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))':
+  '@langfuse/otel@5.7.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.219.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))':
     dependencies:
-      '@langfuse/core': 5.6.0(@opentelemetry/api@1.9.1)
+      '@langfuse/core': 5.7.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 2.8.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/exporter-trace-otlp-http': 0.219.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.8.0(@opentelemetry/api@1.9.1)
 
-  '@langfuse/tracing@5.6.0(@opentelemetry/api@1.9.1)':
+  '@langfuse/tracing@5.7.0(@opentelemetry/api@1.9.1)':
     dependencies:
-      '@langfuse/core': 5.6.0(@opentelemetry/api@1.9.1)
+      '@langfuse/core': 5.7.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/api': 1.9.1
 
   '@llamaduck/forgejo-ts@14.0.2-4':
@@ -11824,7 +11824,7 @@ snapshots:
     dependencies:
       playwright: 1.60.0
 
-  '@posthog/core@1.37.0':
+  '@posthog/core@1.37.1':
     dependencies:
       '@posthog/types': 1.391.0
 
@@ -17274,9 +17274,9 @@ snapshots:
     dependencies:
       xtend: 4.0.2
 
-  posthog-node@5.38.3(rxjs@7.8.2):
+  posthog-node@5.38.4(rxjs@7.8.2):
     dependencies:
-      '@posthog/core': 1.37.0
+      '@posthog/core': 1.37.1
     optionalDependencies:
       rxjs: 7.8.2
 
