@@ -1,9 +1,12 @@
 import { BYOKConfig } from '@kodus/kodus-common/llm';
-import { type Tool } from 'ai';
+import { type Tool, type LanguageModel } from 'ai';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 
 import type { AgentSpec } from '@libs/agent-harness/domain/contracts/agent.contract';
-import type { ConversationStore } from '@libs/agent-harness/domain/contracts';
+import type {
+    ConversationStore,
+    ToolContext,
+} from '@libs/agent-harness/domain/contracts';
 import { CONVERSATION_STORE_TOKEN } from '@libs/agents/infrastructure/persistence/mongo-conversation-store';
 import { AiSdkAgentRunner } from '@libs/agent-harness/infrastructure/ai-sdk/ai-sdk-agent-runner';
 import { AiSdkToolRegistry } from '@libs/agent-harness/infrastructure/ai-sdk/ai-sdk-tool-registry';
@@ -68,7 +71,12 @@ export class ConversationAgentProvider {
     private readonly logger = createLogger(ConversationAgentProvider.name);
 
     private readonly defaultLLMConfig = {
-        temperature: 0,
+        // No fixed temperature on purpose: some BYOK models reject anything but
+        // their default (e.g. kimi-k2.7-code → "invalid temperature: only 1 is
+        // allowed for this model"), which made every call return 0 tokens and
+        // fall back. Omitting it lets each provider use its valid default — and
+        // a non-zero temperature is fine for natural conversation anyway. The
+        // code-review finder omits it for the same reason.
         maxTokens: 20000,
     };
 
@@ -128,13 +136,22 @@ export class ConversationAgentProvider {
                 : undefined,
         });
 
-        // Thinking/reasoning budget. Replaces the legacy
-        // `maxReasoningTokens: 1024`, which the flow LLM bridge passed through.
-        // `buildProviderOptions` maps an effort tier to the right per-provider
-        // shape (Gemini thinkingBudget/thinkingLevel, Anthropic thinking,
-        // OpenAI reasoningEffort) — the repo-standard reasoning path.
+        // Per-call model params come straight from the org's saved BYOK config
+        // (temperature / maxOutputTokens / reasoningEffort) — NOT hardcoded. The
+        // old hardcoded `temperature: 0` overrode the config and broke models
+        // that only accept their own value (e.g. kimi-k2.7-code wants 1).
+        // `temperature` is passed through only when configured; omitting it lets
+        // the provider use its valid default.
+        const temperature = byokConfig?.main?.temperature;
+        const maxOutputTokens =
+            byokConfig?.main?.maxOutputTokens ?? this.defaultLLMConfig.maxTokens;
+
+        // Thinking/reasoning budget. `buildProviderOptions` maps an effort tier
+        // to the right per-provider shape (Gemini thinkingBudget/thinkingLevel,
+        // Anthropic thinking, OpenAI reasoningEffort). The tier also comes from
+        // the BYOK config (the org configured it).
         const providerOptions = buildProviderOptions('conversationAgent', undefined, {
-            reasoningEffort: 'low',
+            reasoningEffort: byokConfig?.main?.reasoningEffort ?? 'low',
             byokProvider: byokConfig?.main?.provider,
             modelName: byokConfig?.main?.model,
         });
@@ -147,6 +164,10 @@ export class ConversationAgentProvider {
             ...mcp.tools,
             ...(sandbox ? buildNativeTools(sandbox) : {}),
         };
+        // Whether the memory tool is actually available — gates the mandatory
+        // memory bootstrap in the prompt (see buildUserPrompt). MCP offline ->
+        // no tool -> don't command the model to call something that isn't there.
+        const hasMemoryTool = 'KODUS_FIND_MEMORIES' in mcp.tools;
 
         // Single runtime: the conversation runs as an AgentSpec on the harness
         // AiSdkAgentRunner — the SAME loop/policies/observability seam as the
@@ -161,8 +182,8 @@ export class ConversationAgentProvider {
             tools: new AiSdkToolRegistry(tools),
             policies: [],
             maxSteps: CONVERSATION_MAX_STEPS,
-            temperature: this.defaultLLMConfig.temperature,
-            maxOutputTokens: this.defaultLLMConfig.maxTokens,
+            ...(typeof temperature === 'number' ? { temperature } : {}),
+            maxOutputTokens,
             ...(Object.keys(providerOptions).length ? { providerOptions } : {}),
         };
 
@@ -178,6 +199,7 @@ export class ConversationAgentProvider {
                 prompt,
                 prepareContext,
                 organizationAndTeamData,
+                hasMemoryTool,
                 sandbox,
             );
 
@@ -234,11 +256,16 @@ export class ConversationAgentProvider {
                 },
             });
 
-            const response = normalizeConversationResponse(answer);
+            let response = normalizeConversationResponse(answer);
 
+            // Never-empty guard — the lightweight equivalent of the legacy ReAct
+            // `forceFinalAnswer`. When the main run yields nothing usable (e.g.
+            // the model froze under the tool ceremony), retry ONCE with a
+            // stripped, conversation-only prompt and no tools before giving up.
             if (response === null) {
                 this.logger.warn({
-                    message: 'Conversation agent produced no usable response',
+                    message:
+                        'Conversation agent produced no usable response; retrying minimal',
                     context: ConversationAgentProvider.name,
                     serviceName: ConversationAgentProvider.name,
                     metadata: {
@@ -247,22 +274,35 @@ export class ConversationAgentProvider {
                         rawResult: answer,
                     },
                 });
-                return CONVERSATION_FALLBACK_MESSAGE;
+                response = await this.forceAnswer(
+                    model,
+                    userLanguage,
+                    prompt,
+                    ctx,
+                    temperature,
+                    maxOutputTokens,
+                );
             }
 
+            // The text the user actually sees: the agent's answer (possibly from
+            // the minimal retry), or the graceful fallback when both produced
+            // nothing usable.
+            const userFacing = response ?? CONVERSATION_FALLBACK_MESSAGE;
+
             // Persist the exchange to `kodus-agent-sessions` (best-effort —
-            // never blocks the reply). Keeps the conversation record alive after
-            // the flow removal, keyed by the caller's thread id. The user turn
-            // is the RAW prompt (not the assembled context block).
+            // never blocks the reply). Records the turn even when it fell back,
+            // so the conversation record captures failed turns too. Keyed by the
+            // caller's thread id; the user turn is the RAW prompt (not the
+            // assembled context block).
             await this.persistConversationTurn(
                 thread,
                 prompt,
-                response,
+                userFacing,
                 organizationAndTeamData,
                 prepareContext,
             );
 
-            return response;
+            return userFacing;
         } catch (error) {
             this.logger.error({
                 message: 'Error during conversation agent execution',
@@ -274,6 +314,53 @@ export class ConversationAgentProvider {
         } finally {
             cleanup();
             await mcp.close();
+        }
+    }
+
+    /**
+     * Last-resort minimal answer pass — the lightweight equivalent of the
+     * legacy ReAct `forceFinalAnswer`. When the main run returns nothing usable
+     * (e.g. the model froze on the tool ceremony), retry ONCE with just the
+     * system prompt and the raw user message: no tools, no PR context, single
+     * step. Returns the normalized text, or null if it still produced nothing.
+     */
+    private async forceAnswer(
+        model: LanguageModel,
+        userLanguage: string,
+        prompt: string,
+        ctx: ToolContext,
+        temperature: number | undefined,
+        maxOutputTokens: number,
+    ): Promise<string | null> {
+        try {
+            const runner = new AiSdkAgentRunner({ resolve: () => model });
+            const spec: AgentSpec = {
+                id: 'conversation-retry',
+                systemPrompt: this.buildSystemPrompt(userLanguage),
+                modelId: 'resolved',
+                tools: new AiSdkToolRegistry({}),
+                policies: [],
+                maxSteps: 1,
+                ...(typeof temperature === 'number' ? { temperature } : {}),
+                maxOutputTokens,
+            };
+
+            const state = await runner.run(
+                spec,
+                {
+                    prompt: `Reply directly and naturally, in ${userLanguage}, to the user's message:\n\n${prompt}`,
+                },
+                ctx,
+            );
+
+            return normalizeConversationResponse(finalText(state));
+        } catch (error) {
+            this.logger.warn({
+                message: 'Conversation retry (forceAnswer) failed',
+                context: ConversationAgentProvider.name,
+                error,
+            });
+            return null;
         }
     }
 
@@ -385,13 +472,15 @@ export class ConversationAgentProvider {
 
     /**
      * Assemble the user turn: the conversation context (rebuilt from the PR
-     * comment thread), the mandatory memory bootstrap, the available repo
-     * tools, and finally the user's prompt.
+     * comment thread), an OPTIONAL list of available tools (memory + repo), and
+     * finally the user's message. Tools are offered, never mandated — a chat
+     * agent must be free to just answer.
      */
     private buildUserPrompt(
         prompt: string,
         prepareContext: any,
         organizationAndTeamData: OrganizationAndTeamData,
+        hasMemoryTool: boolean,
         sandbox?: SandboxInstance,
     ): string {
         const organizationId =
@@ -413,31 +502,37 @@ export class ConversationAgentProvider {
             sections.push(contextBlock, '');
         }
 
-        sections.push(
-            'CRITICAL FIRST ACTION (MANDATORY):',
-            '- Before any reasoning, analysis, or other tool call, invoke KODUS_FIND_MEMORIES.',
-            '- Use this exact payload as your first memory lookup:',
-            JSON.stringify(memoryPayload, null, 2),
-            '- If the tool fails, is unavailable, or returns no matches, continue normally.',
-            '- If matches are found, treat them as high-priority context constraints for your response.',
-        );
-
-        // When a sandbox is available, native repo-aware tools (grep, readFile,
-        // listDir, exec) are registered. Tell the agent so it grounds answers
-        // in real code instead of guessing from the prompt alone.
+        // Tools are OPTIONAL aids, not a mandatory pipeline. This is a chat
+        // agent — forcing a tool call first (especially one that may be
+        // unavailable) made the model freeze and answer nothing on trivial
+        // messages like a greeting. List what's available and let it decide.
+        const toolLines: string[] = [];
+        if (hasMemoryTool) {
+            toolLines.push(
+                `- KODUS_FIND_MEMORIES — look up the user's prior context/preferences when the question would benefit from it. Payload: ${JSON.stringify(memoryPayload)}`,
+            );
+        }
         if (sandbox && sandbox.type !== 'null') {
-            sections.push(
-                '',
-                'REPOSITORY TOOLS (available — use them to ground your answer in real code):',
-                '- grep({ pattern, path?, glob? }): regex search across the repo. First reach for this when the user asks about code, config, or behavior.',
-                '- readFile({ path, start, end }): read a file slice between two 1-indexed line numbers. Use after grep to inspect the matched site.',
-                '- listDir({ path, maxDepth }): list files/folders to explore unfamiliar areas of the repo.',
-                '- exec({ command }): run a read-only shell command (e.g. `git log`, `cat package.json`) for ad-hoc inspection.',
-                '- Prefer multiple short tool calls over one long shell invocation. Cite file paths and line numbers in your final reply.',
+            toolLines.push(
+                '- grep / readFile / listDir / exec — search and read the repository when the user asks about code, config, or behavior. Cite file paths and line numbers when you do.',
             );
         }
 
-        sections.push('', 'USER PROMPT:', prompt);
+        if (toolLines.length) {
+            sections.push(
+                '',
+                'TOOLS (optional — use them only when they help you answer; for greetings or simple questions, just reply directly):',
+                ...toolLines,
+            );
+        }
+
+        sections.push(
+            '',
+            "Answer the user's message below directly and naturally, in their language.",
+            '',
+            'USER MESSAGE:',
+            prompt,
+        );
 
         return sections.join('\n');
     }
