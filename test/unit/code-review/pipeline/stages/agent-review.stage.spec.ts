@@ -702,8 +702,8 @@ describe('AgentReviewStage', () => {
                 usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
             });
 
-            const origKey = process.env.API_GOOGLE_AI_API_KEY;
-            process.env.API_GOOGLE_AI_API_KEY = 'test-key';
+            const origKey = process.env.API_OPEN_AI_API_KEY;
+            process.env.API_OPEN_AI_API_KEY = 'test-key';
 
             try {
                 const result = await (stage as any).deduplicateSuggestions(
@@ -721,9 +721,9 @@ describe('AgentReviewStage', () => {
                 }
             } finally {
                 if (origKey === undefined) {
-                    delete process.env.API_GOOGLE_AI_API_KEY;
+                    delete process.env.API_OPEN_AI_API_KEY;
                 } else {
-                    process.env.API_GOOGLE_AI_API_KEY = origKey;
+                    process.env.API_OPEN_AI_API_KEY = origKey;
                 }
             }
         });
@@ -739,8 +739,8 @@ describe('AgentReviewStage', () => {
                 usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
             });
 
-            const origKey = process.env.API_GOOGLE_AI_API_KEY;
-            process.env.API_GOOGLE_AI_API_KEY = 'test-key';
+            const origKey = process.env.API_OPEN_AI_API_KEY;
+            process.env.API_OPEN_AI_API_KEY = 'test-key';
 
             try {
                 const result = await (stage as any).deduplicateSuggestions(
@@ -759,9 +759,9 @@ describe('AgentReviewStage', () => {
                 expect(filenames).toContain('src/file-2.ts');
             } finally {
                 if (origKey === undefined) {
-                    delete process.env.API_GOOGLE_AI_API_KEY;
+                    delete process.env.API_OPEN_AI_API_KEY;
                 } else {
-                    process.env.API_GOOGLE_AI_API_KEY = origKey;
+                    process.env.API_OPEN_AI_API_KEY = origKey;
                 }
             }
         });
@@ -780,8 +780,8 @@ describe('AgentReviewStage', () => {
                 usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
             });
 
-            const origKey = process.env.API_GOOGLE_AI_API_KEY;
-            process.env.API_GOOGLE_AI_API_KEY = 'test-key';
+            const origKey = process.env.API_OPEN_AI_API_KEY;
+            process.env.API_OPEN_AI_API_KEY = 'test-key';
 
             try {
                 const result = await (stage as any).deduplicateSuggestions(
@@ -794,9 +794,9 @@ describe('AgentReviewStage', () => {
                 expect(result.trace.status).toBe('success');
             } finally {
                 if (origKey === undefined) {
-                    delete process.env.API_GOOGLE_AI_API_KEY;
+                    delete process.env.API_OPEN_AI_API_KEY;
                 } else {
-                    process.env.API_GOOGLE_AI_API_KEY = origKey;
+                    process.env.API_OPEN_AI_API_KEY = origKey;
                 }
             }
         });
@@ -814,8 +814,8 @@ describe('AgentReviewStage', () => {
                 usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
             });
 
-            const origKey = process.env.API_GOOGLE_AI_API_KEY;
-            process.env.API_GOOGLE_AI_API_KEY = 'test-key';
+            const origKey = process.env.API_OPEN_AI_API_KEY;
+            process.env.API_OPEN_AI_API_KEY = 'test-key';
 
             try {
                 const result = await (stage as any).deduplicateSuggestions(
@@ -833,9 +833,9 @@ describe('AgentReviewStage', () => {
                 expect(filenames).toContain('src/file-2.ts');
             } finally {
                 if (origKey === undefined) {
-                    delete process.env.API_GOOGLE_AI_API_KEY;
+                    delete process.env.API_OPEN_AI_API_KEY;
                 } else {
-                    process.env.API_GOOGLE_AI_API_KEY = origKey;
+                    process.env.API_OPEN_AI_API_KEY = origKey;
                 }
             }
         });
@@ -851,8 +851,8 @@ describe('AgentReviewStage', () => {
                 usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
             });
 
-            const origKey = process.env.API_GOOGLE_AI_API_KEY;
-            process.env.API_GOOGLE_AI_API_KEY = 'test-key';
+            const origKey = process.env.API_OPEN_AI_API_KEY;
+            process.env.API_OPEN_AI_API_KEY = 'test-key';
 
             try {
                 const result = await (stage as any).deduplicateSuggestions(
@@ -874,9 +874,9 @@ describe('AgentReviewStage', () => {
                 expect(file0.suggestionContent).toContain('src/file-1.ts');
             } finally {
                 if (origKey === undefined) {
-                    delete process.env.API_GOOGLE_AI_API_KEY;
+                    delete process.env.API_OPEN_AI_API_KEY;
                 } else {
-                    process.env.API_GOOGLE_AI_API_KEY = origKey;
+                    process.env.API_OPEN_AI_API_KEY = origKey;
                 }
             }
         });
@@ -892,8 +892,8 @@ describe('AgentReviewStage', () => {
                 usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
             });
 
-            const origKey = process.env.API_GOOGLE_AI_API_KEY;
-            process.env.API_GOOGLE_AI_API_KEY = 'test-key';
+            const origKey = process.env.API_OPEN_AI_API_KEY;
+            process.env.API_OPEN_AI_API_KEY = 'test-key';
 
             try {
                 const result = await (stage as any).deduplicateSuggestions(
@@ -912,9 +912,9 @@ describe('AgentReviewStage', () => {
                 }
             } finally {
                 if (origKey === undefined) {
-                    delete process.env.API_GOOGLE_AI_API_KEY;
+                    delete process.env.API_OPEN_AI_API_KEY;
                 } else {
-                    process.env.API_GOOGLE_AI_API_KEY = origKey;
+                    process.env.API_OPEN_AI_API_KEY = origKey;
                 }
             }
         });
@@ -934,8 +934,8 @@ describe('AgentReviewStage', () => {
                 usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
             });
 
-            const origKey = process.env.API_GOOGLE_AI_API_KEY;
-            process.env.API_GOOGLE_AI_API_KEY = 'test-key';
+            const origKey = process.env.API_OPEN_AI_API_KEY;
+            process.env.API_OPEN_AI_API_KEY = 'test-key';
 
             try {
                 const result = await (stage as any).deduplicateSuggestions(
@@ -955,9 +955,9 @@ describe('AgentReviewStage', () => {
                 ).toHaveLength(1);
             } finally {
                 if (origKey === undefined) {
-                    delete process.env.API_GOOGLE_AI_API_KEY;
+                    delete process.env.API_OPEN_AI_API_KEY;
                 } else {
-                    process.env.API_GOOGLE_AI_API_KEY = origKey;
+                    process.env.API_OPEN_AI_API_KEY = origKey;
                 }
             }
         });
@@ -975,8 +975,8 @@ describe('AgentReviewStage', () => {
                 usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
             });
 
-            const origKey = process.env.API_GOOGLE_AI_API_KEY;
-            process.env.API_GOOGLE_AI_API_KEY = 'test-key';
+            const origKey = process.env.API_OPEN_AI_API_KEY;
+            process.env.API_OPEN_AI_API_KEY = 'test-key';
 
             try {
                 const result = await (stage as any).deduplicateSuggestions(
@@ -994,9 +994,9 @@ describe('AgentReviewStage', () => {
                 );
             } finally {
                 if (origKey === undefined) {
-                    delete process.env.API_GOOGLE_AI_API_KEY;
+                    delete process.env.API_OPEN_AI_API_KEY;
                 } else {
-                    process.env.API_GOOGLE_AI_API_KEY = origKey;
+                    process.env.API_OPEN_AI_API_KEY = origKey;
                 }
             }
         });
