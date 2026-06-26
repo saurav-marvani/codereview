@@ -87,8 +87,12 @@ export function classifyLLMError(
     err: unknown,
     provider?: string,
 ): ClassifiedErrorInfo {
+    // `err.message` is typed string but at runtime can be null (malformed
+    // Error-like objects) — guard so the `rawMessage.toLowerCase()` fallback
+    // never throws "Cannot read properties of null (reading 'toLowerCase')".
     const rawMessage =
-        err instanceof Error ? err.message : String(err ?? 'unknown');
+        (err instanceof Error ? err.message : String(err ?? 'unknown')) ??
+        'unknown';
     // Match against the FULL error text, not just `message`. Vercel AI SDK's
     // APICallError sets `message` to a terse "Not Found" while the actionable
     // detail (e.g. Vertex's "your project does not have access to it") lives

@@ -17,6 +17,16 @@ function errorWithStatus(message: string, status: number): Error {
 }
 
 describe('classifyLLMError', () => {
+    it('does not throw on a malformed Error with a null message', () => {
+        // Regression: "Cannot read properties of null (reading 'toLowerCase')".
+        // err.message is typed string but can be null at runtime; the
+        // rawMessage fallback must not blow up the whole error path.
+        const err = new Error('x') as Error;
+        (err as any).message = null;
+        expect(() => classifyLLMError(err)).not.toThrow();
+        expect(classifyLLMError(err).category).toBeDefined();
+    });
+
     describe('HTTP status mapping (most reliable signal)', () => {
         it.each([401, 403])('maps %i → AUTH_INVALID', (status) => {
             const err = errorWithStatus('not authorized', status);
