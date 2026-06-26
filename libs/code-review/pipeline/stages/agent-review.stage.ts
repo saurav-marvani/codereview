@@ -1392,10 +1392,12 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             };
         }
 
-        // Model resolution: Google AI key → BYOK via withStructuredOutputFallback → skip dedup
-        const googleKey =
-            process.env.API_GOOGLE_AI_API_KEY ||
-            process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+        // Model resolution: platform OpenAI key (gpt-5.4-mini, see DEDUP_MODEL_ID)
+        // → BYOK via withStructuredOutputFallback → skip dedup. Swapped off the
+        // Google path because that project can get rate-denied env-wide and
+        // silently disable dedup; gpt-5.4-mini is a separate vendor + quality-
+        // equivalent on the dedup eval.
+        const openaiKey = process.env.API_OPEN_AI_API_KEY;
 
         try {
             const runDedup = (model: any) =>
@@ -1414,12 +1416,14 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 });
 
             let dedupResult: any;
-            if (googleKey) {
-                const { createGoogleGenerativeAI } =
-                    await import('@ai-sdk/google');
-                const model = createGoogleGenerativeAI({ apiKey: googleKey })(
-                    DEDUP_MODEL_ID,
-                );
+            if (openaiKey) {
+                const { createOpenAI } = await import('@ai-sdk/openai');
+                const model = createOpenAI({
+                    apiKey: openaiKey,
+                    ...(process.env.API_OPENAI_FORCE_BASE_URL
+                        ? { baseURL: process.env.API_OPENAI_FORCE_BASE_URL }
+                        : {}),
+                })(DEDUP_MODEL_ID);
                 dedupResult = await runDedup(model);
             } else {
                 dedupResult = await withStructuredOutputFallback(

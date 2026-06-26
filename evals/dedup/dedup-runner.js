@@ -18,12 +18,12 @@ const normSeverity = (s) => (s == null ? 'medium' : String(s).toLowerCase());
 // Model registry for the dedup A/B. provider drives which SDK + key env.
 // `default` is production's model. Add small candidates here.
 const DEDUP_MODELS = {
-    'gemini-3-flash': { provider: 'google', model: DEDUP_MODEL_ID, keyEnv: ['API_GOOGLE_AI_API_KEY', 'BYOK_GOOGLE_API_KEY'] },
+    'gemini-3-flash': { provider: 'google', model: 'gemini-3-flash-preview', keyEnv: ['API_GOOGLE_AI_API_KEY', 'BYOK_GOOGLE_API_KEY'] },
     'gemini-2.5-flash': { provider: 'google', model: 'gemini-2.5-flash', keyEnv: ['API_GOOGLE_AI_API_KEY', 'BYOK_GOOGLE_API_KEY'] },
     'haiku-4.5': { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', keyEnv: ['ANTHROPIC_API_KEY', 'BYOK_ANTHROPIC_API_KEY'] },
     'kimi-k2.7': { provider: 'openai-compatible', model: 'kimi-k2.7-code', baseURL: 'https://api.moonshot.ai/v1', keyEnv: ['BYOK_MOONSHOT_API_KEY'] },
     'glm-5.1': { provider: 'openai-compatible', model: 'glm-5.1', baseURL: 'https://api.z.ai/api/paas/v4', keyEnv: ['BYOK_ZHIPU_API_KEY'] },
-    'gpt-5-mini': { provider: 'openai', model: 'gpt-5-mini', keyEnv: ['BYOK_OPENAI_API_KEY', 'API_OPEN_AI_API_KEY'] },
+    'gpt-5.4-mini': { provider: 'openai', model: 'gpt-5.4-mini', keyEnv: ['BYOK_OPENAI_API_KEY', 'API_OPEN_AI_API_KEY'] },
     'deepseek-v4': { provider: 'openai-compatible', model: 'deepseek-chat', baseURL: 'https://api.deepseek.com', keyEnv: ['DEEPSEEK_API_KEY'] },
 };
 
@@ -58,7 +58,7 @@ async function buildModel(spec) {
  * @param {Array} suggestions
  * @param {string} modelKey   key into DEDUP_MODELS (default 'gemini-3-flash' = prod)
  */
-async function runDedup(suggestions, modelKey = 'gemini-3-flash') {
+async function runDedup(suggestions, modelKey = 'gpt-5.4-mini') {
     if (suggestions.length <= 1) {
         return { groups: [], unique: suggestions.map((_, i) => i), kept: suggestions.map((_, i) => i), dropped: [], unmentioned: [], raw: { skipped: true } };
     }

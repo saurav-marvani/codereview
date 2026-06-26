@@ -6,7 +6,11 @@
  * own group→kept mapping; the eval reuses them to invoke the real dedup decision.
  */
 
-export const DEDUP_MODEL_ID = 'gemini-3-flash-preview';
+// Production dedup model. Swapped off gemini-3-flash for resilience: the Google
+// project can get rate-denied env-wide (silently disabling dedup). gpt-5.4-mini
+// is quality-equivalent on the dedup eval (within run-to-run noise) and on a
+// separate vendor. Provider in agent-review.stage.ts must match (OpenAI).
+export const DEDUP_MODEL_ID = 'gpt-5.4-mini';
 
 /** JSON schema for the dedup LLM output (groups + unique indices). */
 export const DEDUP_SCHEMA = {
