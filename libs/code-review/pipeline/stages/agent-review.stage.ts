@@ -7,6 +7,11 @@ import { tracedGenerateText } from '@libs/code-review/infrastructure/agents/llm/
 import { resolveAdaptiveProfile } from '@libs/code-review/infrastructure/agents/llm/adaptive-fit';
 import { resolveContextWindow } from '@libs/code-review/infrastructure/agents/llm/model-context-window';
 import {
+    DEDUP_MODEL_ID,
+    DEDUP_SCHEMA,
+    buildDedupPrompt,
+} from '@libs/code-review/infrastructure/agents/llm/dedup-prompt';
+import {
     dedupReviewWarnings,
     type ReviewWarning,
 } from '@libs/code-review/infrastructure/agents/llm/review-warnings';
@@ -1387,20 +1392,14 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             };
         }
 
-        // Model resolution: Google AI key → BYOK via withStructuredOutputFallback → skip dedup
-        const googleKey =
-            process.env.API_GOOGLE_AI_API_KEY ||
-            process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+        // Model resolution: platform OpenAI key (gpt-5.4-mini, see DEDUP_MODEL_ID)
+        // → BYOK via withStructuredOutputFallback → skip dedup. Swapped off the
+        // Google path because that project can get rate-denied env-wide and
+        // silently disable dedup; gpt-5.4-mini is a separate vendor + quality-
+        // equivalent on the dedup eval.
+        const openaiKey = process.env.API_OPEN_AI_API_KEY;
 
         try {
-            // Build summaries with file + lines for cross-file comparison
-            const summaries = suggestions
-                .map(
-                    (s, i) =>
-                        `[${i}] ${s.relevantFile || 'unknown'}:${s.relevantLinesStart}-${s.relevantLinesEnd} [${s.label || 'unknown'}/${this.normalizeSeverity(s.severity)}]: ${s.oneSentenceSummary || s.suggestionContent?.substring(0, 200)}${s.improvedCode ? `\n    fix: ${s.improvedCode.substring(0, 100)}` : ''}`,
-                )
-                .join('\n');
-
             const runDedup = (model: any) =>
                 tracedGenerateText({
                     model: model as any,
@@ -1409,71 +1408,22 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                         telemetryMeta,
                     ),
                     output: Output.object({
-                        schema: jsonSchema({
-                            type: 'object',
-                            properties: {
-                                groups: {
-                                    type: 'array',
-                                    description:
-                                        'Groups of suggestions. Each group has a representative and its duplicates.',
-                                    items: {
-                                        type: 'object',
-                                        properties: {
-                                            keep: {
-                                                type: 'number',
-                                                description:
-                                                    'Index of the best suggestion to keep as representative',
-                                            },
-                                            duplicates: {
-                                                type: 'array',
-                                                items: { type: 'number' },
-                                                description:
-                                                    'Indices of duplicate suggestions (same bug, same or different locations)',
-                                            },
-                                        },
-                                        required: ['keep', 'duplicates'],
-                                        additionalProperties: false,
-                                    },
-                                },
-                                unique: {
-                                    type: 'array',
-                                    items: { type: 'number' },
-                                    description:
-                                        'Indices of suggestions that have no duplicates',
-                                },
-                            },
-                            required: ['groups', 'unique'],
-                            additionalProperties: false,
-                        }),
+                        schema: jsonSchema(DEDUP_SCHEMA as any),
                     }) as any,
-                    prompt: `You have ${suggestions.length} code review suggestions across multiple files in a PR. Identify duplicates and group them.
-
-BE CONSERVATIVE — when in doubt, do NOT group. Only group when you are highly confident they describe the exact same bug.
-
-There are TWO types of duplicates:
-
-1. **EXACT DUPLICATES** (same bug, same location): Multiple suggestions pointing to the same file and overlapping lines describing the same issue. Keep the one with the most detail, discard the rest.
-
-2. **CROSS-LOCATION DUPLICATES** (same bug pattern, different locations): Suggestions describing the EXACT SAME code pattern/bug but applied in different files (e.g., "forEach with async callback" found in 3 different files, or "missing null check on the same API call" in 2 files). These should be GROUPED — keep the best one as representative, list the others as duplicates.
-
-NOT duplicates (keep both):
-- Different bugs in the same file or nearby lines (e.g., "nil pointer" and "missing validation" in the same controller — these are DIFFERENT bugs)
-- Different root causes even if they sound similar (e.g., "add nil check" vs "fix typo" — different problems)
-- Suggestions about different code even if the description sounds similar
-
-IGNORE the category label (bug/security/performance) when deciding — two agents can independently find the same issue.
-Prefer keeping the suggestion with the most detail or clearest fix as the representative.
-
-${summaries}`,
+                    prompt: buildDedupPrompt(suggestions, (sev) =>
+                        this.normalizeSeverity(sev),
+                    ),
                 });
 
             let dedupResult: any;
-            if (googleKey) {
-                const { createGoogleGenerativeAI } =
-                    await import('@ai-sdk/google');
-                const model = createGoogleGenerativeAI({ apiKey: googleKey })(
-                    'gemini-3-flash-preview',
-                );
+            if (openaiKey) {
+                const { createOpenAI } = await import('@ai-sdk/openai');
+                const model = createOpenAI({
+                    apiKey: openaiKey,
+                    ...(process.env.API_OPENAI_FORCE_BASE_URL
+                        ? { baseURL: process.env.API_OPENAI_FORCE_BASE_URL }
+                        : {}),
+                })(DEDUP_MODEL_ID);
                 dedupResult = await runDedup(model);
             } else {
                 dedupResult = await withStructuredOutputFallback(
