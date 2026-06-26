@@ -210,12 +210,10 @@ export default {
         // different files") and break every suite. Never load modules from them.
         '<rootDir>/.claude/worktrees',
     ],
-    // The mcp-manager e2e spec imports the full AppModule, which transitively
-    // imports @composio/core — a package that ships CJS/ESM-mixed syntax jest
-    // cannot parse without a custom transform. Unit tests for the same module
-    // (composio.spec, docs-auth.spec) are fine and run normally. Re-enabling
-    // e2e is a focused follow-up (would need transformIgnorePatterns tweak or
-    // moving to a dedicated e2e jest config like apps/api uses).
+    // The mcp-manager e2e spec imports the full AppModule and needs a
+    // dedicated e2e setup to run; excluded here as a focused follow-up (would
+    // move to a dedicated e2e jest config like apps/api uses). Unit tests for
+    // the same module run normally.
     testPathIgnorePatterns: [
         '/node_modules/',
         '<rootDir>/apps/mcp-manager/test/e2e/',
