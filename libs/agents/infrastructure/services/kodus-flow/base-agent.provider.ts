@@ -135,12 +135,23 @@ export abstract class BaseAgentProvider {
                                 });
                             }
                             return await builder
+                                // Per-call temperature/maxTokens must honor the
+                                // org's BYOK config FIRST. `createBYOKProvider`
+                                // uses `options.temperature` (this value), NOT
+                                // `byokConfig.main.temperature`, so a hardcoded
+                                // `defaultLLMConfig.temperature: 0` was being sent
+                                // to the BYOK model — and models like
+                                // kimi-k2.7-code reject anything but their
+                                // configured temperature (1), failing the call
+                                // and falling back to the system Gemini.
                                 .setTemperature(
-                                    options?.temperature ??
+                                    this.byokConfig?.main?.temperature ??
+                                        options?.temperature ??
                                         this.defaultLLMConfig.temperature,
                                 )
                                 .setMaxTokens(
-                                    options?.maxTokens ??
+                                    this.byokConfig?.main?.maxOutputTokens ??
+                                        options?.maxTokens ??
                                         this.defaultLLMConfig.maxTokens,
                                 )
                                 .setMaxReasoningTokens(
