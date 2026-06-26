@@ -277,4 +277,3 @@ We welcome contributions of all sizes 🧡
 Fix a typo, improve the docs, report a bug, suggest a feature, or open a pull request for something you think should exist.
 
 Not sure where to start? Open an issue or join the community. We’re happy to help.
-
