@@ -63,7 +63,7 @@ async function main() {
 
         let dedup;
         try {
-            dedup = mock ? mockDedup(mock, ds.findings) : await runDedup(ds.findings, dedupModel);
+            dedup = mock ? mockDedup(mock, ds.findings) : await runDedup(ds.findings, dedupModel, { temperature: args.temp != null ? Number(args.temp) : undefined, guard: args.guard || undefined, tightRatio: args.tightratio != null ? Number(args.tightratio) : undefined, contentThresh: args.contentthresh != null ? Number(args.contentthresh) : undefined });
         } catch (e) {
             console.error(`  ${ds.prId.slice(0, 40)}: dedup ERROR ${e.message.slice(0, 60)}`);
             continue;

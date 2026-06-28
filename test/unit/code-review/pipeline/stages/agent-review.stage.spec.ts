@@ -691,6 +691,75 @@ describe('AgentReviewStage', () => {
             mockWithStructuredOutputFallback.mockReset();
         });
 
+        it('content guard: keeps a low-similarity "duplicate" the model over-merged', async () => {
+            // The model groups #1 into #0, but they describe DIFFERENT bugs (no
+            // shared words) — the content guard must reverse it and keep both.
+            const suggestions = [
+                {
+                    relevantFile: 'src/a.ts',
+                    suggestionContent: 'Null pointer dereference when the user object is missing',
+                    label: 'bug', severity: 'high',
+                    relevantLinesStart: 10, relevantLinesEnd: 14,
+                    oneSentenceSummary: 'Null pointer dereference when user is null',
+                },
+                {
+                    relevantFile: 'src/a.ts',
+                    suggestionContent: 'Race condition incrementing the payment retry counter',
+                    label: 'bug', severity: 'high',
+                    relevantLinesStart: 11, relevantLinesEnd: 13,
+                    oneSentenceSummary: 'Race condition on retry counter increment',
+                },
+            ];
+            mockTracedGenerateText.mockResolvedValue({
+                object: { groups: [{ keep: 0, duplicates: [1] }], unique: [] },
+                usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
+            });
+            const origKey = process.env.API_OPEN_AI_API_KEY;
+            process.env.API_OPEN_AI_API_KEY = 'test-key';
+            try {
+                const result = await (stage as any).deduplicateSuggestions(suggestions, 42);
+                expect(result.suggestions).toHaveLength(2); // both survive
+            } finally {
+                if (origKey === undefined) delete process.env.API_OPEN_AI_API_KEY;
+                else process.env.API_OPEN_AI_API_KEY = origKey;
+            }
+        });
+
+        it('content guard: honors a merge when the two findings say the same thing', async () => {
+            // Same bug, near-identical words → guard allows; one result with an
+            // "Also found in" pointer to the other location.
+            const suggestions = [
+                {
+                    relevantFile: 'src/a.ts',
+                    suggestionContent: 'Unawaited async callback inside forEach loop',
+                    label: 'bug', severity: 'high',
+                    relevantLinesStart: 10, relevantLinesEnd: 14,
+                    oneSentenceSummary: 'Unawaited async callback in forEach loop',
+                },
+                {
+                    relevantFile: 'src/b.ts',
+                    suggestionContent: 'Unawaited async callback inside forEach loop',
+                    label: 'bug', severity: 'high',
+                    relevantLinesStart: 20, relevantLinesEnd: 24,
+                    oneSentenceSummary: 'Unawaited async callback in forEach loop',
+                },
+            ];
+            mockTracedGenerateText.mockResolvedValue({
+                object: { groups: [{ keep: 0, duplicates: [1] }], unique: [] },
+                usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
+            });
+            const origKey = process.env.API_OPEN_AI_API_KEY;
+            process.env.API_OPEN_AI_API_KEY = 'test-key';
+            try {
+                const result = await (stage as any).deduplicateSuggestions(suggestions, 42);
+                expect(result.suggestions).toHaveLength(1); // merged
+                expect(result.suggestions[0].suggestionContent).toContain('Also found in');
+            } finally {
+                if (origKey === undefined) delete process.env.API_OPEN_AI_API_KEY;
+                else process.env.API_OPEN_AI_API_KEY = origKey;
+            }
+        });
+
         it('Layer 1: should reject NaN keep index', async () => {
             const suggestions = makeSuggestions(4);
 

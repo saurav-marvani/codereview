@@ -11,6 +11,8 @@ const {
     buildDedupPrompt,
     DEDUP_SCHEMA,
     DEDUP_MODEL_ID,
+    contentSimilarity,
+    DEDUP_CONTENT_THRESHOLD,
 } = require('@libs/code-review/infrastructure/agents/llm/dedup-prompt');
 
 const normSeverity = (s) => (s == null ? 'medium' : String(s).toLowerCase());
@@ -58,7 +60,7 @@ async function buildModel(spec) {
  * @param {Array} suggestions
  * @param {string} modelKey   key into DEDUP_MODELS (default 'gemini-3-flash' = prod)
  */
-async function runDedup(suggestions, modelKey = 'gpt-5.4-mini') {
+async function runDedup(suggestions, modelKey = 'gpt-5.4-mini', opts = {}) {
     if (suggestions.length <= 1) {
         return { groups: [], unique: suggestions.map((_, i) => i), kept: suggestions.map((_, i) => i), dropped: [], unmentioned: [], raw: { skipped: true } };
     }
@@ -70,6 +72,7 @@ async function runDedup(suggestions, modelKey = 'gpt-5.4-mini') {
         model,
         schema: jsonSchema(DEDUP_SCHEMA),
         prompt: buildDedupPrompt(suggestions, normSeverity),
+        ...(opts.temperature != null ? { temperature: opts.temperature } : {}),
     });
 
     const rawGroups = Array.isArray(object?.groups) ? object.groups : [];
@@ -106,6 +109,53 @@ async function runDedup(suggestions, modelKey = 'gpt-5.4-mini') {
     for (const d of seenAsDup) if (!kept.has(d)) {
         const into = groups.find((g) => (g.duplicates || []).includes(d))?.keep;
         dropped.push({ idx: d, keptInto: into });
+    }
+
+    // Deterministic guard: only honor a merge when the duplicate is the SAME file
+    // AND overlapping lines as its representative (exact dup — can't be a distinct
+    // bug). Cross-location merges (where over-merge of different bugs happens) are
+    // reversed: the "duplicate" is kept instead of dropped. Trades under-merge for
+    // ~zero over-merge.
+    if (opts.guard) {
+        const sameFileOverlap = (a, b) => {
+            if (!a || !b || a.relevantFile !== b.relevantFile) return false;
+            const as = +a.relevantLinesStart, ae = +a.relevantLinesEnd;
+            const bs = +b.relevantLinesStart, be = +b.relevantLinesEnd;
+            if (![as, ae, bs, be].every(Number.isFinite)) return false;
+            return as <= be && bs <= ae;
+        };
+        // 'tight' → same file AND the overlap covers >=50% of the LARGER range.
+        // Blocks the real hole: a broad finding (whole function) swallowing a
+        // narrow distinct bug inside it (overlap real but tiny vs the big range).
+        const tightOverlap = (a, b) => {
+            if (!sameFileOverlap(a, b)) return false;
+            const lenA = Math.abs(+a.relevantLinesEnd - +a.relevantLinesStart) + 1;
+            const lenB = Math.abs(+b.relevantLinesEnd - +b.relevantLinesStart) + 1;
+            const ov = Math.min(+a.relevantLinesEnd, +b.relevantLinesEnd) - Math.max(+a.relevantLinesStart, +b.relevantLinesStart) + 1;
+            const ratio = opts.tightRatio != null ? opts.tightRatio : 0.5;
+            return ov >= ratio * Math.max(lenA, lenB);
+        };
+        // 'content' → allow a merge only if the two findings actually SAY the same
+        // thing: word-overlap >= threshold (the SAME contentSimilarity production
+        // uses — imported, no drift). Targets "same bug vs different bug" directly.
+        // 'exact'    → survive iff same-file + any overlap (block ALL else).
+        // 'tight'    → exact, but require >=ratio overlap of the larger range.
+        // 'samefile' → block ONLY same-file-non-overlapping; allow cross-file too.
+        // 'content'  → allow iff the two findings' text is similar enough.
+        const keepMerge = (dup, rep) => {
+            const sameFile = dup && rep && dup.relevantFile === rep.relevantFile;
+            if (opts.guard === 'content') return contentSimilarity(dup, rep) >= (opts.contentThresh != null ? opts.contentThresh : DEDUP_CONTENT_THRESHOLD);
+            if (opts.guard === 'samefile') return !sameFile || sameFileOverlap(dup, rep);
+            if (opts.guard === 'tight') return tightOverlap(dup, rep);
+            return sameFileOverlap(dup, rep); // 'exact'
+        };
+        const survives = [];
+        for (const d of dropped) {
+            if (keepMerge(suggestions[d.idx], suggestions[d.keptInto])) survives.push(d);
+            else kept.add(d.idx); // un-merge, keep it
+        }
+        dropped.length = 0;
+        dropped.push(...survives);
     }
 
     const accounted = new Set([...kept, ...dropped.map((x) => x.idx)]);

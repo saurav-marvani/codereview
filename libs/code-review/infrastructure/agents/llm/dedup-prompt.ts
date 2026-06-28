@@ -49,6 +49,31 @@ export const DEDUP_SCHEMA = {
     additionalProperties: false,
 } as const;
 
+// Content guard: the LLM proposes which suggestions to merge, but only honor a
+// merge when the two findings actually describe the same thing. We measure that
+// with word-overlap (Jaccard) of summary+fix+content. A low-similarity "duplicate"
+// is a DIFFERENT bug the model over-merged (e.g. two distinct issues on
+// overlapping lines) — keep it instead of dropping. 0.3 was tuned on the dedup
+// eval (39 PRs / 136 goldens): over-merge 3.0→0, no real bug dropped across 6 runs.
+export const DEDUP_CONTENT_THRESHOLD = 0.3;
+
+function contentWords(f?: { oneSentenceSummary?: string; improvedCode?: string; suggestionContent?: string }): Set<string> {
+    const text = `${f?.oneSentenceSummary || ''} ${f?.improvedCode || ''} ${f?.suggestionContent || ''}`;
+    return new Set(text.toLowerCase().match(/[a-z_][a-z0-9_]{2,}/g) || []);
+}
+
+/** Word-overlap (Jaccard) of two findings' text. 0 = nothing in common, 1 = identical. */
+export function contentSimilarity(
+    a?: { oneSentenceSummary?: string; improvedCode?: string; suggestionContent?: string },
+    b?: { oneSentenceSummary?: string; improvedCode?: string; suggestionContent?: string },
+): number {
+    const A = contentWords(a), B = contentWords(b);
+    if (!A.size || !B.size) return 0;
+    let inter = 0;
+    for (const w of A) if (B.has(w)) inter++;
+    return inter / (A.size + B.size - inter);
+}
+
 type DedupSuggestionLike = {
     relevantFile?: string;
     relevantLinesStart?: number | string;
