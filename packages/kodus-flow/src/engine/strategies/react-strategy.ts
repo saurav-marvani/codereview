@@ -1223,10 +1223,30 @@ export class ReActStrategy extends BaseExecutionStrategy {
 
         const data = parseResult as any;
 
-        if (!data.reasoning || typeof data.reasoning !== 'string') {
-            throw new Error(
-                'Missing or invalid reasoning field in LLM response',
-            );
+        // `reasoning` is diagnostic only — the `action` is what actually drives
+        // the answer. Reasoning/thinking models often emit their chain-of-thought
+        // in a dedicated thinking block (stripped before we get here) and omit the
+        // top-level `reasoning` field, or surface it under a different key. Don't
+        // hard-fail on an otherwise usable response: default `reasoning` and keep
+        // going as long as a real action is present (guarded below).
+        const reasoning =
+            typeof data.reasoning === 'string' && data.reasoning.trim().length > 0
+                ? data.reasoning
+                : typeof data.thought === 'string' &&
+                    data.thought.trim().length > 0
+                  ? data.thought
+                  : typeof data.thinking === 'string' &&
+                      data.thinking.trim().length > 0
+                    ? data.thinking
+                    : '';
+
+        if (typeof data.reasoning !== 'string' || !data.reasoning.trim()) {
+            this.logger.warn({
+                message:
+                    'LLM response missing a string `reasoning` field; proceeding with the parsed action',
+                context: this.constructor.name,
+                metadata: { iteration, parsedKeys: Object.keys(data) },
+            });
         }
 
         let actionData: any = null;
@@ -1254,7 +1274,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
             typeof data.confidence === 'number' ? data.confidence : 0.8;
 
         const thought: AgentThought = {
-            reasoning: data.reasoning,
+            reasoning,
             confidence,
             scratchpadUpdate: data.scratchpadUpdate, // Capture scratchpad update
             action: this.parseActionFromJSON(actionData),
@@ -1282,7 +1302,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
             context: this.constructor.name,
 
             metadata: {
-                reasoningLength: data.reasoning.length,
+                reasoningLength: reasoning.length,
                 confidence,
                 actionType: actionData.type,
                 hasHypotheses: !!data.hypotheses,

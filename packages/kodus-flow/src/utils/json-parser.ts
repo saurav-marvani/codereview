@@ -15,28 +15,36 @@ const transformToValidJSON = (input: string): string => {
     }
 };
 
-function tryParseJSONObject<T>(payload: string): T | null {
+// Strict parse only (JSON.parse + JSON5). Deliberately excludes jsonrepair so it
+// can't "repair" prose into a bogus value — used for the whole-text fast path
+// before we attempt precise extraction.
+function tryParseStrict<T>(payload: string): T | null {
     if (!payload || typeof payload !== 'string') return null;
     const text = payload.trim();
     if (text.length === 0) return null;
 
-    // 1. Standard JSON (Fastest & Strictest)
     try {
         return JSON.parse(text);
     } catch {
         // Continue
     }
 
-    // 2. JSON5 (Supports comments, trailing commas, single quotes)
     try {
         return JSON5.parse(text);
     } catch {
         // Continue
     }
 
-    // 3. jsonrepair (Fixes broken structure, unescaped chars, python-style booleans, etc.)
+    return null;
+}
+
+function tryParseJSONObject<T>(payload: string): T | null {
+    const strict = tryParseStrict<T>(payload);
+    if (strict !== null) return strict;
+
+    // jsonrepair (Fixes broken structure, unescaped chars, python-style booleans, etc.)
     try {
-        const repaired = jsonrepair(text);
+        const repaired = jsonrepair(payload.trim());
         return JSON.parse(repaired);
     } catch {
         // Continue
@@ -67,14 +75,24 @@ export class EnhancedJSONParser {
     static parse<T = unknown>(text: string): T | null {
         if (!text) return null;
 
-        // 1. Try parsing the raw text directly
-        let result = tryParseJSONObject<T>(text);
-        if (result !== null) return result;
+        // 1. Fast path: strictly parse the raw text (no jsonrepair). Handles clean
+        // responses without risking jsonrepair mangling surrounding prose.
+        const strict = tryParseStrict<T>(text);
+        if (strict !== null) return strict;
 
-        // 2. Try to extract JSON object/array using indices (Robust extraction)
-        // This helps when the LLM wraps JSON in explanation text without code blocks
-        // or when there are multiple code blocks and we want the first valid one.
+        // 2. Extract from an explicit markdown code block first. LLMs commonly
+        // prefix the JSON with a prose sentence; running jsonrepair on the whole
+        // string (step 4) would turn that comma-separated prose into a bogus
+        // array, so isolate the fenced block before falling back to repair.
+        // Use non-overlapping pattern to prevent ReDoS.
+        const match = text.match(/```(?:json)?\n?([\s\S]*?)```/);
+        if (match && match[1]) {
+            const fenced = tryParseJSONObject<T>(match[1].trim());
+            if (fenced !== null) return fenced;
+        }
 
+        // 3. Extract the first JSON object/array span by indices. This isolates
+        // the JSON from any surrounding explanation text without code blocks.
         const firstBrace = text.indexOf('{');
         const firstBracket = text.indexOf('[');
 
@@ -95,22 +113,15 @@ export class EnhancedJSONParser {
 
         if (start !== -1 && end !== -1 && end > start) {
             const candidate = text.substring(start, end + 1);
-            // Only retry if candidate is different (meaning there was surrounding text)
-            // or just retry anyway to be safe
-            if (candidate.length < text.length || candidate.length > 0) {
-                result = tryParseJSONObject<T>(candidate);
-                if (result !== null) return result;
+            if (candidate.length > 0) {
+                const extracted = tryParseJSONObject<T>(candidate);
+                if (extracted !== null) return extracted;
             }
         }
 
-        // 3. Try extracting from markdown code blocks explicitly (Regex fallback)
-        // Useful if the robust extraction failed due to unbalanced braces in the surrounding text
-        // Use non-overlapping pattern to prevent ReDoS (removed \s* before closing ```)
-        const match = text.match(/```(?:json)?\n?([\s\S]*?)```/);
-        if (match && match[1]) {
-            result = tryParseJSONObject<T>(match[1].trim());
-            if (result !== null) return result;
-        }
+        // 4. Last resort: jsonrepair on the whole text.
+        const repaired = tryParseJSONObject<T>(text);
+        if (repaired !== null) return repaired;
 
         return null;
     }

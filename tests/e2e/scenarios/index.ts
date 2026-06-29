@@ -4,6 +4,7 @@ import cockpitAnalytics from './cockpit-analytics.js';
 import codeReviewBasic from './code-review-basic.js';
 import codeReviewVertexByok from './code-review-vertex-byok.js';
 import conversationVertexByok from './conversation-vertex-byok.js';
+import conversationAnthropicByok from './conversation-anthropic-byok.js';
 import commandReview from './command-review.js';
 import kodyRulesCreateAndApply from './kody-rules.js';
 import licenseAttribution from './license-attribution.js';
@@ -26,6 +27,7 @@ export const allScenarios: Record<string, Scenario> = {
     [codeReviewBasic.id]: codeReviewBasic,
     [codeReviewVertexByok.id]: codeReviewVertexByok,
     [conversationVertexByok.id]: conversationVertexByok,
+    [conversationAnthropicByok.id]: conversationAnthropicByok,
     [centralizedConfigSync.id]: centralizedConfigSync,
     [commandReview.id]: commandReview,
     [cockpitAnalytics.id]: cockpitAnalytics,
