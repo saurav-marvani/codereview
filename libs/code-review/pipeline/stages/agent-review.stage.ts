@@ -774,11 +774,12 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             // (snapLinesToDiff returns null) rather than clamped onto an unrelated
             // changed line — clamping was re-anchoring comments about UNCHANGED code
             // onto the diff and shipping them as false positives.
+            const changedFilesByName = new Map(
+                changedFiles.map((f) => [f.filename, f]),
+            );
             const validatedSuggestions = result.suggestions
                 .map((s) => {
-                    const file = changedFiles.find(
-                        (f) => f.filename === s.relevantFile,
-                    );
+                    const file = changedFilesByName.get(s.relevantFile);
                     if (!file) return s;
                     const validRanges = extractValidDiffLines(file.patch);
                     const snapped = snapLinesToDiff(s, validRanges);
