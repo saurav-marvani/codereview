@@ -9,7 +9,9 @@ import { resolveContextWindow } from '@libs/code-review/infrastructure/agents/ll
 import {
     DEDUP_MODEL_ID,
     DEDUP_SCHEMA,
+    DEDUP_CONTENT_THRESHOLD,
     buildDedupPrompt,
+    contentSimilarity,
 } from '@libs/code-review/infrastructure/agents/llm/dedup-prompt';
 import {
     dedupReviewWarnings,
@@ -1586,6 +1588,27 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 const otherLocations: string[] = [];
                 for (const dupIdx of dupIndices) {
                     if (!Number.isInteger(dupIdx) || dupIdx < 0 || dupIdx >= suggestions.length) {
+                        continue;
+                    }
+                    // Content guard: only honor the model's merge when the two
+                    // findings actually describe the same thing. A low word-overlap
+                    // "duplicate" is a DIFFERENT bug the model over-merged (distinct
+                    // issues on overlapping lines) — keep it instead of dropping.
+                    if (
+                        contentSimilarity(
+                            suggestions[dupIdx],
+                            suggestions[keepIdx],
+                        ) < DEDUP_CONTENT_THRESHOLD
+                    ) {
+                        classifiedIndices.add(dupIdx);
+                        if (!addedIndices.has(dupIdx)) {
+                            addedIndices.add(dupIdx);
+                            indexToResult.set(dupIdx, result.length);
+                            result.push(suggestions[dupIdx]);
+                            uniqueSuggestions.push(
+                                this.summarizeDedupSuggestion(suggestions[dupIdx]),
+                            );
+                        }
                         continue;
                     }
                     classifiedIndices.add(dupIdx);
