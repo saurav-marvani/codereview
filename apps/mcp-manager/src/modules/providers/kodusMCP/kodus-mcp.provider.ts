@@ -721,8 +721,8 @@ export class KodusMCPProvider extends BaseProvider {
     private async safeGetTools(client: CustomClient): Promise<MCPTool[]> {
         // Hard timeout so one unreachable/slow managed server (expired OAuth →
         // 401, dead endpoint → 404, network stall) can't block the whole
-        // integrations listing while its transport retries. Listing many
-        // integrations fans out over every server, so an unbounded getTools()
+        // integrations listing while its transport retries. Listing integrations
+        // fans a live getTools() out over every server, so an unbounded call
         // here is what makes the registry thrash. On timeout we degrade to an
         // empty tool list instead of hanging the request.
         const TIMEOUT_MS = 8_000;

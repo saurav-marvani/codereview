@@ -235,43 +235,63 @@ export class McpService {
         return updatedConnection;
     }
 
+    /**
+     * Disconnect a managed integration.
+     *
+     * Disconnect is keyed on the *integration*, not on a connection row. A
+     * plugin can be "connected" purely via its managed OAuth credential
+     * (`mcp_integration_oauth`) with no row in `mcp_connections` — the two
+     * tables can drift, and the UI still shows it connected because
+     * `isConnected` is derived from the credential. In that state the web only
+     * has the integrationId (there is no connection PK to send), so this accepts
+     * **either** the connection PK or the integrationId.
+     *
+     * Clearing the managed OAuth credential is what actually disconnects the
+     * integration (it flips `hasManagedCredential` → false). The connection row,
+     * when present, is deleted too — but its absence must not block the
+     * disconnect.
+     */
     async deleteConnection(
         connectionIdOrIntegrationId: string,
         organizationId: string,
     ) {
-        // The web sends the connection PK when it can resolve it, but falls back
-        // to the integrationId (always known from the route) when the
-        // connections list failed to load. Accept either so the user can always
-        // disconnect, even when the UI never received the connection PK.
-        const connection =
-            (await this.getConnectionById(
-                connectionIdOrIntegrationId,
-                organizationId,
-            )) ??
-            (await this.connectionRepository.findOne({
-                where: {
-                    integrationId: connectionIdOrIntegrationId,
-                    organizationId,
-                },
-            }));
+        const ref = connectionIdOrIntegrationId;
 
-        if (!connection) {
-            throw new NotFoundException(
-                `Connection not found for "${connectionIdOrIntegrationId}"`,
+        // `id` is a uuid column, so only match it by `id` when the value is
+        // actually a uuid — otherwise Postgres throws "invalid input syntax for
+        // type uuid". The integrationId is always a safe lookup.
+        const isUuid =
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                ref,
             );
-        }
+        const connection = await this.connectionRepository.findOne({
+            where: isUuid
+                ? [
+                      { id: ref, organizationId },
+                      { integrationId: ref, organizationId },
+                  ]
+                : [{ integrationId: ref, organizationId }],
+        });
 
-        const provider = this.providerFactory.getProvider(connection.provider);
+        // The integration to disconnect: from the row when we have it, else the
+        // ref itself (which is the integrationId in the credential-only case).
+        const integrationId = connection?.integrationId ?? ref;
 
-        await provider.deleteConnection(connection.id);
-
-        // Remove OAuth state for the integration associated with this connection
+        // Always clear the managed OAuth credential — this is what truly
+        // disconnects the integration, even when no connection row exists.
         await this.integrationOAuthService.deleteOAuthState(
             organizationId,
-            connection.integrationId,
+            integrationId,
         );
 
-        await this.connectionRepository.delete(connection.id);
+        // Delete the connection row only when it exists.
+        if (connection) {
+            const provider = this.providerFactory.getProvider(
+                connection.provider,
+            );
+            await provider.deleteConnection(connection.id);
+            await this.connectionRepository.delete(connection.id);
+        }
 
         return { message: 'Connection deleted successfully' };
     }
