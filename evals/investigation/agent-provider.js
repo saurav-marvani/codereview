@@ -161,11 +161,18 @@ function buildOpenAICompatibleConfig(config, apiKey, defaultName) {
 }
 
 async function createModel(config) {
+    // Env overrides so ANY model runs from one yaml (no per-provider config):
+    //   RECALL_MODEL, RECALL_PROVIDER, RECALL_BASEURL, RECALL_APIKEY_ENV.
+    if (process.env.RECALL_PROVIDER || process.env.RECALL_BASEURL) {
+        config = {
+            ...config,
+            ...(process.env.RECALL_PROVIDER ? { provider: process.env.RECALL_PROVIDER } : {}),
+            ...(process.env.RECALL_BASEURL ? { baseURL: process.env.RECALL_BASEURL } : {}),
+        };
+    }
     const provider = config.provider || 'google';
-    // RECALL_MODEL overrides the yaml model so any model can be A/B'd from one
-    // config (e.g. RECALL_MODEL=gemini-3.5-flash) without a per-model yaml.
     const model = process.env.RECALL_MODEL || config.model;
-    const apiKeyEnv = config.apiKeyEnv || defaultApiKeyEnv(provider);
+    const apiKeyEnv = process.env.RECALL_APIKEY_ENV || config.apiKeyEnv || defaultApiKeyEnv(provider);
     const apiKey = config.apiKey || process.env[apiKeyEnv];
 
     if (!model) {
