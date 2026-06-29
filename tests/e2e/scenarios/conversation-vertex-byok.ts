@@ -102,6 +102,25 @@ export const conversationVertexByok: Scenario = {
                 `Kody never answered the @kody mention on PR #${pr.number} within 600s (model=${vertex!.model}, region=${vertex!.region}). The conversation agent runs on the v2 langchain engine — suspect Vertex routing on that path, the model not enabled in Model Garden, or the conversation feature disabled for the tenant.`,
             );
 
+            // A non-empty reply is NOT enough: when thought generation fails
+            // (e.g. the ReActStrategy parser rejecting the model's response),
+            // the agent still POSTS a generic fallback comment. A length-only
+            // check would go green while Kody is actually broken — which is how
+            // the "Missing or invalid reasoning field" regression hid for weeks.
+            // Reject the fallback text so this scenario detects parse failures.
+            const FALLBACK_MARKERS = [
+                'encountered an error while processing your request',
+                'please try rephrasing your question',
+            ];
+            const loweredReply = reply!.body.toLowerCase();
+            const isFallback = FALLBACK_MARKERS.some((m) =>
+                loweredReply.includes(m),
+            );
+            ctx.assert(
+                !isFallback,
+                `Kody replied on PR #${pr.number} with the GENERIC ERROR FALLBACK instead of a real answer: "${reply!.body.slice(0, 200)}". This is the @kody conversation thought-generation/parse failure (model=${vertex!.model}, region=${vertex!.region}), not a successful response.`,
+            );
+
             return {
                 prNumber: pr.number,
                 prUrl: pr.url,
