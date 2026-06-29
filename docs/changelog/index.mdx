@@ -49,7 +49,108 @@ rss: true
                     <input className="kodus-changelog-filter-control" type="checkbox" id="kodus-filter-kody-rules" />
                     <span>Kody Rules</span>
                 </label>
+                <label className="kodus-changelog-filter-button">
+                    <input className="kodus-changelog-filter-control" type="checkbox" id="kodus-filter-mcp" />
+                    <span>MCP</span>
+                </label>
             </div>
+        </div>
+    </div>
+
+    <div className="kodus-changelog-release">
+        <div className="kodus-changelog-meta">
+            <span className="kodus-changelog-date">June 29, 2026</span>
+        </div>
+
+        <div className="kodus-changelog-content">
+            <div className="kodus-changelog-section">
+                <div role="heading" aria-level="2" className="kodus-changelog-section-label">What's new</div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-ai-engine">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Validated review engine</div>
+                    <p className="kodus-changelog-copy">We updated Kody's review pipeline to improve analysis accuracy and reduce cases where important issues could slip through unnoticed.</p>
+                    <p className="kodus-changelog-copy">The engine now identifies problematic patterns more effectively, better understands changes that span multiple files, and can review code regions with more flexibility when the context is not fully obvious.</p>
+                    <p className="kodus-changelog-copy">We also optimized processing and reduced the average cost per review by around 30%.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-cockpit">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Shareable dashboard views</div>
+                    <p className="kodus-changelog-copy">Filters applied in Cockpit are now saved in the URL, including time range, repositories, severity, and status.</p>
+                    <p className="kodus-changelog-copy">This means you can copy the link and share it with your team on Slack, for example. Anyone who opens the URL will see Cockpit with the same filters applied, without having to manually recreate the view.</p>
+                    <p className="kodus-changelog-copy">This makes it easier to share specific analyses, such as what changed over the past week or an increase in security suggestions in a repository.</p>
+                    <video autoPlay loop muted playsInline preload="auto" className="kodus-changelog-video">
+                        <source src="/videos/kodus-copy-url.mp4" type="video/mp4" />
+                    </video>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-kody-rules">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Unified Kody Rules lifecycle</div>
+                    <p className="kodus-changelog-copy">We unified the Kody Rules flow into a single lifecycle, regardless of where the rule was created: the library, manual creation, or inheritance from the organization to the repository.</p>
+                    <p className="kodus-changelog-copy">With this change, activating, editing, disabling, and approving rules now follow the same path inside the product. We also migrated older rules to the new format and centralized the control of rules pending approval.</p>
+                    <p className="kodus-changelog-copy">This makes the system more consistent, reduces unexpected states, and ensures that an active rule is actually applied in Kody reviews.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-mcp">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Migrate away from Composio</div>
+                    <p className="kodus-changelog-copy">We removed the dependency on Composio as an external MCP broker and moved to our own implementation for GitHub Issues, now integrated with Kodus Issues.</p>
+                    <p className="kodus-changelog-copy">This reduces an external point of failure, improves call reliability, and gives us more control over authentication, rate limits, and retries.</p>
+                    <p className="kodus-changelog-copy">As part of the migration, we also removed low-usage integrations that depended on Composio, such as ClickUp and CloudId.</p>
+                </div>
+            </div>
+
+            <div className="kodus-changelog-section">
+                <div role="heading" aria-level="2" className="kodus-changelog-section-label">Improvements</div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-kody-rules">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Inheritance toggle</div>
+                    <p className="kodus-changelog-copy">When you enable or disable rule inheritance from the organization to a repository, the UI now shows the new state immediately, without waiting for the API response.</p>
+                    <p className="kodus-changelog-copy">If the call fails, for example because of a connection issue, the state is automatically reverted and we show an error toast. Before, users would click, wait, and not get clear feedback about what had happened.</p>
+                    <p className="kodus-changelog-copy">We also improved the rules cache update. Now we only invalidate the rules affected by that inheritance change, avoiding unnecessary reloads for rules that did not change.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-kody-rules">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Kody Rules Origin</div>
+                    <p className="kodus-changelog-copy">We added an explicit origin to all Kody Rules: <code className="kodus-changelog-code">LIBRARY</code>, <code className="kodus-changelog-code">MANUAL</code>, <code className="kodus-changelog-code">INHERITED</code>, and <code className="kodus-changelog-code">SUGGESTED</code>.</p>
+                    <p className="kodus-changelog-copy">This fixes an issue where some rule creation scenarios could fail silently because the backend expected an origin value that the frontend was not sending.</p>
+                    <p className="kodus-changelog-copy">Now the contract between frontend and backend is clearer, and the rule origin is validated before reaching the creation flow.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-ai-engine">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Atlassian Rovo</div>
+                    <p className="kodus-changelog-copy">Rovo is an Atlassian AI agent that generates code and edits files automatically. When it creates commits, it includes specific metadata, such as message prefixes and custom headers.</p>
+                    <p className="kodus-changelog-copy">Previously, our review engine identified those commits as human-written code and could suggest changes on them.</p>
+                    <p className="kodus-changelog-copy">Now we detect Rovo commits and skip those changes both in the code review logic and in the MCP business-rule validation preflight.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-mcp">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">MCP OAuth callback</div>
+                    <p className="kodus-changelog-copy">We fixed the OAuth flow for connecting MCPs, such as GitHub and Jira.</p>
+                    <p className="kodus-changelog-copy">Previously, users who had already completed onboarding could be blocked when trying to add a new MCP. Now the callback works at any time, as long as the state parameter is valid.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-ux-interface filter-kody-rules">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Pending rules section</div>
+                    <p className="kodus-changelog-copy">Pending rules, which need approval before entering the review pipeline, now have a dedicated section with improved UX.</p>
+                    <p className="kodus-changelog-copy">The section shows a status badge, who suggested the rule, when it was suggested, and inline actions to approve or reject it.</p>
+                    <p className="kodus-changelog-copy">Previously, these rules appeared mixed together with active rules, which made it easy to miss that something needed attention.</p>
+                </div>
+            </div>
+
+            <div className="kodus-changelog-section">
+                <div role="heading" aria-level="2" className="kodus-changelog-section-label">Bug fixes</div>
+
+                <div className="kodus-changelog-fix-list">
+                    <div className="kodus-changelog-fix kodus-changelog-filterable filter-git-provider">
+                        <p className="kodus-changelog-copy"><strong className="kodus-changelog-fix-label">GitHub Integration GitHub App post-onboarding:</strong> we fixed an issue where some GitHub integration pages returned a 404 after the user completed onboarding. This affected routes such as <code className="kodus-changelog-code">/github/integration</code> and <code className="kodus-changelog-code">/github/organization-name</code> when the GitHub App installation state was not updated correctly. We also adjusted the redirect after installation and added route validations to make the integration flow more reliable across different states.</p>
+                    </div>
+
+                    <div className="kodus-changelog-fix kodus-changelog-filterable filter-ux-interface">
+                        <p className="kodus-changelog-copy"><strong className="kodus-changelog-fix-label">Severity slicer colors:</strong> the severity control for low, medium, high, and critical used inconsistent colors. In some places, red meant critical; in others, it meant high. We standardized it to a semantic scale: gray for low, yellow for medium, orange for high, and red for critical. This affects Cockpit filters, suggestion badges, and notification settings.</p>
+                    </div>
+                </div>
+            </div>
+
+            <p className="kodus-changelog-empty">No changelog entries for this filter yet.</p>
         </div>
     </div>
 
@@ -280,6 +381,86 @@ rss: true
 </div>
 
 <div className="kodus-changelog-rss-source" aria-hidden="true">
+    <Update label="June 29, 2026 - Validated review engine" tags={["AI Engine"]}>
+        We updated Kody's review pipeline to improve analysis accuracy and reduce cases where important issues could slip through unnoticed.
+
+        The engine now identifies problematic patterns more effectively, better understands changes that span multiple files, and can review code regions with more flexibility when the context is not fully obvious.
+
+        We also optimized processing and reduced the average cost per review by around 30%.
+    </Update>
+
+    <Update label="June 29, 2026 - Shareable dashboard views" tags={["Cockpit"]}>
+        Filters applied in Cockpit are now saved in the URL, including time range, repositories, severity, and status.
+
+        This means you can copy the link and share it with your team on Slack, for example. Anyone who opens the URL will see Cockpit with the same filters applied, without having to manually recreate the view.
+
+        This makes it easier to share specific analyses, such as what changed over the past week or an increase in security suggestions in a repository.
+
+        Video: https://kodus.io/wp-content/uploads/2026/06/kodus-copy-url.mp4
+    </Update>
+
+    <Update label="June 29, 2026 - Unified Kody Rules lifecycle" tags={["Kody Rules"]}>
+        We unified the Kody Rules flow into a single lifecycle, regardless of where the rule was created: the library, manual creation, or inheritance from the organization to the repository.
+
+        With this change, activating, editing, disabling, and approving rules now follow the same path inside the product. We also migrated older rules to the new format and centralized the control of rules pending approval.
+
+        This makes the system more consistent, reduces unexpected states, and ensures that an active rule is actually applied in Kody reviews.
+    </Update>
+
+    <Update label="June 29, 2026 - Migrate away from Composio" tags={["MCP"]}>
+        We removed the dependency on Composio as an external MCP broker and moved to our own implementation for GitHub Issues, now integrated with Kodus Issues.
+
+        This reduces an external point of failure, improves call reliability, and gives us more control over authentication, rate limits, and retries.
+
+        As part of the migration, we also removed low-usage integrations that depended on Composio, such as ClickUp and CloudId.
+    </Update>
+
+    <Update label="June 29, 2026 - Inheritance toggle" tags={["Kody Rules"]}>
+        When you enable or disable rule inheritance from the organization to a repository, the UI now shows the new state immediately, without waiting for the API response.
+
+        If the call fails, for example because of a connection issue, the state is automatically reverted and we show an error toast. Before, users would click, wait, and not get clear feedback about what had happened.
+
+        We also improved the rules cache update. Now we only invalidate the rules affected by that inheritance change, avoiding unnecessary reloads for rules that did not change.
+    </Update>
+
+    <Update label="June 29, 2026 - Kody Rules Origin" tags={["Kody Rules"]}>
+        We added an explicit origin to all Kody Rules: LIBRARY, MANUAL, INHERITED, and SUGGESTED.
+
+        This fixes an issue where some rule creation scenarios could fail silently because the backend expected an origin value that the frontend was not sending.
+
+        Now the contract between frontend and backend is clearer, and the rule origin is validated before reaching the creation flow.
+    </Update>
+
+    <Update label="June 29, 2026 - Atlassian Rovo" tags={["AI Engine"]}>
+        Rovo is an Atlassian AI agent that generates code and edits files automatically. When it creates commits, it includes specific metadata, such as message prefixes and custom headers.
+
+        Previously, our review engine identified those commits as human-written code and could suggest changes on them.
+
+        Now we detect Rovo commits and skip those changes both in the code review logic and in the MCP business-rule validation preflight.
+    </Update>
+
+    <Update label="June 29, 2026 - MCP OAuth callback" tags={["MCP"]}>
+        We fixed the OAuth flow for connecting MCPs, such as GitHub and Jira.
+
+        Previously, users who had already completed onboarding could be blocked when trying to add a new MCP. Now the callback works at any time, as long as the state parameter is valid.
+    </Update>
+
+    <Update label="June 29, 2026 - Pending rules section" tags={["UX & Interface", "Kody Rules"]}>
+        Pending rules, which need approval before entering the review pipeline, now have a dedicated section with improved UX.
+
+        The section shows a status badge, who suggested the rule, when it was suggested, and inline actions to approve or reject it.
+
+        Previously, these rules appeared mixed together with active rules, which made it easy to miss that something needed attention.
+    </Update>
+
+    <Update label="June 29, 2026 - GitHub Integration GitHub App post-onboarding" tags={["GIT Provider"]}>
+        We fixed an issue where some GitHub integration pages returned a 404 after the user completed onboarding. This affected routes such as /github/integration and /github/organization-name when the GitHub App installation state was not updated correctly. We also adjusted the redirect after installation and added route validations to make the integration flow more reliable across different states.
+    </Update>
+
+    <Update label="June 29, 2026 - Severity slicer colors" tags={["UX & Interface"]}>
+        The severity control for low, medium, high, and critical used inconsistent colors. In some places, red meant critical; in others, it meant high. We standardized it to a semantic scale: gray for low, yellow for medium, orange for high, and red for critical. This affects Cockpit filters, suggestion badges, and notification settings.
+    </Update>
+
     <Update label="June 22, 2026 - Forgejo support is now on par with GitHub & GitLab" tags={["GIT Provider"]}>
         Review comments, commit statuses, force-push detection, and webhook coverage now work consistently for Forgejo repositories. If you self-host with Forgejo, Kody behaves just like on any other major platform.
     </Update>
