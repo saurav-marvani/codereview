@@ -65,7 +65,7 @@ import {
  * For each hunk, we track which RIGHT-side lines exist (context + added).
  * GitHub only allows comments on lines that appear in the diff.
  */
-function extractValidDiffLines(patch?: string): Array<[number, number]> {
+export function extractValidDiffLines(patch?: string): Array<[number, number]> {
     if (!patch) return [];
 
     const ranges: Array<[number, number]> = [];
@@ -112,12 +112,20 @@ function extractValidDiffLines(patch?: string): Array<[number, number]> {
 
 /**
  * Snap suggestion line numbers to the closest valid diff range.
- * If the suggestion lines don't overlap any diff range, finds the nearest one.
+ *
+ * Returns the suggestion clamped to the overlapping hunk when its lines
+ * (partially) overlap a changed range. Returns `null` when the suggestion
+ * cites concrete lines that do NOT overlap ANY changed hunk — i.e. the
+ * finding is about code this PR did not touch. Such findings used to be
+ * clamped onto the nearest hunk, which silently re-anchored a comment about
+ * unchanged code onto a changed line (false positive on unchanged code).
+ * Dropping them keeps the review honest: "only suggest changes on lines
+ * present in the diff".
  */
-function snapLinesToDiff(
+export function snapLinesToDiff(
     suggestion: Partial<CodeSuggestion>,
     validRanges: Array<[number, number]>,
-): Partial<CodeSuggestion> {
+): Partial<CodeSuggestion> | null {
     if (validRanges.length === 0) return suggestion;
 
     const start = suggestion.relevantLinesStart;
@@ -133,7 +141,11 @@ function snapLinesToDiff(
         };
     }
 
-    // Find all overlapping ranges and pick the best one (largest overlap)
+    // Find all overlapping ranges and pick the best one (largest overlap).
+    // Overlap is measured inclusively (overlapEnd - overlapStart + 1) so a
+    // single shared line counts as overlap size 1 — otherwise a finding that
+    // sits exactly on one changed line (start === end) would score 0 and be
+    // treated as "no overlap" and dropped.
     let bestOverlap: [number, number] | null = null;
     let bestOverlapSize = 0;
 
@@ -141,7 +153,7 @@ function snapLinesToDiff(
         if (start <= re && end >= rs) {
             const overlapStart = Math.max(start, rs);
             const overlapEnd = Math.min(end, re);
-            const overlapSize = overlapEnd - overlapStart;
+            const overlapSize = overlapEnd - overlapStart + 1;
             if (overlapSize > bestOverlapSize) {
                 bestOverlapSize = overlapSize;
                 bestOverlap = [overlapStart, overlapEnd];
@@ -157,27 +169,10 @@ function snapLinesToDiff(
         };
     }
 
-    // No overlap — find the closest range
-    let closestRange = validRanges[0];
-    let closestDist = Infinity;
-
-    for (const [rs, re] of validRanges) {
-        const dist = Math.min(Math.abs(start - rs), Math.abs(start - re));
-        if (dist < closestDist) {
-            closestDist = dist;
-            closestRange = [rs, re];
-        }
-    }
-
-    const [rs, re] = closestRange;
-    const clampedStart = Math.max(rs, Math.min(start, re));
-    const clampedEnd = Math.min(re, Math.max(clampedStart, end));
-
-    return {
-        ...suggestion,
-        relevantLinesStart: clampedStart,
-        relevantLinesEnd: clampedEnd,
-    };
+    // No overlap with any changed hunk — the finding is about code this PR
+    // did not modify. Drop it instead of re-anchoring it onto an unrelated
+    // changed line (which produced false positives on unchanged code).
+    return null;
 }
 
 /**
@@ -498,6 +493,16 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                         ?.main,
                 prTitle: context.pullRequest?.title,
                 prBody: context.pullRequest?.body,
+                // Commit list (oldest→newest) so commit-hygiene rules can be
+                // judged against real commit boundaries instead of inferred
+                // from the aggregated/incremental diff. prAllCommits covers the
+                // whole PR; fall back to prCommits (new-since-last) when absent.
+                commits: (context.prAllCommits ?? context.prCommits)?.map(
+                    (c) => ({
+                        sha: c.sha,
+                        message: c.commit?.message ?? '',
+                    }),
+                ),
                 kodyRules: context.codeReviewConfig?.kodyRules,
                 reviewOptions,
                 onAgentProgress,
@@ -758,24 +763,44 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             // Snap suggestion line numbers to valid diff ranges before passing downstream.
             // GitHub rejects inline comments on lines that aren't part of the diff.
-            const validatedSuggestions = result.suggestions.map((s) => {
-                const file = changedFiles.find(
-                    (f) => f.filename === s.relevantFile,
+            // A finding whose cited lines don't overlap ANY changed hunk is dropped
+            // (snapLinesToDiff returns null) rather than clamped onto an unrelated
+            // changed line — clamping was re-anchoring comments about UNCHANGED code
+            // onto the diff and shipping them as false positives.
+            const validatedSuggestions = result.suggestions
+                .map((s) => {
+                    const file = changedFiles.find(
+                        (f) => f.filename === s.relevantFile,
+                    );
+                    if (!file) return s;
+                    const validRanges = extractValidDiffLines(file.patch);
+                    const snapped = snapLinesToDiff(s, validRanges);
+                    if (snapped === null) {
+                        this.logger.log({
+                            message: `[AGENT] Dropped out-of-diff suggestion for ${s.relevantFile}: lines ${s.relevantLinesStart}-${s.relevantLinesEnd} do not overlap any changed hunk`,
+                            context: this.stageName,
+                        });
+                        allDiscarded.push({
+                            ...s,
+                            priorityStatus:
+                                PriorityStatus.DISCARDED_BY_CODE_DIFF,
+                        });
+                        return null;
+                    }
+                    if (
+                        snapped.relevantLinesStart !== s.relevantLinesStart ||
+                        snapped.relevantLinesEnd !== s.relevantLinesEnd
+                    ) {
+                        this.logger.log({
+                            message: `[AGENT] Snapped lines for ${s.relevantFile}: ${s.relevantLinesStart}-${s.relevantLinesEnd} → ${snapped.relevantLinesStart}-${snapped.relevantLinesEnd}`,
+                            context: this.stageName,
+                        });
+                    }
+                    return snapped;
+                })
+                .filter(
+                    (s): s is Partial<CodeSuggestion> => s !== null,
                 );
-                if (!file) return s;
-                const validRanges = extractValidDiffLines(file.patch);
-                const snapped = snapLinesToDiff(s, validRanges);
-                if (
-                    snapped.relevantLinesStart !== s.relevantLinesStart ||
-                    snapped.relevantLinesEnd !== s.relevantLinesEnd
-                ) {
-                    this.logger.log({
-                        message: `[AGENT] Snapped lines for ${s.relevantFile}: ${s.relevantLinesStart}-${s.relevantLinesEnd} → ${snapped.relevantLinesStart}-${snapped.relevantLinesEnd}`,
-                        context: this.stageName,
-                    });
-                }
-                return snapped;
-            });
 
             // Verify/Discover removed — was hurting recall across all models.
             // Benchmark showed F1 drops of -5.7pp to -18.3pp with verify enabled.
