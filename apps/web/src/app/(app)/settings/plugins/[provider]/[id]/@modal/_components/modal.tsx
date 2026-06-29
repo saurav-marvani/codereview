@@ -38,6 +38,8 @@ import {
     KODUS_ISSUES_INTEGRATION_ID,
 } from "@services/mcp-manager/types";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
+
+import { resolveConnectionRef } from "./resolve-connection-ref";
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
 import { EditIcon, PlugIcon, RefreshCwIcon, Trash } from "lucide-react";
@@ -272,12 +274,17 @@ export const PluginModal = ({
 
     const [resetAuth, { loading: isResetAuthLoading }] = useAsyncAction(
         async () => {
-            if (!plugin.connectionId) {
+            // Fall back to the integrationId (always known from the route) when
+            // the connections list failed to load and `connectionId` is absent —
+            // otherwise the user is stuck unable to disconnect. See
+            // resolveConnectionRef.
+            const connectionRef = resolveConnectionRef(plugin);
+            if (!connectionRef) {
                 throw new Error("Connection ID not found");
             }
 
             await deleteMCPConnection({
-                connectionId: plugin.connectionId,
+                connectionId: connectionRef,
             });
 
             await revalidateServerSidePath("/settings/plugins");
