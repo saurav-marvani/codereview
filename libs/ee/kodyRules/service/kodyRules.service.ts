@@ -570,18 +570,6 @@ export class KodyRulesService implements IKodyRulesService {
                 organizationAndTeamData,
             );
 
-            if (!codeReviewConfig?.configValue) {
-                return;
-            }
-
-            const configValue =
-                codeReviewConfig.configValue as CodeReviewParameter;
-            const repositories = configValue.repositories || [];
-
-            if (repositories.some((r) => r.id === rule.repositoryId)) {
-                return;
-            }
-
             let repositoryName = rule.repositoryId;
             try {
                 const repos =
@@ -606,6 +594,32 @@ export class KodyRulesService implements IKodyRulesService {
                 isSelected: true,
                 configs: {},
             };
+
+            if (!codeReviewConfig?.configValue) {
+                const configValue: CodeReviewParameter = {
+                    id: 'global',
+                    name: 'Global',
+                    isSelected: true,
+                    configs: {},
+                    repositories: [newRepo],
+                };
+
+                await parametersService.createOrUpdateConfig(
+                    ParametersKey.CODE_REVIEW_CONFIG,
+                    configValue,
+                    organizationAndTeamData,
+                );
+
+                return;
+            }
+
+            const configValue =
+                codeReviewConfig.configValue as CodeReviewParameter;
+            const repositories = configValue.repositories || [];
+
+            if (repositories.some((r) => r.id === rule.repositoryId)) {
+                return;
+            }
 
             const updatedConfigValue: CodeReviewParameter = {
                 ...configValue,
