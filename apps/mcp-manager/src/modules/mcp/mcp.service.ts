@@ -235,21 +235,35 @@ export class McpService {
         return updatedConnection;
     }
 
-    async deleteConnection(connectionId: string, organizationId: string) {
-        const connection = await this.getConnectionById(
-            connectionId,
-            organizationId,
-        );
+    async deleteConnection(
+        connectionIdOrIntegrationId: string,
+        organizationId: string,
+    ) {
+        // The web sends the connection PK when it can resolve it, but falls back
+        // to the integrationId (always known from the route) when the
+        // connections list failed to load. Accept either so the user can always
+        // disconnect, even when the UI never received the connection PK.
+        const connection =
+            (await this.getConnectionById(
+                connectionIdOrIntegrationId,
+                organizationId,
+            )) ??
+            (await this.connectionRepository.findOne({
+                where: {
+                    integrationId: connectionIdOrIntegrationId,
+                    organizationId,
+                },
+            }));
 
         if (!connection) {
             throw new NotFoundException(
-                `Connection with ID ${connectionId} not found`,
+                `Connection not found for "${connectionIdOrIntegrationId}"`,
             );
         }
 
         const provider = this.providerFactory.getProvider(connection.provider);
 
-        await provider.deleteConnection(connectionId);
+        await provider.deleteConnection(connection.id);
 
         // Remove OAuth state for the integration associated with this connection
         await this.integrationOAuthService.deleteOAuthState(

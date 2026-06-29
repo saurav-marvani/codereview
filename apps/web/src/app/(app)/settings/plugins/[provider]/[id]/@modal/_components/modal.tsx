@@ -272,12 +272,18 @@ export const PluginModal = ({
 
     const [resetAuth, { loading: isResetAuthLoading }] = useAsyncAction(
         async () => {
-            if (!plugin.connectionId) {
+            // Prefer the resolved connection PK, but fall back to the plugin's
+            // integrationId (always known from the route). When the connections
+            // list fails to load server-side, `connectionId` is absent and a
+            // hard throw left the user unable to disconnect — the backend now
+            // accepts either identifier.
+            const connectionRef = plugin.connectionId ?? plugin.id;
+            if (!connectionRef) {
                 throw new Error("Connection ID not found");
             }
 
             await deleteMCPConnection({
-                connectionId: plugin.connectionId,
+                connectionId: connectionRef,
             });
 
             await revalidateServerSidePath("/settings/plugins");
