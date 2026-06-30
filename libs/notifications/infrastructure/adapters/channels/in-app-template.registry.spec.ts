@@ -33,6 +33,7 @@ describe('IN_APP_TEMPLATE_REGISTRY', () => {
             repoName: 'acme/api',
             prUrl: 'https://github.com/acme/api/pull/1',
             ownerContact: 'owner@acme.com',
+            authorUsername: 'kodus',
         },
         [NotificationEvent.IDE_RULES_SYNCED]: {
             repoName: 'acme/api',

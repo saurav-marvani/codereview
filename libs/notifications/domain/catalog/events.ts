@@ -159,6 +159,8 @@ export interface NotificationPayloadMap {
         prUrl: string;
         repoName: string;
         ownerContact?: string;
+        authorUsername?: string;
+        authorEmail?: string;
     };
 
     // ── Billing ────────────────────────────────────────────────

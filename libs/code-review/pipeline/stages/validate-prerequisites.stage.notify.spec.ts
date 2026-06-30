@@ -173,6 +173,8 @@ describe('ValidatePrerequisitesStage — review.skipped_no_license emit', () => 
                     prUrl: 'https://github.com/acme/api/pull/42',
                     repoName: 'acme/api',
                     ownerContact: 'owner@acme.com',
+                    authorUsername: 'alex',
+                    authorEmail: 'alex@acme.com',
                 }),
             }),
         );
