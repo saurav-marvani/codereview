@@ -94,6 +94,7 @@ export class AutomationCodeReviewService implements Omit<
             origin,
             action,
             triggerCommentId,
+            reviewDirective,
             userGitId,
             // Job-level AbortSignal injected by RunCodeReviewAutomationUseCase.
             // Plumbed through handlePullRequest → pipeline context → agent-loop
@@ -271,6 +272,7 @@ export class AutomationCodeReviewService implements Omit<
                     lastExecution?.dataExecution, // Pass last execution data
                     correlationId,
                     signal, // parentSignal — forwarded to pipeline context
+                    reviewDirective, // @kody review <directive> steering text
                 );
 
             await this._handleExecutionCompletion(execution, result, payload);

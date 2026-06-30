@@ -510,6 +510,8 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                         message: c.commit?.message ?? '',
                     }),
                 ),
+                // Free-text steering directive from `@kody review <directive>`.
+                reviewDirective: context.reviewDirective,
                 kodyRules: context.codeReviewConfig?.kodyRules,
                 reviewOptions,
                 onAgentProgress,

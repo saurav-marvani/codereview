@@ -86,6 +86,46 @@ export const isForceReviewCommand = (
 };
 
 /**
+ * Captures the command head (`@kody review` / `@kody start-review`) plus an
+ * optional `--force` flag, so the remaining text on the command can be read as
+ * a free-text steering directive (e.g. `@kody review focus on the auth logic`).
+ */
+const KODY_REVIEW_COMMAND_HEAD_PATTERN =
+    /^\s*@kody\s+(?:start-review|review)\b[ \t]*(?:--?force\b[ \t]*)?/i;
+
+/** Hard cap so a pasted wall of text can't blow up the prompt. */
+const MAX_REVIEW_DIRECTIVE_LENGTH = 500;
+
+/**
+ * Extract the free-text steering directive a user appended to a review command
+ * (`@kody review <directive>`). Returns the trimmed directive, or undefined when
+ * the comment is not a review command or carries no extra text (the common
+ * `@kody review` / `@kody review --force` case). Only the first line after the
+ * command is used, the `--force` flag and surrounding quotes are stripped, and
+ * the result is length-capped. Steers what the finder focuses on; it never
+ * filters — clear issues elsewhere are still reported.
+ */
+export const parseReviewDirective = (
+    text: string | undefined | null,
+): string | undefined => {
+    if (!text) return undefined;
+    if (!KODY_REVIEW_COMMAND_PATTERN.test(text)) return undefined;
+
+    const head = text.match(KODY_REVIEW_COMMAND_HEAD_PATTERN);
+    if (!head) return undefined;
+
+    const directive = text
+        .slice(head[0].length)
+        .split(/\r?\n/)[0]
+        .trim()
+        .replace(/^["'`]+|["'`]+$/g, '')
+        .trim();
+
+    if (!directive) return undefined;
+    return directive.slice(0, MAX_REVIEW_DIRECTIVE_LENGTH);
+};
+
+/**
  * Check if comment has the kody-codereview HTML marker
  */
 export const hasReviewMarker = (text: string | undefined | null): boolean => {
