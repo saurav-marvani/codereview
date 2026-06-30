@@ -53,6 +53,7 @@ type ReviewCommandOptions = {
     branch?: string;
     rulesOnly?: boolean;
     fast?: boolean;
+    focus?: string;
     interactive?: boolean;
     fix?: boolean;
     promptOnly?: boolean;
@@ -105,6 +106,10 @@ Examples:
             'Review using only configured rules (no general suggestions)',
         )
         .option('--fast', 'Fast mode: quicker analysis with lighter checks')
+        .option(
+            '--focus <text>',
+            'Steer the review at a specific area, e.g. --focus "the auth and session logic"',
+        )
         .option(
             '-i, --interactive',
             'Interactive mode: navigate and apply fixes',
@@ -221,6 +226,7 @@ async function reviewAction(
                         staged: options.staged,
                         commit: options.commit,
                         branch: options.branch,
+                        focus: options.focus,
                         quiet: globalOpts.quiet,
                         onProgress: (status) => {
                             if (globalOpts.quiet || ctx.isAgent) {return;}

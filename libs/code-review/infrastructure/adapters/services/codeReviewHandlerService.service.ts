@@ -170,6 +170,8 @@ export class CodeReviewHandlerService {
         // JobProcessorRouterService.runWithTimeout. When this aborts, all
         // downstream LLM/agent calls cancel via parentSignal composition.
         parentSignal?: AbortSignal,
+        // Free-text steering directive from `@kody review <directive>`.
+        reviewDirective?: string,
     ) {
         let initialContext: CodeReviewPipelineContext;
 
@@ -197,6 +199,7 @@ export class CodeReviewHandlerService {
                 platformType: platformType as PlatformType,
                 triggerCommentId,
                 userGitId,
+                reviewDirective,
                 pipelineMetadata: {
                     lastExecution: {
                         ...(lastExecutionData || null),

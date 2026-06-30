@@ -231,6 +231,7 @@ export class RunCodeReviewAutomationUseCase implements IUseCase {
                 //TODO: prcisa do byokauu
                 //byokConfig,
                 triggerCommentId: sanitizedPayload?.triggerCommentId,
+                reviewDirective: sanitizedPayload?.reviewDirective,
                 userGitId,
                 workflowJobId,
                 correlationId,

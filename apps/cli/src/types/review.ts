@@ -108,6 +108,8 @@ export interface ReviewConfig {
     };
     rulesOnly?: boolean;
     fast?: boolean;
+    /** Free-text steering directive (`--focus`); sanitized + capped server-side. */
+    focus?: string;
     files?: FileContent[];
 }
 

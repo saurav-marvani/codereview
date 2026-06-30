@@ -525,6 +525,14 @@ export interface ReviewAgentInput {
     adaptiveProfile?: AdaptiveProfile;
     /** Categories allowed for this run when using a mixed/generalist reviewer. */
     requestedCategories?: Array<'bug' | 'security' | 'performance'>;
+    /**
+     * Optional per-review steering directive supplied by the user at trigger
+     * time (e.g. `@kody review focus on the auth logic`). Free text. When set,
+     * it is rendered as a high-priority `<ReviewFocus>` block at the top of the
+     * user prompt so the finder concentrates depth on the named area WITHOUT
+     * suppressing concrete issues found elsewhere. Empty/undefined = no steer.
+     */
+    reviewDirective?: string;
     /** Parent (job-level) AbortSignal. Forwarded to runAgentLoop so the
      *  outer router timeout cancels the LLM call instead of leaving it
      *  running ghost in the background. */
@@ -2056,6 +2064,7 @@ ${memoryRulesSection}
         return (
             `<ReviewTask>
   ${prContextSection}
+${this.formatReviewFocus(input.reviewDirective)}
 
   <Diffs>
 ${diffsSection}
@@ -2164,6 +2173,7 @@ ${coverageTargets ? `${coverageTargets}\n` : ''}
 
         return `<ReviewTask>
   ${prContextSection}
+${this.formatReviewFocus(input.reviewDirective)}
   <Diffs>
 ${diffsSection}
   </Diffs>
@@ -2300,6 +2310,7 @@ ${memoryRulesSection}
         return (
             `<ReviewTask mode="self-contained">
   ${prContextSection}
+${this.formatReviewFocus(input.reviewDirective)}
 
   <Diffs>
 ${diffsSection}
@@ -2388,6 +2399,22 @@ ${fileContentsSection}
         if (prBody) parts.push(prBody.substring(0, 500));
 
         return `\n  <PRContext>${parts.join('\n')}</PRContext>`;
+    }
+
+    /**
+     * Renders the user's per-review steering directive as a high-priority
+     * block. Placed at the very top of the user prompt so the finder reads it
+     * before the diffs. It RAISES depth on the named area; it must not suppress
+     * concrete issues found elsewhere (the model can post both).
+     */
+    private formatReviewFocus(directive?: string): string {
+        const text = (directive ?? '').trim();
+        if (!text) return '';
+        return `\n  <ReviewFocus>
+    The user asked this review to focus on: ${text}
+    Spend your deepest analysis on the changed code matching this focus — trace its callers/callees and challenge it hardest.
+    Still report any concrete bug, security, or performance issue you notice elsewhere in the diff; do NOT suppress findings outside the focus. The focus sets priority, not a filter.
+  </ReviewFocus>`;
     }
 
     private formatDiffs(

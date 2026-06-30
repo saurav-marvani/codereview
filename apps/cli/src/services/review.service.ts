@@ -52,6 +52,7 @@ class ReviewService {
             staged?: boolean;
             commit?: string;
             branch?: string;
+            focus?: string;
             quiet?: boolean;
             onProgress?: (status: string) => void;
         },
