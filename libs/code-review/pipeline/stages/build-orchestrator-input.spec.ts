@@ -1,0 +1,81 @@
+/**
+ * Guards the context → agent-input wiring that no typecheck would catch: the
+ * fields are OPTIONAL, so a refactor that silently stops forwarding one (most
+ * importantly `reviewDirective` from `@kody review <directive>`) would leave the
+ * feature dead with every other test still green. Testing the pure mapping is
+ * the cheap, durable seam for that.
+ */
+import {
+    buildOrchestratorInput,
+    type OrchestratorInputComputed,
+} from './build-orchestrator-input';
+import type { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
+
+const computed: OrchestratorInputComputed = {
+    changedFiles: [],
+    prNumber: 1,
+    repositoryId: 'repo-1',
+    reviewOptions: {} as any,
+    onAgentProgress: () => undefined,
+    gitHubToken: undefined,
+    callGraph: '',
+    adaptiveProfile: { skipHeavyPasses: false } as any,
+};
+
+const makeContext = (
+    over: Record<string, unknown> = {},
+): CodeReviewPipelineContext =>
+    ({
+        organizationAndTeamData: { organizationId: 'o', teamId: 't' },
+        pullRequest: { title: 'T', body: 'B' },
+        repository: { fullName: 'kodus/test' },
+        codeReviewConfig: {},
+        ...over,
+    }) as unknown as CodeReviewPipelineContext;
+
+describe('buildOrchestratorInput — context→agent wiring', () => {
+    it('forwards reviewDirective from context into the agent input', () => {
+        const input = buildOrchestratorInput(
+            makeContext({
+                reviewDirective: 'the auth and session logic',
+            }),
+            computed,
+        );
+        expect(input.reviewDirective).toBe('the auth and session logic');
+    });
+
+    it('leaves reviewDirective undefined for a normal review (no directive)', () => {
+        expect(
+            buildOrchestratorInput(makeContext(), computed).reviewDirective,
+        ).toBeUndefined();
+    });
+
+    it('maps the load-bearing prompt fields from context', () => {
+        const input = buildOrchestratorInput(
+            makeContext({
+                pullRequest: { title: 'My PR', body: 'desc' },
+                codeReviewConfig: { reviewMode: 'deep' },
+            }),
+            computed,
+        );
+        expect(input.prTitle).toBe('My PR');
+        expect(input.prBody).toBe('desc');
+        expect(input.reviewMode).toBe('deep');
+    });
+
+    it('defaults reviewMode to normal when unset', () => {
+        expect(
+            buildOrchestratorInput(makeContext(), computed).reviewMode,
+        ).toBe('normal');
+    });
+
+    it('passes the stage-computed locals through unchanged', () => {
+        const input = buildOrchestratorInput(makeContext(), {
+            ...computed,
+            callGraph: '<CallGraph>x</CallGraph>',
+            prNumber: 42,
+        });
+        expect(input.callGraph).toBe('<CallGraph>x</CallGraph>');
+        expect(input.prNumber).toBe(42);
+    });
+});

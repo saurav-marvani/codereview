@@ -33,6 +33,7 @@ import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-
 import { CodeSuggestion } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { PriorityStatus } from '@libs/platformData/domain/pullRequests/enums/priorityStatus.enum';
 import { ReviewOrchestratorService } from '@libs/code-review/infrastructure/agents/review-orchestrator.service';
+import { buildOrchestratorInput } from './build-orchestrator-input';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import {
     AUTOMATION_EXECUTION_SERVICE_TOKEN,
@@ -494,103 +495,20 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             }
             } // end if (shouldBuildCallGraph)
 
-            const result = await this.reviewOrchestrator.execute({
-                organizationAndTeamData: context.organizationAndTeamData,
-                changedFiles,
-                // remoteCommands is undefined when no sandbox is available
-                // (e.g. trial mode). The agent loop detects the empty tools
-                // case and switches to a self-contained analysis variant.
-                remoteCommands: context.sandboxHandle?.remoteCommands as any,
-                prNumber,
-                repositoryId,
-                repositoryFullName:
-                    context.repository?.fullName ||
-                    context.pullRequest?.base?.repo?.fullName ||
-                    '',
-                languageResultPrompt:
-                    context.codeReviewConfig?.languageResultPrompt || 'en-US',
-                memoryRules: context.codeReviewConfig?.kodyMemoryRules,
-                v2PromptOverrides: context.codeReviewConfig?.v2PromptOverrides,
-                generationMain:
-                    context.codeReviewConfig?.v2PromptOverrides?.generation
-                        ?.main,
-                prTitle: context.pullRequest?.title,
-                prBody: context.pullRequest?.body,
-                // Commit list (oldest→newest) so commit-hygiene rules can be
-                // judged against real commit boundaries instead of inferred
-                // from the aggregated/incremental diff. prAllCommits covers the
-                // whole PR; fall back to prCommits (new-since-last) when absent.
-                commits: (context.prAllCommits ?? context.prCommits)?.map(
-                    (c) => ({
-                        sha: c.sha,
-                        message: c.commit?.message ?? '',
-                    }),
-                ),
-                // Free-text steering directive from `@kody review <directive>`.
-                reviewDirective: context.reviewDirective,
-                kodyRules: context.codeReviewConfig?.kodyRules,
-                reviewOptions,
-                onAgentProgress,
-                gitHubToken: await this.resolveGitHubToken(context),
-                baseBranch:
-                    context.sandboxHandle?.baseBranch ||
-                    context.pullRequest?.base?.ref ||
-                    context.repository?.defaultBranch,
-                callGraph,
-                callGraphJson: context.callGraphJson,
-                reviewMode: context.codeReviewConfig?.reviewMode || 'normal',
-                // Trial reviews get a forced default model (only consulted
-                // when there's no BYOK config). Two distinct "trial" surfaces,
-                // each with its OWN model:
-                //   1. Subscription trial — signed-up orgs in their 14-day
-                //      trial (`subscriptionStatus === 'trial'`, captured by
-                //      ValidatePrerequisitesStage). Routed to Kimi K2.6: they
-                //      run the managed pipeline with no BYOK, so without this
-                //      they'd burn the expensive 3.1-pro default on Kodus's
-                //      dime for the whole trial window. The `kimi-` prefix
-                //      routes through Moonshot's OpenAI-compatible endpoint in
-                //      byokToVercelModel (reads API_MOONSHOT_API_KEY — that env
-                //      MUST be set in the cloud deployment).
-                //   2. Anonymous public demo (`isTrialMode`, try.kodus.io) —
-                //      kept on Gemini 3 Flash: it's a latency-sensitive public
-                //      demo and the try UI advertises "Gemini 3 Flash". Without
-                //      this it would fall back to the slow 3.1-pro default
-                //      (~4-5 min).
-                // Either override is ignored when a BYOK config is present
-                // (byokToVercelModel prefers BYOK), so a trial org that
-                // configured its own key keeps using it.
-                // `isTrialMode` lives on the CLI pipeline context — we can't
-                // import that type here without inverting the dep graph
-                // (cli-review depends on code-review), so the cast is
-                // intentional.
-                defaultModelOverride:
-                    context.pipelineMetadata?.subscriptionStatus === 'trial'
-                        ? 'kimi-k2.6'
-                        : (context as { isTrialMode?: boolean }).isTrialMode
-                          ? 'gemini-3-flash-preview'
-                          : undefined,
-                // Per-repo/directory model override resolved by ValidateConfigStage.
-                byokModel: context.codeReviewConfig?.byokModel,
-                // Adaptive-fit profile: agents read this to decide whether
-                // to compact the prompt, force all-optional tiering, drop
-                // low-signal files unconditionally, truncate per-file diffs,
-                // and skip heavy passes. Resolved once at the stage so the
-                // stage-level decisions (callGraph, heavy passes) and
-                // per-agent decisions agree.
-                adaptiveProfile,
-                // Auto-skip heavy passes (verifier, second-chance, rescue)
-                // when the profile says so. These are independent
-                // generateText calls that re-incur the full prompt overhead;
-                // on small windows they're guaranteed to refire the same
-                // preflight error. Don't override an explicit caller value.
-                skipHeavyPasses:
-                    adaptiveProfile.skipHeavyPasses || undefined,
-                // Forwarded from the workflow job timeout. The router builds
-                // an AbortController; here we pass it through so when the
-                // 1h45min budget fires, the agent-loop's local controller is
-                // aborted via parentSignal composition.
-                parentSignal: context.parentSignal,
-            });
+            // Single place that maps context → agent input (extracted to a pure
+            // helper so the wiring, notably reviewDirective, is unit-testable).
+            const result = await this.reviewOrchestrator.execute(
+                buildOrchestratorInput(context, {
+                    changedFiles,
+                    prNumber,
+                    repositoryId,
+                    reviewOptions,
+                    onAgentProgress,
+                    gitHubToken: await this.resolveGitHubToken(context),
+                    callGraph,
+                    adaptiveProfile,
+                }),
+            );
 
             // Emit profile-driven warnings up here at the stage so they
             // surface even when the agent's overhead preflight throws
