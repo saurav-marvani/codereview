@@ -97,13 +97,34 @@ const KODY_REVIEW_COMMAND_HEAD_PATTERN =
 const MAX_REVIEW_DIRECTIVE_LENGTH = 500;
 
 /**
+ * The directive is UNTRUSTED text (anyone who can comment can supply it) and it
+ * gets rendered inside a `<ReviewFocus>` block in the finder prompt. Strip the
+ * characters it could use to break out of that block — primarily the angle
+ * brackets that could forge a `</ReviewFocus>` close tag or a fake `<section>` —
+ * plus control characters, and collapse whitespace. This is structural
+ * defense-in-depth, not a full prompt-injection defense: the directive is also
+ * framed as a low-trust hint that only prioritizes (never suppresses/approves)
+ * and is injected ONLY into the finder prompt, not the verify/summary passes.
+ * Backticks and ordinary punctuation are kept so a legit focus like
+ * "the `topCodes` sort" survives.
+ */
+const sanitizeReviewDirective = (raw: string): string =>
+    raw
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\u0000-\u001f\u007f]/g, ' ')
+        .replace(/[<>]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+/**
  * Extract the free-text steering directive a user appended to a review command
- * (`@kody review <directive>`). Returns the trimmed directive, or undefined when
- * the comment is not a review command or carries no extra text (the common
+ * (`@kody review <directive>`). Returns the sanitized directive, or undefined
+ * when the comment is not a review command or carries no extra text (the common
  * `@kody review` / `@kody review --force` case). Only the first line after the
- * command is used, the `--force` flag and surrounding quotes are stripped, and
- * the result is length-capped. Steers what the finder focuses on; it never
- * filters — clear issues elsewhere are still reported.
+ * command is used; the `--force` flag and surrounding quotes are stripped; the
+ * text is sanitized (see sanitizeReviewDirective) and length-capped. Steers what
+ * the finder focuses on; it never filters — clear issues elsewhere are still
+ * reported.
  */
 export const parseReviewDirective = (
     text: string | undefined | null,
@@ -114,12 +135,13 @@ export const parseReviewDirective = (
     const head = text.match(KODY_REVIEW_COMMAND_HEAD_PATTERN);
     if (!head) return undefined;
 
-    const directive = text
-        .slice(head[0].length)
-        .split(/\r?\n/)[0]
-        .trim()
-        .replace(/^["'`]+|["'`]+$/g, '')
-        .trim();
+    const directive = sanitizeReviewDirective(
+        text
+            .slice(head[0].length)
+            .split(/\r?\n/)[0]
+            .trim()
+            .replace(/^["'`]+|["'`]+$/g, ''),
+    );
 
     if (!directive) return undefined;
     return directive.slice(0, MAX_REVIEW_DIRECTIVE_LENGTH);
