@@ -114,6 +114,8 @@
         "eval:kody-rules:gate": "node evals/kody-rules/real-agent.js --dataset=github-cases --gate",
         "eval:kody-rules:bench": "node evals/kody-rules/build-bench-cases.js && node evals/kody-rules/real-agent.js --dataset=bench-cases",
         "eval:kody-rules:harvest": "node evals/kody-rules/harvest-github-cases.js",
+        "eval:anchoring": "node evals/anchoring/anchor-eval.js --limit=25",
+        "eval:anchoring:gate": "node evals/anchoring/anchor-eval.js --limit=25 --gate",
         "eval:investigation": "node evals/investigation/run-eval.js",
         "eval:investigation:all": "node evals/investigation/run-eval.js --all",
         "eval:investigation:no-cache": "node evals/investigation/run-eval.js --no-cache",
