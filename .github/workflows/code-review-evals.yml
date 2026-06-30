@@ -1,0 +1,98 @@
+name: "Code-review evals (replay suite)"
+
+# Replacement for the live QA model benchmark. Runs the real review engine over
+# benchmark PR diffs via DETERMINISTIC TOOL REPLAY — same engine code, same
+# tier-0 models — so there is no deploy, no live reviews, and it runs in minutes
+# from the PR/branch itself instead of post-deploy on qa.web.kodus.io.
+#
+# - pull_request (engine paths)   → LIGHT gate: one cheap model, fast feedback.
+# - push to main (engine paths)   → FULL matrix: every tier-0 model (per-model
+#                                   comparison, the benchmark's core value).
+# - workflow_dispatch             → manual; pin one model via `only_model`.
+#
+# Secrets reused from the QA environment (same names the benchmark uses):
+#   BYOK_OPENAI_API_KEY, BYOK_ANTHROPIC_API_KEY, BYOK_GOOGLE_API_KEY,
+#   BYOK_MOONSHOT_API_KEY, BYOK_ZHIPU_API_KEY
+
+on:
+    workflow_dispatch:
+        inputs:
+            only_model:
+                description: "Pin one tier-0 model id (e.g. gpt-5.4, claude-sonnet-4-6); empty = full matrix"
+                required: false
+                default: ""
+                type: string
+    push:
+        branches: [main]
+        paths:
+            - "libs/code-review/**"
+            - "libs/ee/codeReview/**"
+            - "libs/ee/kodyRules/**"
+            - "libs/kodyRules/**"
+            - "packages/kodus-flow/**"
+            - "apps/web/src/features/ee/byok/_data/curated-models.json"
+            - "evals/**"
+    pull_request:
+        paths:
+            - "libs/code-review/**"
+            - "libs/ee/codeReview/**"
+            - "libs/ee/kodyRules/**"
+            - "libs/kodyRules/**"
+            - "packages/kodus-flow/**"
+            - "evals/**"
+
+concurrency:
+    group: code-review-evals-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    # Decide the model matrix from the event: PR = one cheap model (fast gate),
+    # push/dispatch = the full tier-0 set (or the pinned model).
+    prepare:
+        runs-on: ubuntu-latest
+        outputs:
+            models: ${{ steps.pick.outputs.models }}
+        steps:
+            - id: pick
+              run: |
+                  if [ -n "${{ github.event.inputs.only_model }}" ]; then
+                      echo "models=[\"${{ github.event.inputs.only_model }}\"]" >> "$GITHUB_OUTPUT"
+                  elif [ "${{ github.event_name }}" = "pull_request" ]; then
+                      echo 'models=["gpt-5.4-mini"]' >> "$GITHUB_OUTPUT"
+                  else
+                      echo 'models=["gpt-5.4","claude-sonnet-4-6","gemini-3.1-pro-preview-customtools","gemini-3-flash-preview","kimi-k2.6","kimi-k2.7-code","glm-5.1"]' >> "$GITHUB_OUTPUT"
+                  fi
+
+    suite:
+        needs: prepare
+        name: "suite · ${{ matrix.model }}"
+        runs-on: ubuntu-latest
+        # Secrets live in the QA environment (same as the benchmark).
+        environment: QA
+        timeout-minutes: 45
+        strategy:
+            fail-fast: false
+            matrix:
+                model: ${{ fromJSON(needs.prepare.outputs.models) }}
+        steps:
+            - uses: actions/checkout@v6.0.2
+            - uses: pnpm/action-setup@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: "22"
+                  cache: "pnpm"
+            - name: Install deps
+              run: pnpm install --frozen-lockfile
+            - name: Run eval suite
+              # PR runs are advisory (fast feedback) while thresholds are still
+              # being calibrated per model/sample-size; push-to-main and dispatch
+              # ENFORCE the gate. Flip this off once the PR-leg model is calibrated.
+              continue-on-error: ${{ github.event_name == 'pull_request' }}
+              env:
+                  BYOK_OPENAI_API_KEY: ${{ secrets.BYOK_OPENAI_API_KEY }}
+                  BYOK_ANTHROPIC_API_KEY: ${{ secrets.BYOK_ANTHROPIC_API_KEY }}
+                  BYOK_GOOGLE_API_KEY: ${{ secrets.BYOK_GOOGLE_API_KEY }}
+                  BYOK_MOONSHOT_API_KEY: ${{ secrets.BYOK_MOONSHOT_API_KEY }}
+                  BYOK_ZHIPU_API_KEY: ${{ secrets.BYOK_ZHIPU_API_KEY }}
+                  API_CRYPTO_KEY: ${{ secrets.API_CRYPTO_KEY }}
+              run: node evals/run-suite.js --model=${{ matrix.model }} --prs=5 --runs=3
