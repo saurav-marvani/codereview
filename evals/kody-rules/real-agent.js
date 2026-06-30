@@ -53,7 +53,9 @@ const MODELS = {
     'sonnet-4.6': { model: 'anthropic-claude-4.6-sonnet', keyEnv: ['DO_MODEL_ACCESS_KEY'], baseURL: 'https://inference.do-ai.run/v1' },
 };
 
-const cases = require('./' + DATASET);
+const allCases = require('./' + DATASET);
+// --limit=N caps how many cases run (CI scopes to a small PR set).
+const cases = args.limit ? allCases.slice(0, +args.limit) : allCases;
 
 // --- replay (same shape/semantics as evals/investigation/agent-provider.js) ---
 function normalizePath(v) { return String(v || '').replace(/^\/+/, '').replace(/\\/g, '/').replace(/\/+/g, '/'); }
@@ -151,14 +153,20 @@ async function runCase(provider, c, changedFiles, replay) {
 }
 
 async function main() {
-    const spec = MODELS[MODELKEY];
-    if (!spec) throw new Error(`unknown model ${MODELKEY}`);
-    const key = spec.keyEnv.map((e) => process.env[e]).find(Boolean);
-    if (!key) throw new Error(`no key (${spec.keyEnv.join('/')})`);
-    // Drive the real self-hosted model seam.
-    process.env.API_LLM_PROVIDER_MODEL = spec.model;
-    process.env.API_OPEN_AI_API_KEY = key;
-    if (spec.baseURL) process.env.API_OPENAI_FORCE_BASE_URL = spec.baseURL;
+    // tier-0 model ids route through the shared seam (any supported provider);
+    // legacy local presets (DO models) keep working via the registry below.
+    const { TIER0, applyModelEnv } = require('../shared/tier0-models');
+    if (TIER0[MODELKEY]) {
+        applyModelEnv(MODELKEY);
+    } else {
+        const spec = MODELS[MODELKEY];
+        if (!spec) throw new Error(`unknown model ${MODELKEY}`);
+        const key = spec.keyEnv.map((e) => process.env[e]).find(Boolean);
+        if (!key) throw new Error(`no key (${spec.keyEnv.join('/')})`);
+        process.env.API_LLM_PROVIDER_MODEL = spec.model;
+        process.env.API_OPEN_AI_API_KEY = key;
+        if (spec.baseURL) process.env.API_OPENAI_FORCE_BASE_URL = spec.baseURL;
+    }
 
     const provider = buildProvider();
 
