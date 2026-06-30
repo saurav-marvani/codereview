@@ -1,14 +1,21 @@
-// Code-review eval suite — runs the replay evals for ONE model and gates on the
-// deterministic ones. This is the per-PR/per-model replacement for the live QA
-// benchmark: same engine code, same tier-0 models, but via deterministic tool
-// replay (no deploy, no live reviews).
+// Code-review eval suite — runs the replay evals for ONE model. The per-PR/
+// per-model replacement for the live QA benchmark: same engine code, same tier-0
+// models, but via deterministic tool replay (no deploy, no live reviews).
 //
-//   node evals/run-suite.js --model=gpt-5.4 [--prs=5] [--runs=3]
+//   node evals/run-suite.js --model=gpt-5.4 [--prs=5] [--runs=3] [--enforce]
 //
-// Exit non-zero if any GATING eval fails. Non-gating evals (still being
-// calibrated) run report-only so a flaky threshold can't block CI yet.
+// Exit-code policy (so a broken model never looks green — problem #3):
+//   - INFRA error in any eval (no key, bad model id, crash) → suite ALWAYS fails.
+//   - GATE failure (a quality threshold) → reported; fails the suite only with
+//     --enforce (off by default = post-merge monitor while thresholds calibrate).
+//
+// Per-eval exit codes the suite reads: 0 = pass, 1 = gate-fail, 2 = infra. The
+// deterministic evals (kody-rules, anchoring) honor this contract. The promptfoo
+// evals (finder, promotion) can't cleanly separate gate-vs-infra on their exit
+// code yet, so they run REPORT-ONLY (logged, never block) until classified.
 const { spawnSync } = require('child_process');
 const path = require('path');
+const { TIER0, promptfooFlags } = require('./shared/tier0-models');
 
 const args = Object.fromEntries(process.argv.slice(2).map((a) => {
     const m = a.match(/^--([^=]+)(?:=(.*))?$/); return m ? [m[1], m[2] ?? true] : [a, true];
@@ -16,43 +23,70 @@ const args = Object.fromEntries(process.argv.slice(2).map((a) => {
 const MODEL = args.model || 'gpt-5.4';
 const PRS = +(args.prs || 5);
 const RUNS = +(args.runs || 3);
+const ENFORCE = !!args.enforce;
 const ROOT = path.join(__dirname, '..');
 
-// Each entry: a real-engine replay eval invoked per-model. `gate: true` means a
-// non-zero exit fails the suite (the eval owns its own thresholds via --gate).
+if (!TIER0[MODEL]) {
+    console.error(`unknown tier-0 model '${MODEL}' (known: ${Object.keys(TIER0).join(', ')})`);
+    process.exit(2);
+}
+
+// kind: 'gate'   → exit-code contract honored (0 pass / 1 gate / 2 infra), gates.
+//       'report' → promptfoo eval; runs for coverage, never blocks (yet).
+//       'todo'   → not wired across tier-0 models yet (logged, skipped).
 const SUITE = [
-    {
-        name: 'kody-rules',
-        gate: true,
-        cmd: ['node', 'evals/kody-rules/real-agent.js', '--dataset=github-cases', '--gate', `--model=${MODEL}`, `--runs=${RUNS}`, `--limit=${PRS}`],
-    },
-    {
-        name: 'anchoring',
-        gate: true,
-        cmd: ['node', 'evals/anchoring/anchor-eval.js', '--gate', `--model=${MODEL}`, `--limit=${PRS}`],
-    },
-    // TODO (follow-up): wire the promptfoo evals (finder-recall, promotion,
-    // safeguard, dedup) per-model and promote to gate once their thresholds are
-    // calibrated for the CI sample size. They run in their own jobs today.
+    { name: 'kody-rules', kind: 'gate',
+      cmd: ['node', 'evals/kody-rules/real-agent.js', '--dataset=github-cases', '--gate', `--model=${MODEL}`, `--runs=${RUNS}`, `--limit=${PRS}`] },
+    { name: 'anchoring', kind: 'gate',
+      cmd: ['node', 'evals/anchoring/anchor-eval.js', '--gate', `--model=${MODEL}`, `--limit=${PRS}`] },
+    { name: 'finder-recall', kind: 'report',
+      cmd: ['node', 'evals/investigation/run-eval.js', '--no-cache', ...promptfooFlags(MODEL)] },
+    { name: 'promotion', kind: 'report',
+      cmd: ['node', 'evals/promotion/run-eval.js', '--no-cache', ...promptfooFlags(MODEL)] },
+    // dedup (no model flag / no threshold gate) and safeguard (bash harness) are
+    // not wired across tier-0 models yet — surfaced so coverage gaps are visible.
+    { name: 'dedup', kind: 'todo' },
+    { name: 'safeguard', kind: 'todo' },
 ];
 
 function run(step) {
-    console.log(`\n┌─ eval: ${step.name} (model=${MODEL})  ${step.gate ? '[GATING]' : '[report-only]'}`);
+    if (step.kind === 'todo') {
+        console.log(`\n┌─ eval: ${step.name}  [TODO — not wired across tier-0 models]`);
+        console.log(`└─ ${step.name}: ⏭️  skipped`);
+        return { name: step.name, kind: step.kind, status: 'skip' };
+    }
+    console.log(`\n┌─ eval: ${step.name} (model=${MODEL})  [${step.kind === 'gate' ? 'GATING' : 'report-only'}]`);
     const r = spawnSync(step.cmd[0], step.cmd.slice(1), { cwd: ROOT, stdio: 'inherit', env: process.env });
-    const ok = r.status === 0;
-    console.log(`└─ ${step.name}: ${ok ? '✅ pass' : '❌ fail'} (exit ${r.status})`);
-    return ok;
+    const code = r.status;
+    let status;
+    if (r.error || code === null) status = 'infra';           // failed to spawn / killed
+    else if (code === 0) status = 'pass';
+    else if (step.kind === 'gate') status = code === 1 ? 'gate' : 'infra'; // 1=gate, 2+=infra
+    else status = 'report-fail';                              // promptfoo non-zero: report-only
+    console.log(`└─ ${step.name}: ${{ pass: '✅ pass', gate: '⚠️ gate-fail', infra: '❌ INFRA ERROR', 'report-fail': '⚠️ report-fail (non-blocking)', skip: '⏭️ skip' }[status]} (exit ${code})`);
+    return { name: step.name, kind: step.kind, status };
 }
 
-console.log(`════ code-review eval suite · model=${MODEL} · ${PRS} PRs · ${RUNS} runs ════`);
-const results = SUITE.map((s) => ({ name: s.name, gate: s.gate, ok: run(s) }));
+console.log(`════ code-review eval suite · model=${MODEL} · ${PRS} PRs · ${RUNS} runs${ENFORCE ? ' · ENFORCE' : ' · monitor'} ════`);
+const results = SUITE.map(run);
 
 console.log(`\n════ SUITE SUMMARY (${MODEL}) ════`);
-for (const r of results) console.log(`  ${r.ok ? '✅' : '❌'} ${r.name}${r.gate ? '' : ' (report-only)'}`);
+for (const r of results) console.log(`  ${{ pass: '✅', gate: '⚠️', infra: '❌', 'report-fail': '⚠️', skip: '⏭️' }[r.status]} ${r.name} (${r.status})`);
 
-const gatingFails = results.filter((r) => r.gate && !r.ok);
-if (gatingFails.length) {
-    console.error(`\n❌ SUITE FAILED for ${MODEL}: ${gatingFails.map((r) => r.name).join(', ')}`);
-    process.exit(1);
+const infra = results.filter((r) => r.status === 'infra');
+const gateFails = results.filter((r) => r.status === 'gate');
+
+// Infra errors ALWAYS fail — a misrouted/broken model must never look green.
+if (infra.length) {
+    console.error(`\n❌ SUITE FAILED for ${MODEL}: infra error in ${infra.map((r) => r.name).join(', ')} (broken model/key/crash — not a quality result)`);
+    process.exit(2);
 }
-console.log(`\n✅ SUITE PASSED for ${MODEL}`);
+// Gate failures fail only under --enforce (monitor mode while calibrating).
+if (gateFails.length) {
+    if (ENFORCE) {
+        console.error(`\n❌ SUITE FAILED for ${MODEL}: gate(s) ${gateFails.map((r) => r.name).join(', ')}`);
+        process.exit(1);
+    }
+    console.log(`\n⚠️  ${MODEL}: gate(s) ${gateFails.map((r) => r.name).join(', ')} below threshold (monitor mode — not blocking)`);
+}
+console.log(`\n✅ SUITE OK for ${MODEL}${gateFails.length ? ' (gate warnings above)' : ''}`);

@@ -58,4 +58,23 @@ function applyModelEnv(modelId, env = process.env) {
     return spec;
 }
 
-module.exports = { TIER0, EXCLUDED_BY_DEFAULT, defaultMatrix, applyModelEnv };
+// Flags for the promptfoo evals (investigation, promotion) that accept explicit
+// --provider/--model/--base-url/--api-key-env — lets them run the SAME tier-0
+// model without depending on their own (stale) preset registries. The key is
+// read from the env var applyModelEnv populated.
+const PROMPTFOO_PROVIDER = {
+    openai: 'openai', anthropic: 'anthropic', google: 'google', openai_compatible: 'openai-compatible',
+};
+function promptfooFlags(modelId) {
+    const spec = TIER0[modelId];
+    if (!spec) throw new Error(`unknown tier-0 model '${modelId}'`);
+    const apiKeyEnv = spec.provider === 'google' ? 'API_GOOGLE_AI_API_KEY' : 'API_OPEN_AI_API_KEY';
+    return [
+        '--provider', PROMPTFOO_PROVIDER[spec.provider],
+        '--model', modelId,
+        '--api-key-env', apiKeyEnv,
+        ...(spec.baseURL ? ['--base-url', spec.baseURL] : []),
+    ];
+}
+
+module.exports = { TIER0, EXCLUDED_BY_DEFAULT, defaultMatrix, applyModelEnv, promptfooFlags };

@@ -229,4 +229,6 @@ async function main() {
     }
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+// Exit-code contract for the suite: 1 = gate failed (quality regression),
+// 2 = infra error (no key, bad model id, crash) — always surfaced loudly.
+main().catch((e) => { console.error(e); process.exit(2); });

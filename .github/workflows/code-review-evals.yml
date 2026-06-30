@@ -78,10 +78,10 @@ jobs:
             - name: Install deps
               run: pnpm install --frozen-lockfile
             - name: Run eval suite
-              # Post-merge monitor while thresholds are calibrated against real
-              # per-model numbers; don't fail the run yet. Flip to false to enforce
-              # once the first full-matrix runs have set the baselines.
-              continue-on-error: true
+              # The suite's own exit code decides: an INFRA error (broken model/
+              # key/crash) always fails this step; a GATE threshold miss only fails
+              # with --enforce (added once baselines are calibrated). So a misrouted
+              # model goes red, but a still-calibrating quality gate doesn't.
               env:
                   BYOK_OPENAI_API_KEY: ${{ secrets.BYOK_OPENAI_API_KEY }}
                   BYOK_ANTHROPIC_API_KEY: ${{ secrets.BYOK_ANTHROPIC_API_KEY }}
