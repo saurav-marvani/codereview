@@ -361,6 +361,22 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             },
         });
 
+        // Observability for the `@kody review <directive>` steering feature:
+        // emit a marker when a directive reached the finder, so it's visible in
+        // logs (and assertable in E2E) that the review was actually focused.
+        if (context.reviewDirective) {
+            this.logger.log({
+                message: `[AGENT][review-focus] steering PR#${prNumber} by directive: "${context.reviewDirective}"`,
+                context: this.stageName,
+                metadata: {
+                    prNumber,
+                    reviewDirective: context.reviewDirective,
+                    organizationId:
+                        context.organizationAndTeamData?.organizationId,
+                },
+            });
+        }
+
         try {
             // Build progress callback for real-time agent traces in PR timeline
             const executionUuid =
