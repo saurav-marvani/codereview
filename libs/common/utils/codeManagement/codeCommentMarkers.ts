@@ -117,6 +117,23 @@ const sanitizeReviewDirective = (raw: string): string =>
         .trim();
 
 /**
+ * Sanitize + length-cap an already-extracted directive string. Shared by the
+ * PR-comment path (parseReviewDirective) and the CLI path (`--focus`), so every
+ * surface that feeds a steering directive into the finder applies the same
+ * structural prompt-injection hardening. Returns undefined when empty.
+ */
+export const normalizeReviewDirective = (
+    raw: string | undefined | null,
+): string | undefined => {
+    if (!raw) return undefined;
+    const clean = sanitizeReviewDirective(String(raw)).slice(
+        0,
+        MAX_REVIEW_DIRECTIVE_LENGTH,
+    );
+    return clean || undefined;
+};
+
+/**
  * Extract the free-text steering directive a user appended to a review command
  * (`@kody review <directive>`). Returns the sanitized directive, or undefined
  * when the comment is not a review command or carries no extra text (the common
@@ -135,16 +152,13 @@ export const parseReviewDirective = (
     const head = text.match(KODY_REVIEW_COMMAND_HEAD_PATTERN);
     if (!head) return undefined;
 
-    const directive = sanitizeReviewDirective(
+    return normalizeReviewDirective(
         text
             .slice(head[0].length)
             .split(/\r?\n/)[0]
             .trim()
             .replace(/^["'`]+|["'`]+$/g, ''),
     );
-
-    if (!directive) return undefined;
-    return directive.slice(0, MAX_REVIEW_DIRECTIVE_LENGTH);
 };
 
 /**

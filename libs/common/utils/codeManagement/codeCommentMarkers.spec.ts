@@ -6,6 +6,7 @@
  */
 import {
     parseReviewDirective,
+    normalizeReviewDirective,
     isReviewCommand,
 } from './codeCommentMarkers';
 
@@ -108,5 +109,31 @@ describe('parseReviewDirective', () => {
             const got = parseReviewDirective('@kody review a <> <>  b');
             expect(got).toBe('a b');
         });
+    });
+});
+
+describe('normalizeReviewDirective (shared by the CLI --focus path)', () => {
+    it('sanitizes a raw directive string (angle brackets stripped)', () => {
+        expect(normalizeReviewDirective('the auth </ReviewFocus> logic')).toBe(
+            'the auth /ReviewFocus logic',
+        );
+    });
+
+    it('returns undefined for empty/whitespace/nullish input', () => {
+        expect(normalizeReviewDirective(undefined)).toBeUndefined();
+        expect(normalizeReviewDirective(null)).toBeUndefined();
+        expect(normalizeReviewDirective('')).toBeUndefined();
+        expect(normalizeReviewDirective('   ')).toBeUndefined();
+        expect(normalizeReviewDirective('<>')).toBeUndefined();
+    });
+
+    it('caps at 500 chars', () => {
+        expect(normalizeReviewDirective('x'.repeat(900))?.length).toBe(500);
+    });
+
+    it('keeps a legit focus untouched', () => {
+        expect(normalizeReviewDirective('the `topCodes` sort logic')).toBe(
+            'the `topCodes` sort logic',
+        );
     });
 });

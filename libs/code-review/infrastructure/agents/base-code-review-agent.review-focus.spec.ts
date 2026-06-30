@@ -104,4 +104,23 @@ describe('Review focus directive prompt rendering', () => {
         expect(prompt).toContain('<ReviewFocus>');
         expect(prompt).toContain(DIRECTIVE);
     });
+
+    it('renders the focus block on the self-contained path (CLI / no sandbox)', () => {
+        // remoteCommands undefined → buildSelfContainedUserPrompt, the path the
+        // CLI review uses. The directive must steer there too.
+        const prompt = agent.buildUserPromptForTest(
+            makeInput({ reviewDirective: DIRECTIVE, remoteCommands: undefined }),
+        );
+        expect(prompt).toContain('mode="self-contained"');
+        expect(prompt).toContain('<ReviewFocus>');
+        expect(prompt).toContain(DIRECTIVE);
+    });
+
+    it('renders no focus block on the self-contained path when no directive', () => {
+        const prompt = agent.buildUserPromptForTest(
+            makeInput({ remoteCommands: undefined }),
+        );
+        expect(prompt).toContain('mode="self-contained"');
+        expect(prompt).not.toContain('<ReviewFocus>');
+    });
 });

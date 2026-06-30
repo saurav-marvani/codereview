@@ -2310,6 +2310,7 @@ ${memoryRulesSection}
         return (
             `<ReviewTask mode="self-contained">
   ${prContextSection}
+${this.formatReviewFocus(input.reviewDirective)}
 
   <Diffs>
 ${diffsSection}
