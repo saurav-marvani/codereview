@@ -10,6 +10,7 @@ test("allScenarios: includes the registered release-gate scenarios", () => {
         "code-review-basic",
         "code-review-vertex-byok",
         "command-review",
+        "conversation-anthropic-byok",
         "conversation-vertex-byok",
         "kody-rules-create-and-apply",
         "license-attribution",

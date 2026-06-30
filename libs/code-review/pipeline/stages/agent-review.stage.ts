@@ -7,6 +7,13 @@ import { tracedGenerateText } from '@libs/llm/llm-call';
 import { resolveAdaptiveProfile } from '@libs/code-review/infrastructure/agents/engine/adaptive-fit';
 import { resolveContextWindow } from '@libs/llm/model-context-window';
 import {
+    DEDUP_MODEL_ID,
+    DEDUP_SCHEMA,
+    DEDUP_CONTENT_THRESHOLD,
+    buildDedupPrompt,
+    contentSimilarity,
+} from '@libs/code-review/infrastructure/agents/llm/dedup-prompt';
+import {
     dedupReviewWarnings,
     type ReviewWarning,
 } from '@libs/code-review/infrastructure/agents/engine/review-warnings';
@@ -114,12 +121,20 @@ function extractValidDiffLines(patch?: string): Array<[number, number]> {
 
 /**
  * Snap suggestion line numbers to the closest valid diff range.
- * If the suggestion lines don't overlap any diff range, finds the nearest one.
+ *
+ * Returns the suggestion clamped to the overlapping hunk when its lines
+ * (partially) overlap a changed range. Returns `null` when the suggestion
+ * cites concrete lines that do NOT overlap ANY changed hunk — i.e. the
+ * finding is about code this PR did not touch. Such findings used to be
+ * clamped onto the nearest hunk, which silently re-anchored a comment about
+ * unchanged code onto a changed line (false positive on unchanged code).
+ * Dropping them keeps the review honest: "only suggest changes on lines
+ * present in the diff".
  */
-function snapLinesToDiff(
+export function snapLinesToDiff(
     suggestion: Partial<CodeSuggestion>,
     validRanges: Array<[number, number]>,
-): Partial<CodeSuggestion> {
+): Partial<CodeSuggestion> | null {
     if (validRanges.length === 0) return suggestion;
 
     const start = suggestion.relevantLinesStart;
@@ -135,7 +150,11 @@ function snapLinesToDiff(
         };
     }
 
-    // Find all overlapping ranges and pick the best one (largest overlap)
+    // Find all overlapping ranges and pick the best one (largest overlap).
+    // Overlap is measured inclusively (overlapEnd - overlapStart + 1) so a
+    // single shared line counts as overlap size 1 — otherwise a finding that
+    // sits exactly on one changed line (start === end) would score 0 and be
+    // treated as "no overlap" and dropped.
     let bestOverlap: [number, number] | null = null;
     let bestOverlapSize = 0;
 
@@ -143,7 +162,7 @@ function snapLinesToDiff(
         if (start <= re && end >= rs) {
             const overlapStart = Math.max(start, rs);
             const overlapEnd = Math.min(end, re);
-            const overlapSize = overlapEnd - overlapStart;
+            const overlapSize = overlapEnd - overlapStart + 1;
             if (overlapSize > bestOverlapSize) {
                 bestOverlapSize = overlapSize;
                 bestOverlap = [overlapStart, overlapEnd];
@@ -159,27 +178,10 @@ function snapLinesToDiff(
         };
     }
 
-    // No overlap — find the closest range
-    let closestRange = validRanges[0];
-    let closestDist = Infinity;
-
-    for (const [rs, re] of validRanges) {
-        const dist = Math.min(Math.abs(start - rs), Math.abs(start - re));
-        if (dist < closestDist) {
-            closestDist = dist;
-            closestRange = [rs, re];
-        }
-    }
-
-    const [rs, re] = closestRange;
-    const clampedStart = Math.max(rs, Math.min(start, re));
-    const clampedEnd = Math.min(re, Math.max(clampedStart, end));
-
-    return {
-        ...suggestion,
-        relevantLinesStart: clampedStart,
-        relevantLinesEnd: clampedEnd,
-    };
+    // No overlap with any changed hunk — the finding is about code this PR
+    // did not modify. Drop it instead of re-anchoring it onto an unrelated
+    // changed line (which produced false positives on unchanged code).
+    return null;
 }
 
 /**
@@ -452,6 +454,16 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                         ?.main,
                 prTitle: context.pullRequest?.title,
                 prBody: context.pullRequest?.body,
+                // Commit list (oldest→newest) so commit-hygiene rules can be
+                // judged against real commit boundaries instead of inferred
+                // from the aggregated/incremental diff. prAllCommits covers the
+                // whole PR; fall back to prCommits (new-since-last) when absent.
+                commits: (context.prAllCommits ?? context.prCommits)?.map(
+                    (c) => ({
+                        sha: c.sha,
+                        message: c.commit?.message ?? '',
+                    }),
+                ),
                 kodyRules: context.codeReviewConfig?.kodyRules,
                 reviewOptions,
                 onAgentProgress,
@@ -714,24 +726,43 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             // Snap suggestion line numbers to valid diff ranges before passing downstream.
             // GitHub rejects inline comments on lines that aren't part of the diff.
-            const validatedSuggestions = result.suggestions.map((s) => {
-                const file = changedFiles.find(
-                    (f) => f.filename === s.relevantFile,
-                );
-                if (!file) return s;
-                const validRanges = extractValidDiffLines(file.patch);
-                const snapped = snapLinesToDiff(s, validRanges);
-                if (
-                    snapped.relevantLinesStart !== s.relevantLinesStart ||
-                    snapped.relevantLinesEnd !== s.relevantLinesEnd
-                ) {
-                    this.logger.log({
-                        message: `[AGENT] Snapped lines for ${s.relevantFile}: ${s.relevantLinesStart}-${s.relevantLinesEnd} → ${snapped.relevantLinesStart}-${snapped.relevantLinesEnd}`,
-                        context: this.stageName,
-                    });
-                }
-                return snapped;
-            });
+            // A finding whose cited lines don't overlap ANY changed hunk is dropped
+            // (snapLinesToDiff returns null) rather than clamped onto an unrelated
+            // changed line — clamping was re-anchoring comments about UNCHANGED code
+            // onto the diff and shipping them as false positives.
+            const changedFilesByName = new Map(
+                changedFiles.map((f) => [f.filename, f]),
+            );
+            const validatedSuggestions = result.suggestions
+                .map((s) => {
+                    const file = changedFilesByName.get(s.relevantFile);
+                    if (!file) return s;
+                    const validRanges = extractValidDiffLines(file.patch);
+                    const snapped = snapLinesToDiff(s, validRanges);
+                    if (snapped === null) {
+                        this.logger.log({
+                            message: `[AGENT] Dropped out-of-diff suggestion for ${s.relevantFile}: lines ${s.relevantLinesStart}-${s.relevantLinesEnd} do not overlap any changed hunk`,
+                            context: this.stageName,
+                        });
+                        allDiscarded.push({
+                            ...s,
+                            priorityStatus:
+                                PriorityStatus.DISCARDED_BY_CODE_DIFF,
+                        });
+                        return null;
+                    }
+                    if (
+                        snapped.relevantLinesStart !== s.relevantLinesStart ||
+                        snapped.relevantLinesEnd !== s.relevantLinesEnd
+                    ) {
+                        this.logger.log({
+                            message: `[AGENT] Snapped lines for ${s.relevantFile}: ${s.relevantLinesStart}-${s.relevantLinesEnd} → ${snapped.relevantLinesStart}-${snapped.relevantLinesEnd}`,
+                            context: this.stageName,
+                        });
+                    }
+                    return snapped;
+                })
+                .filter((s): s is Partial<CodeSuggestion> => s !== null);
 
             // Verify/Discover removed — was hurting recall across all models.
             // Benchmark showed F1 drops of -5.7pp to -18.3pp with verify enabled.
@@ -1343,20 +1374,14 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             };
         }
 
-        // Model resolution: Google AI key → BYOK via withStructuredOutputFallback → skip dedup
-        const googleKey =
-            process.env.API_GOOGLE_AI_API_KEY ||
-            process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+        // Model resolution: platform OpenAI key (gpt-5.4-mini, see DEDUP_MODEL_ID)
+        // → BYOK via withStructuredOutputFallback → skip dedup. Swapped off the
+        // Google path because that project can get rate-denied env-wide and
+        // silently disable dedup; gpt-5.4-mini is a separate vendor + quality-
+        // equivalent on the dedup eval.
+        const openaiKey = process.env.API_OPEN_AI_API_KEY;
 
         try {
-            // Build summaries with file + lines for cross-file comparison
-            const summaries = suggestions
-                .map(
-                    (s, i) =>
-                        `[${i}] ${s.relevantFile || 'unknown'}:${s.relevantLinesStart}-${s.relevantLinesEnd} [${s.label || 'unknown'}/${this.normalizeSeverity(s.severity)}]: ${s.oneSentenceSummary || s.suggestionContent?.substring(0, 200)}${s.improvedCode ? `\n    fix: ${s.improvedCode.substring(0, 100)}` : ''}`,
-                )
-                .join('\n');
-
             const runDedup = (model: any) =>
                 tracedGenerateText({
                     model: model as any,
@@ -1365,71 +1390,22 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                         telemetryMeta,
                     ),
                     output: Output.object({
-                        schema: jsonSchema({
-                            type: 'object',
-                            properties: {
-                                groups: {
-                                    type: 'array',
-                                    description:
-                                        'Groups of suggestions. Each group has a representative and its duplicates.',
-                                    items: {
-                                        type: 'object',
-                                        properties: {
-                                            keep: {
-                                                type: 'number',
-                                                description:
-                                                    'Index of the best suggestion to keep as representative',
-                                            },
-                                            duplicates: {
-                                                type: 'array',
-                                                items: { type: 'number' },
-                                                description:
-                                                    'Indices of duplicate suggestions (same bug, same or different locations)',
-                                            },
-                                        },
-                                        required: ['keep', 'duplicates'],
-                                        additionalProperties: false,
-                                    },
-                                },
-                                unique: {
-                                    type: 'array',
-                                    items: { type: 'number' },
-                                    description:
-                                        'Indices of suggestions that have no duplicates',
-                                },
-                            },
-                            required: ['groups', 'unique'],
-                            additionalProperties: false,
-                        }),
+                        schema: jsonSchema(DEDUP_SCHEMA as any),
                     }) as any,
-                    prompt: `You have ${suggestions.length} code review suggestions across multiple files in a PR. Identify duplicates and group them.
-
-BE CONSERVATIVE — when in doubt, do NOT group. Only group when you are highly confident they describe the exact same bug.
-
-There are TWO types of duplicates:
-
-1. **EXACT DUPLICATES** (same bug, same location): Multiple suggestions pointing to the same file and overlapping lines describing the same issue. Keep the one with the most detail, discard the rest.
-
-2. **CROSS-LOCATION DUPLICATES** (same bug pattern, different locations): Suggestions describing the EXACT SAME code pattern/bug but applied in different files (e.g., "forEach with async callback" found in 3 different files, or "missing null check on the same API call" in 2 files). These should be GROUPED — keep the best one as representative, list the others as duplicates.
-
-NOT duplicates (keep both):
-- Different bugs in the same file or nearby lines (e.g., "nil pointer" and "missing validation" in the same controller — these are DIFFERENT bugs)
-- Different root causes even if they sound similar (e.g., "add nil check" vs "fix typo" — different problems)
-- Suggestions about different code even if the description sounds similar
-
-IGNORE the category label (bug/security/performance) when deciding — two agents can independently find the same issue.
-Prefer keeping the suggestion with the most detail or clearest fix as the representative.
-
-${summaries}`,
+                    prompt: buildDedupPrompt(suggestions, (sev) =>
+                        this.normalizeSeverity(sev),
+                    ),
                 });
 
             let dedupResult: any;
-            if (googleKey) {
-                const { createGoogleGenerativeAI } =
-                    await import('@ai-sdk/google');
-                const model = createGoogleGenerativeAI({ apiKey: googleKey })(
-                    'gemini-3-flash-preview',
-                );
+            if (openaiKey) {
+                const { createOpenAI } = await import('@ai-sdk/openai');
+                const model = createOpenAI({
+                    apiKey: openaiKey,
+                    ...(process.env.API_OPENAI_FORCE_BASE_URL
+                        ? { baseURL: process.env.API_OPENAI_FORCE_BASE_URL }
+                        : {}),
+                })(DEDUP_MODEL_ID);
                 dedupResult = await runDedup(model);
             } else {
                 dedupResult = await withStructuredOutputFallback(
@@ -1515,7 +1491,11 @@ ${summaries}`,
 
             // Add unique suggestions as-is
             for (const idx of unique) {
-                if (Number.isInteger(idx) && idx >= 0 && idx < suggestions.length) {
+                if (
+                    Number.isInteger(idx) &&
+                    idx >= 0 &&
+                    idx < suggestions.length
+                ) {
                     indexToResult.set(idx, result.length);
                     result.push(suggestions[idx]);
                     addedIndices.add(idx);
@@ -1531,16 +1511,27 @@ ${summaries}`,
                 const keepIdx = group.keep;
                 const dupIndices = group.duplicates || [];
 
-                if (!Number.isInteger(keepIdx) || keepIdx < 0 || keepIdx >= suggestions.length) {
+                if (
+                    !Number.isInteger(keepIdx) ||
+                    keepIdx < 0 ||
+                    keepIdx >= suggestions.length
+                ) {
                     // Layer 2: keep is invalid — preserve valid duplicates as independent results
                     for (const dupIdx of dupIndices) {
                         classifiedIndices.add(dupIdx);
-                        if (Number.isInteger(dupIdx) && dupIdx >= 0 && dupIdx < suggestions.length && !addedIndices.has(dupIdx)) {
+                        if (
+                            Number.isInteger(dupIdx) &&
+                            dupIdx >= 0 &&
+                            dupIdx < suggestions.length &&
+                            !addedIndices.has(dupIdx)
+                        ) {
                             indexToResult.set(dupIdx, result.length);
                             result.push(suggestions[dupIdx]);
                             addedIndices.add(dupIdx);
                             uniqueSuggestions.push(
-                                this.summarizeDedupSuggestion(suggestions[dupIdx]),
+                                this.summarizeDedupSuggestion(
+                                    suggestions[dupIdx],
+                                ),
                             );
                         }
                     }
@@ -1554,7 +1545,11 @@ ${summaries}`,
                     if (existingIdx !== undefined) {
                         const locations: string[] = [];
                         for (const dupIdx of dupIndices) {
-                            if (Number.isInteger(dupIdx) && dupIdx >= 0 && dupIdx < suggestions.length) {
+                            if (
+                                Number.isInteger(dupIdx) &&
+                                dupIdx >= 0 &&
+                                dupIdx < suggestions.length
+                            ) {
                                 classifiedIndices.add(dupIdx);
                                 const dup = suggestions[dupIdx];
                                 const loc = `${dup.relevantFile}:${dup.relevantLinesStart}-${dup.relevantLinesEnd}`;
@@ -1566,12 +1561,18 @@ ${summaries}`,
                         }
                         if (locations.length > 0) {
                             const existing = result[existingIdx];
-                            const locList = locations.map((l) => `- \`${l}\``).join('\n');
+                            const locList = locations
+                                .map((l) => `- \`${l}\``)
+                                .join('\n');
                             existing.suggestionContent = `${existing.suggestionContent}\n\n**Also found in:**\n${locList}`;
                         }
                     } else {
                         for (const dupIdx of dupIndices) {
-                            if (Number.isInteger(dupIdx) && dupIdx >= 0 && dupIdx < suggestions.length) {
+                            if (
+                                Number.isInteger(dupIdx) &&
+                                dupIdx >= 0 &&
+                                dupIdx < suggestions.length
+                            ) {
                                 classifiedIndices.add(dupIdx);
                             }
                         }
@@ -1587,7 +1588,34 @@ ${summaries}`,
                 // Collect locations from duplicates that are in DIFFERENT locations
                 const otherLocations: string[] = [];
                 for (const dupIdx of dupIndices) {
-                    if (!Number.isInteger(dupIdx) || dupIdx < 0 || dupIdx >= suggestions.length) {
+                    if (
+                        !Number.isInteger(dupIdx) ||
+                        dupIdx < 0 ||
+                        dupIdx >= suggestions.length
+                    ) {
+                        continue;
+                    }
+                    // Content guard: only honor the model's merge when the two
+                    // findings actually describe the same thing. A low word-overlap
+                    // "duplicate" is a DIFFERENT bug the model over-merged (distinct
+                    // issues on overlapping lines) — keep it instead of dropping.
+                    if (
+                        contentSimilarity(
+                            suggestions[dupIdx],
+                            suggestions[keepIdx],
+                        ) < DEDUP_CONTENT_THRESHOLD
+                    ) {
+                        classifiedIndices.add(dupIdx);
+                        if (!addedIndices.has(dupIdx)) {
+                            addedIndices.add(dupIdx);
+                            indexToResult.set(dupIdx, result.length);
+                            result.push(suggestions[dupIdx]);
+                            uniqueSuggestions.push(
+                                this.summarizeDedupSuggestion(
+                                    suggestions[dupIdx],
+                                ),
+                            );
+                        }
                         continue;
                     }
                     classifiedIndices.add(dupIdx);

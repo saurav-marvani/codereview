@@ -78,7 +78,6 @@ import {
     CockpitController,
     CockpitProductivityController,
     CockpitReviewAnalyticsController,
-    CockpitWeeklyRecapController,
 } from './controllers/cockpit.controller';
 import { PullRequestController } from './controllers/pullRequest.controller';
 import { PullRequestMessagesController } from './controllers/pullRequestMessages.controller';
@@ -193,7 +192,6 @@ import { NotificationController } from './controllers/notification.controller';
         CockpitCodeHealthController,
         CockpitProductivityController,
         CockpitReviewAnalyticsController,
-        CockpitWeeklyRecapController,
         NotificationController,
     ],
     providers: [LangfuseShutdownProvider, TrialExtensionNotifierService],

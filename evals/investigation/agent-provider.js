@@ -161,9 +161,18 @@ function buildOpenAICompatibleConfig(config, apiKey, defaultName) {
 }
 
 async function createModel(config) {
+    // Env overrides so ANY model runs from one yaml (no per-provider config):
+    //   RECALL_MODEL, RECALL_PROVIDER, RECALL_BASEURL, RECALL_APIKEY_ENV.
+    if (process.env.RECALL_PROVIDER || process.env.RECALL_BASEURL) {
+        config = {
+            ...config,
+            ...(process.env.RECALL_PROVIDER ? { provider: process.env.RECALL_PROVIDER } : {}),
+            ...(process.env.RECALL_BASEURL ? { baseURL: process.env.RECALL_BASEURL } : {}),
+        };
+    }
     const provider = config.provider || 'google';
-    const model = config.model;
-    const apiKeyEnv = config.apiKeyEnv || defaultApiKeyEnv(provider);
+    const model = process.env.RECALL_MODEL || config.model;
+    const apiKeyEnv = process.env.RECALL_APIKEY_ENV || config.apiKeyEnv || defaultApiKeyEnv(provider);
     const apiKey = config.apiKey || process.env[apiKeyEnv];
 
     if (!model) {
@@ -454,6 +463,12 @@ function serializeResult(caseId, agentResult, remoteCommands) {
                 args: call.args || {},
             })),
             unexpectedToolCalls: remoteCommands.unexpectedCalls,
+            // Total calls the replay actually fielded (served + unserved) — the
+            // correct denominator for the replay hit-rate. The agent's toolCalls
+            // array undercounts (no retries/internal reads), so don't use it.
+            replayCalls: Array.isArray(remoteCommands.calls)
+                ? remoteCommands.calls.length
+                : null,
         },
     };
 }
@@ -516,19 +531,30 @@ class InvestigationAgentProvider {
             );
 
             stage = 'run-agent-loop';
-            const agentResult = await runAgentLoop({
-                model,
-                systemPrompt,
-                userPrompt,
-                remoteCommands,
-                changedFiles: input.changedFiles,
-                prNumber: input.prNumber,
-                repositoryFullName: input.repositoryFullName,
-                baseBranch: input.baseBranch,
-                reviewMode: input.reviewMode,
-                maxSteps: input.maxSteps,
-                agentName: `investigation-eval:${this.providerId}`,
-            });
+            // runAgentLoop(input, secrets): `secrets` was split out of `input` so
+            // span I/O never records keys/services. The deterministic tool replay
+            // (remoteCommands) lives in `secrets` now — passing it in `input` (the
+            // old single-arg shape) left the agent tool-less and crashed on
+            // `secrets.byokErrorReporter`.
+            const agentResult = await runAgentLoop(
+                {
+                    model,
+                    systemPrompt,
+                    userPrompt,
+                    changedFiles: input.changedFiles,
+                    prNumber: input.prNumber,
+                    repositoryFullName: input.repositoryFullName,
+                    baseBranch: input.baseBranch,
+                    reviewMode: input.reviewMode,
+                    maxSteps: input.maxSteps,
+                    agentName: `investigation-eval:${this.providerId}`,
+                },
+                {
+                    remoteCommands,
+                    byokConfig: undefined,
+                    byokErrorReporter: undefined,
+                },
+            );
 
             stage = 'serialize-result';
             const output = serializeResult(

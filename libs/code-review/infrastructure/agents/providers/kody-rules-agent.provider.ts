@@ -196,10 +196,26 @@ You validate code against the team's custom rules listed below. Your ONLY job is
             ? `\n  <PRContext>Title: ${input.prTitle}\nDescription: ${prDescription || '(empty)'}</PRContext>`
             : '';
 
+        // Commit list (oldest→newest) so commit-hygiene rules are judged
+        // against real commit boundaries rather than inferred from the diff.
+        const commits = input.commits ?? [];
+        const commitsSection = commits.length
+            ? `\n  <Commits>\n${commits
+                  .map(
+                      (c, i) =>
+                          `    ${i + 1}. ${(c.sha || '').substring(0, 8)} ${(
+                              c.message || ''
+                          ).split('\n')[0]}`,
+                  )
+                  .join(
+                      '\n',
+                  )}\n    NOTE: The diff above may be an aggregate of these commits or only an incremental push (a subset). It is NOT a single commit. Use this list — not the diff or PR description — to judge commit-hygiene rules.\n  </Commits>`
+            : '';
+
         return `<ReviewTask>${prContextSection}
   <Diffs>
 ${diffsSection}
-  </Diffs>
+  </Diffs>${commitsSection}
 
   <OutputFormat>
 After investigating with tools, respond with ONLY a JSON block.
@@ -258,6 +274,8 @@ If no violations found, respond with \`{"reasoning": "Checked all rules, no viol
     <Rule>Only report actual violations — not code that follows the rules.</Rule>
     <Rule>Include the rule title in the suggestionContent so the team knows which rule was violated.</Rule>
     <Rule>If you spot a real issue that does NOT map to any listed rule, DROP IT. Your scope is only team rules. Other agents cover generic bugs, security, performance.</Rule>
+    <Rule>Only flag lines that are present in the &lt;Diffs&gt; above. readFile/grep return the FULL file including code this PR did not touch — surrounding lines are context only. Never report a violation whose evidence (existingCode / relevantLines) lies outside the diff hunks.</Rule>
+    <Rule>Commit-hygiene rules (e.g. "don't mix mechanical and behavioral changes", "separate commits and call out which are mechanical") MUST be judged against the &lt;Commits&gt; list, NOT the aggregated diff or the PR description. Seeing several commits' changes together, or an incremental push that is purely mechanical, is NOT a violation — you are just viewing more than one commit at once, or a subset. This rule is HIGH-PRECISION and targets only WHOLESALE mechanical changes — project/file-wide reformatting, mass renames, or import re-sorting — that are bundled into the SAME commit as unrelated behavioral logic. The following are NOT violations and must NOT be reported: incidental comments or docstrings, local whitespace/indentation, and formatting that is a normal part of implementing the change in that commit; a commit that is entirely mechanical (e.g. "fix lint", "style: formatting"); or mechanical changes already isolated in their own commit. When in doubt, do NOT report.</Rule>
   </Rules>
 </ReviewTask>`;
     }

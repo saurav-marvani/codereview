@@ -48,6 +48,7 @@
         "selfhosted:deploy-all": "scripts/selfhosted/deploy-all.sh",
         "selfhosted:destroy": "scripts/selfhosted/destroy.sh",
         "selfhosted:destroy-all": "scripts/selfhosted/destroy-all.sh",
+        "selfhosted:reap": "scripts/selfhosted/reap.sh",
         "selfhosted:status": "scripts/selfhosted/status.sh",
         "selfhosted:ssh": "scripts/selfhosted/ssh.sh",
         "selfhosted:logs": "scripts/selfhosted/logs.sh",
