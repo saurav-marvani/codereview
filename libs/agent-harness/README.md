@@ -54,6 +54,8 @@ diferentes — **verify não é policy.**
 | `ai-sdk/ai-sdk-tool-registry` → `AiSdkToolRegistry` | carrega tools nativos do AI SDK (MCP/Zod) sem round-trip de schema |
 | `tools/in-memory-tool-registry` → `InMemoryToolRegistry` | registry de `AgentTool` (JSON-Schema) |
 | `policies/` → `BudgetPolicy`, `CompressionPolicy`, `CompletionGatePolicy`, `ForceFinalizePolicy` | Budget + Compression genéricas; CompletionGate + ForceFinalize são do padrão "result-tool" |
+| `compression/` → `ContextWindowCompressor` (+ `context-compressor`) | impl canônica do `Compressor` (janela de token); usada por code-review **e** pelo fetcher de skills via `CompressionPolicy` |
+| `verify/` → `llm-verdict` (`buildVerifierAgentSpec` / `extractVerdict` / `submitVerdictTool`) | scaffolding genérico de `Verdict` (doer≠checker, fail-open) — um domínio só fornece prompt + candidato→prompt |
 | `orchestration/verification-pass` → `runVerificationPass<T>` | driver do `Verifier<T>` sobre um conjunto de candidatos |
 | `orchestration/sub-agent.factory` → `DefaultSubAgentFactory` | sub-agent-como-tool |
 

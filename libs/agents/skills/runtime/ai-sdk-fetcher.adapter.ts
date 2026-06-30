@@ -14,12 +14,15 @@ import { type LanguageModel } from 'ai';
 
 import { AiSdkAgentRunner } from '@libs/agent-harness/infrastructure/ai-sdk/ai-sdk-agent-runner';
 import type {
+    AgentPolicy,
     AgentSpec,
     AgentTool,
     JSONSchema,
     RunState,
     ToolRegistry,
 } from '@libs/agent-harness/domain/contracts';
+import { CompressionPolicy } from '@libs/agent-harness/infrastructure/policies/compression.policy';
+import { ContextWindowCompressor } from '@libs/agent-harness/infrastructure/compression/context-window-compressor';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 import { resolveAgentModel } from '@libs/llm/agent-model';
 
@@ -112,6 +115,11 @@ export async function runMcpFetcherAgent(params: {
     providerOptions?: Record<string, unknown>;
     runId: string;
     signal?: AbortSignal;
+    /** Model context window (tokens). When set, a CompressionPolicy compacts the
+     *  message window before it overflows — same primitive the code-review finder
+     *  uses. OFF when absent: don't guess a window (wrong value over-compresses or
+     *  under-protects); a skill opts in via SKILL.md with its model's real size. */
+    contextWindowTokens?: number;
     /** BYOK failure reporter (ByokErrorCounter.record) — same as every agent. */
     reporter?: (input: {
         organizationId?: string;
@@ -134,12 +142,23 @@ export async function runMcpFetcherAgent(params: {
     });
     const runner = new AiSdkAgentRunner({ resolve: () => model });
 
+    // Cross-cutting as composable policies on the AgentSpec (the loop is thin;
+    // behavior lives here). Compression is the first: a no-op until the window
+    // approaches its threshold, so adding it can't regress a small fetch.
+    const policies: AgentPolicy[] = params.contextWindowTokens
+        ? [
+              new CompressionPolicy(
+                  new ContextWindowCompressor(params.contextWindowTokens),
+              ),
+          ]
+        : [];
+
     const spec: AgentSpec = {
         id: params.agentId,
         systemPrompt: params.systemPrompt,
         modelId: 'resolved',
         tools: params.tools,
-        policies: [],
+        policies,
         maxSteps: params.maxSteps,
         ...(params.providerOptions
             ? { providerOptions: params.providerOptions }

@@ -1,9 +1,11 @@
 /**
- * code-review (domain) — adapter from the existing context-compressor to the
- * agent-harness Compressor port. Closes the compression gap so large PRs don't
- * risk context overflow on the new harness.
+ * agent-harness — canonical Compressor: adapts the token-window context
+ * compressor to the harness Compressor port. Closes the compression gap so a
+ * long agentic run (large PR review, or a skill fetcher gathering lots of
+ * context) doesn't risk context overflow. Generic across consumers — both
+ * code-review and the skills fetcher plug this in via CompressionPolicy.
  *
- * Maps the core's AgentMessage <-> AI SDK ModelMessage and reuses the
+ * Maps the harness AgentMessage <-> AI SDK ModelMessage and reuses the
  * battle-tested shouldCompress/compressMessages. The investigation recap
  * (allToolCalls) is not threaded yet — passes [] (weaker recap, still
  * functional); a later step can wire the live tool-call history.
@@ -20,7 +22,7 @@ import {
     compressMessages,
     estimateMessagesTokens,
     shouldCompress,
-} from '@libs/code-review/infrastructure/agents/engine/context-compressor';
+} from './context-compressor';
 
 export class ContextWindowCompressor implements Compressor {
     constructor(private readonly contextWindowTokens: number) {}

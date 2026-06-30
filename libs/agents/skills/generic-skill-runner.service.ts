@@ -12,6 +12,7 @@ import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/
 import { MetricsCollectorService } from '@libs/core/infrastructure/metrics/metrics-collector.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import { buildProviderOptions } from '@libs/llm/reasoning-options';
+import { createAgentRunContext } from '@libs/llm/agent-run-context';
 import { ByokErrorCounter } from '@libs/notifications/application/byok-error-counter.service';
 import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service';
 
@@ -65,7 +66,11 @@ type ResolvedExecutionPolicy = Required<
         | 'fetcherMaxIterations'
         | 'analyzerMaxIterations'
     >
->;
+> &
+    // Optional (off by default): a skill opts into fetcher compression by
+    // declaring its model's real context window in SKILL.md, and/or into the
+    // analyzer verify gate.
+    Pick<SkillExecutionPolicy, 'contextWindowTokens' | 'verifyAnalyzerResult'>;
 
 export type SkillResolvedExecutionPolicy = ResolvedExecutionPolicy;
 
@@ -145,11 +150,15 @@ export class GenericSkillRunnerService {
             const requiredProviderHints = this.resolveRequiredProviderHints(
                 meta.requiredMcps,
             );
+            const requiredCategories = this.resolveRequiredCategories(
+                meta.requiredMcps,
+            );
 
             this.preflightRequiredMcps(
                 skillName,
                 meta.requiredMcps,
                 requiredProviderHints,
+                requiredCategories,
                 availableProviders,
                 mcpManagerServers,
             );
@@ -159,6 +168,7 @@ export class GenericSkillRunnerService {
                 requiredTools,
                 fetcherPolicy,
                 requiredProviderHints,
+                requiredCategories,
                 mcpManagerServers,
             );
             this.metricsCollector?.recordGauge(
@@ -257,20 +267,36 @@ export class GenericSkillRunnerService {
                 `gathered data.`;
 
             const toolCaller: ToolCaller = {
-                callTool: async (toolName, args) =>
-                    this.normalizeToolExecutionResponse(
-                        mcpAdapter
-                            ? await mcpAdapter.executeTool(toolName, args)
-                            : undefined,
-                    ),
-                callAgent: async (agentName, prompt) => {
-                    // Per-call timeout → AbortSignal (replaces the flow agent
-                    // `timeout`); the runner forwards it to the model call.
-                    const controller = new AbortController();
-                    const timer = setTimeout(
-                        () => controller.abort(),
-                        executionPolicy.fetcherTimeoutMs,
+                // Deterministic capability fetches (PR diff/metadata) run through
+                // the SAME harness ToolRegistry/AgentTools as the agentic fetcher
+                // — no direct mcpAdapter bypass. The MCP AgentTool stringifies the
+                // raw adapter envelope into `output`; we parse it back so the
+                // shape reaching the extractors is identical to before.
+                callTool: async (toolName, args) => {
+                    const tool = toolRegistry.get(toolName);
+                    if (!tool) {
+                        return this.normalizeToolExecutionResponse(undefined);
+                    }
+                    const toolResult = await tool.execute(args, {
+                        runId: `${skillName}:deterministic`,
+                    });
+                    if (toolResult.isError) {
+                        return this.normalizeToolExecutionResponse(undefined);
+                    }
+                    return this.normalizeToolExecutionResponse(
+                        this.parseAgentToolOutput(toolResult.output),
                     );
+                },
+                callAgent: async (agentName, prompt) => {
+                    // Standard run context: signal + hard timeout via the shared
+                    // helper — same guarantee as the code-review and conversation
+                    // agents (replaces the hand-rolled AbortController+setTimeout).
+                    // The per-skill `fetcherTimeoutMs` is kept as the ceiling, and
+                    // composeAbortSignal lets a parent cancellation propagate in.
+                    const { ctx, cleanup } = createAgentRunContext({
+                        runId: `${skillName}:${agentName}`,
+                        timeoutMs: executionPolicy.fetcherTimeoutMs,
+                    });
                     try {
                         // Wrapped in a billing span so token usage reaches the
                         // Mongo `observability_telemetry` cost dataset (parity
@@ -312,8 +338,10 @@ export class GenericSkillRunnerService {
                                                     byokConfig?.main?.model,
                                             },
                                         ),
-                                        runId: `${skillName}:${agentName}`,
-                                        signal: controller.signal,
+                                        runId: ctx.runId,
+                                        signal: ctx.signal,
+                                        contextWindowTokens:
+                                            executionPolicy.contextWindowTokens,
                                         reporter: this.byokErrorCounter
                                             ? (e) =>
                                                   void this.byokErrorCounter!.record(
@@ -334,7 +362,7 @@ export class GenericSkillRunnerService {
                             result.text,
                         );
                     } finally {
-                        clearTimeout(timer);
+                        cleanup();
                     }
                 },
                 getRegisteredTools: () =>
@@ -477,6 +505,7 @@ export class GenericSkillRunnerService {
         skillName: string,
         requiredMcps: SkillRequiredMcp[] | undefined,
         requiredProviderHints: string[],
+        requiredCategories: Set<string>,
         availableProviders: string[],
         mcpManagerServers: McpConnection[] | undefined,
     ): void {
@@ -517,8 +546,17 @@ export class GenericSkillRunnerService {
             return;
         }
 
+        // Prefer the canonical capability category stamped by the mcp-manager
+        // registry (drift-proof: doesn't depend on the connection's display
+        // name — "Git Issues" vs "Github Issues" no longer breaks the match).
+        // Fall back to display-name hints for connections without a category
+        // (external/custom MCPs the registry doesn't classify).
         const matchingExternalConnections = externalConnections.filter(
             (server) =>
+                this.serverMatchesRequiredCategory(
+                    server,
+                    requiredCategories,
+                ) ||
                 this.serverMatchesRequiredHints(server, requiredProviderHints),
         );
 
@@ -545,6 +583,7 @@ export class GenericSkillRunnerService {
         requiredTools: string[] | undefined,
         fetcherPolicy: Required<SkillFetcherPolicy>,
         requiredProviderHints: string[],
+        requiredCategories: Set<string>,
         mcpManagerServers: McpConnection[] | undefined,
     ): MCPAdapter | null {
         if (!mcpManagerServers?.length) {
@@ -587,12 +626,18 @@ export class GenericSkillRunnerService {
                     );
                 }
 
-                if (!requiredProviderHints.length) {
+                if (!requiredProviderHints.length && !requiredCategories.size) {
                     return true;
                 }
-                return this.serverMatchesRequiredHints(
-                    server,
-                    requiredProviderHints,
+                return (
+                    this.serverMatchesRequiredCategory(
+                        server,
+                        requiredCategories,
+                    ) ||
+                    this.serverMatchesRequiredHints(
+                        server,
+                        requiredProviderHints,
+                    )
                 );
             })
             .map((server) => {
@@ -698,6 +743,16 @@ export class GenericSkillRunnerService {
         return [...hints];
     }
 
+    private resolveRequiredCategories(
+        requiredMcps: SkillRequiredMcp[] | undefined,
+    ): Set<string> {
+        return new Set(
+            (requiredMcps ?? [])
+                .map((mcp) => mcp.category)
+                .filter((c): c is string => typeof c === 'string'),
+        );
+    }
+
     private providerMatchesRequiredHints(
         provider: unknown,
         requiredHints: string[],
@@ -715,6 +770,19 @@ export class GenericSkillRunnerService {
                 normalizedProvider === hint ||
                 normalizedProvider.includes(hint) ||
                 hint.includes(normalizedProvider),
+        );
+    }
+
+    private serverMatchesRequiredCategory(
+        server: McpConnection,
+        requiredCategories: Set<string>,
+    ): boolean {
+        if (!requiredCategories.size) {
+            return false;
+        }
+        return (
+            typeof server?.category === 'string' &&
+            requiredCategories.has(server.category)
         );
     }
 
@@ -827,6 +895,9 @@ export class GenericSkillRunnerService {
             analyzerTimeoutMs: policy?.analyzerTimeoutMs ?? 120_000,
             fetcherMaxIterations: policy?.fetcherMaxIterations ?? 4,
             analyzerMaxIterations: policy?.analyzerMaxIterations ?? 1,
+            // Optional, off by default — only present when the SKILL.md declares it.
+            contextWindowTokens: policy?.contextWindowTokens,
+            verifyAnalyzerResult: policy?.verifyAnalyzerResult,
         };
     }
 
@@ -848,6 +919,23 @@ export class GenericSkillRunnerService {
         }
 
         return [...new Set([...explicitTools, ...capabilityTools])];
+    }
+
+    /**
+     * The harness MCP AgentTool returns `{ output }` where `output` is the raw
+     * adapter response stringified (or a plain string). Parse JSON back to the
+     * object so `normalizeToolExecutionResponse` sees the same shape the direct
+     * adapter call used to produce; a non-JSON string is passed through as-is.
+     */
+    private parseAgentToolOutput(output: unknown): unknown {
+        if (typeof output !== 'string') {
+            return output;
+        }
+        try {
+            return JSON.parse(output);
+        } catch {
+            return output;
+        }
     }
 
     private normalizeToolExecutionResponse(

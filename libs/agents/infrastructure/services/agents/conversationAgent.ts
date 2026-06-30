@@ -197,6 +197,7 @@ export class ConversationAgentProvider {
         try {
             const preparedPrompt = this.buildUserPrompt(
                 prompt,
+                userLanguage,
                 prepareContext,
                 organizationAndTeamData,
                 hasMemoryTool,
@@ -348,7 +349,7 @@ export class ConversationAgentProvider {
             const state = await runner.run(
                 spec,
                 {
-                    prompt: `Reply directly and naturally, in ${userLanguage}, to the user's message:\n\n${prompt}`,
+                    prompt: `Reply to the user's message below. Write your reply in ${userLanguage} — do NOT switch to the language the user wrote in:\n\n${prompt}`,
                 },
                 ctx,
             );
@@ -461,12 +462,11 @@ export class ConversationAgentProvider {
             'You are Kodus, an intelligent conversation agent for user interactions.',
             'Goal: engage in natural, helpful conversations while respecting the user language preference.',
             '',
-            'LANGUAGE REQUIREMENTS:',
-            `- Respond in the user's preferred language: ${userLanguage}`,
-            '- Default to English if no language preference is configured',
-            '- Maintain consistent language throughout conversation',
-            '- Use appropriate terminology and formatting for the selected language',
-            '- Adapt communication style to the target language conventions',
+            'LANGUAGE REQUIREMENTS (NON-NEGOTIABLE):',
+            `- Write your ENTIRE response in ${userLanguage}. This is the team's configured system language.`,
+            `- ALWAYS reply in ${userLanguage} EVEN WHEN the user writes in a different language. NEVER mirror or switch to the language of the user's message.`,
+            '- Keep the whole reply in one language; do not mix languages.',
+            '- Use terminology and formatting natural to that language.',
         ].join('\n');
     }
 
@@ -478,6 +478,7 @@ export class ConversationAgentProvider {
      */
     private buildUserPrompt(
         prompt: string,
+        userLanguage: string,
         prepareContext: any,
         organizationAndTeamData: OrganizationAndTeamData,
         hasMemoryTool: boolean,
@@ -528,7 +529,7 @@ export class ConversationAgentProvider {
 
         sections.push(
             '',
-            "Answer the user's message below directly and naturally, in their language.",
+            `Answer the user's message below directly. Write your entire answer in ${userLanguage} (the team's configured language) — do NOT switch to the language the user wrote in.`,
             '',
             'USER MESSAGE:',
             prompt,

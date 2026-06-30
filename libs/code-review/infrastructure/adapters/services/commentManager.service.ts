@@ -176,6 +176,23 @@ export class CommentManagerService implements ICommentManagerService {
                 );
         }
 
+        // Resolve the org's BYOK when the caller didn't pass one (the review
+        // flow passes codeReviewConfig.byokConfig, which can be null even when
+        // the org has BYOK). Without this, the summary falls to the internal
+        // default provider — which hard-fails when that provider is blocked
+        // (e.g. "project denied access") — while the review agents, which
+        // resolve BYOK themselves, keep working. Fetch the same BYOK they use.
+        if (!byokConfigValue) {
+            try {
+                byokConfigValue =
+                    (await this.permissionValidationService.getBYOKConfig(
+                        organizationAndTeamData,
+                    )) ?? null;
+            } catch {
+                byokConfigValue = null;
+            }
+        }
+
         const maxRetries = 2;
         let retryCount = 0;
 

@@ -23,7 +23,7 @@
  */
 import { AiSdkAgentRunner } from '@libs/agent-harness/infrastructure/ai-sdk/ai-sdk-agent-runner';
 
-import { ContextWindowCompressor } from '@libs/code-review/infrastructure/agents/adapters/context-window-compressor.adapter';
+import { ContextWindowCompressor } from '@libs/agent-harness/infrastructure/compression/context-window-compressor';
 import { DiffCoverageLedger } from '@libs/code-review/infrastructure/agents/adapters/diff-coverage-ledger.adapter';
 import { buildFinderToolRegistry } from '@libs/code-review/infrastructure/agents/adapters/finder-tools.adapter';
 import { wrapByokModel } from '@libs/llm/byok-model-wrapper';
@@ -66,10 +66,11 @@ export async function runAgentLoopViaCore(
 
     const runner = new AiSdkAgentRunner({ resolve: () => model });
 
-    const tools = buildFinderToolRegistry({
+    const { registry: tools, cache: toolCache } = buildFinderToolRegistry({
         remoteCommands: secrets.remoteCommands,
         repositoryFullName: input.repositoryFullName,
         callGraph: input.callGraph,
+        outlineFirst: input.outlineFirst,
     });
 
     const coverageLedger = new DiffCoverageLedger({
@@ -168,6 +169,10 @@ export async function runAgentLoopViaCore(
             repositoryId: input.telemetryMetadata?.repositoryId,
             agent: input.agentName ?? 'finder',
             funnel,
+            // Read-only tool memoization for this run: hits = repeated calls
+            // served without re-execution (tokens saved). High hits = the agent
+            // re-reads a lot — and the cache absorbed it.
+            toolCache: toolCache.stats,
         },
     });
 

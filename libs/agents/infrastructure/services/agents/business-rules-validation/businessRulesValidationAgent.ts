@@ -55,6 +55,11 @@ import {
 import { buildBusinessRulesAnalysisPrompt } from './analysis-prompt.builder';
 import { buildBusinessRulesContractViolationFeedback } from './contract-feedback.builder';
 import { parseBusinessRulesValidationResult } from './validation-result.parser';
+import {
+    applyBusinessRulesVerdict,
+    BusinessRulesVerifier,
+    shouldVerifyValidationResult,
+} from './business-rules-verifier';
 
 const SKILL_NAME = 'business-rules-validation';
 const DEFAULT_LANGUAGE = 'en-US';
@@ -308,8 +313,16 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
             maxAttempts,
             timeoutMs: executionPolicy.analyzerTimeoutMs,
         });
-        const normalizedValidationResult = this.applyValidationDefaults(
+        // Optional second pass: an independent Verifier (doer≠checker) refutes a
+        // claimed violation the analyzer may have over-flagged. OFF by default —
+        // see SkillExecutionPolicy.verifyAnalyzerResult; no-op until opted in.
+        const verifiedResult = await this.maybeVerifyValidationResult(
             validationResult,
+            ctx,
+            executionPolicy,
+        );
+        const normalizedValidationResult = this.applyValidationDefaults(
+            verifiedResult,
             ctx,
         );
         this.recordValidationOutcomeMetric(ctx, normalizedValidationResult);
@@ -323,6 +336,90 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
             validationResult: normalizedValidationResult,
             formattedResponse,
         };
+    }
+
+    /**
+     * Independent verify pass (doer≠checker). When opted in
+     * (SkillExecutionPolicy.verifyAnalyzerResult) and the analysis concluded, an
+     * LLM Verifier refutes the analyzer's claimed violation; a refuted claim is
+     * dropped (applyBusinessRulesVerdict). OFF by default and fully fail-open: a
+     * verify error returns the analyzer's result untouched. Reuses the same model
+     * setup + run-context guarantees as the analyzer.
+     */
+    private async maybeVerifyValidationResult(
+        result: ValidationResult,
+        ctx: BusinessRulesContext,
+        policy: { verifyAnalyzerResult?: boolean; analyzerTimeoutMs: number },
+    ): Promise<ValidationResult> {
+        if (!shouldVerifyValidationResult(result, policy)) {
+            return result;
+        }
+        const orgId =
+            ctx.organizationAndTeamData?.organizationId?.toString();
+        const teamId = ctx.organizationAndTeamData?.teamId?.toString();
+        try {
+            const model = resolveAgentModel(this.byokConfig, {
+                organizationId: orgId,
+                provider: this.byokConfig?.main?.provider,
+                reporter: this.byokErrorCounter
+                    ? (e) => void this.byokErrorCounter!.record(e)
+                    : undefined,
+            });
+            const runner = new AiSdkAgentRunner({ resolve: () => model });
+            const verifier = new BusinessRulesVerifier(runner, {
+                modelId: 'resolved',
+                diff: ctx.prDiff ?? '',
+                taskContext: ctx.taskContext ?? '',
+                userLanguage: ctx.userLanguage,
+                telemetryMetadata: {
+                    organizationId: orgId,
+                    teamId,
+                    provider: this.byokConfig?.main?.provider,
+                },
+            });
+            const { ctx: runCtx, cleanup } = createAgentRunContext({
+                runId: 'business-rules:verify',
+                timeoutMs: policy.analyzerTimeoutMs,
+            });
+            try {
+                const verdict = await verifier.verify(result, runCtx);
+                // Verify cost → Mongo observability_telemetry, same canonical
+                // emitter/schema as the analyzer (just a distinct phase) so the
+                // verify pass's tokens are billed, not invisible.
+                const u = verifier.usage;
+                await this.observabilityService.recordAgentRunUsage({
+                    agentName: 'BusinessRulesValidation',
+                    phase: 'businessRulesVerify',
+                    runName: 'businessRulesVerify',
+                    model: this.byokConfig?.main?.model,
+                    isByok: !!this.byokConfig,
+                    usage: {
+                        inputTokens: u.inputTokens,
+                        outputTokens: u.outputTokens,
+                        totalTokens:
+                            (u.inputTokens ?? 0) + (u.outputTokens ?? 0),
+                        reasoningTokens: u.reasoningTokens,
+                        cacheReadTokens: u.cacheReadTokens,
+                    },
+                    organizationId: orgId,
+                    teamId,
+                });
+                return applyBusinessRulesVerdict(result, verdict);
+            } finally {
+                cleanup();
+            }
+        } catch (error) {
+            // Fail-open: the verify pass never drops a result by erroring.
+            this.logger.warn({
+                message: `business-rules verify pass failed; keeping analyzer result: ${
+                    error instanceof Error ? error.message : String(error)
+                }`,
+                context: BusinessRulesValidationAgentProvider.name,
+                serviceName: BusinessRulesValidationAgentProvider.name,
+                metadata: { organizationId: orgId, teamId },
+            });
+            return result;
+        }
     }
 
     private isParserFallback(result: ValidationResult): boolean {
@@ -442,11 +539,7 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
                     maxTokens: this.defaultLLMConfig.maxTokens,
                 },
                 'businessRulesAnalyzer',
-                {
-                    organizationId:
-                        params.ctx.organizationAndTeamData?.organizationId?.toString(),
-                    teamId: params.ctx.organizationAndTeamData?.teamId?.toString(),
-                },
+                this.telemetryMetadataFromCtx(params.ctx),
             ),
             params.timeoutMs,
             `business-rules-analyzer-attempt-${params.attempt}`,
@@ -463,11 +556,43 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
      * `byokToVercelModel` resolves the BYOK model and `generateText` runs a
      * plain (no-tools) completion. Langfuse parity via `buildLangfuseTelemetry`.
      */
+    /**
+     * Telemetry metadata (org/team/PR/repo) for Langfuse so the analyzer +
+     * formatter traces group under the SAME `org:repo:pr` session as the
+     * code-review agents — parity, instead of landing outside the PR session.
+     */
+    private telemetryMetadataFromCtx(ctx: BusinessRulesContext): {
+        organizationId?: string;
+        teamId?: string;
+        pullRequestId?: number;
+        repositoryId?: string;
+    } {
+        const pc = ctx.prepareContext;
+        const repoId = pc?.repository?.id;
+        return {
+            organizationId:
+                ctx.organizationAndTeamData?.organizationId?.toString(),
+            teamId: ctx.organizationAndTeamData?.teamId?.toString(),
+            pullRequestId:
+                pc?.pullRequestNumber ?? pc?.pullRequest?.pullRequestNumber,
+            repositoryId: repoId != null ? String(repoId) : undefined,
+        };
+    }
+
     private async callLLM(
         messages: AnalyzerMessage[],
         options: { temperature?: number; maxTokens?: number },
         functionId: string,
-        metadata?: { organizationId?: string; teamId?: string },
+        metadata?: {
+            organizationId?: string;
+            teamId?: string;
+            // Forwarded to Langfuse so the analyzer trace groups under the SAME
+            // PR session as the code-review agents (which pass the full PR/repo
+            // context). Without these, the business-rules trace lands outside the
+            // org:repo:pr session and looks "missing" in the sessions view.
+            pullRequestId?: number;
+            repositoryId?: string;
+        },
     ): Promise<AnalyzerCallResult> {
         // Standard model setup (same as every agent): BYOK resolve + concurrency
         // limiter + failure reporter.
@@ -539,6 +664,8 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
                     telemetry: buildLangfuseTelemetry(functionId, {
                         organizationId: metadata?.organizationId,
                         teamId: metadata?.teamId,
+                        pullRequestId: metadata?.pullRequestId,
+                        repositoryId: metadata?.repositoryId,
                         provider: this.byokConfig?.main?.provider,
                     }),
                 },
@@ -689,16 +816,19 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
                     : diagnostic;
             }
 
+            const formatterMetadata = this.telemetryMetadataFromCtx(ctx);
             const rawMessage = limitationMessage
                 ? await this.formatUserFacingMessage(
                       limitationMessage,
                       ctx.userLanguage,
                       'limitation',
+                      formatterMetadata,
                   )
                 : await this.formatUserFacingMessage(
                       result.missingInfo ?? DEFAULT_NEEDS_MORE_INFO_MESSAGE,
                       ctx.userLanguage,
                       'limitation',
+                      formatterMetadata,
                   );
 
             // Embed a marker so the pipeline stage can detect weak task
@@ -720,6 +850,12 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
         message: string,
         userLanguage: string,
         mode: 'feedback' | 'limitation',
+        metadata?: {
+            organizationId?: string;
+            teamId?: string;
+            pullRequestId?: number;
+            repositoryId?: string;
+        },
     ): Promise<string> {
         if (typeof message !== 'string' || message.trim().length === 0) {
             return message;
@@ -746,6 +882,7 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
                 ],
                 { temperature: 0, maxTokens: 1200 },
                 'businessRulesUserFacingFormatter',
+                metadata,
             );
 
             return typeof formatted.content === 'string' &&
