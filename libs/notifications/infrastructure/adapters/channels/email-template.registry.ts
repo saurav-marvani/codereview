@@ -247,12 +247,16 @@ export const EMAIL_TEMPLATE_REGISTRY: Partial<
         const prUrl = metadata.prUrl as string;
         const repoName = metadata.repoName as string;
         const ownerContact = metadata.ownerContact as string | undefined;
+        const authorUsername = metadata.authorUsername as string | undefined;
+        const authorEmail = metadata.authorEmail as string | undefined;
         return {
             ...reviewSkippedNoLicenseEmailMeta({ repoName }),
             react: ReviewSkippedNoLicenseEmail({
                 prUrl,
                 repoName,
                 ownerContact,
+                authorUsername,
+                authorEmail,
             }),
         };
     },

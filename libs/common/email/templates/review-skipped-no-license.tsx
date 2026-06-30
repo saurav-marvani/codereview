@@ -14,6 +14,8 @@ export type ReviewSkippedNoLicenseEmailProps = {
     prUrl: string;
     repoName: string;
     ownerContact?: string;
+    authorUsername?: string;
+    authorEmail?: string;
 };
 
 export const reviewSkippedNoLicenseEmailMeta = (params: {
@@ -27,14 +29,26 @@ function ReviewSkippedNoLicenseEmail({
     prUrl,
     repoName,
     ownerContact,
+    authorUsername,
+    authorEmail,
 }: ReviewSkippedNoLicenseEmailProps) {
     return (
         <BrandLayout
             preview={`A pull request in ${repoName} wasn't reviewed — no active license`}>
             <Heading style={baseHeading}>Review skipped — license required</Heading>
             <Text style={baseText}>
-                A pull request in <strong>{repoName}</strong> was not reviewed
-                because your organization doesn't have an active license.
+                A pull request by <strong>{authorUsername || authorEmail || 'an unknown user'}</strong> in{' '}
+                <strong>{repoName}</strong> was not reviewed because your
+                organization doesn't have an active license.
+            </Text>
+            <Text style={baseText}>
+                {authorEmail && authorEmail !== ownerContact ? (
+                    <>
+                        The user <strong>{authorUsername || authorEmail}</strong>
+                        {authorEmail ? ` (${authorEmail})` : ''} needs a license
+                        seat.
+                    </>
+                ) : null}
             </Text>
             <Text style={baseText}>
                 {ownerContact ? (
