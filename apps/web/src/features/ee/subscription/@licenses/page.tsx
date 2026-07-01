@@ -31,31 +31,49 @@ export default async function SubscriptionTabs() {
         ? organizationMembersRaw
         : [];
 
-    const organizationMembersWithLicense: LicenseTableRow[] =
-        organizationMembers.map((member) => {
-            const normalizedName =
-                member.name?.trim() ||
-                member.displayName?.trim() ||
-                member.username?.trim() ||
-                member.login?.trim() ||
-                "Unknown member";
+    const organizationMemberIds = new Set(
+        organizationMembers.map((m) => m.id.toString()),
+    );
 
-            const user = usersWithLicense.find(
+    const organizationMembersWithLicense: LicenseTableRow[] = [
+        ...organizationMembers
+            .map((member) => {
+                const normalizedName =
+                    member.name?.trim() ||
+                    member.displayName?.trim() ||
+                    member.username?.trim() ||
+                    member.login?.trim() ||
+                    "Unknown member";
+
+                const user = usersWithLicense.find(
+                    (userWithLicense) =>
+                        userWithLicense.git_id === member.id.toString(),
+                );
+
+                return {
+                    id: member.id,
+                    name: normalizedName,
+                    licenseStatus:
+                        license.valid && license.subscriptionStatus === "trial"
+                            ? "active"
+                            : user?.git_id
+                              ? "active"
+                              : "inactive",
+                };
+            })
+            .filter((member) => member.licenseStatus === "active"),
+        ...usersWithLicense
+            .filter(
                 (userWithLicense) =>
-                    userWithLicense.git_id === member.id.toString(),
-            );
-
-            return {
-                id: member.id,
-                name: normalizedName,
-                licenseStatus:
-                    license.valid && license.subscriptionStatus === "trial"
-                        ? "active"
-                        : user?.git_id
-                          ? "active"
-                          : "inactive",
-            };
-        });
+                    !organizationMemberIds.has(userWithLicense.git_id),
+            )
+            .map((userWithLicense) => ({
+                id: userWithLicense.git_id,
+                name: `Deleted user (${userWithLicense.git_id})`,
+                licenseStatus: "active" as const,
+                removedFromGit: true,
+            })),
+    ];
 
     return (
         <LicensesPageClient
