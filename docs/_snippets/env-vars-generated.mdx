@@ -315,9 +315,7 @@
 | `API_MCP_MANAGER_DATABASE_ENV` | – | string | 🏠 Self-hosted |  |
 | `API_MCP_MANAGER_CORS_ORIGINS` | – | string | 🏠 Self-hosted | Comma-separated allowed origins for the MCP Manager HTTP server. |
 | `API_MCP_MANAGER_JWT_SECRET` | – | secret | 🏠 Self-hosted | Generate with: openssl rand -base64 32 |
-| `API_MCP_MANAGER_COMPOSIO_BASE_URL` | – | url | 🏠 Self-hosted | Composio (third-party MCP marketplace) — optional, leave empty to disable. |
-| `API_MCP_MANAGER_COMPOSIO_API_KEY` | – | secret | 🏠 Self-hosted |  |
-| `API_MCP_MANAGER_MCP_PROVIDERS` | – | string | 🏠 Self-hosted | Comma-separated list of MCP providers to enable: kodusmcp,composio,custom. |
+| `API_MCP_MANAGER_MCP_PROVIDERS` | – | string | 🏠 Self-hosted | Comma-separated list of MCP providers to enable: kodusmcp,custom. |
 | `API_MCP_MANAGER_REDIRECT_URI` | – | url | 🏠 Self-hosted | OAuth redirect URI used by MCP Manager when wiring providers via the web UI. |
 | `API_MCP_MANAGER_PG_DB_SCHEMA` | – | string | 🏠 Self-hosted | Postgres schema name used by MCP Manager (shares the main DB). |
 | `API_MCP_MANAGER_ENCRYPTION_SECRET` | – | secret | ⚙️ Both | Symmetric key used by MCP Manager to encrypt tokens at rest. Generate with: openssl rand -base64 32 |
