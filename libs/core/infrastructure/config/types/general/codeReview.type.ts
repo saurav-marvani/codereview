@@ -376,6 +376,10 @@ export type CodeReviewConfig = {
     contextReferenceId?: string;
     contextRequirementsHash?: string;
     enableCommittableSuggestions?: boolean;
+    /** Experimental A/B (default off): when true, the finder's readFile returns
+     *  a symbol outline for range-less reads of large files instead of dumping
+     *  the head — fewer model tokens. Threaded to ReviewAgentInput.outlineFirst. */
+    outlineFirst?: boolean;
     // This is the default branch of the repository, used only during the review process
     // This field is populated dynamically from the API (GitHub/GitLab) and should NOT be saved to the database
     // It represents the repository's default branch (e.g., 'main', 'develop') that comes from the code management platform

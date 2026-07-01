@@ -549,6 +549,7 @@ export abstract class BaseCodeReviewAgentProvider {
                 // would have their preference silently dropped here.
                 skipHeavyPasses: input.skipHeavyPasses,
                 skipSynthesisRescue: input.skipSynthesisRescue,
+                outlineFirst: input.outlineFirst,
                 contextWindowTokens: contextWindow,
                 reasoningEffort: byokConfig?.main?.reasoningEffort,
                 reasoningConfigOverride:

@@ -30,7 +30,9 @@ describe('buildFinderToolRegistry', () => {
             },
         });
 
-        const reg = buildFinderToolRegistry({ remoteCommands: undefined });
+        const { registry: reg } = buildFinderToolRegistry({
+            remoteCommands: undefined,
+        });
         const grep = reg.get('grep')!;
 
         expect(grep.name).toBe('grep');
@@ -55,9 +57,35 @@ describe('buildFinderToolRegistry', () => {
             },
         });
 
-        const reg = buildFinderToolRegistry({ remoteCommands: undefined });
+        const { registry: reg } = buildFinderToolRegistry({
+            remoteCommands: undefined,
+        });
         const r = await reg.get('readFile')!.execute({}, ctx);
         expect(r.isError).toBe(true);
         expect(r.output).toContain('file not found');
+    });
+
+    it('memoizes read-only tools — an identical call is served from cache', async () => {
+        let calls = 0;
+        (buildAgentTools as jest.Mock).mockReturnValue({
+            grep: {
+                description: 'search',
+                inputSchema: jsonSchema({ type: 'object', properties: {} }),
+                execute: async () => `result ${++calls}`,
+            },
+        });
+
+        const { registry: reg, cache } = buildFinderToolRegistry({
+            remoteCommands: undefined,
+        });
+        const grep = reg.get('grep')!;
+
+        const first = await grep.execute({ pattern: 'x' }, ctx);
+        const second = await grep.execute({ pattern: 'x' }, ctx);
+
+        expect(calls).toBe(1); // inner ran once
+        expect(first.output).toBe('result 1');
+        expect(second.meta?.cached).toBe(true);
+        expect(cache.stats.hits).toBe(1);
     });
 });

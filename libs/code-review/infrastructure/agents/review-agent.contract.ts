@@ -226,6 +226,9 @@ export interface ReviewAgentInput
      *  outer router timeout cancels the LLM call instead of leaving it
      *  running ghost in the background. */
     parentSignal?: AbortSignal;
+    /** Gated A/B knob (default off): forwarded to AgentLoopInput.outlineFirst.
+     *  The pipeline/experiment sets it; everything below threads it down. */
+    outlineFirst?: boolean;
 }
 
 /**
@@ -279,6 +282,10 @@ export interface AgentLoopInput {
     contextWindowTokens?: number;
     /** When true, skip recovery/rescue/second-chance passes. Used by rule-checking agents that don't benefit from open-ended exploration. */
     skipHeavyPasses?: boolean;
+    /** Gated A/B knob (default off): wrap readFile so a range-less read of a
+     *  large file returns a symbol outline + expand hint instead of dumping the
+     *  head — fewer model tokens. Off = current behavior. */
+    outlineFirst?: boolean;
     /** When true, skip ONLY the synthesis-rescue pass while still running
      *  coverage-recovery and coverage-second-chance. Useful for agents
      *  that benefit from re-investigating uncovered files but don't need
