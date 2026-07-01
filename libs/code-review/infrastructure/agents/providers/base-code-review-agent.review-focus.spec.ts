@@ -8,12 +8,12 @@
  * base-code-review-agent.compact-prompt.spec.ts.
  */
 
-import { resolveAdaptiveProfile } from './llm/adaptive-fit';
+import { resolveAdaptiveProfile } from '@libs/code-review/infrastructure/agents/engine/adaptive-fit';
+import { BaseCodeReviewAgentProvider } from '@libs/code-review/infrastructure/agents/providers/base-code-review-agent.provider';
 import {
-    BaseCodeReviewAgentProvider,
     type ReviewAgentInput,
     type ReviewAgentIdentity,
-} from './base-code-review-agent.provider';
+} from '@libs/code-review/infrastructure/agents/review-agent.contract';
 
 class TestAgent extends BaseCodeReviewAgentProvider {
     constructor() {
