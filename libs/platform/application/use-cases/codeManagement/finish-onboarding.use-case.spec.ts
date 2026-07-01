@@ -26,6 +26,7 @@ describe('FinishOnboardingUseCase', () => {
             syncSelectedReposKodyRulesUseCase as any,
             createOrUpdateParametersUseCase as any,
             {} as any, // telemetry
+            {} as any, // codeManagement
         );
 
         return {

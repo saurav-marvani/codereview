@@ -113,7 +113,7 @@ export class CodeReviewHandlerService {
             // milestone notification actionable (Discord/email). If any
             // lookup fails we still fire telemetry with whatever we have —
             // the milestone marker is the source of truth, names are gravy.
-            const [org, owner] = await Promise.all([
+            const [org, owner, members] = await Promise.all([
                 this.organizationService
                     .findOne({ uuid: organizationId })
                     .catch(() => undefined),
@@ -123,7 +123,23 @@ export class CodeReviewHandlerService {
                         role: Role.OWNER,
                     } as any)
                     .catch(() => undefined),
+                // Real engineering team size from the connected git org — the
+                // strongest lead-scoring signal, and only reachable here since
+                // Kodus holds the per-org git installation auth. Deferred via
+                // `Promise.resolve().then` so even a synchronous throw becomes a
+                // caught rejection and never drops the milestone telemetry.
+                Promise.resolve()
+                    .then(() =>
+                        this.codeManagement.getListMembers({
+                            organizationAndTeamData,
+                        }),
+                    )
+                    .catch(() => undefined),
             ]);
+
+            const orgMemberCount = Array.isArray(members)
+                ? members.length
+                : undefined;
 
             await this.telemetry.firstReviewCompleted({
                 organizationId,
@@ -135,6 +151,7 @@ export class CodeReviewHandlerService {
                 platform: platformType,
                 ownerEmail: owner?.email,
                 ownerId: owner?.uuid,
+                orgMemberCount,
             });
         } catch (error) {
             this.logger.warn({
