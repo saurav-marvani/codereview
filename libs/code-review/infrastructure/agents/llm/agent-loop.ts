@@ -1189,14 +1189,17 @@ async function runAgentLoopBody(
                 generateText({
                     ...({ __kodusHardTimeoutMs: AGENT_TIMEOUT_MS } as any),
                     model: input.model,
-                    // Cap SDK-level retries to 1 on the main loop. The default
-                    // is 2 (3 total attempts); when the model genuinely can't
-                    // serve the prompt (context overflow, hard auth fail) the
-                    // extra retry burns minutes of the AGENT_TIMEOUT_MS budget
-                    // with no chance of succeeding. Cheap sub-calls
-                    // (severity classifier, dedup) keep the default since
-                    // their retries are short and cover real transient blips.
-                    maxRetries: 1,
+                    // Cap SDK-level retries to 3 on the main loop. Some BYOK
+                    // providers (Neuralwatt/GLM, Synthetic, Z.AI) intermittently
+                    // return empty response bodies (output: null, usage.total: 0).
+                    // These are fast failures — the provider returns quickly —
+                    // so extra retries don't burn meaningful timeout budget.
+                    // At 3 retries (4 total attempts) the loop survives transient
+                    // empty-body responses without changing the per-call timeout.
+                    // Sub-calls (severity classifier, dedup) keep the SDK default
+                    // of 2 retries since their payloads are small and retries are
+                    // short.
+                    maxRetries: 3,
                     abortSignal: abortController.signal,
                     system: withAnthropicCacheControl(
                         input.systemPrompt,
