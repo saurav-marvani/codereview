@@ -57,7 +57,7 @@ const ReviewCadencePreview = () => {
         automationEnabled === false
             ? ReviewCadenceType.MANUAL
             : (config?.reviewCadence?.type?.value ??
-              ReviewCadenceType.AUTOMATIC);
+                ReviewCadenceType.AUTOMATIC);
     const cadenceCopy =
         REVIEW_CADENCE_COPY[cadenceType] ??
         REVIEW_CADENCE_COPY[ReviewCadenceType.AUTOMATIC];
@@ -313,11 +313,66 @@ export const dropdownItems = {
             "Shows which configuration level was used to review this PR",
         example: <ReviewScopePreview />,
     },
-} satisfies Record<
-    string,
-    {
-        label: string;
-        description: string;
-        example: React.JSX.Element;
-    }
->;
+    consolidatedLLMPrompt: {
+        label: "Consolidated LLM Prompt",
+        description:
+            "All review suggestions consolidated into a single prompt block for AI agents",
+        example: (
+            <div className="text-sm">
+                <p className="mb-2 font-semibold">
+                    🛠️ Kody Code Review — 2 suggested fixes.
+                </p>
+                <p className="mb-2 text-text-secondary">
+                    Paste the prompt below to your agent and all review fixed at once!
+                </p>
+                <details className="rounded-md border border-border bg-card-lv1">
+                    <summary className="cursor-pointer bg-card-lv2 px-3 py-2 font-medium hover:bg-card-lv3">
+                        🛠️ Open Agent Prompt
+                    </summary>
+                    <div className="border-t border-border p-3">
+                        <div className="overflow-x-auto rounded-md bg-black/90 p-3 font-mono text-xs text-green-400">
+                            <p className="mb-2 text-white">
+                                A code review identified the following issues in this
+                                pull request. Each section describes what was found
+                                and includes a reference implementation where
+                                available.
+                            </p>
+                            <p className="mb-2 font-semibold text-white">
+                                Files involved:
+                            </p>
+                            <p className="mb-2 text-white">
+                                - src/utils/dateUtils.ts:8
+                            </p>
+                            <p className="mb-2 text-white">
+                                - apps/frontend/vite.config.ts:13
+                            </p>
+                            <hr className="my-2 border-white/20" />
+                            <p className="mb-2 font-semibold text-yellow-400">
+                                ### [1/2] src/utils/dateUtils.ts:8
+                            </p>
+                            <p className="mb-2 text-white">
+                                Issue identified during code review:
+                            </p>
+                            <p className="mb-2 text-white">
+                                Incomplete string literal in `formatDistanceToNow`...
+                            </p>
+                            <hr className="my-2 border-white/20" />
+                            <p className="text-white/80">
+                                Review each issue in context, use the reference
+                                implementations as guidance, and apply fixes that are
+                                consistent with the surrounding codebase.
+                            </p>
+                        </div>
+                    </div>
+                </details>
+            </div>
+        ),
+
+    } satisfies Record<
+        string,
+        {
+            label: string;
+            description: string;
+            example: React.JSX.Element;
+        }
+    >;

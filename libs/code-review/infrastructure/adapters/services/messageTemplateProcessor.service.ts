@@ -14,6 +14,7 @@ import {
     ReviewCadenceType,
 } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
+import { CommentResult } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { ConfigLevel } from '@libs/core/infrastructure/config/types/general/pullRequestMessages.type';
 
 export interface PlaceholderContext {
@@ -23,6 +24,7 @@ export interface PlaceholderContext {
     platformType?: PlatformType;
     organizationAndTeamData?: OrganizationAndTeamData;
     prNumber?: number;
+    lineComments?: CommentResult[];
 }
 
 export type PlaceholderHandler = (
@@ -42,6 +44,14 @@ export class MessageTemplateProcessor {
         this.handlers.set('changeSummary', this.generateChangeSummary);
         this.handlers.set('reviewOptions', this.generateReviewOptionsAccordion);
         this.handlers.set('reviewCadence', this.generateReviewCadenceInfo);
+        this.handlers.set(
+            'consolidatedLLMPrompt',
+            async (context: PlaceholderContext) => {
+                return this.getConsolidatedLLMPromptBody(
+                    context.lineComments || [],
+                );
+            },
+        );
         this.handlers.set('reviewScope', this.generateReviewScope);
     }
 
@@ -320,5 +330,120 @@ ${reviewOptionsMarkdown}
             (language as LanguageValue) ?? LanguageValue.ENGLISH,
             TranslationsCategory.PullRequestSummaryMarkdown,
         );
+    }
+
+    private extractPromptsFromComments(lineComments: CommentResult[]): Array<{
+        file: string;
+        line?: number;
+        prompt: string;
+        improvedCode?: string;
+    }> {
+        if (!lineComments?.length) return [];
+
+        return lineComments.reduce(
+            (acc, { comment }) => {
+                if (comment?.suggestion?.llmPrompt) {
+                    acc.push({
+                        file: comment.path,
+                        line: comment.line,
+                        prompt: comment.suggestion.llmPrompt,
+                        improvedCode: comment.suggestion.improvedCode,
+                    });
+                }
+                return acc;
+            },
+            [] as Array<{
+                file: string;
+                line?: number;
+                prompt: string;
+                improvedCode?: string;
+            }>,
+        );
+    }
+
+    private buildConsolidatedCommentBody(
+        prompts: Array<{
+            file: string;
+            line?: number;
+            prompt: string;
+            improvedCode?: string;
+        }>,
+    ): string {
+        const taskList = prompts
+            .map(
+                ({ file, line }) =>
+                    `- ${file}${line != null ? `:${line}` : ''}`,
+            )
+            .join('\n');
+
+        const tasks = prompts
+            .map(({ file, line, prompt, improvedCode }, index) => {
+                const location = `${file}${line != null ? `:${line}` : ''}`;
+
+                const referenceSection = improvedCode
+                    ? [
+                          `Reference implementation (from code review):`,
+                          ``,
+                          `// ${location}`,
+                          improvedCode.trim(),
+                      ].join('\n')
+                    : '';
+
+                return [
+                    `### [${index + 1}/${prompts.length}] ${location}`,
+                    ``,
+                    `Issue identified during code review:`,
+                    prompt.trim(),
+                    ``,
+                    referenceSection,
+                ]
+                    .filter(Boolean)
+                    .join('\n');
+            })
+            .join('\n\n---\n\n');
+
+        const agentBlock = [
+            `A code review identified the following issues in this pull request.`,
+            `Each section describes what was found and includes a reference implementation where available.`,
+            ``,
+            `Files involved:`,
+            taskList,
+            ``,
+            `---`,
+            ``,
+            tasks,
+            ``,
+            `---`,
+            ``,
+            `Review each issue in context, use the reference implementations as guidance, and apply fixes that are consistent with the surrounding codebase.`,
+        ].join('\n');
+
+        return [
+            `**Kody Code Review** — ${prompts.length} suggested fix${prompts.length > 1 ? 'es' : ''}.`,
+            `Paste the prompt below to your agent and all review fixed at once!\n`,
+            `<details>`,
+            `<summary>🛠️ Open Agent Prompt</summary>`,
+            ``,
+            `\`\`\``,
+            agentBlock,
+            `\`\`\``,
+            ``,
+            `</details>`,
+        ].join('\n');
+    }
+
+    public getConsolidatedLLMPromptBody(lineComments: CommentResult[]): string {
+        console.log(
+            '[MessageTemplateProcessor] DEBUG: getConsolidatedLLMPromptBody called, lineComments:',
+            lineComments?.length,
+        );
+        const prompts = this.extractPromptsFromComments(lineComments);
+        console.log(
+            '[MessageTemplateProcessor] DEBUG: extractPromptsFromComments returned:',
+            prompts.length,
+            'prompts',
+        );
+        if (prompts.length === 0) return '';
+        return this.buildConsolidatedCommentBody(prompts);
     }
 }

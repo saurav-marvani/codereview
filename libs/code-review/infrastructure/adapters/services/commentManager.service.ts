@@ -809,6 +809,7 @@ You must always respond in ${languageResultPrompt}.`;
         codeReviewConfig?: CodeReviewConfig,
         language?: string,
         platformType?: PlatformType,
+        lineComments?: CommentResult[],
     ): Promise<string> {
         const placeholderContext = await this.getTemplateContext(
             changedFiles,
@@ -817,6 +818,7 @@ You must always respond in ${languageResultPrompt}.`;
             codeReviewConfig,
             language,
             platformType,
+            lineComments,
         );
 
         const processedBody = await this.messageProcessor.processTemplate(
@@ -2468,6 +2470,7 @@ ${reviewOptions}
         codeReviewConfig?: CodeReviewConfig,
         language?: string,
         platformType?: PlatformType,
+        lineComments?: CommentResult[],
     ): Promise<PlaceholderContext> {
         return {
             changedFiles,
@@ -2476,6 +2479,7 @@ ${reviewOptions}
             codeReviewConfig,
             language,
             platformType,
+            lineComments,
         };
     }
 
@@ -2565,4 +2569,6 @@ ${reviewOptions}
 
         return chunks;
     }
+
+
 }
