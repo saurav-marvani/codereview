@@ -27,6 +27,17 @@ export interface PlaceholderContext {
     lineComments?: CommentResult[];
 }
 
+/**
+ * One review suggestion distilled into the fields the consolidated agent-prompt
+ * block renders (see MessageTemplateProcessor.getConsolidatedLLMPromptBody).
+ */
+type ConsolidatedPromptEntry = {
+    file: string;
+    line?: number;
+    prompt: string;
+    improvedCode?: string;
+};
+
 export type PlaceholderHandler = (
     context: PlaceholderContext,
 ) => Promise<string> | string;
@@ -45,7 +56,7 @@ export class MessageTemplateProcessor {
         this.handlers.set('reviewOptions', this.generateReviewOptionsAccordion);
         this.handlers.set('reviewCadence', this.generateReviewCadenceInfo);
         this.handlers.set(
-            'consolidatedLLMPrompt',
+            'agentPrompt',
             async (context: PlaceholderContext) => {
                 return this.getConsolidatedLLMPromptBody(
                     context.lineComments || [],
@@ -63,6 +74,8 @@ export class MessageTemplateProcessor {
      * @changeSummary - requires: context.changedFiles, context.language
      * @reviewOptions - requires: context.codeReviewConfig, context.language
      * @reviewCadence - requires: context.codeReviewConfig, context.language
+     * @reviewScope - requires: context.codeReviewConfig
+     * @agentPrompt - requires: context.lineComments
      *
      * @param template Template with @placeholders
      * @param context Context for the handlers
@@ -332,15 +345,12 @@ ${reviewOptionsMarkdown}
         );
     }
 
-    private extractPromptsFromComments(lineComments: CommentResult[]): Array<{
-        file: string;
-        line?: number;
-        prompt: string;
-        improvedCode?: string;
-    }> {
+    private extractPromptsFromComments(
+        lineComments: CommentResult[],
+    ): ConsolidatedPromptEntry[] {
         if (!lineComments?.length) return [];
 
-        return lineComments.reduce(
+        return lineComments.reduce<ConsolidatedPromptEntry[]>(
             (acc, { comment }) => {
                 if (comment?.suggestion?.llmPrompt) {
                     acc.push({
@@ -352,22 +362,12 @@ ${reviewOptionsMarkdown}
                 }
                 return acc;
             },
-            [] as Array<{
-                file: string;
-                line?: number;
-                prompt: string;
-                improvedCode?: string;
-            }>,
+            [],
         );
     }
 
     private buildConsolidatedCommentBody(
-        prompts: Array<{
-            file: string;
-            line?: number;
-            prompt: string;
-            improvedCode?: string;
-        }>,
+        prompts: ConsolidatedPromptEntry[],
     ): string {
         const taskList = prompts
             .map(
@@ -418,31 +418,32 @@ ${reviewOptionsMarkdown}
             `Review each issue in context, use the reference implementations as guidance, and apply fixes that are consistent with the surrounding codebase.`,
         ].join('\n');
 
+        // The block is fenced so the user can copy it verbatim. improvedCode /
+        // llmPrompt may themselves contain ``` fences; pick a backtick run
+        // longer than any inside the content so the outer fence can't be closed
+        // early (CommonMark fenced-code rule).
+        const longestBacktickRun = Math.max(
+            0,
+            ...(agentBlock.match(/`+/g) ?? []).map((run) => run.length),
+        );
+        const fence = '`'.repeat(Math.max(3, longestBacktickRun + 1));
+
         return [
             `**Kody Code Review** — ${prompts.length} suggested fix${prompts.length > 1 ? 'es' : ''}.`,
             `Paste the prompt below to your agent and all review fixed at once!\n`,
             `<details>`,
             `<summary>🛠️ Open Agent Prompt</summary>`,
             ``,
-            `\`\`\``,
+            fence,
             agentBlock,
-            `\`\`\``,
+            fence,
             ``,
             `</details>`,
         ].join('\n');
     }
 
     public getConsolidatedLLMPromptBody(lineComments: CommentResult[]): string {
-        console.log(
-            '[MessageTemplateProcessor] DEBUG: getConsolidatedLLMPromptBody called, lineComments:',
-            lineComments?.length,
-        );
         const prompts = this.extractPromptsFromComments(lineComments);
-        console.log(
-            '[MessageTemplateProcessor] DEBUG: extractPromptsFromComments returned:',
-            prompts.length,
-            'prompts',
-        );
         if (prompts.length === 0) return '';
         return this.buildConsolidatedCommentBody(prompts);
     }

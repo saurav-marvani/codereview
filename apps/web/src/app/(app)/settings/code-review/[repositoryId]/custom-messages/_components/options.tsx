@@ -313,8 +313,8 @@ export const dropdownItems = {
             "Shows which configuration level was used to review this PR",
         example: <ReviewScopePreview />,
     },
-    consolidatedLLMPrompt: {
-        label: "Consolidated LLM Prompt",
+    agentPrompt: {
+        label: "Agent Prompt",
         description:
             "All review suggestions consolidated into a single prompt block for AI agents",
         example: (
@@ -367,12 +367,21 @@ export const dropdownItems = {
                 </details>
             </div>
         ),
+    },
+} satisfies Record<
+    string,
+    {
+        label: string;
+        description: string;
+        example: React.JSX.Element;
+    }
+>;
 
-    } satisfies Record<
-        string,
-        {
-            label: string;
-            description: string;
-            example: React.JSX.Element;
-        }
-    >;
+/**
+ * Placeholders that only make sense on the END review message — they depend on
+ * data produced during the review (e.g. line comments). Hidden from the Start
+ * message's "Add context" list, where that data doesn't exist yet.
+ */
+export const END_ONLY_PLACEHOLDERS = new Set<keyof typeof dropdownItems>([
+    "agentPrompt",
+]);
