@@ -10,7 +10,20 @@ export const useTokenUsageFilters = (models: string[]) => {
     const searchParams = useSearchParams();
     const currentFilter = searchParams.get("filter") ?? "daily";
 
-    const [selectedModels, setSelectedModels] = useState<string[]>(models);
+    // Seed from `?models=` (comma-separated) so a deep-link — e.g. the BYOK
+    // per-model cost chip — lands scoped to that model. Only ids that actually
+    // exist in the current aggregation are honored; anything else falls back to
+    // "all models". Mirrors how `prNumber`/`developer` seed from the URL below.
+    const [selectedModels, setSelectedModels] = useState<string[]>(() => {
+        const fromUrl = searchParams.get("models");
+        if (!fromUrl) return models;
+        const requested = fromUrl
+            .split(",")
+            .map((m) => m.trim())
+            .filter(Boolean);
+        const valid = requested.filter((m) => models.includes(m));
+        return valid.length > 0 ? valid : models;
+    });
 
     // Keep selection in sync when the upstream `models` list changes —
     // switching filter (daily/by-pr/by-developer) yields a different
@@ -78,6 +91,25 @@ export const useTokenUsageFilters = (models: string[]) => {
 
         router.replace(`${pathname}?${params.toString()}`);
     }, [debouncedDeveloper, router, pathname, searchParams]);
+
+    // Mirror the model selection back into `?models=` so the scope survives
+    // reload/share and matches what a deep-link would produce. Written only for
+    // a proper subset; cleared for all/none (both mean "All models", see
+    // getModelSelectionText). Keyed on the selection so URL churn doesn't loop.
+    const selectedModelsKey = selectedModels.join(",");
+    useEffect(() => {
+        const params = new URLSearchParams(searchParams.toString());
+        const isSubset =
+            selectedModels.length > 0 &&
+            selectedModels.length < models.length;
+        if (isSubset) {
+            params.set("models", selectedModelsKey);
+        } else {
+            params.delete("models");
+        }
+        router.replace(`${pathname}?${params.toString()}`);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedModelsKey, models.length]);
 
     const handlePrNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setPrNumber(e.target.value);

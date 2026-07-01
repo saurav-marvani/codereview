@@ -12,6 +12,7 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from "@components/ui/tooltip";
+import { formatUsd } from "@services/usage/format";
 import {
     EnrichedModelUsage,
     ModelPricingInfo,
@@ -24,14 +25,6 @@ function formatTokens(n: number): string {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
     if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
     return n.toLocaleString();
-}
-
-function formatUsd(amount: number): string {
-    if (amount >= 1000) {
-        const truncated = Math.floor((amount / 1000) * 100) / 100;
-        return `$${truncated.toFixed(2)}K`;
-    }
-    return `$${amount.toFixed(2)}`;
 }
 
 /**

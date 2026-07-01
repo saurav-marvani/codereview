@@ -122,6 +122,27 @@ export const SpendLimitSection = ({ teamId }: { teamId?: string }) => {
     );
     const allPriceable = unpriceableModels.length === 0;
 
+    // Dirty check: only enable "Save" when the form actually differs from the
+    // loaded config — so the button isn't lit when nothing changed. Mirrors the
+    // exact seeding done in the effect above.
+    const isDirty = useMemo(() => {
+        const seededEnabled = data?.enabled ?? false;
+        const seededLimit =
+            data && data.monthlyLimitUsd > 0
+                ? String(data.monthlyLimitUsd)
+                : "";
+        const seededPrices = data
+            ? Object.fromEntries(
+                  data.models.map((m) => [m.model, seedPrices(m)]),
+              )
+            : {};
+        return (
+            enabled !== seededEnabled ||
+            monthlyLimit !== seededLimit ||
+            JSON.stringify(prices) !== JSON.stringify(seededPrices)
+        );
+    }, [data, enabled, monthlyLimit, prices]);
+
     const updatePrice = (model: string, field: PriceField, value: string) => {
         setPrices((prev) => ({
             ...prev,
@@ -336,8 +357,11 @@ export const SpendLimitSection = ({ teamId }: { teamId?: string }) => {
                         loading={isSaving}
                         disabled={
                             isSaving ||
-                            !limitIsValid ||
-                            (enabled && !allPriceable)
+                            // Nothing changed since the last save → keep it off.
+                            !isDirty ||
+                            // Alerts ON needs a valid limit + every model priced.
+                            // (Prices alone still save with alerts OFF — decoupled.)
+                            (enabled && (!limitIsValid || !allPriceable))
                         }
                         onClick={handleSave}>
                         Save spend limit
