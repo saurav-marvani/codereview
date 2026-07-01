@@ -188,57 +188,73 @@ function getPinoLogger(): pino.Logger {
             },
         };
 
-        let transport;
-        if (isProduction && !shouldPrettyPrint) {
-            // Production JSON logging to stdout
-            transport = pino.transport({
-                targets: [
-                    {
-                        target: 'pino/file',
-                        options: {
-                            destination: 1, // stdout
-                            mkdir: false,
+        try {
+            let transport;
+            if (isProduction && !shouldPrettyPrint) {
+                // Production JSON logging to stdout
+                transport = pino.transport({
+                    targets: [
+                        {
+                            target: 'pino/file',
+                            options: {
+                                destination: 1, // stdout
+                                mkdir: false,
+                            },
+                            level: process.env.API_LOG_LEVEL || 'info',
                         },
-                        level: process.env.API_LOG_LEVEL || 'info',
-                    },
-                ],
-            });
-        } else {
-            // Development pretty-printed logging
-            transport = pino.transport({
-                targets: [
-                    {
-                        target: 'pino-pretty',
-                        options: {
-                            colorize: true,
-                            translateTime: 'SYS:standard',
-                            ignore: 'pid,hostname,environment,metadata,traceId,spanId,correlationId,tenantId,sessionId',
-                            levelFirst: true,
-                            errorProps: 'message,stack',
-                            messageFormat:
-                                'SYS:[{serviceName}] {level} - {context} - {msg}',
+                    ],
+                });
+            } else {
+                // Development pretty-printed logging
+                transport = pino.transport({
+                    targets: [
+                        {
+                            target: 'pino-pretty',
+                            options: {
+                                colorize: true,
+                                translateTime: 'SYS:standard',
+                                ignore: 'pid,hostname,environment,metadata,traceId,spanId,correlationId,tenantId,sessionId',
+                                levelFirst: true,
+                                errorProps: 'message,stack',
+                                messageFormat:
+                                    'SYS:[{serviceName}] {level} - {context} - {msg}',
+                            },
+                            level: process.env.API_LOG_LEVEL || 'info',
                         },
-                        level: process.env.API_LOG_LEVEL || 'info',
-                    },
-                ],
-            });
-        }
+                    ],
+                });
+            }
 
-        let transportFailed = false;
-        transport.on('error', (err) => {
-            if (transportFailed) return;
-            transportFailed = true;
+            let transportFailed = false;
+            transport.on('error', (err) => {
+                if (transportFailed) return;
+                transportFailed = true;
+                console.error(
+                    'Pino transport worker died, falling back to in-process stdout logger:',
+                    err,
+                );
+                // Worker thread is gone — rebuild the singleton with an in-process
+                // destination so subsequent getPinoLogger() calls return a healthy
+                // logger that can't die the same way.
+                pinoLogger = pino(baseConfig, pino.destination({ dest: 1 }));
+            });
+
+            pinoLogger = pino(baseConfig, transport);
+        } catch (err) {
+            // `pino.transport()` throws SYNCHRONOUSLY when its target module
+            // can't be resolved — notably 'pino-pretty' inside a webpack bundle
+            // (the mcp-manager), where transports run in a worker thread that
+            // resolves the target by path. The async `.on('error')` handler
+            // above can't catch this — the throw happens before it's attached.
+            // A logging-transport failure must NEVER break the app: this was
+            // propagating out of the first log() call and crashing MCP
+            // integration loading. Fall back to an in-process stdout logger.
             console.error(
-                'Pino transport worker died, falling back to in-process stdout logger:',
+                'Pino transport could not be created, falling back to in-process stdout logger:',
                 err,
             );
-            // Worker thread is gone — rebuild the singleton with an in-process
-            // destination so subsequent getPinoLogger() calls return a healthy
-            // logger that can't die the same way.
             pinoLogger = pino(baseConfig, pino.destination({ dest: 1 }));
-        });
-
-        pinoLogger = pino(baseConfig, transport);
+        }
     }
     return pinoLogger;
 }
