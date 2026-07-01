@@ -71,6 +71,24 @@ function resolvePromptOverrideText(value: unknown): string {
     return '';
 }
 
+/**
+ * Renders the user's per-review steering directive (`@kody review <directive>`)
+ * as a high-priority block at the top of the user prompt so the finder reads it
+ * before the diffs. It RAISES depth on the named area; it must NOT suppress
+ * concrete issues found elsewhere (priority, not filter). Empty when absent.
+ * (PR #1417 — re-homed here after the prompt-building was extracted from the
+ * base provider during the agents refactor.)
+ */
+export function formatReviewFocus(directive?: string): string {
+    const text = (directive ?? '').trim();
+    if (!text) return '';
+    return `\n  <ReviewFocus>
+    The user asked this review to focus on: ${text}
+    Spend your deepest analysis on the changed code matching this focus — trace its callers/callees and challenge it hardest.
+    Still report any concrete bug, security, or performance issue you notice elsewhere in the diff; do NOT suppress findings outside the focus. The focus sets priority, not a filter.
+  </ReviewFocus>`;
+}
+
 export function buildSystemPrompt(input: ReviewAgentInput, meta: PromptAgentMeta): string {
         const isSelfContained = !input.remoteCommands;
         if (isSelfContained) {
@@ -295,7 +313,7 @@ export function buildUserPrompt(input: ReviewAgentInput, meta: PromptAgentMeta):
                   'issues introduced by these changes');
 
         return (
-            `<ReviewTask>
+            `<ReviewTask>${formatReviewFocus(input.reviewDirective)}
   ${prContextSection}
 
   <Diffs>
@@ -403,7 +421,7 @@ export function buildCompactUserPrompt(input: ReviewAgentInput, meta: PromptAgen
             ? `\n    Label each finding as one of: ${allowedSuggestionLabels.join(', ')}.`
             : '';
 
-        return `<ReviewTask>
+        return `<ReviewTask>${formatReviewFocus(input.reviewDirective)}
   ${prContextSection}
   <Diffs>
 ${diffsSection}
@@ -539,7 +557,7 @@ export function buildSelfContainedUserPrompt(input: ReviewAgentInput, meta: Prom
                   'issues introduced by these changes');
 
         return (
-            `<ReviewTask mode="self-contained">
+            `<ReviewTask mode="self-contained">${formatReviewFocus(input.reviewDirective)}
   ${prContextSection}
 
   <Diffs>

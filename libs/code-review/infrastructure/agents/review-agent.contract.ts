@@ -229,6 +229,21 @@ export interface ReviewAgentInput
     /** Gated A/B knob (default off): forwarded to AgentLoopInput.outlineFirst.
      *  The pipeline/experiment sets it; everything below threads it down. */
     outlineFirst?: boolean;
+    /**
+     * Commits that make up this PR (SHA + subject line), oldest→newest. Threaded
+     * so commit-hygiene rules ("don't mix mechanical and behavioral changes")
+     * are judged against real commit boundaries instead of the aggregated diff.
+     * (PR #1412.)
+     */
+    commits?: Array<{ sha: string; message: string }>;
+    /**
+     * Optional per-review steering directive supplied by the user at trigger
+     * time (e.g. `@kody review focus on the auth logic`). Free text. When set,
+     * it renders as a high-priority `<ReviewFocus>` block at the top of the user
+     * prompt so the finder concentrates depth on the named area WITHOUT
+     * suppressing concrete issues found elsewhere. (PR #1417.)
+     */
+    reviewDirective?: string;
 }
 
 /**
