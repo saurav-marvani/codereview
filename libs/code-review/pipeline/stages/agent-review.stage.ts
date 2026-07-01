@@ -12,7 +12,7 @@ import {
     DEDUP_CONTENT_THRESHOLD,
     buildDedupPrompt,
     contentSimilarity,
-} from '@libs/code-review/infrastructure/agents/llm/dedup-prompt';
+} from '@libs/code-review/infrastructure/agents/engine/dedup-prompt';
 import {
     dedupReviewWarnings,
     type ReviewWarning,
@@ -72,7 +72,7 @@ import {
  * For each hunk, we track which RIGHT-side lines exist (context + added).
  * GitHub only allows comments on lines that appear in the diff.
  */
-function extractValidDiffLines(patch?: string): Array<[number, number]> {
+export function extractValidDiffLines(patch?: string): Array<[number, number]> {
     if (!patch) {
         return [];
     }
@@ -520,6 +520,9 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 // on small windows they're guaranteed to refire the same
                 // preflight error. Don't override an explicit caller value.
                 skipHeavyPasses: adaptiveProfile.skipHeavyPasses || undefined,
+                // Experimental A/B knob (config-driven, default off): outline-
+                // first readFile. Flows down to the finder's tool registry.
+                outlineFirst: context.codeReviewConfig?.outlineFirst,
                 // Forwarded from the workflow job timeout. The router builds
                 // an AbortController; here we pass it through so when the
                 // 1h45min budget fires, the agent-loop's local controller is
@@ -1429,9 +1432,9 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     spanName: 'dedup-suggestions',
                     runName: 'code-review-dedup',
                     model: 'internal-dedup',
-                    // Real billing source: the Google system key path is
-                    // 'system'; the else branch runs on the org's BYOK config.
-                    isByok: !googleKey,
+                    // Real billing source: the platform OpenAI-key path is a
+                    // 'system' key; the else branch runs on the org's BYOK config.
+                    isByok: !openaiKey,
                     usage: {
                         inputTokens: dedupUsage.inputTokens,
                         outputTokens: dedupUsage.outputTokens,
@@ -1688,6 +1691,18 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             };
         } catch (error) {
             const noModel = error instanceof NoStructuredFallbackModelError;
+            // Fail loud outside production. An unexpected error here (e.g. the
+            // `googleKey` ReferenceError that shipped on a feature branch) is a
+            // programming bug — left to the graceful 'failed-keep-all' path it
+            // ships silently as duplicate comments. In dev/CI/test we re-throw
+            // so it surfaces at PR time; the operational "no model available"
+            // case (noModel) stays graceful everywhere.
+            const isProduction =
+                (process.env.API_NODE_ENV || process.env.NODE_ENV) ===
+                'production';
+            if (!noModel && !isProduction) {
+                throw error;
+            }
             if (noModel) {
                 this.logger.warn({
                     message: `[DEDUP] PR#${prNumber}: No model available for dedup (no Google key and no BYOK), keeping all ${suggestions.length} suggestions`,

@@ -766,6 +766,24 @@ describe('AgentReviewStage', () => {
             }
         });
 
+        it('fails loud (re-throws) on an unexpected dedup error outside production', async () => {
+            // Guard against the `googleKey`-class bug: a programming error must
+            // NOT be swallowed into a silent 'failed-keep-all' in dev/CI/test.
+            const suggestions = makeSuggestions(2);
+            mockTracedGenerateText.mockRejectedValue(new Error('boom'));
+            const origKey = process.env.API_OPEN_AI_API_KEY;
+            process.env.API_OPEN_AI_API_KEY = 'test-key';
+            try {
+                await expect(
+                    (stage as any).deduplicateSuggestions(suggestions, 42),
+                ).rejects.toThrow('boom');
+            } finally {
+                if (origKey === undefined)
+                    delete process.env.API_OPEN_AI_API_KEY;
+                else process.env.API_OPEN_AI_API_KEY = origKey;
+            }
+        });
+
         it('Layer 1: should reject NaN keep index', async () => {
             const suggestions = makeSuggestions(4);
 
