@@ -15,6 +15,12 @@
  *
  *   # cloud path (gpt-5.4-mini):
  *   API_OPEN_AI_API_KEY=$BYOK_OPENAI_API_KEY node evals/parser/run.js
+ *
+ *   # a specific re-structurer model (mirrors BYOK/self-hosted resolution via
+ *   # the tier0-models seam — one model per process so the json-schema cache
+ *   # and env never leak between models):
+ *   RECOVERY_MODEL=kimi-k2.7-code node evals/parser/run.js
+ *   RECOVERY_MODEL=gemini-3-flash-preview node evals/parser/run.js
  */
 require('ts-node/register/transpile-only');
 require('tsconfig-paths/register');
@@ -30,6 +36,43 @@ const { recoverFindingsFromProse } = require(
 );
 
 async function main() {
+    // Optional: point the internal (re-structurer) model at a specific tier-0
+    // model, exactly as the self-hosted path resolves it. Omit -> cloud
+    // gpt-5.4-mini (or whatever getInternalModel picks from the env).
+    const model = process.env.RECOVERY_MODEL;
+    if (model) {
+        const { applyModelEnv } = require('../shared/tier0-models');
+        applyModelEnv(model); // sets API_LLM_PROVIDER_MODEL + key + baseURL
+    }
+    console.log(`re-structurer model: ${model || '(cloud default gpt-5.4-mini)'}`);
+
+    // Reachability probe. recoverFindingsFromProse swallows errors by design
+    // (best-effort — it must never break a review), so in an eval a dead key or
+    // an unreachable model would masquerade as "recovered 0 findings" (a quality
+    // fail) instead of an infra error. Surface it here so ERROR != 0-findings.
+    {
+        const { getInternalModel } = require(
+            path.join(__dirname, '../../libs/llm/byok-to-vercel.ts'),
+        );
+        const { generateObject } = require('ai');
+        const { z } = require('zod');
+        try {
+            const m = getInternalModel(undefined, { structuredOutputs: true });
+            if (!m) throw new Error('getInternalModel returned null (no key)');
+            await generateObject({
+                model: m,
+                schema: z.object({ ok: z.string() }),
+                prompt: 'Reply with {"ok":"yes"}.',
+            });
+        } catch (e) {
+            console.log(
+                `MODEL ERROR (${model || 'default'}): ${String(e.message || e).split('\n')[0].slice(0, 200)}`,
+            );
+            console.log('(unreachable / bad key — NOT a recovery-quality result)');
+            process.exit(3);
+        }
+    }
+
     const fixtures = JSON.parse(
         fs.readFileSync(path.join(__dirname, 'fixtures.json'), 'utf8'),
     );
