@@ -370,6 +370,16 @@ export function buildAgentTools(
                 if (!result && result !== '') {
                     return `Error: readFile returned ${typeof result} for ${filePath}`;
                 }
+                // An empty string means the read produced no content: either a
+                // range that starts past end-of-file, or a genuinely empty file.
+                // Return a clear signal instead of a blank numbered line
+                // ("500: ") the model could misread as "this line is blank".
+                if (result === '') {
+                    if (startLine > 0) {
+                        return `readFile: no content in ${filePath} for the requested range (startLine=${startLine}${endLine ? `, endLine=${endLine}` : ''}). The file likely has fewer than ${startLine} lines — re-read without startLine/endLine, or with a smaller startLine.`;
+                    }
+                    return `readFile: ${filePath} is empty (0 bytes).`;
+                }
                 const baseLineNumber = startLine > 0 ? startLine : 1;
                 const numbered = addLineNumbers(result, baseLineNumber);
                 if (numbered.length > MAX_READ_LENGTH) {
@@ -488,8 +498,14 @@ export function buildAgentTools(
                                     ? safePattern
                                     : `*${safePattern}*`;
                             const fdCmd = `fd --glob '${globPattern}'${extArg} '${safePath}' --type f --max-results 30`;
-                            const { stdout } = await remoteCommands.exec(fdCmd);
-                            if (stdout && stdout.trim()) {
+                            const { stdout, exitCode } =
+                                await remoteCommands.exec(fdCmd);
+                            // Only trust output on a clean exit. exec merges
+                            // stderr into stdout, so a missing `fd` binary yields
+                            // a non-zero exit with "fd: command not found" in
+                            // stdout — returning that here would ship the error
+                            // as if it were a file list and skip the fallbacks.
+                            if (exitCode === 0 && stdout.trim()) {
                                 return stdout.trim();
                             }
                         } catch {
@@ -508,9 +524,12 @@ export function buildAgentTools(
                                     ? safePattern
                                     : `*${safePattern}*`;
                             const findCmd = `find '${safePath}' -type f -iname '${globPattern}'`;
-                            const { stdout } =
+                            const { stdout, exitCode } =
                                 await remoteCommands.exec(findCmd);
-                            if (stdout && stdout.trim()) {
+                            // Same guard as fd: only return on a clean exit so a
+                            // find error (or missing binary) falls through to the
+                            // listDir fallback instead of being returned as data.
+                            if (exitCode === 0 && stdout.trim()) {
                                 const lines = stdout.trim().split('\n');
                                 return lines.slice(0, 30).join('\n');
                             }
