@@ -84,6 +84,12 @@ function grepStrongUsages(): Set<string> {
         '--exclude-dir=.cache',
         '--exclude-dir=.git',
         '--exclude-dir=.env-preview',
+        // Nested git worktrees (e.g. .worktrees/worker-prodlike-sim) are
+        // separate checkouts — often carrying their own dist/ bundles and EE
+        // libs — not the main tree's source of truth. Scanning them surfaces
+        // env vars that only exist on that other branch (false positives).
+        // Exclude like node_modules/dist.
+        '--exclude-dir=.worktrees',
         // Claude Code / Cursor / IDE local config — sometimes contains
         // example commands with `process.env.X` in escaped JSON. Not code.
         '--exclude-dir=.claude',
