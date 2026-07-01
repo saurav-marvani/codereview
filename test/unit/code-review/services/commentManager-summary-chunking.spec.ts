@@ -394,18 +394,18 @@ describe('CommentManagerService – generateSummaryPR chunking integration', () 
         llmCallCount = 0;
 
         mockObservabilityService = {
-            runLLMInSpan: jest.fn().mockImplementation(async ({ runName }) => {
+            runAiSdkLLMInSpan: jest.fn().mockImplementation(async ({ runName }) => {
                 llmCallCount++;
                 if (runName.includes('consolidation')) {
-                    return { result: 'Consolidated summary of all changes.' };
+                    return { text: 'Consolidated summary of all changes.' };
                 }
                 if (runName.includes('chunk')) {
                     const chunkNum = runName.match(/chunk_(\d+)/)?.[1] || '?';
                     return {
-                        result: `Partial summary for chunk ${chunkNum}.`,
+                        text: `Partial summary for chunk ${chunkNum}.`,
                     };
                 }
-                return { result: 'Full PR summary generated.' };
+                return { text: 'Full PR summary generated.' };
             }),
         };
 
@@ -522,7 +522,7 @@ describe('CommentManagerService – generateSummaryPR chunking integration', () 
             expect(result).toContain('Consolidated summary');
 
             // Verify chunk calls
-            const calls = mockObservabilityService.runLLMInSpan.mock.calls;
+            const calls = mockObservabilityService.runAiSdkLLMInSpan.mock.calls;
             const runNames = calls.map((c: any) => c[0].runName);
             expect(runNames).toContain('generateSummaryPR_chunk_1');
             expect(runNames).toContain('generateSummaryPR_chunk_2');
@@ -570,21 +570,21 @@ describe('CommentManagerService – generateSummaryPR chunking integration', () 
     describe('with maxInputTokens, some chunks return empty', () => {
         it('should consolidate only non-empty partial summaries', async () => {
             // Override mock: chunk 2 returns empty
-            mockObservabilityService.runLLMInSpan.mockImplementation(
+            mockObservabilityService.runAiSdkLLMInSpan.mockImplementation(
                 async ({ runName }: any) => {
                     llmCallCount++;
                     if (runName.includes('consolidation')) {
                         return {
-                            result: 'Consolidated from partial summaries.',
+                            text: 'Consolidated from partial summaries.',
                         };
                     }
                     if (runName === 'generateSummaryPR_chunk_2') {
-                        return { result: null }; // empty chunk
+                        return { text: null }; // empty chunk
                     }
                     if (runName.includes('chunk')) {
-                        return { result: 'Partial summary for chunk.' };
+                        return { text: 'Partial summary for chunk.' };
                     }
-                    return { result: 'Full summary.' };
+                    return { text: 'Full summary.' };
                 },
             );
 
@@ -618,10 +618,10 @@ describe('CommentManagerService – generateSummaryPR chunking integration', () 
     describe('with maxInputTokens, all chunks return empty', () => {
         it('should return null after retry exhaustion', async () => {
             // All chunk calls return empty
-            mockObservabilityService.runLLMInSpan.mockImplementation(
+            mockObservabilityService.runAiSdkLLMInSpan.mockImplementation(
                 async () => {
                     llmCallCount++;
-                    return { result: null };
+                    return { text: null };
                 },
             );
 

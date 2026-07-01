@@ -61,8 +61,8 @@ describe('CommentManagerService – REPLACE mode bug (tags removed by user)', ()
 
     beforeEach(async () => {
         mockObservabilityService = {
-            runLLMInSpan: jest.fn().mockImplementation(async () => {
-                return { result: LLM_SUMMARY };
+            runAiSdkLLMInSpan: jest.fn().mockImplementation(async () => {
+                return { text: LLM_SUMMARY };
             }),
         };
 
