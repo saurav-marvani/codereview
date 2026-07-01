@@ -211,6 +211,7 @@
         "docker:prod:sim": "bash ./scripts/docker/simulate-prod.sh",
         "sentry:sourcemaps": "sentry-cli sourcemaps inject --org kodus --project kodus-orchestrator ./dist && sentry-cli sourcemaps upload --org kodus --project kodus-orchestrator ./dist",
         "typecheck": "node --max-old-space-size=8192 ./node_modules/.bin/tsc --noEmit --skipLibCheck",
+        "typecheck:libs-gate": "bash scripts/typecheck-libs-gate.sh",
         "prepare": "husky || true",
         "dev:yalc": "pnpm run dev:yalc:init && pnpm run dev:yalc:up && pnpm run dev:yalc:watch",
         "dev:yalc:tunel": "pnpm run tunnel & pnpm run dev:yalc:up && pnpm run dev:yalc:init && pnpm run dev:yalc:watch && pnpm run docker:logs",
