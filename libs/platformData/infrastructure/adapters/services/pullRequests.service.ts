@@ -1306,7 +1306,7 @@ export class PullRequestsService implements IPullRequestsService {
                     : null;
 
                 return {
-                    id: data?.user?.uuid.replace(/[{}]/g, '') || '',
+                    id: String(data?.user?.uuid?.replace(/[{}]/g, '') || ''),
                     username: data?.user?.nickname || '',
                     name: data?.user?.display_name || '',
                     email: completeUser?.email || null,
@@ -1332,7 +1332,7 @@ export class PullRequestsService implements IPullRequestsService {
                     : null;
 
                 return {
-                    id: data?.id || data?.uuid || '',
+                    id: String(data?.id || data?.uuid || ''),
                     username:
                         data?.login ||
                         data?.username ||
@@ -1358,8 +1358,8 @@ export class PullRequestsService implements IPullRequestsService {
                         platformType,
                     );
 
-                return {
-                    id: completeUser.id,
+                    return {
+                    id: String(completeUser.id),
                     username:
                         completeUser?.login ||
                         completeUser?.username ||
@@ -1374,7 +1374,7 @@ export class PullRequestsService implements IPullRequestsService {
             }
 
             return {
-                id: data?.id || data?.uuid || '',
+                id: String(data?.id || data?.uuid || ''),
                 username:
                     data?.login ||
                     data?.username ||
@@ -2091,7 +2091,7 @@ export class PullRequestsService implements IPullRequestsService {
                 });
                 return foundUser
                     ? {
-                          id: foundUser.id,
+                          id: String(foundUser.id),
                           username: foundUser.username,
                           name: foundUser.name,
                       }

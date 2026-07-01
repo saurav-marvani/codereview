@@ -118,19 +118,21 @@ export class PullRequestsModel extends CoreDocument {
     @Prop({ type: String, required: false })
     public provider: string;
 
-    @Prop({ type: Object, required: false })
+    @Prop({ type: { id: String, username: String, name: String, email: String }, required: false })
     public user: {
         id: string;
         username: string;
+        name?: string;
+        email?: string;
     };
 
-    @Prop({ type: Array, required: false })
+    @Prop({ type: [{ id: String, username: String }], required: false })
     public reviewers: Array<{
         id: string;
         username: string;
     }>;
 
-    @Prop({ type: Array, required: false })
+    @Prop({ type: [{ id: String, username: String }], required: false })
     public assignees: Array<{
         id: string;
         username: string;

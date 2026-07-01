@@ -407,7 +407,7 @@ export class BackfillHistoricalPRsUseCase {
             updatedAt: pr.updated_at || new Date().toISOString(),
             provider: '',
             user: {
-                id: pr.user?.id || '',
+                id: String(pr.user?.id || ''),
                 username: pr.user?.login || pr.user?.name || '',
             },
             reviewers:
