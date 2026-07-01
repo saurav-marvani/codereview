@@ -8,6 +8,7 @@ import {
     IContextResolutionService,
 } from '@libs/core/context-resolution/domain/contracts/context-resolution.service.contract';
 import { STATUS } from '@libs/core/infrastructure/config/types/database/status.type';
+import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import { PERMISSIONS_SERVICE_TOKEN } from '@libs/identity/domain/permissions/contracts/permissions.service.contract';
 import { Role } from '@libs/identity/domain/permissions/enums/permissions.enum';
 import { AuthorizationService } from '@libs/identity/infrastructure/adapters/services/permissions/authorization.service';
@@ -147,6 +148,15 @@ describe('CreateOrUpdateKodyRulesUseCase — inheritance toggle authz', () => {
                 {
                     provide: CentralizedConfigPrService,
                     useValue: centralizedConfigPrServiceMock,
+                },
+                {
+                    provide: PermissionValidationService,
+                    useValue: {
+                        getBYOKConfig: jest.fn().mockResolvedValue(null),
+                        getSubscriptionStatus: jest
+                            .fn()
+                            .mockResolvedValue(undefined),
+                    },
                 },
             ],
         }).compile();
