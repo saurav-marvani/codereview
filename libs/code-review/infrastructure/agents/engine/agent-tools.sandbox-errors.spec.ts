@@ -27,18 +27,21 @@ describe('findFile — resilient to a missing fd binary', () => {
         const remote = makeRemote({
             exec: async (cmd: string) => {
                 if (cmd.startsWith('fd ')) {
+                    // Post-unmerge: the shell error lands on stderr, exit 127.
                     return {
-                        stdout: '/bin/bash: line 1: fd: command not found',
+                        stdout: '',
+                        stderr: '/bin/bash: line 1: fd: command not found',
                         exitCode: 127,
                     };
                 }
                 if (cmd.startsWith('find ')) {
                     return {
                         stdout: 'src/foo.ts\nsrc/foo.test.ts',
+                        stderr: '',
                         exitCode: 0,
                     };
                 }
-                return { stdout: '', exitCode: 0 };
+                return { stdout: '', stderr: '', exitCode: 0 };
             },
         });
         const out = await buildAgentTools(remote).findFile.execute({
@@ -51,7 +54,8 @@ describe('findFile — resilient to a missing fd binary', () => {
     it('falls through to listDir when both fd and find are unavailable', async () => {
         const remote = makeRemote({
             exec: async (cmd: string) => ({
-                stdout: `${cmd.split(' ')[0]}: command not found`,
+                stdout: '',
+                stderr: `${cmd.split(' ')[0]}: command not found`,
                 exitCode: 127,
             }),
             listDir: async () => 'src/foo.ts\nsrc/bar.ts',
@@ -68,8 +72,8 @@ describe('findFile — resilient to a missing fd binary', () => {
         const remote = makeRemote({
             exec: async (cmd: string) =>
                 cmd.startsWith('fd ')
-                    ? { stdout: 'src/config.ts', exitCode: 0 }
-                    : { stdout: '', exitCode: 0 },
+                    ? { stdout: 'src/config.ts', stderr: '', exitCode: 0 }
+                    : { stdout: '', stderr: '', exitCode: 0 },
         });
         const out = await buildAgentTools(remote).findFile.execute({
             pattern: 'config',
