@@ -86,6 +86,82 @@ export const isForceReviewCommand = (
 };
 
 /**
+ * Captures the command head (`@kody review` / `@kody start-review`) plus an
+ * optional `--force` flag, so the remaining text on the command can be read as
+ * a free-text steering directive (e.g. `@kody review focus on the auth logic`).
+ */
+const KODY_REVIEW_COMMAND_HEAD_PATTERN =
+    /^\s*@kody\s+(?:start-review|review)\b[ \t]*(?:--?force\b[ \t]*)?/i;
+
+/** Hard cap so a pasted wall of text can't blow up the prompt. */
+const MAX_REVIEW_DIRECTIVE_LENGTH = 500;
+
+/**
+ * The directive is UNTRUSTED text (anyone who can comment can supply it) and it
+ * gets rendered inside a `<ReviewFocus>` block in the finder prompt. Strip the
+ * characters it could use to break out of that block — primarily the angle
+ * brackets that could forge a `</ReviewFocus>` close tag or a fake `<section>` —
+ * plus control characters, and collapse whitespace. This is structural
+ * defense-in-depth, not a full prompt-injection defense: the directive is also
+ * framed as a low-trust hint that only prioritizes (never suppresses/approves)
+ * and is injected ONLY into the finder prompt, not the verify/summary passes.
+ * Backticks and ordinary punctuation are kept so a legit focus like
+ * "the `topCodes` sort" survives.
+ */
+const sanitizeReviewDirective = (raw: string): string =>
+    raw
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\u0000-\u001f\u007f]/g, ' ')
+        .replace(/[<>]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+/**
+ * Sanitize + length-cap an already-extracted directive string. Shared by the
+ * PR-comment path (parseReviewDirective) and the CLI path (`--focus`), so every
+ * surface that feeds a steering directive into the finder applies the same
+ * structural prompt-injection hardening. Returns undefined when empty.
+ */
+export const normalizeReviewDirective = (
+    raw: string | undefined | null,
+): string | undefined => {
+    if (!raw) return undefined;
+    const clean = sanitizeReviewDirective(String(raw)).slice(
+        0,
+        MAX_REVIEW_DIRECTIVE_LENGTH,
+    );
+    return clean || undefined;
+};
+
+/**
+ * Extract the free-text steering directive a user appended to a review command
+ * (`@kody review <directive>`). Returns the sanitized directive, or undefined
+ * when the comment is not a review command or carries no extra text (the common
+ * `@kody review` / `@kody review --force` case). Only the first line after the
+ * command is used; the `--force` flag and surrounding quotes are stripped; the
+ * text is sanitized (see sanitizeReviewDirective) and length-capped. Steers what
+ * the finder focuses on; it never filters — clear issues elsewhere are still
+ * reported.
+ */
+export const parseReviewDirective = (
+    text: string | undefined | null,
+): string | undefined => {
+    if (!text) return undefined;
+    if (!KODY_REVIEW_COMMAND_PATTERN.test(text)) return undefined;
+
+    const head = text.match(KODY_REVIEW_COMMAND_HEAD_PATTERN);
+    if (!head) return undefined;
+
+    return normalizeReviewDirective(
+        text
+            .slice(head[0].length)
+            .split(/\r?\n/)[0]
+            .trim()
+            .replace(/^["'`]+|["'`]+$/g, ''),
+    );
+};
+
+/**
  * Check if comment has the kody-codereview HTML marker
  */
 export const hasReviewMarker = (text: string | undefined | null): boolean => {

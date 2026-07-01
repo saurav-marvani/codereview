@@ -17,6 +17,7 @@ import {
     isForceReviewCommand,
     isKodyMentionNonReview,
     isReviewCommand,
+    parseReviewDirective,
 } from '@libs/common/utils/codeManagement/codeCommentMarkers';
 import { getMappedPlatform } from '@libs/common/utils/webhooks';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
@@ -498,6 +499,7 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
                             action: 'synchronize',
                             origin: isForceCommand ? 'command-force' : 'command',
                             triggerCommentId: comment?.id,
+                            reviewDirective: parseReviewDirective(comment.body),
                         },
                     };
 

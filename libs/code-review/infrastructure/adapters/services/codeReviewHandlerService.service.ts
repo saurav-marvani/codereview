@@ -165,6 +165,8 @@ export class CodeReviewHandlerService {
         lastExecutionData?: any, // Data from the last successful execution
         correlationId?: string,
         parentSignal?: AbortSignal,
+        // Free-text steering directive from `@kody review <directive>`.
+        reviewDirective?: string,
     ) {
         let initialContext: CodeReviewPipelineContext;
 
@@ -192,6 +194,7 @@ export class CodeReviewHandlerService {
                 platformType: platformType as PlatformType,
                 triggerCommentId,
                 userGitId,
+                reviewDirective,
                 pipelineMetadata: {
                     lastExecution: {
                         ...(lastExecutionData || null),

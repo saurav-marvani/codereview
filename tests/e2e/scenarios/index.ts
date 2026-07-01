@@ -6,6 +6,7 @@ import codeReviewVertexByok from './code-review-vertex-byok.js';
 import conversationVertexByok from './conversation-vertex-byok.js';
 import conversationAnthropicByok from './conversation-anthropic-byok.js';
 import commandReview from './command-review.js';
+import commandReviewFocus from './command-review-focus.js';
 import kodyRulesCreateAndApply from './kody-rules.js';
 import licenseAttribution from './license-attribution.js';
 import onboardingWebhookRegistration from './onboarding-webhook-registration.js';
@@ -30,6 +31,7 @@ export const allScenarios: Record<string, Scenario> = {
     [conversationAnthropicByok.id]: conversationAnthropicByok,
     [centralizedConfigSync.id]: centralizedConfigSync,
     [commandReview.id]: commandReview,
+    [commandReviewFocus.id]: commandReviewFocus,
     [cockpitAnalytics.id]: cockpitAnalytics,
     [kodyRulesCreateAndApply.id]: kodyRulesCreateAndApply,
     [licenseAttribution.id]: licenseAttribution,
@@ -66,6 +68,7 @@ export {
     codeReviewVertexByok,
     conversationVertexByok,
     commandReview,
+    commandReviewFocus,
     kodyRulesCreateAndApply,
     licenseAttribution,
     onboardingWebhookRegistration,

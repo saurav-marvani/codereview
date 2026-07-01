@@ -920,6 +920,8 @@ export class ValidatePrerequisitesStage extends BasePipelineStage<CodeReviewPipe
                     prUrl: (pullRequest?.url as string) ?? '',
                     repoName: repository?.name ?? '',
                     ownerContact,
+                    authorUsername: author?.username,
+                    authorEmail: author?.email,
                 },
                 organizationId: organizationAndTeamData.organizationId,
                 recipients,

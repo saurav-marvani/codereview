@@ -33,6 +33,7 @@ import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-
 import { CodeSuggestion } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { PriorityStatus } from '@libs/platformData/domain/pullRequests/enums/priorityStatus.enum';
 import { ReviewOrchestratorService } from '@libs/code-review/infrastructure/agents/review-orchestrator.service';
+import { buildOrchestratorInput } from './build-orchestrator-input';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import {
     AUTOMATION_EXECUTION_SERVICE_TOKEN,
@@ -359,6 +360,22 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             },
         });
 
+        // Observability for the `@kody review <directive>` steering feature:
+        // emit a marker when a directive reached the finder, so it's visible in
+        // logs (and assertable in E2E) that the review was actually focused.
+        if (context.reviewDirective) {
+            this.logger.log({
+                message: `[AGENT][review-focus] steering PR#${prNumber} by directive: "${context.reviewDirective}"`,
+                context: this.stageName,
+                metadata: {
+                    prNumber,
+                    reviewDirective: context.reviewDirective,
+                    organizationId:
+                        context.organizationAndTeamData?.organizationId,
+                },
+            });
+        }
+
         try {
             // Build progress callback for real-time agent traces in PR timeline
             const executionUuid =
@@ -435,6 +452,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 }
             }
 
+<<<<<<< HEAD
             const result = await this.reviewOrchestrator.execute({
                 organizationAndTeamData: context.organizationAndTeamData,
                 changedFiles,
@@ -529,6 +547,22 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 // aborted via parentSignal composition.
                 parentSignal: context.parentSignal,
             });
+=======
+            // Single place that maps context → agent input (extracted to a pure
+            // helper so the wiring, notably reviewDirective, is unit-testable).
+            const result = await this.reviewOrchestrator.execute(
+                buildOrchestratorInput(context, {
+                    changedFiles,
+                    prNumber,
+                    repositoryId,
+                    reviewOptions,
+                    onAgentProgress,
+                    gitHubToken: await this.resolveGitHubToken(context),
+                    callGraph,
+                    adaptiveProfile,
+                }),
+            );
+>>>>>>> main
 
             // Emit profile-driven warnings up here at the stage so they
             // surface even when the agent's overhead preflight throws

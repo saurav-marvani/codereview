@@ -95,6 +95,7 @@ export class AutomationCodeReviewService implements Omit<
             origin,
             action,
             triggerCommentId,
+            reviewDirective,
             userGitId,
             signal,
         } = payload as Record<string, any>;
@@ -262,6 +263,7 @@ export class AutomationCodeReviewService implements Omit<
                     lastExecution?.dataExecution, // Pass last execution data
                     correlationId,
                     signal, // parentSignal — forwarded to pipeline context
+                    reviewDirective, // @kody review <directive> steering text
                 );
 
             await this._handleExecutionCompletion(execution, result, payload);

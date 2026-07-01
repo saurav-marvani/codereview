@@ -66,6 +66,12 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     platformType: PlatformType;
     triggerCommentId?: number | string;
     userGitId?: string;
+    /**
+     * Free-text steering directive from a review command
+     * (`@kody review focus on the auth logic`). Threaded into the finder prompt
+     * as a high-priority focus block. Empty/undefined = a normal review.
+     */
+    reviewDirective?: string;
 
     codeReviewConfig?: CodeReviewConfig;
     automaticReviewStatus?: AutomaticReviewStatus;
