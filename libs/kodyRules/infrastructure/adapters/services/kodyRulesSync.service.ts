@@ -2456,6 +2456,13 @@ export class KodyRulesSyncService {
             },
         ];
 
+        const [byokConfig, subscriptionStatus] = await Promise.all([
+            this.permissionValidationService.getBYOKConfig(detectionOrgData),
+            this.permissionValidationService.getSubscriptionStatus(
+                detectionOrgData,
+            ),
+        ]);
+
         try {
             const contextReferenceId =
                 await this.contextReferenceDetectionService.detectAndSaveReferences(
@@ -2466,6 +2473,8 @@ export class KodyRulesSyncService {
                         repositoryId,
                         repositoryName,
                         organizationAndTeamData: detectionOrgData,
+                        byokConfig: byokConfig ?? undefined,
+                        subscriptionStatus,
                     },
                 );
 

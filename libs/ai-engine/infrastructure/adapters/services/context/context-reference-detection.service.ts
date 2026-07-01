@@ -51,6 +51,7 @@ export interface ContextReferenceDetectionParams {
     repositoryName?: string;
     organizationAndTeamData: OrganizationAndTeamData;
     byokConfig?: BYOKConfig;
+    subscriptionStatus?: string;
 }
 
 @Injectable()
@@ -77,6 +78,7 @@ export class ContextReferenceDetectionService {
             repositoryName,
             organizationAndTeamData,
             byokConfig,
+            subscriptionStatus,
         } = params;
 
         if (!fields || fields.length === 0) {
@@ -131,6 +133,7 @@ export class ContextReferenceDetectionService {
                 repositoryName,
                 organizationAndTeamData,
                 byokConfig,
+                subscriptionStatus,
             });
 
             if (!result) {
@@ -188,6 +191,7 @@ export class ContextReferenceDetectionService {
         repositoryName?: string;
         organizationAndTeamData: OrganizationAndTeamData;
         byokConfig?: BYOKConfig;
+        subscriptionStatus?: string;
     }): Promise<
         | {
               requirement: ContextRequirement;
@@ -204,6 +208,7 @@ export class ContextReferenceDetectionService {
             repositoryName,
             organizationAndTeamData,
             byokConfig,
+            subscriptionStatus,
         } = params;
 
         const trimmedText = field.text.trim();
@@ -259,6 +264,7 @@ export class ContextReferenceDetectionService {
                 repositoryName,
                 organizationAndTeamData,
                 byokConfig,
+                subscriptionStatus,
                 fieldId: fieldKey,
             });
 
@@ -468,6 +474,7 @@ export class ContextReferenceDetectionService {
         repositoryName?: string;
         organizationAndTeamData: OrganizationAndTeamData;
         byokConfig?: BYOKConfig;
+        subscriptionStatus?: string;
         fieldId?: string;
     }): Promise<{
         references: Array<{
@@ -499,6 +506,7 @@ export class ContextReferenceDetectionService {
                 detectionMode:
                     params.entityType === 'kodyRule' ? 'rule' : 'prompt',
                 byokConfig: params.byokConfig,
+                subscriptionStatus: params.subscriptionStatus,
             });
 
         const allDependencies: ContextDependency[] =
