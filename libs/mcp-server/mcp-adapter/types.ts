@@ -222,6 +222,9 @@ export interface MCPServerConfig {
     retries?: number;
     allowedTools?: string[];
     provider?: string;
+    /** Canonical capability category from the mcp-manager registry (e.g.
+     *  'task-management'). Lets consumers match by capability, not display name. */
+    category?: string | null;
 }
 
 export interface MCPAdapterConfig {

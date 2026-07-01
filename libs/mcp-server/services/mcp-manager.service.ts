@@ -31,6 +31,9 @@ type MCPItem = {
     mcpUrl: string;
     allowedTools: string[];
     metadata: Metadata;
+    // Canonical capability category stamped by the mcp-manager from its registry
+    // (e.g. 'task-management'). Single source of truth skills match against.
+    category?: string | null;
     createdAt: string;
     updatedAt: string;
     deletedAt: string | null;
@@ -418,6 +421,9 @@ export class MCPManagerService {
             retries: 1,
             timeout: 60_000,
             allowedTools: connection.allowedTools,
+            // Canonical capability category from the mcp-manager registry, used
+            // by skills to match required MCPs by capability (not display name).
+            category: connection.category ?? null,
         };
     }
 

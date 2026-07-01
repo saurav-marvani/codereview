@@ -4,6 +4,9 @@
   "moduleFileExtensions": ["js", "json", "ts"],
   "rootDir": ".",
   "testRegex": ".spec.ts$",
+  "moduleNameMapper": {
+    "^@libs/(.*)$": "<rootDir>/../../libs/$1"
+  },
   "transform": {
     "^.+\\.(t|j)s$": ["ts-jest", {
       "useESM": false,
