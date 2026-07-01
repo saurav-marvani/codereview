@@ -21,7 +21,7 @@ import {
 } from './notification-dispatcher.service';
 import { NotificationSseService } from './notification-sse.service';
 
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
         warn: jest.fn(),

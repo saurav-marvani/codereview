@@ -211,7 +211,7 @@ pnpm run selfhosted:logs -- web api                    # check for errors
 
 Common causes:
 - Memory pressure on `s-2vcpu-4gb` → use `DO_SIZE=s-4vcpu-8gb`
-- `WEB_HOSTNAME_API` wrong (must be `kodus-api`, the internal container name)
+- `WEB_HOSTNAME_API` wrong (must be `localhost`, the sentinel that makes the web resolve the API via `GLOBAL_API_CONTAINER_NAME`, i.e. the `kodus_api` container)
 - Container crash-looping due to a missing env var → read the logs
 
 ### Tunnel URL changed

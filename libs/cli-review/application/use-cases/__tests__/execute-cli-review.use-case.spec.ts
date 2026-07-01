@@ -1,18 +1,6 @@
 import { ExecuteCliReviewUseCase } from '../execute-cli-review.use-case';
 import { KodyRulesStatus } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 
-jest.mock('@kodus/flow', () => ({
-    createLogger: () => ({
-        log: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-        debug: jest.fn(),
-    }),
-    IdGenerator: {
-        correlationId: () => 'test-correlation-id',
-    },
-}));
-
 /**
  * We test the private helpers via the public execute() path and
  * via direct access using (useCase as any) for unit-level coverage.

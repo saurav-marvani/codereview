@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { Sandbox } from 'e2b';
 import pLimit from 'p-limit';
 import { ValidationCandidate } from '@libs/code-review/domain/types/astValidate.type';

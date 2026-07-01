@@ -1,6 +1,6 @@
-import { createBusinessRulesBlueprint } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/blueprint';
-import { classifyTaskQualityFromSources } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/blueprint.tooling';
-import { BusinessRulesContext } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/types';
+import { createBusinessRulesBlueprint } from '@libs/agents/infrastructure/services/agents/business-rules-validation/blueprint';
+import { classifyTaskQualityFromSources } from '@libs/agents/infrastructure/services/agents/business-rules-validation/blueprint.tooling';
+import { BusinessRulesContext } from '@libs/agents/infrastructure/services/agents/business-rules-validation/types';
 import { SkillCapabilityRuntimeConfig } from '@libs/agents/skills/generic-skill-runner.service';
 import { CapabilityStrategyScope } from '@libs/agents/skills/runtime/skill-runtime.types';
 import { runBlueprint } from '@libs/shared/blueprint/blueprint.runner';

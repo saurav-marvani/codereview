@@ -4,7 +4,7 @@ import {
 } from '@libs/core/infrastructure/pipeline/interfaces/checks-adapter.interface';
 import { ForgejoChecksService } from '@libs/platform/infrastructure/adapters/services/forgejo/forgejo-checks.service';
 
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
         error: jest.fn(),

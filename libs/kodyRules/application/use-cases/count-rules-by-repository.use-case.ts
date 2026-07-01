@@ -1,7 +1,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
 import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';
 import {

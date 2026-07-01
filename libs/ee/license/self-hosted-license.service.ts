@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { Inject, Injectable } from '@nestjs/common';
 
 import { OrganizationParametersKey } from '@libs/core/domain/enums';

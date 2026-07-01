@@ -1,4 +1,4 @@
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { PlatformType } from '@libs/core/domain/enums';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
@@ -12,7 +12,7 @@ import {
     checkStageMap,
 } from './pipeline-checks.service';
 
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: jest.fn().mockReturnValue({
         warn: jest.fn(),
         error: jest.fn(),

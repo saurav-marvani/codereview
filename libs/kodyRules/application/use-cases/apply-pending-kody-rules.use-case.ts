@@ -1,4 +1,4 @@
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { CentralizedPrMetadata } from '@libs/centralized-config/infrastructure/adapters/services/centralized-config-pr.service';
 import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';
 import { CreateKodyRuleDto } from '@libs/ee/kodyRules/dtos/create-kody-rule.dto';

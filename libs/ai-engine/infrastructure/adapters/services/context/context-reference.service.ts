@@ -2,8 +2,8 @@ import {
     ContextRevisionScope,
     ContextRequirement,
     ContextRevisionActor,
-} from '@kodus/flow';
-import { createRevisionEntry, computeRequirementsHash } from '@kodus/flow';
+} from '@libs/ai-engine/infrastructure/adapters/services/context/context-pack';
+import { createRevisionEntry, computeRequirementsHash } from '@libs/ai-engine/infrastructure/adapters/services/context/context-pack';
 import { Inject, Injectable } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 

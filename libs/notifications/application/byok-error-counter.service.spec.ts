@@ -9,7 +9,7 @@ import { NotificationEvent } from '../domain/catalog/events';
 import { NotificationRateLimiter } from './notification-rate-limiter.service';
 import { NotificationService } from './notification.service';
 
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
         warn: jest.fn(),

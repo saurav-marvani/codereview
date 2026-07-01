@@ -7,7 +7,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PullRequestClosedEvent } from '@libs/core/domain/events/pull-request-closed.event';
 import { KodyRulesSyncService } from '../services/kodyRulesSync.service';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import {
     IDE_RULES_SYNC_DISABLED_EVENT,
     IdeRulesSyncDisabledEvent,

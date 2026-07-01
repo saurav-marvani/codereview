@@ -1,4 +1,4 @@
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 
 import { fitPRDescription } from '@libs/code-review/utils/fit-pr-description';
 import { INTEGRATION_REQUEST_TIMEOUT_MS } from '@libs/core/infrastructure/http/integration-timeouts';

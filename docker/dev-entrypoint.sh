@@ -1,12 +1,21 @@
 #!/bin/sh
 set -eu
 
-# Point pnpm at a named-volume store instead of a path inside the
-# container's writable layer, so installs don't bloat each container.
-# The volume is declared in docker-compose.dev.yml and shared across
-# services so a single install populates the store once (pnpm's
+# Point pnpm at a named-volume store mounted AT pnpm's natural store path
+# (`<project>/.pnpm-store`), declared in docker-compose.dev.yml and shared
+# across services so one install populates the store once (pnpm's
 # content-addressable store is safe under concurrent access).
-export npm_config_store_dir=/pnpm-store
+#
+# Why this exact path and not a separate mount like /pnpm-store: pnpm derives
+# the store location from the project root's drive and, when an explicit
+# store-dir sits on a DIFFERENT filesystem, falls back to `<root>/.pnpm-store`.
+# On macOS the project root is a bind mount (FUSE/virtiofs), so that fallback
+# put the store's index.db on the bind mount — where finalizing it HANGS the
+# pnpm process on exit (it never releases the dependency-install lock, and
+# every other service then waits forever). Mounting the fast named volume at
+# `.pnpm-store` keeps pnpm's chosen path off the bind mount. Cross-volume vs
+# node_modules means copy (not hardlink), which the +x-restore step below fixes.
+export npm_config_store_dir=/usr/src/app/.pnpm-store
 mkdir -p "$npm_config_store_dir"
 
 echo "▶ dev-entrypoint: starting (NODE_ENV=${NODE_ENV:-})"
@@ -75,6 +84,18 @@ install_deps() {
 
   echo "▶ Installing deps (pnpm install --frozen-lockfile)…"
   pnpm install --frozen-lockfile
+
+  # pnpm's hoisted node-linker copies packages into node_modules, and the
+  # /pnpm-store cache lives on a SEPARATE docker volume (different filesystem),
+  # so pnpm can't hardlink — it copies, and the copy drops the +x bit on bin
+  # targets. Shebang execs (ts-node, nest, typeorm…) then die with
+  # "Permission denied". Restore +x on every file the .bin symlinks point to.
+  echo "▶ Restoring executable bit on node_modules/.bin targets…"
+  find node_modules/.bin -maxdepth 1 -type l 2>/dev/null | while read -r link; do
+    target=$(readlink -f "$link" 2>/dev/null) || continue
+    [ -f "$target" ] && chmod +x "$target" 2>/dev/null || true
+  done
+
   mkdir -p node_modules
   printf "%s" "$DEPS_FINGERPRINT" > "$DEPS_STAMP_FILE"
 
@@ -141,9 +162,6 @@ if [ "$RUN_SEEDS" = "true" ]; then
 else
   echo "▶ Skipping Seeds (RUN_SEEDS=$RUN_SEEDS)"
 fi
-
-# 3. Yalc Check
-[ -d ".yalc/@kodus/flow" ] && echo "▶ yalc detected: using .yalc/@kodus/flow"
 
 # 4. Execute container command (Full flexibility)
 # If no command is passed, use nodemon as fallback

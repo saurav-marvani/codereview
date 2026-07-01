@@ -87,6 +87,9 @@ export function buildOrchestratorInput(
         byokModel: context.codeReviewConfig?.byokModel,
         adaptiveProfile: computed.adaptiveProfile,
         skipHeavyPasses: computed.adaptiveProfile.skipHeavyPasses || undefined,
+        // Experimental A/B knob (config-driven, default off): outline-first
+        // readFile. Flows down to the finder's tool registry.
+        outlineFirst: context.codeReviewConfig?.outlineFirst,
         parentSignal: context.parentSignal,
     };
 }

@@ -1,5 +1,5 @@
-import { createLogger } from '@kodus/flow';
-import { forwardRef, Inject, Injectable } from '@nestjs/common';
+import { createLogger } from '@libs/core/log/logger';
+import { Inject, Injectable, forwardRef } from '@nestjs/common';
 import pLimit from 'p-limit';
 
 import {
@@ -110,7 +110,8 @@ export class GenerateKodyRulesUseCase {
                 message:
                     'Could not resolve kodyKnowledgeApproval for generated rules; defaulting to active',
                 context: GenerateKodyRulesUseCase.name,
-                error: error instanceof Error ? error : new Error(String(error)),
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
                 metadata: { organizationAndTeamData, repositoryId },
             });
             return false;
@@ -492,15 +493,13 @@ export class GenerateKodyRulesUseCase {
                 ),
                 with429Retry(
                     () =>
-                        this.codeManagementService.getPullRequestReviewComment(
-                            {
-                                organizationAndTeamData,
-                                filters: {
-                                    repository,
-                                    pullRequestNumber: prNumber,
-                                },
+                        this.codeManagementService.getPullRequestReviewComment({
+                            organizationAndTeamData,
+                            filters: {
+                                repository,
+                                pullRequestNumber: prNumber,
                             },
-                        ),
+                        }),
                     { label: `genRules:getReviewComments PR#${prNumber}` },
                 ),
                 with429Retry(

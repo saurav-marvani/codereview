@@ -9,7 +9,7 @@ import { NotificationEvent } from '@libs/notifications/domain/catalog/events';
 
 import { BillingController } from './billing.controller';
 
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
         warn: jest.fn(),

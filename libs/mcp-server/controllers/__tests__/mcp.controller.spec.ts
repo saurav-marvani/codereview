@@ -13,7 +13,7 @@ jest.mock('../../services/kodus-issues-mcp-server.service', () => ({
     KodusIssuesMcpServerService: class {},
 }));
 
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
         error: jest.fn(),

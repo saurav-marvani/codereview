@@ -10,7 +10,7 @@ import {
     KodyRulesStatus,
 } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import { validateAndScopeIdeRulePath } from '@libs/common/utils/kody-rules/file-patterns';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 
 @Injectable()
 export class ImportFastKodyRulesUseCase {

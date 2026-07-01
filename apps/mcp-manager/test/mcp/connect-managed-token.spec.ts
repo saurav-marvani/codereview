@@ -1,6 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 
-jest.mock('@kodus/flow', () => ({
+// createMCPAdapter now comes from the in-repo @libs/mcp-server/mcp-adapter.
+jest.mock('@libs/mcp-server/mcp-adapter', () => ({
+    ...jest.requireActual('@libs/mcp-server/mcp-adapter'),
     createMCPAdapter: jest.fn(),
 }));
 

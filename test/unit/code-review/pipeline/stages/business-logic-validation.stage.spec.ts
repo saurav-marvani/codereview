@@ -1,14 +1,7 @@
 import { BusinessLogicValidationStage } from '@/code-review/pipeline/stages/business-logic-validation.stage';
-import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
+import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/agents/business-rules-validation/businessRulesValidationAgent';
 
-jest.mock('@kodus/flow', () => ({
-    createLogger: () => ({
-        log: jest.fn(),
-        error: jest.fn(),
-        warn: jest.fn(),
-        debug: jest.fn(),
-        info: jest.fn(),
-    }),
+jest.mock('@libs/common/utils/thread-id', () => ({
     createThreadId: jest.fn(),
 }));
 

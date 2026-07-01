@@ -1,5 +1,5 @@
 import * as os from 'os';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import { IncidentManagerService } from '@libs/core/infrastructure/incident/incident-manager.service';
 import {

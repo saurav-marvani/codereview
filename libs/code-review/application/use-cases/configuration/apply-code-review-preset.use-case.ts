@@ -1,4 +1,4 @@
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';
 import {
     CentralizedConfigPrService,

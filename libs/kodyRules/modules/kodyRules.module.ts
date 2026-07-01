@@ -54,7 +54,6 @@ import {
     KodyRulesSchema,
 } from '../infrastructure/adapters/repositories/schemas/kodyRules.model';
 import { ExternalReferenceLoaderService } from '../infrastructure/adapters/services/externalReferenceLoader.service';
-import { KodyRuleDependencyService } from '../infrastructure/adapters/services/kodyRulesDependency.service';
 import { KodyRulesSyncService } from '../infrastructure/adapters/services/kodyRulesSync.service';
 import { RuleLikeModule } from './ruleLike.module';
 
@@ -115,7 +114,6 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         SyncSelectedRepositoriesKodyRulesUseCase,
         KodyRulesValidationService,
         KodyRulesSyncService,
-        KodyRuleDependencyService,
         ExternalReferenceLoaderService,
         AddLibraryKodyRulesUseCase,
         CheckSyncStatusUseCase,
@@ -151,7 +149,6 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         SendRulesNotificationUseCase,
         KodyRulesValidationService,
         KodyRulesSyncService,
-        KodyRuleDependencyService,
         ExternalReferenceLoaderService,
         SyncSelectedRepositoriesKodyRulesUseCase,
         AddLibraryKodyRulesUseCase,

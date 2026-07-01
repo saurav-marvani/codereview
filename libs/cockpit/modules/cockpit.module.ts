@@ -37,7 +37,10 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
  */
 @Module({
     imports: [
-        AnalyticsWarehouseModule.forRoot(),
+        // forFeature (not forRoot): ApiModule already calls forRoot() and owns
+        // the single analytics DataSource registration. A second forRoot() here
+        // throws DuplicateDataSourceException under @nestjs/typeorm.
+        AnalyticsWarehouseModule.forFeature(),
         LicenseModule,
         EmailModule,
         forwardRef(() => UserModule),

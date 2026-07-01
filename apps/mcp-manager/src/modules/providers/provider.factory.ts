@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IntegrationOAuthService } from '../integrations/integration-oauth.service';
 import { IntegrationsService } from '../integrations/integrations.service';
@@ -12,7 +12,6 @@ export type ProviderType = string;
 @Injectable()
 export class ProviderFactory {
     private providers: Map<ProviderType, MCPProvider> = new Map();
-    private logger: Logger = new Logger(ProviderFactory.name);
 
     constructor(
         private configService: ConfigService,
@@ -50,14 +49,6 @@ export class ProviderFactory {
                             this.integrationsService,
                             this.integrationOAuthService,
                         ),
-                    );
-                    break;
-                case 'composio':
-                    // Composio is decommissioned. Tolerate a stale
-                    // `API_MCP_MANAGER_MCP_PROVIDERS` entry (skip instead of
-                    // crashing on boot) until it's dropped from the env.
-                    this.logger.warn(
-                        'Ignoring decommissioned provider "composio"',
                     );
                     break;
                 default:

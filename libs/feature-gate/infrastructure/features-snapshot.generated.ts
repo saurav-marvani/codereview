@@ -5,18 +5,9 @@ import type { FeaturesSnapshot } from '../domain/snapshot.types';
 
 export const FEATURES_SNAPSHOT: FeaturesSnapshot = {
     "schema_version": 1,
-    "generated_at": "2026-06-04T17:51:12.845Z",
+    "generated_at": "2026-06-16T16:39:33.332Z",
     "source": "manual",
     "features": {
-        "agent-review": {
-            "name": "Agent-first code review",
-            "stage": "general-availability",
-            "description": "A new code review engine built on three specialized agents — context, suggestion, and validation — replacing the single-shot model. Higher precision, fewer false positives.",
-            "audience": [
-                "cloud",
-                "self-hosted"
-            ]
-        },
         "github-enterprise-server-pat": {
             "name": "GitHub Enterprise Server (PAT auth)",
             "stage": "beta",

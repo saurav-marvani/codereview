@@ -31,6 +31,17 @@ import {
     MCPConnectionEntity,
     MCPConnectionStatus,
 } from './entities/mcp-connection.entity';
+import managedMcpServers from '../../config/managed-mcp-servers.json';
+
+// Canonical capability category per managed integration, derived ONCE from the
+// registry (managed-mcp-servers.json). This is the single source of truth that
+// skills match against (e.g. task-management) — instead of fuzzy-matching the
+// human-facing display name, which drifts (e.g. "Git Issues" vs "Github Issues").
+const MANAGED_CATEGORY_BY_ID: Record<string, string> = Object.fromEntries(
+    (managedMcpServers as Array<{ id: string; category?: string }>)
+        .filter((server) => typeof server.category === 'string')
+        .map((server) => [server.id, server.category as string]),
+);
 
 @Injectable()
 export class McpService {
@@ -48,11 +59,21 @@ export class McpService {
     async getConnections(query: QueryDto, organizationId: string) {
         const { page, pageSize, ...where } = query;
         const [items, total] = await this.connectionRepository.findAndCount({
-            where: { organizationId, ...where },
+            // organizationId LAST so the auth-derived tenant always wins: a
+            // client-supplied `organizationId` in the query must never override
+            // it (cross-tenant leak). Defense-in-depth: the field is also gone
+            // from QueryDto so it can't be passed at all.
+            where: { ...where, organizationId },
             skip: (page - 1) * pageSize,
             take: pageSize,
         });
-        return { items, total };
+        // Stamp the canonical capability category (from the registry) onto each
+        // connection so consumers (skills) match by category, not display name.
+        const itemsWithCategory = items.map((item) => ({
+            ...item,
+            category: MANAGED_CATEGORY_BY_ID[item.integrationId] ?? null,
+        }));
+        return { items: itemsWithCategory, total };
     }
 
     private async getConnectionById(

@@ -1,27 +1,27 @@
 import * as crypto from 'crypto';
 
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { Output, jsonSchema } from 'ai';
 import { Inject, Injectable } from '@nestjs/common';
-import { tracedGenerateText } from '@libs/code-review/infrastructure/agents/llm/agent-loop';
-import { resolveAdaptiveProfile } from '@libs/code-review/infrastructure/agents/llm/adaptive-fit';
-import { resolveContextWindow } from '@libs/code-review/infrastructure/agents/llm/model-context-window';
+import { tracedGenerateText } from '@libs/llm/llm-call';
+import { resolveAdaptiveProfile } from '@libs/code-review/infrastructure/agents/engine/adaptive-fit';
+import { resolveContextWindow } from '@libs/llm/model-context-window';
 import {
     DEDUP_MODEL_ID,
     DEDUP_SCHEMA,
     DEDUP_CONTENT_THRESHOLD,
     buildDedupPrompt,
     contentSimilarity,
-} from '@libs/code-review/infrastructure/agents/llm/dedup-prompt';
+} from '@libs/code-review/infrastructure/agents/engine/dedup-prompt';
 import {
     dedupReviewWarnings,
     type ReviewWarning,
-} from '@libs/code-review/infrastructure/agents/llm/review-warnings';
+} from '@libs/code-review/infrastructure/agents/engine/review-warnings';
 import {
     withStructuredOutputFallback,
     NoStructuredFallbackModelError,
     getModelName,
-} from '@libs/code-review/infrastructure/agents/llm/byok-to-vercel';
+} from '@libs/llm/byok-to-vercel';
 import { buildKodyRuleLink } from '@libs/code-review/utils/build-kody-rule-link';
 import {
     buildLangfuseTelemetry,
@@ -40,7 +40,7 @@ import {
     IAutomationExecutionService,
 } from '@libs/automation/domain/automationExecution/contracts/automation-execution.service';
 import { AutomationStatus } from '@libs/automation/domain/automation/enum/automation-status';
-import { AgentProgressEvent } from '@libs/code-review/infrastructure/agents/base-code-review-agent.provider';
+import { AgentProgressEvent } from '@libs/code-review/infrastructure/agents/review-agent.contract';
 
 import { GraphContextService } from '@libs/code-review/infrastructure/adapters/services/graph/graph-context.service';
 import {
@@ -60,10 +60,10 @@ import {
 } from '../context/code-review-pipeline.context';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
 import {
-    ReviewErrorCategory,
+    LlmErrorCategory,
     classifyLLMError,
     getClassification,
-} from '@libs/code-review/infrastructure/agents/llm/error-classifier';
+} from '@libs/llm/error-classifier';
 
 /**
  * Extract valid line ranges from a unified diff patch.
@@ -74,7 +74,9 @@ import {
  * GitHub only allows comments on lines that appear in the diff.
  */
 export function extractValidDiffLines(patch?: string): Array<[number, number]> {
-    if (!patch) return [];
+    if (!patch) {
+        return [];
+    }
 
     const ranges: Array<[number, number]> = [];
     const lines = patch.split('\n');
@@ -234,13 +236,13 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
     }
 
     constructor(
-        private readonly reviewOrchestrator: ReviewOrchestratorService,
-        private readonly observabilityService: ObservabilityService,
         @Inject(AUTOMATION_EXECUTION_SERVICE_TOKEN)
         private readonly automationExecutionService: IAutomationExecutionService,
-        private readonly graphContext: GraphContextService,
         @Inject(REPOSITORY_SERVICE_TOKEN)
         private readonly repositoryService: IRepositoryService,
+        private readonly reviewOrchestrator: ReviewOrchestratorService,
+        private readonly observabilityService: ObservabilityService,
+        private readonly graphContext: GraphContextService,
     ) {
         super();
     }
@@ -252,10 +254,6 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
         const changedFiles = context.changedFiles;
 
         if (!changedFiles?.length) {
-            this.logger.log({
-                message: `[AGENT] Skipping agent review: no changed files for PR#${prNumber}`,
-                context: this.stageName,
-            });
             return context;
         }
 
@@ -264,8 +262,9 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
         // single-shot analysis on the diff content inlined in the user
         // prompt. The orchestrator/agent-loop detect the empty tools case
         // and switch to a self-contained system/user prompt variant.
-        const hasSandbox = !!context.sandboxHandle?.remoteCommands;
-        if (!hasSandbox) {
+        //const hasSandbox = !!context.sandboxHandle?.remoteCommands;
+
+        if (!context.sandboxHandle?.remoteCommands) {
             this.logger.log({
                 message: `[AGENT] Running self-contained agent review for PR#${prNumber} (no sandbox available)`,
                 context: this.stageName,
@@ -291,8 +290,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
         // the org-level main.model when present — same resolution the agent
         // uses internally (`base-code-review-agent.provider.ts:541-551`).
         const mainByok = context.codeReviewConfig?.byokConfig?.main;
-        const overrideModel =
-            context.codeReviewConfig?.byokModel?.trim();
+        const overrideModel = context.codeReviewConfig?.byokModel?.trim();
         const byokWithOverride =
             overrideModel && mainByok
                 ? {
@@ -350,7 +348,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
         const startTime = Date.now();
 
-        this.logger.log({
+        this.logger.debug({
             message: `[AGENT] Starting agent review for PR#${prNumber} with ${changedFiles.length} files`,
             context: this.stageName,
             metadata: {
@@ -406,6 +404,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             // prompt. `light+` profiles always skip it. The agent still has
             // grep/readFile to investigate cross-file relationships on demand.
             const shouldBuildCallGraph = !adaptiveProfile.dropCallGraph;
+
             if (!shouldBuildCallGraph) {
                 this.logger.log({
                     message: `[AGENT] adaptive-fit (${adaptiveProfile.kind}): skipping callGraph build to fit context window`,
@@ -413,90 +412,52 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 });
                 emitStageWarning('CALLGRAPH_DROPPED');
             }
+
             if (shouldBuildCallGraph) {
-              try {
-                const sandboxType = context.sandboxHandle?.type ?? 'unknown';
-                const hasSandbox = !!context.sandboxHandle?.run;
-                this.logger.log({
-                    message: `[AGENT] sandboxHandle check: type=${sandboxType}, hasSandbox=${hasSandbox}, platform=${context.platformType}, repoId=${context.repository?.id}`,
-                    context: this.stageName,
-                    metadata: {
-                        sandboxType,
-                        hasSandbox,
-                        platform: context.platformType,
-                        repoExternalId: context.repository?.id,
-                    },
-                });
+                try {
+                    if (context.sandboxHandle?.run) {
+                        const repo =
+                            await this.repositoryService.findByExternalId(
+                                context.platformType,
+                                String(context.repository?.id || ''),
+                            );
 
-                if (context.sandboxHandle?.run) {
-                    const repo = await this.repositoryService.findByExternalId(
-                        context.platformType,
-                        String(context.repository?.id || ''),
-                    );
-
-                    this.logger.log({
-                        message: `[AGENT] repo lookup: found=${!!repo}, astGraphStatus=${repo?.astGraphStatus ?? 'N/A'}, uuid=${repo?.uuid ?? 'N/A'}`,
-                        context: this.stageName,
-                        metadata: {
-                            repoExternalId: context.repository?.id,
-                            repoUuid: repo?.uuid,
-                            astGraphStatus: repo?.astGraphStatus,
-                        },
-                    });
-
-                    if (repo?.astGraphStatus === AstGraphStatus.READY) {
-                        callGraph = await this.graphContext.generateContext(
-                            context.sandboxHandle,
-                            changedFiles,
-                            repo.uuid,
-                        );
-                    } else {
-                        this.logger.log({
-                            message: `[AGENT] No AST graph in DB for PR#${prNumber} (status=${repo?.astGraphStatus || 'not found'}), falling back to legacy (changed-files only)`,
-                            context: this.stageName,
-                        });
-                        callGraph =
-                            await this.graphContext.generateContextLegacy(
+                        if (repo?.astGraphStatus === AstGraphStatus.READY) {
+                            callGraph = await this.graphContext.generateContext(
                                 context.sandboxHandle,
                                 changedFiles,
-                                context.sandboxHandle?.baseBranch ||
-                                    context.pullRequest?.base?.ref ||
-                                    context.repository?.defaultBranch,
+                                repo.uuid,
                             );
+                        } else {
+                            callGraph =
+                                await this.graphContext.generateContextLegacy(
+                                    context.sandboxHandle,
+                                    changedFiles,
+                                    context.sandboxHandle?.baseBranch ||
+                                        context.pullRequest?.base?.ref ||
+                                        context.repository?.defaultBranch,
+                                );
+                        }
                     }
-                } else {
+                } catch (err) {
                     this.logger.warn({
-                        message: `[AGENT] No sandboxHandle object (type=${sandboxType}), skipping kodus-graph for PR#${prNumber}`,
+                        message: `[AGENT] Call graph failed for PR#${prNumber}, proceeding without it`,
                         context: this.stageName,
-                    });
-                }
-
-                if (callGraph) {
-                    this.logger.log({
-                        message: `[AGENT] kodus-graph context: ${callGraph.length} chars for PR#${prNumber}`,
-                        context: this.stageName,
+                        error: err,
                         metadata: {
-                            prNumber,
-                            callGraphChars: callGraph.length,
-                            callGraphPreview: callGraph.substring(0, 320),
+                            sandboxType: context.sandboxHandle?.type,
+                            hasSandbox: !!context.sandboxHandle?.run,
                         },
                     });
                 }
-            } catch (err) {
-                this.logger.warn({
-                    message: `[AGENT] Call graph failed for PR#${prNumber}, proceeding without it`,
-                    context: this.stageName,
-                    error: err,
-                    metadata: {
-                        sandboxType: context.sandboxHandle?.type,
-                        hasSandbox: !!context.sandboxHandle?.run,
-                    },
-                });
             }
-            } // end if (shouldBuildCallGraph)
 
-            // Single place that maps context → agent input (extracted to a pure
-            // helper so the wiring, notably reviewDirective, is unit-testable).
+            // Single place that maps context → agent input, extracted to a
+            // PURE helper (build-orchestrator-input) so the wiring — notably
+            // reviewDirective, an optional field no typecheck would catch if
+            // dropped — is unit-testable and can't drift from a second inline
+            // copy. A committed merge conflict once kept an inline builder that
+            // silently dropped reviewDirective; this is the single source now.
             const result = await this.reviewOrchestrator.execute(
                 buildOrchestratorInput(context, {
                     changedFiles,
@@ -538,7 +499,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             const durationMs = Date.now() - startTime;
 
-            this.logger.log({
+            this.logger.debug({
                 message: `[TIMING] AgentReviewStage completed for PR#${prNumber}: ${result.suggestions.length} suggestions in ${durationMs}ms`,
                 context: this.stageName,
                 metadata: {
@@ -569,10 +530,12 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 'security',
                 'performance',
             ]);
+
             for (const failure of result.failures || []) {
                 const severity = CRITICAL_AGENTS.has(failure.agentName)
                     ? 'critical'
                     : 'partial';
+
                 context = this.updateContext(context, (draft) => {
                     draft.errors.push({
                         pipelineId: context.pipelineMetadata?.pipelineId,
@@ -597,6 +560,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             // UNKNOWN) classification wins; fall back to any critical, then
             // any failure.
             const failures = result.failures ?? [];
+
             if (failures.length > 0) {
                 const reviewProvider =
                     typeof context.codeReviewConfig?.byokConfig?.main
@@ -616,10 +580,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 ranked.sort((a, b) => {
                     const aMapped =
                         classifyFailure(a).category !==
-                        ReviewErrorCategory.UNKNOWN;
+                        LlmErrorCategory.UNKNOWN;
                     const bMapped =
                         classifyFailure(b).category !==
-                        ReviewErrorCategory.UNKNOWN;
+                        LlmErrorCategory.UNKNOWN;
                     if (aMapped === bMapped) return 0;
                     return aMapped ? -1 : 1;
                 });
@@ -636,7 +600,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     };
                 });
 
-                this.logger.log({
+                this.logger.debug({
                     message: `[AGENT] Review failures: ${failures.length} (critical=${criticalFailures.length}, category=${classification.category})`,
                     context: this.stageName,
                     metadata: {
@@ -742,9 +706,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     }
                     return snapped;
                 })
-                .filter(
-                    (s): s is Partial<CodeSuggestion> => s !== null,
-                );
+                .filter((s): s is Partial<CodeSuggestion> => s !== null);
 
             // Verify/Discover removed — was hurting recall across all models.
             // Benchmark showed F1 drops of -5.7pp to -18.3pp with verify enabled.
@@ -882,7 +844,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             try {
                 const {
                     classifySeverity,
-                } = require('@libs/code-review/infrastructure/agents/llm/classify-severity');
+                } = require('@libs/code-review/infrastructure/agents/engine/classify-severity');
                 const severityMap = await classifySeverity(
                     deduped.map((s) => ({
                         relevantFile: s.relevantFile || '',
@@ -975,7 +937,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             try {
                 const {
                     formatSuggestionContent,
-                } = require('@libs/code-review/infrastructure/agents/llm/format-suggestion-content');
+                } = require('@libs/code-review/infrastructure/agents/engine/format-suggestion-content');
                 const formatted = await formatSuggestionContent(
                     deduped.map((s) => ({
                         suggestionContent: s.suggestionContent || '',
@@ -1400,31 +1362,27 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 );
             }
 
-            // Track token usage
-            try {
-                const dedupUsage = dedupResult.usage ?? dedupResult.totalUsage;
-                if (dedupUsage) {
-                    await this.observabilityService.runInSpan(
-                        'dedup-suggestions',
-                        async () => dedupResult,
-                        {
-                            'gen_ai.usage.input_tokens':
-                                dedupUsage.inputTokens ?? 0,
-                            'gen_ai.usage.output_tokens':
-                                dedupUsage.outputTokens ?? 0,
-                            'gen_ai.usage.total_tokens':
-                                dedupUsage.totalTokens ??
-                                (dedupUsage.inputTokens ?? 0) +
-                                    (dedupUsage.outputTokens ?? 0),
-                            'gen_ai.response.model': 'internal-dedup',
-                            'gen_ai.run.name': 'code-review-dedup',
-                            'type': 'system',
-                            'prNumber': prNumber,
-                        },
-                    );
-                }
-            } catch {
-                // Observability is best-effort
+            // Track token usage — via the canonical emitter so the dedup pass'
+            // cost lands in `observability_telemetry` with the SAME schema
+            // (agentName/phase/type/gen_ai.usage.*) as the review agents.
+            const dedupUsage = dedupResult.usage ?? dedupResult.totalUsage;
+            if (dedupUsage) {
+                await this.observabilityService.recordAgentRunUsage({
+                    agentName: 'code-review',
+                    phase: 'dedup',
+                    spanName: 'dedup-suggestions',
+                    runName: 'code-review-dedup',
+                    model: 'internal-dedup',
+                    // Real billing source: the platform OpenAI-key path is a
+                    // 'system' key; the else branch runs on the org's BYOK config.
+                    isByok: !openaiKey,
+                    usage: {
+                        inputTokens: dedupUsage.inputTokens,
+                        outputTokens: dedupUsage.outputTokens,
+                        totalTokens: dedupUsage.totalTokens,
+                    },
+                    prNumber,
+                });
             }
 
             const dedupOutput =
@@ -1477,7 +1435,11 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             // Add unique suggestions as-is
             for (const idx of unique) {
-                if (Number.isInteger(idx) && idx >= 0 && idx < suggestions.length) {
+                if (
+                    Number.isInteger(idx) &&
+                    idx >= 0 &&
+                    idx < suggestions.length
+                ) {
                     indexToResult.set(idx, result.length);
                     result.push(suggestions[idx]);
                     addedIndices.add(idx);
@@ -1493,16 +1455,27 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 const keepIdx = group.keep;
                 const dupIndices = group.duplicates || [];
 
-                if (!Number.isInteger(keepIdx) || keepIdx < 0 || keepIdx >= suggestions.length) {
+                if (
+                    !Number.isInteger(keepIdx) ||
+                    keepIdx < 0 ||
+                    keepIdx >= suggestions.length
+                ) {
                     // Layer 2: keep is invalid — preserve valid duplicates as independent results
                     for (const dupIdx of dupIndices) {
                         classifiedIndices.add(dupIdx);
-                        if (Number.isInteger(dupIdx) && dupIdx >= 0 && dupIdx < suggestions.length && !addedIndices.has(dupIdx)) {
+                        if (
+                            Number.isInteger(dupIdx) &&
+                            dupIdx >= 0 &&
+                            dupIdx < suggestions.length &&
+                            !addedIndices.has(dupIdx)
+                        ) {
                             indexToResult.set(dupIdx, result.length);
                             result.push(suggestions[dupIdx]);
                             addedIndices.add(dupIdx);
                             uniqueSuggestions.push(
-                                this.summarizeDedupSuggestion(suggestions[dupIdx]),
+                                this.summarizeDedupSuggestion(
+                                    suggestions[dupIdx],
+                                ),
                             );
                         }
                     }
@@ -1516,7 +1489,11 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     if (existingIdx !== undefined) {
                         const locations: string[] = [];
                         for (const dupIdx of dupIndices) {
-                            if (Number.isInteger(dupIdx) && dupIdx >= 0 && dupIdx < suggestions.length) {
+                            if (
+                                Number.isInteger(dupIdx) &&
+                                dupIdx >= 0 &&
+                                dupIdx < suggestions.length
+                            ) {
                                 classifiedIndices.add(dupIdx);
                                 const dup = suggestions[dupIdx];
                                 const loc = `${dup.relevantFile}:${dup.relevantLinesStart}-${dup.relevantLinesEnd}`;
@@ -1528,12 +1505,18 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                         }
                         if (locations.length > 0) {
                             const existing = result[existingIdx];
-                            const locList = locations.map((l) => `- \`${l}\``).join('\n');
+                            const locList = locations
+                                .map((l) => `- \`${l}\``)
+                                .join('\n');
                             existing.suggestionContent = `${existing.suggestionContent}\n\n**Also found in:**\n${locList}`;
                         }
                     } else {
                         for (const dupIdx of dupIndices) {
-                            if (Number.isInteger(dupIdx) && dupIdx >= 0 && dupIdx < suggestions.length) {
+                            if (
+                                Number.isInteger(dupIdx) &&
+                                dupIdx >= 0 &&
+                                dupIdx < suggestions.length
+                            ) {
                                 classifiedIndices.add(dupIdx);
                             }
                         }
@@ -1549,7 +1532,11 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 // Collect locations from duplicates that are in DIFFERENT locations
                 const otherLocations: string[] = [];
                 for (const dupIdx of dupIndices) {
-                    if (!Number.isInteger(dupIdx) || dupIdx < 0 || dupIdx >= suggestions.length) {
+                    if (
+                        !Number.isInteger(dupIdx) ||
+                        dupIdx < 0 ||
+                        dupIdx >= suggestions.length
+                    ) {
                         continue;
                     }
                     // Content guard: only honor the model's merge when the two
@@ -1568,7 +1555,9 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                             indexToResult.set(dupIdx, result.length);
                             result.push(suggestions[dupIdx]);
                             uniqueSuggestions.push(
-                                this.summarizeDedupSuggestion(suggestions[dupIdx]),
+                                this.summarizeDedupSuggestion(
+                                    suggestions[dupIdx],
+                                ),
                             );
                         }
                         continue;
@@ -1643,6 +1632,18 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             };
         } catch (error) {
             const noModel = error instanceof NoStructuredFallbackModelError;
+            // Fail loud outside production. An unexpected error here (e.g. the
+            // `googleKey` ReferenceError that shipped on a feature branch) is a
+            // programming bug — left to the graceful 'failed-keep-all' path it
+            // ships silently as duplicate comments. In dev/CI/test we re-throw
+            // so it surfaces at PR time; the operational "no model available"
+            // case (noModel) stays graceful everywhere.
+            const isProduction =
+                (process.env.API_NODE_ENV || process.env.NODE_ENV) ===
+                'production';
+            if (!noModel && !isProduction) {
+                throw error;
+            }
             if (noModel) {
                 this.logger.warn({
                     message: `[DEDUP] PR#${prNumber}: No model available for dedup (no Google key and no BYOK), keeping all ${suggestions.length} suggestions`,
@@ -1709,9 +1710,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 event,
                 label,
                 agentToolCalls,
-            ).catch(() => {
-                // Best effort — don't fail the review if timeline write fails
-            });
+            );
         };
     }
 
@@ -1857,9 +1856,6 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 coverage: event.coverage,
                 verification: event.verification,
                 anomalies: event.anomalies,
-                // Error details surfaced so the UI (or a copy-paste into a
-                // bug report) has the failure reason without needing docker
-                // logs access.
                 ...(event.status === 'error' && {
                     error: {
                         name: event.errorName,

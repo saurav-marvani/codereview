@@ -32,7 +32,7 @@ x-app-service-template: &app-service-defaults
     volumes:
         - .:/usr/src/app:delegated
         - node_modules_cache:/usr/src/app/node_modules
-        - pnpm_store:/pnpm-store
+        - pnpm_store:/usr/src/app/.pnpm-store
         - logs_data:/usr/src/app/logs
         - yalc_store:/root/.yalc
     networks:
@@ -114,7 +114,7 @@ services:
         volumes:
             - .:/usr/src/app:delegated
             - node_modules_cache:/usr/src/app/node_modules:nocopy
-            - pnpm_store:/pnpm-store
+            - pnpm_store:/usr/src/app/.pnpm-store
             - logs_data:/usr/src/app/logs
             - yalc_store:/root/.yalc
         ports:
@@ -178,7 +178,7 @@ services:
         volumes:
             - .:/usr/src/app:delegated
             - node_modules_cache:/usr/src/app/node_modules:nocopy
-            - pnpm_store:/pnpm-store
+            - pnpm_store:/usr/src/app/.pnpm-store
             - logs_data:/usr/src/app/logs
             - yalc_store:/root/.yalc
         ports:
@@ -241,7 +241,7 @@ services:
         volumes:
             - .:/usr/src/app:delegated
             - node_modules_cache:/usr/src/app/node_modules:nocopy
-            - pnpm_store:/pnpm-store
+            - pnpm_store:/usr/src/app/.pnpm-store
             - logs_data:/usr/src/app/logs
             - yalc_store:/root/.yalc
         ports:
@@ -333,10 +333,8 @@ services:
             - API_MCP_MANAGER_JWT_SECRET=${API_MCP_MANAGER_JWT_SECRET:-}
             - API_MCP_MANAGER_ENCRYPTION_SECRET=${API_MCP_MANAGER_ENCRYPTION_SECRET:-}
             - API_MCP_MANAGER_PG_DB_SCHEMA=${API_MCP_MANAGER_PG_DB_SCHEMA:-mcp-manager}
-            - API_MCP_MANAGER_MCP_PROVIDERS=${API_MCP_MANAGER_MCP_PROVIDERS:-kodusmcp,composio,custom}
+            - API_MCP_MANAGER_MCP_PROVIDERS=${API_MCP_MANAGER_MCP_PROVIDERS:-kodusmcp,custom}
             - API_MCP_MANAGER_REDIRECT_URI=${API_MCP_MANAGER_REDIRECT_URI:-http://localhost:3000/setup/mcp/oauth}
-            - API_MCP_MANAGER_COMPOSIO_BASE_URL=${API_MCP_MANAGER_COMPOSIO_BASE_URL:-https://backend.composio.dev/api/v3}
-            - API_MCP_MANAGER_COMPOSIO_API_KEY=${API_MCP_MANAGER_COMPOSIO_API_KEY:-}
 
     #----------------------------------------------------------------
     # Web Frontend

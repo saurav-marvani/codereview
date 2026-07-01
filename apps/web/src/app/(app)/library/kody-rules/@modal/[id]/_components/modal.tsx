@@ -13,7 +13,6 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@components/ui/dialog";
-import { McpProvidersBadge } from "@components/ui/kody-rules/mcp-providers";
 import { PopoverTrigger } from "@components/ui/popover";
 import { Section } from "@components/ui/section";
 import { Separator } from "@components/ui/separator";
@@ -200,9 +199,6 @@ export const KodyRuleLibraryItemModal = ({
 
     const badExample = rule.examples?.find(({ isCorrect }) => !isCorrect);
     const goodExample = rule.examples?.find(({ isCorrect }) => isCorrect);
-    const requiredMcps = Array.isArray(rule.required_mcps)
-        ? rule.required_mcps.filter(Boolean)
-        : [];
 
     const { mutate: sendFeedback, isPending: isFeedbackActionInProgress } =
         useMutation<any, Error, FeedbackType>({
@@ -333,26 +329,6 @@ export const KodyRuleLibraryItemModal = ({
                                 {rule.rule}
                             </Section.Content>
                         </Section.Root>
-
-                        {requiredMcps.length > 0 && (
-                            <Section.Root>
-                                <Section.Header>
-                                    <Section.Title>
-                                        Required Plugins
-                                    </Section.Title>
-                                </Section.Header>
-
-                                <Section.Content className="text-text-secondary space-y-2 text-sm">
-                                    <p>
-                                        This rule fetches context from:
-                                        <span className="text-text-primary font-medium">
-                                            {" "}
-                                            {requiredMcps.join(", ")}
-                                        </span>
-                                    </p>
-                                </Section.Content>
-                            </Section.Root>
-                        )}
 
                         <Separator />
 

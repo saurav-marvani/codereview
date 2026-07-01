@@ -1,5 +1,5 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { with429Retry } from '@libs/core/infrastructure/http/rate-limit-retry';
 import { IPullRequests } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';

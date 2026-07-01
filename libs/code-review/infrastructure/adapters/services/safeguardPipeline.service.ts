@@ -1,4 +1,4 @@
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import {
     BYOKConfig,
     LLMModelProvider,
@@ -833,9 +833,10 @@ Evidence field in ${params.languageResultPrompt}.`;
                         role: PromptRole.AI,
                     });
                     messages.push({
-                        prompt: parsed.verdict === true
-                            ? 'You must use at least one tool call to verify the defect exists in the actual code before giving a verdict. Search for the key symbol or read the file first.'
-                            : 'You must use at least one tool call to actively REFUTE the defect before discarding. A discard requires concrete evidence the finding is wrong, mitigated, or unreachable — search for the key symbol or read the file first.',
+                        prompt:
+                            parsed.verdict === true
+                                ? 'You must use at least one tool call to verify the defect exists in the actual code before giving a verdict. Search for the key symbol or read the file first.'
+                                : 'You must use at least one tool call to actively REFUTE the defect before discarding. A discard requires concrete evidence the finding is wrong, mitigated, or unreachable — search for the key symbol or read the file first.',
                         role: PromptRole.USER,
                     });
                     continue;

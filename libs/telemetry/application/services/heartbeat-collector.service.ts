@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import * as os from 'node:os';
 import { join } from 'node:path';
 
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { InjectDataSource } from '@nestjs/typeorm';

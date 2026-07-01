@@ -1,5 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { createLogger, IdGenerator } from '@kodus/flow';
+import { IdGenerator } from '@libs/core/utils/id-generator';
+import { createLogger } from '@libs/core/log/logger';
 import { LLMModelProvider } from '@kodus/kodus-common/llm';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
 import { normalizeReviewDirective } from '@libs/common/utils/codeManagement/codeCommentMarkers';

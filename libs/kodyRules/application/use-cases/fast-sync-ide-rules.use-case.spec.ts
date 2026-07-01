@@ -9,7 +9,7 @@ import { CodeManagementService } from '@libs/platform/infrastructure/adapters/se
 import { FastSyncIdeRulesUseCase } from './fast-sync-ide-rules.use-case';
 import { ValidateRuleFileReferencesUseCase } from './validate-rule-file-references.use-case';
 
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
         warn: jest.fn(),

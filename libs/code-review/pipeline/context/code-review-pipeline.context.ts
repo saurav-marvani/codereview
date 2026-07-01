@@ -1,4 +1,4 @@
-import type { ContextEvidence, ContextLayer, ContextPack } from '@kodus/flow';
+import type { ContextEvidence, ContextLayer, ContextPack } from '@libs/ai-engine/infrastructure/adapters/services/context/context-pack';
 import { IExternalPromptContext } from '@libs/ai-engine/domain/prompt/interfaces/promptExternalReference.interface';
 import { ContextAugmentationsMap } from '@libs/ai-engine/infrastructure/adapters/services/context/interfaces/code-review-context-pack.interface';
 import { AutomationExecutionEntity } from '@libs/automation/domain/automationExecution/entities/automation-execution.entity';
@@ -8,8 +8,8 @@ import {
 } from '@libs/sandbox/domain/contracts/sandbox.provider';
 import { IPullRequestMessages } from '@libs/code-review/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import { CollectCrossFileContextsResult } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
-import { ReviewErrorCategory } from '@libs/code-review/infrastructure/agents/llm/error-classifier';
-import type { ReviewWarning } from '@libs/code-review/infrastructure/agents/llm/review-warnings';
+import { LlmErrorCategory } from '@libs/llm/error-classifier';
+import type { ReviewWarning } from '@libs/code-review/infrastructure/agents/engine/review-warnings';
 import { PlatformType } from '@libs/core/domain/enums';
 import {
     AnalysisContext,
@@ -114,10 +114,6 @@ export interface CodeReviewPipelineContext extends PipelineContext {
          *  ValidatePrerequisitesStage from the license validation so later
          *  stages can pick a trial-specific model. */
         subscriptionStatus?: string;
-        /** Set by the pipeline provider before execution. When true, the
-         *  agent (v4) engine will run, which has its own token-budget chunking
-         *  and tolerates much larger PRs than the legacy engine. */
-        useAgentEngine?: boolean;
         [key: string]: any;
     };
 
@@ -241,7 +237,7 @@ export interface CodeReviewPipelineContext extends PipelineContext {
      * this only exists to interpolate the user-facing reason.
      */
     lastReviewError?: {
-        category: ReviewErrorCategory;
+        category: LlmErrorCategory;
         provider?: string;
         friendlyMessage: string;
         agentName?: string;

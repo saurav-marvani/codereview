@@ -31,7 +31,7 @@ RUN echo 'network-timeout 600000' > /root/.yarnrc
 
 COPY package.json yarn.lock ./
 
-RUN --mount=type=cache,target=/yarn-cache,sharing=locked \
+RUN --mount=type=cache,target=/yarn-cache,sharing=private \
     YARN_CACHE_FOLDER=/yarn-cache \
     yarn install --frozen-lockfile --production=false
 
@@ -43,8 +43,8 @@ RUN yarn build
 FROM docker.io/library/node:22.22.2-slim AS production
 
 # curl for container/LB health checks against /health.
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
+    --mount=type=cache,target=/var/lib/apt,sharing=private \
     rm -f /etc/apt/apt.conf.d/docker-clean \
   && apt-get update \
   && apt-get install -y --no-install-recommends curl

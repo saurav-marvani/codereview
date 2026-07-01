@@ -46,7 +46,7 @@ import {
     ReactionsInComments,
 } from '@libs/platform/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { hasKodyMarker } from '@libs/common/utils/codeManagement/codeCommentMarkers';
 import { getCodeReviewBadge } from '@libs/common/utils/codeManagement/codeReviewBadge';
 import { getLabelShield } from '@libs/common/utils/codeManagement/labels';

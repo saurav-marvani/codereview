@@ -22,10 +22,15 @@ ENV NODE_ENV=development
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 RUN corepack disable \
- && npm i -g pnpm@10.34.1
+ && npm i -g pnpm@11.7.0
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+# sharing=private (not locked): the dev images build sequentially, so there is
+# never legitimate concurrent apt access. With sharing=locked, a build killed
+# mid-apt (Ctrl-C/OOM) leaves the cache lock held in buildkitd, and the next
+# build blocks forever waiting for it. private gives each build its own cache
+# instance and sidesteps that deadlock entirely.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
+    --mount=type=cache,target=/var/lib/apt,sharing=private \
     rm -f /etc/apt/apt.conf.d/docker-clean \
   && apt-get update \
   && apt-get install -y --no-install-recommends \
@@ -41,7 +46,6 @@ COPY package.json pnpm-lock.yaml .npmrc ./
 COPY nest-cli.json tsconfig*.json ./
 
 COPY packages/kodus-common ./packages/kodus-common
-COPY packages/kodus-flow ./packages/kodus-flow
 
 # Build local packages first. Shared pnpm store mount survives across
 # rebuilds so dependency changes don't trigger a full re-download.
@@ -55,18 +59,21 @@ RUN --mount=type=cache,target=/pnpm-store,sharing=shared \
     cd packages/kodus-common \
   && pnpm install --store-dir /pnpm-store \
   && pnpm run prepack
-RUN --mount=type=cache,target=/pnpm-store,sharing=shared \
-    cd packages/kodus-flow \
-  && pnpm install --store-dir /pnpm-store \
-  && pnpm run build
 
-# Install dependencies and link local packages
+# Install dependencies and link local packages.
+# pnpm-workspace.yaml is copied HERE (not with the manifests above) so the
+# kodus-common sub-build doesn't see /usr/src/app as a workspace
+# root and install into it (`../..`). Only the root install below needs it —
+# it carries the `overrides` that must match the lockfile under --frozen-lockfile.
+COPY pnpm-workspace.yaml ./
 RUN --mount=type=cache,target=/pnpm-store,sharing=shared \
     pnpm install --frozen-lockfile --store-dir /pnpm-store
 RUN rm -rf node_modules/@kodus/kodus-common && cp -r packages/kodus-common node_modules/@kodus/kodus-common
-RUN rm -rf node_modules/@kodus/flow && cp -r packages/kodus-flow node_modules/@kodus/flow
 
 COPY --chmod=0755 docker/dev-entrypoint.sh /usr/local/bin/dev-entrypoint
 
 ENTRYPOINT ["/usr/local/bin/dev-entrypoint"]
-CMD ["pnpm", "run", "start:dev"]
+# Fallback only — each service in docker-compose.dev.yml overrides this with
+# its own `command:` (start:dev:api / :worker / :webhooks). There is no root
+# `start:dev` script; `start:dev:all` runs the three apps via concurrently.
+CMD ["pnpm", "run", "start:dev:all"]

@@ -17,7 +17,7 @@ import { JobStatus } from '@libs/core/workflow/domain/enums/job-status.enum';
 import { ErrorClassification } from '@libs/core/workflow/domain/enums/error-classification.enum';
 
 import { ObservabilityService } from '@libs/core/log/observability.service';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import {
     IInboxMessageRepository,
     INBOX_MESSAGE_REPOSITORY_TOKEN,

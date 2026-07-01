@@ -12,15 +12,16 @@ import { CodeReviewVersion } from '@/core/domain/enums/code-review.enum';
 const mockTracedGenerateText = jest.fn();
 const mockWithStructuredOutputFallback = jest.fn();
 
-jest.mock(
-    '@libs/code-review/infrastructure/agents/llm/agent-loop',
-    () => ({
-        tracedGenerateText: (...args: any[]) => mockTracedGenerateText(...args),
-    }),
-);
+// tracedGenerateText was relocated from the legacy agent-loop to @libs/llm/llm-call
+// during the llm migration; mock it there so the stage's dedup LLM call is
+// intercepted (preserve the module's other exports, e.g. AGENT_TIMEOUT_MS).
+jest.mock('@libs/llm/llm-call', () => ({
+    ...jest.requireActual('@libs/llm/llm-call'),
+    tracedGenerateText: (...args: any[]) => mockTracedGenerateText(...args),
+}));
 
 jest.mock(
-    '@libs/code-review/infrastructure/agents/llm/byok-to-vercel',
+    '@libs/llm/byok-to-vercel',
     () => ({
         withStructuredOutputFallback: (...args: any[]) =>
             mockWithStructuredOutputFallback(...args),
@@ -42,7 +43,7 @@ jest.mock('ai', () => ({
     tool: (opts: any) => opts,
 }));
 
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
         error: jest.fn(),
@@ -149,6 +150,7 @@ describe('AgentReviewStage', () => {
                     provide: ObservabilityService,
                     useValue: {
                         runInSpan: jest.fn((_name: string, fn: any) => fn()),
+                        recordAgentRunUsage: jest.fn(),
                     },
                 },
                 {
@@ -359,6 +361,7 @@ describe('AgentReviewStage', () => {
                 ],
                 failures: [],
                 totalDurationMs: 1000,
+                warnings: [],
             });
 
             const context = createBaseContext({
@@ -432,6 +435,7 @@ describe('AgentReviewStage', () => {
         });
 
         it('should handle undefined agentResults without throwing', async () => {
+            // Deliberately malformed (undefined agentResults) to test resilience.
             mockOrchestrator.execute.mockResolvedValue({
                 suggestions: [
                     {
@@ -444,8 +448,10 @@ describe('AgentReviewStage', () => {
                     },
                 ],
                 agentResults: undefined,
+                failures: [],
                 totalDurationMs: 1000,
-            });
+                warnings: [],
+            } as any);
 
             const context = createBaseContext({
                 changedFiles: [{ filename: 'src/auth.ts' } as any],
@@ -756,6 +762,24 @@ describe('AgentReviewStage', () => {
                 expect(result.suggestions[0].suggestionContent).toContain('Also found in');
             } finally {
                 if (origKey === undefined) delete process.env.API_OPEN_AI_API_KEY;
+                else process.env.API_OPEN_AI_API_KEY = origKey;
+            }
+        });
+
+        it('fails loud (re-throws) on an unexpected dedup error outside production', async () => {
+            // Guard against the `googleKey`-class bug: a programming error must
+            // NOT be swallowed into a silent 'failed-keep-all' in dev/CI/test.
+            const suggestions = makeSuggestions(2);
+            mockTracedGenerateText.mockRejectedValue(new Error('boom'));
+            const origKey = process.env.API_OPEN_AI_API_KEY;
+            process.env.API_OPEN_AI_API_KEY = 'test-key';
+            try {
+                await expect(
+                    (stage as any).deduplicateSuggestions(suggestions, 42),
+                ).rejects.toThrow('boom');
+            } finally {
+                if (origKey === undefined)
+                    delete process.env.API_OPEN_AI_API_KEY;
                 else process.env.API_OPEN_AI_API_KEY = origKey;
             }
         });

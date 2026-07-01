@@ -3,7 +3,7 @@
  * Kodus Tech. All rights reserved.
  */
 
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { Inject, Injectable } from '@nestjs/common';
 
 import { AutomationStatus } from '@libs/automation/domain/automation/enum/automation-status';
@@ -97,11 +97,10 @@ export class CodeReviewHandlerService {
         if (!organizationId) return;
 
         try {
-            const existing =
-                await this.organizationParametersService.findByKey(
-                    OrganizationParametersKey.FIRST_REVIEW_AT,
-                    { organizationId },
-                );
+            const existing = await this.organizationParametersService.findByKey(
+                OrganizationParametersKey.FIRST_REVIEW_AT,
+                { organizationId },
+            );
             if (existing) return;
 
             await this.organizationParametersService.createOrUpdateConfig(
@@ -165,10 +164,6 @@ export class CodeReviewHandlerService {
         workflowJobId?: string, // Optional: ID of workflow job (for pausing/resuming)
         lastExecutionData?: any, // Data from the last successful execution
         correlationId?: string,
-        // Parent (job-level) AbortSignal — forwarded from the strategy
-        // which got it from runCodeReview use-case, originally created by
-        // JobProcessorRouterService.runWithTimeout. When this aborts, all
-        // downstream LLM/agent calls cancel via parentSignal composition.
         parentSignal?: AbortSignal,
         // Free-text steering directive from `@kody review <directive>`.
         reviewDirective?: string,
@@ -226,14 +221,6 @@ export class CodeReviewHandlerService {
                 this.pipelineFactory.getPipeline('CodeReviewPipeline');
             const result = await pipeline.execute(initialContext);
 
-            // Classify the final status BEFORE reactions/logs so the right
-            // emoji (hooray vs confused) and the persisted automation status
-            // reflect reality. Errors with `severity === 'partial'` come from
-            // auxiliary stages (business-logic validation, PR-level comments,
-            // summary) or the kody-rules agent — they degrade the run but do
-            // not kill it. Critical errors (default) flip the whole execution
-            // to ERROR. Previously, a pipeline that finished in IN_PROGRESS
-            // with agent failures was silently relabeled as SUCCESS here.
             const collectedErrors = result.errors || [];
             const hasCriticalError = collectedErrors.some(
                 (e) => (e.severity ?? 'critical') === 'critical',
@@ -242,9 +229,6 @@ export class CodeReviewHandlerService {
                 (e) => e.severity === 'partial',
             );
 
-            // `result.statusInfo` is frozen by immer — build a new object and
-            // produce a shallow-cloned result that the rest of the function
-            // (handleReactionsByStatus, logs, return value) can read.
             let classifiedStatus = result.statusInfo;
             if (classifiedStatus.status === AutomationStatus.IN_PROGRESS) {
                 if (hasCriticalError) {
@@ -278,22 +262,10 @@ export class CodeReviewHandlerService {
             };
 
             // Handle reactions based on classified result status
-            await this.handleReactionsByStatus(initialContext, classifiedResult);
-
-            this.logger.log({
-                message: `Code review pipeline completed for PR#${pullRequest.number} with status=${classifiedStatus.status}`,
-                context: CodeReviewHandlerService.name,
-                serviceName: CodeReviewHandlerService.name,
-                metadata: {
-                    suggestionsCount: result?.lineComments?.length || 0,
-                    organizationAndTeamData,
-                    pullRequestNumber: pullRequest.number,
-                    executionId,
-                    finalStatus: classifiedStatus.status,
-                    criticalErrors: hasCriticalError,
-                    partialErrors: hasPartialError,
-                },
-            });
+            await this.handleReactionsByStatus(
+                initialContext,
+                classifiedResult,
+            );
 
             if (classifiedStatus.status === AutomationStatus.SUCCESS) {
                 void this.captureFirstReviewIfNeeded(
@@ -314,10 +286,6 @@ export class CodeReviewHandlerService {
                 automaticReviewStatus: result?.automaticReviewStatus,
                 statusInfo: finalStatus,
                 orphanedBaseCommit: result?.orphanedBaseCommit,
-                // Forward adaptive-fit fidelity warnings to the
-                // automation_execution.dataExecution payload (see
-                // _buildExecutionData) so the web dashboard can render
-                // them. Absent on full-fidelity runs.
                 reviewWarnings: result?.reviewWarnings,
             };
         } catch (error) {

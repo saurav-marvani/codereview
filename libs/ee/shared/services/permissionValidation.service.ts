@@ -13,7 +13,7 @@ import {
     IOrganizationParametersService,
     ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
 } from '@libs/organization/domain/organizationParameters/contracts/organizationParameters.service.contract';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 
 export enum PlanType {
     FREE = 'free',

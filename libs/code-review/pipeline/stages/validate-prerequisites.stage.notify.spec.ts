@@ -20,7 +20,7 @@ import { USER_SERVICE_TOKEN } from '@libs/identity/domain/user/contracts/user.se
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 import { ValidatePrerequisitesStage } from './validate-prerequisites.stage';
 
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
         warn: jest.fn(),
