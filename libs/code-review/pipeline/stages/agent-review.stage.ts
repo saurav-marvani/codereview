@@ -33,7 +33,6 @@ import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-
 import { CodeSuggestion } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { PriorityStatus } from '@libs/platformData/domain/pullRequests/enums/priorityStatus.enum';
 import { ReviewOrchestratorService } from '@libs/code-review/infrastructure/agents/review-orchestrator.service';
-import { buildOrchestratorInput } from './build-orchestrator-input';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import {
     AUTOMATION_EXECUTION_SERVICE_TOKEN,
@@ -452,7 +451,6 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 }
             }
 
-<<<<<<< HEAD
             const result = await this.reviewOrchestrator.execute({
                 organizationAndTeamData: context.organizationAndTeamData,
                 changedFiles,
@@ -482,6 +480,12 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                         message: c.commit?.message ?? '',
                     }),
                 ),
+                // Free-text steering directive from `@kody review <directive>`.
+                // Threaded into the finder prompt as a high-priority
+                // <ReviewFocus> block (formatReviewFocus). Optional field — a
+                // refactor silently dropping it wouldn't trip typecheck, which
+                // is exactly what happened once; keep it wired here.
+                reviewDirective: context.reviewDirective,
                 kodyRules: context.codeReviewConfig?.kodyRules,
                 reviewOptions,
                 onAgentProgress,
@@ -547,22 +551,6 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 // aborted via parentSignal composition.
                 parentSignal: context.parentSignal,
             });
-=======
-            // Single place that maps context → agent input (extracted to a pure
-            // helper so the wiring, notably reviewDirective, is unit-testable).
-            const result = await this.reviewOrchestrator.execute(
-                buildOrchestratorInput(context, {
-                    changedFiles,
-                    prNumber,
-                    repositoryId,
-                    reviewOptions,
-                    onAgentProgress,
-                    gitHubToken: await this.resolveGitHubToken(context),
-                    callGraph,
-                    adaptiveProfile,
-                }),
-            );
->>>>>>> main
 
             // Emit profile-driven warnings up here at the stage so they
             // surface even when the agent's overhead preflight throws

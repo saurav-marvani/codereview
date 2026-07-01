@@ -202,7 +202,8 @@ export function buildSystemPrompt(input: ReviewAgentInput, meta: PromptAgentMeta
   <Scope>
     Root cause must be in lines added or modified by this PR.
     relevantFile/relevantLinesStart/relevantLinesEnd must point to the changed lines.
-    Trace impact through callers — symptom can appear elsewhere, but the cause must be in the diff.${SCOPE_CROSS_FILE_EXTRA}
+    Trace impact through callers — symptom can appear elsewhere, but the cause must be in the diff.
+    readFile and grep return the FULL file, including code this PR did NOT touch. Those surrounding lines are context for understanding only — they are NOT part of the diff. Before reporting, confirm the line you cite appears as an added/modified line in the diff hunks; if a pattern you noticed (e.g. a rename, a legacy field, a pre-existing bug) is only visible via readFile and is not in the diff, do NOT report it as introduced by this PR.${SCOPE_CROSS_FILE_EXTRA}
   </Scope>
 
 ${overridesSection}
