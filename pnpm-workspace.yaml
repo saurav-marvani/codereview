@@ -84,4 +84,6 @@ minimumReleaseAgeExclude:
   - react-email@6.6.4
   - '@langfuse/langchain@5.6.0 || 5.7.0'
   - '@langfuse/otel@5.6.0 || 5.7.0'
-  - '@ai-sdk/anthropic@3.0.86'
+  - '@ai-sdk/anthropic@3.0.86 || 3.0.91'
+  - '@ai-sdk/provider-utils@4.0.34'
+  - '@ai-sdk/provider@3.0.13'

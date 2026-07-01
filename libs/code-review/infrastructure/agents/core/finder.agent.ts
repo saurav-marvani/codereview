@@ -34,6 +34,7 @@ import { InMemoryToolRegistry } from '@libs/agent-harness/infrastructure/tools/i
 
 import { LlmVerifier } from '@libs/code-review/infrastructure/agents/core/verifier.agent';
 import { buildToolEvidenceSummary } from '@libs/code-review/infrastructure/agents/core/agent-anomalies';
+import { supportsStrictTools } from '@libs/code-review/infrastructure/agents/core/model-strictness';
 import type { ToolEvidenceSummary } from '@libs/code-review/infrastructure/agents/review-agent.contract';
 import type { Verdict } from '@libs/agent-harness/domain/contracts/verifier.contract';
 import {
@@ -42,6 +43,10 @@ import {
 } from '@libs/core/log/langfuse';
 // Domain helper relocated out of the legacy file (Zod validation of findings).
 import { sanitizeFindingsResult } from '@libs/code-review/infrastructure/agents/core/findings-schema';
+import { withStructuredOutputFallback } from '@libs/llm/byok-to-vercel';
+import type { BYOKConfig } from '@kodus/kodus-common/llm';
+import { generateObject } from 'ai';
+import { z } from 'zod';
 
 export const FINDER_DONE_TOOL = 'submitResult' as const;
 
@@ -65,12 +70,17 @@ export interface FinderSuggestion {
 /** JSON schema for submitResult — mirrors the legacy _findingsSchema. */
 const SUBMIT_RESULT_SCHEMA: JSONSchema = {
     type: 'object',
+    // additionalProperties:false on every object is required by provider strict
+    // tool use / structured output modes. Harmless in best-effort mode; optional
+    // properties are still allowed.
+    additionalProperties: false,
     properties: {
         reasoning: { type: 'string' },
         suggestions: {
             type: 'array',
             items: {
                 type: 'object',
+                additionalProperties: false,
                 properties: {
                     relevantFile: { type: 'string' },
                     language: { type: 'string' },
@@ -131,7 +141,11 @@ export interface BuildFinderSpecParams {
 export function buildFinderAgentSpec(params: BuildFinderSpecParams): AgentSpec {
     const tools = new InMemoryToolRegistry([
         ...params.tools.list(),
-        submitResultTool,
+        // Enable strict/structured tool calling on the done-tool for
+        // strict-capable models (Gemini VALIDATED mode) so the findings payload
+        // can't be omitted or emitted as prose. Best-effort otherwise. NOT
+        // enabled for Anthropic — see model-strictness.ts (it craters recall).
+        { ...submitResultTool, strict: supportsStrictTools(params.modelId) },
     ]);
 
     const policies = [
@@ -185,8 +199,22 @@ export function extractFindings(state: RunState): {
                 suggestions: (clean.suggestions ?? []) as FinderSuggestion[],
             };
         }
-        // Artifact present but unusable (e.g. Gemini called submitResult with {})
-        // → fall through to text parsing, like the legacy loop.
+        // Artifact present but unusable — either empty args (e.g. Gemini
+        // `submitResult({})`) or, for Anthropic, the model wrote its findings as
+        // PROSE in `reasoning` and omitted `suggestions`. Preserve that prose so
+        // a downstream fallback-LLM can re-structure it into findings; otherwise
+        // those (real) findings are silently lost.
+        const proseReasoning =
+            typeof (artifact.payload as { reasoning?: unknown })?.reasoning ===
+            'string'
+                ? ((artifact.payload as { reasoning: string }).reasoning ?? '')
+                : '';
+        return (
+            findingsFromText(state) ?? {
+                reasoning: proseReasoning,
+                suggestions: [],
+            }
+        );
     }
     // 2. Fallback: the model answered in TEXT instead of calling submitResult
     //    (or called it empty). Recover the findings JSON from its final text.
@@ -231,6 +259,102 @@ function extractJsonBlock(text: string): string | null {
     return null;
 }
 
+// ─── Prose-findings recovery (fallback LLM) ─────────────────────────────────
+// When the finder writes its findings as PROSE (in `reasoning`) and omits the
+// structured `suggestions` array — the dominant Anthropic failure mode — the
+// findings are otherwise lost. A cheap internal LLM re-structures that prose
+// into findings. This does NOT constrain the finder (unlike strict tool use,
+// which craters recall); it only recovers what the model already found.
+
+/** Cheap gate: only pay for the recovery LLM when the prose actually reads like
+ *  code-review findings (file/line refs + issue verbs), not investigation notes. */
+function looksLikeFindings(text: string): boolean {
+    if (!text || text.length < 80) return false;
+    const l = text.toLowerCase();
+    const signals = [
+        /\b(bug|issue|vulnerabilit|race|leak|npe|null|missing|incorrect|unsafe|injection|overflow|deadlock|toctou)\b/,
+        /\b(should|must|fix|instead|because|so that|would)\b/,
+        /(\.(ts|tsx|js|jsx|go|rb|py|java|rs|kt)\b|:\d+|line\s*\d+)/,
+    ];
+    return signals.filter((r) => r.test(l)).length >= 2;
+}
+
+const RECOVERY_SCHEMA = z.object({
+    suggestions: z.array(
+        z.object({
+            relevantFile: z.string(),
+            suggestionContent: z.string(),
+            existingCode: z.string(),
+            improvedCode: z.string(),
+            language: z.string().nullable(),
+            label: z.string().nullable(),
+            oneSentenceSummary: z.string().nullable(),
+            relevantLinesStart: z.number().nullable(),
+            relevantLinesEnd: z.number().nullable(),
+            severity: z.string().nullable(),
+            confidence: z.number().nullable(),
+        }),
+    ),
+});
+
+/** Injected capability: re-structure a prose `reasoning` into findings. The
+ *  domain (finder/recall passes) depends only on this function; the adapter
+ *  wires it to the concrete internal-model fallback. Undefined = recovery off. */
+export type ProseRecoverer = (
+    reasoning: string,
+) => Promise<FinderSuggestion[]>;
+
+/** Extract findings from a run, and — if the model produced NONE but wrote
+ *  finding-like prose in `reasoning` (the Anthropic omission mode) — recover
+ *  them via the injected recoverer. Applied at EVERY extraction seam (main
+ *  finder + each recall pass) so an omission in any pass is caught. */
+export async function extractFindingsWithRecovery(
+    state: RunState,
+    recover?: ProseRecoverer,
+): Promise<FinderFindings> {
+    const found = extractFindings(state);
+    if (found.suggestions.length > 0 || !recover) return found;
+    const recovered = await recover(found.reasoning);
+    return recovered.length > 0
+        ? { reasoning: found.reasoning, suggestions: recovered }
+        : found;
+}
+
+export async function recoverFindingsFromProse(
+    prose: string,
+    byokConfig: BYOKConfig | undefined,
+    organizationId: string | undefined,
+): Promise<FinderSuggestion[]> {
+    if (!looksLikeFindings(prose)) return [];
+    try {
+        const suggestions = await withStructuredOutputFallback(
+            {
+                byokConfig,
+                organizationId,
+                label: 'finder-prose-recovery',
+            },
+            async (model) => {
+                const { object } = await generateObject({
+                    model,
+                    schema: RECOVERY_SCHEMA,
+                    prompt:
+                        "The following is a code reviewer's analysis written as " +
+                        'prose. Extract EVERY concrete finding it describes into ' +
+                        'the structured schema — one entry per distinct issue, ' +
+                        'using the file paths and line numbers mentioned. Do NOT ' +
+                        'invent findings; only extract what is explicitly ' +
+                        `described.\n\nANALYSIS:\n${prose}`,
+                });
+                return object.suggestions as unknown as FinderSuggestion[];
+            },
+        );
+        return suggestions ?? [];
+    } catch {
+        // Best-effort: recovery must never break the review.
+        return [];
+    }
+}
+
 // ─── Finder + Verify (parity orchestration on the SAME runner) ──────────────
 
 export interface RunFinderWithVerifyParams {
@@ -256,6 +380,9 @@ export interface RunFinderWithVerifyParams {
     telemetryMetadata?: LangfuseTelemetryMetadata;
     /** Agent name (finder/security/...) — prefixes every observation name. */
     agentName?: string;
+    /** Injected prose-findings recovery capability (see ProseRecoverer). The
+     *  adapter wires it to the internal-model fallback; omit to disable. */
+    recoverProse?: ProseRecoverer;
 }
 
 export interface VerifyUsage {
@@ -317,7 +444,12 @@ export async function runFinderWithVerify(
         },
         ctx,
     );
-    const base = extractFindings(finderState);
+    // Main finder findings — with prose-recovery applied (the same wrapper the
+    // recall passes use, so an omission in any pass is caught consistently).
+    const base = await extractFindingsWithRecovery(
+        finderState,
+        params.recoverProse,
+    );
 
     // RECALL PASS: synthesis rescue — one extra finder run that re-thinks from
     // the evidence already gathered and surfaces concrete MISSED bugs BEFORE
@@ -335,6 +467,7 @@ export async function runFinderWithVerify(
             skipSynthesisRescue: params.skipSynthesisRescue,
             telemetryMetadata: params.telemetryMetadata,
             agentName: params.agentName,
+            recoverProse: params.recoverProse,
         },
         ctx,
     );
@@ -512,6 +645,8 @@ interface RecallPassesParams {
     skipSynthesisRescue?: boolean;
     telemetryMetadata?: LangfuseTelemetryMetadata;
     agentName?: string;
+    /** Injected prose-findings recovery (see ProseRecoverer). */
+    recoverProse?: ProseRecoverer;
 }
 
 const ZERO_RECALL_USAGE: VerifyUsage = {
@@ -549,7 +684,10 @@ export async function runRecallPasses(
         );
         usage = sumVerifyUsage(usage, usageOf(state.usage));
         toolCalls.push(...collectToolCalls(state));
-        findings = mergeSuggestions(findings, extractFindings(state));
+        findings = mergeSuggestions(
+            findings,
+            await extractFindingsWithRecovery(state, params.recoverProse),
+        );
     };
 
     // Synthesis rescue — re-think from the evidence already gathered, surface
