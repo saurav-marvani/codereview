@@ -18,6 +18,9 @@ import {
     TaskContextNormalized,
     TaskQuality,
 } from './types';
+import { createLogger } from '@libs/core/log/logger';
+
+const blueprintLogger = createLogger('business-rules-blueprint');
 
 export const SKILL_NAME = 'business-rules-validation';
 export const PR_METADATA_CAPABILITY = 'pr.metadata.read';
@@ -303,6 +306,25 @@ function resolvePullRequestRef(
     const teamId = ctx.organizationAndTeamData?.teamId;
     const repositoryId = resolveRepositoryId(ctx);
     const pullRequestNumber = resolvePullRequestNumber(ctx);
+
+    // [diag] What org/team/repo/PR the skill actually resolved to operate on —
+    // surfaces tenant/PR mismatches (e.g. the comment's PR vs the resolved one,
+    // or a repo shared across two orgs) at the source.
+    blueprintLogger.log({
+        message: '[business-rules] resolvePullRequestRef',
+        context: 'business-rules-blueprint',
+        metadata: {
+            organizationId: organizationId ?? null,
+            teamId: teamId ?? null,
+            repositoryId: repositoryId ?? null,
+            pullRequestNumber: pullRequestNumber ?? null,
+            resolvable:
+                typeof organizationId === 'string' &&
+                typeof teamId === 'string' &&
+                typeof repositoryId === 'string' &&
+                typeof pullRequestNumber === 'number',
+        },
+    });
 
     if (
         typeof organizationId !== 'string' ||

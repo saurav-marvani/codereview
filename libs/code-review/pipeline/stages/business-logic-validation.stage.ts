@@ -48,12 +48,25 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
     /** Jira-style issue keys, e.g. LKDB-286, PROJ_1-42 (case-insensitive). */
     private static readonly TICKET_KEY_PATTERN = /[A-Za-z][A-Za-z0-9_]+-\d+/g;
 
+    /** Managed task-management integrationId → canonical hint the signal
+     *  detectors use. Display names drift ("Git Issues" vs the 'githubissues'
+     *  hint), so map by the stable integrationId. */
+    private static readonly MANAGED_TASK_MCP_HINT: Record<string, string> = {
+        // Kodus's built-in "Git Issues" MCP (provider-agnostic issue tracker for
+        // the connected git provider) — NOT "GitHub Issues". Resolves `#N` refs.
+        'kodus-issues-default': 'gitissues',
+        'linear-default': 'linear',
+        'atlassian-rovo-default': 'atlassianrovo',
+        'notion-default': 'notion',
+    };
+
     /** MCPs that can resolve ticket keys (not URL-only sources like Notion). */
     private static readonly TICKET_KEY_MCPS = [
         'jira',
         'linear',
         'clickup',
         'githubissues',
+        'gitissues',
         'atlassianrovo',
     ] as const;
 
@@ -97,6 +110,23 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
         // AgentReview, ValidateSuggestions, ...). Instead, surface the
         // outcome via logs + the businessLogicOutcome field that the
         // observer can pick up for per-stage UI metadata.
+        // [diag] Stage entry — shows it was reached and the inputs that decide
+        // whether it runs: the business_logic config toggle (off ⇒ skips), the
+        // PR/repo context, and whether there's a PR body for the agent to read.
+        this.logger.log({
+            message: '[BUSINESS-LOGIC] stage entered — evaluating run conditions',
+            context: this.stageName,
+            metadata: {
+                organizationId: context.organizationAndTeamData?.organizationId,
+                teamId: context.organizationAndTeamData?.teamId,
+                prNumber: context.pullRequest?.number,
+                repositoryId: context.repository?.id,
+                businessLogicEnabled:
+                    !!context.codeReviewConfig?.reviewOptions?.business_logic,
+                hasPrBody: !!context.pullRequest?.body,
+            },
+        });
+
         const skipDecision = await this.evaluateSkip(context);
         if (skipDecision) {
             this.logger.log({
@@ -142,6 +172,22 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
             };
             const thread = this.createBusinessLogicThread(context);
 
+            // [diag] Passed evaluateSkip — now actually invoking the business
+            // skill agent (preflight → task context → diff → analyze). What the
+            // agent returns is logged right after.
+            this.logger.log({
+                message:
+                    '[BUSINESS-LOGIC] running business-rules agent (passed skip gate)',
+                context: this.stageName,
+                metadata: {
+                    organizationId:
+                        context.organizationAndTeamData?.organizationId,
+                    prNumber: context.pullRequest?.number,
+                    prBodyLength: prBody.length,
+                    signalCount: Array.isArray(signals) ? signals.length : 0,
+                },
+            });
+
             const timeoutPromise = new Promise<never>((_, reject) =>
                 setTimeout(
                     () => reject(new Error('BusinessLogicValidation timeout')),
@@ -159,6 +205,25 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
                 });
 
             const result = await Promise.race([agentPromise, timeoutPromise]);
+
+            // [diag] What the agent returned — the decisive signal: the
+            // NO_TASK_MCP sentinel (preflight found no task-management MCP), the
+            // weak-task-context marker, or a real validation summary.
+            this.logger.log({
+                message: '[BUSINESS-LOGIC] agent returned',
+                context: this.stageName,
+                metadata: {
+                    prNumber: context.pullRequest?.number,
+                    isNoTaskMcpSentinel:
+                        result ===
+                        BusinessRulesValidationAgentProvider.NO_TASK_MCP_SENTINEL,
+                    resultType: typeof result,
+                    resultPreview:
+                        typeof result === 'string'
+                            ? result.slice(0, 160)
+                            : JSON.stringify(result)?.slice(0, 160),
+                },
+            });
 
             // No task-management MCP connected — treat as if the category
             // were disabled: skip silently, no PR comment.
@@ -440,6 +505,36 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
             for (const conn of (allConnections ?? []).filter(
                 (c) => c.organizationId === orgId,
             )) {
+                // Canonical signal: the mcp-manager stamps `category` from its
+                // registry. Use it FIRST (drift-proof — "Git Issues" no longer
+                // has to match a hardcoded name hint), then fall back to name
+                // hints for external MCPs the registry doesn't classify. This
+                // mirrors the agent preflight's category matching so the stage's
+                // own precheck doesn't skip a connection the agent would accept.
+                if (
+                    (conn as { category?: string | null }).category ===
+                    'task-management'
+                ) {
+                    // Normalize the managed integration to its CANONICAL hint
+                    // (kodus-issues → 'githubissues') so downstream signal
+                    // detection (ticket key / URL) can match it. Falling back to
+                    // the raw id (e.g. 'kodus-issues-default') would never match
+                    // TICKET_KEY_MCPS / MCP_URL_PATTERNS.
+                    const canonical =
+                        BusinessLogicValidationStage.MANAGED_TASK_MCP_HINT[
+                            conn.integrationId ?? ''
+                        ];
+                    if (canonical && !matched.includes(canonical)) {
+                        matched.push(canonical);
+                    } else {
+                        this.appendTaskManagementHints(matched, [
+                            conn.appName,
+                            conn.provider,
+                            conn.integrationId,
+                        ]);
+                    }
+                    continue;
+                }
                 this.appendTaskManagementHints(matched, [
                     conn.appName,
                     conn.provider,
@@ -544,6 +639,18 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
             return true;
         }
 
+        // Git-issue-style references (e.g. "#256", "Closes #256") when a git
+        // issues task MCP is connected (Kodus "Git Issues" → 'gitissues', or a
+        // GitHub Issues MCP → 'githubissues'). The Jira-style TICKET_KEY_PATTERN
+        // (`ABC-123`) never matches `#N`, so handle it explicitly.
+        if (
+            (connectedMcps.includes('gitissues') ||
+                connectedMcps.includes('githubissues')) &&
+            /(?:^|[\s(])#\d+\b/.test(body)
+        ) {
+            return true;
+        }
+
         // URLs are valid only if they match the domain pattern of a
         // connected MCP.
         const urls = this.detectTaskLinks(body);
@@ -564,7 +671,33 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
     private detectTicketKeys(text: string): string[] {
         const matches =
             text.match(BusinessLogicValidationStage.TICKET_KEY_PATTERN) ?? [];
-        return Array.from(new Set(matches.map((m) => m.toUpperCase())));
+        const keys = matches.map((m) => m.toUpperCase());
+
+        // Git-issue references ("#256", "Closes #256"). The Jira-style
+        // TICKET_KEY_PATTERN (`ABC-123`) never matches `#N`, so the agent never
+        // received the issue number as a structured signal — it fell back to
+        // listing issues (which returns PRs) and couldn't resolve the task. With
+        // `#256` in the signals, the agent fetches it directly via KODUS_GET_ISSUE.
+        const issueRefs = text.match(/(?:^|[\s(])#(\d+)\b/g) ?? [];
+        for (const ref of issueRefs) {
+            const num = ref.match(/\d+/)?.[0];
+            if (num) {
+                keys.push(`#${num}`);
+            }
+        }
+
+        // ...and full issue URLs (github.com/owner/repo/issues/256,
+        // gitlab .../issues/256). Users often paste the link instead of `#N`.
+        const issueUrls =
+            text.match(/https?:\/\/[^\s)>\]"']*\/issues\/(\d+)/gi) ?? [];
+        for (const url of issueUrls) {
+            const num = url.match(/\/issues\/(\d+)/)?.[1];
+            if (num) {
+                keys.push(`#${num}`);
+            }
+        }
+
+        return Array.from(new Set(keys));
     }
 
     private detectTaskLinks(body: string): string[] {

@@ -256,6 +256,74 @@ describe('GenericSkillRunnerService', () => {
         ).resolves.toBeDefined();
     });
 
+    it('accepts the Kodus built-in "Git Issues" MCP for task-management (regression)', async () => {
+        // Real-world NO_TASK_MCP: the connected MCP is Kodus\'s built-in task
+        // tracker whose appName is "Git Issues" (→ `gitissues`). The example
+        // "Github Issues" normalizes to `githubissues`, which does NOT match
+        // `gitissues` (the "hub" breaks both === and includes). The fix adds
+        // "Git Issues" to the examples so the hint matches the real connection.
+        skillLoaderService.loadSkillMetaFromFilesystem.mockReturnValue(
+            withSkillMeta({
+                requiredMcps: [
+                    {
+                        category: 'task-management',
+                        label: 'Task Management',
+                        examples:
+                            'Jira, Atlassian Rovo, Linear, Notion, ClickUp, Github Issues, Git Issues',
+                    },
+                ],
+            }),
+        );
+        mcpManagerService.getConnections.mockResolvedValue([
+            {
+                provider: 'kodusmcp',
+                name: 'Git Issues',
+                allowedTools: ['KODUS_LIST_ISSUES', 'KODUS_GET_ISSUE'],
+            },
+        ] as any);
+
+        await expect(
+            service.createFetcherOrchestration(
+                'business-rules-validation',
+                {} as any,
+                organizationAndTeamData,
+            ),
+        ).resolves.toBeDefined();
+    });
+
+    it('matches by canonical registry category regardless of display name (drift-proof, the correct fix)', async () => {
+        // The connection name matches NO example hint, but the mcp-manager
+        // stamped its registry category. Category matching is the single source
+        // of truth — it must accept the connection even when the name drifts.
+        skillLoaderService.loadSkillMetaFromFilesystem.mockReturnValue(
+            withSkillMeta({
+                requiredMcps: [
+                    {
+                        category: 'task-management',
+                        label: 'Task Management',
+                        examples: 'Jira, Linear',
+                    },
+                ],
+            }),
+        );
+        mcpManagerService.getConnections.mockResolvedValue([
+            {
+                provider: 'kodusmcp',
+                name: 'Some Renamed Tracker',
+                category: 'task-management',
+                allowedTools: ['KODUS_LIST_ISSUES'],
+            },
+        ] as any);
+
+        await expect(
+            service.createFetcherOrchestration(
+                'business-rules-validation',
+                {} as any,
+                organizationAndTeamData,
+            ),
+        ).resolves.toBeDefined();
+    });
+
     it('filters external MCP providers by required MCP hints while keeping kodusmcp', async () => {
         skillLoaderService.loadSkillMetaFromFilesystem.mockReturnValue(
             withSkillMeta({

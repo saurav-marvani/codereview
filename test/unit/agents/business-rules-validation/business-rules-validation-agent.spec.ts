@@ -200,10 +200,18 @@ describe('BusinessRulesValidationAgentProvider.formatValidationResponse', () => 
             },
         );
 
+        // The 4th arg is the Langfuse telemetry metadata (org/team/PR/repo) so
+        // the formatter trace groups under the PR session; this ctx carries none.
         expect((provider as any).formatUserFacingMessage).toHaveBeenCalledWith(
             '## 🤔 Need Task Information',
             'pt-BR',
             'limitation',
+            {
+                organizationId: undefined,
+                teamId: undefined,
+                pullRequestId: undefined,
+                repositoryId: undefined,
+            },
         );
         expect(formatted).toBe('## 🤔 Preciso de mais contexto');
     });
