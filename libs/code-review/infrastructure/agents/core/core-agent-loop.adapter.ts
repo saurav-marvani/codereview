@@ -28,7 +28,11 @@ import { DiffCoverageLedger } from '@libs/code-review/infrastructure/agents/adap
 import { buildFinderToolRegistry } from '@libs/code-review/infrastructure/agents/adapters/finder-tools.adapter';
 import { wrapByokModel } from '@libs/llm/byok-model-wrapper';
 import { anthropicSystemCacheControl } from '@libs/llm/system-cache';
-import { buildFinderAgentSpec, runFinderWithVerify } from '@libs/code-review/infrastructure/agents/core/finder.agent';
+import {
+    buildFinderAgentSpec,
+    runFinderWithVerify,
+    recoverFindingsFromProse,
+} from '@libs/code-review/infrastructure/agents/core/finder.agent';
 import {
     buildFindingsFromVerify,
     summarizeFunnel,
@@ -110,9 +114,15 @@ export async function runAgentLoopViaCore(
     const skipSynthesisRescue = !!input.skipSynthesisRescue;
 
     const contextWindowTokens = input.contextWindowTokens;
+    // The AgentSpec.modelId is NOT used to resolve the model (the runner's
+    // resolver above ignores it and always returns `model`). It IS used to
+    // decide provider-native strict tool use (supportsStrictTools), so pass the
+    // REAL model id — a placeholder like 'resolved' would disable strict for
+    // every model (it matches neither the Gemini nor the Claude pattern).
+    const specModelId = (input.model as any)?.modelId ?? 'resolved';
     const finderSpec = buildFinderAgentSpec({
         systemPrompt: input.systemPrompt,
-        modelId: 'resolved',
+        modelId: specModelId,
         tools,
         coverageLedger,
         compressor: contextWindowTokens
@@ -135,7 +145,7 @@ export async function runAgentLoopViaCore(
         {
             runner,
             finderSpec,
-            modelId: 'resolved',
+            modelId: specModelId,
             tools,
             providerOptions,
             systemProviderOptions,
@@ -143,6 +153,15 @@ export async function runAgentLoopViaCore(
             skipSynthesisRescue,
             telemetryMetadata: input.telemetryMetadata,
             agentName: input.agentName,
+            // Wire the prose-findings recovery to the internal-model fallback.
+            // The finder/recall passes stay decoupled from BYOK — they only see
+            // the ProseRecoverer function.
+            recoverProse: (reasoning: string) =>
+                recoverFindingsFromProse(
+                    reasoning,
+                    secrets.byokConfig,
+                    input.telemetryMetadata?.organizationId,
+                ),
         },
         { prompt: input.userPrompt },
         ctx,

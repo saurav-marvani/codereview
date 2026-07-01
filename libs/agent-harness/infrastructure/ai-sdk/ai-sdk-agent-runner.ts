@@ -67,6 +67,10 @@ export class AiSdkAgentRunner implements AgentRunner {
                 toolMap[t.name] = aiTool({
                     description: t.description,
                     inputSchema: jsonSchema(t.inputSchema as any),
+                    // Forward the tool's opt-in strict flag (set by the domain
+                    // only for strict-capable models). Providers that don't
+                    // support strict tool calling ignore it.
+                    ...(t.strict != null ? { strict: t.strict } : {}),
                     execute: async (args: unknown) => {
                         const r = await t.execute(args, ctx);
                         return r.isError ? `ERROR: ${r.output}` : r.output;

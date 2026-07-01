@@ -12,7 +12,11 @@ import type { ToolContext } from '@libs/agent-harness/domain/contracts/tool.cont
 import { AiSdkAgentRunner } from '@libs/agent-harness/infrastructure/ai-sdk/ai-sdk-agent-runner';
 import { InMemoryToolRegistry } from '@libs/agent-harness/infrastructure/tools/in-memory-tool-registry';
 
-import { buildFinderAgentSpec, extractFindings } from '@libs/code-review/infrastructure/agents/core/finder.agent';
+import {
+    buildFinderAgentSpec,
+    extractFindings,
+    extractFindingsWithRecovery,
+} from '@libs/code-review/infrastructure/agents/core/finder.agent';
 
 const sampleFindings = {
     reasoning: 'found a null deref',
@@ -125,5 +129,81 @@ describe('finder.agent (assembled on agent-harness)', () => {
             trace: [],
         };
         expect(extractFindings(state).suggestions).toEqual([]);
+    });
+});
+
+// ─── Prose-findings recovery (deterministic, mocked recoverer, no LLM) ───────
+// The model called submitResult but wrote its findings as PROSE in `reasoning`
+// and omitted the `suggestions` array (the dominant Anthropic omission mode).
+// These lock the WIRING — the part that silently broke before: preserving the
+// prose, gating the recovery, merging its output, and covering "no recoverer".
+describe('prose-findings recovery', () => {
+    const prose =
+        'Bug: null deref on src/x.ts:10 — should guard with x?.y before use.';
+
+    // A submitResult artifact with ONLY reasoning (no suggestions array).
+    const reasoningOnlyState = {
+        runId: 'r',
+        agentId: 'finder',
+        status: 'ok' as const,
+        steps: [],
+        artifacts: [{ type: 'submitResult', payload: { reasoning: prose } }],
+        usage: {},
+        trace: [],
+    } as any;
+
+    const recovered = [
+        {
+            relevantFile: 'src/x.ts',
+            suggestionContent: 'null deref',
+            existingCode: 'x.y',
+            improvedCode: 'x?.y',
+        },
+    ];
+
+    it('extractFindings preserves the prose reasoning when suggestions is omitted', () => {
+        const out = extractFindings(reasoningOnlyState);
+        expect(out.suggestions).toEqual([]);
+        expect(out.reasoning).toBe(prose); // <- prose kept for recovery
+    });
+
+    it('does NOT call the recoverer when findings are already structured', async () => {
+        const validState = {
+            ...reasoningOnlyState,
+            artifacts: [{ type: 'submitResult', payload: sampleFindings }],
+        } as any;
+        const recover = jest.fn();
+        const out = await extractFindingsWithRecovery(validState, recover);
+        expect(recover).not.toHaveBeenCalled();
+        expect(out.suggestions).toHaveLength(1);
+    });
+
+    it('recovers findings from the prose when suggestions is empty', async () => {
+        const recover = jest.fn().mockResolvedValue(recovered);
+        const out = await extractFindingsWithRecovery(
+            reasoningOnlyState,
+            recover,
+        );
+        expect(recover).toHaveBeenCalledWith(prose);
+        expect(out.suggestions).toEqual(recovered);
+        expect(out.reasoning).toBe(prose);
+    });
+
+    it('keeps empty findings when the recoverer finds nothing', async () => {
+        const recover = jest.fn().mockResolvedValue([]);
+        const out = await extractFindingsWithRecovery(
+            reasoningOnlyState,
+            recover,
+        );
+        expect(out.suggestions).toEqual([]);
+    });
+
+    it('is a no-op (never throws) when no recoverer is injected', async () => {
+        const out = await extractFindingsWithRecovery(
+            reasoningOnlyState,
+            undefined,
+        );
+        expect(out.suggestions).toEqual([]);
+        expect(out.reasoning).toBe(prose);
     });
 });
