@@ -9,8 +9,11 @@ export type KodyKnowledgeApprovalConfig = {
 /**
  * Whether a rule/memory of the given origin needs approval before it becomes
  * active, under the resolved (global/repo/directory-merged) config. When
- * enabled, generated knowledge requires approval; imported/manual origins
- * remain active.
+ * enabled, generated knowledge AND auto-synced IDE rule files
+ * (`repo_file_sync`) require approval; manual/library/CLI origins remain
+ * active. `repo_file_sync` is gated but deliberately kept out of
+ * `isGeneratedKodyRuleOrigin` — it's imported, not machine-generated, and that
+ * helper drives origin display / centralized-sync classification elsewhere.
  */
 export function requiresKnowledgeApproval(
     config: KodyKnowledgeApprovalConfig | undefined,
@@ -20,5 +23,8 @@ export function requiresKnowledgeApproval(
         return false;
     }
 
-    return isGeneratedKodyRuleOrigin(origin);
+    return (
+        isGeneratedKodyRuleOrigin(origin) ||
+        origin === KodyRulesOrigin.REPO_FILE_SYNC
+    );
 }

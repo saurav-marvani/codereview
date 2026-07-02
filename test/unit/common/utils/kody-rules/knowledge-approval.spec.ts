@@ -22,13 +22,24 @@ describe('requiresKnowledgeApproval', () => {
             expect(requiresKnowledgeApproval(config, origin)).toBe(true);
         });
 
+        it('requires approval for repo_file_sync (auto-synced IDE rule files)', () => {
+            expect(
+                requiresKnowledgeApproval(
+                    config,
+                    KodyRulesOrigin.REPO_FILE_SYNC,
+                ),
+            ).toBe(true);
+        });
+
         it.each([
             KodyRulesOrigin.MANUAL,
             KodyRulesOrigin.LIBRARY,
-            KodyRulesOrigin.REPO_FILE_SYNC,
             KodyRulesOrigin.CLI,
-        ])('does not require approval for non-generated origin %s', (origin) => {
-            expect(requiresKnowledgeApproval(config, origin)).toBe(false);
-        });
+        ])(
+            'does not require approval for user/imported origin %s',
+            (origin) => {
+                expect(requiresKnowledgeApproval(config, origin)).toBe(false);
+            },
+        );
     });
 });
