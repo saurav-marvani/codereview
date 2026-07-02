@@ -166,4 +166,85 @@ describe('runAgentLoopViaCore (harness + agent integration)', () => {
         expect(out.findings).toBeDefined();
         expect(out.usage).toBeDefined();
     });
+
+    it('reports coverage from the ledger mutated during the run', async () => {
+        const calls = { count: 0 };
+        const doGenerate = (async (opts: any) => {
+            calls.count++;
+            const sys = JSON.stringify(opts?.prompt ?? opts ?? '');
+            const isVerifier =
+                sys.includes('REFUTE') ||
+                sys.includes('verdict') ||
+                sys.includes('verify');
+
+            if (isVerifier) {
+                return {
+                    content: [
+                        {
+                            type: 'tool-call',
+                            toolCallId: 'v',
+                            toolName: 'submitVerdict',
+                            input: JSON.stringify({
+                                keep: true,
+                                rationale: 'ok',
+                            }),
+                        },
+                    ],
+                    finishReason: 'tool-calls',
+                    usage: { inputTokens: 5, outputTokens: 5 },
+                    warnings: [],
+                };
+            }
+
+            if (calls.count === 1) {
+                return {
+                    content: [
+                        {
+                            type: 'tool-call',
+                            toolCallId: 'r',
+                            toolName: 'readFile',
+                            input: JSON.stringify({
+                                path: 'a.ts',
+                                startLine: 1,
+                                endLine: 2,
+                            }),
+                        },
+                    ],
+                    finishReason: 'tool-calls',
+                    usage: { inputTokens: 5, outputTokens: 5 },
+                    warnings: [],
+                };
+            }
+
+            return {
+                content: [
+                    {
+                        type: 'tool-call',
+                        toolCallId: 'f',
+                        toolName: 'submitResult',
+                        input: JSON.stringify({
+                            reasoning: 'done',
+                            suggestions: [],
+                        }),
+                    },
+                ],
+                finishReason: 'tool-calls',
+                usage: { inputTokens: 5, outputTokens: 5 },
+                warnings: [],
+            };
+        }) as any;
+
+        const out = await runAgentLoopViaCore(
+            makeInput(new MockLanguageModelV3({ doGenerate }), {
+                reviewMode: 'fast',
+                maxSteps: 4,
+            }),
+            secrets,
+        );
+
+        expect(out.coverage.totalTargets).toBe(2);
+        expect(out.coverage.touchedTargets).toBe(1);
+        expect(out.coverage.pendingTargets).toBe(1);
+        expect(out.coverage.touchedFiles).toEqual(['a.ts']);
+    });
 });

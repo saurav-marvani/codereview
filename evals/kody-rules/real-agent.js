@@ -109,7 +109,7 @@ class ReplayRemoteCommands {
 }
 
 function buildProvider() {
-    const { KodyRulesAgentProvider } = require(path.join(__dirname, '../../libs/code-review/infrastructure/agents/kody-rules-agent.provider.ts'));
+    const { KodyRulesAgentProvider } = require(path.join(__dirname, '../../libs/code-review/infrastructure/agents/providers/kody-rules-agent.provider.ts'));
     const permissionValidationService = { getBYOKConfig: async () => null };
     const observabilityService = {
         runInSpan: async (_n, fn) => (typeof fn === 'function' ? fn() : undefined),

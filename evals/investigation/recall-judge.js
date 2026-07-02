@@ -2,7 +2,8 @@
  * Sonnet judge for finder-recall: does a candidate finding match a golden bug?
  * Same matching algorithm as scripts/benchmark/scorecard.ts so eval numbers are
  * comparable to the full benchmark. Runs locally (no droplet) — needs an
- * Anthropic key (ANTHROPIC_API_KEY / BYOK_ANTHROPIC_API_KEY, or ~/.kodus-dev/config).
+ * Anthropic key (API_ANTHROPIC_API_KEY / ANTHROPIC_API_KEY /
+ * BYOK_ANTHROPIC_API_KEY, or ~/.kodus-dev/config).
  */
 const fs = require('fs');
 const path = require('path');
@@ -10,6 +11,11 @@ const os = require('os');
 
 const JUDGE_MODEL = 'claude-sonnet-4-6';
 const MATCH_CONFIDENCE = 0.5;
+const JUDGE_KEY_ENVS = [
+    'API_ANTHROPIC_API_KEY',
+    'ANTHROPIC_API_KEY',
+    'BYOK_ANTHROPIC_API_KEY',
+];
 
 const JUDGE_PROMPT = `You are evaluating AI code review tools.
 Determine if the candidate issue matches the golden (expected) comment.
@@ -29,19 +35,49 @@ Respond with ONLY a JSON object:
 {"reasoning": "brief explanation", "match": true/false, "confidence": 0.0-1.0}`;
 
 function loadJudgeKey() {
-    const envKey = process.env.ANTHROPIC_API_KEY || process.env.BYOK_ANTHROPIC_API_KEY;
-    if (envKey) return envKey;
+    if (process.env.API_ANTHROPIC_API_KEY) {
+        return process.env.API_ANTHROPIC_API_KEY;
+    }
+
+    for (const envFile of [
+        path.join(__dirname, '..', '..', '.env.local'),
+        path.join(__dirname, '..', '..', '.env'),
+    ]) {
+        try {
+            const text = fs.readFileSync(envFile, 'utf8');
+            const value = findKeyInText(text);
+            if (value) return value;
+        } catch {
+            /* no env file */
+        }
+    }
+
+    for (const key of ['ANTHROPIC_API_KEY', 'BYOK_ANTHROPIC_API_KEY']) {
+        if (process.env[key]) return process.env[key];
+    }
+
     try {
         const text = fs.readFileSync(path.join(os.homedir(), '.kodus-dev', 'config'), 'utf8');
-        for (const line of text.split('\n')) {
-            const m = line.match(/^\s*(ANTHROPIC_API_KEY|BYOK_ANTHROPIC_API_KEY)\s*=\s*(.*)/);
-            if (m) {
-                const v = m[2].replace(/\s+#.*$/, '').trim().replace(/^["']|["']$/g, '');
-                if (v && !v.startsWith('op://')) return v;
-            }
-        }
+        const value = findKeyInText(text);
+        if (value) return value;
     } catch {
         /* no config file */
+    }
+    return null;
+}
+
+function findKeyInText(text) {
+    const values = new Map();
+    for (const line of String(text || '').split('\n')) {
+        const m = line.match(/^\s*([A-Z_]*ANTHROPIC_API_KEY)\s*=\s*(.*)/);
+        if (!m || !JUDGE_KEY_ENVS.includes(m[1])) continue;
+
+        const v = m[2].replace(/\s+#.*$/, '').trim().replace(/^["']|["']$/g, '');
+        if (v && !v.startsWith('op://')) values.set(m[1], v);
+    }
+
+    for (const key of JUDGE_KEY_ENVS) {
+        if (values.has(key)) return values.get(key);
     }
     return null;
 }

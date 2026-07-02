@@ -20,6 +20,7 @@ import {
     isCoverageSatisfied,
     markCoverageFromToolCall,
     TIERED_TOTAL_COVERAGE_THRESHOLD,
+    type CoverageSummary,
     type CoverageTarget,
     type CoverageTier,
 } from '@libs/code-review/infrastructure/agents/engine/coverage-ledger';
@@ -57,6 +58,10 @@ export class DiffCoverageLedger implements ProgressLedger {
             criticalTotal: s.criticalTotal,
             criticalPending: s.criticalPending,
         };
+    }
+
+    coverageSummary(): CoverageSummary {
+        return getCoverageSummary(this.targets);
     }
 
     debtNote(): string | null {

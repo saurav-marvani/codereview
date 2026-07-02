@@ -1,7 +1,6 @@
 // Invokes the REAL production dedup decision (prompt + schema from
-// libs/.../llm/dedup-prompt.ts) on a list of suggestions, on ANY model — so we
-// can A/B which small model dedups well (production defaults to gemini-3-flash,
-// but Google can get rate-denied; this finds resilient alternatives).
+// libs/.../engine/dedup-prompt.ts) on a list of suggestions, on ANY model — so we
+// can A/B which small model dedups well.
 // Loaded via ts-node so it reads the live TS prompt module — no drift.
 require('ts-node/register/transpile-only');
 require('tsconfig-paths/register');
@@ -13,7 +12,7 @@ const {
     DEDUP_MODEL_ID,
     contentSimilarity,
     DEDUP_CONTENT_THRESHOLD,
-} = require('@libs/code-review/infrastructure/agents/llm/dedup-prompt');
+} = require('@libs/code-review/infrastructure/agents/engine/dedup-prompt');
 
 const normSeverity = (s) => (s == null ? 'medium' : String(s).toLowerCase());
 
@@ -24,7 +23,7 @@ const DEDUP_MODELS = {
     'gemini-2.5-flash': { provider: 'google', model: 'gemini-2.5-flash', keyEnv: ['API_GOOGLE_AI_API_KEY', 'BYOK_GOOGLE_API_KEY'] },
     'haiku-4.5': { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', keyEnv: ['ANTHROPIC_API_KEY', 'BYOK_ANTHROPIC_API_KEY'] },
     'kimi-k2.7': { provider: 'openai-compatible', model: 'kimi-k2.7-code', baseURL: 'https://api.moonshot.ai/v1', keyEnv: ['BYOK_MOONSHOT_API_KEY'] },
-    'glm-5.1': { provider: 'openai-compatible', model: 'glm-5.1', baseURL: 'https://api.z.ai/api/paas/v4', keyEnv: ['BYOK_ZHIPU_API_KEY'] },
+    'glm-5.2': { provider: 'openai-compatible', model: 'glm-5.2', baseURL: 'https://api.z.ai/api/paas/v4', keyEnv: ['BYOK_ZHIPU_API_KEY'] },
     'gpt-5.4-mini': { provider: 'openai', model: 'gpt-5.4-mini', keyEnv: ['BYOK_OPENAI_API_KEY', 'API_OPEN_AI_API_KEY'] },
     'deepseek-v4': { provider: 'openai-compatible', model: 'deepseek-chat', baseURL: 'https://api.deepseek.com', keyEnv: ['DEEPSEEK_API_KEY'] },
 };
@@ -58,7 +57,7 @@ async function buildModel(spec) {
 
 /**
  * @param {Array} suggestions
- * @param {string} modelKey   key into DEDUP_MODELS (default 'gemini-3-flash' = prod)
+ * @param {string} modelKey   key into DEDUP_MODELS (default 'gpt-5.4-mini' = prod)
  */
 async function runDedup(suggestions, modelKey = 'gpt-5.4-mini', opts = {}) {
     if (suggestions.length <= 1) {

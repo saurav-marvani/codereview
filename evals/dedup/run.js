@@ -1,13 +1,14 @@
 // Dedup-eval driver. For each PR dataset (>=2 findings): judge-label findings →
-// goldens (Sonnet, cached), run the REAL dedup (gemini) or a mock, score the
+// goldens (Sonnet, cached), run the REAL dedup (gpt-5.4-mini) or a mock, score the
 // over-merge / under-merge metrics, and print an aggregate.
 //
-//   node run.js                 # live dedup (needs Google AI key)
+//   node run.js                 # live dedup (needs OpenAI key)
 //   node run.js --mock=identity # keep-all baseline (no Google; sanity/CI)
 //   node run.js --limit=5       # first 5 dedup-relevant PRs
 //   node run.js --pr=<caseId>   # one PR
 //
-// Keys: ANTHROPIC_API_KEY (judge) + BYOK_GOOGLE_API_KEY/API_GOOGLE_AI_API_KEY (dedup).
+// Keys: ANTHROPIC_API_KEY/BYOK_ANTHROPIC_API_KEY (judge) +
+// BYOK_OPENAI_API_KEY/API_OPEN_AI_API_KEY (dedup default).
 const fs = require('fs');
 const path = require('path');
 const { loadJudgeKey } = require('../investigation/recall-judge');
@@ -34,9 +35,17 @@ function mockDedup(mode, findings) {
 }
 
 async function main() {
+    if (!fs.existsSync(DATA)) {
+        console.error(`dedup datasets missing: ${DATA}`);
+        console.error('Build or commit evals/dedup/datasets before using dedup as a CI gate.');
+        process.exit(2);
+    }
+
     const judgeKey = loadJudgeKey();
     const mock = args.mock;
-    const dedupModel = args.model || 'gemini-3-flash'; // production default
+    const dedupModel = args.model || 'gpt-5.4-mini'; // production default
+    const gate = !!args.gate;
+    const goldensLostMax = args['goldens-lost-max'] != null ? Number(args['goldens-lost-max']) : 0;
     let runDedup = null;
     if (!mock) ({ runDedup } = require('./dedup-runner'));
     fs.mkdirSync(CACHE, { recursive: true });
@@ -91,6 +100,19 @@ async function main() {
         prsWithLoss.forEach((r) => console.log(`   ${r.pr.slice(0, 50)} (-${r.goldensLost})`));
     }
     fs.writeFileSync(path.join(__dirname, `result-${mock ? 'mock-' + mock : dedupModel}.json`), JSON.stringify(rows, null, 2));
+
+    if (gate) {
+        if (!rows.length) {
+            console.error('\n❌ GATE FAILED: no dedup-relevant rows were evaluated');
+            process.exit(2);
+        }
+        const lost = sum('goldensLost');
+        if (lost > goldensLostMax) {
+            console.error(`\n❌ GATE FAILED: goldensLost ${lost} > ${goldensLostMax}`);
+            process.exit(1);
+        }
+        console.log(`\n✅ GATE PASSED (goldensLost ≤ ${goldensLostMax})`);
+    }
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => { console.error(e); process.exit(2); });

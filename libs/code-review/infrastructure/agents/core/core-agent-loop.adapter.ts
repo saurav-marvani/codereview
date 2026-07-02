@@ -49,7 +49,6 @@ import { buildProviderOptions } from '@libs/llm/reasoning-options';
 // buildAgentAnomalies is review-specific (anomaly summary shapes) — lives in its
 // own module (relocated out of the legacy llm/agent-loop.ts).
 import { buildAgentAnomalies } from '@libs/code-review/infrastructure/agents/core/agent-anomalies';
-import { buildCoverageLedger, getCoverageSummary } from '@libs/code-review/infrastructure/agents/engine/coverage-ledger';
 
 const funnelLogger = createLogger('review-funnel');
 
@@ -206,10 +205,7 @@ export async function runAgentLoopViaCore(
                     : {},
         })),
     );
-    const covTargets = buildCoverageLedger(input.changedFiles, {
-        fileTiers: input.fileTiers,
-    });
-    const coverage = getCoverageSummary(covTargets);
+    const coverage = coverageLedger.coverageSummary();
 
     // Usage = finder run + verify sub-step (the verify usage is NOT in
     // finderState — it is summed across the verifier runs). cacheWrite stays 0:
@@ -290,5 +286,6 @@ export async function runAgentLoopViaCore(
             coverage,
         }),
         warnings: [],
+        debugTrace: r.finderState.trace as any,
     };
 }
