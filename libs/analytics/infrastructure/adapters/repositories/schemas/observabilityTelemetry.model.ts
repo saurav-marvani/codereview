@@ -29,8 +29,8 @@ export const ObservabilityTelemetryModelSchema = SchemaFactory.createForClass(
 // NOT the Mongoose `timestamps: true` `createdAt`. Every read filters on
 // `timestamp`, so a `createdAt` index is dead weight the planner never uses.
 // (The index-covered Token Usage path uses the `tu_cover_*` indexes built by
-// scripts/perf/token-usage/migration.js; these support the count/fallback path
-// and other org+time analytics.)
+// the TokenUsageTuMongo migration; these support the count/fallback path and
+// other org+time analytics.)
 ObservabilityTelemetryModelSchema.index(
     { 'attributes.organizationId': 1, timestamp: -1 },
     { background: true },
