@@ -13,10 +13,7 @@ import {
     UsageSummaryContract,
 } from '@libs/analytics/domain/token-usage/types/tokenUsage.types';
 
-import { PricingResolver } from '@libs/analytics/application/use-cases/usage/pricing-resolver';
-
 import { ObservabilityTelemetryModel } from './schemas/observabilityTelemetry.model';
-import { LLMAnalysisService } from '@libs/code-review/infrastructure/adapters/services/llmAnalysis.service';
 
 type RawAggRow = {
     model: string;
@@ -33,322 +30,10 @@ type RawAggRow = {
 
 @Injectable()
 export class TokenUsageRepository implements ITokenUsageRepository {
-    /**
-     * Sum accumulators applied per (model, tier) group. Each pulls a token
-     * count from the observability span's dotted-key attributes.
-     */
-    private readonly GROUP_ACCUMULATORS = {
-        input: this._sumAttr('gen_ai.usage.input_tokens'),
-        output: this._sumAttr('gen_ai.usage.output_tokens'),
-        total: this._sumAttr('gen_ai.usage.total_tokens'),
-        outputReasoning: this._sumAttr('gen_ai.usage.reasoning_tokens'),
-        cacheRead: this._sumAttr('gen_ai.usage.cache_read_input_tokens'),
-        cacheWrite: this._sumAttr('gen_ai.usage.cache_creation_input_tokens'),
-    };
-
     constructor(
         @InjectModel(ObservabilityTelemetryModel.name)
         private readonly observabilityTelemetryModel: Model<ObservabilityTelemetryModel>,
-        private readonly pricingResolver: PricingResolver,
     ) {}
-
-    private _sumAttr(field: string) {
-        return {
-            $sum: {
-                $ifNull: [
-                    { $getField: { field, input: '$attributes' } },
-                    0,
-                ],
-            },
-        };
-    }
-
-    /**
-     * Pulls the distinct canonical model names that appear inside the query's
-     * org + date window. We need this list before running the main aggregation
-     * to look up each model's input tier threshold from the PricingResolver.
-     */
-    private async _distinctCanonicalModels(
-        query: TokenUsageQueryContract,
-    ): Promise<string[]> {
-        const rows = await this.observabilityTelemetryModel
-            .aggregate<{ _id: string }>([
-                {
-                    $match: {
-                        'attributes.organizationId': query.organizationId,
-                        timestamp: { $gte: query.start, $lte: query.end },
-                    },
-                },
-                {
-                    $group: {
-                        _id: {
-                            $let: {
-                                vars: {
-                                    raw: {
-                                        $ifNull: [
-                                            {
-                                                $getField: {
-                                                    field: 'gen_ai.response.model',
-                                                    input: '$attributes',
-                                                },
-                                            },
-                                            '',
-                                        ],
-                                    },
-                                },
-                                in: {
-                                    $arrayElemAt: [
-                                        { $split: ['$$raw', ':'] },
-                                        -1,
-                                    ],
-                                },
-                            },
-                        },
-                    },
-                },
-            ])
-            .exec();
-        return rows.map((r) => r._id).filter((m) => typeof m === 'string' && m);
-    }
-
-    /**
-     * Resolves each canonical model to its input tier threshold (in tokens).
-     * Models without a tier breakpoint (most providers — Gemini Pro is the
-     * notable exception) are omitted from the map.
-     */
-    private async _fetchInputThresholds(
-        canonicalModels: string[],
-    ): Promise<Map<string, number>> {
-        if (canonicalModels.length === 0) return new Map();
-        const resolved = await this.pricingResolver.resolveMany(canonicalModels);
-        const out = new Map<string, number>();
-        for (const r of resolved) {
-            const threshold = r.rates.input.tier?.threshold;
-            if (typeof threshold === 'number' && threshold > 0) {
-                out.set(r.model, threshold);
-            }
-        }
-        return out;
-    }
-
-    /**
-     * Builds the per-model $switch expression that resolves each call's tier
-     * threshold. Models without a tier collapse to the `default` branch (which
-     * returns 0, so every call is treated as "le tier" — equivalent to flat
-     * pricing in the cost calculator).
-     */
-    private _thresholdSwitch(thresholds: Map<string, number>) {
-        const branches: Array<{ case: any; then: number }> = [];
-        for (const [model, threshold] of thresholds) {
-            branches.push({
-                case: { $eq: ['$_canonicalModel', model] },
-                then: threshold,
-            });
-        }
-        if (branches.length === 0) return 0;
-        return { $switch: { branches, default: 0 } };
-    }
-
-    private _createUsageAggregationPipeline(params: {
-        query: TokenUsageQueryContract;
-        thresholds: Map<string, number>;
-        matchStage?: Record<string, any>;
-        groupById?: any;
-        projectExtras?: Record<string, any>;
-    }): any[] {
-        const {
-            query,
-            thresholds,
-            matchStage = {},
-            groupById = {},
-            projectExtras = {},
-        } = params;
-
-        const matchOrgAndDate = {
-            $match: {
-                'attributes.organizationId': query.organizationId,
-                timestamp: { $gte: query.start, $lte: query.end },
-                ...matchStage,
-            },
-        };
-
-        // Exclude spans without token data (wrapper/parent spans that have no LLM usage)
-        const matchHasTokenData = {
-            $match: {
-                $expr: {
-                    $gt: [
-                        {
-                            $ifNull: [
-                                {
-                                    $getField: {
-                                        field: 'gen_ai.usage.total_tokens',
-                                        input: '$attributes',
-                                    },
-                                },
-                                0,
-                            ],
-                        },
-                        0,
-                    ],
-                },
-            },
-        };
-
-        const matchBYOK = {
-            $match: query.byok
-                ? { 'attributes.type': 'byok' }
-                : {
-                      // would-be BYOK runs (for free-trial cost simulation)
-                      $expr: {
-                          $not: {
-                              $in: [
-                                  {
-                                      $getField: {
-                                          field: 'gen_ai.run.name',
-                                          input: '$attributes',
-                                      },
-                                  },
-                                  [
-                                      LLMAnalysisService.prototype
-                                          .selectReviewMode.name,
-                                      LLMAnalysisService.prototype
-                                          .validateImplementedSuggestions.name,
-                                      LLMAnalysisService.prototype
-                                          .generateCodeSuggestions.name,
-                                      'analyzeASTWithAI',
-                                  ],
-                              ],
-                          },
-                      },
-                  },
-        };
-
-        const matchPRNumber = {
-            $match: query.prNumber
-                ? { 'attributes.prNumber': query.prNumber }
-                : {},
-        };
-
-        const matchModels = {
-            $match: query.models
-                ? {
-                      $expr: {
-                          $in: [
-                              {
-                                  $getField: {
-                                      field: 'gen_ai.response.model',
-                                      input: '$attributes',
-                                  },
-                              },
-                              query.models.split(','),
-                          ],
-                      },
-                  }
-                : {},
-        };
-
-        // Normalize the model name and the raw input count, then derive the
-        // per-call tier from the pre-fetched threshold map. Canonical name
-        // collapses `google_gemini:gemini-2.5-pro` → `gemini-2.5-pro` so both
-        // BYOK-prefixed and bare grafias roll into one row.
-        const addDerivedFields = {
-            $addFields: {
-                _rawModel: {
-                    $ifNull: [
-                        {
-                            $getField: {
-                                field: 'gen_ai.response.model',
-                                input: '$attributes',
-                            },
-                        },
-                        '',
-                    ],
-                },
-                _input: {
-                    $ifNull: [
-                        {
-                            $getField: {
-                                field: 'gen_ai.usage.input_tokens',
-                                input: '$attributes',
-                            },
-                        },
-                        0,
-                    ],
-                },
-            },
-        };
-
-        const addCanonicalModel = {
-            $addFields: {
-                _canonicalModel: {
-                    $arrayElemAt: [{ $split: ['$_rawModel', ':'] }, -1],
-                },
-            },
-        };
-
-        const addTier = {
-            $addFields: {
-                _threshold: this._thresholdSwitch(thresholds),
-            },
-        };
-
-        const addTierBucket = {
-            $addFields: {
-                _tier: {
-                    $cond: [
-                        {
-                            $and: [
-                                { $gt: ['$_threshold', 0] },
-                                { $gt: ['$_input', '$_threshold'] },
-                            ],
-                        },
-                        'gt',
-                        'le',
-                    ],
-                },
-            },
-        };
-
-        const groupStage = {
-            $group: {
-                _id: {
-                    model: '$_canonicalModel',
-                    tier: '$_tier',
-                    ...groupById,
-                },
-                ...this.GROUP_ACCUMULATORS,
-            },
-        };
-
-        const projectStageFinal = {
-            $project: {
-                ...projectExtras,
-                _id: 0,
-                model: '$_id.model',
-                tier: '$_id.tier',
-                input: 1,
-                output: 1,
-                total: 1,
-                outputReasoning: 1,
-                cacheRead: 1,
-                cacheWrite: 1,
-            },
-        };
-
-        return [
-            matchOrgAndDate,
-            matchHasTokenData,
-            matchBYOK,
-            matchPRNumber,
-            matchModels,
-            addDerivedFields,
-            addCanonicalModel,
-            addTier,
-            addTierBucket,
-            groupStage,
-            projectStageFinal,
-        ];
-    }
 
     /**
      * Returns one BaseUsageContract per logical bucket (per model + per
@@ -404,19 +89,102 @@ export class TokenUsageRepository implements ITokenUsageRepository {
         return Array.from(grouped.values());
     }
 
+    /**
+     * Reads the pre-derived, indexable `attributes.tu.*` sub-doc via the
+     * covering index instead of $getField over the fat dotted-key attributes.
+     * The aggregation is index-covered (docsExamined=0) → ~2s vs ~90s.
+     *
+     * Both Token Usage views are reproduced EXACTLY via the baked flags (see
+     * token-usage-tu.ts):
+     *   - byok=true  → attributes.tu.isByok === true  (spans with type='byok')
+     *   - byok=false → attributes.tu.sys === false     (all usage spans except
+     *     the internal system-analysis run-names — the cost-simulation view)
+     * `tu` exists only on spans that had LLM usage, so matching either flag also
+     * implies "has token data" (the old matchHasTokenData guard).
+     */
+    /**
+     * Shared `$match` for the covered path: org + timestamp + the view flag
+     * (isByok/sys), plus optional prNumber and model filters. `prOnly` restricts
+     * to spans that carry a prNumber (for the by-PR aggregations).
+     */
+    private _tuMatch(
+        query: TokenUsageQueryContract,
+        prOnly = false,
+    ): Record<string, any> {
+        const match: Record<string, any> = {
+            'attributes.organizationId': query.organizationId,
+            timestamp: { $gte: query.start, $lte: query.end },
+            ...(query.byok
+                ? { 'attributes.tu.isByok': true }
+                : { 'attributes.tu.sys': false }),
+        };
+        if (query.prNumber) match['attributes.prNumber'] = query.prNumber;
+        else if (prOnly)
+            // `{$type:'number'}` — NOT `{$exists:true,$ne:null}`: $exists in the
+            // match forces a FETCH of every candidate doc (docsExamined=1.27M,
+            // ~13s), while a value predicate is read from the covering index
+            // (docsExamined=0, ~3s). Equivalent — prNumber is always numeric
+            // when present.
+            match['attributes.prNumber'] = { $type: 'number' };
+        if (query.models)
+            match['attributes.tu.model'] = { $in: query.models.split(',') };
+        return match;
+    }
+
+    private async _tuRows(
+        query: TokenUsageQueryContract,
+        groupById: Record<string, any> = {},
+        projectExtras: Record<string, any> = {},
+        prOnly = false,
+    ): Promise<RawAggRow[]> {
+        const pipeline = [
+            { $match: this._tuMatch(query, prOnly) },
+            {
+                $group: {
+                    _id: {
+                        model: '$attributes.tu.model',
+                        tier: '$attributes.tu.tier',
+                        ...groupById,
+                    },
+                    input: { $sum: '$attributes.tu.input' },
+                    output: { $sum: '$attributes.tu.output' },
+                    total: { $sum: '$attributes.tu.total' },
+                    outputReasoning: { $sum: '$attributes.tu.reasoning' },
+                    cacheRead: { $sum: '$attributes.tu.cacheRead' },
+                    cacheWrite: { $sum: '$attributes.tu.cacheWrite' },
+                },
+            },
+            {
+                $project: {
+                    ...projectExtras,
+                    _id: 0,
+                    model: '$_id.model',
+                    tier: '$_id.tier',
+                    input: 1,
+                    output: 1,
+                    total: 1,
+                    outputReasoning: 1,
+                    cacheRead: 1,
+                    cacheWrite: 1,
+                },
+            },
+        ];
+        return this.observabilityTelemetryModel
+            .aggregate<RawAggRow>(pipeline)
+            .exec();
+    }
+
+    /** A model is tier-aware in this window if it produced any 'gt' rows. */
+    private _thresholdsFromRows(rows: RawAggRow[]): Map<string, number> {
+        return new Map(
+            rows.filter((r) => r.tier === 'gt').map((r) => [r.model, 1]),
+        );
+    }
+
     async getSummary(
         query: TokenUsageQueryContract,
     ): Promise<UsageSummaryContract> {
-        const canonicalModels = await this._distinctCanonicalModels(query);
-        const thresholds = await this._fetchInputThresholds(canonicalModels);
-        const pipeline = this._createUsageAggregationPipeline({
-            query,
-            thresholds,
-        });
-
-        const rows = await this.observabilityTelemetryModel
-            .aggregate<RawAggRow>(pipeline)
-            .exec();
+        const rows = await this._tuRows(query);
 
         // Cross-model rollup: one row total.
         const summary: UsageSummaryContract = {
@@ -447,20 +215,10 @@ export class TokenUsageRepository implements ITokenUsageRepository {
     async getSummaryByModel(
         query: TokenUsageQueryContract,
     ): Promise<BaseUsageContract[]> {
-        const canonicalModels = await this._distinctCanonicalModels(query);
-        const thresholds = await this._fetchInputThresholds(canonicalModels);
-        const pipeline = this._createUsageAggregationPipeline({
-            query,
-            thresholds,
-        });
-
-        const rows = await this.observabilityTelemetryModel
-            .aggregate<RawAggRow>(pipeline)
-            .exec();
-
+        const rows = await this._tuRows(query);
         return this._mergeTierRows(
             rows,
-            thresholds,
+            this._thresholdsFromRows(rows),
             (r) => r.model,
             (base) => base,
         );
@@ -469,12 +227,9 @@ export class TokenUsageRepository implements ITokenUsageRepository {
     async getDailyUsage(
         query: TokenUsageQueryContract,
     ): Promise<DailyUsageResultContract[]> {
-        const canonicalModels = await this._distinctCanonicalModels(query);
-        const thresholds = await this._fetchInputThresholds(canonicalModels);
-        const pipeline = this._createUsageAggregationPipeline({
+        const rows = await this._tuRows(
             query,
-            thresholds,
-            groupById: {
+            {
                 date: {
                     $dateToString: {
                         format: '%Y-%m-%d',
@@ -483,18 +238,12 @@ export class TokenUsageRepository implements ITokenUsageRepository {
                     },
                 },
             },
-            projectExtras: {
-                date: '$_id.date',
-            },
-        });
-
-        const rows = await this.observabilityTelemetryModel
-            .aggregate<RawAggRow>(pipeline)
-            .exec();
+            { date: '$_id.date' },
+        );
 
         const merged = this._mergeTierRows<DailyUsageResultContract>(
             rows,
-            thresholds,
+            this._thresholdsFromRows(rows),
             (r) => `${r.date}|${r.model}`,
             (base, row) => ({ ...base, date: row.date! }),
         );
@@ -509,27 +258,16 @@ export class TokenUsageRepository implements ITokenUsageRepository {
     async getUsageByPr(
         query: TokenUsageQueryContract,
     ): Promise<UsageByPrResultContract[]> {
-        const canonicalModels = await this._distinctCanonicalModels(query);
-        const thresholds = await this._fetchInputThresholds(canonicalModels);
-        const pipeline = this._createUsageAggregationPipeline({
+        const rows = await this._tuRows(
             query,
-            thresholds,
-            matchStage: { 'attributes.prNumber': { $exists: true, $ne: null } },
-            groupById: {
-                pr: '$attributes.prNumber',
-            },
-            projectExtras: {
-                prNumber: '$_id.pr',
-            },
-        });
-
-        const rows = await this.observabilityTelemetryModel
-            .aggregate<RawAggRow>(pipeline)
-            .exec();
+            { pr: '$attributes.prNumber' },
+            { prNumber: '$_id.pr' },
+            true,
+        );
 
         const merged = this._mergeTierRows<UsageByPrResultContract>(
             rows,
-            thresholds,
+            this._thresholdsFromRows(rows),
             (r) => `${r.prNumber}|${r.model}`,
             (base, row) => ({ ...base, prNumber: row.prNumber! }),
         );
@@ -544,13 +282,9 @@ export class TokenUsageRepository implements ITokenUsageRepository {
     async getDailyUsageByPr(
         query: TokenUsageQueryContract,
     ): Promise<DailyUsageByPrResultContract[]> {
-        const canonicalModels = await this._distinctCanonicalModels(query);
-        const thresholds = await this._fetchInputThresholds(canonicalModels);
-        const pipeline = this._createUsageAggregationPipeline({
+        const rows = await this._tuRows(
             query,
-            thresholds,
-            matchStage: { 'attributes.prNumber': { $exists: true, $ne: null } },
-            groupById: {
+            {
                 prNumber: '$attributes.prNumber',
                 date: {
                     $dateToString: {
@@ -560,19 +294,13 @@ export class TokenUsageRepository implements ITokenUsageRepository {
                     },
                 },
             },
-            projectExtras: {
-                prNumber: '$_id.prNumber',
-                date: '$_id.date',
-            },
-        });
-
-        const rows = await this.observabilityTelemetryModel
-            .aggregate<RawAggRow>(pipeline)
-            .exec();
+            { prNumber: '$_id.prNumber', date: '$_id.date' },
+            true,
+        );
 
         const merged = this._mergeTierRows<DailyUsageByPrResultContract>(
             rows,
-            thresholds,
+            this._thresholdsFromRows(rows),
             (r) => `${r.prNumber}|${r.date}|${r.model}`,
             (base, row) => ({
                 ...base,
@@ -586,6 +314,167 @@ export class TokenUsageRepository implements ITokenUsageRepository {
             return a.model.localeCompare(b.model);
         });
         return merged;
+    }
+
+    /**
+     * Single-pass overview: summary + byModel + daily + byPr + dailyByPr in ONE
+     * covered aggregation via `$facet`. The org+timestamp+flag scan happens once
+     * instead of ~4 separate covered scans (the screen fires summary=2 + daily +
+     * by-pr in parallel) — which both cuts wall time and removes the concurrent
+     * scan load that caused the prod OOM.
+     *
+     * A `$project` of ONLY index-covered fields sits before `$facet`: `$facet`
+     * is a blocking stage, so without it the `$match` would FETCH full docs to
+     * feed the sub-pipelines, defeating the covering. Projecting the tu fields
+     * (all in `tu_cover_*`) keeps the scan index-only (docsExamined=0).
+     *
+     * Numbers are identical to the standalone endpoints — same group math, same
+     * baked tier — proven by the golden test.
+     */
+    async getUsageOverview(query: TokenUsageQueryContract): Promise<{
+        summary: UsageSummaryContract;
+        byModel: BaseUsageContract[];
+        daily: DailyUsageResultContract[];
+        byPr: UsageByPrResultContract[];
+    }> {
+        // Project only index fields → $facet works on a lean covered stream.
+        const projectTu = {
+            $project: {
+                _id: 0,
+                model: '$attributes.tu.model',
+                tier: '$attributes.tu.tier',
+                pr: '$attributes.prNumber',
+                date: {
+                    $dateToString: {
+                        format: '%Y-%m-%d',
+                        date: '$timestamp',
+                        timezone: query.timezone || 'UTC',
+                    },
+                },
+                input: '$attributes.tu.input',
+                output: '$attributes.tu.output',
+                total: '$attributes.tu.total',
+                reasoning: '$attributes.tu.reasoning',
+                cacheRead: '$attributes.tu.cacheRead',
+                cacheWrite: '$attributes.tu.cacheWrite',
+            },
+        };
+        const acc = {
+            input: { $sum: '$input' },
+            output: { $sum: '$output' },
+            total: { $sum: '$total' },
+            outputReasoning: { $sum: '$reasoning' },
+            cacheRead: { $sum: '$cacheRead' },
+            cacheWrite: { $sum: '$cacheWrite' },
+        };
+        const groupProject = (
+            groupById: Record<string, any>,
+            projectExtras: Record<string, any>,
+        ) => [
+            {
+                $group: {
+                    _id: { model: '$model', tier: '$tier', ...groupById },
+                    ...acc,
+                },
+            },
+            {
+                $project: {
+                    ...projectExtras,
+                    _id: 0,
+                    model: '$_id.model',
+                    tier: '$_id.tier',
+                    input: 1,
+                    output: 1,
+                    total: 1,
+                    outputReasoning: 1,
+                    cacheRead: 1,
+                    cacheWrite: 1,
+                },
+            },
+        ];
+        // PR facets drop projected rows without a prNumber (matches the
+        // standalone getUsageByPr/getDailyUsageByPr prOnly filter).
+        const prPresent = { $match: { pr: { $exists: true, $ne: null } } };
+
+        const pipeline = [
+            { $match: this._tuMatch(query) },
+            projectTu,
+            {
+                $facet: {
+                    byModel: groupProject({}, {}),
+                    daily: groupProject({ date: '$date' }, { date: '$_id.date' }),
+                    byPr: [
+                        prPresent,
+                        ...groupProject({ pr: '$pr' }, { prNumber: '$_id.pr' }),
+                    ],
+                },
+            },
+        ];
+
+        const [facet] = await this.observabilityTelemetryModel
+            .aggregate<{
+                byModel: RawAggRow[];
+                daily: RawAggRow[];
+                byPr: RawAggRow[];
+            }>(pipeline)
+            .exec();
+
+        const rows = facet ?? {
+            byModel: [],
+            daily: [],
+            byPr: [],
+        };
+        // Tier-awareness derived from the baked tier rows (same as _tuRows).
+        const thresholds = this._thresholdsFromRows(rows.byModel);
+
+        const byModel = this._mergeTierRows(
+            rows.byModel,
+            thresholds,
+            (r) => r.model,
+            (base) => base,
+        );
+
+        const summary: UsageSummaryContract = {
+            model: '',
+            input: 0,
+            output: 0,
+            total: 0,
+            outputReasoning: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+        };
+        for (const r of rows.byModel) {
+            summary.input += r.input;
+            summary.output += r.output;
+            summary.total += r.total;
+            summary.outputReasoning += r.outputReasoning;
+            summary.cacheRead = (summary.cacheRead ?? 0) + r.cacheRead;
+            summary.cacheWrite = (summary.cacheWrite ?? 0) + r.cacheWrite;
+        }
+
+        const daily = this._mergeTierRows<DailyUsageResultContract>(
+            rows.daily,
+            thresholds,
+            (r) => `${r.date}|${r.model}`,
+            (base, row) => ({ ...base, date: row.date! }),
+        ).sort((a, b) =>
+            a.date === b.date
+                ? a.model.localeCompare(b.model)
+                : a.date.localeCompare(b.date),
+        );
+
+        const byPr = this._mergeTierRows<UsageByPrResultContract>(
+            rows.byPr,
+            thresholds,
+            (r) => `${r.prNumber}|${r.model}`,
+            (base, row) => ({ ...base, prNumber: row.prNumber! }),
+        ).sort((a, b) =>
+            a.prNumber === b.prNumber
+                ? a.model.localeCompare(b.model)
+                : a.prNumber - b.prNumber,
+        );
+
+        return { summary, byModel, daily, byPr };
     }
 }
 

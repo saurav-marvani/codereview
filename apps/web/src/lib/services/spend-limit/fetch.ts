@@ -15,10 +15,21 @@ export const getSpendLimitConfig = async (teamId?: string) => {
 };
 
 export const getSpendLimitStatus = async () => {
-    return await authorizedFetch<SpendLimitStatus | null>(
-        SPEND_LIMIT_PATHS.STATUS,
-        {},
-    );
+    try {
+        return await authorizedFetch<SpendLimitStatus | null>(
+            SPEND_LIMIT_PATHS.STATUS,
+            {},
+        );
+    } catch (error) {
+        // The API's global transform interceptor turns a `null` handler result
+        // into a 404 — and `evaluate()` returns null when no enabled spend
+        // limit is configured. That's an expected "no limit" state, not an
+        // error, so swallow the 404 and let the widget render nothing.
+        if ((error as { statusCode?: number })?.statusCode === 404) {
+            return null;
+        }
+        throw error;
+    }
 };
 
 export const updateSpendLimit = async (payload: UpdateSpendLimitPayload) => {

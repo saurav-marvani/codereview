@@ -9,6 +9,7 @@ import { createLogger } from '@kodus/flow';
 import { TokenTrackingHandler, BYOKConfig } from '@kodus/kodus-common/llm';
 import { CallbackHandler as LangfuseCallbackHandler } from '@langfuse/langchain';
 import { shouldTrace } from './langfuse';
+import { deriveTu } from './token-usage-tu';
 
 /**
  * Narrow projection of BYOKConfig that carries only the fields the
@@ -292,7 +293,11 @@ export class ObservabilityService implements OnModuleInit {
         const obs = this.getObsInstance();
         const span = obs.startSpan(name);
         if (attributes && typeof span?.setAttributes === 'function') {
-            span.setAttributes(attributes);
+            // Mirror LLM-usage into the indexable `attributes.tu` sub-doc so the
+            // Token Usage aggregation stays index-covered. deriveTu returns null
+            // for spans without usage → non-LLM spans are untouched.
+            const tu = deriveTu(attributes);
+            span.setAttributes(tu ? { ...attributes, tu } : attributes);
         }
         return span;
     }
@@ -373,7 +378,7 @@ export class ObservabilityService implements OnModuleInit {
                 : undefined;
 
             if (span) {
-                span.setAttributes({
+                const spanAttrs: Record<string, any> = {
                     'gen_ai.usage.total_tokens': s.totalTokens,
                     'gen_ai.usage.input_tokens': s.inputTokens,
                     'gen_ai.usage.output_tokens': s.outputTokens,
@@ -398,7 +403,14 @@ export class ObservabilityService implements OnModuleInit {
                         runNames: s.runNamesArr.join(','),
                     }),
                     ...(metadata ?? {}),
-                });
+                };
+                // Mirror LLM-usage into the indexable `attributes.tu` sub-doc so
+                // the Token Usage aggregation stays index-covered (see
+                // token-usage-tu.ts). Derived from these same attrs → identical
+                // numbers, just index-readable.
+                const tu = deriveTu(spanAttrs);
+                if (tu) spanAttrs.tu = tu;
+                span.setAttributes(spanAttrs);
             }
 
             if (reset) {

@@ -86,6 +86,27 @@ export class TokenPricingUseCase {
         }
     }
 
+    /**
+     * Batch variant: resolve many models in one call. `getCatalog()` is cached,
+     * so this fetches the LiteLLM catalog at most once regardless of model
+     * count — collapsing the screen's per-model N+1 into a single request.
+     */
+    async executeMany(
+        models: string[],
+        provider?: string,
+    ): Promise<Record<string, ModelPricingInfo>> {
+        const unique = Array.from(
+            new Set(models.map((m) => m?.trim()).filter(Boolean)),
+        );
+        const entries = await Promise.all(
+            unique.map(
+                async (model) =>
+                    [model, await this.execute(model, provider)] as const,
+            ),
+        );
+        return Object.fromEntries(entries);
+    }
+
     async getCatalog(): Promise<Record<string, LiteLLMModel>> {
         const cached =
             await this.cacheService.getFromCache<Record<string, LiteLLMModel>>(
