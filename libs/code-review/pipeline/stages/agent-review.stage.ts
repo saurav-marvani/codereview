@@ -6,8 +6,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { tracedGenerateText } from '@libs/code-review/infrastructure/agents/llm/agent-loop';
 import { resolveAdaptiveProfile } from '@libs/code-review/infrastructure/agents/llm/adaptive-fit';
 import { resolveContextWindow } from '@libs/code-review/infrastructure/agents/llm/model-context-window';
+import { SECONDARY_PASS_MODEL_ID } from '@libs/code-review/infrastructure/agents/llm/secondary-pass-model';
 import {
-    DEDUP_MODEL_ID,
     DEDUP_SCHEMA,
     DEDUP_CONTENT_THRESHOLD,
     buildDedupPrompt,
@@ -1034,6 +1034,13 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 for (const [i, fmt] of formatted) {
                     if (deduped[i]) {
                         deduped[i].suggestionContent = fmt.suggestionContent;
+                        // Keep llmPrompt in sync with the formatted prose.
+                        // llmPrompt is a snapshot of the RAW suggestionContent
+                        // (WHAT/WHY/HOW) taken before this pass; the per-comment
+                        // "Prompt for LLM" copy block and the consolidated
+                        // @agentPrompt read it, so without this the raw
+                        // scaffolding still leaks there.
+                        deduped[i].llmPrompt = fmt.suggestionContent;
                     }
                 }
                 this.logger.log({
@@ -1394,11 +1401,11 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             };
         }
 
-        // Model resolution: platform OpenAI key (gpt-5.4-mini, see DEDUP_MODEL_ID)
-        // → BYOK via withStructuredOutputFallback → skip dedup. Swapped off the
-        // Google path because that project can get rate-denied env-wide and
-        // silently disable dedup; gpt-5.4-mini is a separate vendor + quality-
-        // equivalent on the dedup eval.
+        // Model resolution: platform OpenAI key (SECONDARY_PASS_MODEL_ID =
+        // gpt-5.4-mini) → BYOK via withStructuredOutputFallback → skip dedup.
+        // Same model choice as the other secondary passes (severity, formatter);
+        // dedup keeps its own structured-output fallback because it emits a
+        // schema-constrained object, not manually-parsed JSON.
         const openaiKey = process.env.API_OPEN_AI_API_KEY;
 
         try {
@@ -1425,7 +1432,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     ...(process.env.API_OPENAI_FORCE_BASE_URL
                         ? { baseURL: process.env.API_OPENAI_FORCE_BASE_URL }
                         : {}),
-                })(DEDUP_MODEL_ID);
+                })(SECONDARY_PASS_MODEL_ID);
                 dedupResult = await runDedup(model);
             } else {
                 dedupResult = await withStructuredOutputFallback(

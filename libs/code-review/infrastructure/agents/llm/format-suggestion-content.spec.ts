@@ -10,12 +10,9 @@ jest.mock('ai', () => ({
     jsonSchema: (s: any) => s,
 }));
 
-jest.mock('@ai-sdk/google', () => ({
-    createGoogleGenerativeAI: () => () => ({ __mock: 'google-model' }),
-}));
-
-jest.mock('./byok-to-vercel', () => ({
-    getInternalModel: () => ({ __mock: 'byok-model' }),
+jest.mock('./secondary-pass-model', () => ({
+    resolveSecondaryPassModel: () => ({ __mock: 'secondary-model' }),
+    SECONDARY_PASS_MODEL_ID: 'gpt-5.4-mini',
 }));
 
 import { formatSuggestionContent } from './format-suggestion-content';
@@ -35,11 +32,6 @@ describe('formatSuggestionContent — prompt composition', () => {
         mockGenerateText.mockResolvedValue({
             text: '```json\n[{"index": 0, "suggestionContent": "ok"}]\n```',
         });
-        process.env.API_GOOGLE_AI_API_KEY = 'fake-google-key';
-    });
-
-    afterEach(() => {
-        delete process.env.API_GOOGLE_AI_API_KEY;
     });
 
     const captureLastPrompt = (): string => {
