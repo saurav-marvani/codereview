@@ -274,6 +274,15 @@ export class TokenUsageController {
             .split(',')
             .map((m) => m.trim())
             .filter(Boolean);
+        // Cap the batch: an authenticated caller could otherwise send a huge
+        // list and force an unbounded number of catalog lookups per request
+        // (DoS). The screen only ever asks for the models in its breakdown.
+        const MAX_BATCH_MODELS = 100;
+        if (list.length > MAX_BATCH_MODELS) {
+            throw new BadRequestException(
+                `Too many models (max ${MAX_BATCH_MODELS} per request)`,
+            );
+        }
         return this.tokenPricingUseCase.executeMany(list, provider);
     }
 
