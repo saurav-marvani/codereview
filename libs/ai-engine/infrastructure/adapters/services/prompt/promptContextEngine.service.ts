@@ -34,6 +34,7 @@ interface DetectReferencesParams {
     context?: 'rule' | 'instruction' | 'prompt';
     detectionMode?: 'rule' | 'prompt';
     byokConfig?: BYOKConfig;
+    subscriptionStatus?: string;
 }
 
 interface DetectionResult {
@@ -129,6 +130,7 @@ export class PromptContextEngineService implements IPromptContextEngineService {
                     context: params.context,
                     detectionMode: params.detectionMode,
                     byokConfig: params.byokConfig,
+                    subscriptionStatus: params.subscriptionStatus,
                 });
 
             if (!detectedReferences.length) {

@@ -24,6 +24,7 @@ import {
     ResourceType,
 } from '@libs/identity/domain/permissions/enums/permissions.enum';
 import { AuthorizationService } from '@libs/identity/infrastructure/adapters/services/permissions/authorization.service';
+import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import {
     IKodyRulesService,
     KODY_RULES_SERVICE_TOKEN,
@@ -47,6 +48,7 @@ export class CreateOrUpdateKodyRulesUseCase {
         private readonly authorizationService: AuthorizationService,
         private readonly contextReferenceDetectionService: ContextReferenceDetectionService,
         private readonly centralizedConfigPrService: CentralizedConfigPrService,
+        private readonly permissionValidationService: PermissionValidationService,
     ) {}
 
     async execute(
@@ -671,6 +673,15 @@ export class CreateOrUpdateKodyRulesUseCase {
                         },
                     ];
 
+                    const [byokConfig, subscriptionStatus] = await Promise.all([
+                        this.permissionValidationService.getBYOKConfig(
+                            detectionOrgData,
+                        ),
+                        this.permissionValidationService.getSubscriptionStatus(
+                            detectionOrgData,
+                        ),
+                    ]);
+
                     const contextReferenceId =
                         await this.contextReferenceDetectionService.detectAndSaveReferences(
                             {
@@ -680,6 +691,8 @@ export class CreateOrUpdateKodyRulesUseCase {
                                 repositoryId,
                                 repositoryName,
                                 organizationAndTeamData: detectionOrgData,
+                                byokConfig: byokConfig ?? undefined,
+                                subscriptionStatus,
                             },
                         );
 

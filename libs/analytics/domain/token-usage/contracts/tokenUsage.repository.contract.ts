@@ -27,4 +27,15 @@ export interface ITokenUsageRepository {
     getDailyUsageByPr(
         query: TokenUsageQueryContract,
     ): Promise<DailyUsageByPrResultContract[]>;
+
+    /**
+     * Single covered aggregation that returns summary + byModel + daily + byPr
+     * + dailyByPr in one pass (collapses ~4 separate scans the screen fires).
+     */
+    getUsageOverview(query: TokenUsageQueryContract): Promise<{
+        summary: UsageSummaryContract;
+        byModel: BaseUsageContract[];
+        daily: DailyUsageResultContract[];
+        byPr: UsageByPrResultContract[];
+    }>;
 }

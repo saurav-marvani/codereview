@@ -52,6 +52,7 @@ import {
     ResourceType,
 } from '@libs/identity/domain/permissions/enums/permissions.enum';
 import { AuthorizationService } from '@libs/identity/infrastructure/adapters/services/permissions/authorization.service';
+import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import {
     IIntegrationConfigService,
     INTEGRATION_CONFIG_SERVICE_TOKEN,
@@ -100,6 +101,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         private readonly centralizedConfigPrService: CentralizedConfigPrService,
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: IKodyRulesService,
+        private readonly permissionValidationService: PermissionValidationService,
     ) {}
 
     async execute(
@@ -1119,6 +1121,15 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             directoryId,
         );
 
+        const [byokConfig, subscriptionStatus] = await Promise.all([
+            this.permissionValidationService.getBYOKConfig(
+                organizationAndTeamData,
+            ),
+            this.permissionValidationService.getSubscriptionStatus(
+                organizationAndTeamData,
+            ),
+        ]);
+
         const contextReferenceId =
             await this.contextReferenceDetectionService.detectAndSaveReferences(
                 {
@@ -1128,6 +1139,8 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                     repositoryId: repositoryId ?? 'global',
                     repositoryName: repositoryName ?? repositoryId ?? 'global',
                     organizationAndTeamData,
+                    byokConfig: byokConfig ?? undefined,
+                    subscriptionStatus,
                 },
             );
 

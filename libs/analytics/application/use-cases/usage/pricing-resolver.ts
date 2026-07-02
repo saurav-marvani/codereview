@@ -58,6 +58,15 @@ export class PricingResolver {
         };
     }
 
+    /**
+     * Canonical model name → input-tier threshold for every catalog-tiered
+     * model (delegates to the cached catalog). Source of truth for the Token
+     * Usage read's per-request tier derivation — no DB scan, no baked tier.
+     */
+    tieredInputThresholds(): Promise<Map<string, number>> {
+        return this.tokenPricingUseCase.tieredInputThresholds();
+    }
+
     /** Resolve a set of models (de-duplicated, blanks dropped). */
     async resolveMany(
         models: string[],

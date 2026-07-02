@@ -111,6 +111,16 @@ export interface UsageSummaryReportContract {
     byModel: EnrichedModelUsage[];
 }
 
+/**
+ * Single-request payload for the Token Usage screen: the enriched summary plus
+ * the daily and by-PR series — all from one covered $facet aggregation.
+ */
+export interface UsageOverviewReportContract {
+    summary: UsageSummaryReportContract;
+    daily: DailyUsageResultContract[];
+    byPr: UsageByPrResultContract[];
+}
+
 export interface TokenUsageBreakdown {
     inputTokens: number;
     outputTokens: number;

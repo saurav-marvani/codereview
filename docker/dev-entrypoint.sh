@@ -83,7 +83,11 @@ install_deps() {
   fi
 
   echo "▶ Installing deps (pnpm install --frozen-lockfile)…"
-  pnpm install --frozen-lockfile
+  # pnpm 11 refuses to purge node_modules non-interactively when the
+  # manifests drift (e.g. after a branch switch), aborting with
+  # ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY. This entrypoint never runs
+  # against a TTY, so tell pnpm to skip the confirmation and just sync.
+  CI=true pnpm install --frozen-lockfile --config.confirm-modules-purge=false
 
   # pnpm's hoisted node-linker copies packages into node_modules, and the
   # /pnpm-store cache lives on a SEPARATE docker volume (different filesystem),
@@ -95,7 +99,6 @@ install_deps() {
     target=$(readlink -f "$link" 2>/dev/null) || continue
     [ -f "$target" ] && chmod +x "$target" 2>/dev/null || true
   done
-
   mkdir -p node_modules
   printf "%s" "$DEPS_FINGERPRINT" > "$DEPS_STAMP_FILE"
 

@@ -54,6 +54,10 @@ export interface IAutomationExecutionRepository {
     findLatestExecutionByFilters(
         filters?: Partial<any>,
     ): Promise<AutomationExecutionEntity | null>;
+    findStaleInProgress(
+        cutoffDate: Date,
+        limit?: number,
+    ): Promise<AutomationExecutionEntity[]>;
     findByPeriodAndTeamAutomationId(
         startDate: Date,
         endDate: Date,

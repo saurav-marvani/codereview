@@ -1,6 +1,7 @@
 import { createLogger } from '@libs/core/log/logger';
 import type {
     CreateCheckRunParams,
+    FindCheckRunParams,
     IChecksAdapter,
     UpdateCheckRunParams,
 } from '@libs/core/infrastructure/pipeline/interfaces/checks-adapter.interface';
@@ -42,6 +43,12 @@ export class ForgejoChecksService implements IChecksAdapter {
     private readonly logger = createLogger(ForgejoChecksService.name);
 
     constructor(private readonly forgejoService: ForgejoService) {}
+
+    // Forgejo commit statuses are keyed by (sha, context): posting with the
+    // same context replaces the previous state, so there is no run to reuse.
+    async findCheckRun(params: FindCheckRunParams): Promise<string | null> {
+        return null;
+    }
 
     async createCheckRun(
         params: CreateCheckRunParams,

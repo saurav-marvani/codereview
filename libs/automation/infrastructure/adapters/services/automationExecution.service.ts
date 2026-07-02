@@ -128,6 +128,16 @@ export class AutomationExecutionService implements IAutomationExecutionService {
         return this.automationExecutionRepository.delete(uuid);
     }
 
+    findStaleInProgress(
+        cutoffDate: Date,
+        limit?: number,
+    ): Promise<AutomationExecutionEntity[]> {
+        return this.automationExecutionRepository.findStaleInProgress(
+            cutoffDate,
+            limit,
+        );
+    }
+
     findById(uuid: string): Promise<AutomationExecutionEntity> {
         return this.automationExecutionRepository.findById(uuid);
     }
@@ -338,6 +348,43 @@ export class AutomationExecutionService implements IAutomationExecutionService {
                 },
             });
             return null;
+        }
+    }
+
+    async finalizeInProgressStageLogs(
+        executionUuid: string,
+        status: AutomationStatus,
+        message: string,
+    ): Promise<number> {
+        try {
+            const inProgressLogs = await this.codeReviewExecutionService.find({
+                automationExecution: { uuid: executionUuid },
+                status: AutomationStatus.IN_PROGRESS,
+            } as any);
+
+            if (!inProgressLogs?.length) {
+                return 0;
+            }
+
+            await Promise.all(
+                inProgressLogs.map((log) =>
+                    this.codeReviewExecutionService.updateById(log.uuid, {
+                        status,
+                        message,
+                        finishedAt: new Date(),
+                    } as any),
+                ),
+            );
+
+            return inProgressLogs.length;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error finalizing in-progress stage logs',
+                error,
+                context: AutomationExecutionService.name,
+                metadata: { executionUuid, status },
+            });
+            return 0;
         }
     }
 
