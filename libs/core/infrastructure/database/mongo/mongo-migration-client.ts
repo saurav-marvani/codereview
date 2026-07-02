@@ -12,24 +12,36 @@
  * this helper, does the work, and closes — so Mongo schema/data changes ride
  * the SAME "runs once on boot, pod-locked" mechanism as the SQL migrations.
  */
+import { ConnectionString } from 'connection-string';
 import { Db, MongoClient } from 'mongodb';
 
 /**
  * Builds the Mongo URI from the same env the API uses (mongodb.config.loader).
- * Prefers a full URI; otherwise assembles host/port/creds with authSource=admin.
+ * Prefers a full URI; otherwise assembles host/port/creds with the SAME
+ * `connection-string` builder + protocol rule as the runtime app
+ * (`MongooseFactory.createMongooseOptions`): a numeric `API_MG_DB_PORT`
+ * → `mongodb://host:port`; anything else (empty, `''`, non-numeric — e.g.
+ * Atlas via SSM) → `mongodb+srv://host` (SRV supplies the port).
+ *
+ * Keeping this in lock-step with the app matters because self-hosted customers
+ * only test what boots the API. If a client's env boots the app it must also
+ * boot migrations — we shouldn't have two independent URI dialects to keep in
+ * sync.
  */
 export function buildMongoUri(): string {
     const uri = process.env.MONGODB_URI ?? process.env.API_MG_DB_URI;
     if (uri) return uri;
 
     const host = process.env.API_MG_DB_HOST ?? 'localhost';
-    const port = process.env.API_MG_DB_PORT ?? '27017';
-    const user = process.env.API_MG_DB_USERNAME;
-    const pass = process.env.API_MG_DB_PASSWORD;
-    const auth =
-        user && pass ? `${user}:${encodeURIComponent(pass)}@` : '';
-    const db = process.env.API_MG_DB_DATABASE ?? 'kodus';
-    return `mongodb://${auth}${host}:${port}/${db}?authSource=admin`;
+    const port = parseInt(process.env.API_MG_DB_PORT ?? '', 10);
+    const hasPort = Number.isFinite(port);
+
+    return new ConnectionString('', {
+        user: process.env.API_MG_DB_USERNAME,
+        password: process.env.API_MG_DB_PASSWORD,
+        protocol: hasPort ? 'mongodb' : 'mongodb+srv',
+        hosts: [{ name: host, port: hasPort ? port : undefined }],
+    }).toString();
 }
 
 export function mongoDatabaseName(): string {
