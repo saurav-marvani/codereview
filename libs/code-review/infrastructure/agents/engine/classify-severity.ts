@@ -11,6 +11,7 @@ import { createLogger } from '@libs/core/log/logger';
 import type { BYOKConfig } from '@kodus/kodus-common/llm';
 import type { CodeReviewConfig } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { tracedGenerateText as generateText } from '@libs/llm/llm-call';
+import { resolveSecondaryPassModel } from './secondary-pass-model';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 
 const logger = createLogger('SeverityClassifier');
