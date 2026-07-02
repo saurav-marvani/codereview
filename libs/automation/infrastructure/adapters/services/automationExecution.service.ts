@@ -128,6 +128,16 @@ export class AutomationExecutionService implements IAutomationExecutionService {
         return this.automationExecutionRepository.delete(uuid);
     }
 
+    findStaleInProgress(
+        cutoffDate: Date,
+        limit?: number,
+    ): Promise<AutomationExecutionEntity[]> {
+        return this.automationExecutionRepository.findStaleInProgress(
+            cutoffDate,
+            limit,
+        );
+    }
+
     findById(uuid: string): Promise<AutomationExecutionEntity> {
         return this.automationExecutionRepository.findById(uuid);
     }

@@ -42,6 +42,63 @@ export class CodeReviewPipelineObserver implements IPipelineObserver {
             context,
             '_pipelineStart',
         );
+
+        await this.persistCheckRunInfo(context, observerContext);
+    }
+
+    /**
+     * Persist the platform check-run reference into the execution's
+     * dataExecution while the review is running. The checkRunId otherwise
+     * lives only in the in-memory observer context, so if the process dies
+     * mid-review nothing can finalize the check — the stale-review watchdog
+     * cron reads this to complete orphaned checks. The completion path
+     * overwrites dataExecution, so this key is only reliable (and only
+     * needed) while status is IN_PROGRESS.
+     */
+    private async persistCheckRunInfo(
+        context: CodeReviewPipelineContext,
+        observerContext: PipelineObserverContext,
+    ): Promise<void> {
+        const checkRunId = observerContext.checkRunId;
+        const executionUuid = context.pipelineMetadata?.lastExecution?.uuid;
+
+        if (!checkRunId || !executionUuid) {
+            return;
+        }
+
+        const headSha = context.pullRequest?.head?.sha;
+        const [owner, repo] = context.repository?.fullName?.split('/') || [];
+
+        try {
+            const execution =
+                await this.automationExecutionService.findById(executionUuid);
+
+            if (!execution) {
+                return;
+            }
+
+            await this.automationExecutionService.update(
+                { uuid: executionUuid },
+                {
+                    dataExecution: {
+                        ...(execution.dataExecution || {}),
+                        checkRun: {
+                            id: checkRunId,
+                            headSha,
+                            repository: { owner, name: repo },
+                        },
+                    },
+                },
+            );
+        } catch (error) {
+            this.logger.warn({
+                message:
+                    'Failed to persist check run info for stale-review recovery',
+                context: CodeReviewPipelineObserver.name,
+                error,
+                metadata: { executionUuid, checkRunId },
+            });
+        }
     }
 
     async onPipelineFinish(

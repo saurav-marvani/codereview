@@ -3,6 +3,7 @@ import {
     CheckConclusion,
     CheckStatus,
     CreateCheckRunParams,
+    FindCheckRunParams,
     IChecksAdapter,
     UpdateCheckRunParams,
 } from '@libs/core/infrastructure/pipeline/interfaces/checks-adapter.interface';
@@ -44,6 +45,47 @@ export class GithubChecksService implements IChecksAdapter {
     private readonly logger = createLogger(GithubChecksService.name);
 
     constructor(private readonly gitHubService: GithubService) {}
+
+    async findCheckRun(params: FindCheckRunParams): Promise<number | null> {
+        const { organizationAndTeamData, repository, headSha, name } = params;
+
+        try {
+            const authDetails = await this.gitHubService.getGithubAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (authDetails.authMode === AuthMode.TOKEN) {
+                return null;
+            }
+
+            const octokit = await this.gitHubService.getAuthenticatedOctokit(
+                organizationAndTeamData,
+            );
+
+            const response = await octokit.checks.listForRef({
+                owner: repository.owner,
+                repo: repository.name,
+                ref: headSha,
+                check_name: name,
+                filter: 'latest',
+                per_page: 1,
+            });
+
+            return response.data.check_runs?.[0]?.id ?? null;
+        } catch (error) {
+            this.logger.warn({
+                message: `Failed to look up existing GitHub Check Run`,
+                context: GithubChecksService.name,
+                error,
+                metadata: {
+                    repository: repository.name,
+                    headSha,
+                    name,
+                },
+            });
+            return null;
+        }
+    }
 
     async createCheckRun(params: CreateCheckRunParams): Promise<number | null> {
         const {

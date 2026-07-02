@@ -4,6 +4,7 @@ import {
     FindManyOptions,
     FindOneOptions,
     FindOptionsWhere,
+    LessThan,
     Repository,
 } from 'typeorm';
 
@@ -119,6 +120,36 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                 error,
                 metadata: { filter },
             });
+        }
+    }
+
+    async findStaleInProgress(
+        cutoffDate: Date,
+        limit = 100,
+    ): Promise<AutomationExecutionEntity[]> {
+        try {
+            const staleExecutions =
+                await this.automationExecutionRepository.find({
+                    where: {
+                        status: AutomationStatus.IN_PROGRESS,
+                        updatedAt: LessThan(cutoffDate),
+                    },
+                    order: { updatedAt: 'ASC' },
+                    take: limit,
+                });
+
+            return mapSimpleModelsToEntities(
+                staleExecutions,
+                AutomationExecutionEntity,
+            );
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to find stale in-progress executions',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { cutoffDate, limit },
+            });
+            return [];
         }
     }
 
