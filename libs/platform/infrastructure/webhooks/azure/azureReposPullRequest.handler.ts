@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
@@ -11,6 +11,7 @@ import {
     isForceReviewCommand,
     isKodyMentionNonReview,
     isReviewCommand,
+    parseReviewDirective,
 } from '@libs/common/utils/codeManagement/codeCommentMarkers';
 import { getMappedPlatform } from '@libs/common/utils/webhooks';
 import { CacheService } from '@libs/core/cache/cache.service';
@@ -535,6 +536,7 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                         action: 'synchronize',
                         origin: isForceCommand ? 'command-force' : 'command',
                         triggerCommentId: comment?.id,
+                        reviewDirective: parseReviewDirective(comment.body),
                     },
                 };
 

@@ -5,7 +5,7 @@ import { CodeManagementService } from '@libs/platform/infrastructure/adapters/se
 import { PULL_REQUEST_MANAGER_SERVICE_TOKEN } from '@libs/code-review/domain/contracts/PullRequestManagerService.contract';
 import { CacheService } from '@libs/core/cache/cache.service';
 
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
         error: jest.fn(),

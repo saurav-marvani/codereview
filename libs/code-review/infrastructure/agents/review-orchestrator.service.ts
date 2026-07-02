@@ -1,4 +1,4 @@
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { Injectable, Optional } from '@nestjs/common';
 
 import {
@@ -6,19 +6,19 @@ import {
     ReviewOptions,
 } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { IKodyRule } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
-import { BugAgentProvider } from './bug-agent.provider';
-import { SecurityAgentProvider } from './security-agent.provider';
-import { PerformanceAgentProvider } from './performance-agent.provider';
-import { GeneralistAgentProvider } from './generalist-agent.provider';
-import { KodyRulesAgentProvider } from './kody-rules-agent.provider';
+import { BugAgentProvider } from '@libs/code-review/infrastructure/agents/providers/bug-agent.provider';
+import { SecurityAgentProvider } from '@libs/code-review/infrastructure/agents/providers/security-agent.provider';
+import { PerformanceAgentProvider } from '@libs/code-review/infrastructure/agents/providers/performance-agent.provider';
+import { GeneralistAgentProvider } from '@libs/code-review/infrastructure/agents/providers/generalist-agent.provider';
+import { KodyRulesAgentProvider } from '@libs/code-review/infrastructure/agents/providers/kody-rules-agent.provider';
 import {
     ReviewAgentInput,
     ReviewAgentOutput,
-} from './base-code-review-agent.provider';
+} from '@libs/code-review/infrastructure/agents/review-agent.contract';
 import {
     dedupReviewWarnings,
     type ReviewWarning,
-} from './llm/review-warnings';
+} from '@libs/code-review/infrastructure/agents/engine/review-warnings';
 
 export interface OrchestratorInput extends ReviewAgentInput {
     reviewOptions: ReviewOptions;
@@ -169,7 +169,8 @@ export class ReviewOrchestratorService {
         const agentInputWithoutContent: ReviewAgentInput = {
             ...agentInput,
             changedFiles: agentInput.changedFiles.map(
-                ({ content, fileContent, ...rest }) => rest as any,
+                ({ content: _content, fileContent: _fileContent, ...rest }) =>
+                    rest as any,
             ),
         };
 
@@ -203,10 +204,6 @@ export class ReviewOrchestratorService {
             agentTasks.map((task) => runAgent(task)),
         );
 
-        // Collect successful results AND failures. Before this change, rejected
-        // agents were only logged — callers had no way to tell whether the
-        // review ran end-to-end or silently lost an agent. Returning failures
-        // lets AgentReviewStage decide critical vs partial downstream.
         const agentResults: ReviewAgentOutput[] = [];
         const allSuggestions: Partial<CodeSuggestion>[] = [];
         const failures: OrchestratorAgentFailure[] = [];
@@ -218,6 +215,7 @@ export class ReviewOrchestratorService {
             if (result.status === 'fulfilled') {
                 agentResults.push(result.value);
                 allSuggestions.push(...result.value.suggestions);
+
                 this.logger.log({
                     message: `[AGENT] ${agentName} returned ${result.value.suggestions.length} suggestions in ${result.value.durationMs}ms`,
                     context: ReviewOrchestratorService.name,
@@ -233,6 +231,7 @@ export class ReviewOrchestratorService {
                     error: err,
                     durationMs: 0,
                 });
+
                 this.logger.error({
                     message: `[AGENT] ${agentName} failed: ${err.message || 'Unknown error'}`,
                     context: ReviewOrchestratorService.name,
@@ -240,10 +239,6 @@ export class ReviewOrchestratorService {
                 });
             }
         }
-
-        // No deterministic dedup here — LLM dedup in AgentReviewStage handles it better.
-        // Deterministic dedup by line overlap was too aggressive, removing findings from
-        // different categories (bug vs security) that happened to be on the same lines.
 
         const totalDurationMs = Date.now() - startTime;
 
@@ -259,9 +254,6 @@ export class ReviewOrchestratorService {
             },
         });
 
-        // Fold cross-agent warnings (same `kind` + model can fire on 4
-        // agents in parallel) into a single user-facing list before
-        // handing back to the stage.
         const warnings = dedupReviewWarnings(
             agentResults.flatMap((r) => r.warnings ?? []),
         );
@@ -311,103 +303,5 @@ export class ReviewOrchestratorService {
             (changedFilesCount - BASELINE_FILES) * STEPS_PER_EXTRA_FILE,
         );
         return Math.min(base + extra, ADAPTIVE_CAP);
-    }
-
-    /**
-     * Deduplicate suggestions from different agents that target the same
-     * file + overlapping line range + same category. Only removes true
-     * duplicates (same category, high line overlap). Keeps suggestions
-     * from different categories even if they overlap in lines — a bug
-     * and a security issue on the same line are different findings.
-     */
-    private deduplicateSuggestions(
-        suggestions: Partial<CodeSuggestion>[],
-    ): Partial<CodeSuggestion>[] {
-        if (suggestions.length <= 1) return suggestions;
-
-        const severityOrder: Record<string, number> = {
-            critical: 4,
-            high: 3,
-            medium: 2,
-            low: 1,
-        };
-
-        // Group by file
-        const byFile = new Map<string, Partial<CodeSuggestion>[]>();
-        for (const s of suggestions) {
-            const file = s.relevantFile || '';
-            if (!byFile.has(file)) byFile.set(file, []);
-            byFile.get(file)!.push(s);
-        }
-
-        const result: Partial<CodeSuggestion>[] = [];
-
-        for (const [, fileSuggestions] of byFile) {
-            // Sort by severity descending so higher severity is kept
-            fileSuggestions.sort(
-                (a, b) =>
-                    (severityOrder[b.severity || 'medium'] || 2) -
-                    (severityOrder[a.severity || 'medium'] || 2),
-            );
-
-            const kept: Partial<CodeSuggestion>[] = [];
-
-            for (const candidate of fileSuggestions) {
-                const isDuplicate = kept.some(
-                    (existing) =>
-                        this.sameCategory(existing, candidate) &&
-                        this.highLineOverlap(existing, candidate),
-                );
-                if (!isDuplicate) {
-                    kept.push(candidate);
-                }
-            }
-
-            result.push(...kept);
-        }
-
-        return result;
-    }
-
-    /**
-     * Check if two suggestions are from the same category (bug, security, performance).
-     * Different categories = different findings, even on the same lines.
-     */
-    private sameCategory(
-        a: Partial<CodeSuggestion>,
-        b: Partial<CodeSuggestion>,
-    ): boolean {
-        const catA = (a.label || '').toLowerCase();
-        const catB = (b.label || '').toLowerCase();
-        if (!catA || !catB) return true; // If no label, assume same to be safe
-        return catA === catB;
-    }
-
-    /**
-     * Check if two suggestions have >70% line overlap.
-     * Small overlaps (e.g., adjacent functions) are not duplicates.
-     */
-    private highLineOverlap(
-        a: Partial<CodeSuggestion>,
-        b: Partial<CodeSuggestion>,
-    ): boolean {
-        const aStart = a.relevantLinesStart ?? 0;
-        const aEnd = a.relevantLinesEnd ?? aStart;
-        const bStart = b.relevantLinesStart ?? 0;
-        const bEnd = b.relevantLinesEnd ?? bStart;
-
-        if (aStart === 0 || bStart === 0) return false;
-
-        // No overlap at all
-        if (aStart > bEnd || bStart > aEnd) return false;
-
-        // Calculate overlap percentage
-        const overlapStart = Math.max(aStart, bStart);
-        const overlapEnd = Math.min(aEnd, bEnd);
-        const overlapSize = overlapEnd - overlapStart + 1;
-        const smallerRange = Math.min(aEnd - aStart + 1, bEnd - bStart + 1);
-
-        // Only deduplicate if >70% of the smaller range overlaps
-        return overlapSize / smallerRange > 0.7;
     }
 }

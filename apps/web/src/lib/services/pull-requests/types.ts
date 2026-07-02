@@ -58,7 +58,7 @@ export interface CodeReviewTimelineItem {
 
 /**
  * Mirrors `ReviewWarning` from the backend
- * (libs/code-review/infrastructure/agents/llm/review-warnings.ts).
+ * (libs/code-review/infrastructure/agents/engine/review-warnings.ts).
  * Emitted when the configured model's context window forced the
  * adaptive-fit pipeline into a degraded path. Surfaced in the admin
  * dashboard so operators can see when reviews ran at reduced fidelity;

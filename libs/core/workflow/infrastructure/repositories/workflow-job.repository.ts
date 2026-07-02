@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository, EntityManager } from 'typeorm';
 
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { IWorkflowJobRepository } from '@libs/core/workflow/domain/contracts/workflow-job.repository.contract';
 import { IWorkflowJob } from '@libs/core/workflow/domain/interfaces/workflow-job.interface';
 import { JobStatus } from '@libs/core/workflow/domain/enums/job-status.enum';

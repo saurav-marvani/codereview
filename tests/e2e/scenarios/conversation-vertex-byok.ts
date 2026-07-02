@@ -1,17 +1,16 @@
-import { ensureLicenseSeat } from "../lib/onboarding.js";
-import { readVertexByokEnv, setVertexByok } from "../lib/vertex-byok.js";
-import type { RunContext, Scenario } from "../lib/types.js";
+import { ensureLicenseSeat } from '../lib/onboarding.js';
+import { readVertexByokEnv, setVertexByok } from '../lib/vertex-byok.js';
+import type { RunContext, Scenario } from '../lib/types.js';
 
 // Standing-branch fixture (same repo as code-review-vertex-byok). The PR
 // content is irrelevant here — we only need an open PR to talk to Kody on.
-const FIXTURE = { head: "bug/missing-null-check", base: "main" };
+const FIXTURE = { head: 'bug/missing-null-check', base: 'main' };
 
 // `@kody <question>` (NOT `@kody review`) is what the webhook handlers match
 // with KODY_MENTION_NON_REVIEW_PATTERN to route the comment to the
-// ConversationAgent (kodus-flow → BYOKPromptRunnerService → the Vertex
 // adapter). A review command would take the v5 agent path instead.
 const QUESTION =
-    "@kody in one short sentence, what does this pull request change?";
+    '@kody in one short sentence, what does this pull request change?';
 
 /**
  * Proves Kody's CONVERSATION path honors a Claude-on-Vertex BYOK key. The
@@ -21,19 +20,19 @@ const QUESTION =
  * mention — distinct from the code-review path (which is v5/Vercel SDK).
  */
 export const conversationVertexByok: Scenario = {
-    id: "conversation-vertex-byok",
-    title: "Kody answers an @kody mention using a Claude-on-Vertex BYOK key (v2 path)",
-    priority: "P2",
+    id: 'conversation-vertex-byok',
+    title: 'Kody answers an @kody mention using a Claude-on-Vertex BYOK key (v2 path)',
+    priority: 'P2',
     appliesTo: {
-        target: ["self-hosted"],
-        provider: ["github"],
-        license: ["paid", "license-paid"],
+        target: ['self-hosted'],
+        provider: ['github'],
+        license: ['paid', 'license-paid'],
     },
     timeoutSec: 1200,
     async run(ctx: RunContext) {
         ctx.assert(
             ctx.tenant,
-            "scenario requires a tenant (set SH_TENANT_EMAIL/_PASSWORD)",
+            'scenario requires a tenant (set SH_TENANT_EMAIL/_PASSWORD)',
         );
         // Skip (not fail) when a required secret is absent — keeps the matrix
         // green on CI runners that don't have Vertex / the conversation user
@@ -41,7 +40,7 @@ export const conversationVertexByok: Scenario = {
         const vertex = readVertexByokEnv();
         if (!vertex) {
             ctx.skip(
-                "VERTEX_SA_JSON not set — needs a GCP service-account JSON (raw or base64) for a project with Vertex AI on and the Claude model enabled in Model Garden",
+                'VERTEX_SA_JSON not set — needs a GCP service-account JSON (raw or base64) for a project with Vertex AI on and the Claude model enabled in Model Garden',
             );
         }
 

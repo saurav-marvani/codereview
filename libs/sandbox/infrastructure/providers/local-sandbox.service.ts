@@ -1,4 +1,4 @@
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { PlatformType } from '@libs/core/domain/enums';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -346,7 +346,11 @@ export class LocalSandboxService implements ISandboxProvider {
 
             exec: async (
                 command: string,
-            ): Promise<{ stdout: string; exitCode: number }> => {
+            ): Promise<{
+                stdout: string;
+                stderr: string;
+                exitCode: number;
+            }> => {
                 // Strict whitelist — only allow programs that READ files. This
                 // runs on the host machine with no container isolation, so any
                 // program that evaluates code in the cloned repo is an RCE
@@ -372,12 +376,13 @@ export class LocalSandboxService implements ISandboxProvider {
                 ]);
 
                 if (!command.trim()) {
-                    return { stdout: '', exitCode: 1 };
+                    return { stdout: '', stderr: '', exitCode: 1 };
                 }
 
                 // Reject shell features we don't emulate up front. We support
                 // only the subset the agent tools actually emit:
-                //   - `2>&1` (stderr merged into stdout, which we always do)
+                //   - `2>&1` (accepted and stripped; stdout/stderr are captured
+                //     separately below, so tools relying on it still see stderr)
                 //   - top-level `|` pipelines between whitelisted programs
                 // Anything else (`>`, `>>`, `<`, `;`, `&&`, `||`, backticks,
                 // `$(...)`) would require real shell semantics we intentionally
@@ -393,6 +398,7 @@ export class LocalSandboxService implements ISandboxProvider {
                 if (/`|\$\(/.test(command)) {
                     return {
                         stdout: `Command substitution is not allowed in local sandbox: ${command}`,
+                        stderr: '',
                         exitCode: 1,
                     };
                 }
@@ -403,6 +409,7 @@ export class LocalSandboxService implements ISandboxProvider {
                 if (/(?:>>|<<|>|<|;|&&|\|\|)/.test(outsideQuotes)) {
                     return {
                         stdout: `Unsupported shell syntax in local sandbox: ${command}`,
+                        stderr: '',
                         exitCode: 1,
                     };
                 }
@@ -416,11 +423,12 @@ export class LocalSandboxService implements ISandboxProvider {
                 const validated: Array<{ program: string; args: string[] }> =
                     [];
                 for (const stage of stages) {
-                    // Drop `2>&1` tokens — stderr is always merged into stdout below.
+                    // Drop `2>&1` tokens — stdout/stderr are captured separately
+                    // below, so the redirect is a no-op for our purposes.
                     const parts =
                         stage.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
                     if (parts.length === 0) {
-                        return { stdout: '', exitCode: 1 };
+                        return { stdout: '', stderr: '', exitCode: 1 };
                     }
                     const tokens = parts
                         .map((p) => p.replace(/^['"]|['"]$/g, ''))
@@ -430,6 +438,7 @@ export class LocalSandboxService implements ISandboxProvider {
                     if (!ALLOWED_PROGRAMS.has(program)) {
                         return {
                             stdout: `Program "${program}" is not allowed in local sandbox. Allowed: ${[...ALLOWED_PROGRAMS].join(', ')}`,
+                            stderr: '',
                             exitCode: 1,
                         };
                     }
@@ -454,6 +463,7 @@ export class LocalSandboxService implements ISandboxProvider {
                     if (hasTraversal) {
                         return {
                             stdout: 'Arguments with path traversal (..) or absolute paths are not allowed.',
+                            stderr: '',
                             exitCode: 1,
                         };
                     }
@@ -473,12 +483,14 @@ export class LocalSandboxService implements ISandboxProvider {
                             },
                         );
                         return {
-                            stdout: stdout + (stderr || ''),
+                            stdout,
+                            stderr: stderr || '',
                             exitCode: 0,
                         };
                     } catch (error: any) {
                         return {
-                            stdout: (error.stdout || '') + (error.stderr || ''),
+                            stdout: error.stdout || '',
+                            stderr: error.stderr || '',
                             exitCode: error.code ?? 1,
                         };
                     }
@@ -496,32 +508,40 @@ export class LocalSandboxService implements ISandboxProvider {
                         }),
                     );
 
-                    let finalOutput = '';
+                    let stdoutBuf = '';
+                    let stderrBuf = '';
                     let totalSize = 0;
                     let bufferExceeded = false;
-                    const collect = (chunk: Buffer) => {
-                        if (bufferExceeded) return;
-                        totalSize += chunk.length;
-                        if (totalSize > MAX_BUFFER) {
-                            bufferExceeded = true;
-                            finalOutput += '\n[output truncated]';
-                            return;
-                        }
-                        finalOutput += chunk.toString('utf8');
-                    };
+                    // Capture stdout and stderr into separate buffers, capping
+                    // their COMBINED size so a runaway process can't exhaust
+                    // memory. Only the last stage's stdout is the pipeline
+                    // output; every stage's stderr is kept separate.
+                    const collect =
+                        (stream: 'stdout' | 'stderr') => (chunk: Buffer) => {
+                            if (bufferExceeded) return;
+                            totalSize += chunk.length;
+                            if (totalSize > MAX_BUFFER) {
+                                bufferExceeded = true;
+                                stdoutBuf += '\n[output truncated]';
+                                return;
+                            }
+                            if (stream === 'stdout') {
+                                stdoutBuf += chunk.toString('utf8');
+                            } else {
+                                stderrBuf += chunk.toString('utf8');
+                            }
+                        };
 
                     for (let i = 0; i < children.length; i++) {
                         const child = children[i];
                         const next = children[i + 1];
-                        // Merge stderr of every stage into the final output so
-                        // compiler/linter diagnostics (usually on stderr) survive.
-                        child.stderr?.on('data', collect);
+                        child.stderr?.on('data', collect('stderr'));
                         if (next) {
                             child.stdout?.pipe(next.stdin!);
                             child.stdout?.on('error', () => {});
                             next.stdin?.on('error', () => {});
                         } else {
-                            child.stdout?.on('data', collect);
+                            child.stdout?.on('data', collect('stdout'));
                         }
                     }
 
@@ -532,12 +552,17 @@ export class LocalSandboxService implements ISandboxProvider {
 
                     last.on('close', (code) => {
                         clearTimeout(timeout);
-                        resolve({ stdout: finalOutput, exitCode: code ?? 0 });
+                        resolve({
+                            stdout: stdoutBuf,
+                            stderr: stderrBuf,
+                            exitCode: code ?? 0,
+                        });
                     });
 
                     for (const c of children) {
                         c.on('error', (err) => {
-                            finalOutput += `\n${err.message}`;
+                            // spawn failure (e.g. ENOENT) is diagnostic, not output
+                            stderrBuf += `\n${err.message}`;
                         });
                     }
                 });

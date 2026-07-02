@@ -4,7 +4,7 @@ import {
     PublicPrFetchError,
 } from '../github-public-pr.service';
 
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
         warn: jest.fn(),

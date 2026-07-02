@@ -429,6 +429,12 @@ export class KodyRulesValidationService {
             return true;
         }
 
+        // Directory-group rules are scoped by directoryId — applying any
+        // rule.path glob here would narrow them back to a single folder.
+        if (rule.directoryId) {
+            return true;
+        }
+
         // If the rule has no path defined, it matches all files.
         const rulePath = rule.path?.trim();
         if (!rulePath) {
@@ -448,6 +454,10 @@ export class KodyRulesValidationService {
     ): boolean {
         // If we aren't checking a specific folder, all paths match.
         if (normalizedFolder === null) {
+            return true;
+        }
+
+        if (rule.directoryId) {
             return true;
         }
 

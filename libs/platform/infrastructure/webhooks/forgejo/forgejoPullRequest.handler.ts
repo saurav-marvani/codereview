@@ -1,4 +1,4 @@
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { EnqueueAstGraphUpdateOnMergedUseCase } from '@libs/code-review/application/use-cases/enqueue-ast-graph-update-on-merged.use-case';
 import { EnqueueImplementationCheckUseCase } from '@libs/code-review/application/use-cases/enqueue-implementation-check.use-case';
 import {
@@ -6,6 +6,7 @@ import {
     isForceReviewCommand,
     isKodyMentionNonReview,
     isReviewCommand,
+    parseReviewDirective,
 } from '@libs/common/utils/codeManagement/codeCommentMarkers';
 import { getMappedPlatform } from '@libs/common/utils/webhooks';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
@@ -636,6 +637,7 @@ export class ForgejoPullRequestHandler implements IWebhookEventHandler {
                                 ? 'command-force'
                                 : 'command',
                             triggerCommentId: comment?.id,
+                            reviewDirective: parseReviewDirective(comment.body),
                             pull_request:
                                 pullRequestData ||
                                 pullRequest ||

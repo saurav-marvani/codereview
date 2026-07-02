@@ -1,4 +1,4 @@
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
@@ -16,6 +16,7 @@ import {
     isForceReviewCommand,
     isKodyMentionNonReview,
     isReviewCommand,
+    parseReviewDirective,
 } from '@libs/common/utils/codeManagement/codeCommentMarkers';
 import { getMappedPlatform } from '@libs/common/utils/webhooks';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
@@ -539,6 +540,7 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
                         action: 'synchronize',
                         origin: isForceCommand ? 'command-force' : 'command',
                         triggerCommentId: comment?.id,
+                        reviewDirective: parseReviewDirective(comment.body),
                     },
                 };
 

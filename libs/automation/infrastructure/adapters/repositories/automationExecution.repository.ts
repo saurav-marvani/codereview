@@ -8,7 +8,7 @@ import {
     Repository,
 } from 'typeorm';
 
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { AutomationStatus } from '@libs/automation/domain/automation/enum/automation-status';
 import { IAutomationExecutionRepository } from '@libs/automation/domain/automationExecution/contracts/automation-execution.repository';
 import { AutomationExecutionEntity } from '@libs/automation/domain/automationExecution/entities/automation-execution.entity';

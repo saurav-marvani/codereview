@@ -176,6 +176,7 @@ KEYS=(
     "/prod/kodus-orchestrator/API_JWT_PRIVATE_KEY"
 
     "/prod/kodus-orchestrator/API_BILLING_WEBHOOK_SECRET"
+    "/prod/kodus-orchestrator/API_DISCORD_TRIAL_REQUEST_WEBHOOK_URL"
 )
 
 # Lista de todas as chaves que você precisa

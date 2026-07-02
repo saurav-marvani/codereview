@@ -7,7 +7,7 @@ import {
     PULL_REQUEST_MANAGER_SERVICE_TOKEN,
     IPullRequestManagerService,
 } from '@libs/code-review/domain/contracts/PullRequestManagerService.contract';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { PullRequestMessageStatus } from '@libs/core/infrastructure/config/types/general/pullRequestMessages.type';
 import {
     BehaviourForNewCommits,
@@ -232,7 +232,7 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 (startReviewMessage.status ===
                     PullRequestMessageStatus.ONLY_WHEN_OPENED &&
                     !context.lastExecution))
-        ) {
+        ) { 
             const finalCommentBody =
                 await this.commentManagerService.processEndReviewMessageTemplate(
                     endReviewMessage.content,
@@ -242,6 +242,7 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                     codeReviewConfig,
                     codeReviewConfig?.languageResultPrompt ?? 'en-US',
                     platformType,
+                    lineComments,
                 );
 
             await this.commentManagerService.updateOverallComment(

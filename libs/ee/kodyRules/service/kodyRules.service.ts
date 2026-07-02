@@ -9,7 +9,7 @@ import { v4 } from 'uuid';
 import bucketsData from './data/buckets.json';
 import libraryKodyRules from './data/library-kody-rules.json';
 
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { CentralizedConfigPrService } from '@libs/centralized-config/infrastructure/adapters/services/centralized-config-pr.service';
 import { ModuleRef } from '@nestjs/core';
 import {
@@ -570,18 +570,6 @@ export class KodyRulesService implements IKodyRulesService {
                 organizationAndTeamData,
             );
 
-            if (!codeReviewConfig?.configValue) {
-                return;
-            }
-
-            const configValue =
-                codeReviewConfig.configValue as CodeReviewParameter;
-            const repositories = configValue.repositories || [];
-
-            if (repositories.some((r) => r.id === rule.repositoryId)) {
-                return;
-            }
-
             let repositoryName = rule.repositoryId;
             try {
                 const repos =
@@ -606,6 +594,32 @@ export class KodyRulesService implements IKodyRulesService {
                 isSelected: true,
                 configs: {},
             };
+
+            if (!codeReviewConfig?.configValue) {
+                const configValue: CodeReviewParameter = {
+                    id: 'global',
+                    name: 'Global',
+                    isSelected: true,
+                    configs: {},
+                    repositories: [newRepo],
+                };
+
+                await parametersService.createOrUpdateConfig(
+                    ParametersKey.CODE_REVIEW_CONFIG,
+                    configValue,
+                    organizationAndTeamData,
+                );
+
+                return;
+            }
+
+            const configValue =
+                codeReviewConfig.configValue as CodeReviewParameter;
+            const repositories = configValue.repositories || [];
+
+            if (repositories.some((r) => r.id === rule.repositoryId)) {
+                return;
+            }
 
             const updatedConfigValue: CodeReviewParameter = {
                 ...configValue,
@@ -1042,17 +1056,6 @@ export class KodyRulesService implements IKodyRulesService {
                         }
                     }
 
-                    // Filtro por needMCPS (required_mcps)
-                    if (filters.needMCPS === true) {
-                        const hasRequiredMcps =
-                            Array.isArray(rule.required_mcps) &&
-                            rule.required_mcps.length > 0;
-
-                        if (!hasRequiredMcps) {
-                            return false;
-                        }
-                    }
-
                     return true;
                 });
             }
@@ -1146,49 +1149,6 @@ export class KodyRulesService implements IKodyRulesService {
                 message: 'Error in getLibraryKodyRulesBuckets',
                 error: error,
                 context: KodyRulesService.name,
-            });
-            return [];
-        }
-    }
-
-    async getRecommendedRulesByMCP(
-        organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<LibraryKodyRule[]> {
-        try {
-            const mcpConnections = await this.mcpManagerService.getConnections(
-                organizationAndTeamData,
-                false,
-            );
-
-            if (!mcpConnections || mcpConnections.length === 0) {
-                return [];
-            }
-
-            const installedMCPs = mcpConnections.map((conn) => conn.appName);
-
-            const eligibleRules = (
-                libraryKodyRules as LibraryKodyRule[]
-            ).filter((rule) => {
-                if (!rule.required_mcps || rule.required_mcps.length === 0) {
-                    return false;
-                }
-
-                return rule.required_mcps.some((mcp) =>
-                    installedMCPs.some((installedMCP) =>
-                        installedMCP.toLowerCase().includes(mcp.toLowerCase()),
-                    ),
-                );
-            });
-
-            return eligibleRules;
-        } catch (error) {
-            this.logger.error({
-                message: 'Error in getRecommendedRulesByMCP',
-                error: error,
-                context: KodyRulesService.name,
-                metadata: {
-                    organizationId: organizationAndTeamData.organizationId,
-                },
             });
             return [];
         }

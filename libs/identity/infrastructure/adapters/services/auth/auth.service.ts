@@ -10,7 +10,7 @@ import axios from 'axios';
 import * as bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { IAuthService } from '@libs/identity/domain/auth/contracts/auth.service.contracts';
 import {
     AUTH_REPOSITORY_TOKEN,

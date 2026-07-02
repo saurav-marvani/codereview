@@ -11,11 +11,11 @@ jest.mock('@libs/common/utils/crypto', () => ({
     decrypt: (value: string) => value.replace(/^enc\(|\)$/g, ''),
 }));
 
-import { byokToVercelModel } from '@libs/code-review/infrastructure/agents/llm/byok-to-vercel';
+import { byokToVercelModel } from '@libs/llm/byok-to-vercel';
 import {
     buildReasoningProviderOptions,
     EFFORT_TO_BUDGET,
-} from '@libs/code-review/infrastructure/agents/llm/agent-loop';
+} from '@libs/llm/reasoning-options';
 import { TestByokConnectionUseCase } from '@libs/organization/application/use-cases/organizationParameters/test-byok-connection.use-case';
 import axios from 'axios';
 

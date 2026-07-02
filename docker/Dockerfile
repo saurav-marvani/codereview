@@ -26,8 +26,8 @@ ENV npm_config_fetch_timeout=600000
 # repeated apt-get runs don't re-download the same .deb packages. The
 # `docker-clean` apt hook (ships in debian-slim) would delete the cache
 # after each install, defeating the mount — remove it first.
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
+    --mount=type=cache,target=/var/lib/apt,sharing=private \
     rm -f /etc/apt/apt.conf.d/docker-clean \
   && apt-get update \
   && apt-get install -y --no-install-recommends \
@@ -37,9 +37,11 @@ RUN corepack disable \
   && npm i -g pnpm@10.34.1
 
 FROM base AS deps
-COPY package.json pnpm-lock.yaml .npmrc ./
+# pnpm-workspace.yaml carries overrides/catalog/nodeLinker since the pnpm 11
+# migration moved them out of package.json/.npmrc. Without it here, the frozen
+# install sees empty overrides and aborts (ERR_PNPM_LOCKFILE_CONFIG_MISMATCH).
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY packages/kodus-common ./packages/kodus-common
-COPY packages/kodus-flow ./packages/kodus-flow
 
 # `--store-dir` points pnpm at a BuildKit cache mount so the
 # content-addressable store survives across builds. pnpm's store is safe
@@ -57,11 +59,6 @@ RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
     cd packages/kodus-common \
   && pnpm install --store-dir /pnpm-store \
   && pnpm run prepack
-RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
-    --mount=type=cache,target=/pnpm-store,sharing=shared \
-    cd packages/kodus-flow \
-  && pnpm install --store-dir /pnpm-store \
-  && pnpm run build
 
 # Install dependencies and link local packages.
 # github_token (optional) authenticates @vscode/ripgrep's postinstall
@@ -74,7 +71,6 @@ RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
     if [ -s /run/secrets/github_token ]; then export GITHUB_TOKEN="$(cat /run/secrets/github_token)"; fi \
  && pnpm install --frozen-lockfile --store-dir /pnpm-store
 RUN rm -rf node_modules/@kodus/kodus-common && cp -r packages/kodus-common node_modules/@kodus/kodus-common
-RUN rm -rf node_modules/@kodus/flow && cp -r packages/kodus-flow node_modules/@kodus/flow
 
 FROM deps AS build
 ARG API_CLOUD_MODE=false
@@ -97,27 +93,23 @@ RUN sed -e "s/__CLOUD_MODE__/${API_CLOUD_MODE}/g" \
 # webpack.config.js) across builds via a BuildKit cache mount. Without this the
 # `COPY . .` above invalidates the layer on every source change and webpack
 # recompiles all 6 apps from scratch (~3min). With it, only the changed modules
-# rebuild → seconds. sharing=locked because build:apps runs the 6 nest builds in
+# rebuild → seconds. sharing=private because build:apps runs the 6 nest builds in
 # parallel against one shared cache dir.
 RUN --mount=type=cache,target=/usr/src/app/node_modules/.cache,sharing=locked \
     pnpm run build:apps && pnpm run build:migrations
 
 # Install production dependencies only
 FROM base AS prod-deps
-COPY package.json pnpm-lock.yaml .npmrc ./
+# See deps stage: pnpm-workspace.yaml must be present for overrides/catalog to
+# resolve under --frozen-lockfile.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY packages/kodus-common ./packages/kodus-common
-COPY packages/kodus-flow ./packages/kodus-flow
 
 RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
     --mount=type=cache,target=/pnpm-store,sharing=shared \
     cd packages/kodus-common \
   && pnpm install --store-dir /pnpm-store \
   && pnpm run prepack
-RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
-    --mount=type=cache,target=/pnpm-store,sharing=shared \
-    cd packages/kodus-flow \
-  && pnpm install --store-dir /pnpm-store \
-  && pnpm run build
 
 # --prod skips devDependencies (TypeScript, Nest CLI, Jest, ESLint, etc.)
 # since the `build` stage already produced the compiled output in
@@ -135,11 +127,10 @@ RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
 # needed for `pnpm run prepack` but not at runtime — keeping them would
 # duplicate ~450MB inside the final image for no benefit. `dist/` and
 # `package.json` are what Node actually resolves.
-RUN rm -rf packages/kodus-common/node_modules packages/kodus-flow/node_modules \
-           packages/kodus-common/src packages/kodus-flow/src \
-           packages/kodus-common/test packages/kodus-flow/test
+RUN rm -rf packages/kodus-common/node_modules \
+           packages/kodus-common/src \
+           packages/kodus-common/test
 RUN rm -rf node_modules/@kodus/kodus-common && cp -r packages/kodus-common node_modules/@kodus/kodus-common
-RUN rm -rf node_modules/@kodus/flow && cp -r packages/kodus-flow node_modules/@kodus/flow
 
 # Dedicated stage for the bun binary. Using the official oven/bun image
 # instead of `curl bun.sh/install | bash` because:
@@ -167,8 +158,8 @@ ENV RELEASE_VERSION=${RELEASE_VERSION}
 ENV SENTRY_RELEASE=${RELEASE_VERSION}
 ENV PATH="/home/node/.bun/bin:${PATH}"
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
+    --mount=type=cache,target=/var/lib/apt,sharing=private \
     rm -f /etc/apt/apt.conf.d/docker-clean \
   && apt-get update \
   && apt-get install -y --no-install-recommends \

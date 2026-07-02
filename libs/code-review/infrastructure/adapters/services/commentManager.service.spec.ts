@@ -42,10 +42,14 @@ jest.mock(
 // tracedGenerateText) instead of the v2 BYOKPromptRunnerService builder, so
 // Claude-on-Vertex works. Mock that path: capture the system/user prompts
 // (Bug E) and return a deterministic summary (Bug A).
-jest.mock('@libs/code-review/infrastructure/agents/llm/byok-to-vercel', () => ({
+jest.mock('@libs/llm/byok-to-vercel', () => ({
     byokToVercelModel: jest.fn(() => ({ __mockModel: true })),
 }));
-jest.mock('@libs/code-review/infrastructure/agents/llm/agent-loop', () => ({
+// `tracedGenerateText` moved to @libs/llm/llm-call (the legacy
+// agents/engine/agent-loop module was removed). requireActual keeps the rest of
+// the module (AGENT_TIMEOUT_MS, etc.) and overrides only the LLM call.
+jest.mock('@libs/llm/llm-call', () => ({
+    ...jest.requireActual('@libs/llm/llm-call'),
     tracedGenerateText: jest.fn(
         async ({ system, prompt }: { system?: string; prompt?: string }) => {
             if (system) {
@@ -67,7 +71,10 @@ import { CommentManagerService } from './commentManager.service';
 describe('CommentManagerService.generateSummaryPR', () => {
     let service: CommentManagerService;
     let codeManagementService: { getPullRequestByNumber: jest.Mock };
-    let observabilityService: { runLLMInSpan: jest.Mock };
+    let observabilityService: {
+        runLLMInSpan: jest.Mock;
+        runAiSdkLLMInSpan: jest.Mock;
+    };
     let parametersService: any;
     let messageProcessor: any;
     let promptRunnerService: any;
@@ -99,6 +106,9 @@ describe('CommentManagerService.generateSummaryPR', () => {
                 const result = await exec(() => {});
                 return { result };
             }),
+            // generateSummaryPR now uses runAiSdkLLMInSpan (AI SDK usage path).
+            // It returns the exec result directly; the caller reads `.text`.
+            runAiSdkLLMInSpan: jest.fn(async ({ exec }) => exec()),
         };
 
         parametersService = {};

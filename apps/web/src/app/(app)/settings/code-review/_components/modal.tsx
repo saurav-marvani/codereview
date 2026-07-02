@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { Badge } from "@components/ui/badge";
 import { Button } from "@components/ui/button";
 import { Checkbox } from "@components/ui/checkbox";
 import { CodeInputSimple } from "@components/ui/code-input-simple";
@@ -182,19 +181,6 @@ const GOOD_EXAMPLE_PLACEHOLDER = `for (var i = 1; i <= 10; i += 2)  // Compliant
 {
   //...
 }`;
-
-const getDirectoryPathForReplace = (
-    directory: FormattedDirectoryCodeReviewConfig,
-) => `${(directory.folders?.[0]?.path ?? '').slice(1)}/`;
-const getKodyRulePathWithoutDirectoryPath = ({
-    directory,
-    rule,
-}: {
-    rule: KodyRule;
-    directory: FormattedDirectoryCodeReviewConfig;
-}) => (rule.path ?? "").replace(getDirectoryPathForReplace(directory), "");
-
-const DEFAULT_PATH_FOR_DIRECTORIES = "**";
 
 const RULE_SUGGESTIONS = [
     {
@@ -382,25 +368,9 @@ export const KodyRuleAddOrUpdateItemModal = ({
         disabled: !canEdit || isInherited,
         defaultValues: {
             path:
-                initialScope === "pull-request"
+                initialScope === "pull-request" || directory
                     ? ""
-                    : rule
-                        ? !directory
-                            ? rule.path
-                            : (() => {
-                                const pathWithoutDirectory =
-                                    getKodyRulePathWithoutDirectoryPath({
-                                        directory,
-                                        rule,
-                                    });
-                                return (
-                                    pathWithoutDirectory ||
-                                    DEFAULT_PATH_FOR_DIRECTORIES
-                                );
-                            })()
-                        : directory
-                            ? DEFAULT_PATH_FOR_DIRECTORIES
-                            : "",
+                    : rule?.path ?? "",
             rule: rule?.rule ?? "",
             title: rule?.title ?? "",
             severity: rule ? resolveKodyRuleDisplaySeverity(rule) : "high",
@@ -434,12 +404,8 @@ export const KodyRuleAddOrUpdateItemModal = ({
                 examples.push({ isCorrect: true, snippet: config.goodExample });
 
             let newPath = "";
-            if (!isMemory && config.scope === "file") {
-                if (directory) {
-                    newPath = `${getDirectoryPathForReplace(directory)}${config.path}`;
-                } else {
-                    newPath = config.path;
-                }
+            if (!isMemory && config.scope === "file" && !directory) {
+                newPath = config.path;
             }
 
             const mutationResult = await createOrUpdateKodyRule(
@@ -831,26 +797,9 @@ export const KodyRuleAddOrUpdateItemModal = ({
                                                         field.onChange(value);
 
                                                     if (value === "file") {
-                                                        let newPath = "";
-
-                                                        if (directory) {
-                                                            if (rule) {
-                                                                newPath =
-                                                                    getKodyRulePathWithoutDirectoryPath(
-                                                                        {
-                                                                            directory,
-                                                                            rule,
-                                                                        },
-                                                                    );
-                                                            } else {
-                                                                newPath =
-                                                                    DEFAULT_PATH_FOR_DIRECTORIES;
-                                                            }
-                                                        }
-
                                                         form.setValue(
                                                             "path",
-                                                            newPath,
+                                                            "",
                                                             {
                                                                 shouldValidate: true,
                                                             },
@@ -958,12 +907,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
                     <Controller
                         name="path"
                         control={form.control}
-                        rules={{
-                            required:
-                                !isMemory && directory && watchScope === "file"
-                                    ? "Path is required"
-                                    : undefined,
-                        }}
+                        rules={{}}
                         render={({ field, fieldState }) => {
                             if (isMemory) return <></>;
 
@@ -1024,43 +968,24 @@ export const KodyRuleAddOrUpdateItemModal = ({
 
                                     <FormControl.Input>
                                         <div className="flex flex-col">
-                                            <div className="flex items-center">
-                                                {directory &&
-                                                    watchScope === "file" &&
-                                                    !isInherited && (
-                                                        <Badge
-                                                            size="md"
-                                                            variant="helper"
-                                                            className="text-text-primary pointer-events-none h-full rounded-r-none ring-1">
-                                                            {directory?.folders?.[0]?.path ?? ''}/
-                                                        </Badge>
-                                                    )}
-
-                                                <Input
-                                                    id={field.name}
-                                                    value={field.value}
-                                                    maxLength={600}
-                                                    placeholder="Example: **/*.js"
-                                                    error={fieldState.error}
-                                                    className={cn(
-                                                        directory &&
-                                                        !isInherited &&
-                                                        watchScope ===
-                                                        "file" &&
-                                                        "rounded-l-none",
-                                                    )}
-                                                    disabled={
-                                                        field.disabled ||
-                                                        watchScope ===
-                                                        "pull-request"
-                                                    }
-                                                    onChange={(e) =>
-                                                        field.onChange(
-                                                            e.target.value,
-                                                        )
-                                                    }
-                                                />
-                                            </div>
+                                            <Input
+                                                id={field.name}
+                                                value={field.value}
+                                                maxLength={600}
+                                                placeholder="Example: **/*.js"
+                                                error={fieldState.error}
+                                                disabled={
+                                                    field.disabled ||
+                                                    watchScope ===
+                                                    "pull-request" ||
+                                                    !!directory
+                                                }
+                                                onChange={(e) =>
+                                                    field.onChange(
+                                                        e.target.value,
+                                                    )
+                                                }
+                                            />
 
                                             <FormControl.Error>
                                                 {fieldState.error?.message}
@@ -1071,7 +996,43 @@ export const KodyRuleAddOrUpdateItemModal = ({
                                                     Path is not applicable for
                                                     pull request scope
                                                 </FormControl.Helper>
-                                            ) : directory ? null : (
+                                            ) : directory ? (
+                                                <FormControl.Helper>
+                                                    <span className="inline-flex items-center gap-1">
+                                                        This rule applies to all
+                                                        folders in this
+                                                        directory group.
+                                                        <Tooltip>
+                                                            <TooltipTrigger
+                                                                tabIndex={-1}>
+                                                                <Info
+                                                                    size={14}
+                                                                    className="text-primary-light cursor-help"
+                                                                />
+                                                            </TooltipTrigger>
+                                                            <TooltipContent
+                                                                align="start"
+                                                                className="flex flex-col gap-0.5 font-mono text-xs">
+                                                                {(
+                                                                    directory.folders ??
+                                                                    []
+                                                                ).map(
+                                                                    (folder) => (
+                                                                        <span
+                                                                            key={
+                                                                                folder.id
+                                                                            }>
+                                                                            {
+                                                                                folder.path
+                                                                            }
+                                                                        </span>
+                                                                    ),
+                                                                )}
+                                                            </TooltipContent>
+                                                        </Tooltip>
+                                                    </span>
+                                                </FormControl.Helper>
+                                            ) : (
                                                 <FormControl.Helper>
                                                     If empty, rule will be
                                                     applied to all files.

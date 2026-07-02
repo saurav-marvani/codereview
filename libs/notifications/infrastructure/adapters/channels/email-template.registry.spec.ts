@@ -119,6 +119,8 @@ describe('EMAIL_TEMPLATE_REGISTRY', () => {
             prUrl: 'https://github.com/acme/api/pull/1',
             repoName: 'acme/api',
             ownerContact: 'owner@acme.com',
+            authorUsername: 'kodus',
+            authorEmail: 'kodus@acme.com',
         },
         [NotificationEvent.IDE_RULES_SYNCED]: {
             repoName: 'acme/api',

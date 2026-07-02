@@ -24,7 +24,7 @@ import { CreateOrUpdateKodyRulesUseCase } from '@libs/kodyRules/application/use-
 import { ParametersKey } from '@libs/core/domain/enums';
 import { KodyRulesStatus } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
         error: jest.fn(),

@@ -1,4 +1,4 @@
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { Injectable, Inject } from '@nestjs/common';
 
 import {
@@ -54,8 +54,7 @@ export class DeleteRuleInOrganizationByIdKodyRulesUseCase {
             const ru: any = requestUser;
             const organizationId =
                 actor?.organizationId || ru?.organization?.uuid;
-            const teamId =
-                actor?.teamId || ru?.team?.uuid || ru?.teamId;
+            const teamId = actor?.teamId || ru?.team?.uuid || ru?.teamId;
 
             const existingRule = await this.kodyRulesService.findById(ruleId);
 

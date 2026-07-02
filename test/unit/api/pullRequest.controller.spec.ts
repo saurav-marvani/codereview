@@ -20,7 +20,7 @@ import { PolicyGuard } from '@libs/identity/infrastructure/adapters/services/per
 import { STATUS } from '@libs/core/infrastructure/config/types/database/status.type';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
 
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
         error: jest.fn(),

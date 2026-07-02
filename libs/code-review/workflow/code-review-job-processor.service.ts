@@ -1,4 +1,4 @@
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { Injectable, Inject, Optional } from '@nestjs/common';
 
 import { JobStatus } from '@libs/core/workflow/domain/enums/job-status.enum';
@@ -304,12 +304,19 @@ export class CodeReviewJobProcessorService implements IJobProcessorService {
                 if (prAuthor) recipients.push(prAuthor);
             }
 
+            const isAIEmptyBodyError =
+                error?.message?.includes('Last error: <none>');
+
+            const reason = isAIEmptyBodyError
+                ? `The configured AI provider returned empty responses for several requests in a row. This is usually a transient provider issue. You can re-run the review or switch to a different model in Settings → AI Provider. (${error?.message || ''})`
+                : error?.message ?? 'unknown error';
+
             await this.notificationService.emit({
                 event: NotificationEvent.REVIEW_FAILED,
                 payload: {
                     prUrl,
                     repoName,
-                    reason: error?.message ?? 'unknown error',
+                    reason,
                     correlationId,
                 },
                 organizationId,

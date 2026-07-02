@@ -1,6 +1,6 @@
-import { ContextDependency } from '@kodus/flow';
-import { createLogger } from '@kodus/flow';
-import type { BYOKConfig } from '@kodus/kodus-common/llm';
+import { ContextDependency } from '@libs/ai-engine/infrastructure/adapters/services/context/context-pack';
+import { createLogger } from '@libs/core/log/logger';
+import { BYOKConfig } from '@kodus/kodus-common/llm';
 import { Injectable } from '@nestjs/common';
 
 import {
@@ -8,11 +8,7 @@ import {
     IFileReference,
 } from '@libs/ai-engine/domain/prompt/interfaces/promptExternalReference.interface';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
-import {
-    byokToVercelModel,
-    getModelName,
-} from '@libs/code-review/infrastructure/agents/llm/byok-to-vercel';
-import { tracedGenerateText as generateText } from '@libs/code-review/infrastructure/agents/llm/agent-loop';
+
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 import {
     prompt_detect_external_references_system,
@@ -23,6 +19,8 @@ import {
     prompt_kodyrules_detect_references_user,
 } from '@libs/common/utils/langchainCommon/prompts/kodyRulesExternalReferences';
 import { extractJsonFromResponse } from '@libs/common/utils/prompt-parser.utils';
+import { byokToVercelModel, getModelName } from '@libs/llm/byok-to-vercel';
+import { tracedGenerateText as generateText } from '@libs/llm/llm-call';
 
 // Trial-only override: while the org is in the 14-day subscription trial
 // and hasn't wired a BYOK key, route reference detection through Moonshot's

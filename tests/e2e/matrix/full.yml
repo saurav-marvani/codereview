@@ -22,6 +22,13 @@ scenarios:
     # and posts the comment, so the review under test can only come
     # from the command. Covers all 4 providers.
     - command-review
+    # @kody review <directive> — the focus-steering path. Same command
+    # flow as command-review but with trailing free-text after the
+    # command; guards that the directive parsing/forwarding (added across
+    # all 5 webhook handlers) doesn't break command detection on any
+    # platform, and that the review still fires. Full-tier only — it's a
+    # second real review per cell, too heavy for the PR-check fast tier.
+    - command-review-focus
     - kody-rules-create-and-apply
     # Centralized config (config-as-code) init→sync→disable on a throwaway org.
     # github × {paid, license-paid}; skipped unless CENTRALIZED_CONFIG_TEST_REPO is set.
@@ -82,7 +89,7 @@ scenarios:
     # absent, so runners without Vertex wired stay green.
     #   * code-review-vertex-byok: the v5 (Vercel SDK) review path. Needs
     #     VERTEX_SA_JSON (+ optional VERTEX_REGION/VERTEX_MODEL).
-    #   * conversation-vertex-byok: the v2 (langchain) path via the kodus-flow
+    #   * conversation-vertex-byok: the v2 (langchain) path via the legacy
     #     conversation agent — @kody mention. Also needs CONVERSATION_USER_TOKEN
     #     (a non-"kody/kodus" GitHub account with PR R/W on the fixture repo).
     - code-review-vertex-byok

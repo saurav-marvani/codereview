@@ -8,7 +8,7 @@ import { NotificationService } from '@libs/notifications/application/notificatio
 import { NotificationEvent } from '@libs/notifications/domain/catalog/events';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 
-jest.mock('@kodus/flow', () => ({
+jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
         log: jest.fn(),
         error: jest.fn(),

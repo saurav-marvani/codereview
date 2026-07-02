@@ -48,7 +48,7 @@ import {
     getInternalModel,
     withStructuredOutputFallback,
     __structuredFallbackInternals,
-} from '@/code-review/infrastructure/agents/llm/byok-to-vercel';
+} from '@libs/llm/byok-to-vercel';
 import { encrypt } from '@/common/utils/crypto';
 import { BYOKConfig, BYOKProvider } from '@kodus/kodus-common/llm';
 

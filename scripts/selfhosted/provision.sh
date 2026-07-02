@@ -515,7 +515,11 @@ env_set() {
     fi
 }
 env_set IMAGE_TAG "$IMAGE_TAG"
-env_set WEB_HOSTNAME_API "kodus-api"
+# "localhost" is the sentinel the web reads (helpers.ts): it makes the proxy
+# resolve the API via GLOBAL_API_CONTAINER_NAME (the actual container name,
+# now "kodus_api"). Hardcoding "kodus-api" here broke web->api DNS after the
+# kodus-api -> kodus_api container rename (EAI_AGAIN kodus-api).
+env_set WEB_HOSTNAME_API "localhost"
 env_set WEB_PORT_API "3001"
 env_set NEXTAUTH_URL "http://$SERVER_IP:3000"
 # Per-provider webhook URLs. Note the mismatched prefixes match what
@@ -586,7 +590,7 @@ fi
 
 # ---------- wait for the review pipeline (RabbitMQ workflow queue) ----------
 # The HTTP checks above only prove web/api/webhooks ANSWER. The code-review
-# pipeline runs through RabbitMQ (@kodus/flow): the webhooks service
+# pipeline runs through RabbitMQ: the webhooks service
 # publishes a job to `workflow.jobs.code_review.queue` and the worker
 # consumes it. On a cold boot the worker declares + binds that queue only
 # after its (slow) NestJS init; until then the producer hits

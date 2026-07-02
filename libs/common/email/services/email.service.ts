@@ -1,5 +1,5 @@
-import { createLogger } from '@kodus/flow';
-import { SimpleLogger } from '@kodus/flow/dist/observability/logger';
+import { createLogger } from '@libs/core/log/logger';
+import { SimpleLogger } from '@libs/core/log/logger';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as React from 'react';

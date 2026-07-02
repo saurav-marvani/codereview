@@ -40,6 +40,7 @@ export interface ICommentManagerService {
         codeReviewConfig?: CodeReviewConfig,
         language?: string,
         platformType?: PlatformType,
+        lineComments?: CommentResult[],
     ): Promise<string>;
 
     generateSummaryPR(

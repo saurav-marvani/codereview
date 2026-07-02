@@ -1,4 +1,4 @@
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import {
     CentralizedConfigPrService,
     CentralizedPrMetadata,
@@ -77,8 +77,19 @@ export class CreateOrUpdateKodyRulesUseCase {
                     ? { userId: reqUser.uuid, userEmail: reqUser.email }
                     : { userId: 'kody-system', userEmail: 'kody@kodus.io' });
 
+            // Centralized config is the source of truth for APPROVED rules
+            // only. A rule persisted as PENDING (awaiting approval) or REJECTED
+            // must not be routed into the rolling PR — it stays in the DB until
+            // approved, at which point the apply/convert use-cases re-run this
+            // flow with an active status and it exports normally.
+            const isApprovedForCentralized =
+                !kodyRule.status ||
+                kodyRule.status === KodyRulesStatus.ACTIVE ||
+                kodyRule.status === KodyRulesStatus.PAUSED;
+
             const bypassCentralizedRouting =
-                this.isInternalSyncActor(userInfoData);
+                this.isInternalSyncActor(userInfoData) ||
+                !isApprovedForCentralized;
 
             if (
                 !skipAuthorization &&

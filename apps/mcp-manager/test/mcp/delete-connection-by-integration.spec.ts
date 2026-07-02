@@ -1,4 +1,6 @@
-jest.mock('@kodus/flow', () => ({
+// createMCPAdapter moved from @kodus/flow to @libs/mcp-server/mcp-adapter in the
+// ai-sdk migration (@kodus/flow was removed from the repo).
+jest.mock('@libs/mcp-server/mcp-adapter', () => ({
     createMCPAdapter: jest.fn(),
 }));
 

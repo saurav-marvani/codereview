@@ -22,7 +22,7 @@ import {
     DRY_RUN_SERVICE_TOKEN,
     IDryRunService,
 } from '@libs/dryRun/domain/contracts/dryRun.service.contract';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { ParametersKey } from '@libs/core/domain/enums';
 import {
     AutomationMessage,

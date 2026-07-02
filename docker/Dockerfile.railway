@@ -31,7 +31,6 @@ RUN corepack disable \
 FROM base AS deps
 COPY package.json pnpm-lock.yaml .npmrc ./
 COPY packages/kodus-common ./packages/kodus-common
-COPY packages/kodus-flow ./packages/kodus-flow
 
 # Railway's Metal builder rejects BuildKit secret mounts and requires a
 # service-id-prefixed cache key on cache mounts (which can't share across
@@ -41,13 +40,9 @@ COPY packages/kodus-flow ./packages/kodus-flow
 RUN cd packages/kodus-common \
   && pnpm install \
   && pnpm run prepack
-RUN cd packages/kodus-flow \
-  && pnpm install \
-  && pnpm run build
 
 RUN pnpm install --frozen-lockfile
 RUN rm -rf node_modules/@kodus/kodus-common && cp -r packages/kodus-common node_modules/@kodus/kodus-common
-RUN rm -rf node_modules/@kodus/flow && cp -r packages/kodus-flow node_modules/@kodus/flow
 
 FROM deps AS build
 ARG API_CLOUD_MODE=false
@@ -71,25 +66,20 @@ RUN pnpm run build:apps && pnpm run build:migrations
 FROM base AS prod-deps
 COPY package.json pnpm-lock.yaml .npmrc ./
 COPY packages/kodus-common ./packages/kodus-common
-COPY packages/kodus-flow ./packages/kodus-flow
 
 RUN cd packages/kodus-common \
   && pnpm install \
   && pnpm run prepack
-RUN cd packages/kodus-flow \
-  && pnpm install \
-  && pnpm run build
 
 RUN pnpm install --frozen-lockfile --prod
 
 # Drop nested node_modules/src/test that were needed for `pnpm run prepack`
 # but not at runtime — keeping them would duplicate hundreds of MB inside
 # the final image. `dist/` and `package.json` are what Node resolves.
-RUN rm -rf packages/kodus-common/node_modules packages/kodus-flow/node_modules \
-           packages/kodus-common/src packages/kodus-flow/src \
-           packages/kodus-common/test packages/kodus-flow/test
+RUN rm -rf packages/kodus-common/node_modules \
+           packages/kodus-common/src \
+           packages/kodus-common/test
 RUN rm -rf node_modules/@kodus/kodus-common && cp -r packages/kodus-common node_modules/@kodus/kodus-common
-RUN rm -rf node_modules/@kodus/flow && cp -r packages/kodus-flow node_modules/@kodus/flow
 
 # Runtime stage — single stage, service selected via SERVICE_TYPE
 FROM docker.io/library/node:22.22.2-slim

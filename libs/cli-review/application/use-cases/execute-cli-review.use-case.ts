@@ -1,7 +1,9 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { createLogger, IdGenerator } from '@kodus/flow';
+import { IdGenerator } from '@libs/core/utils/id-generator';
+import { createLogger } from '@libs/core/log/logger';
 import { LLMModelProvider } from '@kodus/kodus-common/llm';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
+import { normalizeReviewDirective } from '@libs/common/utils/codeManagement/codeCommentMarkers';
 import {
     CliReviewInput,
     CliReviewResponse,
@@ -203,6 +205,9 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                 organizationAndTeamData,
                 codeReviewConfig: effectiveConfig,
                 changedFiles,
+                // CLI equivalent of `@kody review focus on X` — same sanitize +
+                // cap as the PR-comment path. Steers the finder when set.
+                reviewDirective: normalizeReviewDirective(input.config?.focus),
                 validSuggestions: [],
                 discardedSuggestions: [],
                 preparedFileContexts: [],

@@ -13,8 +13,8 @@ import { useCodeReviewConfig } from "src/app/(app)/settings/_components/context"
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { cn } from "src/core/utils/components";
 
-import { useCodeReviewRouteParams } from "../../../../_hooks";
 import { ReviewCadenceType } from "../../../_types";
+import { useCodeReviewRouteParams } from "../../../../_hooks";
 
 /* Match @variable-name, @variable_name, @variableName */
 export const VARIABLE_REGEX = /\@((?:\w(?:[-_]?))+)/g;
@@ -95,9 +95,7 @@ const ReviewScopePreview = () => {
     const repository = configValue?.repositories?.find(
         (r) => r.id === repositoryId,
     );
-    const group = repository?.directories?.find(
-        (d) => d.id === directoryId,
-    );
+    const group = repository?.directories?.find((d) => d.id === directoryId);
     const folders = (group as any)?.folders ?? [];
     const primaryPath = folders[0]?.path ?? "/src/example";
     const remaining = folders.length - 1;
@@ -312,6 +310,64 @@ export const dropdownItems = {
         description:
             "Shows which configuration level was used to review this PR",
         example: <ReviewScopePreview />,
+    },
+    consolidatedLLMPrompt: {
+        label: "Consolidated LLM Prompt",
+        description:
+            "All review suggestions consolidated into a single prompt block for AI agents",
+        example: (
+            <div className="text-sm">
+                <p className="mb-2 font-semibold">
+                    🛠️ Kody Code Review — 2 suggested fixes.
+                </p>
+                <p className="text-text-secondary mb-2">
+                    Paste the prompt below to your agent and all review fixed at
+                    once!
+                </p>
+                <details className="border-border bg-card-lv1 rounded-md border">
+                    <summary className="bg-card-lv2 hover:bg-card-lv3 cursor-pointer px-3 py-2 font-medium">
+                        🛠️ Open Agent Prompt
+                    </summary>
+                    <div className="border-border border-t p-3">
+                        <div className="overflow-x-auto rounded-md bg-black/90 p-3 font-mono text-xs text-green-400">
+                            <p className="mb-2 text-white">
+                                A code review identified the following issues in
+                                this pull request. Each section describes what
+                                was found and includes a reference
+                                implementation where available.
+                            </p>
+                            <p className="mb-2 font-semibold text-white">
+                                Files involved:
+                            </p>
+                            <p className="mb-2 text-white">
+                                - src/utils/dateUtils.ts:8
+                            </p>
+                            <p className="mb-2 text-white">
+                                - apps/frontend/vite.config.ts:13
+                            </p>
+                            <hr className="my-2 border-white/20" />
+                            <p className="mb-2 font-semibold text-yellow-400">
+                                ### [1/2] src/utils/dateUtils.ts:8
+                            </p>
+                            <p className="mb-2 text-white">
+                                Issue identified during code review:
+                            </p>
+                            <p className="mb-2 text-white">
+                                Incomplete string literal in
+                                `formatDistanceToNow`...
+                            </p>
+                            <hr className="my-2 border-white/20" />
+                            <p className="text-white/80">
+                                Review each issue in context, use the reference
+                                implementations as guidance, and apply fixes
+                                that are consistent with the surrounding
+                                codebase.
+                            </p>
+                        </div>
+                    </div>
+                </details>
+            </div>
+        ),
     },
 } satisfies Record<
     string,

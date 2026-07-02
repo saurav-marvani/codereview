@@ -195,11 +195,9 @@ export default {
         '^@apps/(.*)$': '<rootDir>/apps/$1/src',
         '^@kodus/kodus-common/(.*)$': '<rootDir>/packages/kodus-common/src/$1',
         '^@kodus/kodus-common$': '<rootDir>/packages/kodus-common/src',
-        '^@kodus/flow/(.*)$': '<rootDir>/packages/kodus-flow/src/$1',
-        '^@kodus/flow$': '<rootDir>/packages/kodus-flow/src',
     },
     transformIgnorePatterns: [
-        'node_modules/(?!(@octokit|universal-user-agent|p-limit|@kodus/flow|uuid|universal-github-app-jwt|before-after-hook|yocto-queue)/)',
+        'node_modules/(?!(@octokit|universal-user-agent|p-limit|uuid|universal-github-app-jwt|before-after-hook|yocto-queue)/)',
     ],
     modulePathIgnorePatterns: [
         '<rootDir>/dist',
@@ -207,17 +205,15 @@ export default {
         '<rootDir>/.worktrees',
         '<rootDir>/worktrees',
         // Claude Code agent worktrees: isolated checkouts under here carry a
-        // second copy of packages/kodus-flow and test/__mocks__, which collide
+        // second copy of the local packages and test/__mocks__, which collide
         // in jest's Haste map ("looked up in the Haste module map ... several
         // different files") and break every suite. Never load modules from them.
         '<rootDir>/.claude/worktrees',
     ],
-    // The mcp-manager e2e spec imports the full AppModule, which transitively
-    // imports @composio/core — a package that ships CJS/ESM-mixed syntax jest
-    // cannot parse without a custom transform. Unit tests for the same module
-    // (composio.spec, docs-auth.spec) are fine and run normally. Re-enabling
-    // e2e is a focused follow-up (would need transformIgnorePatterns tweak or
-    // moving to a dedicated e2e jest config like apps/api uses).
+    // The mcp-manager e2e spec imports the full AppModule and needs a
+    // dedicated e2e setup to run; excluded here as a focused follow-up (would
+    // move to a dedicated e2e jest config like apps/api uses). Unit tests for
+    // the same module run normally.
     testPathIgnorePatterns: [
         '/node_modules/',
         '<rootDir>/apps/mcp-manager/test/e2e/',

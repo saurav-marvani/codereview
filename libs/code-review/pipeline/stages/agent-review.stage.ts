@@ -1,27 +1,27 @@
 import * as crypto from 'crypto';
 
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { Output, jsonSchema } from 'ai';
 import { Inject, Injectable } from '@nestjs/common';
-import { tracedGenerateText } from '@libs/code-review/infrastructure/agents/llm/agent-loop';
-import { resolveAdaptiveProfile } from '@libs/code-review/infrastructure/agents/llm/adaptive-fit';
-import { resolveContextWindow } from '@libs/code-review/infrastructure/agents/llm/model-context-window';
+import { tracedGenerateText } from '@libs/llm/llm-call';
+import { resolveAdaptiveProfile } from '@libs/code-review/infrastructure/agents/engine/adaptive-fit';
+import { resolveContextWindow } from '@libs/llm/model-context-window';
 import {
     DEDUP_MODEL_ID,
     DEDUP_SCHEMA,
     DEDUP_CONTENT_THRESHOLD,
     buildDedupPrompt,
     contentSimilarity,
-} from '@libs/code-review/infrastructure/agents/llm/dedup-prompt';
+} from '@libs/code-review/infrastructure/agents/engine/dedup-prompt';
 import {
     dedupReviewWarnings,
     type ReviewWarning,
-} from '@libs/code-review/infrastructure/agents/llm/review-warnings';
+} from '@libs/code-review/infrastructure/agents/engine/review-warnings';
 import {
     withStructuredOutputFallback,
     NoStructuredFallbackModelError,
     getModelName,
-} from '@libs/code-review/infrastructure/agents/llm/byok-to-vercel';
+} from '@libs/llm/byok-to-vercel';
 import { buildKodyRuleLink } from '@libs/code-review/utils/build-kody-rule-link';
 import {
     buildLangfuseTelemetry,
@@ -33,13 +33,14 @@ import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-
 import { CodeSuggestion } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { PriorityStatus } from '@libs/platformData/domain/pullRequests/enums/priorityStatus.enum';
 import { ReviewOrchestratorService } from '@libs/code-review/infrastructure/agents/review-orchestrator.service';
+import { buildOrchestratorInput } from './build-orchestrator-input';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import {
     AUTOMATION_EXECUTION_SERVICE_TOKEN,
     IAutomationExecutionService,
 } from '@libs/automation/domain/automationExecution/contracts/automation-execution.service';
 import { AutomationStatus } from '@libs/automation/domain/automation/enum/automation-status';
-import { AgentProgressEvent } from '@libs/code-review/infrastructure/agents/base-code-review-agent.provider';
+import { AgentProgressEvent } from '@libs/code-review/infrastructure/agents/review-agent.contract';
 
 import { GraphContextService } from '@libs/code-review/infrastructure/adapters/services/graph/graph-context.service';
 import {
@@ -59,10 +60,10 @@ import {
 } from '../context/code-review-pipeline.context';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
 import {
-    ReviewErrorCategory,
+    LlmErrorCategory,
     classifyLLMError,
     getClassification,
-} from '@libs/code-review/infrastructure/agents/llm/error-classifier';
+} from '@libs/llm/error-classifier';
 
 /**
  * Extract valid line ranges from a unified diff patch.
@@ -72,8 +73,10 @@ import {
  * For each hunk, we track which RIGHT-side lines exist (context + added).
  * GitHub only allows comments on lines that appear in the diff.
  */
-function extractValidDiffLines(patch?: string): Array<[number, number]> {
-    if (!patch) return [];
+export function extractValidDiffLines(patch?: string): Array<[number, number]> {
+    if (!patch) {
+        return [];
+    }
 
     const ranges: Array<[number, number]> = [];
     const lines = patch.split('\n');
@@ -119,12 +122,20 @@ function extractValidDiffLines(patch?: string): Array<[number, number]> {
 
 /**
  * Snap suggestion line numbers to the closest valid diff range.
- * If the suggestion lines don't overlap any diff range, finds the nearest one.
+ *
+ * Returns the suggestion clamped to the overlapping hunk when its lines
+ * (partially) overlap a changed range. Returns `null` when the suggestion
+ * cites concrete lines that do NOT overlap ANY changed hunk — i.e. the
+ * finding is about code this PR did not touch. Such findings used to be
+ * clamped onto the nearest hunk, which silently re-anchored a comment about
+ * unchanged code onto a changed line (false positive on unchanged code).
+ * Dropping them keeps the review honest: "only suggest changes on lines
+ * present in the diff".
  */
-function snapLinesToDiff(
+export function snapLinesToDiff(
     suggestion: Partial<CodeSuggestion>,
     validRanges: Array<[number, number]>,
-): Partial<CodeSuggestion> {
+): Partial<CodeSuggestion> | null {
     if (validRanges.length === 0) return suggestion;
 
     const start = suggestion.relevantLinesStart;
@@ -140,7 +151,11 @@ function snapLinesToDiff(
         };
     }
 
-    // Find all overlapping ranges and pick the best one (largest overlap)
+    // Find all overlapping ranges and pick the best one (largest overlap).
+    // Overlap is measured inclusively (overlapEnd - overlapStart + 1) so a
+    // single shared line counts as overlap size 1 — otherwise a finding that
+    // sits exactly on one changed line (start === end) would score 0 and be
+    // treated as "no overlap" and dropped.
     let bestOverlap: [number, number] | null = null;
     let bestOverlapSize = 0;
 
@@ -148,7 +163,7 @@ function snapLinesToDiff(
         if (start <= re && end >= rs) {
             const overlapStart = Math.max(start, rs);
             const overlapEnd = Math.min(end, re);
-            const overlapSize = overlapEnd - overlapStart;
+            const overlapSize = overlapEnd - overlapStart + 1;
             if (overlapSize > bestOverlapSize) {
                 bestOverlapSize = overlapSize;
                 bestOverlap = [overlapStart, overlapEnd];
@@ -164,27 +179,10 @@ function snapLinesToDiff(
         };
     }
 
-    // No overlap — find the closest range
-    let closestRange = validRanges[0];
-    let closestDist = Infinity;
-
-    for (const [rs, re] of validRanges) {
-        const dist = Math.min(Math.abs(start - rs), Math.abs(start - re));
-        if (dist < closestDist) {
-            closestDist = dist;
-            closestRange = [rs, re];
-        }
-    }
-
-    const [rs, re] = closestRange;
-    const clampedStart = Math.max(rs, Math.min(start, re));
-    const clampedEnd = Math.min(re, Math.max(clampedStart, end));
-
-    return {
-        ...suggestion,
-        relevantLinesStart: clampedStart,
-        relevantLinesEnd: clampedEnd,
-    };
+    // No overlap with any changed hunk — the finding is about code this PR
+    // did not modify. Drop it instead of re-anchoring it onto an unrelated
+    // changed line (which produced false positives on unchanged code).
+    return null;
 }
 
 /**
@@ -238,13 +236,13 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
     }
 
     constructor(
-        private readonly reviewOrchestrator: ReviewOrchestratorService,
-        private readonly observabilityService: ObservabilityService,
         @Inject(AUTOMATION_EXECUTION_SERVICE_TOKEN)
         private readonly automationExecutionService: IAutomationExecutionService,
-        private readonly graphContext: GraphContextService,
         @Inject(REPOSITORY_SERVICE_TOKEN)
         private readonly repositoryService: IRepositoryService,
+        private readonly reviewOrchestrator: ReviewOrchestratorService,
+        private readonly observabilityService: ObservabilityService,
+        private readonly graphContext: GraphContextService,
     ) {
         super();
     }
@@ -256,10 +254,6 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
         const changedFiles = context.changedFiles;
 
         if (!changedFiles?.length) {
-            this.logger.log({
-                message: `[AGENT] Skipping agent review: no changed files for PR#${prNumber}`,
-                context: this.stageName,
-            });
             return context;
         }
 
@@ -268,8 +262,9 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
         // single-shot analysis on the diff content inlined in the user
         // prompt. The orchestrator/agent-loop detect the empty tools case
         // and switch to a self-contained system/user prompt variant.
-        const hasSandbox = !!context.sandboxHandle?.remoteCommands;
-        if (!hasSandbox) {
+        //const hasSandbox = !!context.sandboxHandle?.remoteCommands;
+
+        if (!context.sandboxHandle?.remoteCommands) {
             this.logger.log({
                 message: `[AGENT] Running self-contained agent review for PR#${prNumber} (no sandbox available)`,
                 context: this.stageName,
@@ -295,8 +290,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
         // the org-level main.model when present — same resolution the agent
         // uses internally (`base-code-review-agent.provider.ts:541-551`).
         const mainByok = context.codeReviewConfig?.byokConfig?.main;
-        const overrideModel =
-            context.codeReviewConfig?.byokModel?.trim();
+        const overrideModel = context.codeReviewConfig?.byokModel?.trim();
         const byokWithOverride =
             overrideModel && mainByok
                 ? {
@@ -354,7 +348,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
         const startTime = Date.now();
 
-        this.logger.log({
+        this.logger.debug({
             message: `[AGENT] Starting agent review for PR#${prNumber} with ${changedFiles.length} files`,
             context: this.stageName,
             metadata: {
@@ -365,6 +359,22 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 teamId: context.organizationAndTeamData?.teamId,
             },
         });
+
+        // Observability for the `@kody review <directive>` steering feature:
+        // emit a marker when a directive reached the finder, so it's visible in
+        // logs (and assertable in E2E) that the review was actually focused.
+        if (context.reviewDirective) {
+            this.logger.log({
+                message: `[AGENT][review-focus] steering PR#${prNumber} by directive: "${context.reviewDirective}"`,
+                context: this.stageName,
+                metadata: {
+                    prNumber,
+                    reviewDirective: context.reviewDirective,
+                    organizationId:
+                        context.organizationAndTeamData?.organizationId,
+                },
+            });
+        }
 
         try {
             // Build progress callback for real-time agent traces in PR timeline
@@ -394,6 +404,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             // prompt. `light+` profiles always skip it. The agent still has
             // grep/readFile to investigate cross-file relationships on demand.
             const shouldBuildCallGraph = !adaptiveProfile.dropCallGraph;
+
             if (!shouldBuildCallGraph) {
                 this.logger.log({
                     message: `[AGENT] adaptive-fit (${adaptiveProfile.kind}): skipping callGraph build to fit context window`,
@@ -401,173 +412,64 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 });
                 emitStageWarning('CALLGRAPH_DROPPED');
             }
+
             if (shouldBuildCallGraph) {
-              try {
-                const sandboxType = context.sandboxHandle?.type ?? 'unknown';
-                const hasSandbox = !!context.sandboxHandle?.run;
-                this.logger.log({
-                    message: `[AGENT] sandboxHandle check: type=${sandboxType}, hasSandbox=${hasSandbox}, platform=${context.platformType}, repoId=${context.repository?.id}`,
-                    context: this.stageName,
-                    metadata: {
-                        sandboxType,
-                        hasSandbox,
-                        platform: context.platformType,
-                        repoExternalId: context.repository?.id,
-                    },
-                });
+                try {
+                    if (context.sandboxHandle?.run) {
+                        const repo =
+                            await this.repositoryService.findByExternalId(
+                                context.platformType,
+                                String(context.repository?.id || ''),
+                            );
 
-                if (context.sandboxHandle?.run) {
-                    const repo = await this.repositoryService.findByExternalId(
-                        context.platformType,
-                        String(context.repository?.id || ''),
-                    );
-
-                    this.logger.log({
-                        message: `[AGENT] repo lookup: found=${!!repo}, astGraphStatus=${repo?.astGraphStatus ?? 'N/A'}, uuid=${repo?.uuid ?? 'N/A'}`,
-                        context: this.stageName,
-                        metadata: {
-                            repoExternalId: context.repository?.id,
-                            repoUuid: repo?.uuid,
-                            astGraphStatus: repo?.astGraphStatus,
-                        },
-                    });
-
-                    if (repo?.astGraphStatus === AstGraphStatus.READY) {
-                        callGraph = await this.graphContext.generateContext(
-                            context.sandboxHandle,
-                            changedFiles,
-                            repo.uuid,
-                        );
-                    } else {
-                        this.logger.log({
-                            message: `[AGENT] No AST graph in DB for PR#${prNumber} (status=${repo?.astGraphStatus || 'not found'}), falling back to legacy (changed-files only)`,
-                            context: this.stageName,
-                        });
-                        callGraph =
-                            await this.graphContext.generateContextLegacy(
+                        if (repo?.astGraphStatus === AstGraphStatus.READY) {
+                            callGraph = await this.graphContext.generateContext(
                                 context.sandboxHandle,
                                 changedFiles,
-                                context.sandboxHandle?.baseBranch ||
-                                    context.pullRequest?.base?.ref ||
-                                    context.repository?.defaultBranch,
+                                repo.uuid,
                             );
+                        } else {
+                            callGraph =
+                                await this.graphContext.generateContextLegacy(
+                                    context.sandboxHandle,
+                                    changedFiles,
+                                    context.sandboxHandle?.baseBranch ||
+                                        context.pullRequest?.base?.ref ||
+                                        context.repository?.defaultBranch,
+                                );
+                        }
                     }
-                } else {
+                } catch (err) {
                     this.logger.warn({
-                        message: `[AGENT] No sandboxHandle object (type=${sandboxType}), skipping kodus-graph for PR#${prNumber}`,
+                        message: `[AGENT] Call graph failed for PR#${prNumber}, proceeding without it`,
                         context: this.stageName,
-                    });
-                }
-
-                if (callGraph) {
-                    this.logger.log({
-                        message: `[AGENT] kodus-graph context: ${callGraph.length} chars for PR#${prNumber}`,
-                        context: this.stageName,
+                        error: err,
                         metadata: {
-                            prNumber,
-                            callGraphChars: callGraph.length,
-                            callGraphPreview: callGraph.substring(0, 320),
+                            sandboxType: context.sandboxHandle?.type,
+                            hasSandbox: !!context.sandboxHandle?.run,
                         },
                     });
                 }
-            } catch (err) {
-                this.logger.warn({
-                    message: `[AGENT] Call graph failed for PR#${prNumber}, proceeding without it`,
-                    context: this.stageName,
-                    error: err,
-                    metadata: {
-                        sandboxType: context.sandboxHandle?.type,
-                        hasSandbox: !!context.sandboxHandle?.run,
-                    },
-                });
             }
-            } // end if (shouldBuildCallGraph)
 
-            const result = await this.reviewOrchestrator.execute({
-                organizationAndTeamData: context.organizationAndTeamData,
-                changedFiles,
-                // remoteCommands is undefined when no sandbox is available
-                // (e.g. trial mode). The agent loop detects the empty tools
-                // case and switches to a self-contained analysis variant.
-                remoteCommands: context.sandboxHandle?.remoteCommands as any,
-                prNumber,
-                repositoryId,
-                repositoryFullName:
-                    context.repository?.fullName ||
-                    context.pullRequest?.base?.repo?.fullName ||
-                    '',
-                languageResultPrompt:
-                    context.codeReviewConfig?.languageResultPrompt || 'en-US',
-                memoryRules: context.codeReviewConfig?.kodyMemoryRules,
-                v2PromptOverrides: context.codeReviewConfig?.v2PromptOverrides,
-                generationMain:
-                    context.codeReviewConfig?.v2PromptOverrides?.generation
-                        ?.main,
-                prTitle: context.pullRequest?.title,
-                prBody: context.pullRequest?.body,
-                kodyRules: context.codeReviewConfig?.kodyRules,
-                reviewOptions,
-                onAgentProgress,
-                gitHubToken: await this.resolveGitHubToken(context),
-                baseBranch:
-                    context.sandboxHandle?.baseBranch ||
-                    context.pullRequest?.base?.ref ||
-                    context.repository?.defaultBranch,
-                callGraph,
-                callGraphJson: context.callGraphJson,
-                reviewMode: context.codeReviewConfig?.reviewMode || 'normal',
-                // Trial reviews get a forced default model (only consulted
-                // when there's no BYOK config). Two distinct "trial" surfaces,
-                // each with its OWN model:
-                //   1. Subscription trial — signed-up orgs in their 14-day
-                //      trial (`subscriptionStatus === 'trial'`, captured by
-                //      ValidatePrerequisitesStage). Routed to Kimi K2.6: they
-                //      run the managed pipeline with no BYOK, so without this
-                //      they'd burn the expensive 3.1-pro default on Kodus's
-                //      dime for the whole trial window. The `kimi-` prefix
-                //      routes through Moonshot's OpenAI-compatible endpoint in
-                //      byokToVercelModel (reads API_MOONSHOT_API_KEY — that env
-                //      MUST be set in the cloud deployment).
-                //   2. Anonymous public demo (`isTrialMode`, try.kodus.io) —
-                //      kept on Gemini 3 Flash: it's a latency-sensitive public
-                //      demo and the try UI advertises "Gemini 3 Flash". Without
-                //      this it would fall back to the slow 3.1-pro default
-                //      (~4-5 min).
-                // Either override is ignored when a BYOK config is present
-                // (byokToVercelModel prefers BYOK), so a trial org that
-                // configured its own key keeps using it.
-                // `isTrialMode` lives on the CLI pipeline context — we can't
-                // import that type here without inverting the dep graph
-                // (cli-review depends on code-review), so the cast is
-                // intentional.
-                defaultModelOverride:
-                    context.pipelineMetadata?.subscriptionStatus === 'trial'
-                        ? 'kimi-k2.6'
-                        : (context as { isTrialMode?: boolean }).isTrialMode
-                          ? 'gemini-3-flash-preview'
-                          : undefined,
-                // Per-repo/directory model override resolved by ValidateConfigStage.
-                byokModel: context.codeReviewConfig?.byokModel,
-                // Adaptive-fit profile: agents read this to decide whether
-                // to compact the prompt, force all-optional tiering, drop
-                // low-signal files unconditionally, truncate per-file diffs,
-                // and skip heavy passes. Resolved once at the stage so the
-                // stage-level decisions (callGraph, heavy passes) and
-                // per-agent decisions agree.
-                adaptiveProfile,
-                // Auto-skip heavy passes (verifier, second-chance, rescue)
-                // when the profile says so. These are independent
-                // generateText calls that re-incur the full prompt overhead;
-                // on small windows they're guaranteed to refire the same
-                // preflight error. Don't override an explicit caller value.
-                skipHeavyPasses:
-                    adaptiveProfile.skipHeavyPasses || undefined,
-                // Forwarded from the workflow job timeout. The router builds
-                // an AbortController; here we pass it through so when the
-                // 1h45min budget fires, the agent-loop's local controller is
-                // aborted via parentSignal composition.
-                parentSignal: context.parentSignal,
-            });
+            // Single place that maps context → agent input, extracted to a
+            // PURE helper (build-orchestrator-input) so the wiring — notably
+            // reviewDirective, an optional field no typecheck would catch if
+            // dropped — is unit-testable and can't drift from a second inline
+            // copy. A committed merge conflict once kept an inline builder that
+            // silently dropped reviewDirective; this is the single source now.
+            const result = await this.reviewOrchestrator.execute(
+                buildOrchestratorInput(context, {
+                    changedFiles,
+                    prNumber,
+                    repositoryId,
+                    reviewOptions,
+                    onAgentProgress,
+                    gitHubToken: await this.resolveGitHubToken(context),
+                    callGraph,
+                    adaptiveProfile,
+                }),
+            );
 
             // Emit profile-driven warnings up here at the stage so they
             // surface even when the agent's overhead preflight throws
@@ -597,7 +499,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             const durationMs = Date.now() - startTime;
 
-            this.logger.log({
+            this.logger.debug({
                 message: `[TIMING] AgentReviewStage completed for PR#${prNumber}: ${result.suggestions.length} suggestions in ${durationMs}ms`,
                 context: this.stageName,
                 metadata: {
@@ -628,10 +530,12 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 'security',
                 'performance',
             ]);
+
             for (const failure of result.failures || []) {
                 const severity = CRITICAL_AGENTS.has(failure.agentName)
                     ? 'critical'
                     : 'partial';
+
                 context = this.updateContext(context, (draft) => {
                     draft.errors.push({
                         pipelineId: context.pipelineMetadata?.pipelineId,
@@ -656,6 +560,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             // UNKNOWN) classification wins; fall back to any critical, then
             // any failure.
             const failures = result.failures ?? [];
+
             if (failures.length > 0) {
                 const reviewProvider =
                     typeof context.codeReviewConfig?.byokConfig?.main
@@ -675,10 +580,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 ranked.sort((a, b) => {
                     const aMapped =
                         classifyFailure(a).category !==
-                        ReviewErrorCategory.UNKNOWN;
+                        LlmErrorCategory.UNKNOWN;
                     const bMapped =
                         classifyFailure(b).category !==
-                        ReviewErrorCategory.UNKNOWN;
+                        LlmErrorCategory.UNKNOWN;
                     if (aMapped === bMapped) return 0;
                     return aMapped ? -1 : 1;
                 });
@@ -695,7 +600,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     };
                 });
 
-                this.logger.log({
+                this.logger.debug({
                     message: `[AGENT] Review failures: ${failures.length} (critical=${criticalFailures.length}, category=${classification.category})`,
                     context: this.stageName,
                     metadata: {
@@ -765,24 +670,43 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             // Snap suggestion line numbers to valid diff ranges before passing downstream.
             // GitHub rejects inline comments on lines that aren't part of the diff.
-            const validatedSuggestions = result.suggestions.map((s) => {
-                const file = changedFiles.find(
-                    (f) => f.filename === s.relevantFile,
-                );
-                if (!file) return s;
-                const validRanges = extractValidDiffLines(file.patch);
-                const snapped = snapLinesToDiff(s, validRanges);
-                if (
-                    snapped.relevantLinesStart !== s.relevantLinesStart ||
-                    snapped.relevantLinesEnd !== s.relevantLinesEnd
-                ) {
-                    this.logger.log({
-                        message: `[AGENT] Snapped lines for ${s.relevantFile}: ${s.relevantLinesStart}-${s.relevantLinesEnd} → ${snapped.relevantLinesStart}-${snapped.relevantLinesEnd}`,
-                        context: this.stageName,
-                    });
-                }
-                return snapped;
-            });
+            // A finding whose cited lines don't overlap ANY changed hunk is dropped
+            // (snapLinesToDiff returns null) rather than clamped onto an unrelated
+            // changed line — clamping was re-anchoring comments about UNCHANGED code
+            // onto the diff and shipping them as false positives.
+            const changedFilesByName = new Map(
+                changedFiles.map((f) => [f.filename, f]),
+            );
+            const validatedSuggestions = result.suggestions
+                .map((s) => {
+                    const file = changedFilesByName.get(s.relevantFile);
+                    if (!file) return s;
+                    const validRanges = extractValidDiffLines(file.patch);
+                    const snapped = snapLinesToDiff(s, validRanges);
+                    if (snapped === null) {
+                        this.logger.log({
+                            message: `[AGENT] Dropped out-of-diff suggestion for ${s.relevantFile}: lines ${s.relevantLinesStart}-${s.relevantLinesEnd} do not overlap any changed hunk`,
+                            context: this.stageName,
+                        });
+                        allDiscarded.push({
+                            ...s,
+                            priorityStatus:
+                                PriorityStatus.DISCARDED_BY_CODE_DIFF,
+                        });
+                        return null;
+                    }
+                    if (
+                        snapped.relevantLinesStart !== s.relevantLinesStart ||
+                        snapped.relevantLinesEnd !== s.relevantLinesEnd
+                    ) {
+                        this.logger.log({
+                            message: `[AGENT] Snapped lines for ${s.relevantFile}: ${s.relevantLinesStart}-${s.relevantLinesEnd} → ${snapped.relevantLinesStart}-${snapped.relevantLinesEnd}`,
+                            context: this.stageName,
+                        });
+                    }
+                    return snapped;
+                })
+                .filter((s): s is Partial<CodeSuggestion> => s !== null);
 
             // Verify/Discover removed — was hurting recall across all models.
             // Benchmark showed F1 drops of -5.7pp to -18.3pp with verify enabled.
@@ -920,7 +844,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             try {
                 const {
                     classifySeverity,
-                } = require('@libs/code-review/infrastructure/agents/llm/classify-severity');
+                } = require('@libs/code-review/infrastructure/agents/engine/classify-severity');
                 const severityMap = await classifySeverity(
                     deduped.map((s) => ({
                         relevantFile: s.relevantFile || '',
@@ -1013,7 +937,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             try {
                 const {
                     formatSuggestionContent,
-                } = require('@libs/code-review/infrastructure/agents/llm/format-suggestion-content');
+                } = require('@libs/code-review/infrastructure/agents/engine/format-suggestion-content');
                 const formatted = await formatSuggestionContent(
                     deduped.map((s) => ({
                         suggestionContent: s.suggestionContent || '',
@@ -1438,31 +1362,27 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 );
             }
 
-            // Track token usage
-            try {
-                const dedupUsage = dedupResult.usage ?? dedupResult.totalUsage;
-                if (dedupUsage) {
-                    await this.observabilityService.runInSpan(
-                        'dedup-suggestions',
-                        async () => dedupResult,
-                        {
-                            'gen_ai.usage.input_tokens':
-                                dedupUsage.inputTokens ?? 0,
-                            'gen_ai.usage.output_tokens':
-                                dedupUsage.outputTokens ?? 0,
-                            'gen_ai.usage.total_tokens':
-                                dedupUsage.totalTokens ??
-                                (dedupUsage.inputTokens ?? 0) +
-                                    (dedupUsage.outputTokens ?? 0),
-                            'gen_ai.response.model': 'internal-dedup',
-                            'gen_ai.run.name': 'code-review-dedup',
-                            'type': 'system',
-                            'prNumber': prNumber,
-                        },
-                    );
-                }
-            } catch {
-                // Observability is best-effort
+            // Track token usage — via the canonical emitter so the dedup pass'
+            // cost lands in `observability_telemetry` with the SAME schema
+            // (agentName/phase/type/gen_ai.usage.*) as the review agents.
+            const dedupUsage = dedupResult.usage ?? dedupResult.totalUsage;
+            if (dedupUsage) {
+                await this.observabilityService.recordAgentRunUsage({
+                    agentName: 'code-review',
+                    phase: 'dedup',
+                    spanName: 'dedup-suggestions',
+                    runName: 'code-review-dedup',
+                    model: 'internal-dedup',
+                    // Real billing source: the platform OpenAI-key path is a
+                    // 'system' key; the else branch runs on the org's BYOK config.
+                    isByok: !openaiKey,
+                    usage: {
+                        inputTokens: dedupUsage.inputTokens,
+                        outputTokens: dedupUsage.outputTokens,
+                        totalTokens: dedupUsage.totalTokens,
+                    },
+                    prNumber,
+                });
             }
 
             const dedupOutput =
@@ -1515,7 +1435,11 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             // Add unique suggestions as-is
             for (const idx of unique) {
-                if (Number.isInteger(idx) && idx >= 0 && idx < suggestions.length) {
+                if (
+                    Number.isInteger(idx) &&
+                    idx >= 0 &&
+                    idx < suggestions.length
+                ) {
                     indexToResult.set(idx, result.length);
                     result.push(suggestions[idx]);
                     addedIndices.add(idx);
@@ -1531,16 +1455,27 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 const keepIdx = group.keep;
                 const dupIndices = group.duplicates || [];
 
-                if (!Number.isInteger(keepIdx) || keepIdx < 0 || keepIdx >= suggestions.length) {
+                if (
+                    !Number.isInteger(keepIdx) ||
+                    keepIdx < 0 ||
+                    keepIdx >= suggestions.length
+                ) {
                     // Layer 2: keep is invalid — preserve valid duplicates as independent results
                     for (const dupIdx of dupIndices) {
                         classifiedIndices.add(dupIdx);
-                        if (Number.isInteger(dupIdx) && dupIdx >= 0 && dupIdx < suggestions.length && !addedIndices.has(dupIdx)) {
+                        if (
+                            Number.isInteger(dupIdx) &&
+                            dupIdx >= 0 &&
+                            dupIdx < suggestions.length &&
+                            !addedIndices.has(dupIdx)
+                        ) {
                             indexToResult.set(dupIdx, result.length);
                             result.push(suggestions[dupIdx]);
                             addedIndices.add(dupIdx);
                             uniqueSuggestions.push(
-                                this.summarizeDedupSuggestion(suggestions[dupIdx]),
+                                this.summarizeDedupSuggestion(
+                                    suggestions[dupIdx],
+                                ),
                             );
                         }
                     }
@@ -1554,7 +1489,11 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     if (existingIdx !== undefined) {
                         const locations: string[] = [];
                         for (const dupIdx of dupIndices) {
-                            if (Number.isInteger(dupIdx) && dupIdx >= 0 && dupIdx < suggestions.length) {
+                            if (
+                                Number.isInteger(dupIdx) &&
+                                dupIdx >= 0 &&
+                                dupIdx < suggestions.length
+                            ) {
                                 classifiedIndices.add(dupIdx);
                                 const dup = suggestions[dupIdx];
                                 const loc = `${dup.relevantFile}:${dup.relevantLinesStart}-${dup.relevantLinesEnd}`;
@@ -1566,12 +1505,18 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                         }
                         if (locations.length > 0) {
                             const existing = result[existingIdx];
-                            const locList = locations.map((l) => `- \`${l}\``).join('\n');
+                            const locList = locations
+                                .map((l) => `- \`${l}\``)
+                                .join('\n');
                             existing.suggestionContent = `${existing.suggestionContent}\n\n**Also found in:**\n${locList}`;
                         }
                     } else {
                         for (const dupIdx of dupIndices) {
-                            if (Number.isInteger(dupIdx) && dupIdx >= 0 && dupIdx < suggestions.length) {
+                            if (
+                                Number.isInteger(dupIdx) &&
+                                dupIdx >= 0 &&
+                                dupIdx < suggestions.length
+                            ) {
                                 classifiedIndices.add(dupIdx);
                             }
                         }
@@ -1587,7 +1532,11 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 // Collect locations from duplicates that are in DIFFERENT locations
                 const otherLocations: string[] = [];
                 for (const dupIdx of dupIndices) {
-                    if (!Number.isInteger(dupIdx) || dupIdx < 0 || dupIdx >= suggestions.length) {
+                    if (
+                        !Number.isInteger(dupIdx) ||
+                        dupIdx < 0 ||
+                        dupIdx >= suggestions.length
+                    ) {
                         continue;
                     }
                     // Content guard: only honor the model's merge when the two
@@ -1606,7 +1555,9 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                             indexToResult.set(dupIdx, result.length);
                             result.push(suggestions[dupIdx]);
                             uniqueSuggestions.push(
-                                this.summarizeDedupSuggestion(suggestions[dupIdx]),
+                                this.summarizeDedupSuggestion(
+                                    suggestions[dupIdx],
+                                ),
                             );
                         }
                         continue;
@@ -1681,6 +1632,18 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             };
         } catch (error) {
             const noModel = error instanceof NoStructuredFallbackModelError;
+            // Fail loud outside production. An unexpected error here (e.g. the
+            // `googleKey` ReferenceError that shipped on a feature branch) is a
+            // programming bug — left to the graceful 'failed-keep-all' path it
+            // ships silently as duplicate comments. In dev/CI/test we re-throw
+            // so it surfaces at PR time; the operational "no model available"
+            // case (noModel) stays graceful everywhere.
+            const isProduction =
+                (process.env.API_NODE_ENV || process.env.NODE_ENV) ===
+                'production';
+            if (!noModel && !isProduction) {
+                throw error;
+            }
             if (noModel) {
                 this.logger.warn({
                     message: `[DEDUP] PR#${prNumber}: No model available for dedup (no Google key and no BYOK), keeping all ${suggestions.length} suggestions`,
@@ -1747,9 +1710,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 event,
                 label,
                 agentToolCalls,
-            ).catch(() => {
-                // Best effort — don't fail the review if timeline write fails
-            });
+            );
         };
     }
 
@@ -1895,9 +1856,6 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 coverage: event.coverage,
                 verification: event.verification,
                 anomalies: event.anomalies,
-                // Error details surfaced so the UI (or a copy-paste into a
-                // bug report) has the failure reason without needing docker
-                // logs access.
                 ...(event.status === 'error' && {
                     error: {
                         name: event.errorName,

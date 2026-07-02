@@ -5,7 +5,6 @@
  * cloud). Keep additions in lockstep with the YAML.
  */
 export const FEATURE_KEYS = {
-    agentReview: 'agent-review',
     githubEnterpriseServerPat: 'github-enterprise-server-pat',
 } as const;
 

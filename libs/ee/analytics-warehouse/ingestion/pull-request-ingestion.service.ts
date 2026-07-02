@@ -632,6 +632,7 @@ export class PullRequestIngestionService {
         // root cause of ~33k PRs missing from the first prod backfill
         // (April 2026).
         const stripNulls = (s: string): string =>
+            // eslint-disable-next-line no-control-regex -- intentional: Postgres text/jsonb reject U+0000, so strip it
             s.replace(/\u0000/g, '');
         const message = stripNulls(
             input.err instanceof Error

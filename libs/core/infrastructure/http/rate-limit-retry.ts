@@ -21,7 +21,7 @@
  * agnostic.
  */
 
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 
 const logger = createLogger('rate-limit-retry');
 

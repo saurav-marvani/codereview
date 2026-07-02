@@ -346,9 +346,13 @@ jobs:
     benchmark-engine:
         name: Tier-0 model benchmark
         needs: [ build_push_and_open_pr, detect-engine-change ]
-        # Only when the engine actually changed AND the image built/pushed OK
-        # (so QA will roll out to the SHA the benchmark's settle gate waits for).
-        if: needs.build_push_and_open_pr.result == 'success' && needs.detect-engine-change.outputs.engine == 'true'
+        # DISABLED: superseded by the replay eval suite (code-review-evals.yml),
+        # which runs the same engine + tier-0 models via deterministic tool replay
+        # without a deploy. The live benchmark stays callable via workflow_dispatch
+        # as a fallback; this auto-trigger is gated off (set back to the condition
+        # below to re-enable).
+        # if: needs.build_push_and_open_pr.result == 'success' && needs.detect-engine-change.outputs.engine == 'true'
+        if: false
         permissions:
             contents: read
         uses: ./.github/workflows/code-review-model-benchmark.yml

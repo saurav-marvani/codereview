@@ -4,7 +4,7 @@ import {
     ReasoningConfig,
 } from '@kodus/kodus-common/llm';
 import { ProviderService } from '@libs/core/infrastructure/services/providers/provider.service';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import axios from 'axios';
 

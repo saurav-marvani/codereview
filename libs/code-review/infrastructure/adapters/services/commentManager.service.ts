@@ -41,15 +41,15 @@ import {
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
-import { byokToVercelModel } from '@libs/code-review/infrastructure/agents/llm/byok-to-vercel';
-import { tracedGenerateText } from '@libs/code-review/infrastructure/agents/llm/agent-loop';
+import { byokToVercelModel } from '@libs/llm/byok-to-vercel';
+import { tracedGenerateText } from '@libs/llm/llm-call';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 import {
     getTranslationsForLanguageByCategory,
     TranslationsCategory,
 } from '@libs/common/utils/translations/translations';
 import { prompt_repeated_suggestion_clustering_system } from '@libs/common/utils/langchainCommon/prompts/repeatedCodeReviewSuggestionClustering';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
 import { PriorityStatus } from '@libs/platformData/domain/pullRequests/enums/priorityStatus.enum';
 import { estimateTokens, tokensToChars } from './utils/token-estimator';
@@ -109,35 +109,36 @@ export class CommentManagerService implements ICommentManagerService {
             metadata,
         } = params;
 
-        const { result } = await this.observabilityService.runLLMInSpan<string>(
-            {
-                spanName,
-                runName,
-                attrs,
-                byokConfig: byokConfig ?? undefined,
-                exec: async () => {
-                    const model = byokToVercelModel(
-                        byokConfig ?? undefined,
-                        'main',
-                        {},
-                        'gemini-2.5-flash',
-                    );
-                    const res: any = await tracedGenerateText({
-                        model: model as any,
-                        system: systemPrompt,
-                        prompt: userPrompt,
-                        temperature: byokConfig?.main?.temperature ?? 0,
-                        experimental_telemetry: buildLangfuseTelemetry(
-                            runName,
-                            metadata,
-                        ),
-                    });
-                    return (res?.text as string) ?? '';
-                },
+        // This is an AI SDK call (tracedGenerateText), so use runAiSdkLLMInSpan —
+        // it reads token usage from result.usage. runLLMInSpan is the
+        // LangChain-callback path (TokenTrackingHandler) and can't see AI SDK
+        // usage, which is why summary spans were recorded with 0 tokens.
+        const result = await this.observabilityService.runAiSdkLLMInSpan<any>({
+            spanName,
+            runName,
+            model: byokConfig?.main?.model ?? 'gemini-2.5-flash',
+            attrs,
+            exec: async () => {
+                const model = byokToVercelModel(
+                    byokConfig ?? undefined,
+                    'main',
+                    {},
+                    'gemini-2.5-flash',
+                );
+                return await tracedGenerateText({
+                    model: model as any,
+                    system: systemPrompt,
+                    prompt: userPrompt,
+                    temperature: byokConfig?.main?.temperature ?? 0,
+                    experimental_telemetry: buildLangfuseTelemetry(
+                        runName,
+                        metadata,
+                    ),
+                });
             },
-        );
+        });
 
-        return result;
+        return (result?.text as string) ?? '';
     }
 
     async generateSummaryPR(
@@ -173,6 +174,23 @@ export class CommentManagerService implements ICommentManagerService {
                 await this.permissionValidationService.getBYOKConfig(
                     organizationAndTeamData,
                 );
+        }
+
+        // Resolve the org's BYOK when the caller didn't pass one (the review
+        // flow passes codeReviewConfig.byokConfig, which can be null even when
+        // the org has BYOK). Without this, the summary falls to the internal
+        // default provider — which hard-fails when that provider is blocked
+        // (e.g. "project denied access") — while the review agents, which
+        // resolve BYOK themselves, keep working. Fetch the same BYOK they use.
+        if (!byokConfigValue) {
+            try {
+                byokConfigValue =
+                    (await this.permissionValidationService.getBYOKConfig(
+                        organizationAndTeamData,
+                    )) ?? null;
+            } catch {
+                byokConfigValue = null;
+            }
         }
 
         const maxRetries = 2;
@@ -791,6 +809,7 @@ You must always respond in ${languageResultPrompt}.`;
         codeReviewConfig?: CodeReviewConfig,
         language?: string,
         platformType?: PlatformType,
+        lineComments?: CommentResult[],
     ): Promise<string> {
         const placeholderContext = await this.getTemplateContext(
             changedFiles,
@@ -799,6 +818,7 @@ You must always respond in ${languageResultPrompt}.`;
             codeReviewConfig,
             language,
             platformType,
+            lineComments,
         );
 
         const processedBody = await this.messageProcessor.processTemplate(
@@ -2450,6 +2470,7 @@ ${reviewOptions}
         codeReviewConfig?: CodeReviewConfig,
         language?: string,
         platformType?: PlatformType,
+        lineComments?: CommentResult[],
     ): Promise<PlaceholderContext> {
         return {
             changedFiles,
@@ -2458,6 +2479,7 @@ ${reviewOptions}
             codeReviewConfig,
             language,
             platformType,
+            lineComments,
         };
     }
 
@@ -2547,4 +2569,6 @@ ${reviewOptions}
 
         return chunks;
     }
+
+
 }

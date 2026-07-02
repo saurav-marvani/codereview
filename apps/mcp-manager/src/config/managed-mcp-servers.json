@@ -2,6 +2,7 @@
     {
         "id": "context7-default",
         "name": "Context7",
+        "category": "documentation",
         "baseUrl": "https://context7-kodus.up.railway.app/mcp",
         "protocol": "http",
         "logoUrl": "https://avatars.githubusercontent.com/u/74989412?s=48&v=4",
@@ -11,6 +12,7 @@
     {
         "id": "kodus-docs-default",
         "name": "Kodus Docs",
+        "category": "documentation",
         "baseUrl": "https://docs.kodus.io/mcp",
         "protocol": "http",
         "logoUrl": "https://kodus.io/wp-content/uploads/2025/11/Kodus-AI-Logo-6.png",
@@ -20,6 +22,7 @@
     {
         "id": "kodus-issues-default",
         "name": "Git Issues",
+        "category": "task-management",
         "baseUrl": "/mcp/issues",
         "protocol": "http",
         "logoUrl": "https://kodus.io/wp-content/uploads/2025/11/Kodus-AI-Logo-6.png",
@@ -29,6 +32,7 @@
     {
         "id": "sentry-default",
         "name": "Sentry",
+        "category": "observability",
         "baseUrl": "https://mcp.sentry.dev/mcp",
         "protocol": "http",
         "logoUrl": "https://kodus.io/wp-content/uploads/2025/12/sentry-glyph-light-400x367-1.svg",
@@ -46,6 +50,7 @@
     {
         "id": "exa-default",
         "name": "Exa Search",
+        "category": "search",
         "baseUrl": "https://mcp.exa.ai/mcp?tools=web_search_exa,get_code_context_exa,crawling_exa,company_research_exa,linkedin_search_exa,deep_researcher_start,deep_researcher_check",
         "protocol": "http",
         "logoUrl": "https://exa.ai/images/favicon-32x32.png",
@@ -55,6 +60,7 @@
     {
         "id": "kodus-osv-default",
         "name": "Kodus OSV",
+        "category": "security",
         "baseUrl": "https://mcp-osv.kodus.io/mcp",
         "protocol": "http",
         "logoUrl": "https://kodus.io/wp-content/uploads/2025/11/Kodus-AI-Logo-6.png",
@@ -64,6 +70,7 @@
     {
         "id": "linear-default",
         "name": "Linear",
+        "category": "task-management",
         "baseUrl": "https://mcp.linear.app/mcp",
         "protocol": "http",
         "logoUrl": "https://static.linear.app/client/assets/newAppIcon-256x256-full.NvjGn2GI.png",
@@ -94,6 +101,7 @@
     {
         "id": "atlassian-rovo-default",
         "name": "Atlassian Rovo",
+        "category": "task-management",
         "baseUrl": "https://mcp.atlassian.com/v1/mcp",
         "protocol": "http",
         "logoUrl": "https://avatars.githubusercontent.com/u/21215?s=200&v=4",
@@ -129,6 +137,7 @@
     {
         "id": "notion-default",
         "name": "Notion",
+        "category": "task-management",
         "baseUrl": "https://mcp.notion.com/mcp",
         "protocol": "http",
         "logoUrl": "https://www.notion.so/images/favicon.ico",
@@ -146,6 +155,7 @@
     {
         "id": "fireflies-default",
         "name": "Fireflies",
+        "category": "meetings",
         "baseUrl": "https://api.fireflies.ai/mcp",
         "protocol": "http",
         "logoUrl": "https://fireflies.ai/favicon.ico",

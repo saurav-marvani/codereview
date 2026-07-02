@@ -119,6 +119,7 @@ describe('MessageTemplateProcessor', () => {
                     '@changeSummary',
                     '@reviewOptions',
                     '@reviewCadence',
+                    '@consolidatedLLMPrompt',
                     '@reviewScope',
                 ]),
             );

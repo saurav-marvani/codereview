@@ -33,7 +33,7 @@ jest.mock('@libs/common/utils/crypto', () => ({
     decrypt: (v: string) => v,
 }));
 
-import { byokToVercelModel } from '@libs/code-review/infrastructure/agents/llm/byok-to-vercel';
+import { byokToVercelModel } from '@libs/llm/byok-to-vercel';
 import { TestByokConnectionUseCase } from '@libs/organization/application/use-cases/organizationParameters/test-byok-connection.use-case';
 import { generateText, tool } from 'ai';
 import { z } from 'zod';

@@ -1,0 +1,89 @@
+# Flat (yarn-like) node_modules so undeclared "phantom" deps inherited from
+# the yarn1 era keep resolving. Was in .npmrc as `node-linker=hoisted`, which
+# pnpm 11 no longer reads (only auth/registry stay in .npmrc) — moved here.
+nodeLinker: hoisted
+
+# The dev container's entrypoint runs `pnpm install --frozen-lockfile` with no
+# TTY; when the node_modules layout must be recreated pnpm otherwise aborts
+# (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY). Allow the purge unattended.
+confirmModulesPurge: false
+
+allowBuilds:
+  '@datadog/pprof': false
+  '@nestjs/core': false
+  '@scarf/scarf': false
+  '@sentry-internal/node-cpu-profiler': false
+  '@sentry/cli': false
+  '@sentry/node-cpu-profiler': false
+  '@swc/core': false
+  '@vscode/ripgrep': false
+  esbuild: false
+  protobufjs: false
+  sharp: false
+  unrs-resolver: false
+
+overrides:
+  flatted: '^3.4.2'
+  moment: '^2.29.4'
+  xml2js: '>=0.5.0'
+  axios: '>=1.17.0'
+  qs: '>=6.15.2'
+  diff: '>=8.0.3'
+  '@isaacs/brace-expansion': '>=5.0.1'
+  'minimatch@>=4 <10.2.1': '^10.2.5'
+  rollup: '>=2.80.0'
+  tar: '>=7.5.11'
+  hono: '>=4.12.25'
+  fastify: '>=5.8.5'
+  file-type: '>=22.0.1'
+  undici: '>=6.24.0'
+  yauzl: '>=3.2.1'
+
+minimumReleaseAgeExclude:
+  - e2b@2.30.4 || 2.30.5
+  - posthog-node@5.38.2 || 5.38.3 || 5.38.4
+  - '@langchain/openai@1.5.2 || 1.5.3'
+  - '@ai-sdk/gateway@3.0.134'
+  - '@anthropic-ai/sdk@0.104.2'
+  - '@nestjs/typeorm@11.0.2'
+  - '@sentry/core@10.60.0'
+  - '@sentry/nestjs@10.60.0'
+  - '@sentry/node-core@10.60.0'
+  - '@sentry/node@10.60.0'
+  - '@sentry/opentelemetry@10.60.0'
+  - '@sentry/profiling-node@10.60.0'
+  - '@sentry/server-utils@10.60.0'
+  - '@typescript-eslint/eslint-plugin@8.61.1'
+  - '@typescript-eslint/parser@8.61.1'
+  - '@typescript-eslint/project-service@8.61.1'
+  - '@typescript-eslint/scope-manager@8.61.1'
+  - '@typescript-eslint/tsconfig-utils@8.61.1'
+  - '@typescript-eslint/type-utils@8.61.1'
+  - '@typescript-eslint/types@8.61.1'
+  - '@typescript-eslint/typescript-estree@8.61.1'
+  - '@typescript-eslint/utils@8.61.1'
+  - '@typescript-eslint/visitor-keys@8.61.1'
+  - ai@6.0.209
+  - typescript-eslint@8.61.1
+  - '@morphllm/morphsdk@0.2.183'
+  - '@posthog/core@1.37.0 || 1.37.1'
+  - '@posthog/types@1.391.0'
+  - '@types/ramda@0.32.0'
+  - uuid@14.0.1
+  - '@ai-sdk/amazon-bedrock@4.0.120 || 4.0.121'
+  - '@ai-sdk/google-vertex@4.0.148 || 4.0.149'
+  - '@ai-sdk/openai@3.0.74'
+  - smol-toml@1.7.0
+  - ts-loader@9.6.2
+  - '@langchain/anthropic@1.5.1'
+  - '@langchain/core@1.2.1'
+  - '@langfuse/client@5.6.0 || 5.7.0'
+  - '@langfuse/core@5.6.0 || 5.7.0'
+  - '@langfuse/tracing@5.6.0 || 5.7.0'
+  - '@react-email/ui@6.6.4'
+  - react-email@6.6.4
+  - '@langfuse/langchain@5.6.0 || 5.7.0'
+  - '@langfuse/otel@5.6.0 || 5.7.0'
+  - '@ai-sdk/anthropic@3.0.86 || 3.0.91'
+  - '@ai-sdk/provider-utils@4.0.34'
+  - '@ai-sdk/provider@3.0.13'

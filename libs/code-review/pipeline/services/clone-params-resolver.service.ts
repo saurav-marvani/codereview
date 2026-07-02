@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { createLogger } from '@kodus/flow';
+import { createLogger } from '@libs/core/log/logger';
 import { PlatformType } from '@libs/core/domain/enums';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 import { CliReviewPipelineContext } from '@libs/cli-review/pipeline/context/cli-review-pipeline.context';
@@ -25,7 +25,11 @@ export function parseGitRemoteUrl(
     const extract = (path: string) => {
         const fullName = path.replace(/\.git$/, '').replace(/\/+$/, '');
         const name = fullName.split('/').pop() || '';
-        if (!fullName || !name) return null;
+
+        if (!fullName || !name) {
+            return null;
+        }
+
         return { fullName, name };
     };
 
