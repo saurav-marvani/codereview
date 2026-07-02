@@ -347,6 +347,8 @@
 | --- | --- | --- | --- | --- |
 | `API_CRON_CLASSIFY_ORPHANED_SESSIONS` | – | cron | ⚙️ Both | Reclassifies orphaned (no-PR) review sessions every 15 minutes. Cloud-only feature. |
 | `API_CRON_SSO_TEST_SESSION_CLEANUP` | – | cron | ☁️ Cloud | Daily cleanup of expired SSO test sessions (1 AM UTC). |
+| `API_CRON_STALE_REVIEW_WATCHDOG` | – | cron | ⚙️ Both | Reaps code review executions stuck IN_PROGRESS (process died mid-review) and finalizes their orphaned platform check runs. |
+| `API_STALE_REVIEW_TIMEOUT_MINUTES` | – | number | ⚙️ Both | Age (minutes) after which an IN_PROGRESS review execution is considered dead. Must exceed the job abort timeout (105min) and the queue inbox claim timeout (150min) so the watchdog never kills a review that the queue layer can still recover. |
 | `WORKFLOW_QUEUE_CHECK_IMPLEMENTATION_PREFETCH` | – | number | ⚙️ Both (opt-in) | Per-handler prefetch (in-flight messages) for the check-implementation workflow handler. |
 | `WORKFLOW_QUEUE_CHECK_IMPLEMENTATION_TIMEOUT_MS` | – | number | ⚙️ Both (opt-in) | Hard timeout (ms) for a check-implementation handler invocation. |
 | `WORKFLOW_QUEUE_FEEDBACK_PREFETCH` | – | number | ⚙️ Both (opt-in) | Per-handler prefetch for the feedback workflow handler. |
