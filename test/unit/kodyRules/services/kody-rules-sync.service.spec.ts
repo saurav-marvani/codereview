@@ -1,4 +1,5 @@
 import { KodyRulesSyncService } from '@libs/kodyRules/infrastructure/adapters/services/kodyRulesSync.service';
+import { KodyRulesStatus } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 
 jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
@@ -1232,5 +1233,88 @@ describe('KodyRulesSyncService.getConfiguredDirectories', () => {
         );
 
         expect(dirs).toEqual([]);
+    });
+});
+
+describe('KodyRulesSyncService.resolveSyncDefaultStatus (IDE-sync knowledge-approval gate)', () => {
+    const organizationAndTeamData = { organizationId: 'org-1', teamId: 'team-1' };
+
+    // codeBaseConfigService is the 12th (last) constructor arg. Everything
+    // before it is a stub — this helper only touches getSimpleConfig.
+    function buildService(getSimpleConfig: jest.Mock) {
+        const codeBaseConfigService = { getSimpleConfig };
+        const service = new KodyRulesSyncService(
+            {} as any, // kodyRulesService
+            {} as any, // parametersService
+            {} as any, // contextResolutionService
+            {} as any, // codeManagementService
+            {} as any, // updateOrCreateCodeReviewParameterUseCase
+            {} as any, // createOrUpdateKodyRulesUseCase
+            {} as any, // deleteRuleInOrganizationByIdKodyRulesUseCase
+            {} as any, // promptRunnerService
+            {} as any, // permissionValidationService
+            {} as any, // observabilityService
+            {} as any, // contextReferenceDetectionService
+            codeBaseConfigService as any,
+        );
+        return { service, codeBaseConfigService };
+    }
+
+    it('returns PENDING when kodyKnowledgeApproval is enabled (gate on → IDE rules await review)', async () => {
+        const getSimpleConfig = jest.fn().mockResolvedValue({
+            kodyKnowledgeApproval: { enabled: true },
+        });
+        const { service } = buildService(getSimpleConfig);
+
+        const status = await (service as any).resolveSyncDefaultStatus(
+            organizationAndTeamData,
+            'repo-1',
+        );
+
+        expect(status).toBe(KodyRulesStatus.PENDING);
+        // Resolves at the repository level (no directoryId).
+        expect(getSimpleConfig).toHaveBeenCalledWith(organizationAndTeamData, {
+            repositoryId: 'repo-1',
+        });
+    });
+
+    it('returns ACTIVE when kodyKnowledgeApproval is disabled (gate off → today\'s behavior)', async () => {
+        const getSimpleConfig = jest.fn().mockResolvedValue({
+            kodyKnowledgeApproval: { enabled: false },
+        });
+        const { service } = buildService(getSimpleConfig);
+
+        const status = await (service as any).resolveSyncDefaultStatus(
+            organizationAndTeamData,
+            'repo-1',
+        );
+
+        expect(status).toBe(KodyRulesStatus.ACTIVE);
+    });
+
+    it('returns ACTIVE when kodyKnowledgeApproval config is absent', async () => {
+        const getSimpleConfig = jest.fn().mockResolvedValue({});
+        const { service } = buildService(getSimpleConfig);
+
+        const status = await (service as any).resolveSyncDefaultStatus(
+            organizationAndTeamData,
+            'repo-1',
+        );
+
+        expect(status).toBe(KodyRulesStatus.ACTIVE);
+    });
+
+    it('fails safe to ACTIVE when config resolution throws (never blocks the sync)', async () => {
+        const getSimpleConfig = jest
+            .fn()
+            .mockRejectedValue(new Error('config service down'));
+        const { service } = buildService(getSimpleConfig);
+
+        const status = await (service as any).resolveSyncDefaultStatus(
+            organizationAndTeamData,
+            'repo-1',
+        );
+
+        expect(status).toBe(KodyRulesStatus.ACTIVE);
     });
 });
