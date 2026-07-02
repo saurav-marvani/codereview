@@ -1,6 +1,9 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-import { mongoMigrationClient } from '../../mongo/mongo-migration-client';
+import {
+    mongoMigrationClient,
+    mongoMigrationsSkipped,
+} from '../../mongo/mongo-migration-client';
 import {
     dropTokenUsageIndexes,
     ensureTokenUsageIndexes,
@@ -30,6 +33,12 @@ export class TokenUsageTuMongo2026070200000000 implements MigrationInterface {
     transaction = false;
 
     public async up(_queryRunner: QueryRunner): Promise<void> {
+        if (mongoMigrationsSkipped()) {
+            console.log(
+                '[TokenUsageTuMongo] skipped (SKIP_MONGO_MIGRATIONS=true)',
+            );
+            return;
+        }
         const log = (m: string) => console.log(m);
         const { db, close } = await mongoMigrationClient();
         try {

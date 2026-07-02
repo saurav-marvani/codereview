@@ -36,6 +36,18 @@ export function mongoDatabaseName(): string {
     return process.env.API_MG_DB_DATABASE ?? 'kodus';
 }
 
+/**
+ * True when a Mongo migration should no-op. Set `SKIP_MONGO_MIGRATIONS=true` in
+ * contexts that run `migration:run` (the TypeORM/Postgres runner) but CANNOT
+ * reach Mongo — notably CI, where the step runs on the host runner and the Mongo
+ * service is only resolvable inside the docker network (`getaddrinfo EAI_AGAIN`).
+ * Prod / self-hosted boot leaves it unset: there `migration:run` executes inside
+ * the API container, which reaches Mongo, so the migration runs for real.
+ */
+export function mongoMigrationsSkipped(): boolean {
+    return process.env.SKIP_MONGO_MIGRATIONS === 'true';
+}
+
 export type MongoMigrationHandle = {
     client: MongoClient;
     db: Db;

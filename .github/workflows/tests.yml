@@ -117,7 +117,11 @@ jobs:
 
             - name: Run migrations
               if: github.event.pull_request.head.repo.fork == false
-              run: pnpm run migration:run
+              # Mongo lives on the docker network (db_mongodb), unreachable from
+              # this host step — skip the Mongo migrations here (their modules are
+              # covered by mongo-migrations.integration.spec). Postgres migrations
+              # run normally; prod runs Mongo migrations for real on boot.
+              run: SKIP_MONGO_MIGRATIONS=true pnpm run migration:run
 
             - name: Run tests
               run: API_NODE_ENV=test pnpm run test

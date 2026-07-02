@@ -1,6 +1,9 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-import { mongoMigrationClient } from '../../mongo/mongo-migration-client';
+import {
+    mongoMigrationClient,
+    mongoMigrationsSkipped,
+} from '../../mongo/mongo-migration-client';
 import { migrateKodyRulesOriginRequestType } from '../../mongo/kody-rules/migrate-origin-request-type';
 
 /**
@@ -23,6 +26,12 @@ export class KodyRulesOriginRequestTypeMongo2026070200000001
     transaction = false;
 
     public async up(_queryRunner: QueryRunner): Promise<void> {
+        if (mongoMigrationsSkipped()) {
+            console.log(
+                '[KodyRulesOriginRequestTypeMongo] skipped (SKIP_MONGO_MIGRATIONS=true)',
+            );
+            return;
+        }
         const { db, close } = await mongoMigrationClient();
         try {
             await migrateKodyRulesOriginRequestType(db, {
