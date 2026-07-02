@@ -1,4 +1,4 @@
-import { createLogger } from '@libs/core/log/logger';
+import { createLogger } from '@kodus/flow';
 import { AutomationStatus } from '@libs/automation/domain/automation/enum/automation-status';
 import {
     AUTOMATION_EXECUTION_SERVICE_TOKEN,

@@ -13,6 +13,8 @@ import { ParametersModule } from '@libs/organization/modules/parameters.module';
 import { TeamModule } from '@libs/organization/modules/team.module';
 import { CliReviewModule } from '@libs/cli-review/cli-review.module';
 import { PlatformModule } from '@libs/platform/modules/platform.module';
+import { GithubModule } from '@libs/platform/modules/github.module';
+import { ForgejoModule } from '@libs/platform/modules/forgejo.module';
 import { forwardRef, Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 
@@ -39,6 +41,8 @@ import { SSOModule } from '@libs/ee/sso/sso.module';
         PullRequestsModule,
         CodeReviewConfigurationModule,
         PlatformModule,
+        GithubModule,
+        ForgejoModule,
         PullRequestMessagesModule,
         forwardRef(() => KodyRulesModule),
         forwardRef(() => CodebaseModule),

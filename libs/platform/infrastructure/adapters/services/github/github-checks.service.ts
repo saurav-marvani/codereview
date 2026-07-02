@@ -71,7 +71,22 @@ export class GithubChecksService implements IChecksAdapter {
                 per_page: 1,
             });
 
-            return response.data.check_runs?.[0]?.id ?? null;
+            const checkRun = response.data.check_runs?.[0];
+
+            if (!checkRun) {
+                return null;
+            }
+
+            // A completed check run cannot be reopened: PATCHing status back
+            // to in_progress returns 200 but GitHub silently keeps
+            // status=completed/conclusion. Only queued/in_progress runs are
+            // reusable — for completed ones the caller creates a fresh run
+            // with the same name, which the PR UI surfaces as the latest.
+            if (checkRun.status === GithubCheckStatus.COMPLETED) {
+                return null;
+            }
+
+            return checkRun.id;
         } catch (error) {
             this.logger.warn({
                 message: `Failed to look up existing GitHub Check Run`,

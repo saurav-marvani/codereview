@@ -9,7 +9,7 @@ import { DistributedLockService } from '@libs/core/workflow/infrastructure/distr
 import { Test, TestingModule } from '@nestjs/testing';
 import { StaleReviewWatchdogCronProvider } from './staleReviewWatchdog.cron';
 
-jest.mock('@libs/core/log/logger', () => ({
+jest.mock('@kodus/flow', () => ({
     createLogger: jest.fn().mockReturnValue({
         log: jest.fn(),
         warn: jest.fn(),
