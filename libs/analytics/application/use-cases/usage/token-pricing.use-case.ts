@@ -128,15 +128,29 @@ export class TokenPricingUseCase {
                 typeof entry?.input_cost_per_token_above_200k_tokens ===
                 'number'
             ) {
-                out.set(this.canonicalName(key), LITELLM_TIER_THRESHOLD_TOKENS);
+                for (const name of this.canonicalNames(key)) {
+                    out.set(name, LITELLM_TIER_THRESHOLD_TOKENS);
+                }
             }
         }
         return out;
     }
 
-    /** Last id segment, mirroring deriveTu in token-usage-tu.ts. */
-    private canonicalName(key: string): string {
-        return key.split('/').pop()!.split(':').pop()!;
+    /**
+     * Every form a catalog key can appear as in `attributes.tu.model`, so the
+     * read-time tier `$switch` matches however the id was stored.
+     *
+     * The write path (deriveTu) stores `gen_ai.response.model.split(':').pop()`
+     * — it strips a `provider:` prefix but KEEPS a `provider/` one. So a stored
+     * id may be the colon-stripped key (`vertex_ai/gemini-2.5-pro`) OR the fully
+     * bare last segment (`gemini-2.5-pro`). Emitting only the bare form (as a
+     * previous version did) missed slash-prefixed ids and under-reported their
+     * tiered cost — so emit BOTH.
+     */
+    private canonicalNames(key: string): string[] {
+        const colonStripped = key.split(':').pop()!;
+        const bare = colonStripped.split('/').pop()!;
+        return colonStripped === bare ? [colonStripped] : [colonStripped, bare];
     }
 
     async getCatalog(): Promise<Record<string, LiteLLMModel>> {

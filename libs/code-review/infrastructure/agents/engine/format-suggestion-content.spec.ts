@@ -22,8 +22,7 @@ import { formatSuggestionContent } from '@libs/code-review/infrastructure/agents
 
 describe('formatSuggestionContent — prompt composition', () => {
     const suggestion = {
-        suggestionContent:
-            'WHAT: x. WHY: y. HOW: z.',
+        suggestionContent: 'WHAT: x. WHY: y. HOW: z.',
         existingCode: 'a',
         improvedCode: 'b',
         relevantFile: 'src/foo.ts',
@@ -35,11 +34,6 @@ describe('formatSuggestionContent — prompt composition', () => {
         mockGenerateText.mockResolvedValue({
             text: '```json\n[{"index": 0, "suggestionContent": "ok"}]\n```',
         });
-        process.env.API_GOOGLE_AI_API_KEY = 'fake-google-key';
-    });
-
-    afterEach(() => {
-        delete process.env.API_GOOGLE_AI_API_KEY;
     });
 
     const captureLastPrompt = (): string => {

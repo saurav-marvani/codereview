@@ -366,7 +366,10 @@ export class AutomationExecutionService implements IAutomationExecutionService {
                 return 0;
             }
 
-            await Promise.all(
+            // allSettled, not all: these stage-log updates are independent, so
+            // one failing update must not reject the whole batch and mask the
+            // progress of the others.
+            const results = await Promise.allSettled(
                 inProgressLogs.map((log) =>
                     this.codeReviewExecutionService.updateById(log.uuid, {
                         status,
@@ -375,6 +378,14 @@ export class AutomationExecutionService implements IAutomationExecutionService {
                     } as any),
                 ),
             );
+            const failed = results.filter((r) => r.status === 'rejected');
+            if (failed.length) {
+                this.logger.warn({
+                    message: `finalizeInProgressStageLogs: ${failed.length}/${inProgressLogs.length} stage-log updates failed`,
+                    context: AutomationExecutionService.name,
+                    metadata: { executionUuid, status },
+                });
+            }
 
             return inProgressLogs.length;
         } catch (error) {

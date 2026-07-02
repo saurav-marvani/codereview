@@ -1,9 +1,8 @@
 import { createLogger } from '@libs/core/log/logger';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { BYOKConfig } from '@kodus/kodus-common/llm';
-import { getInternalModel } from '@libs/llm/byok-to-vercel';
 import { tracedGenerateText as generateText } from '@libs/llm/llm-call';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
+import { resolveSecondaryPassModel } from './secondary-pass-model';
 
 const logger = createLogger('SuggestionFormatter');
 
@@ -41,26 +40,11 @@ export async function formatSuggestionContent(
 ): Promise<Map<number, FormattedSuggestion>> {
     if (suggestions.length === 0) return new Map();
 
-    // Resolve model in the same order as classify-severity / dedup:
-    //   1. Cloud default: Google AI key → gemini-3-flash-preview (fast classifier)
-    //   2. BYOK / self-hosted env: delegate to getInternalModel, which
-    //      internally tries the client's BYOK config first and then falls back
-    //      to `API_LLM_PROVIDER_MODEL` + `API_OPEN_AI_API_KEY` (self-hosted).
-    //   3. If neither is configured, getInternalModel returns null and we skip
-    //      formatting (comments still ship, just without the natural-prose
-    //      polish).
-    const googleKey =
-        process.env.API_GOOGLE_AI_API_KEY ||
-        process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-
-    let model: any;
-    if (googleKey) {
-        model = createGoogleGenerativeAI({ apiKey: googleKey })(
-            'gemini-3-flash-preview',
-        );
-    } else {
-        model = getInternalModel(options?.byokConfig);
-    }
+    // Secondary pass: cheap, consistent platform model (gpt-5.4-mini) first,
+    // BYOK only as a self-hosted fallback — see resolveSecondaryPassModel. Null
+    // when nothing is configured → we skip formatting (comments still ship,
+    // minus the prose polish).
+    const model = resolveSecondaryPassModel(options?.byokConfig);
 
     if (!model) {
         logger.warn({
@@ -77,7 +61,9 @@ export async function formatSuggestionContent(
     let langLabel: string | null = null;
     if (options?.languageResultPrompt) {
         try {
-            langLabel = displayNames.of(options.languageResultPrompt) || options.languageResultPrompt;
+            langLabel =
+                displayNames.of(options.languageResultPrompt) ||
+                options.languageResultPrompt;
         } catch {
             langLabel = options.languageResultPrompt;
         }
@@ -100,7 +86,9 @@ export async function formatSuggestionContent(
         const result: any = await generateText({
             model: model as any,
             abortSignal: controller.signal,
-            experimental_telemetry: buildLangfuseTelemetry('suggestion-formatter'),
+            experimental_telemetry: buildLangfuseTelemetry(
+                'suggestion-formatter',
+            ),
             prompt: `You are a code review comment editor. Rewrite each suggestion into clean, natural prose.
 
 Rules:
