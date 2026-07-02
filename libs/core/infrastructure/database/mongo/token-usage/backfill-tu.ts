@@ -115,7 +115,15 @@ export async function backfillTokenUsageTu(
         }`,
     );
 
-    let lastId: ObjectId | null = opts.resumeFrom ?? null;
+    // When `since` is set, start the _id sweep at that time (minus a 1s buffer)
+    // instead of scanning the whole collection: telemetry is inserted at/after
+    // its event `timestamp`, so a doc with `timestamp >= since` always has an
+    // `_id >= since` and is never skipped. The updateMany timestamp predicate
+    // stays the correctness guarantee; this only bounds the scan.
+    const sinceLowerBound = since
+        ? ObjectId.createFromTime(Math.floor(since.getTime() / 1000) - 1)
+        : null;
+    let lastId: ObjectId | null = opts.resumeFrom ?? sinceLowerBound;
     let scanned = 0;
     let stamped = 0;
     const logEvery = batch * 20;
