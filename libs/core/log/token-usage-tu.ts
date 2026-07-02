@@ -63,9 +63,13 @@ const n = (v: unknown): number => (typeof v === 'number' ? v : 0);
 export function deriveTu(
     attrs: Record<string, any> | undefined | null,
 ): TokenUsageTu | null {
-    if (!attrs) return null;
+    if (!attrs) {
+        return null;
+    }
     const total = attrs['gen_ai.usage.total_tokens'];
-    if (typeof total !== 'number' || total <= 0) return null;
+    if (typeof total !== 'number' || total <= 0) {
+        return null;
+    }
 
     const rawModel = attrs['gen_ai.response.model'];
     // Canonical name collapses `google_gemini:gemini-2.5-pro` → `gemini-2.5-pro`
