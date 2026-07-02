@@ -449,6 +449,8 @@
     "pnpm": {
         "onlyBuiltDependencies": [
             "@datadog/pprof",
+            "@nestjs/core",
+            "@scarf/scarf",
             "@sentry-internal/node-cpu-profiler",
             "@sentry/cli",
             "@swc/core",
