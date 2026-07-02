@@ -22,6 +22,7 @@ describe('StaleReviewWatchdogCronProvider', () => {
     let automationExecutionService: {
         findStaleInProgress: jest.Mock;
         updateCodeReview: jest.Mock;
+        finalizeInProgressStageLogs: jest.Mock;
     };
     let checksAdapter: { updateCheckRun: jest.Mock };
     let lock: { release: jest.Mock };
@@ -64,6 +65,7 @@ describe('StaleReviewWatchdogCronProvider', () => {
         automationExecutionService = {
             findStaleInProgress: jest.fn().mockResolvedValue([]),
             updateCodeReview: jest.fn().mockResolvedValue({}),
+            finalizeInProgressStageLogs: jest.fn().mockResolvedValue(0),
         };
         checksAdapter = {
             updateCheckRun: jest.fn().mockResolvedValue(true),
@@ -123,8 +125,19 @@ describe('StaleReviewWatchdogCronProvider', () => {
         automationExecutionService.findStaleInProgress.mockResolvedValue([
             staleExecutionWithCheck,
         ]);
+        automationExecutionService.finalizeInProgressStageLogs.mockResolvedValue(
+            2,
+        );
 
         await provider.handleCron();
+
+        expect(
+            automationExecutionService.finalizeInProgressStageLogs,
+        ).toHaveBeenCalledWith(
+            'stale-uuid-1',
+            AutomationStatus.ERROR,
+            expect.any(String),
+        );
 
         expect(
             automationExecutionService.updateCodeReview,

@@ -110,6 +110,16 @@ export class StaleReviewWatchdogCronProvider {
         execution: AutomationExecutionEntity,
     ): Promise<void> {
         try {
+            // Close stage logs the dead process left IN_PROGRESS (agent
+            // steps etc.) so the PR executions UI stops showing them as
+            // running with a live elapsed timer.
+            const closedStages =
+                await this.automationExecutionService.finalizeInProgressStageLogs(
+                    execution.uuid,
+                    AutomationStatus.ERROR,
+                    STALE_ERROR_MESSAGE,
+                );
+
             await this.automationExecutionService.updateCodeReview(
                 { uuid: execution.uuid },
                 {
@@ -131,6 +141,7 @@ export class StaleReviewWatchdogCronProvider {
                     repositoryId: execution.repositoryId,
                     stuckSince: execution.updatedAt,
                     checkFinalized,
+                    closedStages,
                 },
             });
         } catch (error) {

@@ -351,6 +351,43 @@ export class AutomationExecutionService implements IAutomationExecutionService {
         }
     }
 
+    async finalizeInProgressStageLogs(
+        executionUuid: string,
+        status: AutomationStatus,
+        message: string,
+    ): Promise<number> {
+        try {
+            const inProgressLogs = await this.codeReviewExecutionService.find({
+                automationExecution: { uuid: executionUuid },
+                status: AutomationStatus.IN_PROGRESS,
+            } as any);
+
+            if (!inProgressLogs?.length) {
+                return 0;
+            }
+
+            await Promise.all(
+                inProgressLogs.map((log) =>
+                    this.codeReviewExecutionService.updateById(log.uuid, {
+                        status,
+                        message,
+                        finishedAt: new Date(),
+                    } as any),
+                ),
+            );
+
+            return inProgressLogs.length;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error finalizing in-progress stage logs',
+                error,
+                context: AutomationExecutionService.name,
+                metadata: { executionUuid, status },
+            });
+            return 0;
+        }
+    }
+
     async updateStageLog(
         uuid: string,
         data: Partial<
