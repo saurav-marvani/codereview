@@ -26,10 +26,7 @@ const API_CRON_STALE_REVIEW_WATCHDOG =
 // timeout (150min) after which a crashed worker's message is redelivered.
 // Anything IN_PROGRESS beyond this is unrecoverable — the process that
 // owned it died without a terminal update.
-const STALE_REVIEW_TIMEOUT_MINUTES = parseInt(
-    process.env.API_STALE_REVIEW_TIMEOUT_MINUTES || '180',
-    10,
-);
+const STALE_REVIEW_TIMEOUT_MINUTES = 180;
 
 const BATCH_SIZE = 100;
 
@@ -204,9 +201,7 @@ export class StaleReviewWatchdogCronProvider {
         }
     }
 
-    private async releaseCronLock(
-        lock: DistributedLock | null,
-    ): Promise<void> {
+    private async releaseCronLock(lock: DistributedLock | null): Promise<void> {
         if (!lock) {
             return;
         }
