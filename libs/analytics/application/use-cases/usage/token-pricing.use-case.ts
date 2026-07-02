@@ -107,6 +107,38 @@ export class TokenPricingUseCase {
         return Object.fromEntries(entries);
     }
 
+    /**
+     * Canonical model names the catalog bills at a higher INPUT tier above a
+     * breakpoint (today: the `*_above_200k_tokens` Gemini models), mapped to
+     * that input threshold. The Token Usage read derives each call's tier from
+     * `attributes.tu.input` vs this map — so it needs to know *which models are
+     * tiered* without a per-request DB scan to discover the models present in
+     * the window. The catalog is cached (24h), making this near-free.
+     *
+     * Keys are canonicalized the same way the write path stores
+     * `attributes.tu.model` (strip provider prefix, keep the last id segment),
+     * so `vertex_ai/gemini-2.5-pro` and a bare `gemini-2.5-pro` both collapse to
+     * the stored name and match in the aggregation's `$switch`.
+     */
+    async tieredInputThresholds(): Promise<Map<string, number>> {
+        const catalog = await this.getCatalog();
+        const out = new Map<string, number>();
+        for (const [key, entry] of Object.entries(catalog)) {
+            if (
+                typeof entry?.input_cost_per_token_above_200k_tokens ===
+                'number'
+            ) {
+                out.set(this.canonicalName(key), LITELLM_TIER_THRESHOLD_TOKENS);
+            }
+        }
+        return out;
+    }
+
+    /** Last id segment, mirroring deriveTu in token-usage-tu.ts. */
+    private canonicalName(key: string): string {
+        return key.split('/').pop()!.split(':').pop()!;
+    }
+
     async getCatalog(): Promise<Record<string, LiteLLMModel>> {
         const cached =
             await this.cacheService.getFromCache<Record<string, LiteLLMModel>>(

@@ -14,6 +14,7 @@ import {
 } from '@libs/analytics/domain/token-usage/types/tokenUsage.types';
 
 import { ObservabilityTelemetryModel } from './schemas/observabilityTelemetry.model';
+import { PricingResolver } from '@libs/analytics/application/use-cases/usage/pricing-resolver';
 
 type RawAggRow = {
     model: string;
@@ -33,7 +34,56 @@ export class TokenUsageRepository implements ITokenUsageRepository {
     constructor(
         @InjectModel(ObservabilityTelemetryModel.name)
         private readonly observabilityTelemetryModel: Model<ObservabilityTelemetryModel>,
+        private readonly pricingResolver: PricingResolver,
     ) {}
+
+    /**
+     * Canonical model → input-tier threshold, straight from the cached pricing
+     * catalog (Gemini Pro today). This is the SOURCE OF TRUTH for tiering — tier
+     * is derived per read from it (not baked), so a catalog change (e.g. a new
+     * tiered model) is reflected immediately with no re-backfill.
+     *
+     * Resolved catalog-side, NOT from the window: enumerating which models are
+     * tiered needs no data scan, so the covered read pays a single index scan
+     * instead of an extra ~4.5s distinct-models scan just to discover names.
+     * Branches for models absent from the window simply never match.
+     */
+    private _thresholds(): Promise<Map<string, number>> {
+        return this.pricingResolver.tieredInputThresholds();
+    }
+
+    /**
+     * Aggregation expression that derives a call's tier ('gt'|'le') from the
+     * covered `attributes.tu.model` + `attributes.tu.input` and the catalog
+     * thresholds. Reads only index fields → the pipeline stays covered.
+     */
+    private _tierExpr(thresholds: Map<string, number>): any {
+        if (thresholds.size === 0) return 'le';
+        const branches: Array<{ case: any; then: number }> = [];
+        for (const [model, threshold] of thresholds) {
+            branches.push({
+                case: { $eq: ['$attributes.tu.model', model] },
+                then: threshold,
+            });
+        }
+        return {
+            $let: {
+                vars: { thr: { $switch: { branches, default: 0 } } },
+                in: {
+                    $cond: [
+                        {
+                            $and: [
+                                { $gt: ['$$thr', 0] },
+                                { $gt: ['$attributes.tu.input', '$$thr'] },
+                            ],
+                        },
+                        'gt',
+                        'le',
+                    ],
+                },
+            },
+        };
+    }
 
     /**
      * Returns one BaseUsageContract per logical bucket (per model + per
@@ -133,17 +183,20 @@ export class TokenUsageRepository implements ITokenUsageRepository {
 
     private async _tuRows(
         query: TokenUsageQueryContract,
+        thresholds: Map<string, number>,
         groupById: Record<string, any> = {},
         projectExtras: Record<string, any> = {},
         prOnly = false,
     ): Promise<RawAggRow[]> {
         const pipeline = [
             { $match: this._tuMatch(query, prOnly) },
+            // Derive the tier per call from the catalog thresholds (not baked).
+            { $addFields: { _tier: this._tierExpr(thresholds) } },
             {
                 $group: {
                     _id: {
                         model: '$attributes.tu.model',
-                        tier: '$attributes.tu.tier',
+                        tier: '$_tier',
                         ...groupById,
                     },
                     input: { $sum: '$attributes.tu.input' },
@@ -174,17 +227,10 @@ export class TokenUsageRepository implements ITokenUsageRepository {
             .exec();
     }
 
-    /** A model is tier-aware in this window if it produced any 'gt' rows. */
-    private _thresholdsFromRows(rows: RawAggRow[]): Map<string, number> {
-        return new Map(
-            rows.filter((r) => r.tier === 'gt').map((r) => [r.model, 1]),
-        );
-    }
-
     async getSummary(
         query: TokenUsageQueryContract,
     ): Promise<UsageSummaryContract> {
-        const rows = await this._tuRows(query);
+        const rows = await this._tuRows(query, await this._thresholds());
 
         // Cross-model rollup: one row total.
         const summary: UsageSummaryContract = {
@@ -215,10 +261,11 @@ export class TokenUsageRepository implements ITokenUsageRepository {
     async getSummaryByModel(
         query: TokenUsageQueryContract,
     ): Promise<BaseUsageContract[]> {
-        const rows = await this._tuRows(query);
+        const thresholds = await this._thresholds();
+        const rows = await this._tuRows(query, thresholds);
         return this._mergeTierRows(
             rows,
-            this._thresholdsFromRows(rows),
+            thresholds,
             (r) => r.model,
             (base) => base,
         );
@@ -227,8 +274,10 @@ export class TokenUsageRepository implements ITokenUsageRepository {
     async getDailyUsage(
         query: TokenUsageQueryContract,
     ): Promise<DailyUsageResultContract[]> {
+        const thresholds = await this._thresholds();
         const rows = await this._tuRows(
             query,
+            thresholds,
             {
                 date: {
                     $dateToString: {
@@ -243,7 +292,7 @@ export class TokenUsageRepository implements ITokenUsageRepository {
 
         const merged = this._mergeTierRows<DailyUsageResultContract>(
             rows,
-            this._thresholdsFromRows(rows),
+            thresholds,
             (r) => `${r.date}|${r.model}`,
             (base, row) => ({ ...base, date: row.date! }),
         );
@@ -258,8 +307,10 @@ export class TokenUsageRepository implements ITokenUsageRepository {
     async getUsageByPr(
         query: TokenUsageQueryContract,
     ): Promise<UsageByPrResultContract[]> {
+        const thresholds = await this._thresholds();
         const rows = await this._tuRows(
             query,
+            thresholds,
             { pr: '$attributes.prNumber' },
             { prNumber: '$_id.pr' },
             true,
@@ -267,7 +318,7 @@ export class TokenUsageRepository implements ITokenUsageRepository {
 
         const merged = this._mergeTierRows<UsageByPrResultContract>(
             rows,
-            this._thresholdsFromRows(rows),
+            thresholds,
             (r) => `${r.prNumber}|${r.model}`,
             (base, row) => ({ ...base, prNumber: row.prNumber! }),
         );
@@ -282,8 +333,10 @@ export class TokenUsageRepository implements ITokenUsageRepository {
     async getDailyUsageByPr(
         query: TokenUsageQueryContract,
     ): Promise<DailyUsageByPrResultContract[]> {
+        const thresholds = await this._thresholds();
         const rows = await this._tuRows(
             query,
+            thresholds,
             {
                 prNumber: '$attributes.prNumber',
                 date: {
@@ -300,7 +353,7 @@ export class TokenUsageRepository implements ITokenUsageRepository {
 
         const merged = this._mergeTierRows<DailyUsageByPrResultContract>(
             rows,
-            this._thresholdsFromRows(rows),
+            thresholds,
             (r) => `${r.prNumber}|${r.date}|${r.model}`,
             (base, row) => ({
                 ...base,
@@ -337,12 +390,15 @@ export class TokenUsageRepository implements ITokenUsageRepository {
         daily: DailyUsageResultContract[];
         byPr: UsageByPrResultContract[];
     }> {
+        const thresholds = await this._thresholds();
         // Project only index fields → $facet works on a lean covered stream.
+        // Tier is derived here (from the catalog thresholds) instead of read
+        // from a baked field, so it can't drift when pricing tiers change.
         const projectTu = {
             $project: {
                 _id: 0,
                 model: '$attributes.tu.model',
-                tier: '$attributes.tu.tier',
+                tier: this._tierExpr(thresholds),
                 pr: '$attributes.prNumber',
                 date: {
                     $dateToString: {
@@ -424,8 +480,8 @@ export class TokenUsageRepository implements ITokenUsageRepository {
             daily: [],
             byPr: [],
         };
-        // Tier-awareness derived from the baked tier rows (same as _tuRows).
-        const thresholds = this._thresholdsFromRows(rows.byModel);
+        // `thresholds` fetched above drives both the tier derivation and the
+        // byTier merge — same source, no drift.
 
         const byModel = this._mergeTierRows(
             rows.byModel,

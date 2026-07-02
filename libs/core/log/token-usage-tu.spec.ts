@@ -1,8 +1,4 @@
-import {
-    deriveTu,
-    GEMINI_TIER_THRESHOLD,
-    SYSTEM_RUN_NAMES,
-} from './token-usage-tu';
+import { deriveTu, SYSTEM_RUN_NAMES } from './token-usage-tu';
 
 /**
  * `deriveTu` is the single source of the `attributes.tu` sub-doc mirrored onto
@@ -87,36 +83,6 @@ describe('deriveTu', () => {
                     .sys,
             ).toBe(false);
             expect(deriveTu(usage)!.sys).toBe(false);
-        });
-    });
-
-    describe('tier bucketing', () => {
-        it('flags gt only for Gemini above the input threshold', () => {
-            const gem = 'google_gemini:gemini-2.5-pro';
-            expect(
-                deriveTu({
-                    ...usage,
-                    'gen_ai.response.model': gem,
-                    'gen_ai.usage.input_tokens': GEMINI_TIER_THRESHOLD + 1,
-                })!.tier,
-            ).toBe('gt');
-            expect(
-                deriveTu({
-                    ...usage,
-                    'gen_ai.response.model': gem,
-                    'gen_ai.usage.input_tokens': GEMINI_TIER_THRESHOLD,
-                })!.tier,
-            ).toBe('le');
-        });
-
-        it('never flags gt for non-Gemini models regardless of size', () => {
-            expect(
-                deriveTu({
-                    ...usage,
-                    'gen_ai.response.model': 'openai:gpt-5',
-                    'gen_ai.usage.input_tokens': GEMINI_TIER_THRESHOLD * 10,
-                })!.tier,
-            ).toBe('le');
         });
     });
 });

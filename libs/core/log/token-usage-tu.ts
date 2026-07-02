@@ -31,7 +31,6 @@ export interface TokenUsageTu {
     isByok: boolean;
     sys: boolean;
     model: string;
-    tier: 'le' | 'gt';
     input: number;
     output: number;
     total: number;
@@ -54,15 +53,6 @@ export const SYSTEM_RUN_NAMES: ReadonlySet<string> = new Set([
     'generateCodeSuggestions',
     'analyzeASTWithAI',
 ]);
-
-/**
- * Input-token threshold above which a Gemini call bills at the higher tier.
- * Matches the only tiered model in the pricing catalog today (Gemini Pro,
- * 200k). Baked at write time to keep the aggregation index-covered; if a second
- * tiered model or a different Gemini breakpoint appears, update this constant
- * AND re-run the backfill (scripts/perf/token-usage/migration.js).
- */
-export const GEMINI_TIER_THRESHOLD = 200_000;
 
 const n = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
@@ -92,10 +82,6 @@ export function deriveTu(
         isByok: attrs['type'] === 'byok',
         sys: typeof runName === 'string' && SYSTEM_RUN_NAMES.has(runName),
         model,
-        tier:
-            model.includes('gemini') && input > GEMINI_TIER_THRESHOLD
-                ? 'gt'
-                : 'le',
         input,
         output: n(attrs['gen_ai.usage.output_tokens']),
         total,

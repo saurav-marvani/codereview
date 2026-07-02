@@ -81,18 +81,6 @@ const setTu = {
             isByok: { $eq: [gf('type'), 'byok'] }, // view byok=true
             sys: { $in: [gf('gen_ai.run.name'), SYSTEM_RUN_NAMES] }, // byok=false excludes these
             model: modelE,
-            tier: {
-                $cond: [
-                    {
-                        $and: [
-                            { $regexMatch: { input: modelE, regex: 'gemini' } },
-                            { $gt: [{ $ifNull: [gf('gen_ai.usage.input_tokens'), 0] }, 200000] },
-                        ],
-                    },
-                    'gt',
-                    'le',
-                ],
-            },
             input: { $ifNull: [gf('gen_ai.usage.input_tokens'), 0] },
             output: { $ifNull: [gf('gen_ai.usage.output_tokens'), 0] },
             total: { $ifNull: [gf('gen_ai.usage.total_tokens'), 0] },
@@ -152,17 +140,30 @@ function createIndexes() {
     // Built one at a time; on 130GB expect a long, I/O-heavy build.
     print('[index] building tu_cover_byok (this is slow on a large collection)…');
     c.createIndex(
-        { 'attributes.organizationId': 1, 'attributes.tu.isByok': 1, timestamp: 1, 'attributes.tu.model': 1, 'attributes.tu.tier': 1, 'attributes.prNumber': 1, ...sums },
+        { 'attributes.organizationId': 1, 'attributes.tu.isByok': 1, timestamp: 1, 'attributes.tu.model': 1, 'attributes.prNumber': 1, ...sums },
         { name: 'tu_cover_byok', partialFilterExpression: { 'attributes.tu.isByok': true } },
     );
     print('[index] tu_cover_byok done. Building tu_cover_sys…');
     c.createIndex(
-        { 'attributes.organizationId': 1, 'attributes.tu.sys': 1, timestamp: 1, 'attributes.tu.model': 1, 'attributes.tu.tier': 1, 'attributes.prNumber': 1, ...sums },
+        { 'attributes.organizationId': 1, 'attributes.tu.sys': 1, timestamp: 1, 'attributes.tu.model': 1, 'attributes.prNumber': 1, ...sums },
         { name: 'tu_cover_sys', partialFilterExpression: { 'attributes.tu.sys': { $exists: true } } },
     );
     print('[index] tu_cover_sys done.');
     // Drop the superseded dev-only top-level index if present (no-op in prod).
     try { c.dropIndex('tu_cover'); print('[index] dropped legacy top-level tu_cover'); } catch (e) { /* not present */ }
+    // Drop dead `createdAt` analytics indexes: every read filters on `timestamp`
+    // (the exporter's event time), NOT the Mongoose `createdAt`, so these are
+    // never used by the planner yet cost ~1GB and slow every insert. Their
+    // `timestamp` equivalents (declared on the schema) stay. Safe: no query
+    // targets these. NOTE: this does NOT drop the standalone `createdAt_1`
+    // index — verify nothing (retention/TTL/sort) relies on it before removing.
+    for (const dead of [
+        'attributes.organizationId_1_createdAt_-1',
+        'attributes.organizationId_1_attributes.prNumber_1_createdAt_-1',
+    ]) {
+        try { c.dropIndex(dead); print('[index] dropped dead index ' + dead); }
+        catch (e) { /* not present */ }
+    }
 }
 
 if (PHASE === 'backfill' || PHASE === 'all') backfill();
