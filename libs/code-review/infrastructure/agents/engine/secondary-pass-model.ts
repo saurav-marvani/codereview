@@ -1,5 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import { getInternalModel } from '@libs/code-review/infrastructure/agents/llm/byok-to-vercel';
+import { getInternalModel } from '@libs/llm/byok-to-vercel';
 import type { BYOKConfig } from '@kodus/kodus-common/llm';
 
 /**
