@@ -114,6 +114,14 @@ export class AiSdkAgentRunner implements AgentRunner {
         try {
             result = await generateText({
                 model: this.models.resolve(spec.modelId),
+                // Cap SDK-level retries to 3 on the main loop. Some BYOK
+                // providers (Neuralwatt/GLM, Synthetic, Z.AI) intermittently
+                // return empty response bodies (output: null, usage.total: 0).
+                // These are fast failures — the provider returns quickly —
+                // so extra retries don't burn meaningful timeout budget.
+                // At 3 retries (4 total attempts) the loop survives transient
+                // empty-body responses without changing the per-call timeout.
+                maxRetries: 3,
                 // When the domain supplies systemProviderOptions (e.g. Anthropic
                 // prompt caching), send the system prompt as a system message
                 // carrying those options; otherwise a plain string.
