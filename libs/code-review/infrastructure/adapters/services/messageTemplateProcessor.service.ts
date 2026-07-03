@@ -102,9 +102,10 @@ export class MessageTemplateProcessor {
 
         for (const match of matches) {
             const placeholder = match[1];
+            const aliasTarget = this.aliases.get(placeholder);
             const handler =
                 this.handlers.get(placeholder) ??
-                this.handlers.get(this.aliases.get(placeholder) ?? '');
+                (aliasTarget ? this.handlers.get(aliasTarget) : undefined);
 
             if (handler) {
                 const replacement = await handler(context);

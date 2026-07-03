@@ -144,6 +144,20 @@ describe('MessageTemplateProcessor', () => {
             expect(viaAlias).toBe(viaCurrent);
         });
 
+        it('does not route unknown placeholders through an empty-string handler', async () => {
+            // Guards the alias fallback: an empty-key handler must not become
+            // reachable for every unrecognized placeholder.
+            processor.registerHandler('', () => '__EMPTY__');
+
+            const result = await processor.processTemplate(
+                'Hi @notARealPlaceholder bye',
+                {},
+            );
+
+            expect(result).toBe('Hi @notARealPlaceholder bye');
+            expect(result).not.toContain('__EMPTY__');
+        });
+
         it('lets callers register a custom placeholder handler', async () => {
             processor.registerHandler('greeting', () => 'Hello, world!');
 
