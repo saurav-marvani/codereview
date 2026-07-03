@@ -25,6 +25,11 @@ name: "Code-review evals (replay suite)"
 #   BYOK_MOONSHOT_API_KEY, BYOK_ZHIPU_API_KEY
 #   ANTHROPIC_API_KEY (Sonnet judge for recall/dedup scoring)
 
+# Least-privilege default for every job: these eval jobs only read the repo
+# and call model APIs — they never write back. Overrides go per-job if needed.
+permissions:
+    contents: read
+
 on:
     workflow_dispatch:
         inputs:

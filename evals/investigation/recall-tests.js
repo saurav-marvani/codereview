@@ -54,7 +54,19 @@ module.exports = async () => {
 
     const tests = [];
     for (const file of files) {
-        const raw = JSON.parse(fs.readFileSync(path.join(DATASETS_DIR, file), 'utf8'));
+        // The include filter keys on the dataset's INTERNAL caseId (vars.caseId),
+        // which for 7/50 files differs from the filename — so we must parse to
+        // filter. Guard the parse so a single corrupt/unreadable dataset (even an
+        // unselected one) skips instead of aborting the whole run.
+        let raw;
+        try {
+            raw = JSON.parse(
+                fs.readFileSync(path.join(DATASETS_DIR, file), 'utf8'),
+            );
+        } catch (err) {
+            console.warn(`[recall-tests] skipping unreadable dataset ${file}: ${err.message}`);
+            continue;
+        }
         const c = Array.isArray(raw) ? raw[0] : raw;
         const caseId = c?.vars?.caseId || file.replace(/\.json$/, '');
         const include = all

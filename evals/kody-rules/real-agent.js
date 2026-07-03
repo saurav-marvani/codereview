@@ -115,6 +115,9 @@ function buildProvider() {
         runInSpan: async (_n, fn) => (typeof fn === 'function' ? fn() : undefined),
         runLLMInSpan: async ({ exec }) => exec([]),
         startSpan: () => ({ end() {}, update() {} }),
+        // The refactored provider emits a post-hoc usage span; evals don't ship
+        // telemetry, so a no-op keeps the run from throwing on the real method.
+        recordAgentRunUsage: async () => {},
     };
     return new KodyRulesAgentProvider({}, permissionValidationService, observabilityService);
 }
