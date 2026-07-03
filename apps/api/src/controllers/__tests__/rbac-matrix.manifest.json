@@ -1661,9 +1661,31 @@
     }
   },
   {
+    "key": "tokenUsage.controller.ts#getOverview",
+    "httpMethod": "GET",
+    "urlPath": "/usage/tokens/overview",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "allow",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
     "key": "tokenUsage.controller.ts#getPricing",
     "httpMethod": "GET",
     "urlPath": "/usage/tokens/pricing",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "allow",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
+    "key": "tokenUsage.controller.ts#getPricingBatch",
+    "httpMethod": "GET",
+    "urlPath": "/usage/tokens/pricing/batch",
     "expected": {
       "owner": "allow",
       "billing_manager": "allow",

@@ -1,4 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
+import {
+    CODE_BASE_CONFIG_SERVICE_TOKEN,
+    ICodeBaseConfigService,
+} from '@libs/code-review/domain/contracts/CodeBaseConfigService.contract';
+import { requiresKnowledgeApproval } from '@libs/common/utils/kody-rules/knowledge-approval';
 import * as path from 'path';
 
 import {
@@ -137,6 +142,8 @@ export class KodyRulesSyncService {
         private readonly permissionValidationService: PermissionValidationService,
         private readonly observabilityService: ObservabilityService,
         private readonly contextReferenceDetectionService: ContextReferenceDetectionService,
+        @Inject(forwardRef(() => CODE_BASE_CONFIG_SERVICE_TOKEN))
+        private readonly codeBaseConfigService: ICodeBaseConfigService,
     ) {}
 
     /**
@@ -1711,6 +1718,43 @@ export class KodyRulesSyncService {
         return { head, base };
     }
 
+    /**
+     * Default status for a rule synced from a repo rule file. When the org's
+     * knowledge-approval gate is on, IDE-synced rules land PENDING for review
+     * (consistent with generated knowledge) and flow through the normal
+     * pending UI; otherwise they stay ACTIVE. A config-resolution error falls
+     * back to ACTIVE so a sync is never blocked on the lookup.
+     */
+    private async resolveSyncDefaultStatus(
+        organizationAndTeamData: OrganizationAndTeamData,
+        repositoryId: string,
+    ): Promise<KodyRulesStatus> {
+        try {
+            const mergedConfig =
+                await this.codeBaseConfigService.getSimpleConfig(
+                    organizationAndTeamData,
+                    { repositoryId },
+                );
+
+            return requiresKnowledgeApproval(
+                mergedConfig.kodyKnowledgeApproval,
+                KodyRulesOrigin.REPO_FILE_SYNC,
+            )
+                ? KodyRulesStatus.PENDING
+                : KodyRulesStatus.ACTIVE;
+        } catch (error) {
+            this.logger.warn({
+                message:
+                    'Could not resolve kodyKnowledgeApproval for IDE-synced rule; defaulting to active',
+                context: KodyRulesSyncService.name,
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
+                metadata: { organizationAndTeamData, repositoryId },
+            });
+            return KodyRulesStatus.ACTIVE;
+        }
+    }
+
     private async convertFileToKodyRules(
         params: {
             filePath: string;
@@ -1739,6 +1783,13 @@ export class KodyRulesSyncService {
             await this.permissionValidationService.getBYOKConfig(
                 params.organizationAndTeamData,
             );
+
+        const effectiveDefaultStatus =
+            options?.defaultStatus ??
+            (await this.resolveSyncDefaultStatus(
+                params.organizationAndTeamData,
+                params.repositoryId,
+            ));
 
         const mainProvider =
             options?.mainProvider ?? LLMModelProvider.GEMINI_2_5_FLASH;
@@ -1890,7 +1941,7 @@ export class KodyRulesSyncService {
                     sourcePath,
                     repositoryId: rule?.repositoryId || params.repositoryId,
                     origin: KodyRulesOrigin.REPO_FILE_SYNC,
-                    status: options?.defaultStatus || KodyRulesStatus.ACTIVE,
+                    status: effectiveDefaultStatus,
                     examples: Array.isArray(rule?.examples)
                         ? rule.examples.map((example: any) => ({
                               snippet: example?.snippet || '',
@@ -1970,7 +2021,7 @@ export class KodyRulesSyncService {
                     sourcePath: rule?.sourcePath || params.filePath,
                     repositoryId: rule?.repositoryId || params.repositoryId,
                     origin: KodyRulesOrigin.REPO_FILE_SYNC,
-                    status: options?.defaultStatus || KodyRulesStatus.ACTIVE,
+                    status: effectiveDefaultStatus,
                     examples: Array.isArray(rule?.examples)
                         ? rule.examples.map((example: any) => ({
                               snippet: example?.snippet || '',
@@ -2456,6 +2507,13 @@ export class KodyRulesSyncService {
             },
         ];
 
+        const [byokConfig, subscriptionStatus] = await Promise.all([
+            this.permissionValidationService.getBYOKConfig(detectionOrgData),
+            this.permissionValidationService.getSubscriptionStatus(
+                detectionOrgData,
+            ),
+        ]);
+
         try {
             const contextReferenceId =
                 await this.contextReferenceDetectionService.detectAndSaveReferences(
@@ -2466,6 +2524,8 @@ export class KodyRulesSyncService {
                         repositoryId,
                         repositoryName,
                         organizationAndTeamData: detectionOrgData,
+                        byokConfig: byokConfig ?? undefined,
+                        subscriptionStatus,
                     },
                 );
 

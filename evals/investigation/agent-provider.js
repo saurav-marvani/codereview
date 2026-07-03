@@ -410,7 +410,7 @@ function buildCurrentPrompts(caseData) {
     const { GeneralistAgentProvider } = require(
         path.join(
             __dirname,
-            '../../libs/code-review/infrastructure/agents/generalist-agent.provider.ts',
+            '../../libs/code-review/infrastructure/agents/providers/generalist-agent.provider.ts',
         ),
     );
 
@@ -513,10 +513,15 @@ class InvestigationAgentProvider {
             }
 
             stage = 'load-agent-loop';
-            const { runAgentLoop } = require(
+            // The legacy runAgentLoop (agent-loop.ts) was deleted in the
+            // agent-harness refactor. runAgentLoopViaCore is the drop-in seam:
+            // same (input, secrets) signature, threads secrets.remoteCommands
+            // into buildFinderToolRegistry for deterministic tool replay, and
+            // runs the finder+verify on the new harness.
+            const { runAgentLoopViaCore: runAgentLoop } = require(
                 path.join(
                     __dirname,
-                    '../../libs/code-review/infrastructure/agents/llm/agent-loop.ts',
+                    '../../libs/code-review/infrastructure/agents/core/core-agent-loop.adapter.ts',
                 ),
             );
 

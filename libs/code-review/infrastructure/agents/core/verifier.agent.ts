@@ -25,6 +25,7 @@ import { InMemoryToolRegistry } from '@libs/agent-harness/infrastructure/tools/i
 
 import { buildVerifierPrompt } from '@libs/code-review/infrastructure/agents/prompts/verifier-prompt';
 import type { FinderSuggestion } from '@libs/code-review/infrastructure/agents/core/finder.agent';
+import { supportsStrictTools } from '@libs/code-review/infrastructure/agents/core/model-strictness';
 import {
     buildLangfuseTelemetry,
     type LangfuseTelemetryMetadata,
@@ -34,6 +35,8 @@ export const VERIFY_DONE_TOOL = 'submitVerdict' as const;
 
 const VERDICT_SCHEMA: JSONSchema = {
     type: 'object',
+    // Required by provider strict tool use (see finder.agent SUBMIT_RESULT_SCHEMA).
+    additionalProperties: false,
     properties: {
         keep: { type: 'boolean' },
         rationale: { type: 'string' },
@@ -70,7 +73,9 @@ export function buildVerifierAgentSpec(
     const { system } = buildVerifierPrompt('', 0);
     const tools = new InMemoryToolRegistry([
         ...params.tools.list(),
-        submitVerdictTool,
+        // Strict/structured done-tool for strict-capable models (Gemini
+        // VALIDATED mode) so the verdict can't be omitted or emitted as prose.
+        { ...submitVerdictTool, strict: supportsStrictTools(params.modelId) },
     ]);
     return {
         id: 'verifier',

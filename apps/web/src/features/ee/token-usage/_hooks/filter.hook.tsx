@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useDebounce } from "@hooks/use-debounce";
 
@@ -10,20 +10,16 @@ export const useTokenUsageFilters = (models: string[]) => {
     const searchParams = useSearchParams();
     const currentFilter = searchParams.get("filter") ?? "daily";
 
-    // Seed from `?models=` (comma-separated) so a deep-link — e.g. the BYOK
-    // per-model cost chip — lands scoped to that model. Only ids that actually
-    // exist in the current aggregation are honored; anything else falls back to
-    // "all models". Mirrors how `prNumber`/`developer` seed from the URL below.
-    const [selectedModels, setSelectedModels] = useState<string[]>(() => {
-        const fromUrl = searchParams.get("models");
-        if (!fromUrl) return models;
-        const requested = fromUrl
-            .split(",")
-            .map((m) => m.trim())
-            .filter(Boolean);
-        const valid = requested.filter((m) => models.includes(m));
-        return valid.length > 0 ? valid : models;
-    });
+    // Filter/model/date changes are client-side navigations (router.replace)
+    // that re-run the server component. Next keeps the current UI during a
+    // same-segment param change (no loading.tsx), so without a transition the
+    // screen looks frozen for seconds. useTransition surfaces that pending
+    // window so the UI can show a loading overlay.
+    const [isPending, startTransition] = useTransition();
+    const navigate = (url: string) =>
+        startTransition(() => router.replace(url));
+
+    const [selectedModels, setSelectedModels] = useState<string[]>(models);
 
     // Keep selection in sync when the upstream `models` list changes —
     // switching filter (daily/by-pr/by-developer) yields a different
@@ -57,7 +53,7 @@ export const useTokenUsageFilters = (models: string[]) => {
         if (value !== "by-developer") {
             params.delete("developer");
         }
-        router.replace(`${pathname}?${params.toString()}`);
+        navigate(`${pathname}?${params.toString()}`);
     };
 
     const handleModelChange = (model: string) => {
@@ -77,8 +73,9 @@ export const useTokenUsageFilters = (models: string[]) => {
             params.delete("prNumber");
         }
 
-        router.replace(`${pathname}?${params.toString()}`);
-    }, [debouncedPrNumber, router, pathname, searchParams]);
+        navigate(`${pathname}?${params.toString()}`);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [debouncedPrNumber, pathname, searchParams]);
 
     useEffect(() => {
         const params = new URLSearchParams(searchParams.toString());
@@ -89,8 +86,9 @@ export const useTokenUsageFilters = (models: string[]) => {
             params.delete("developer");
         }
 
-        router.replace(`${pathname}?${params.toString()}`);
-    }, [debouncedDeveloper, router, pathname, searchParams]);
+        navigate(`${pathname}?${params.toString()}`);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [debouncedDeveloper, pathname, searchParams]);
 
     // Mirror the model selection back into `?models=` so the scope survives
     // reload/share and matches what a deep-link would produce. Written only for
@@ -134,6 +132,7 @@ export const useTokenUsageFilters = (models: string[]) => {
 
     return {
         currentFilter,
+        isPending,
         selectedModels,
         prNumber,
         developer,

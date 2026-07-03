@@ -750,16 +750,20 @@ export class E2BSandboxService implements ISandboxProvider {
 
             exec: async (
                 command: string,
-            ): Promise<{ stdout: string; exitCode: number }> => {
+            ): Promise<{ stdout: string; stderr: string; exitCode: number }> => {
                 const result = await runCmd(
                     `cd ${REPO_DIR} && ${command}`,
                     { timeoutMs: TIMEOUTS.COMMAND_LONG_MS },
                 );
                 // With runCmd, a non-zero exit no longer throws: the model now
-                // receives the real exitCode plus stderr, so the {stdout,exitCode}
-                // contract is finally honest (it used to always report 0).
+                // receives the real exitCode plus stderr. stdout and stderr are
+                // kept SEPARATE — merging them let a subprocess error (e.g.
+                // "fd: command not found") masquerade as command output in the
+                // tools. Tools that want compiler diagnostics already redirect
+                // with `2>&1` at the shell, so nothing they need is lost.
                 return {
-                    stdout: result.stdout + (result.stderr || ''),
+                    stdout: result.stdout,
+                    stderr: result.stderr || '',
                     exitCode: result.exitCode,
                 };
             },

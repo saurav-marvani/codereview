@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@components/ui/card";
+import { Skeleton } from "@components/ui/skeleton";
 import {
     BaseUsageContract,
     ModelPricingInfo,
@@ -52,7 +53,7 @@ export const TokenUsagePageClient = ({
     const [isMounted, setIsMounted] = useState(false);
 
     const filters = useTokenUsageFilters(models);
-    const { selectedModels, currentFilter } = filters;
+    const { selectedModels, currentFilter, isPending } = filters;
 
     useEffect(() => {
         setIsMounted(true);
@@ -145,7 +146,8 @@ export const TokenUsagePageClient = ({
                 <DateRangePicker cookieValue={cookieValue} />
             </div>
 
-            {/* Token Summary */}
+            {/* Token Summary — period totals; identical across chart dimensions,
+                so they stay put during a view switch (only the chart changes). */}
             <SummaryCards totalUsage={totalUsage} />
 
             {/* Cost & Pricing Row */}
@@ -158,14 +160,20 @@ export const TokenUsagePageClient = ({
             {/* Month-to-date spend vs the configured BYOK limit */}
             <SpendLimitProgress />
 
-            {/* Chart */}
-            <Card className="h-[420px] p-5">
-                {filteredData && filteredData.length > 0 ? (
-                    <Chart data={filteredData} filterType={currentFilter} />
-                ) : (
-                    <NoData />
-                )}
-            </Card>
+            {/* Chart — the only thing that changes per view, so it shows a
+                skeleton while the new dimension's data loads (consistent with
+                the initial page skeleton) instead of a spinner. */}
+            {isPending ? (
+                <Skeleton className="h-[420px] w-full rounded-xl" />
+            ) : (
+                <Card className="h-[420px] p-5">
+                    {filteredData && filteredData.length > 0 ? (
+                        <Chart data={filteredData} filterType={currentFilter} />
+                    ) : (
+                        <NoData />
+                    )}
+                </Card>
+            )}
 
             {/* Per-model breakdown (collapsed by default) */}
             <ModelBreakdownTable rows={breakdownRows} pricing={filteredPricing} />

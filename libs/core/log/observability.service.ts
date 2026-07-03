@@ -13,6 +13,7 @@ import { createLogger } from '@libs/core/log/logger';
 import { TokenTrackingHandler, BYOKConfig } from '@kodus/kodus-common/llm';
 import { CallbackHandler as LangfuseCallbackHandler } from '@langfuse/langchain';
 import { shouldTrace } from './langfuse';
+import { deriveTu } from './token-usage-tu';
 
 /**
  * Narrow projection of BYOKConfig that carries only the fields the
@@ -142,7 +143,7 @@ function buildUsageSpanAttributes(p: UsageSpanInput): Record<string, any> {
     const totalTokens = u.totalTokens ?? inputTokens + outputTokens;
     const cacheRead = u.cacheReadTokens ?? 0;
     const cacheWrite = u.cacheWriteTokens ?? 0;
-    return {
+    const attrs: Record<string, any> = {
         'gen_ai.usage.input_tokens': inputTokens,
         'gen_ai.usage.output_tokens': outputTokens,
         'gen_ai.usage.total_tokens': totalTokens,
@@ -170,6 +171,15 @@ function buildUsageSpanAttributes(p: UsageSpanInput): Record<string, any> {
         ...(p.durationMs != null && { durationMs: p.durationMs }),
         ...(p.extraAttributes ?? {}),
     };
+    // Mirror LLM-usage into the indexable `attributes.tu` sub-doc so the Token
+    // Usage aggregation stays index-covered (see token-usage-tu.ts) — identical
+    // numbers, just index-readable. Derived HERE, the single source of truth, so
+    // every usage span carries it. deriveTu returns null for non-usage attrs.
+    const tu = deriveTu(attrs);
+    if (tu) {
+        attrs.tu = tu;
+    }
+    return attrs;
 }
 
 @Injectable()
@@ -370,7 +380,11 @@ export class ObservabilityService implements OnModuleInit {
         const obs = this.getObsInstance();
         const span = obs.startSpan(name);
         if (attributes && typeof span?.setAttributes === 'function') {
-            span.setAttributes(attributes);
+            // Mirror LLM-usage into the indexable `attributes.tu` sub-doc so the
+            // Token Usage aggregation stays index-covered. deriveTu returns null
+            // for spans without usage → non-LLM spans are untouched.
+            const tu = deriveTu(attributes);
+            span.setAttributes(tu ? { ...attributes, tu } : attributes);
         }
         return span;
     }
@@ -523,8 +537,7 @@ export class ObservabilityService implements OnModuleInit {
                 async () => undefined,
                 buildUsageSpanAttributes({
                     runName:
-                        params.runName ??
-                        `${params.agentName}-${params.phase}`,
+                        params.runName ?? `${params.agentName}-${params.phase}`,
                     model: params.model,
                     agentName: params.agentName,
                     phase: params.phase,
@@ -592,8 +605,9 @@ export class ObservabilityService implements OnModuleInit {
             if (span) {
                 // Same schema as the AI SDK / harness paths — project through the
                 // single source of truth (buildUsageSpanAttributes) so the Mongo
-                // cost columns are identical regardless of capture method. Only
-                // the LangChain-specific extras (run.id / runIds / names) and the
+                // cost columns are identical regardless of capture method (it
+                // also mirrors the indexable `attributes.tu` sub-doc). Only the
+                // LangChain-specific extras (run.id / runIds / names) and the
                 // caller metadata go through extraAttributes.
                 span.setAttributes(
                     buildUsageSpanAttributes({

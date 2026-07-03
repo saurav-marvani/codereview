@@ -6,12 +6,10 @@
  * - Severity is always classified using the CLIENT's criteria (v2PromptOverrides)
  * - Classification is consistent regardless of which BYOK model the client uses
  */
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { z } from 'zod';
 import { createLogger } from '@libs/core/log/logger';
 import type { BYOKConfig } from '@kodus/kodus-common/llm';
 import type { CodeReviewConfig } from '@libs/core/infrastructure/config/types/general/codeReview.type';
-import { getInternalModel } from '@libs/llm/byok-to-vercel';
+import { resolveSecondaryPassModel } from './secondary-pass-model';
 import { tracedGenerateText as generateText } from '@libs/llm/llm-call';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 
@@ -25,16 +23,6 @@ const DEFAULT_SEVERITY_FLAGS = {
     low: 'Minor performance overhead. Incorrect metrics/logs. Rarely affecting few users. Edge-case issues.',
 };
 
-const severityResultSchema = z.object({
-    classifications: z.array(
-        z.object({
-            index: z.number(),
-            severity: z.enum(['critical', 'high', 'medium', 'low']),
-            reason: z.string(),
-        }),
-    ),
-});
-
 export interface SuggestionForClassification {
     relevantFile: string;
     suggestionContent: string;
@@ -46,9 +34,10 @@ export interface SuggestionForClassification {
 /**
  * Classify severity for a batch of suggestions.
  *
- * Model resolution order:
- * 1. Google AI API key → gemini-3-flash-preview (cloud default)
- * 2. BYOK config → getInternalModel (selfhosted with client keys)
+ * Model resolution (via resolveSecondaryPassModel, same as dedup):
+ * 1. Platform OpenAI key → gpt-5.4-mini (consistent, cheap — severity must not
+ *    vary by the client's BYOK model)
+ * 2. else → getInternalModel(byokConfig) (self-hosted / BYOK fallback)
  * 3. No model available → default everything to 'medium'
  */
 export async function classifySeverity(
@@ -58,16 +47,7 @@ export async function classifySeverity(
 ): Promise<Map<number, string>> {
     if (suggestions.length === 0) return new Map();
 
-    const apiKey =
-        process.env.API_GOOGLE_AI_API_KEY ||
-        process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-
-    let model: any;
-    if (apiKey) {
-        model = createGoogleGenerativeAI({ apiKey })('gemini-3-flash-preview');
-    } else {
-        model = getInternalModel(byokConfig);
-    }
+    const model = resolveSecondaryPassModel(byokConfig);
 
     if (!model) {
         logger.warn({
@@ -90,7 +70,9 @@ export async function classifySeverity(
     try {
         const result: any = await generateText({
             model: model as any,
-            experimental_telemetry: buildLangfuseTelemetry('severity-classifier'),
+            experimental_telemetry: buildLangfuseTelemetry(
+                'severity-classifier',
+            ),
             prompt: `Classify the severity of each code review suggestion based on these criteria:
 
 **CRITICAL**: ${flags.critical || DEFAULT_SEVERITY_FLAGS.critical}

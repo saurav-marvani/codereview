@@ -232,7 +232,7 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 (startReviewMessage.status ===
                     PullRequestMessageStatus.ONLY_WHEN_OPENED &&
                     !context.lastExecution))
-        ) { 
+        ) {
             const finalCommentBody =
                 await this.commentManagerService.processEndReviewMessageTemplate(
                     endReviewMessage.content,

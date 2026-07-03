@@ -11,6 +11,7 @@ import {
     EnrichedModelUsage,
     TierUsage,
     TokenUsageQueryContract,
+    UsageOverviewReportContract,
     UsageSummaryReportContract,
 } from '@libs/analytics/domain/token-usage/types/tokenUsage.types';
 import {
@@ -18,8 +19,19 @@ import {
     PricingSource,
 } from '@libs/analytics/domain/token-usage/types/pricing.types';
 
+import { CacheService } from '@libs/core/cache/cache.service';
+
 import { ModelCostCalculator } from './model-cost-calculator';
 import { PricingResolver } from './pricing-resolver';
+
+// Overview cache TTLs. A window that ends before today is immutable (historical
+// spans never change) → cache long. A window that includes today still grows as
+// new spans land → cache briefly so the screen stays snappy without going stale.
+// Both windows cached 4h. Past windows are immutable; the current window trades
+// up-to-4h staleness on today's data for far fewer (expensive) recomputes —
+// which also relieves the concurrent-scan load that caused the original OOM.
+const OVERVIEW_TTL_PAST_MS = 4 * 60 * 60 * 1000;
+const OVERVIEW_TTL_CURRENT_MS = 4 * 60 * 60 * 1000;
 
 const TO_API_SOURCE: Record<PricingSource, ApiPricingSource> = {
     manual: 'manual',
@@ -39,6 +51,7 @@ export class BuildUsageSummaryUseCase {
         @Inject(TOKEN_USAGE_SERVICE_TOKEN)
         private readonly tokenUsageService: ITokenUsageService,
         private readonly pricingResolver: PricingResolver,
+        private readonly cacheService: CacheService,
     ) {}
 
     async execute(
@@ -50,9 +63,9 @@ export class BuildUsageSummaryUseCase {
             this.tokenUsageService.getSummaryByModel(query),
         ]);
 
-        const enrichedRows = await Promise.all(
-            byModel.map((row) => this.enrich(row, overrides)),
-        );
+        const enrichedRows = (
+            await Promise.all(byModel.map((row) => this.enrich(row, overrides)))
+        ).sort((a, b) => a.model.localeCompare(b.model));
 
         const totalCost = enrichedRows.reduce<CostBreakdown>(
             (acc, row) => addCost(acc, row.cost),
@@ -60,6 +73,80 @@ export class BuildUsageSummaryUseCase {
         );
 
         return { totals, totalCost, byModel: enrichedRows };
+    }
+
+    /**
+     * Single-request overview for the Token Usage screen: one covered $facet
+     * aggregation (summary + daily + byPr) enriched with cost. Replaces the
+     * page's ~4 separate fetches (summary=2 aggs + daily + by-pr) with one,
+     * removing the concurrent scan load that caused the prod OOM.
+     */
+    async executeOverview(
+        query: TokenUsageQueryContract,
+        overrides?: ManualPricingOverrides,
+    ): Promise<UsageOverviewReportContract> {
+        // Past windows are immutable → serve repeat loads from cache instantly
+        // instead of re-scanning ~1M+ index keys every time. The overrides
+        // signature is in the key so manual pricing edits don't serve stale cost.
+        const cacheKey = this.overviewCacheKey(query, overrides);
+        const cached =
+            await this.cacheService.getFromCache<UsageOverviewReportContract>(
+                cacheKey,
+            );
+        if (cached) return cached;
+
+        const report = await this.buildOverview(query, overrides);
+
+        const ttl =
+            query.end.getTime() < startOfTodayUtc()
+                ? OVERVIEW_TTL_PAST_MS
+                : OVERVIEW_TTL_CURRENT_MS;
+        await this.cacheService.addToCache(cacheKey, report, ttl);
+        return report;
+    }
+
+    private overviewCacheKey(
+        query: TokenUsageQueryContract,
+        overrides?: ManualPricingOverrides,
+    ): string {
+        return [
+            'usage:overview:v1',
+            query.organizationId,
+            query.byok ? 'byok' : 'sys',
+            query.start.getTime(),
+            query.end.getTime(),
+            query.timezone || 'UTC',
+            query.models || '',
+            query.prNumber ?? '',
+            JSON.stringify(overrides ?? {}),
+        ].join('|');
+    }
+
+    private async buildOverview(
+        query: TokenUsageQueryContract,
+        overrides?: ManualPricingOverrides,
+    ): Promise<UsageOverviewReportContract> {
+        const overview = await this.tokenUsageService.getUsageOverview(query);
+
+        const enrichedRows = (
+            await Promise.all(
+                overview.byModel.map((row) => this.enrich(row, overrides)),
+            )
+        ).sort((a, b) => a.model.localeCompare(b.model));
+        const totalCost = enrichedRows.reduce<CostBreakdown>(
+            (acc, row) => addCost(acc, row.cost),
+            zeroCost(),
+        );
+
+        return {
+            summary: {
+                totals: overview.summary,
+                totalCost,
+                byModel: enrichedRows,
+            },
+            daily: overview.daily,
+            byPr: overview.byPr,
+        };
     }
 
     private async enrich(
@@ -107,6 +194,16 @@ export class BuildUsageSummaryUseCase {
             pricingSource,
         };
     }
+}
+
+/** Epoch ms for 00:00 UTC today — the cutoff for "immutable past window". */
+function startOfTodayUtc(): number {
+    const now = new Date();
+    return Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate(),
+    );
 }
 
 function zeroCost(): CostBreakdown {

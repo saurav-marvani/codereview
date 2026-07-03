@@ -17,6 +17,7 @@ import { CreatePRCodeReviewUseCase } from './create-prs-code-review.use-case';
 import { SyncSelectedRepositoriesKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/sync-selected-repositories.use-case';
 import { CreateOrUpdateParametersUseCase } from '@libs/organization/application/use-cases/parameters/create-or-update-use-case';
 import { TelemetryService } from '@libs/telemetry/application/services/telemetry.service';
+import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 
 @Injectable()
 export class FinishOnboardingUseCase {
@@ -38,6 +39,7 @@ export class FinishOnboardingUseCase {
         private readonly syncSelectedReposKodyRulesUseCase: SyncSelectedRepositoriesKodyRulesUseCase,
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
         private readonly telemetry: TelemetryService,
+        private readonly codeManagement: CodeManagementService,
     ) {}
 
     async execute(params: FinishOnboardingDTO) {
@@ -161,6 +163,32 @@ export class FinishOnboardingUseCase {
                     });
                 }
 
+                // Real engineering team size from the just-connected git org.
+                // Best-effort lead-scoring signal for the onboarding Discord
+                // card — never blocks onboarding if the git lookup fails.
+                let orgMemberCount: number | undefined;
+                try {
+                    const members = await this.codeManagement.getListMembers({
+                        organizationAndTeamData: { organizationId, teamId },
+                    });
+                    orgMemberCount = Array.isArray(members)
+                        ? members.length
+                        : undefined;
+                } catch (error) {
+                    this.logger.warn({
+                        message:
+                            'Failed to resolve org member count for onboarding telemetry',
+                        context: FinishOnboardingUseCase.name,
+                        metadata: {
+                            teamId,
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error),
+                        },
+                    });
+                }
+
                 void this.telemetry.onboardingCompleted({
                     userId,
                     email: userEmail,
@@ -169,6 +197,7 @@ export class FinishOnboardingUseCase {
                     teamId,
                     teamName,
                     reviewedPR: !!reviewPR,
+                    orgMemberCount,
                 });
 
                 if (reviewPR) {

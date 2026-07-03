@@ -114,6 +114,31 @@ export class TokenUsageController {
         );
     }
 
+    @Get('tokens/overview')
+    @ApiOperation({
+        summary: 'Get token usage overview (single request)',
+        description:
+            'Return summary (totals + cost + per-model) plus daily and by-PR series in ONE covered aggregation. Replaces the separate summary/daily/by-pr calls the screen used to fire.',
+    })
+    @ApiOkResponse({ type: UsageSummaryResponseDto })
+    async getOverview(@Query() query: TokenUsageQueryDto) {
+        const organizationId = this.request?.user?.organization?.uuid;
+
+        if (!organizationId) {
+            throw new BadRequestException('organizationId not found in request');
+        }
+
+        const mapped = this.mapDtoToContract(query, organizationId);
+        const config = await this.spendLimitConfigService.getConfig({
+            organizationId,
+            teamId: '',
+        });
+        return this.buildUsageSummaryUseCase.executeOverview(
+            mapped,
+            config?.modelPricing,
+        );
+    }
+
     @Get('tokens/daily')
     @ApiOperation({
         summary: 'Get daily token usage',
@@ -226,6 +251,39 @@ export class TokenUsageController {
             query.model,
             query.provider,
         );
+    }
+
+    @Get('tokens/pricing/batch')
+    @ApiOperation({
+        summary: 'Get token pricing for many models (single request)',
+        description:
+            'Resolve pricing for a comma-separated list of models in ONE request (LiteLLM catalog is fetched once). Replaces the per-model pricing N+1 the screen used to fire.',
+    })
+    @ApiOkResponse({ type: ApiObjectResponseDto })
+    async getPricingBatch(
+        @Query('models') models?: string,
+        @Query('provider') provider?: string,
+    ) {
+        const organizationId = this.request?.user?.organization?.uuid;
+
+        if (!organizationId) {
+            throw new BadRequestException('organizationId not found in request');
+        }
+
+        const list = (models ?? '')
+            .split(',')
+            .map((m) => m.trim())
+            .filter(Boolean);
+        // Cap the batch: an authenticated caller could otherwise send a huge
+        // list and force an unbounded number of catalog lookups per request
+        // (DoS). The screen only ever asks for the models in its breakdown.
+        const MAX_BATCH_MODELS = 100;
+        if (list.length > MAX_BATCH_MODELS) {
+            throw new BadRequestException(
+                `Too many models (max ${MAX_BATCH_MODELS} per request)`,
+            );
+        }
+        return this.tokenPricingUseCase.executeMany(list, provider);
     }
 
     @Get('cost-estimate')

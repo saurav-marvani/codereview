@@ -28,6 +28,11 @@ x-app-service-template: &app-service-defaults
     environment:
         - CHOKIDAR_USEPOLLING=false
         - API_DEVELOPMENT_MODE=${API_DEVELOPMENT_MODE:-true}
+        # pnpm 11 wants a TTY to confirm purging node_modules when manifests
+        # change (e.g. after a branch switch). The dev-entrypoint runs
+        # non-interactively, so CI=true lets pnpm skip the confirmation and
+        # sync deps instead of aborting with ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY.
+        - CI=true
     restart: unless-stopped
     volumes:
         - .:/usr/src/app:delegated
@@ -89,6 +94,10 @@ services:
             retries: 8
             start_period: 180s
         environment:
+            # pnpm 11 aborts a non-interactive node_modules purge (branch
+            # switch → manifest drift) without CI=true. Per-service blocks
+            # override the anchor's environment list, so it must be set here.
+            - CI=true
             - API_CLOUD_MODE=${API_CLOUD_MODE:-false}
             - NODE_OPTIONS=--max-old-space-size=2560 --max-semi-space-size=64
             - DEBUG_PORT=9229
@@ -142,6 +151,10 @@ services:
             retries: 3
             start_period: 60s
         environment:
+            # pnpm 11 aborts a non-interactive node_modules purge (branch
+            # switch → manifest drift) without CI=true. Per-service blocks
+            # override the anchor's environment list, so it must be set here.
+            - CI=true
             - API_CLOUD_MODE=${API_CLOUD_MODE:-false}
             # V8 heap kept below the 2G container cap (with ~500M headroom
             # for native modules, thread stacks, and Node runtime overhead).
@@ -212,6 +225,10 @@ services:
             retries: 3
             start_period: 60s
         environment:
+            # pnpm 11 aborts a non-interactive node_modules purge (branch
+            # switch → manifest drift) without CI=true. Per-service blocks
+            # override the anchor's environment list, so it must be set here.
+            - CI=true
             - API_CLOUD_MODE=${API_CLOUD_MODE:-false}
             # V8 heap kept below the 1G container cap. 1536M heap on a
             # 1G cgroup let V8 grow past the limit and triggered silent
@@ -266,6 +283,10 @@ services:
             retries: 3
             start_period: 60s
         environment:
+            # pnpm 11 aborts a non-interactive node_modules purge (branch
+            # switch → manifest drift) without CI=true. Per-service blocks
+            # override the anchor's environment list, so it must be set here.
+            - CI=true
             - API_CLOUD_MODE=${API_CLOUD_MODE:-false}
             # V8 heap kept below the 1G container cap. 4096M heap on a
             # 1G cgroup let V8 grow past the limit and triggered silent

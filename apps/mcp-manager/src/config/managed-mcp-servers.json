@@ -1,15 +1,5 @@
 [
     {
-        "id": "context7-default",
-        "name": "Context7",
-        "category": "documentation",
-        "baseUrl": "https://context7-kodus.up.railway.app/mcp",
-        "protocol": "http",
-        "logoUrl": "https://avatars.githubusercontent.com/u/74989412?s=48&v=4",
-        "headers": {},
-        "authMethods": [{ "id": "none", "type": "none", "default": true }]
-    },
-    {
         "id": "kodus-docs-default",
         "name": "Kodus Docs",
         "category": "documentation",

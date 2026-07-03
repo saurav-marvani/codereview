@@ -95,6 +95,13 @@ function grepStrongUsages(): Set<string> {
         '--exclude-dir=.claude',
         '--exclude-dir=.cursor',
         '--exclude-dir=.vscode',
+        // Nested git worktrees (Claude Code / manual `git worktree`) hold
+        // checkouts of OTHER branches — older code using since-renamed env
+        // names (e.g. API_OPENROUTER_KEY → API_OPEN_ROUTER_API_KEY,
+        // API_SERVICE_AST_URL, API_SENTRY_DNS). Scanning them flags phantom
+        // vars that don't exist in THIS branch's tracked code.
+        '--exclude-dir=.worktrees',
+        '--exclude-dir=worktrees',
         // Tooling that's NOT part of the runtime — has its own config story
         // and shouldn't gate the schema. Promotion/cross-file/safeguard
         // evals reference legacy env names that were renamed in production

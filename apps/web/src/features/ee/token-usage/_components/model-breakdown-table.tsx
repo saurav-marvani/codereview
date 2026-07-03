@@ -83,12 +83,17 @@ function PricingTooltip({
 
     return (
         <Tooltip>
+            {/* span, not button: this trigger renders inside the AccordionTrigger
+                (itself a <button>), and a nested <button> is invalid HTML that
+                trips React hydration. tabIndex keeps it keyboard-focusable so the
+                tooltip still opens on focus. */}
             <TooltipTrigger asChild>
-                <button
-                    type="button"
-                    className="text-text-tertiary hover:text-text-primary inline-flex size-4 items-center justify-center">
+                <span
+                    role="button"
+                    tabIndex={0}
+                    className="text-text-tertiary hover:text-text-primary inline-flex size-4 cursor-help items-center justify-center">
                     <InfoIcon className="size-3.5" />
-                </button>
+                </span>
             </TooltipTrigger>
             <TooltipContent side="right" className="max-w-sm p-3 text-xs">
                 <p className="text-text-primary mb-2 font-medium">
