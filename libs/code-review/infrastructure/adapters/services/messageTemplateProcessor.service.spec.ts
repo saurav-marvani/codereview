@@ -125,6 +125,25 @@ describe('MessageTemplateProcessor', () => {
             );
         });
 
+        it('resolves the deprecated @consolidatedLLMPrompt alias without advertising it', async () => {
+            // Renamed to @agentPrompt, but saved templates may still use the old
+            // name — it must render the same block, not the literal placeholder.
+            expect(processor.getAvailablePlaceholders()).not.toContain(
+                '@consolidatedLLMPrompt',
+            );
+
+            const viaAlias = await processor.processTemplate(
+                '@consolidatedLLMPrompt',
+                { lineComments: [] },
+            );
+            const viaCurrent = await processor.processTemplate('@agentPrompt', {
+                lineComments: [],
+            });
+
+            expect(viaAlias).not.toContain('@consolidatedLLMPrompt');
+            expect(viaAlias).toBe(viaCurrent);
+        });
+
         it('lets callers register a custom placeholder handler', async () => {
             processor.registerHandler('greeting', () => 'Hello, world!');
 

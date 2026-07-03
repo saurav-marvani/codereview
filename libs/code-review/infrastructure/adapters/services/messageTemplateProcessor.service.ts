@@ -46,6 +46,16 @@ export type PlaceholderHandler = (
 export class MessageTemplateProcessor {
     private handlers = new Map<string, PlaceholderHandler>();
 
+    // Deprecated placeholder names kept resolvable for backward-compat with
+    // custom message templates saved before a rename. Aliases resolve to the
+    // current handler but are intentionally NOT advertised by
+    // getAvailablePlaceholders() so the UI only offers the current name.
+    private aliases = new Map<string, string>([
+        // @consolidatedLLMPrompt was renamed to @agentPrompt; old saved
+        // templates must still render the consolidated block, not the literal.
+        ['consolidatedLLMPrompt', 'agentPrompt'],
+    ]);
+
     constructor() {
         this.registerDefaultHandlers();
     }
@@ -92,7 +102,9 @@ export class MessageTemplateProcessor {
 
         for (const match of matches) {
             const placeholder = match[1];
-            const handler = this.handlers.get(placeholder);
+            const handler =
+                this.handlers.get(placeholder) ??
+                this.handlers.get(this.aliases.get(placeholder) ?? '');
 
             if (handler) {
                 const replacement = await handler(context);
