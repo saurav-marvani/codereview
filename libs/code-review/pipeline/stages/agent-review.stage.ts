@@ -960,10 +960,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                         deduped[i].suggestionContent = fmt.suggestionContent;
                         // Keep llmPrompt in sync with the formatted prose.
                         // llmPrompt is a snapshot of the RAW suggestionContent
-                        // (WHAT/WHY/HOW) taken before this pass; the per-comment
-                        // "Prompt for LLM" copy block and the consolidated
-                        // @agentPrompt read it, so without this the raw
-                        // scaffolding still leaks there.
+                        // (WHAT/WHY/HOW) taken in finding-mapper before this
+                        // pass; the per-comment "Prompt for LLM" copy block and
+                        // the consolidated @agentPrompt read it, so without this
+                        // the raw scaffolding still leaks there.
                         deduped[i].llmPrompt = fmt.suggestionContent;
                     }
                 }

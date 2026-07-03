@@ -6,12 +6,11 @@
  * - Severity is always classified using the CLIENT's criteria (v2PromptOverrides)
  * - Classification is consistent regardless of which BYOK model the client uses
  */
-import { z } from 'zod';
 import { createLogger } from '@libs/core/log/logger';
 import type { BYOKConfig } from '@kodus/kodus-common/llm';
 import type { CodeReviewConfig } from '@libs/core/infrastructure/config/types/general/codeReview.type';
-import { tracedGenerateText as generateText } from '@libs/llm/llm-call';
 import { resolveSecondaryPassModel } from './secondary-pass-model';
+import { tracedGenerateText as generateText } from '@libs/llm/llm-call';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 
 const logger = createLogger('SeverityClassifier');
@@ -23,16 +22,6 @@ const DEFAULT_SEVERITY_FLAGS = {
     medium: 'Partially broken functionality. Performance issues in specific scenarios. Incorrect but recoverable data.',
     low: 'Minor performance overhead. Incorrect metrics/logs. Rarely affecting few users. Edge-case issues.',
 };
-
-const severityResultSchema = z.object({
-    classifications: z.array(
-        z.object({
-            index: z.number(),
-            severity: z.enum(['critical', 'high', 'medium', 'low']),
-            reason: z.string(),
-        }),
-    ),
-});
 
 export interface SuggestionForClassification {
     relevantFile: string;

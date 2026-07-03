@@ -174,6 +174,7 @@ export const TabContent = (props: {
                             value={props.value}
                             onChange={props.onChangeAction}
                             canEdit={props.canEdit}
+                            messageType={props.type}
                         />
 
                         <OverrideIndicator

@@ -6,7 +6,7 @@ import { resolveSecondaryPassModel } from './secondary-pass-model';
 
 const logger = createLogger('SuggestionFormatter');
 
-const FORMAT_TIMEOUT_MS = 90_000; // 90s — Gemini Flash can take >30s under load
+const FORMAT_TIMEOUT_MS = 90_000; // 90s — the secondary model can take >30s under load
 
 const displayNames = new Intl.DisplayNames(['en'], { type: 'language' });
 
@@ -27,7 +27,8 @@ export interface FormattedSuggestion {
  * Reformat suggestion content from WHAT/WHY/HOW to natural prose,
  * and ensure improvedCode is populated.
  *
- * Uses Gemini Flash (Google API key) or BYOK fallback model.
+ * Runs on the shared secondary-pass model (gpt-5.4-mini) — see
+ * resolveSecondaryPassModel. BYOK only as a self-hosted fallback.
  * Respects custom writing guidelines if provided.
  */
 export async function formatSuggestionContent(
@@ -38,7 +39,9 @@ export async function formatSuggestionContent(
         languageResultPrompt?: string;
     },
 ): Promise<Map<number, FormattedSuggestion>> {
-    if (suggestions.length === 0) return new Map();
+    if (suggestions.length === 0) {
+        return new Map();
+    }
 
     // Secondary pass: cheap, consistent platform model (gpt-5.4-mini) first,
     // BYOK only as a self-hosted fallback — see resolveSecondaryPassModel. Null
