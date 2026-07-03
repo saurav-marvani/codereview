@@ -1,8 +1,8 @@
 import { createLogger } from '@libs/core/log/logger';
 import { BYOKConfig } from '@kodus/kodus-common/llm';
-import { resolveSecondaryPassModel } from './secondary-pass-model';
 import { tracedGenerateText as generateText } from '@libs/llm/llm-call';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
+import { resolveSecondaryPassModel } from './secondary-pass-model';
 
 const logger = createLogger('SuggestionFormatter');
 

@@ -106,18 +106,12 @@ function cell(role: Role, resource: ResourceType): string {
     return parts.length > 0 ? parts.join(' / ') : '—';
 }
 
-// Resources that any non-owner role actually references, in label order.
+// Every labeled resource, in label order. We include owner-only resources
+// (e.g. OrganizationSettings, which the Owner reaches via the `All` wildcard
+// and no other role references) so the matrix surfaces them with "Owner: full
+// / others: —" instead of silently dropping the row.
 function resourcesInUse(): ResourceType[] {
-    const used = new Set<ResourceType>();
-    for (const role of ROLE_ORDER) {
-        for (const rule of ROLE_POLICIES[role]) {
-            if (rule.resource !== ResourceType.All) used.add(rule.resource);
-        }
-    }
-    // Keep the label-map order for stable, readable output.
-    return (Object.keys(RESOURCE_LABELS) as ResourceType[]).filter((r) =>
-        used.has(r),
-    );
+    return Object.keys(RESOURCE_LABELS) as ResourceType[];
 }
 
 function render(): string {

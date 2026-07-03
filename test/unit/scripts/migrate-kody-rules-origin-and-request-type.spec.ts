@@ -1,4 +1,4 @@
-import { migrateRule } from '../../../scripts/migrate-kody-rules-origin-and-request-type';
+import { migrateRule } from '@libs/core/infrastructure/database/mongo/kody-rules/migrate-origin-request-type';
 import {
     KodyRuleRequestType,
     KodyRulesOrigin,

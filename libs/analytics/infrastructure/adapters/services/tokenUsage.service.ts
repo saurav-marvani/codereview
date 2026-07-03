@@ -49,4 +49,8 @@ export class TokenUsageService implements ITokenUsageService {
     ): Promise<DailyUsageByPrResultContract[]> {
         return this.repository.getDailyUsageByPr(query);
     }
+
+    async getUsageOverview(query: TokenUsageQueryContract) {
+        return this.repository.getUsageOverview(query);
+    }
 }

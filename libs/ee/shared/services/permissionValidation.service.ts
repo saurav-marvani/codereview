@@ -743,4 +743,30 @@ export class PermissionValidationService {
 
         return byokConfig?.configValue || null;
     }
+
+    /**
+     * Returns the org's current subscription status (e.g. 'trial', 'active').
+     * Used by non-review flows (kody-rules, config detection) to mirror the
+     * code review pipeline's trial-only defaults for helper LLM calls.
+     * Non-UUID org ids (CLI trial requests) and errors resolve to undefined.
+     */
+    async getSubscriptionStatus(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<string | undefined> {
+        const UUID_RE =
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!UUID_RE.test(organizationAndTeamData?.organizationId || '')) {
+            return undefined;
+        }
+
+        try {
+            const validation =
+                await this.licenseService.validateOrganizationLicense(
+                    organizationAndTeamData,
+                );
+            return validation?.subscriptionStatus;
+        } catch {
+            return undefined;
+        }
+    }
 }

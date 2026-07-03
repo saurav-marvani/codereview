@@ -45,6 +45,12 @@ export interface AgentTool<TInput = unknown> {
     readonly description: string;
     /** Input contract (JSON Schema). The runner validates against it. */
     readonly inputSchema: JSONSchema;
+    /** Opt in to provider-native strict/structured tool calling for this tool
+     *  (grammar-constrained sampling), when the underlying provider + model
+     *  support it. Providers that don't support it ignore the flag. The domain
+     *  sets this (e.g. only on a done-tool, and only for strict-capable models);
+     *  the runner just forwards it. Leave undefined for best-effort tools. */
+    readonly strict?: boolean;
     /** Pure-ish capability: given validated input + context, return a result.
      *  Should not throw for expected failures — return {isError:true}. */
     execute(input: TInput, ctx: ToolContext): Promise<ToolResult>;

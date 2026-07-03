@@ -6,7 +6,6 @@
  * - Severity is always classified using the CLIENT's criteria (v2PromptOverrides)
  * - Classification is consistent regardless of which BYOK model the client uses
  */
-import { z } from 'zod';
 import { createLogger } from '@libs/core/log/logger';
 import type { BYOKConfig } from '@kodus/kodus-common/llm';
 import type { CodeReviewConfig } from '@libs/core/infrastructure/config/types/general/codeReview.type';
@@ -23,16 +22,6 @@ const DEFAULT_SEVERITY_FLAGS = {
     medium: 'Partially broken functionality. Performance issues in specific scenarios. Incorrect but recoverable data.',
     low: 'Minor performance overhead. Incorrect metrics/logs. Rarely affecting few users. Edge-case issues.',
 };
-
-const severityResultSchema = z.object({
-    classifications: z.array(
-        z.object({
-            index: z.number(),
-            severity: z.enum(['critical', 'high', 'medium', 'low']),
-            reason: z.string(),
-        }),
-    ),
-});
 
 export interface SuggestionForClassification {
     relevantFile: string;
@@ -81,7 +70,9 @@ export async function classifySeverity(
     try {
         const result: any = await generateText({
             model: model as any,
-            experimental_telemetry: buildLangfuseTelemetry('severity-classifier'),
+            experimental_telemetry: buildLangfuseTelemetry(
+                'severity-classifier',
+            ),
             prompt: `Classify the severity of each code review suggestion based on these criteria:
 
 **CRITICAL**: ${flags.critical || DEFAULT_SEVERITY_FLAGS.critical}

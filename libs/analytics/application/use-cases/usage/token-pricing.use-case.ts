@@ -86,6 +86,73 @@ export class TokenPricingUseCase {
         }
     }
 
+    /**
+     * Batch variant: resolve many models in one call. `getCatalog()` is cached,
+     * so this fetches the LiteLLM catalog at most once regardless of model
+     * count — collapsing the screen's per-model N+1 into a single request.
+     */
+    async executeMany(
+        models: string[],
+        provider?: string,
+    ): Promise<Record<string, ModelPricingInfo>> {
+        const unique = Array.from(
+            new Set(models.map((m) => m?.trim()).filter(Boolean)),
+        );
+        const entries = await Promise.all(
+            unique.map(
+                async (model) =>
+                    [model, await this.execute(model, provider)] as const,
+            ),
+        );
+        return Object.fromEntries(entries);
+    }
+
+    /**
+     * Canonical model names the catalog bills at a higher INPUT tier above a
+     * breakpoint (today: the `*_above_200k_tokens` Gemini models), mapped to
+     * that input threshold. The Token Usage read derives each call's tier from
+     * `attributes.tu.input` vs this map — so it needs to know *which models are
+     * tiered* without a per-request DB scan to discover the models present in
+     * the window. The catalog is cached (24h), making this near-free.
+     *
+     * Keys are canonicalized the same way the write path stores
+     * `attributes.tu.model` (strip provider prefix, keep the last id segment),
+     * so `vertex_ai/gemini-2.5-pro` and a bare `gemini-2.5-pro` both collapse to
+     * the stored name and match in the aggregation's `$switch`.
+     */
+    async tieredInputThresholds(): Promise<Map<string, number>> {
+        const catalog = await this.getCatalog();
+        const out = new Map<string, number>();
+        for (const [key, entry] of Object.entries(catalog)) {
+            if (
+                typeof entry?.input_cost_per_token_above_200k_tokens ===
+                'number'
+            ) {
+                for (const name of this.canonicalNames(key)) {
+                    out.set(name, LITELLM_TIER_THRESHOLD_TOKENS);
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Every form a catalog key can appear as in `attributes.tu.model`, so the
+     * read-time tier `$switch` matches however the id was stored.
+     *
+     * The write path (deriveTu) stores `gen_ai.response.model.split(':').pop()`
+     * — it strips a `provider:` prefix but KEEPS a `provider/` one. So a stored
+     * id may be the colon-stripped key (`vertex_ai/gemini-2.5-pro`) OR the fully
+     * bare last segment (`gemini-2.5-pro`). Emitting only the bare form (as a
+     * previous version did) missed slash-prefixed ids and under-reported their
+     * tiered cost — so emit BOTH.
+     */
+    private canonicalNames(key: string): string[] {
+        const colonStripped = key.split(':').pop()!;
+        const bare = colonStripped.split('/').pop()!;
+        return colonStripped === bare ? [colonStripped] : [colonStripped, bare];
+    }
+
     async getCatalog(): Promise<Record<string, LiteLLMModel>> {
         const cached =
             await this.cacheService.getFromCache<Record<string, LiteLLMModel>>(

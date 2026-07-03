@@ -1,12 +1,6 @@
 import { ContextDependency } from '@libs/ai-engine/infrastructure/adapters/services/context/context-pack';
 import { createLogger } from '@libs/core/log/logger';
-import {
-    BYOKConfig,
-    LLMModelProvider,
-    ParserType,
-    PromptRole,
-    PromptRunnerService,
-} from '@kodus/kodus-common/llm';
+import { BYOKConfig } from '@kodus/kodus-common/llm';
 import { Injectable } from '@nestjs/common';
 
 import {
@@ -14,8 +8,8 @@ import {
     IFileReference,
 } from '@libs/ai-engine/domain/prompt/interfaces/promptExternalReference.interface';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
-import { ObservabilityService } from '@libs/core/log/observability.service';
-import { BYOKPromptRunnerService } from '@libs/core/infrastructure/services/tokenTracking/byokPromptRunner.service';
+
+import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 import {
     prompt_detect_external_references_system,
     prompt_detect_external_references_user,
@@ -25,6 +19,16 @@ import {
     prompt_kodyrules_detect_references_user,
 } from '@libs/common/utils/langchainCommon/prompts/kodyRulesExternalReferences';
 import { extractJsonFromResponse } from '@libs/common/utils/prompt-parser.utils';
+import { byokToVercelModel, getModelName } from '@libs/llm/byok-to-vercel';
+import { tracedGenerateText as generateText } from '@libs/llm/llm-call';
+
+// Trial-only override: while the org is in the 14-day subscription trial
+// and hasn't wired a BYOK key, route reference detection through Moonshot's
+// Kimi K2.6 so we don't burn the expensive production default on Kodus's
+// dime. Off-trial callers get no override, so byokToVercelModel falls back
+// to the production default (cloud) or API_LLM_PROVIDER_MODEL (self-hosted).
+// Any BYOK config takes precedence over this in every case.
+const TRIAL_MODEL_OVERRIDE = 'kimi-k2.6';
 
 export interface DetectReferencesParams {
     requirementId: string;
@@ -33,16 +37,12 @@ export interface DetectReferencesParams {
     context?: 'rule' | 'instruction' | 'prompt';
     detectionMode?: 'rule' | 'prompt';
     byokConfig?: BYOKConfig;
+    subscriptionStatus?: string;
 }
 
 @Injectable()
 export class ReferenceDetectorService {
     private readonly logger = createLogger(ReferenceDetectorService.name);
-
-    constructor(
-        private readonly promptRunnerService: PromptRunnerService,
-        private readonly observabilityService: ObservabilityService,
-    ) {}
 
     hasLikelyExternalReferences(promptText: string): boolean {
         const patterns = [
@@ -63,65 +63,67 @@ export class ReferenceDetectorService {
     async detectReferences(
         params: DetectReferencesParams,
     ): Promise<IDetectedReference[]> {
-        const mainProvider = LLMModelProvider.GEMINI_2_5_FLASH;
-        const fallbackProvider = LLMModelProvider.GEMINI_2_5_PRO;
-        const runName = 'detectExternalReferences';
-
-        const promptRunner = new BYOKPromptRunnerService(
-            this.promptRunnerService,
-            mainProvider,
-            fallbackProvider,
-            params.byokConfig,
-        );
-
         const { organizationAndTeamData } = params;
 
-        const { result: raw } = await this.observabilityService.runLLMInSpan({
-            spanName: `${ReferenceDetectorService.name}::${runName}`,
-            runName,
-            attrs: {
-                organizationId: organizationAndTeamData.organizationId,
-                type: promptRunner.executeMode,
-                fallback: false,
-                context: params.context || 'unknown',
-            },
-            byokConfig: params.byokConfig,
-            exec: async (callbacks) => {
-                const isRuleMode = params.detectionMode === 'rule';
-                const systemPrompt = isRuleMode
-                    ? prompt_kodyrules_detect_references_system()
-                    : prompt_detect_external_references_system();
-                const userPrompt = isRuleMode
-                    ? prompt_kodyrules_detect_references_user({
-                          rule: params.promptText,
-                      })
-                    : prompt_detect_external_references_user({
-                          text: params.promptText,
-                          context: params.context,
-                      });
+        const defaultModelOverride =
+            params.subscriptionStatus === 'trial'
+                ? TRIAL_MODEL_OVERRIDE
+                : undefined;
 
-                return await promptRunner
-                    .builder()
-                    .setParser(ParserType.STRING)
-                    .setPayload({
-                        text: params.promptText,
-                        context: params.context,
-                    })
-                    .addPrompt({
-                        role: PromptRole.SYSTEM,
-                        prompt: systemPrompt,
-                    })
-                    .addPrompt({
-                        role: PromptRole.USER,
-                        prompt: userPrompt,
-                    })
-                    .addCallbacks(callbacks)
-                    .addMetadata({ runName })
-                    .setRunName(runName)
-                    .execute();
+        const model = byokToVercelModel(
+            params.byokConfig,
+            'main',
+            {},
+            defaultModelOverride,
+        );
+
+        const resolvedModelName = getModelName(
+            params.byokConfig,
+            defaultModelOverride,
+        );
+        this.logger.log({
+            message: `[REF-DETECTOR-DEBUG] Resolved model: ${resolvedModelName}`,
+            context: ReferenceDetectorService.name,
+            metadata: {
+                organizationId: organizationAndTeamData.organizationId,
+                teamId: organizationAndTeamData.teamId,
+                requirementId: params.requirementId,
+                subscriptionStatus: params.subscriptionStatus,
+                hasByok: !!params.byokConfig,
+                byokMainProvider: params.byokConfig?.main?.provider,
+                byokMainModel: params.byokConfig?.main?.model,
+                defaultModelOverride,
+                resolvedModelName,
             },
         });
 
+        const isRuleMode = params.detectionMode === 'rule';
+        const systemPrompt = isRuleMode
+            ? prompt_kodyrules_detect_references_system()
+            : prompt_detect_external_references_system();
+        const userPrompt = isRuleMode
+            ? prompt_kodyrules_detect_references_user({
+                  rule: params.promptText,
+              })
+            : prompt_detect_external_references_user({
+                  text: params.promptText,
+                  context: params.context,
+              });
+
+        const result = await generateText({
+            model,
+            system: systemPrompt,
+            prompt: userPrompt,
+            experimental_telemetry: buildLangfuseTelemetry(
+                'detectExternalReferences',
+                {
+                    organizationId: organizationAndTeamData.organizationId,
+                    teamId: organizationAndTeamData.teamId,
+                },
+            ),
+        });
+
+        const raw = result.text;
         if (!raw) {
             return [];
         }

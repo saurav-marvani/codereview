@@ -23,6 +23,7 @@ export interface IPromptContextEngineService {
         context?: 'rule' | 'instruction' | 'prompt';
         detectionMode?: 'rule' | 'prompt';
         byokConfig?: BYOKConfig;
+        subscriptionStatus?: string;
     }): Promise<{
         references: IFileReference[];
         syncErrors?: IPromptReferenceSyncError[];

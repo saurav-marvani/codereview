@@ -6,7 +6,6 @@ import { Inject, Injectable } from '@nestjs/common';
 import { tracedGenerateText } from '@libs/llm/llm-call';
 import { resolveAdaptiveProfile } from '@libs/code-review/infrastructure/agents/engine/adaptive-fit';
 import { resolveContextWindow } from '@libs/llm/model-context-window';
-import { SECONDARY_PASS_MODEL_ID } from '@libs/code-review/infrastructure/agents/engine/secondary-pass-model';
 import {
     DEDUP_SCHEMA,
     DEDUP_CONTENT_THRESHOLD,
@@ -64,6 +63,7 @@ import {
     classifyLLMError,
     getClassification,
 } from '@libs/llm/error-classifier';
+import { SECONDARY_PASS_MODEL_ID } from '@libs/code-review/infrastructure/agents/engine/secondary-pass-model';
 
 /**
  * Extract valid line ranges from a unified diff patch.

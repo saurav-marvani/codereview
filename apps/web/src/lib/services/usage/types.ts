@@ -85,6 +85,12 @@ export interface EnrichedModelUsage extends BaseUsageContract {
 }
 
 /** Rich payload returned by `/usage/tokens/summary`. */
+export interface UsageOverviewReportContract {
+    summary: UsageSummaryContract;
+    daily: DailyUsageResultContract[];
+    byPr: UsageByPrResultContract[];
+}
+
 export interface UsageSummaryContract {
     totals: BaseUsageContract;
     totalCost: CostBreakdown;

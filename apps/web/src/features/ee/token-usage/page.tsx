@@ -1,12 +1,9 @@
 import { cookies } from "next/headers";
-import { notFound, redirect } from "next/navigation";
 import { Page } from "@components/ui/page";
 import {
-    getDailyTokenUsage,
-    getSummaryTokenUsage,
-    getTokenPricing,
+    getTokenPricingBatch,
     getTokenUsageByDeveloper,
-    getTokenUsageByPR,
+    getTokenUsageOverview,
 } from "@services/usage/fetch";
 import {
     BaseUsageContract,
@@ -44,21 +41,18 @@ function buildFallbackPricing(
     };
 }
 
-async function getModelPricing(model: string): Promise<ModelPricingInfo> {
-    // First try internal API (LiteLLM catalog, wrapped by TokenPricingUseCase)
-    try {
-        const internalPricing = await getTokenPricing(model);
-        if (
-            internalPricing?.pricing?.prompt > 0 ||
-            internalPricing?.pricing?.completion > 0
-        ) {
-            return internalPricing;
-        }
-    } catch {
-        // Fall through to models.dev
-    }
+function hasPricing(info?: ModelPricingInfo): boolean {
+    return !!info && (info.pricing?.prompt > 0 || info.pricing?.completion > 0);
+}
 
-    // Try models.dev as fallback (no cache rates — those fields default to 0)
+/**
+ * Fallback for a model absent (or zero-priced) in the LiteLLM catalog: try
+ * models.dev, else zero. The catalog itself is resolved in one batch call
+ * (getTokenPricingBatch) — this only runs for the leftover misses.
+ */
+async function resolvePricingFallback(
+    model: string,
+): Promise<ModelPricingInfo> {
     const modelsDevPricing = await fetchModelPricingFromModelsDev(model);
     if (modelsDevPricing) {
         return buildFallbackPricing(
@@ -67,8 +61,6 @@ async function getModelPricing(model: string): Promise<ModelPricingInfo> {
             modelsDevPricing.completion,
         );
     }
-
-    // Return zero pricing as last resort
     return buildFallbackPricing(model, 0, 0);
 }
 
@@ -104,46 +96,41 @@ export default async function TokenUsagePage({
     let uniquePrCount = 0;
     const filterType = params.filter ?? "daily";
 
-    try {
-        const chartFetch =
-            filterType === "by-pr"
-                ? getTokenUsageByPR(filters)
-                : filterType === "by-developer"
-                  ? getTokenUsageByDeveloper(filters)
-                  : getDailyTokenUsage(filters);
+    // Primary data fetch — deliberately NOT wrapped in try/catch: a failure
+    // here must surface the route error boundary (error.tsx) so the user gets a
+    // real "failed to load + retry" instead of a page full of misleading zeros.
+    // Pricing has its own catch below and degrades gracefully.
+    //
+    // ONE covered aggregation returns summary + daily + by-pr (the cost cards
+    // need day/PR counts regardless of the chart dimension). Only the
+    // by-developer dimension isn't part of it, so that mode fetches alongside.
+    const [overview, developerData] = await Promise.all([
+        getTokenUsageOverview(filters),
+        filterType === "by-developer"
+            ? getTokenUsageByDeveloper(filters)
+            : Promise.resolve(null),
+    ]);
 
-        // Daily + by-pr requests run unconditionally because the cost cards
-        // need both "active days" and "unique PRs" counts regardless of which
-        // dimension the chart is rendering.
-        const [chartData, summaryData, dailyData, prData] = await Promise.all([
-            chartFetch,
-            getSummaryTokenUsage(filters),
-            filterType === "daily"
-                ? Promise.resolve(null)
-                : getDailyTokenUsage(filters),
-            filterType === "by-pr"
-                ? Promise.resolve(null)
-                : getTokenUsageByPR(filters),
-        ]);
+    summary = overview.summary;
 
-        data = chartData;
-        summary = summaryData;
+    const dailyRows = overview.daily ?? [];
+    const prRows = overview.byPr ?? [];
 
-        const dailyRows = (filterType === "daily" ? chartData : dailyData) ?? [];
-        const prRows = (filterType === "by-pr" ? chartData : prData) ?? [];
-        activeDayCount = new Set(
-            (dailyRows as Array<{ date?: string }>)
-                .map((r) => r.date)
-                .filter(Boolean),
-        ).size;
-        uniquePrCount = new Set(
-            (prRows as Array<{ prNumber?: number }>)
-                .map((r) => r.prNumber)
-                .filter((n): n is number => typeof n === "number"),
-        ).size;
-    } catch (error) {
-        console.error("Failed to fetch token usage data:", error);
-    }
+    data =
+        filterType === "by-pr"
+            ? prRows
+            : filterType === "by-developer"
+              ? (developerData ?? [])
+              : dailyRows;
+
+    activeDayCount = new Set(
+        dailyRows.map((r) => r.date).filter(Boolean),
+    ).size;
+    uniquePrCount = new Set(
+        prRows
+            .map((r) => r.prNumber)
+            .filter((n): n is number => typeof n === "number"),
+    ).size;
 
     const ENABLE_MOCK_DATA = false;
 
@@ -201,15 +188,24 @@ export default async function TokenUsagePage({
                 15.0,
             ),
         };
-    } else {
+    } else if (uniqueModels.length) {
         try {
-            const pricingPromises = uniqueModels.map(async (model) => {
-                const pricingInfo = await getModelPricing(model);
-                return { [model]: pricingInfo };
-            });
-
-            const pricingArray = await Promise.all(pricingPromises);
-            pricing = Object.assign({}, ...pricingArray);
+            // ONE batch request for the LiteLLM catalog rates (was N per-model
+            // calls). Only models missing/zero in the catalog fall back to
+            // models.dev, in parallel.
+            const catalogPricing = await getTokenPricingBatch(uniqueModels);
+            const entries = await Promise.all(
+                uniqueModels.map(async (model) => {
+                    const info = catalogPricing[model];
+                    return [
+                        model,
+                        hasPricing(info)
+                            ? info
+                            : await resolvePricingFallback(model),
+                    ] as const;
+                }),
+            );
+            pricing = Object.fromEntries(entries);
         } catch (error) {
             console.error("Failed to fetch pricing data:", error);
         }
