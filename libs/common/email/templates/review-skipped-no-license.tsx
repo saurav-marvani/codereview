@@ -36,8 +36,8 @@ function ReviewSkippedNoLicenseEmail({
             <Heading style={baseHeading}>Review skipped — license required</Heading>
             <Text style={baseText}>
                 A pull request by <strong>{authorUsername || 'an unknown user'}</strong> in{' '}
-                <strong>{repoName}</strong> was not reviewed because your
-                organization doesn't have an active license.
+                <strong>{repoName}</strong> was not reviewed because this user
+                doesn't have an active license.
             </Text>
             <Text style={baseText}>
                 {ownerContact ? (

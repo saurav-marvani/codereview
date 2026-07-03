@@ -74,7 +74,7 @@ export const IN_APP_TEMPLATE_REGISTRY: Partial<
 
     [NotificationEvent.REVIEW_SKIPPED_NO_LICENSE]: (m) => ({
         title: 'Review skipped — license required',
-        body: `PR by ${(m.authorUsername as string) || 'unknown user'} in ${m.repoName ?? 'a repository'} was not reviewed — your organization lacks an active license. Contact ${m.ownerContact ?? 'your admin'} to enable reviews.`,
+        body: `PR by ${(m.authorUsername as string) || 'unknown user'} in ${m.repoName ?? 'a repository'} was not reviewed — this user doesn't have an active license. Contact ${m.ownerContact ?? 'your admin'} to enable reviews.`,
         ctaUrl: m.prUrl as string | undefined,
     }),
 
