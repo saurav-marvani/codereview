@@ -194,13 +194,26 @@ function extractText(provider, data) {
 }
 
 function parseMatch(text) {
-    const json = String(text || '').slice(String(text).indexOf('{'), String(text).lastIndexOf('}') + 1);
-    try {
-        const p = JSON.parse(json);
-        return !!p.match && (p.confidence ?? 0) >= MATCH_CONFIDENCE;
-    } catch {
-        return false;
+    // Now shared across Anthropic/OpenAI/Google, whose responses may wrap the
+    // JSON in ```json fences or leading/trailing prose. Try the fence-stripped
+    // whole response first, then fall back to the outermost {..} span.
+    const raw = String(text || '')
+        .replace(/^\s*```(?:json)?\s*/i, '')
+        .replace(/\s*```\s*$/i, '')
+        .trim();
+    const candidates = [raw];
+    const first = raw.indexOf('{');
+    const last = raw.lastIndexOf('}');
+    if (first !== -1 && last > first) candidates.push(raw.slice(first, last + 1));
+    for (const json of candidates) {
+        try {
+            const p = JSON.parse(json);
+            return !!p.match && (p.confidence ?? 0) >= MATCH_CONFIDENCE;
+        } catch {
+            /* try the next candidate */
+        }
     }
+    return false;
 }
 
 // Judge a (golden, candidate) pair with an explicit model — used by the

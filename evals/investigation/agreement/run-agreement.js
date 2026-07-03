@@ -126,7 +126,14 @@ function agreement(refMap, candMap, pairs) {
     }
     const precision = tp + fp ? tp / (tp + fp) : null;
     const recall = tp + fn ? tp / (tp + fn) : null;
-    const f1 = precision && recall ? (2 * precision * recall) / (precision + recall) : null;
+    // null only when a rate is undefined (no denominator); a real 0 precision or
+    // 0 recall must report F1 = 0, not null (a truthy guard would swallow it).
+    const f1 =
+        precision === null || recall === null
+            ? null
+            : precision + recall === 0
+              ? 0
+              : (2 * precision * recall) / (precision + recall);
     const accuracy = both ? agree / both : null;
     // Cohen's kappa
     const po = accuracy;
