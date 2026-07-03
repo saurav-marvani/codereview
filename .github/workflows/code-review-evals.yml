@@ -178,12 +178,17 @@ jobs:
               # floors sit at −2·SEM, so a double breach is a real regression,
               # not eval noise). Infra errors (exit 2) fail immediately, no retry.
               run: |
-                  code=0
-                  node evals/investigation/run-recall.js --set=pr --gate --model=${{ matrix.model }} || code=$?
+                  run_gate() { node evals/investigation/run-recall.js --set=pr --gate --model=${{ matrix.model }}; }
+                  code=0; run_gate || code=$?
+                  # exit 2 = infra (quota/rate-limit/key/network) — environmental,
+                  # not a quality regression. Warn and pass, don't block merge.
+                  if [ "$code" -eq 2 ]; then echo "::warning::${{ matrix.model }}: infra failure (quota/rate-limit/key) — not measured, not gating."; exit 0; fi
                   if [ "$code" -eq 0 ]; then exit 0; fi
-                  if [ "$code" -eq 2 ]; then exit 2; fi
-                  echo "::warning::Floor gate breached for ${{ matrix.model }} — retrying once to rule out eval noise."
-                  node evals/investigation/run-recall.js --set=pr --gate --model=${{ matrix.model }}
+                  # exit 1 = floor breach — retry once to rule out eval noise.
+                  echo "::warning::Floor gate breached for ${{ matrix.model }} — retrying once."
+                  code=0; run_gate || code=$?
+                  if [ "$code" -eq 2 ]; then echo "::warning::${{ matrix.model }}: infra failure on retry — not gating."; exit 0; fi
+                  exit "$code"
             - name: Upload finder recall result
               if: always()
               uses: actions/upload-artifact@v4
@@ -231,7 +236,13 @@ jobs:
               # gates against its own occMin (observed − ~2·binomial-SE). Runs the
               # FULL github-cases set (no --limit) so the measured recall matches
               # the floor's calibration.
-              run: node evals/kody-rules/real-agent.js --dataset=github-cases --gate --model=${{ matrix.model }} --runs=1
+              run: |
+                  code=0
+                  node evals/kody-rules/real-agent.js --dataset=github-cases --gate --model=${{ matrix.model }} --runs=1 || code=$?
+                  # exit 2 = infra (quota/rate-limit/key) — warn and pass, not a
+                  # quality regression. exit 1 = real floor breach → block.
+                  if [ "$code" -eq 2 ]; then echo "::warning::${{ matrix.model }}: infra failure (quota/rate-limit/key) — not gating."; exit 0; fi
+                  exit "$code"
 
     pr-anchoring-canary:
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false

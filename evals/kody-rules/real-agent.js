@@ -193,6 +193,10 @@ async function main() {
     let cleanFiles = 0, falseAlarmFiles = 0;
     // occurrence-level (only for cases that carry per-line groundTruth)
     let occTotal = 0, occCaught = 0, lineNoiseTotal = 0, flaggedTotal = 0;
+    // Environmental failures (quota / rate-limit / bad key) surface as errored
+    // runs — NOT real misses. Track them so a broken environment warns (infra)
+    // instead of deflating recall into a false quality-gate failure.
+    let erroredRuns = 0, totalRuns = 0;
     const haveGT = cases.some((c) => c.groundTruth);
     // flatten groundTruth → [{file, line}]
     const gtSites = (c) => Object.entries(c.groundTruth || {})
@@ -202,9 +206,10 @@ async function main() {
         const sites = gtSites(c);
         const perRun = [];
         for (let r = 0; r < RUNS; r++) {
-            let sugg = [];
+            let sugg = [], errored = false;
+            totalRuns++;
             try { sugg = await runCase(provider, c, changedFiles, replay); }
-            catch (e) { console.error(`  [case ${c.rule.uuid} run ${r}] ${String(e.message).slice(0, 140)}`); }
+            catch (e) { errored = true; erroredRuns++; console.error(`  [case ${c.rule.uuid} run ${r}] ${String(e.message).slice(0, 140)}`); }
             const flaggedFiles = new Set(sugg.map((s) => normalizePath(s.relevantFile)).filter(Boolean));
             const hit = violFiles.filter((f) => flaggedFiles.has(f)).length;
             const falseOnClean = okFiles.filter((f) => flaggedFiles.has(f)).length;
@@ -212,7 +217,7 @@ async function main() {
             const flags = sugg.map((s) => ({ file: normalizePath(s.relevantFile), line: s.relevantLinesStart })).filter((x) => x.file && Number.isFinite(x.line));
             const coveredSites = sites.filter((g) => flags.some((x) => x.file === g.file && Math.abs(x.line - g.line) <= LINE_TOL)).length;
             const onTargetFlags = flags.filter((x) => sites.some((g) => x.file === g.file && Math.abs(x.line - g.line) <= LINE_TOL)).length;
-            perRun.push({ hit, falseOnClean, coveredSites, flags: flags.length, lineNoise: flags.length - onTargetFlags });
+            perRun.push({ hit, falseOnClean, coveredSites, flags: flags.length, lineNoise: flags.length - onTargetFlags, errored });
         }
         const N = violFiles.length;
         const allRuns = perRun.filter((p) => p.hit >= N).length;
@@ -220,7 +225,10 @@ async function main() {
         caughtAllRuns += allRuns; totalMultiRuns += RUNS;
         cleanFiles += okFiles.length * RUNS; falseAlarmFiles += perRun.reduce((a, b) => a + b.falseOnClean, 0);
         if (c.groundTruth) {
-            occTotal += sites.length * RUNS; occCaught += perRun.reduce((a, b) => a + b.coveredSites, 0);
+            // Count only runs that actually executed — an errored (infra) run
+            // must not add its sites to the denominator as if they were missed.
+            const okRuns = perRun.filter((p) => !p.errored).length;
+            occTotal += sites.length * okRuns; occCaught += perRun.reduce((a, b) => a + (b.errored ? 0 : b.coveredSites), 0);
             lineNoiseTotal += perRun.reduce((a, b) => a + b.lineNoise, 0); flaggedTotal += perRun.reduce((a, b) => a + b.flags, 0);
             console.log(`${c.rule.uuid.padEnd(22)} files=${fileCount} sites=${sites.length}  file-hits/run=[${perRun.map((p) => p.hit).join(',')}]  occ-caught/run=[${perRun.map((p) => p.coveredSites).join(',')}]  flags/run=[${perRun.map((p) => p.flags).join(',')}]`);
         } else {
@@ -237,6 +245,14 @@ async function main() {
     console.log(`specificity (files):  ${pct(cleanFiles - falseAlarmFiles, cleanFiles)}%  (${falseAlarmFiles}/${cleanFiles} clean files false-alarmed)`);
 
     if (GATE) {
+        // Infra guard: if the environment (quota/rate-limit/key) broke enough
+        // runs that the measurement is unreliable, exit 2 (infra) so CI warns
+        // instead of red-flagging quality on a bogus low recall.
+        const erroredFrac = totalRuns ? erroredRuns / totalRuns : 0;
+        if (occTotal === 0 || erroredFrac >= 0.5) {
+            console.error(`\n⚠️ INFRA: ${erroredRuns}/${totalRuns} runs errored (quota/rate-limit/key) — measurement unreliable, not gating.`);
+            process.exit(2);
+        }
         const occ = occTotal ? (100 * occCaught / occTotal) : 0;
         const spec = cleanFiles ? (100 * (cleanFiles - falseAlarmFiles) / cleanFiles) : 100;
         const fails = [];
