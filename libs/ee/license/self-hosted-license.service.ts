@@ -178,6 +178,26 @@ export class SelfHostedLicenseService implements ILicenseService {
                 if (existing.status === 'active') {
                     return true;
                 }
+
+                const maxSeats = validation.numberOfLicenses || 0;
+                if (maxSeats > 0) {
+                    const globalCount =
+                        await this.getGlobalAssignedUsersCount();
+                    if (globalCount >= maxSeats) {
+                        this.logger.warn({
+                            message:
+                                'Cannot reactivate license: global seat limit reached',
+                            context: SelfHostedLicenseService.name,
+                            metadata: {
+                                currentGlobal: globalCount,
+                                max: maxSeats,
+                                userGitId,
+                            },
+                        });
+                        return false;
+                    }
+                }
+
                 existing.status = 'active';
                 await this.saveAssignedUsers(
                     organizationAndTeamData,
@@ -274,16 +294,10 @@ export class SelfHostedLicenseService implements ILicenseService {
             ) {
                 const raw = param.configValue.users;
                 if (isLegacyFormat(raw)) {
-                    const migrated: AssignedUserEntry[] = raw.map((id) => ({
+                    return raw.map((id) => ({
                         gitId: id,
                         status: 'active' as const,
                     }));
-                    await this.organizationParametersService.createOrUpdateConfig(
-                        OrganizationParametersKey.LICENSE_ASSIGNED_USERS,
-                        { users: migrated },
-                        organizationAndTeamData,
-                    );
-                    return migrated;
                 }
                 return raw as AssignedUserEntry[];
             }

@@ -22,6 +22,10 @@ import {
 } from '@libs/identity/infrastructure/adapters/services/permissions/policy.guard';
 import { checkPermissions } from '@libs/identity/infrastructure/adapters/services/permissions/policy.handlers';
 import { CreateOrUpdateOrganizationParametersUseCase } from '@libs/organization/application/use-cases/organizationParameters/create-or-update.use-case';
+import {
+    ILicenseService,
+    LICENSE_SERVICE_TOKEN,
+} from '@libs/ee/license/interfaces/license.interface';
 import { SelfHostedLicenseService } from '@libs/ee/license/self-hosted-license.service';
 import { ApiStandardResponses } from '../docs/api-standard-responses.decorator';
 import { TrialExtensionNotifierService } from '../services/trial-extension-notifier.service';
@@ -33,6 +37,8 @@ import { TrialExtensionNotifierService } from '../services/trial-extension-notif
 export class LicenseController {
     constructor(
         private readonly selfHostedLicenseService: SelfHostedLicenseService,
+        @Inject(LICENSE_SERVICE_TOKEN)
+        private readonly licenseService: ILicenseService,
         private readonly createOrUpdateOrganizationParametersUseCase: CreateOrUpdateOrganizationParametersUseCase,
         private readonly trialExtensionNotifierService: TrialExtensionNotifierService,
 
@@ -187,7 +193,7 @@ export class LicenseController {
             );
         }
 
-        return this.selfHostedLicenseService.getAllUsersEverWithLicense({
+        return this.licenseService.getAllUsersEverWithLicense({
             organizationId,
         });
     }
