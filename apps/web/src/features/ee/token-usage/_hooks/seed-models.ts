@@ -14,10 +14,12 @@ export function seedSelectedModels(
     available: readonly string[],
 ): string[] {
     if (!raw) return [...available];
+    // O(1) membership per candidate instead of scanning `available` each pass.
+    const availableSet = new Set(available);
     const wanted = raw
         .split(",")
         .map((m) => m.trim())
         .filter(Boolean);
-    const valid = wanted.filter((m) => available.includes(m));
+    const valid = wanted.filter((m) => availableSet.has(m));
     return valid.length ? valid : [...available];
 }

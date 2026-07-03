@@ -113,7 +113,10 @@ export const useTokenUsageFilters = (models: string[]) => {
         } else {
             params.delete("models");
         }
-        router.replace(`${pathname}?${params.toString()}`);
+        // Use `navigate` (startTransition) like the other filter effects so the
+        // isPending flag drives the loading skeleton — a bare router.replace
+        // would swap data with no pending state, leaving stale charts on screen.
+        navigate(`${pathname}?${params.toString()}`);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedModelsKey, models.length]);
 

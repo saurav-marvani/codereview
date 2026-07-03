@@ -66,6 +66,32 @@ const catalogFieldsOf = (model: ResolvedModelPricing): ModelPrices | null =>
 const fieldsEqual = (a: ModelPrices, b: ModelPrices): boolean =>
     PRICE_FIELDS.every((f) => a[f.key] === b[f.key]);
 
+/**
+ * Numeric equality between two per-model price maps — compares the resolved
+ * per-token rate, NOT the raw display string. `toPerMillion` normalizes trailing
+ * zeros, so "0.1234" and "0.12340" are the same price; a string compare would
+ * mark them different and falsely enable Save.
+ */
+const priceMapsEqual = (
+    a: Record<string, ModelPrices>,
+    b: Record<string, ModelPrices>,
+): boolean => {
+    const modelsUnion = new Set([...Object.keys(a), ...Object.keys(b)]);
+    for (const model of modelsUnion) {
+        const pa = a[model];
+        const pb = b[model];
+        if (!pa || !pb) return false;
+        if (
+            PRICE_FIELDS.some(
+                (f) => fromPerMillion(pa[f.key]) !== fromPerMillion(pb[f.key]),
+            )
+        ) {
+            return false;
+        }
+    }
+    return true;
+};
+
 /** A model is priceable once it charges for input or output (cache is optional). */
 const isModelPriceable = (prices: ModelPrices): boolean => {
     const input = fromPerMillion(prices.input);
@@ -139,7 +165,7 @@ export const SpendLimitSection = ({ teamId }: { teamId?: string }) => {
         return (
             enabled !== seededEnabled ||
             monthlyLimit !== seededLimit ||
-            JSON.stringify(prices) !== JSON.stringify(seededPrices)
+            !priceMapsEqual(prices, seededPrices)
         );
     }, [data, enabled, monthlyLimit, prices]);
 
