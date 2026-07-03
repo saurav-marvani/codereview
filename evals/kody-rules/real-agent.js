@@ -45,9 +45,18 @@ const DATASET = args.dataset || 'github-cases';
 // (default 0 = no gate when the model has no calibrated target yet).
 const GATE = !!args.gate;
 const KODY_TARGETS = (() => {
-    try { return require('./kody-targets.json').models || {}; } catch { return {}; }
+    // Missing file → no calibrated floors (gate falls back to 0/off). But a
+    // MALFORMED file must fail loudly, not silently disable the gate.
+    try {
+        return require('./kody-targets.json').models || {};
+    } catch (err) {
+        if (err.code === 'MODULE_NOT_FOUND') return {};
+        throw err;
+    }
 })();
-const MODEL_TARGET = KODY_TARGETS[args.model] || {};
+// Use MODELKEY (not args.model) so the default invocation resolves the floor of
+// the model it actually runs (gpt-5.4-mini), instead of an undefined lookup.
+const MODEL_TARGET = KODY_TARGETS[MODELKEY] || {};
 const OCC_MIN = +(args['occ-min'] ?? MODEL_TARGET.occMin ?? 0);
 const SPEC_MIN = +(args['spec-min'] ?? MODEL_TARGET.specMin ?? 95);
 

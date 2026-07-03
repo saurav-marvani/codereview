@@ -97,8 +97,13 @@ function evaluateGate(summary, rows, model) {
     let targets;
     try {
         targets = require('./targets.json');
-    } catch {
-        return { status: 'skipped', reason: 'targets.json missing' };
+    } catch (err) {
+        // Missing file → skip the gate. A malformed file must fail loudly
+        // rather than silently disabling the gate.
+        if (err.code === 'MODULE_NOT_FOUND') {
+            return { status: 'skipped', reason: 'targets.json missing' };
+        }
+        throw err;
     }
     const target = targets.models?.[model];
     if (!target) {
