@@ -590,48 +590,6 @@ jobs:
             tag: ${{ needs.plan-release.outputs.release_tag }}
         secrets: inherit
 
-    trigger-installer-e2e:
-        name: Trigger legacy self-hosted E2E in kodus-installer
-        needs:
-            - plan-release
-            - promote
-        # Fires AFTER promote (final tag exists in GHCR). This is the
-        # legacy single-cell E2E in kodus-installer; the multi-provider
-        # matrix that gates promote lives at e2e-self-hosted-matrix.yml
-        # in this repo. Both run — the installer one is a redundant
-        # post-promote sanity check against the published :latest image.
-        if: needs.promote.result == 'success'
-        runs-on: ubuntu-latest
-        environment: ci
-        # GITHUB_TOKEN isn't used here (we dispatch with CROSS_REPO_PAT),
-        # but declare an explicit empty perms block so the default
-        # write-all token scope doesn't leak in.
-        permissions: {}
-        # GITHUB_TOKEN only scopes to this repo, so a cross-repo PAT is
-        # needed to fire repository_dispatch into kodustech/kodus-installer.
-        # We reuse CROSS_REPO_PAT (already used by env-sync-release.yml to
-        # checkout + push + open PRs in the installer). It needs
-        # `Contents: Read and write` on kodus-installer — same permission
-        # env-sync already requires, so no new secret to manage.
-        steps:
-            - name: Fire repository_dispatch into kodus-installer
-              env:
-                  GH_TOKEN: ${{ secrets.CROSS_REPO_PAT }}
-                  RELEASE_TAG: ${{ needs.plan-release.outputs.release_tag }}
-              run: |
-                  if [ -z "$GH_TOKEN" ]; then
-                      echo "::warning::CROSS_REPO_PAT is not set — skipping E2E dispatch."
-                      exit 0
-                  fi
-                  gh api \
-                      --method POST \
-                      "repos/kodustech/kodus-installer/dispatches" \
-                      -f event_type=selfhosted-image-published \
-                      -f client_payload[release_tag]="$RELEASE_TAG" \
-                      -f client_payload[image_tag]=latest \
-                      -f client_payload[source_run_url]="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                  echo "::notice::Dispatched selfhosted-image-published to kodustech/kodus-installer for tag $RELEASE_TAG"
-
     # ----------------------------------------------------------------
     # Always unfreeze, even if anything above failed or was cancelled.
     # Only fires if freeze-main actually succeeded (no point trying to
@@ -656,7 +614,6 @@ jobs:
             - cli-release
             - changelog-publish
             - env-sync-installer
-            - trigger-installer-e2e
             - cleanup-rc-tag
         # `!= 'skipped'` (not `== 'success'`): a PARTIALLY failed freeze
         # (2026-06-05: ruleset activated, then the variable step 403'd)
@@ -779,7 +736,6 @@ jobs:
             - cli-release
             - changelog-publish
             - env-sync-installer
-            - trigger-installer-e2e
             - cleanup-rc-tag
         # Cover ANY upstream failure in the release pipeline. The May-24
         # release shipped images + promoted but `cli-release` failed
@@ -817,7 +773,6 @@ jobs:
                   elif [ "${{ needs.cli-release.result }}"         = "failure" ]; then echo "phase=CLI npm publish (POST-PROMOTE)"             >> $GITHUB_OUTPUT; echo "color=0xff00ff" >> $GITHUB_OUTPUT
                   elif [ "${{ needs.changelog-publish.result }}"   = "failure" ]; then echo "phase=Changelog publish (POST-PROMOTE)"            >> $GITHUB_OUTPUT; echo "color=0xff00ff" >> $GITHUB_OUTPUT
                   elif [ "${{ needs.env-sync-installer.result }}"  = "failure" ]; then echo "phase=Installer env sync (POST-PROMOTE)"           >> $GITHUB_OUTPUT; echo "color=0xff00ff" >> $GITHUB_OUTPUT
-                  elif [ "${{ needs.trigger-installer-e2e.result }}" = "failure" ]; then echo "phase=Installer E2E dispatch (POST-PROMOTE)"     >> $GITHUB_OUTPUT; echo "color=0xff00ff" >> $GITHUB_OUTPUT
                   elif [ "${{ needs.cleanup-rc-tag.result }}"      = "failure" ]; then echo "phase=RC tag cleanup (POST-PROMOTE — cosmetic)"   >> $GITHUB_OUTPUT; echo "color=0xff00ff" >> $GITHUB_OUTPUT
                   else echo "phase=Unknown" >> $GITHUB_OUTPUT; echo "color=0xff0000" >> $GITHUB_OUTPUT
                   fi
