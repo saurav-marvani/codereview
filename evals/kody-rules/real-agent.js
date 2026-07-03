@@ -196,7 +196,7 @@ async function main() {
     // Environmental failures (quota / rate-limit / bad key) surface as errored
     // runs — NOT real misses. Track them so a broken environment warns (infra)
     // instead of deflating recall into a false quality-gate failure.
-    let erroredRuns = 0, totalRuns = 0;
+    let erroredRuns = 0, totalRuns = 0, emittedSuggestions = 0;
     const haveGT = cases.some((c) => c.groundTruth);
     // flatten groundTruth → [{file, line}]
     const gtSites = (c) => Object.entries(c.groundTruth || {})
@@ -210,6 +210,7 @@ async function main() {
             totalRuns++;
             try { sugg = await runCase(provider, c, changedFiles, replay); }
             catch (e) { errored = true; erroredRuns++; console.error(`  [case ${c.rule.uuid} run ${r}] ${String(e.message).slice(0, 140)}`); }
+            emittedSuggestions += sugg.length;
             const flaggedFiles = new Set(sugg.map((s) => normalizePath(s.relevantFile)).filter(Boolean));
             const hit = violFiles.filter((f) => flaggedFiles.has(f)).length;
             const falseOnClean = okFiles.filter((f) => flaggedFiles.has(f)).length;
@@ -249,8 +250,16 @@ async function main() {
         // runs that the measurement is unreliable, exit 2 (infra) so CI warns
         // instead of red-flagging quality on a bogus low recall.
         const erroredFrac = totalRuns ? erroredRuns / totalRuns : 0;
-        if (occTotal === 0 || erroredFrac >= 0.5) {
-            console.error(`\n⚠️ INFRA: ${erroredRuns}/${totalRuns} runs errored (quota/rate-limit/key) — measurement unreliable, not gating.`);
+        // Zero suggestions across the WHOLE run is not a quality result — a
+        // working model always emits something on rule-violation cases. It means
+        // the provider swallowed an error (e.g. Gemini quota returns empty
+        // instead of throwing), so erroredRuns stays 0 but recall is a bogus 0%.
+        // Treat total silence as infra.
+        if (occTotal === 0 || erroredFrac >= 0.5 || emittedSuggestions === 0) {
+            const why = emittedSuggestions === 0
+                ? 'model emitted 0 suggestions across all runs (provider likely swallowed a quota/rate-limit error)'
+                : `${erroredRuns}/${totalRuns} runs errored (quota/rate-limit/key)`;
+            console.error(`\n⚠️ INFRA: ${why} — measurement unreliable, not gating.`);
             process.exit(2);
         }
         const occ = occTotal ? (100 * occCaught / occTotal) : 0;
