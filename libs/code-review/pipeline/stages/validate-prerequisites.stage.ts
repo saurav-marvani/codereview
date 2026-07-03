@@ -873,8 +873,30 @@ export class ValidatePrerequisitesStage extends BasePipelineStage<CodeReviewPipe
             const { pullRequest, organizationAndTeamData, repository } =
                 context;
             const author = pullRequest?.user as
-                | { email?: string; username?: string }
+                | {
+                      email?: string;
+                      username?: string;
+                      login?: string;
+                      nickname?: string;
+                      uniqueName?: string;
+                      descriptor?: string;
+                  }
                 | undefined;
+
+            // Resolve the author handle with the SAME field precedence used to
+            // persist `user.username` in the pullRequests collection
+            // (PullRequestsService.extractUser), applied to the same
+            // `pullRequest.user` object. Keeping these aligned guarantees the
+            // notification shows exactly the handle we already store, for every
+            // platform: GitHub `login`, GitLab/Bitbucket-DC `username`,
+            // Bitbucket-Cloud `nickname`, Azure `uniqueName` (its UPN).
+            const authorUsername =
+                author?.login ||
+                author?.username ||
+                author?.nickname ||
+                author?.uniqueName ||
+                author?.descriptor ||
+                undefined;
 
             const authorRecipient =
                 await this.prAuthorRecipientResolver.resolve(
@@ -920,8 +942,7 @@ export class ValidatePrerequisitesStage extends BasePipelineStage<CodeReviewPipe
                     prUrl: (pullRequest?.url as string) ?? '',
                     repoName: repository?.name ?? '',
                     ownerContact,
-                    authorUsername: author?.username,
-                    authorEmail: author?.email,
+                    authorUsername,
                 },
                 organizationId: organizationAndTeamData.organizationId,
                 recipients,

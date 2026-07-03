@@ -174,11 +174,48 @@ describe('ValidatePrerequisitesStage — review.skipped_no_license emit', () => 
                     repoName: 'acme/api',
                     ownerContact: 'owner@acme.com',
                     authorUsername: 'alex',
-                    authorEmail: 'alex@acme.com',
                 }),
             }),
         );
     });
+
+    // The author handle mirrors the precedence used to persist `user.username`
+    // in the pullRequests collection (PullRequestsService.extractUser):
+    // login -> username -> nickname -> uniqueName -> descriptor.
+    it.each([
+        // GitHub: raw payload exposes only `login` (the @username).
+        [{ login: 'octocat' }, 'octocat'],
+        // GitLab / Bitbucket DC: username handle.
+        [{ username: 'ada' }, 'ada'],
+        // Bitbucket Cloud: no login/username, only the nickname.
+        [{ nickname: 'ada-lovelace' }, 'ada-lovelace'],
+        // Azure: identified by the UPN in `uniqueName` (email-format).
+        [{ uniqueName: 'ada@contoso.com' }, 'ada@contoso.com'],
+    ])(
+        'resolves the author handle like the pullRequests collection (%o)',
+        async (user, expected) => {
+            prAuthorResolver.resolve.mockResolvedValueOnce({
+                kind: 'user',
+                userId: 'user-1',
+            });
+            usersService.find.mockResolvedValueOnce([
+                { email: 'owner@acme.com' } as any,
+            ]);
+
+            const context = makeContext();
+            (context.pullRequest as any).user = user;
+
+            await stage.execute(context);
+
+            expect(notificationService.emit).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    payload: expect.objectContaining({
+                        authorUsername: expected,
+                    }),
+                }),
+            );
+        },
+    );
 
     it('skips the emit when the rate limiter rejects (already notified within 24h)', async () => {
         prAuthorResolver.resolve.mockResolvedValueOnce({
