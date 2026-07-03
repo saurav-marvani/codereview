@@ -76,22 +76,51 @@ jobs:
             - name: Check eval harness wiring
               run: node evals/engine-gate.js --profile=harness
 
+    # Pick the per-PR model matrix by blast radius. Engine-only diffs
+    # (prompt/loop/tools/pipeline) can regress on ANY model, so two sentinels
+    # suffice — kimi-k2.7-code (highest, most stable recall) + gemini-3-flash
+    # (cheap, different provider). Diffs that can break PER-PROVIDER (llm layer,
+    # byok, provider adapters) need the full tier-0 matrix, since a sentinel is
+    # blind to a provider it doesn't exercise.
+    detect:
+        if: github.event_name == 'pull_request'
+        runs-on: ubuntu-latest
+        outputs:
+            finder_models: ${{ steps.pick.outputs.finder_models }}
+            kody_models: ${{ steps.pick.outputs.kody_models }}
+            scope: ${{ steps.pick.outputs.scope }}
+        steps:
+            - uses: actions/checkout@v6.0.2
+              with:
+                  fetch-depth: 0
+            - id: pick
+              env:
+                  BASE_SHA: ${{ github.event.pull_request.base.sha }}
+                  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+              run: |
+                  changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" || true)"
+                  if echo "$changed" | grep -qE '^(libs/llm/|apps/web/src/features/ee/byok/|libs/code-review/infrastructure/agents/adapters/|libs/code-review/infrastructure/agents/providers/)'; then
+                      scope=full
+                      echo 'finder_models=["gpt-5.4","claude-sonnet-4-6","gemini-3.1-pro-preview-customtools","gemini-3-flash-preview","kimi-k2.7-code","glm-5.2"]' >> "$GITHUB_OUTPUT"
+                      echo 'kody_models=["gpt-5.4","claude-sonnet-4-6","gemini-3.1-pro-preview-customtools","gemini-3-flash-preview","kimi-k2.7-code","glm-5.2","gpt-5.4-mini"]' >> "$GITHUB_OUTPUT"
+                  else
+                      scope=engine
+                      echo 'finder_models=["kimi-k2.7-code","gemini-3-flash-preview"]' >> "$GITHUB_OUTPUT"
+                      echo 'kody_models=["kimi-k2.7-code","gemini-3-flash-preview"]' >> "$GITHUB_OUTPUT"
+                  fi
+                  echo "scope=$scope" >> "$GITHUB_OUTPUT"
+                  echo "resolved matrix scope: $scope"
+
     pr-finder-gate:
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
-        needs: harness
+        needs: [harness, detect]
         name: "PR finder · ${{ matrix.model }}"
         runs-on: ubuntu-latest
         timeout-minutes: 45
         strategy:
             fail-fast: false
             matrix:
-                model:
-                    - gpt-5.4
-                    - claude-sonnet-4-6
-                    - gemini-3.1-pro-preview-customtools
-                    - gemini-3-flash-preview
-                    - kimi-k2.7-code
-                    - glm-5.2
+                model: ${{ fromJSON(needs.detect.outputs.finder_models) }}
         steps:
             - uses: actions/checkout@v6.0.2
             - uses: pnpm/action-setup@v4
@@ -156,21 +185,14 @@ jobs:
 
     pr-kody-rules-gate:
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
-        needs: harness
+        needs: [harness, detect]
         name: "PR kody-rules · ${{ matrix.model }}"
         runs-on: ubuntu-latest
         timeout-minutes: 45
         strategy:
             fail-fast: false
             matrix:
-                model:
-                    - gpt-5.4
-                    - claude-sonnet-4-6
-                    - gemini-3.1-pro-preview-customtools
-                    - gemini-3-flash-preview
-                    - kimi-k2.7-code
-                    - glm-5.2
-                    - gpt-5.4-mini
+                model: ${{ fromJSON(needs.detect.outputs.kody_models) }}
         steps:
             - uses: actions/checkout@v6.0.2
             - uses: pnpm/action-setup@v4
@@ -208,6 +230,39 @@ jobs:
               env:
                   BYOK_OPENAI_API_KEY: ${{ secrets.BYOK_OPENAI_API_KEY }}
               run: node evals/anchoring/anchor-eval.js --gate --model=gpt-5.4 --limit=3
+
+    # Single rollup status for branch protection: mark ONLY this check required.
+    # The per-model jobs stay visible for debugging (expand to see which model
+    # regressed), but the PR gates on one clean pass/fail. `always()` so it runs
+    # even when an upstream job fails; skipped upstreams (fork PRs) are fine —
+    # only a real failure/cancel trips it.
+    pr-evals-gate:
+        if: always() && github.event_name == 'pull_request'
+        needs: [harness, detect, pr-finder-gate, pr-kody-rules-gate, pr-anchoring-canary]
+        name: "PR evals gate"
+        runs-on: ubuntu-latest
+        timeout-minutes: 2
+        steps:
+            - name: Require all eval jobs to pass
+              env:
+                  R_HARNESS: ${{ needs.harness.result }}
+                  R_FINDER: ${{ needs.pr-finder-gate.result }}
+                  R_KODY: ${{ needs.pr-kody-rules-gate.result }}
+                  R_ANCHOR: ${{ needs.pr-anchoring-canary.result }}
+                  SCOPE: ${{ needs.detect.outputs.scope }}
+              run: |
+                  echo "scope=$SCOPE | harness=$R_HARNESS finder=$R_FINDER kody=$R_KODY anchoring=$R_ANCHOR"
+                  failed=0
+                  for r in "$R_HARNESS" "$R_FINDER" "$R_KODY" "$R_ANCHOR"; do
+                      if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+                          failed=1
+                      fi
+                  done
+                  if [ "$failed" -eq 1 ]; then
+                      echo "::error::One or more eval jobs did not pass — see the per-model checks above."
+                      exit 1
+                  fi
+                  echo "All eval jobs passed (or were skipped)."
 
     # Model matrix: the pinned model (dispatch) or the full tier-0 set.
     prepare:
