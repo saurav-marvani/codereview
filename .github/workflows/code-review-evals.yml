@@ -107,7 +107,6 @@ jobs:
                   BYOK_MOONSHOT_API_KEY: ${{ secrets.BYOK_MOONSHOT_API_KEY }}
                   BYOK_ZHIPU_API_KEY: ${{ secrets.BYOK_ZHIPU_API_KEY }}
                   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-                  API_CRYPTO_KEY: ${{ secrets.API_CRYPTO_KEY }}
               run: |
                   missing=0
                   for name in \
@@ -116,8 +115,7 @@ jobs:
                       BYOK_GOOGLE_API_KEY \
                       BYOK_MOONSHOT_API_KEY \
                       BYOK_ZHIPU_API_KEY \
-                      ANTHROPIC_API_KEY \
-                      API_CRYPTO_KEY
+                      ANTHROPIC_API_KEY
                   do
                       if [ -z "${!name}" ]; then
                           echo "::error::Missing required GitHub Actions secret: $name"
@@ -135,7 +133,6 @@ jobs:
                   BYOK_MOONSHOT_API_KEY: ${{ secrets.BYOK_MOONSHOT_API_KEY }}
                   BYOK_ZHIPU_API_KEY: ${{ secrets.BYOK_ZHIPU_API_KEY }}
                   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-                  API_CRYPTO_KEY: ${{ secrets.API_CRYPTO_KEY }}
               # --gate: run mean vs the model's absolute floors (targets.json).
               # One retry before red: a floor breach re-runs the model once and
               # only fails if it breaches twice (recall_mean noise ≈ ±1 SEM/run;
@@ -190,7 +187,6 @@ jobs:
                   BYOK_GOOGLE_API_KEY: ${{ secrets.BYOK_GOOGLE_API_KEY }}
                   BYOK_MOONSHOT_API_KEY: ${{ secrets.BYOK_MOONSHOT_API_KEY }}
                   BYOK_ZHIPU_API_KEY: ${{ secrets.BYOK_ZHIPU_API_KEY }}
-                  API_CRYPTO_KEY: ${{ secrets.API_CRYPTO_KEY }}
               run: node evals/kody-rules/real-agent.js --dataset=github-cases --gate --model=${{ matrix.model }} --runs=1 --limit=3
 
     pr-anchoring-canary:
@@ -211,7 +207,6 @@ jobs:
             - name: Run anchoring canary
               env:
                   BYOK_OPENAI_API_KEY: ${{ secrets.BYOK_OPENAI_API_KEY }}
-                  API_CRYPTO_KEY: ${{ secrets.API_CRYPTO_KEY }}
               run: node evals/anchoring/anchor-eval.js --gate --model=gpt-5.4 --limit=3
 
     # Model matrix: the pinned model (dispatch) or the full tier-0 set.
@@ -260,5 +255,4 @@ jobs:
                   BYOK_MOONSHOT_API_KEY: ${{ secrets.BYOK_MOONSHOT_API_KEY }}
                   BYOK_ZHIPU_API_KEY: ${{ secrets.BYOK_ZHIPU_API_KEY }}
                   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-                  API_CRYPTO_KEY: ${{ secrets.API_CRYPTO_KEY }}
               run: node evals/engine-gate.js --profile=ci --model=${{ matrix.model }} --prs=5 --runs=3
