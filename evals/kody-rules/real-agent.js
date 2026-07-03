@@ -38,12 +38,18 @@ const args = Object.fromEntries(process.argv.slice(2).map((a) => {
 const RUNS = +(args.runs || 3);
 const MODELKEY = args.model || 'gpt-5.4-mini';
 const DATASET = args.dataset || 'github-cases';
-// CI gate: with --gate, exit non-zero if metrics fall below baselines. Thresholds
-// are tunable (--occ-min=, --spec-min=) and reflect the validated gpt-5.4 numbers
-// with a margin (occ-recall 82%, specificity 100%).
+// CI gate: with --gate, exit non-zero if metrics fall below the model's floor.
+// occurrence-recall varies a lot by model, so floors are PER-MODEL in
+// kody-targets.json (occMin = observed − ~2·binomial-SE). --occ-min=/--spec-min=
+// still override for ad-hoc runs; otherwise resolve the current model's floor
+// (default 0 = no gate when the model has no calibrated target yet).
 const GATE = !!args.gate;
-const OCC_MIN = +(args['occ-min'] || 70);
-const SPEC_MIN = +(args['spec-min'] || 95);
+const KODY_TARGETS = (() => {
+    try { return require('./kody-targets.json').models || {}; } catch { return {}; }
+})();
+const MODEL_TARGET = KODY_TARGETS[args.model] || {};
+const OCC_MIN = +(args['occ-min'] ?? MODEL_TARGET.occMin ?? 0);
+const SPEC_MIN = +(args['spec-min'] ?? MODEL_TARGET.specMin ?? 95);
 
 // Model presets → drive the real self-hosted byokToVercelModel path via env.
 const MODELS = {
