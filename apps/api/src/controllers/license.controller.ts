@@ -175,7 +175,8 @@ export class LicenseController {
     )
     @ApiOperation({
         summary: 'Get users with license',
-        description: 'Return users that have been assigned a license seat.',
+        description:
+            'Return all users who have ever been assigned a license seat (active and inactive).',
     })
     public async usersWithLicense() {
         const organizationId = this.request?.user?.organization?.uuid;
@@ -186,7 +187,7 @@ export class LicenseController {
             );
         }
 
-        return this.selfHostedLicenseService.getAllUsersWithLicense({
+        return this.selfHostedLicenseService.getAllUsersEverWithLicense({
             organizationId,
         });
     }

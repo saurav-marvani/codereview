@@ -56,21 +56,21 @@ export default async function SubscriptionTabs() {
                     licenseStatus:
                         license.valid && license.subscriptionStatus === "trial"
                             ? "active"
-                            : user?.git_id
-                              ? "active"
-                              : "inactive",
+                            : user?.git_id && (user?.status ?? "active") === "active"
+                            ? "active"
+                            : "inactive",
                 };
-            })
-            .filter((member) => member.licenseStatus === "active"),
+        }),
         ...usersWithLicense
             .filter(
                 (userWithLicense) =>
-                    !organizationMemberIds.has(userWithLicense.git_id),
+                    !organizationMemberIds.has(userWithLicense.git_id) &&
+                    userWithLicense.status !== 'inactive',
             )
             .map((userWithLicense) => ({
                 id: userWithLicense.git_id,
                 name: `Deleted user (${userWithLicense.git_id})`,
-                licenseStatus: "active" as const,
+                licenseStatus: userWithLicense.status ?? "active",
                 removedFromGit: true,
             })),
     ];

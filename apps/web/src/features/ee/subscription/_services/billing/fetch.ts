@@ -107,7 +107,7 @@ export const createManageBillingLink = async (params: { teamId: string }) => {
 export const getUsersWithLicense = async (params: { teamId: string }) => {
     if (isSelfHosted) {
         try {
-            return await authorizedFetch<Array<{ git_id: string }>>(
+            return await authorizedFetch<Array<{ git_id: string; status?: 'active' | 'inactive' }>>(
                 pathToApiUrl("/license/users"),
             );
         } catch {

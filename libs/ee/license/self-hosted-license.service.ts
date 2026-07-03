@@ -26,6 +26,18 @@ MCowBQYDK2VwAyEAig1JYVU3PCPOY18JGKsMdcoPeDMrGRCRb5XPZeLniZc=
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+type AssignedUserEntry = {
+    gitId: string;
+    status: 'active' | 'inactive';
+};
+
+function isLegacyFormat(
+    users: unknown,
+): users is string[] {
+    if (!Array.isArray(users)) return false;
+    return users.length === 0 || typeof users[0] === 'string';
+}
+
 @Injectable()
 export class SelfHostedLicenseService implements ILicenseService {
     private readonly logger = createLogger(SelfHostedLicenseService.name);
@@ -108,10 +120,33 @@ export class SelfHostedLicenseService implements ILicenseService {
             const assignedUsers = await this.getAssignedUsers(
                 organizationAndTeamData,
             );
-            return assignedUsers.map((gitId) => ({ git_id: gitId }));
+            return assignedUsers
+                .filter((u) => u.status === 'active')
+                .map((u) => ({ git_id: u.gitId }));
         } catch (error) {
             this.logger.error({
                 message: 'Error getting assigned users',
+                context: SelfHostedLicenseService.name,
+                error,
+            });
+            return [];
+        }
+    }
+
+    async getAllUsersEverWithLicense(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<UserWithLicense[]> {
+        try {
+            const assignedUsers = await this.getAssignedUsers(
+                organizationAndTeamData,
+            );
+            return assignedUsers.map((u) => ({
+                git_id: u.gitId,
+                status: u.status,
+            }));
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting all users ever with license',
                 context: SelfHostedLicenseService.name,
                 error,
             });
@@ -136,8 +171,18 @@ export class SelfHostedLicenseService implements ILicenseService {
                 organizationAndTeamData,
             );
 
-            // Already assigned
-            if (assignedUsers.includes(userGitId)) {
+            const existing = assignedUsers.find(
+                (u) => u.gitId === userGitId,
+            );
+            if (existing) {
+                if (existing.status === 'active') {
+                    return true;
+                }
+                existing.status = 'active';
+                await this.saveAssignedUsers(
+                    organizationAndTeamData,
+                    assignedUsers,
+                );
                 return true;
             }
 
@@ -160,7 +205,7 @@ export class SelfHostedLicenseService implements ILicenseService {
                 }
             }
 
-            assignedUsers.push(userGitId);
+            assignedUsers.push({ gitId: userGitId, status: 'active' });
             await this.saveAssignedUsers(
                 organizationAndTeamData,
                 assignedUsers,
@@ -184,13 +229,16 @@ export class SelfHostedLicenseService implements ILicenseService {
             const assignedUsers = await this.getAssignedUsers(
                 organizationAndTeamData,
             );
-            const filtered = assignedUsers.filter((id) => id !== userGitId);
 
-            if (filtered.length === assignedUsers.length) {
-                return true; // User wasn't assigned
+            const existing = assignedUsers.find(
+                (u) => u.gitId === userGitId,
+            );
+            if (!existing) {
+                return true;
             }
 
-            await this.saveAssignedUsers(organizationAndTeamData, filtered);
+            existing.status = 'inactive';
+            await this.saveAssignedUsers(organizationAndTeamData, assignedUsers);
             return true;
         } catch (error) {
             this.logger.error({
@@ -214,7 +262,7 @@ export class SelfHostedLicenseService implements ILicenseService {
 
     private async getAssignedUsers(
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<string[]> {
+    ): Promise<AssignedUserEntry[]> {
         try {
             const param = await this.organizationParametersService.findByKey(
                 OrganizationParametersKey.LICENSE_ASSIGNED_USERS,
@@ -224,7 +272,20 @@ export class SelfHostedLicenseService implements ILicenseService {
                 param?.configValue?.users &&
                 Array.isArray(param.configValue.users)
             ) {
-                return param.configValue.users;
+                const raw = param.configValue.users;
+                if (isLegacyFormat(raw)) {
+                    const migrated: AssignedUserEntry[] = raw.map((id) => ({
+                        gitId: id,
+                        status: 'active' as const,
+                    }));
+                    await this.organizationParametersService.createOrUpdateConfig(
+                        OrganizationParametersKey.LICENSE_ASSIGNED_USERS,
+                        { users: migrated },
+                        organizationAndTeamData,
+                    );
+                    return migrated;
+                }
+                return raw as AssignedUserEntry[];
             }
         } catch {
             // Not found yet
@@ -234,7 +295,7 @@ export class SelfHostedLicenseService implements ILicenseService {
 
     private async saveAssignedUsers(
         organizationAndTeamData: OrganizationAndTeamData,
-        users: string[],
+        users: AssignedUserEntry[],
     ): Promise<void> {
         await this.organizationParametersService.createOrUpdateConfig(
             OrganizationParametersKey.LICENSE_ASSIGNED_USERS,
@@ -255,10 +316,15 @@ export class SelfHostedLicenseService implements ILicenseService {
 
             const uniqueUsers = new Set<string>();
             for (const param of allParams) {
-                const users = param.configValue?.users;
-                if (Array.isArray(users)) {
-                    for (const user of users) {
-                        uniqueUsers.add(user);
+                const raw = param.configValue?.users;
+                if (Array.isArray(raw)) {
+                    const entries: AssignedUserEntry[] = isLegacyFormat(raw)
+                        ? raw.map((id) => ({ gitId: id, status: 'active' as const }))
+                        : (raw as AssignedUserEntry[]);
+                    for (const entry of entries) {
+                        if (entry.status === 'active') {
+                            uniqueUsers.add(entry.gitId);
+                        }
                     }
                 }
             }
