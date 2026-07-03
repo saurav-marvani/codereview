@@ -252,8 +252,12 @@ async function assertSeatCount(
     // `data.length` no longer equals the number of occupied seats — an inactive
     // user shows up in the list but does NOT consume a seat. Per-seat billing
     // cares about the active count.
+    // Treat a missing `status` as active too: before #1451 every listed user
+    // was active (the endpoint didn't emit a status field), so `undefined ===
+    // active` preserves that semantic and avoids under-counting real active
+    // users if the field is absent.
     const count = (resp.body.data ?? []).filter(
-        (u) => u.status === "active",
+        (u) => u.status === "active" || u.status === undefined,
     ).length;
     ctx.assert(
         count === expected,
