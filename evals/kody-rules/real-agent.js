@@ -220,19 +220,19 @@ async function main() {
             perRun.push({ hit, falseOnClean, coveredSites, flags: flags.length, lineNoise: flags.length - onTargetFlags, errored });
         }
         const N = violFiles.length;
-        const allRuns = perRun.filter((p) => p.hit >= N).length;
-        multiTotalSites += N * RUNS; multiCaughtSites += perRun.reduce((a, b) => a + b.hit, 0);
-        caughtAllRuns += allRuns; totalMultiRuns += RUNS;
-        cleanFiles += okFiles.length * RUNS; falseAlarmFiles += perRun.reduce((a, b) => a + b.falseOnClean, 0);
+        // Count only runs that actually executed — an errored (infra) run must
+        // not add its sites to any denominator as if they were real misses.
+        const okRuns = perRun.filter((p) => !p.errored).length;
+        const allRuns = perRun.filter((p) => !p.errored && p.hit >= N).length;
+        multiTotalSites += N * okRuns; multiCaughtSites += perRun.reduce((a, b) => a + (b.errored ? 0 : b.hit), 0);
+        caughtAllRuns += allRuns; totalMultiRuns += okRuns;
+        cleanFiles += okFiles.length * okRuns; falseAlarmFiles += perRun.reduce((a, b) => a + (b.errored ? 0 : b.falseOnClean), 0);
         if (c.groundTruth) {
-            // Count only runs that actually executed — an errored (infra) run
-            // must not add its sites to the denominator as if they were missed.
-            const okRuns = perRun.filter((p) => !p.errored).length;
             occTotal += sites.length * okRuns; occCaught += perRun.reduce((a, b) => a + (b.errored ? 0 : b.coveredSites), 0);
-            lineNoiseTotal += perRun.reduce((a, b) => a + b.lineNoise, 0); flaggedTotal += perRun.reduce((a, b) => a + b.flags, 0);
+            lineNoiseTotal += perRun.reduce((a, b) => a + (b.errored ? 0 : b.lineNoise), 0); flaggedTotal += perRun.reduce((a, b) => a + (b.errored ? 0 : b.flags), 0);
             console.log(`${c.rule.uuid.padEnd(22)} files=${fileCount} sites=${sites.length}  file-hits/run=[${perRun.map((p) => p.hit).join(',')}]  occ-caught/run=[${perRun.map((p) => p.coveredSites).join(',')}]  flags/run=[${perRun.map((p) => p.flags).join(',')}]`);
         } else {
-            console.log(`${c.rule.uuid.padEnd(22)} files=${fileCount} viol=${N}  hits/run=[${perRun.map((p) => p.hit).join(',')}]  caught-all ${allRuns}/${RUNS}  false-on-clean ${perRun.reduce((a, b) => a + b.falseOnClean, 0)}`);
+            console.log(`${c.rule.uuid.padEnd(22)} files=${fileCount} viol=${N}  hits/run=[${perRun.map((p) => p.hit).join(',')}]  caught-all ${allRuns}/${okRuns}  false-on-clean ${perRun.reduce((a, b) => a + (b.errored ? 0 : b.falseOnClean), 0)}`);
         }
     }
     const pct = (a, b) => (b ? (100 * a / b).toFixed(0) : '—');
