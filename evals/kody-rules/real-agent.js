@@ -167,7 +167,11 @@ async function runCase(provider, c, changedFiles, replay) {
         prBody: c.body || '',
         kodyRules: [{ ...c.rule, type: 'standard', status: 'active', scope: c.rule.scope || 'file' }],
     });
-    return out.suggestions || [];
+    // turnsUsed = agent steps executed. 0 means the agent never ran a step —
+    // it failed before starting (e.g. a swallowed quota/rate-limit error that
+    // surfaces as finishReason=error/steps=0 rather than a throw). A legitimate
+    // "investigated and found nothing" run has turnsUsed > 0.
+    return { suggestions: out.suggestions || [], turnsUsed: out.turnsUsed ?? 0 };
 }
 
 async function main() {
@@ -196,7 +200,7 @@ async function main() {
     // Environmental failures (quota / rate-limit / bad key) surface as errored
     // runs — NOT real misses. Track them so a broken environment warns (infra)
     // instead of deflating recall into a false quality-gate failure.
-    let erroredRuns = 0, totalRuns = 0, emittedSuggestions = 0;
+    let erroredRuns = 0, totalRuns = 0;
     const haveGT = cases.some((c) => c.groundTruth);
     // flatten groundTruth → [{file, line}]
     const gtSites = (c) => Object.entries(c.groundTruth || {})
@@ -206,11 +210,16 @@ async function main() {
         const sites = gtSites(c);
         const perRun = [];
         for (let r = 0; r < RUNS; r++) {
-            let sugg = [], errored = false;
+            let sugg = [], turnsUsed = 0, errored = false;
             totalRuns++;
-            try { sugg = await runCase(provider, c, changedFiles, replay); }
-            catch (e) { errored = true; erroredRuns++; console.error(`  [case ${c.rule.uuid} run ${r}] ${String(e.message).slice(0, 140)}`); }
-            emittedSuggestions += sugg.length;
+            try { const res = await runCase(provider, c, changedFiles, replay); sugg = res.suggestions; turnsUsed = res.turnsUsed; }
+            catch (e) { errored = true; console.error(`  [case ${c.rule.uuid} run ${r}] ${String(e.message).slice(0, 140)}`); }
+            // Infra run = it threw, OR the agent returned without executing a
+            // single step and produced nothing (failed before running, e.g.
+            // swallowed quota). A real "found nothing" run has turnsUsed > 0 and
+            // still counts as a genuine miss against the quality gate.
+            if (!errored && sugg.length === 0 && turnsUsed === 0) errored = true;
+            if (errored) erroredRuns++;
             const flaggedFiles = new Set(sugg.map((s) => normalizePath(s.relevantFile)).filter(Boolean));
             const hit = violFiles.filter((f) => flaggedFiles.has(f)).length;
             const falseOnClean = okFiles.filter((f) => flaggedFiles.has(f)).length;
@@ -249,17 +258,13 @@ async function main() {
         // Infra guard: if the environment (quota/rate-limit/key) broke enough
         // runs that the measurement is unreliable, exit 2 (infra) so CI warns
         // instead of red-flagging quality on a bogus low recall.
+        // erroredRuns now counts thrown runs AND ran-zero-steps runs (the
+        // concrete "agent never executed" signal — not a pure 0-output guess, so
+        // a real engine regression that DOES run but finds nothing still fails
+        // the quality gate below).
         const erroredFrac = totalRuns ? erroredRuns / totalRuns : 0;
-        // Zero suggestions across the WHOLE run is not a quality result — a
-        // working model always emits something on rule-violation cases. It means
-        // the provider swallowed an error (e.g. Gemini quota returns empty
-        // instead of throwing), so erroredRuns stays 0 but recall is a bogus 0%.
-        // Treat total silence as infra.
-        if (occTotal === 0 || erroredFrac >= 0.5 || emittedSuggestions === 0) {
-            const why = emittedSuggestions === 0
-                ? 'model emitted 0 suggestions across all runs (provider likely swallowed a quota/rate-limit error)'
-                : `${erroredRuns}/${totalRuns} runs errored (quota/rate-limit/key)`;
-            console.error(`\n⚠️ INFRA: ${why} — measurement unreliable, not gating.`);
+        if (occTotal === 0 || erroredFrac >= 0.5) {
+            console.error(`\n⚠️ INFRA: ${erroredRuns}/${totalRuns} runs never executed (quota/rate-limit/key — steps=0 or threw) — measurement unreliable, not gating.`);
             process.exit(2);
         }
         const occ = occTotal ? (100 * occCaught / occTotal) : 0;
