@@ -44,6 +44,7 @@
                                 "group": "AI Code Review",
                                 "pages": [
                                     "how_to_use/en/code_review/flow",
+                                    "how_to_use/en/code_review/review_directive",
                                     "how_to_use/en/code_review/policy",
                                     {
                                         "group": "Advanced Configs",
@@ -345,6 +346,7 @@
                                 "group": "Revisión de Código con IA",
                                 "pages": [
                                     "how_to_use/es/code_review/flow",
+                                    "how_to_use/es/code_review/review_directive",
                                     "how_to_use/es/code_review/policy",
                                     {
                                         "group": "Configuraciones Avanzadas",
@@ -646,6 +648,7 @@
                                 "group": "Revisão de Código com IA",
                                 "pages": [
                                     "how_to_use/pt-br/code_review/flow",
+                                    "how_to_use/pt-br/code_review/review_directive",
                                     "how_to_use/pt-br/code_review/policy",
                                     {
                                         "group": "Configurações Avançadas",
@@ -947,6 +950,7 @@
                                 "group": "AIコードレビュー",
                                 "pages": [
                                     "how_to_use/ja/code_review/flow",
+                                    "how_to_use/ja/code_review/review_directive",
                                     "how_to_use/ja/code_review/policy",
                                     {
                                         "group": "詳細設定",
@@ -1248,6 +1252,7 @@
                                 "group": "AI 代码审查",
                                 "pages": [
                                     "how_to_use/zh/code_review/flow",
+                                    "how_to_use/zh/code_review/review_directive",
                                     "how_to_use/zh/code_review/policy",
                                     {
                                         "group": "高级配置",
