@@ -32,29 +32,19 @@ if (!TIER0[MODEL]) {
 }
 
 // kind: 'gate'   → exit-code contract honored (0 pass / 1 gate / 2 infra), gates.
-//       'report' → promptfoo eval; runs for coverage, never blocks (yet).
-//       'todo'   → not wired across tier-0 models yet (logged, skipped).
+//       'report' → promptfoo/non-gated eval; runs for coverage, never blocks (yet).
 const SUITE = [
     { name: 'kody-rules', kind: 'gate',
       cmd: ['node', 'evals/kody-rules/real-agent.js', '--dataset=github-cases', '--gate', `--model=${MODEL}`, `--runs=${RUNS}`, `--limit=${PRS}`] },
     { name: 'anchoring', kind: 'gate',
       cmd: ['node', 'evals/anchoring/anchor-eval.js', '--gate', `--model=${MODEL}`, `--limit=${PRS}`] },
-    { name: 'finder-recall', kind: 'report',
-      cmd: ['node', 'evals/investigation/run-eval.js', '--no-cache', ...promptfooFlags(MODEL)] },
+    { name: 'finder-recall', kind: 'gate',
+      cmd: ['node', 'evals/investigation/run-recall.js', '--set=pr', '--gate', `--model=${MODEL}`] },
     { name: 'promotion', kind: 'report',
       cmd: ['node', 'evals/promotion/run-eval.js', '--no-cache', ...promptfooFlags(MODEL)] },
-    // dedup (no model flag / no threshold gate) and safeguard (bash harness) are
-    // not wired across tier-0 models yet — surfaced so coverage gaps are visible.
-    { name: 'dedup', kind: 'todo' },
-    { name: 'safeguard', kind: 'todo' },
 ];
 
 function run(step) {
-    if (step.kind === 'todo') {
-        console.log(`\n┌─ eval: ${step.name}  [TODO — not wired across tier-0 models]`);
-        console.log(`└─ ${step.name}: ⏭️  skipped`);
-        return { name: step.name, kind: step.kind, status: 'skip' };
-    }
     console.log(`\n┌─ eval: ${step.name} (model=${MODEL})  [${step.kind === 'gate' ? 'GATING' : 'report-only'}]`);
     const r = spawnSync(step.cmd[0], step.cmd.slice(1), { cwd: ROOT, stdio: 'inherit', env: process.env });
     const code = r.status;

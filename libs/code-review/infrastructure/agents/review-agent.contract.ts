@@ -420,6 +420,14 @@ export interface AgentLoopOutput {
      *  forced compact prompt, dropped callGraph, etc). Always present;
      *  empty array when no adaptive strategy fired. */
     warnings: ReviewWarning[];
+    /** Low-level harness trace. Intended for eval/debug artifacts; product
+     *  callers should keep using the domain fields above. */
+    debugTrace?: Array<{
+        at: number;
+        source: string;
+        kind: string;
+        detail?: Readonly<Record<string, unknown>>;
+    }>;
 }
 
 export interface ToolEvidenceSummary {

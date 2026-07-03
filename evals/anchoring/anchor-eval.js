@@ -143,8 +143,8 @@ async function buildModel(spec) {
 }
 
 async function runFinder(model, caseData) {
-    const { GeneralistAgentProvider } = require('../../libs/code-review/infrastructure/agents/generalist-agent.provider.ts');
-    const { runAgentLoop } = require('../../libs/code-review/infrastructure/agents/llm/agent-loop.ts');
+    const { GeneralistAgentProvider } = require('../../libs/code-review/infrastructure/agents/providers/generalist-agent.provider.ts');
+    const { runAgentLoopViaCore: runAgentLoop } = require('../../libs/code-review/infrastructure/agents/core/core-agent-loop.adapter.ts');
     const provider = new GeneralistAgentProvider({}, {}, {});
     const changedFiles = normalizeChangedFiles(parseMaybe(caseData.changedFiles));
     const input = {
@@ -171,7 +171,7 @@ async function main() {
     let model;
     if (TIER0[MODELKEY]) {
         applyModelEnv(MODELKEY);
-        const { byokToVercelModel } = require('../../libs/code-review/infrastructure/agents/llm/byok-to-vercel.ts');
+        const { byokToVercelModel } = require('../../libs/llm/byok-to-vercel.ts');
         model = byokToVercelModel(undefined, 'main', {});
     } else {
         const spec = MODELS[MODELKEY];

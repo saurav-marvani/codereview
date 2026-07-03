@@ -38,12 +38,27 @@ const args = Object.fromEntries(process.argv.slice(2).map((a) => {
 const RUNS = +(args.runs || 3);
 const MODELKEY = args.model || 'gpt-5.4-mini';
 const DATASET = args.dataset || 'github-cases';
-// CI gate: with --gate, exit non-zero if metrics fall below baselines. Thresholds
-// are tunable (--occ-min=, --spec-min=) and reflect the validated gpt-5.4 numbers
-// with a margin (occ-recall 82%, specificity 100%).
+// CI gate: with --gate, exit non-zero if metrics fall below the model's floor.
+// occurrence-recall varies a lot by model, so floors are PER-MODEL in
+// kody-targets.json (occMin = observed − ~2·binomial-SE). --occ-min=/--spec-min=
+// still override for ad-hoc runs; otherwise resolve the current model's floor
+// (default 0 = no gate when the model has no calibrated target yet).
 const GATE = !!args.gate;
-const OCC_MIN = +(args['occ-min'] || 70);
-const SPEC_MIN = +(args['spec-min'] || 95);
+const KODY_TARGETS = (() => {
+    // Missing file → no calibrated floors (gate falls back to 0/off). But a
+    // MALFORMED file must fail loudly, not silently disable the gate.
+    try {
+        return require('./kody-targets.json').models || {};
+    } catch (err) {
+        if (err.code === 'MODULE_NOT_FOUND') return {};
+        throw err;
+    }
+})();
+// Use MODELKEY (not args.model) so the default invocation resolves the floor of
+// the model it actually runs (gpt-5.4-mini), instead of an undefined lookup.
+const MODEL_TARGET = KODY_TARGETS[MODELKEY] || {};
+const OCC_MIN = +(args['occ-min'] ?? MODEL_TARGET.occMin ?? 0);
+const SPEC_MIN = +(args['spec-min'] ?? MODEL_TARGET.specMin ?? 95);
 
 // Model presets → drive the real self-hosted byokToVercelModel path via env.
 const MODELS = {
@@ -109,12 +124,15 @@ class ReplayRemoteCommands {
 }
 
 function buildProvider() {
-    const { KodyRulesAgentProvider } = require(path.join(__dirname, '../../libs/code-review/infrastructure/agents/kody-rules-agent.provider.ts'));
+    const { KodyRulesAgentProvider } = require(path.join(__dirname, '../../libs/code-review/infrastructure/agents/providers/kody-rules-agent.provider.ts'));
     const permissionValidationService = { getBYOKConfig: async () => null };
     const observabilityService = {
         runInSpan: async (_n, fn) => (typeof fn === 'function' ? fn() : undefined),
         runLLMInSpan: async ({ exec }) => exec([]),
         startSpan: () => ({ end() {}, update() {} }),
+        // The refactored provider emits a post-hoc usage span; evals don't ship
+        // telemetry, so a no-op keeps the run from throwing on the real method.
+        recordAgentRunUsage: async () => {},
     };
     return new KodyRulesAgentProvider({}, permissionValidationService, observabilityService);
 }
@@ -149,7 +167,11 @@ async function runCase(provider, c, changedFiles, replay) {
         prBody: c.body || '',
         kodyRules: [{ ...c.rule, type: 'standard', status: 'active', scope: c.rule.scope || 'file' }],
     });
-    return out.suggestions || [];
+    // turnsUsed = agent steps executed. 0 means the agent never ran a step —
+    // it failed before starting (e.g. a swallowed quota/rate-limit error that
+    // surfaces as finishReason=error/steps=0 rather than a throw). A legitimate
+    // "investigated and found nothing" run has turnsUsed > 0.
+    return { suggestions: out.suggestions || [], turnsUsed: out.turnsUsed ?? 0 };
 }
 
 async function main() {
@@ -175,6 +197,10 @@ async function main() {
     let cleanFiles = 0, falseAlarmFiles = 0;
     // occurrence-level (only for cases that carry per-line groundTruth)
     let occTotal = 0, occCaught = 0, lineNoiseTotal = 0, flaggedTotal = 0;
+    // Environmental failures (quota / rate-limit / bad key) surface as errored
+    // runs — NOT real misses. Track them so a broken environment warns (infra)
+    // instead of deflating recall into a false quality-gate failure.
+    let erroredRuns = 0, totalRuns = 0;
     const haveGT = cases.some((c) => c.groundTruth);
     // flatten groundTruth → [{file, line}]
     const gtSites = (c) => Object.entries(c.groundTruth || {})
@@ -184,9 +210,16 @@ async function main() {
         const sites = gtSites(c);
         const perRun = [];
         for (let r = 0; r < RUNS; r++) {
-            let sugg = [];
-            try { sugg = await runCase(provider, c, changedFiles, replay); }
-            catch (e) { console.error(`  [case ${c.rule.uuid} run ${r}] ${String(e.message).slice(0, 140)}`); }
+            let sugg = [], turnsUsed = 0, errored = false;
+            totalRuns++;
+            try { const res = await runCase(provider, c, changedFiles, replay); sugg = res.suggestions; turnsUsed = res.turnsUsed; }
+            catch (e) { errored = true; console.error(`  [case ${c.rule.uuid} run ${r}] ${String(e.message).slice(0, 140)}`); }
+            // Infra run = it threw, OR the agent returned without executing a
+            // single step and produced nothing (failed before running, e.g.
+            // swallowed quota). A real "found nothing" run has turnsUsed > 0 and
+            // still counts as a genuine miss against the quality gate.
+            if (!errored && sugg.length === 0 && turnsUsed === 0) errored = true;
+            if (errored) erroredRuns++;
             const flaggedFiles = new Set(sugg.map((s) => normalizePath(s.relevantFile)).filter(Boolean));
             const hit = violFiles.filter((f) => flaggedFiles.has(f)).length;
             const falseOnClean = okFiles.filter((f) => flaggedFiles.has(f)).length;
@@ -194,19 +227,22 @@ async function main() {
             const flags = sugg.map((s) => ({ file: normalizePath(s.relevantFile), line: s.relevantLinesStart })).filter((x) => x.file && Number.isFinite(x.line));
             const coveredSites = sites.filter((g) => flags.some((x) => x.file === g.file && Math.abs(x.line - g.line) <= LINE_TOL)).length;
             const onTargetFlags = flags.filter((x) => sites.some((g) => x.file === g.file && Math.abs(x.line - g.line) <= LINE_TOL)).length;
-            perRun.push({ hit, falseOnClean, coveredSites, flags: flags.length, lineNoise: flags.length - onTargetFlags });
+            perRun.push({ hit, falseOnClean, coveredSites, flags: flags.length, lineNoise: flags.length - onTargetFlags, errored });
         }
         const N = violFiles.length;
-        const allRuns = perRun.filter((p) => p.hit >= N).length;
-        multiTotalSites += N * RUNS; multiCaughtSites += perRun.reduce((a, b) => a + b.hit, 0);
-        caughtAllRuns += allRuns; totalMultiRuns += RUNS;
-        cleanFiles += okFiles.length * RUNS; falseAlarmFiles += perRun.reduce((a, b) => a + b.falseOnClean, 0);
+        // Count only runs that actually executed — an errored (infra) run must
+        // not add its sites to any denominator as if they were real misses.
+        const okRuns = perRun.filter((p) => !p.errored).length;
+        const allRuns = perRun.filter((p) => !p.errored && p.hit >= N).length;
+        multiTotalSites += N * okRuns; multiCaughtSites += perRun.reduce((a, b) => a + (b.errored ? 0 : b.hit), 0);
+        caughtAllRuns += allRuns; totalMultiRuns += okRuns;
+        cleanFiles += okFiles.length * okRuns; falseAlarmFiles += perRun.reduce((a, b) => a + (b.errored ? 0 : b.falseOnClean), 0);
         if (c.groundTruth) {
-            occTotal += sites.length * RUNS; occCaught += perRun.reduce((a, b) => a + b.coveredSites, 0);
-            lineNoiseTotal += perRun.reduce((a, b) => a + b.lineNoise, 0); flaggedTotal += perRun.reduce((a, b) => a + b.flags, 0);
+            occTotal += sites.length * okRuns; occCaught += perRun.reduce((a, b) => a + (b.errored ? 0 : b.coveredSites), 0);
+            lineNoiseTotal += perRun.reduce((a, b) => a + (b.errored ? 0 : b.lineNoise), 0); flaggedTotal += perRun.reduce((a, b) => a + (b.errored ? 0 : b.flags), 0);
             console.log(`${c.rule.uuid.padEnd(22)} files=${fileCount} sites=${sites.length}  file-hits/run=[${perRun.map((p) => p.hit).join(',')}]  occ-caught/run=[${perRun.map((p) => p.coveredSites).join(',')}]  flags/run=[${perRun.map((p) => p.flags).join(',')}]`);
         } else {
-            console.log(`${c.rule.uuid.padEnd(22)} files=${fileCount} viol=${N}  hits/run=[${perRun.map((p) => p.hit).join(',')}]  caught-all ${allRuns}/${RUNS}  false-on-clean ${perRun.reduce((a, b) => a + b.falseOnClean, 0)}`);
+            console.log(`${c.rule.uuid.padEnd(22)} files=${fileCount} viol=${N}  hits/run=[${perRun.map((p) => p.hit).join(',')}]  caught-all ${allRuns}/${okRuns}  false-on-clean ${perRun.reduce((a, b) => a + (b.errored ? 0 : b.falseOnClean), 0)}`);
         }
     }
     const pct = (a, b) => (b ? (100 * a / b).toFixed(0) : '—');
@@ -219,6 +255,18 @@ async function main() {
     console.log(`specificity (files):  ${pct(cleanFiles - falseAlarmFiles, cleanFiles)}%  (${falseAlarmFiles}/${cleanFiles} clean files false-alarmed)`);
 
     if (GATE) {
+        // Infra guard: if the environment (quota/rate-limit/key) broke enough
+        // runs that the measurement is unreliable, exit 2 (infra) so CI warns
+        // instead of red-flagging quality on a bogus low recall.
+        // erroredRuns now counts thrown runs AND ran-zero-steps runs (the
+        // concrete "agent never executed" signal — not a pure 0-output guess, so
+        // a real engine regression that DOES run but finds nothing still fails
+        // the quality gate below).
+        const erroredFrac = totalRuns ? erroredRuns / totalRuns : 0;
+        if (occTotal === 0 || erroredFrac >= 0.5) {
+            console.error(`\n⚠️ INFRA: ${erroredRuns}/${totalRuns} runs never executed (quota/rate-limit/key — steps=0 or threw) — measurement unreliable, not gating.`);
+            process.exit(2);
+        }
         const occ = occTotal ? (100 * occCaught / occTotal) : 0;
         const spec = cleanFiles ? (100 * (cleanFiles - falseAlarmFiles) / cleanFiles) : 100;
         const fails = [];

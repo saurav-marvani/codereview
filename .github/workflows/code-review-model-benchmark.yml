@@ -41,8 +41,8 @@ name: "Benchmark: tier-0 model code review"
 #   BYOK_ANTHROPIC_API_KEY   Claude (sonnet-4-6, opus-4-7)
 #   BYOK_OPENAI_API_KEY      gpt-5.4
 #   BYOK_GOOGLE_API_KEY      gemini-3.1-pro
-#   BYOK_MOONSHOT_API_KEY    kimi-k2.6 (openai_compatible)
-#   BYOK_ZHIPU_API_KEY       glm-5.1 (openai_compatible)
+#   BYOK_MOONSHOT_API_KEY    kimi-k2.7-code (openai_compatible)
+#   BYOK_ZHIPU_API_KEY       glm-5.2 (openai_compatible)
 #   ANTHROPIC_API_KEY        the scorecard judge (Sonnet)
 # Optional: BENCH_TENANT_EMAIL / BENCH_TENANT_PASSWORD for a dedicated tenant.
 
