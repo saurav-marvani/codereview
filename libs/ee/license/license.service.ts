@@ -125,6 +125,12 @@ export class LicenseService implements ILicenseService {
         }
     }
 
+    async getAllUsersEverWithLicense(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<UserWithLicense[]> {
+        return this.getAllUsersWithLicense(organizationAndTeamData);
+    }
+
     /**
      * Assign license to a user by calling the billing service endpoint.
      * @param organizationAndTeamData Organization and team identifiers

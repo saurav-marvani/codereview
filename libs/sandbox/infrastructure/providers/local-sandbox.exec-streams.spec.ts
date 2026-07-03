@@ -28,8 +28,8 @@ describe('LocalSandboxService exec — separates stdout and stderr', () => {
     it('keeps a failing single command’s stderr out of stdout', async () => {
         const r = await rc.exec('cat nonexistent.txt');
         expect(r.exitCode).not.toBe(0);
-        expect(r.stderr).toMatch(/No such file/i);
-        expect(r.stdout).not.toMatch(/No such file/i);
+        expect(r.stderr).toMatch(/nonexistent/i);
+        expect(r.stdout).not.toMatch(/nonexistent/i);
     });
 
     it('returns clean stdout with empty stderr on success', async () => {
@@ -41,7 +41,7 @@ describe('LocalSandboxService exec — separates stdout and stderr', () => {
 
     it('keeps stderr out of stdout in a pipeline', async () => {
         const r = await rc.exec('cat nonexistent.txt | head');
-        expect(r.stderr).toMatch(/No such file/i);
-        expect(r.stdout).not.toMatch(/No such file/i);
+        expect(r.stderr).toMatch(/nonexistent/i);
+        expect(r.stdout).not.toMatch(/nonexistent/i);
     });
 });

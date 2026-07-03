@@ -35,6 +35,10 @@ export default async function SubscriptionTabs() {
         organizationMembers.map((m) => m.id.toString()),
     );
 
+    const usersWithLicenseByGitId = new Map(
+        usersWithLicense.map((u) => [u.git_id, u]),
+    );
+
     const organizationMembersWithLicense: LicenseTableRow[] = [
         ...organizationMembers
             .map((member) => {
@@ -45,10 +49,7 @@ export default async function SubscriptionTabs() {
                     member.login?.trim() ||
                     "Unknown member";
 
-                const user = usersWithLicense.find(
-                    (userWithLicense) =>
-                        userWithLicense.git_id === member.id.toString(),
-                );
+                const user = usersWithLicenseByGitId.get(member.id.toString());
 
                 return {
                     id: member.id,
@@ -56,21 +57,21 @@ export default async function SubscriptionTabs() {
                     licenseStatus:
                         license.valid && license.subscriptionStatus === "trial"
                             ? "active"
-                            : user?.git_id
-                              ? "active"
-                              : "inactive",
+                            : user?.git_id && (user?.status ?? "active") === "active"
+                            ? "active"
+                            : "inactive",
                 };
-            })
-            .filter((member) => member.licenseStatus === "active"),
+        }),
         ...usersWithLicense
             .filter(
                 (userWithLicense) =>
-                    !organizationMemberIds.has(userWithLicense.git_id),
+                    !organizationMemberIds.has(userWithLicense.git_id) &&
+                    userWithLicense.status !== 'inactive',
             )
             .map((userWithLicense) => ({
                 id: userWithLicense.git_id,
                 name: `Deleted user (${userWithLicense.git_id})`,
-                licenseStatus: "active" as const,
+                licenseStatus: userWithLicense.status ?? "active",
                 removedFromGit: true,
             })),
     ];

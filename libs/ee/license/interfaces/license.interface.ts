@@ -42,6 +42,7 @@ export type OrganizationLicenseValidationResult = {
 
 export type UserWithLicense = {
     git_id: string;
+    status?: 'active' | 'inactive';
 };
 
 export type TrialUnlock = {
@@ -84,6 +85,16 @@ export interface ILicenseService {
      * @returns Promise with array of users with license.
      */
     getAllUsersWithLicense(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<UserWithLicense[]>;
+
+    /**
+     * Get all users ever assigned a license (including inactive).
+     *
+     * @param params Organization ID and team ID.
+     * @returns Promise with array of all users ever assigned a license.
+     */
+    getAllUsersEverWithLicense(
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<UserWithLicense[]>;
 
