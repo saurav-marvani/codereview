@@ -223,7 +223,13 @@ jobs:
                   BYOK_GOOGLE_API_KEY: ${{ secrets.BYOK_GOOGLE_API_KEY }}
                   BYOK_MOONSHOT_API_KEY: ${{ secrets.BYOK_MOONSHOT_API_KEY }}
                   BYOK_ZHIPU_API_KEY: ${{ secrets.BYOK_ZHIPU_API_KEY }}
-              run: node evals/kody-rules/real-agent.js --dataset=github-cases --gate --model=${{ matrix.model }} --runs=1 --limit=3
+              # Advisory (no --gate): runs and reports occurrence-recall /
+              # specificity, but does NOT block merge yet. The gate's OCC_MIN=70
+              # is a flat threshold calibrated only on gpt-5.4 and measured on 3
+              # cases — too noisy/model-blind to enforce. Re-enable once it has
+              # per-model floors from a measured distribution (like the finder's
+              # targets.json).
+              run: node evals/kody-rules/real-agent.js --dataset=github-cases --model=${{ matrix.model }} --runs=1 --limit=3
 
     pr-anchoring-canary:
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
