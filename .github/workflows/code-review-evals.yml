@@ -231,18 +231,14 @@ jobs:
                   BYOK_GOOGLE_API_KEY: ${{ secrets.BYOK_GOOGLE_API_KEY }}
                   BYOK_MOONSHOT_API_KEY: ${{ secrets.BYOK_MOONSHOT_API_KEY }}
                   BYOK_ZHIPU_API_KEY: ${{ secrets.BYOK_ZHIPU_API_KEY }}
-              # Gate on PER-MODEL floors (kody-targets.json), not a flat number:
-              # occurrence-recall ranges 35%-72% across these three, so each model
-              # gates against its own occMin (observed − ~2·binomial-SE). Runs the
-              # FULL github-cases set (no --limit) so the measured recall matches
-              # the floor's calibration.
-              run: |
-                  code=0
-                  node evals/kody-rules/real-agent.js --dataset=github-cases --gate --model=${{ matrix.model }} --runs=1 || code=$?
-                  # exit 2 = infra (quota/rate-limit/key) — warn and pass, not a
-                  # quality regression. exit 1 = real floor breach → block.
-                  if [ "$code" -eq 2 ]; then echo "::warning::${{ matrix.model }}: infra failure (quota/rate-limit/key) — not gating."; exit 0; fi
-                  exit "$code"
+              # Advisory (no --gate) for now. The kody-targets.json floors were
+              # calibrated from a SINGLE run per model, but occurrence-recall has
+              # large run-to-run variance (gpt-5.4-mini swung 72% → 47% between
+              # two runs — far beyond the binomial-SE margin), so a single-run
+              # floor false-reds. Re-enable --gate once floors are calibrated from
+              # MULTIPLE runs per model, and after the prompt-mismatch fix (#1449)
+              # which will move the numbers anyway. Reports occ-recall meanwhile.
+              run: node evals/kody-rules/real-agent.js --dataset=github-cases --model=${{ matrix.model }} --runs=1
 
     pr-anchoring-canary:
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
