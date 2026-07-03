@@ -29,7 +29,9 @@ RUN corepack disable \
   && npm i -g pnpm@10.34.1
 
 FROM base AS deps
-COPY package.json pnpm-lock.yaml .npmrc ./
+# pnpm-workspace.yaml carries the overrides (moved out of package.json/.npmrc by the pnpm 11 migration).
+# Without it here, the frozen install sees empty overrides and aborts with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY packages/kodus-common ./packages/kodus-common
 
 # Railway's Metal builder rejects BuildKit secret mounts and requires a
@@ -64,7 +66,7 @@ RUN pnpm run build:apps && pnpm run build:migrations
 
 # Install production dependencies only
 FROM base AS prod-deps
-COPY package.json pnpm-lock.yaml .npmrc ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY packages/kodus-common ./packages/kodus-common
 
 RUN cd packages/kodus-common \
