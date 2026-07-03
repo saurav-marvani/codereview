@@ -11,7 +11,14 @@ import {
 } from "@components/ui/popover";
 import { Separator } from "@components/ui/separator";
 import { Spinner } from "@components/ui/spinner";
-import { formatDate, isEqual, parseISO, subMonths, subWeeks } from "date-fns";
+import {
+    formatDate,
+    isEqual,
+    parseISO,
+    subDays,
+    subMonths,
+    subWeeks,
+} from "date-fns";
 import { enUS } from "date-fns/locale";
 import { CalendarIcon } from "lucide-react";
 import { type PropsRange } from "react-day-picker";
@@ -38,9 +45,9 @@ const ranges = [
         },
     },
     {
-        label: "Last 2 weeks",
+        label: "Last 15 days",
         range: {
-            from: dateToString(subWeeks(today, 2)),
+            from: dateToString(subDays(today, 15)),
             to: dateToString(today),
         },
     },
@@ -66,7 +73,9 @@ const ranges = [
     };
 }>;
 
-const defaultItem = ranges[0];
+// "Last 15 days" is the default window across the cockpit / token-usage / BYOK
+// cost — kept in sync with getSelectedDateRange()'s server-side default.
+const defaultItem = ranges[1];
 
 export const DateRangePicker = ({ cookieValue, ...props }: Props) => {
     const router = useRouter();

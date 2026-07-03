@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { formatDate, subWeeks } from "date-fns";
+import { formatDate, subDays } from "date-fns";
 import type { CookieName } from "src/core/utils/cookie";
 import { getCurrentSearchParamsOnServerComponents } from "src/core/utils/headers";
 
@@ -31,8 +31,10 @@ export const getSelectedDateRange = async (): Promise<{
         "cockpit-selected-date-range" satisfies CookieName,
     )?.value;
 
+    // Default window: last 15 days — kept in sync with the DateRangePicker's
+    // default preset so the trigger label and the fetched data agree.
     const endDate = new Date();
-    const startDate = subWeeks(endDate, 2);
+    const startDate = subDays(endDate, 15);
 
     let parsedDateRangeFromCookie: {
         startDate: Date | string;

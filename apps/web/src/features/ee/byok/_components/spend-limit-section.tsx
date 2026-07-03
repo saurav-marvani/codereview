@@ -66,6 +66,32 @@ const catalogFieldsOf = (model: ResolvedModelPricing): ModelPrices | null =>
 const fieldsEqual = (a: ModelPrices, b: ModelPrices): boolean =>
     PRICE_FIELDS.every((f) => a[f.key] === b[f.key]);
 
+/**
+ * Numeric equality between two per-model price maps — compares the resolved
+ * per-token rate, NOT the raw display string. `toPerMillion` normalizes trailing
+ * zeros, so "0.1234" and "0.12340" are the same price; a string compare would
+ * mark them different and falsely enable Save.
+ */
+const priceMapsEqual = (
+    a: Record<string, ModelPrices>,
+    b: Record<string, ModelPrices>,
+): boolean => {
+    const modelsUnion = new Set([...Object.keys(a), ...Object.keys(b)]);
+    for (const model of modelsUnion) {
+        const pa = a[model];
+        const pb = b[model];
+        if (!pa || !pb) return false;
+        if (
+            PRICE_FIELDS.some(
+                (f) => fromPerMillion(pa[f.key]) !== fromPerMillion(pb[f.key]),
+            )
+        ) {
+            return false;
+        }
+    }
+    return true;
+};
+
 /** A model is priceable once it charges for input or output (cache is optional). */
 const isModelPriceable = (prices: ModelPrices): boolean => {
     const input = fromPerMillion(prices.input);
@@ -121,6 +147,27 @@ export const SpendLimitSection = ({ teamId }: { teamId?: string }) => {
         [models, prices],
     );
     const allPriceable = unpriceableModels.length === 0;
+
+    // Dirty check: only enable "Save" when the form actually differs from the
+    // loaded config — so the button isn't lit when nothing changed. Mirrors the
+    // exact seeding done in the effect above.
+    const isDirty = useMemo(() => {
+        const seededEnabled = data?.enabled ?? false;
+        const seededLimit =
+            data && data.monthlyLimitUsd > 0
+                ? String(data.monthlyLimitUsd)
+                : "";
+        const seededPrices = data
+            ? Object.fromEntries(
+                  data.models.map((m) => [m.model, seedPrices(m)]),
+              )
+            : {};
+        return (
+            enabled !== seededEnabled ||
+            monthlyLimit !== seededLimit ||
+            !priceMapsEqual(prices, seededPrices)
+        );
+    }, [data, enabled, monthlyLimit, prices]);
 
     const updatePrice = (model: string, field: PriceField, value: string) => {
         setPrices((prev) => ({
@@ -336,8 +383,11 @@ export const SpendLimitSection = ({ teamId }: { teamId?: string }) => {
                         loading={isSaving}
                         disabled={
                             isSaving ||
-                            !limitIsValid ||
-                            (enabled && !allPriceable)
+                            // Nothing changed since the last save → keep it off.
+                            !isDirty ||
+                            // Alerts ON needs a valid limit + every model priced.
+                            // (Prices alone still save with alerts OFF — decoupled.)
+                            (enabled && (!limitIsValid || !allPriceable))
                         }
                         onClick={handleSave}>
                         Save spend limit

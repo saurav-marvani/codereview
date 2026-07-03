@@ -13,6 +13,7 @@ import {
     type LLMConfigStatus,
 } from "@services/organizationParameters/fetch";
 import { OrganizationParametersConfigKey } from "@services/parameters/types";
+import type { ByokModelCost } from "@services/usage/byok-cost";
 import {
     ExternalLinkIcon,
     InfoIcon,
@@ -162,10 +163,18 @@ export const ByokPageClient = ({
     config,
     llmConfigStatus,
     teamId,
+    mainCost,
+    fallbackCost,
+    periodLabel,
+    costRangeQuery,
 }: {
     config: { main: BYOKConfig; fallback: BYOKConfig } | null | undefined;
     llmConfigStatus: LLMConfigStatus | null;
     teamId?: string;
+    mainCost?: ByokModelCost;
+    fallbackCost?: ByokModelCost;
+    periodLabel?: string;
+    costRangeQuery?: string;
 }) => {
     const router = useRouter();
     const [mainState, setMainState] = useState<SlotState>(
@@ -354,6 +363,9 @@ export const ByokPageClient = ({
                     {mainState === "idle" && config?.main ? (
                         <ConfiguredSummary
                             config={config.main}
+                            cost={mainCost}
+                            periodLabel={periodLabel}
+                            costRangeQuery={costRangeQuery}
                             isDeleting={isDeletingMain}
                             onChange={() => handleEdit("main")}
                             onDelete={onDeleteMain}
@@ -384,6 +396,9 @@ export const ByokPageClient = ({
                         {fallbackState === "idle" && config?.fallback ? (
                             <ConfiguredSummary
                                 config={config.fallback}
+                                cost={fallbackCost}
+                                periodLabel={periodLabel}
+                                costRangeQuery={costRangeQuery}
                                 isDeleting={isDeletingFallback}
                                 onChange={() => handleEdit("fallback")}
                                 onDelete={onDeleteFallback}

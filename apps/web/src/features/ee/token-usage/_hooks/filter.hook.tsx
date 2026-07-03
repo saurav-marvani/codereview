@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useDebounce } from "@hooks/use-debounce";
+import { seedSelectedModels } from "./seed-models";
 
 export const useTokenUsageFilters = (models: string[]) => {
     const router = useRouter();
@@ -19,7 +20,14 @@ export const useTokenUsageFilters = (models: string[]) => {
     const navigate = (url: string) =>
         startTransition(() => router.replace(url));
 
-    const [selectedModels, setSelectedModels] = useState<string[]>(models);
+    // Seed the model selection from `?models=` so a deep-link (e.g. the BYOK
+    // per-model cost chip) opens the screen already scoped to that model.
+    // Intersect with the available models; an unknown/empty value falls back to
+    // "all models". Without this seed the mirror effect below would see the
+    // full selection on mount and strip the incoming `?models=` param.
+    const [selectedModels, setSelectedModels] = useState<string[]>(() =>
+        seedSelectedModels(searchParams.get("models"), models),
+    );
 
     // Keep selection in sync when the upstream `models` list changes —
     // switching filter (daily/by-pr/by-developer) yields a different
@@ -89,6 +97,28 @@ export const useTokenUsageFilters = (models: string[]) => {
         navigate(`${pathname}?${params.toString()}`);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [debouncedDeveloper, pathname, searchParams]);
+
+    // Mirror the model selection back into `?models=` so the scope survives
+    // reload/share and matches what a deep-link would produce. Written only for
+    // a proper subset; cleared for all/none (both mean "All models", see
+    // getModelSelectionText). Keyed on the selection so URL churn doesn't loop.
+    const selectedModelsKey = selectedModels.join(",");
+    useEffect(() => {
+        const params = new URLSearchParams(searchParams.toString());
+        const isSubset =
+            selectedModels.length > 0 &&
+            selectedModels.length < models.length;
+        if (isSubset) {
+            params.set("models", selectedModelsKey);
+        } else {
+            params.delete("models");
+        }
+        // Use `navigate` (startTransition) like the other filter effects so the
+        // isPending flag drives the loading skeleton — a bare router.replace
+        // would swap data with no pending state, leaving stale charts on screen.
+        navigate(`${pathname}?${params.toString()}`);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedModelsKey, models.length]);
 
     const handlePrNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setPrNumber(e.target.value);
