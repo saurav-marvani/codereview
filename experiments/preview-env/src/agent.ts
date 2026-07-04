@@ -240,4 +240,145 @@ export async function detectEnvironment(
     };
 }
 
+const DIAGNOSE_SYSTEM_PROMPT = `You are Kody's failure-diagnosis agent. You have root shell access (via the bash tool) to a VM where a customer repository is checked out at the repo root (every command starts there, with the customer env file exported). The environment was previously validated as working; now one or more verification tests FAIL. The working-tree diff (git diff) represents the pull request under review — the failure was most likely introduced by it.
+
+Investigate hands-on: reproduce the failing check, inspect the PR diff, read the relevant code, add temporary instrumentation if needed (revert it afterwards). Then call finish with:
+- root_cause: precise explanation of the defect
+- file: the file (and line if possible) where the bug lives
+- suggested_fix: a concrete minimal fix (diff-style or exact code)
+- confidence: high|medium|low
+
+Rules: be economical with output (~12k chars/command visible). Do not fix the bug permanently — diagnosis only. Call finish exactly once.`;
+
+const DIAGNOSE_TOOLS: Anthropic.Tool[] = [
+    TOOLS[0], // bash
+    {
+        name: 'finish',
+        description: 'Report the diagnosis.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                root_cause: { type: 'string' },
+                file: { type: 'string' },
+                suggested_fix: { type: 'string' },
+                confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+            },
+            required: ['root_cause', 'file', 'suggested_fix', 'confidence'],
+        },
+    },
+];
+
+export interface DiagnoseResult {
+    rootCause: string;
+    file: string;
+    suggestedFix: string;
+    confidence: string;
+    turns: number;
+    transcriptPath: string;
+}
+
+export async function diagnoseFailure(
+    state: PreviewState,
+    failureReport: string,
+    opts: { model?: string } = {},
+): Promise<DiagnoseResult> {
+    const model = opts.model ?? getEnv('PREVIEW_AGENT_MODEL') ?? DEFAULT_MODEL;
+    const isKimi = model.startsWith('kimi');
+    const baseURL =
+        getEnv('PREVIEW_AGENT_BASE_URL') ??
+        (isKimi ? 'https://api.kimi.com/coding' : undefined);
+    const apiKey =
+        getEnv('PREVIEW_AGENT_API_KEY') ??
+        (isKimi
+            ? getEnv('KIMI_CODING_PLAN_KEY')
+            : (getEnv('ANTHROPIC_API_KEY') ?? getEnv('BYOK_ANTHROPIC_API_KEY')));
+    if (!apiKey) throw new Error(`No API key for model '${model}'`);
+    const client = new Anthropic({ apiKey, baseURL });
+
+    const runDir = join(RUNS_DIR, state.name);
+    mkdirSync(runDir, { recursive: true });
+    const transcriptPath = join(
+        runDir,
+        `diagnose-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`,
+    );
+    const logLine = (obj: unknown) =>
+        appendFileSync(transcriptPath, JSON.stringify(obj) + '\n');
+
+    const messages: Anthropic.MessageParam[] = [
+        {
+            role: 'user',
+            content: `Failing verification report:\n${failureReport}\n\nThe PR under review is the current git working-tree diff. Find the root cause.`,
+        },
+    ];
+
+    for (let turn = 1; turn <= MAX_TURNS; turn++) {
+        const response = await client.messages.create({
+            model,
+            max_tokens: 8192,
+            system: DIAGNOSE_SYSTEM_PROMPT,
+            tools: DIAGNOSE_TOOLS,
+            messages,
+        });
+        logLine({ turn, role: 'assistant', content: response.content });
+        const text = response.content
+            .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+            .map((b) => b.text)
+            .join('\n');
+        if (text.trim()) console.log(`\n[agent:${turn}] ${text.trim()}`);
+
+        const toolUses = response.content.filter(
+            (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
+        );
+        if (!toolUses.length) {
+            messages.push(
+                { role: 'assistant', content: response.content },
+                { role: 'user', content: 'Continue investigating, or call finish.' },
+            );
+            continue;
+        }
+        messages.push({ role: 'assistant', content: response.content });
+        const toolResults: Anthropic.ToolResultBlockParam[] = [];
+        for (const toolUse of toolUses) {
+            if (toolUse.name === 'finish') {
+                const input = toolUse.input as any;
+                logLine({ turn, finish: input });
+                return {
+                    rootCause: input.root_cause,
+                    file: input.file,
+                    suggestedFix: input.suggested_fix,
+                    confidence: input.confidence,
+                    turns: turn,
+                    transcriptPath,
+                };
+            }
+            const input = toolUse.input as {
+                command: string;
+                timeout_seconds?: number;
+            };
+            console.log(`\n[bash:${turn}] $ ${input.command}`);
+            const res = await sshExec(state, wrapCommand(state, input.command), {
+                timeoutMs: (input.timeout_seconds ?? 300) * 1000,
+            });
+            console.log(
+                `[bash:${turn}] exit ${res.exitCode} in ${Math.round(res.durationMs / 1000)}s`,
+            );
+            logLine({ turn, tool: 'bash', input, exitCode: res.exitCode });
+            toolResults.push({
+                type: 'tool_result',
+                tool_use_id: toolUse.id,
+                content:
+                    `exit_code: ${res.exitCode}${res.timedOut ? ' (TIMED OUT)' : ''}\n` +
+                    truncateForModel(
+                        [res.stdout, res.stderr && `--- stderr ---\n${res.stderr}`]
+                            .filter(Boolean)
+                            .join('\n'),
+                    ),
+                is_error: res.exitCode !== 0,
+            });
+        }
+        messages.push({ role: 'user', content: toolResults });
+    }
+    throw new Error(`Diagnosis hit the ${MAX_TURNS}-turn limit`);
+}
+
 export { dumpPlaybook };

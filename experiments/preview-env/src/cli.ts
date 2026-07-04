@@ -2,7 +2,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { detectEnvironment, dumpPlaybook } from './agent.js';
+import { detectEnvironment, diagnoseFailure, dumpPlaybook } from './agent.js';
 import { getEnv } from './config.js';
 import {
     PHASES,
@@ -51,7 +51,8 @@ Usage:
   preview up      --name <n> --repo <git-url> [--token <t>] [--env-file <path>]
                   [--provider digitalocean] [--region ...] [--size ...] [--branch <b>]
   preview detect  --name <n> [--hint "..."] [--model <id>] [--force]
-  preview run     --name <n> [--phase setup|services|build|test] [--timeout <s>]
+  preview run     --name <n> [--phase setup|services|build|test] [--playbook <file>] [--timeout <s>]
+  preview diagnose --name <n> [--model <id>]   # run tests; on failure, agent finds root cause
   preview exec    --name <n> -- <command...>
   preview ssh     --name <n>
   preview status                    # local state + live VMs (API is source of truth)
@@ -300,6 +301,38 @@ async function cmdRun(args: Args): Promise<void> {
     process.exitCode = ok ? 0 : 1;
 }
 
+/**
+ * Runs the playbook's test phase; on failure, hands the failing check +
+ * output to the diagnosis agent, which investigates on the VM and reports
+ * root cause + suggested fix (the Kody PR-validation story).
+ */
+async function cmdDiagnose(args: Args): Promise<void> {
+    const name = normalizeName(str(args, 'name') ?? 'default');
+    const state = loadState(name);
+    const playbook = await readRemotePlaybook(state);
+    if (!playbook) throw new Error(`No playbook on VM. Run detect first.`);
+    const timeoutMs = Number(str(args, 'timeout') ?? 1800) * 1000;
+    console.log('running verification (test phase)...');
+    const { ok, results } = await runPlaybook(state, playbook, ['test'], timeoutMs);
+    if (ok) {
+        console.log('\nAll checks passed — nothing to diagnose.');
+        return;
+    }
+    const failed = results[results.length - 1];
+    const failureReport =
+        `Check FAILED (exit ${failed.exitCode}):\n$ ${failed.command}\n\nOutput:\n${failed.outputTail}\n\n` +
+        `Checks that passed before it: ${results.length - 1}`;
+    console.log('\nstarting diagnosis agent...');
+    const d = await diagnoseFailure(state, failureReport, {
+        model: str(args, 'model'),
+    });
+    console.log(`\n=== DIAGNOSIS (${d.turns} turns, confidence: ${d.confidence}) ===`);
+    console.log(`root cause: ${d.rootCause}`);
+    console.log(`file:       ${d.file}`);
+    console.log(`fix:\n${d.suggestedFix}`);
+    console.log(`transcript: ${d.transcriptPath}`);
+}
+
 async function cmdExec(args: Args): Promise<void> {
     const name = normalizeName(str(args, 'name') ?? 'default');
     const state = loadState(name);
@@ -355,6 +388,7 @@ async function main(): Promise<void> {
         case 'up': return cmdUp(args);
         case 'detect': return cmdDetect(args);
         case 'run': return cmdRun(args);
+        case 'diagnose': return cmdDiagnose(args);
         case 'exec': return cmdExec(args);
         case 'ssh': {
             const state = loadState(normalizeName(str(args, 'name') ?? 'default'));
