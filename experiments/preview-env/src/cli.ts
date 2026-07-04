@@ -43,6 +43,13 @@ runcmd:
   - systemctl restart ssh
   - curl -fsSL https://get.docker.com | sh
   - mkdir -p /opt/kody
+  # Base Node + headless Playwright/Chromium so agents can verify web UIs
+  # in a real browser without burning turns on setup. Repos that pin a
+  # different Node version can still install it over this one.
+  - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  - apt-get install -y nodejs
+  - npm install -g playwright
+  - playwright install --with-deps chromium
 `;
 
 const USAGE = `kody preview-env — ephemeral customer test environments (experiment)
