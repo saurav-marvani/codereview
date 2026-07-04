@@ -396,11 +396,20 @@ export class TokenPricingUseCase {
         provider: string,
     ): CatalogEntry {
         // Prefer the explicit tier list (carries its own breakpoint); fall
-        // back to the legacy fixed-200k object. TokenPrice models a SINGLE
-        // breakpoint, so for the rare multi-tier entry we take the lowest one
-        // deterministically (sorted, not array order): the elevated rate then
-        // applies from the first breakpoint up, which never underprices above
-        // it. Today every tiered model Kodus uses has exactly one (>200k).
+        // back to the legacy fixed-200k object.
+        //
+        // TokenPrice models a SINGLE breakpoint, and the read applies it as a
+        // per-call binary: a call whose input exceeds the threshold is priced
+        // ENTIRELY at the tier rate, otherwise at the default rate (not
+        // graduated). For the rare multi-tier entry we deterministically take
+        // the LOWEST breakpoint (sorted, not array order) — intentionally, not
+        // the highest. With the binary model, the lowest breakpoint elevates
+        // the widest set of large calls (everything above the first tier);
+        // choosing a higher breakpoint would instead leave the whole
+        // first-tier band priced at the default rate, underpricing a far more
+        // common range than the ultra-rare calls above a second breakpoint.
+        // Moot in practice: every tiered model Kodus uses today has exactly
+        // one context tier (>200k), so this only breaks ties of one.
         const contextTier = (cost?.tiers ?? [])
             .filter(
                 (t) =>
