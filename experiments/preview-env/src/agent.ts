@@ -449,6 +449,25 @@ Your mission: decide whether this PR introduces bugs — by ACTUALLY EXERCISING 
 
 Rules: be economical with output (~12k chars visible per command). Long boots need generous waits. Kill any server you start when done (kill by pid file or port, never pkill -f). If the PR is fine, say so — a clean verdict with evidence of what you exercised is a valid outcome. Call finish exactly once.`;
 
+/**
+ * Redacted, diff-only reviewer. Prior art (empirically measured) shows that
+ * an author's benign framing in the PR metadata cuts LLM vuln detection by
+ * 16-93pp with a strong false-negative bias; the proven mitigation is to
+ * withhold the PR's stated intent and force diff-only analysis. This prompt
+ * gives the reviewer no title/description at all — only the code change —
+ * and an explicit security-first, assume-nothing lens.
+ */
+const VALIDATE_REDACTED_SYSTEM_PROMPT = `You are Kody's independent PR-validation agent. You have root shell access (via the bash tool) to a VM where the customer repository is checked out at the repo root; the environment (toolchain, deps, build) is already set up. The change under review is the current git working-tree diff (git diff shows it). You are given NO title, NO description, and NO stated intent — deliberately. Do not speculate about what the author wanted. Judge ONLY what the code now does.
+
+Your mission: determine whether this change is safe and correct — by EXERCISING the affected behavior, assuming nothing.
+1. From the diff alone, identify every behavior the code now exhibits and, crucially, every guarantee it might now BREAK. If the diff touches anything security-relevant (auth, permissions, input validation, sanitization, SSRF/URL/host allow-or-block logic, path handling, crypto, deserialization, command/DB construction), your FIRST duty is to check whether that protection still holds — regardless of how reasonable the change looks.
+2. For each such control, construct the input a malicious actor would use and verify the control still stops it: e.g. for URL/host filtering, try loopback (127.0.0.1), link-local / cloud metadata (169.254.169.254), and internal ranges; for auth, try acting as the wrong/lower-privilege principal; for path handling, try traversal (../); for injection, try a payload. Run it against the RUNNING app (API or UI) and observe.
+3. A change that ALLOWS something previously blocked by a security control is a security regression even if it looks like a convenience/feature — name it as such (e.g. "reintroduces SSRF: X is now reachable"), with the executed repro and its concrete impact (what an attacker reaches).
+4. Also cover correctness: falsifying inputs, negated operators, empty/boundary. Existing unit tests passing is weak evidence — they encode old assumptions; a diff that makes tests fail may mean the diff is wrong OR the tests are stale, so judge behavior directly, never defer to the test's expectation.
+5. Call finish with verdict and findings. Every finding: what you ran, expected vs actual, file/line, and — for security — the concrete attacker impact. Do NOT report style/hypotheticals you could not reproduce. request_changes if any real defect (security or correctness) reproduces.
+
+Rules: be economical (~12k chars/command). Generous waits for boots. Kill servers you start by pid/port (never pkill -f). Call finish exactly once.`;
+
 const VALIDATE_TOOLS: Anthropic.Tool[] = [
     TOOLS[0], // bash
     {
@@ -490,7 +509,7 @@ export interface ValidateResult {
 export async function validatePr(
     state: PreviewState,
     pr: { title: string; description: string },
-    opts: { model?: string } = {},
+    opts: { model?: string; redact?: boolean } = {},
 ): Promise<ValidateResult> {
     const model = opts.model ?? getEnv('PREVIEW_AGENT_MODEL') ?? DEFAULT_MODEL;
     const isKimi = model.startsWith('kimi');
@@ -514,18 +533,21 @@ export async function validatePr(
     const logLine = (obj: unknown) =>
         appendFileSync(transcriptPath, JSON.stringify(obj) + '\n');
 
+    const systemPrompt = opts.redact
+        ? VALIDATE_REDACTED_SYSTEM_PROMPT
+        : VALIDATE_SYSTEM_PROMPT;
+    const firstMessage = opts.redact
+        ? `The change under review is the current git working-tree diff (run 'git diff'). No description is provided by design. Analyze the diff, exercise the affected behavior on the running app, and call finish with your verdict.`
+        : `PR title: ${pr.title}\n\nPR description:\n${pr.description}\n\nThe PR's changes are the current git working-tree diff. Validate this PR hands-on and call finish with your verdict.`;
     const messages: Anthropic.MessageParam[] = [
-        {
-            role: 'user',
-            content: `PR title: ${pr.title}\n\nPR description:\n${pr.description}\n\nThe PR's changes are the current git working-tree diff. Validate this PR hands-on and call finish with your verdict.`,
-        },
+        { role: 'user', content: firstMessage },
     ];
 
     for (let turn = 1; turn <= MAX_TURNS; turn++) {
         const response = await client.messages.create({
             model,
             max_tokens: 8192,
-            system: VALIDATE_SYSTEM_PROMPT + loadLessons(),
+            system: systemPrompt + loadLessons(),
             tools: VALIDATE_TOOLS,
             messages,
         });

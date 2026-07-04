@@ -376,6 +376,7 @@ async function cmdValidate(args: Args): Promise<void> {
     if (descFile) description = readFileSync(descFile, 'utf8');
     const result = await validatePr(state, { title, description }, {
         model: str(args, 'model'),
+        redact: Boolean(args.redact),
     });
     console.log(`\n=== VALIDATION: ${result.verdict.toUpperCase()} (${result.turns} turns, ${result.bugs.length} bug(s)) ===`);
     console.log(result.summary);
