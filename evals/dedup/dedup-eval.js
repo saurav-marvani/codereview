@@ -1,5 +1,6 @@
 // Core dedup-eval logic: golden-anchored ground truth (no new labeling, judged
-// by Sonnet — a DIFFERENT model than the gemini dedup, so it's not circular).
+// by the configured JUDGE_MODEL — pinned to claude-haiku-4-5 by run.js so it
+// stays a DIFFERENT model than the gpt-5.4-mini dedup, keeping it non-circular).
 //
 // For one PR:
 //   1. matchFindingsToGoldens — judge-label each finding with the golden it hits

@@ -1,6 +1,6 @@
 // Dedup-eval driver. For each PR dataset (>=2 findings): judge-label findings →
-// goldens (Sonnet, cached), run the REAL dedup (gpt-5.4-mini) or a mock, score the
-// over-merge / under-merge metrics, and print an aggregate.
+// goldens (claude-haiku-4-5, cached), run the REAL dedup (gpt-5.4-mini) or a
+// mock, score the over-merge / under-merge metrics, and print an aggregate.
 //
 //   node run.js                 # live dedup (needs OpenAI key)
 //   node run.js --mock=identity # keep-all baseline (no Google; sanity/CI)
@@ -9,6 +9,14 @@
 //
 // Keys: ANTHROPIC_API_KEY/BYOK_ANTHROPIC_API_KEY (judge) +
 // BYOK_OPENAI_API_KEY/API_OPEN_AI_API_KEY (dedup default).
+//
+// The judge must stay a DIFFERENT model than the dedup (else the label→goldens
+// step correlates with the merge decision). The dedup model is gpt-5.4-mini, so
+// pin the judge to claude-haiku-4-5 (also the global default) BEFORE requiring
+// recall-judge, which captures JUDGE_MODEL at load time — this stays correct
+// even if the global default judge is later pointed at gpt-5.4-mini.
+process.env.JUDGE_MODEL = process.env.JUDGE_MODEL || 'claude-haiku-4-5';
+if (process.env.JUDGE_MODEL === 'gpt-5.4-mini') process.env.JUDGE_MODEL = 'claude-haiku-4-5';
 const fs = require('fs');
 const path = require('path');
 const { loadJudgeKey } = require('../investigation/recall-judge');
