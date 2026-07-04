@@ -1,9 +1,8 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
-import useResizeObserver from "@hooks/use-resize-observer";
+import { useEffect, useMemo, useState } from "react";
 import { BaseUsageContract } from "@services/usage/types";
-import { ExpandableContext } from "src/core/providers/expandable";
+import { cn } from "src/core/utils/components";
 import {
     Bar,
     CartesianGrid,
@@ -29,6 +28,13 @@ const SERIES = [
 ] as const;
 
 type SeriesKey = (typeof SERIES)[number]["key"];
+
+/**
+ * Cockpit charts never scroll horizontally — series are bounded to fit the
+ * container. Unbounded dimensions (PR/review/developer) show the top
+ * consumers by total tokens.
+ */
+const TOP_N = 24;
 
 type ChartRow = Record<SeriesKey, number> & {
     label: string;
@@ -108,13 +114,21 @@ export const Chart = ({
     >;
     filterType: string;
 }) => {
-    const [graphRef, boundingRect] = useResizeObserver();
-    const { isExpanded } = use(ExpandableContext);
     const [isMounted, setIsMounted] = useState(false);
+    const [hidden, setHidden] = useState<Record<string, boolean>>({});
 
     useEffect(() => {
         setIsMounted(true);
     }, []);
+
+    // Cockpit-style legend toggles — never allow hiding every series.
+    const toggle = (key: SeriesKey) => {
+        setHidden((prev) => {
+            const next = { ...prev, [key]: !prev[key] };
+            if (SERIES.every((s) => next[s.key])) return prev;
+            return next;
+        });
+    };
 
     const xAccessor = useMemo(() => {
         switch (filterType) {
@@ -165,16 +179,36 @@ export const Chart = ({
         return Object.values(merged);
     }, [data, filterType, xAccessor]);
 
+    // Cockpit charts never scroll — they bound the series to the container.
+    // Daily is bounded by the date range; the categorical dimensions
+    // (PR/review/developer) are unbounded, so show the TOP consumers by
+    // total tokens, which is the question this screen answers.
+    const isTopN = filterType !== "daily";
+    const { boundedData, droppedCount } = useMemo(() => {
+        if (!isTopN || transformedData.length <= TOP_N) {
+            return { boundedData: transformedData, droppedCount: 0 };
+        }
+        const sorted = [...transformedData].sort(
+            (a, b) =>
+                b.input + b.output + b.outputReasoning -
+                (a.input + a.output + a.outputReasoning),
+        );
+        return {
+            boundedData: sorted.slice(0, TOP_N),
+            droppedCount: transformedData.length - TOP_N,
+        };
+    }, [transformedData, isTopN]);
+
     // Outlier cap: when the max bar dwarfs the p95, scale outliers down to
     // 1.2×p95 so the rest of the chart stays readable; capped bars keep their
     // real values for the tooltip and get a marker dot at the top.
     const { maxDomain, chartData } = useMemo(() => {
-        const totals = transformedData.map(
+        const totals = boundedData.map(
             (d) => d.input + d.output + d.outputReasoning,
         );
 
         if (totals.length === 0) {
-            return { maxDomain: undefined, chartData: transformedData };
+            return { maxDomain: undefined, chartData: boundedData };
         }
 
         const sortedTotals = [...totals].sort((a, b) => a - b);
@@ -183,11 +217,11 @@ export const Chart = ({
         const maxValue = sortedTotals[sortedTotals.length - 1];
 
         if (maxValue <= percentile95 * 3) {
-            return { maxDomain: undefined, chartData: transformedData };
+            return { maxDomain: undefined, chartData: boundedData };
         }
 
         const capLimit = percentile95 * 1.2;
-        const cappedData = transformedData.map((d) => {
+        const cappedData = boundedData.map((d) => {
             const total = d.input + d.output + d.outputReasoning;
             if (total <= capLimit) return d;
 
@@ -203,16 +237,11 @@ export const Chart = ({
         });
 
         return { maxDomain: capLimit, chartData: cappedData };
-    }, [transformedData]);
+    }, [boundedData]);
 
-    const isTiltedDate = chartData.length > 6 && !isExpanded;
-
-    const minBarWidth = 40;
-    const minWidth = chartData.length * minBarWidth;
-    const chartWidth = Math.max(boundingRect.width, minWidth);
-    const shouldScroll = chartWidth > boundingRect.width;
-
-    const formatXTick = (x: string) => {
+    // Tooltip shows the full label; the axis truncates long ones
+    // (by-review's "#PR · shortId").
+    const formatLabel = (x: string) => {
         if (filterType === "daily") {
             return new Date(x).toLocaleDateString("en-US", {
                 month: "short",
@@ -221,52 +250,37 @@ export const Chart = ({
         }
         return x;
     };
+    const formatXTick = (x: string) => {
+        const label = formatLabel(x);
+        return label.length > 12 ? `${label.slice(0, 11)}…` : label;
+    };
 
     if (!isMounted) {
-        return <div ref={graphRef} className="h-full w-full" />;
+        return <div className="h-full w-full" />;
     }
 
     return (
-        <div ref={graphRef} className="flex h-full w-full flex-col">
-            {/* Custom Legend */}
-            <div className="mb-2 flex items-center justify-center gap-6">
-                {SERIES.map((series) => (
-                    <div
-                        key={series.key}
-                        className="flex items-center gap-2">
-                        <div
-                            className="size-2 rounded-xs"
-                            style={{ backgroundColor: series.color }}
-                        />
-                        <span className="text-text-secondary text-xs">
-                            {series.label}
-                        </span>
-                    </div>
-                ))}
-            </div>
-
-            <div className={shouldScroll ? "min-h-0 flex-1 overflow-x-auto" : "min-h-0 flex-1"}>
-                <div
-                    style={{
-                        width: shouldScroll ? chartWidth : "100%",
-                        height: "100%",
-                    }}>
-                    <ResponsiveContainer width="100%" height="100%">
+        <div className="flex h-full w-full flex-col gap-4">
+            {droppedCount > 0 && (
+                <p className="text-text-tertiary text-xs">
+                    Top {TOP_N} by total tokens ({droppedCount} more in the
+                    period — narrow the date range or filters to see them).
+                </p>
+            )}
+            <div className="min-h-0 flex-1">
+                <ResponsiveContainer width="100%" height="100%">
                         <ComposedChart
                             data={chartData}
-                            margin={{
-                                top: 8,
-                                right: 12,
-                                left: 0,
-                                bottom: isTiltedDate ? 24 : 0,
-                            }}>
+                            margin={{ top: 10, right: 12, left: -8, bottom: 0 }}>
                             <CartesianGrid {...rechartsGridProps} />
+                            {/* Auto tick skipping (cockpit convention):
+                                dense dimensions show a readable subset of
+                                labels; every bar stays hoverable and the
+                                tooltip carries the full identity. */}
                             <XAxis
                                 dataKey="label"
-                                tickMargin={10}
-                                interval={0}
-                                angle={isTiltedDate ? -35 : 0}
-                                textAnchor={isTiltedDate ? "end" : "middle"}
+                                tickMargin={8}
+                                minTickGap={24}
                                 tickFormatter={(value) =>
                                     formatXTick(String(value))
                                 }
@@ -281,10 +295,10 @@ export const Chart = ({
                                 {...rechartsAxisProps}
                             />
                             <Tooltip
-                                cursor={{ fill: "#30304b22" }}
+                                cursor={{ fill: "#20203266" }}
                                 content={
                                     <UsageTooltip
-                                        formatLabel={formatXTick}
+                                        formatLabel={formatLabel}
                                     />
                                 }
                             />
@@ -292,23 +306,26 @@ export const Chart = ({
                                 dataKey="input"
                                 name="Input"
                                 stackId="tokens"
+                                hide={hidden.input}
                                 fill={CHART_COLORS.info}
-                                maxBarSize={24}
+                                maxBarSize={28}
                                 radius={[0, 0, 5, 5]}
                             />
                             <Bar
                                 dataKey="output"
                                 name="Output"
                                 stackId="tokens"
+                                hide={hidden.output}
                                 fill={CHART_COLORS.success}
-                                maxBarSize={24}
+                                maxBarSize={28}
                             />
                             <Bar
                                 dataKey="outputReasoning"
                                 name="Reasoning"
                                 stackId="tokens"
+                                hide={hidden.outputReasoning}
                                 fill={CHART_COLORS.warning}
-                                maxBarSize={24}
+                                maxBarSize={28}
                                 radius={[5, 5, 0, 0]}
                             />
                             {maxDomain && (
@@ -332,20 +349,34 @@ export const Chart = ({
                                     }
                                 />
                             )}
-                        </ComposedChart>
-                    </ResponsiveContainer>
-                </div>
+                    </ComposedChart>
+                </ResponsiveContainer>
             </div>
 
-            {maxDomain && (
-                <div className="text-warning mt-2 flex items-center gap-2 px-2 text-xs">
-                    <div className="bg-warning size-2 rounded-full" />
-                    <span>
-                        Some values exceed the scale. Hover over bars to see
-                        actual values.
+            <div className="flex items-center gap-5">
+                {SERIES.map((series) => (
+                    <button
+                        key={series.key}
+                        type="button"
+                        onClick={() => toggle(series.key)}
+                        className="flex cursor-pointer items-center gap-2 text-xs">
+                        <span
+                            style={{ backgroundColor: series.color }}
+                            className={cn(
+                                "size-3 rounded-full",
+                                hidden[series.key] && "bg-text-tertiary!",
+                            )}
+                        />
+                        {series.label}
+                    </button>
+                ))}
+                {maxDomain && (
+                    <span className="text-warning ml-auto flex items-center gap-2 text-xs">
+                        <span className="bg-warning size-2 rounded-full" />
+                        Some values exceed the scale — hover for actual values.
                     </span>
-                </div>
-            )}
+                )}
+            </div>
         </div>
     );
 };
