@@ -16,7 +16,10 @@ import {
 
 import { rowCost } from "../_utils/cost";
 
-const PAGE = 25;
+// Collapsed by default; "Show all" expands up to CAP (bounded so a huge
+// period doesn't blow up the DOM) and flips to "Show less".
+const INITIAL = 12;
+const CAP = 100;
 
 const formatTokens = (t: number) => {
     if (t === 0) return "0";
@@ -63,7 +66,7 @@ export const ReviewActivityTable = ({
     selectedModels: string[];
     pricing: Record<string, ModelPricingInfo>;
 }) => {
-    const [limit, setLimit] = useState(PAGE);
+    const [expanded, setExpanded] = useState(false);
 
     const runs = useMemo(() => {
         const byRun = new Map<string, RunRow>();
@@ -99,14 +102,17 @@ export const ReviewActivityTable = ({
 
     if (!runs.length) return null;
 
+    const limit = expanded ? CAP : INITIAL;
     const visible = runs.slice(0, limit);
+    const cappedOut = expanded && runs.length > CAP ? runs.length - CAP : 0;
 
     return (
         <Card color="lv1">
             <CardHeader>
                 <CardTitle className="text-sm">Review activity</CardTitle>
                 <CardDescription className="text-xs">
-                    Every review run in the period, most expensive first.
+                    {runs.length} review run{runs.length === 1 ? "" : "s"} in
+                    the period, most expensive first.
                 </CardDescription>
             </CardHeader>
             <CardContent>
@@ -152,14 +158,22 @@ export const ReviewActivityTable = ({
                         ))}
                     </tbody>
                 </table>
-                {runs.length > limit && (
-                    <div className="mt-3 flex justify-center">
+                {runs.length > INITIAL && (
+                    <div className="mt-3 flex items-center justify-center gap-3">
                         <Button
                             size="xs"
                             variant="helper"
-                            onClick={() => setLimit((l) => l + PAGE)}>
-                            Show more ({runs.length - limit} remaining)
+                            onClick={() => setExpanded((e) => !e)}>
+                            {expanded
+                                ? "Show less"
+                                : `Show all (${Math.min(runs.length, CAP)})`}
                         </Button>
+                        {cappedOut > 0 && (
+                            <span className="text-text-tertiary text-xs">
+                                Top {CAP} by spend · {cappedOut} more — narrow
+                                the filters to see them.
+                            </span>
+                        )}
                     </div>
                 )}
             </CardContent>
