@@ -1,4 +1,13 @@
-import { deriveTu, SYSTEM_RUN_NAMES } from './token-usage-tu';
+import {
+    deriveArea,
+    deriveTu,
+    SUGGESTION_RUN_NAMES,
+    SYSTEM_RUN_NAMES,
+} from './token-usage-tu';
+import {
+    BACKFILL_SUGGESTION_RUN_NAMES,
+    BACKFILL_SYSTEM_RUN_NAMES,
+} from '../infrastructure/database/mongo/token-usage/backfill-tu';
 
 /**
  * `deriveTu` is the single source of the `attributes.tu` sub-doc mirrored onto
@@ -72,6 +81,14 @@ describe('deriveTu', () => {
             expect(deriveTu(usage)!.isByok).toBe(false);
         });
 
+        it('stamps the process area from the run name', () => {
+            expect(
+                deriveTu({ ...usage, 'gen_ai.run.name': 'code-review-security' })!
+                    .area,
+            ).toBe('review');
+            expect(deriveTu(usage)!.area).toBe('other');
+        });
+
         it('sys is true only for the internal system-analysis run-names', () => {
             for (const name of SYSTEM_RUN_NAMES) {
                 expect(
@@ -84,5 +101,83 @@ describe('deriveTu', () => {
             ).toBe(false);
             expect(deriveTu(usage)!.sys).toBe(false);
         });
+    });
+});
+
+/**
+ * `deriveArea` maps every usage span onto the small fixed TokenUsageArea set.
+ * The cases below pin one representative run-name per producer family (see
+ * the full inventory in issue #1453 / the observability call sites).
+ */
+describe('deriveArea', () => {
+    const cases: Array<[string, string]> = [
+        // system (SYSTEM_RUN_NAMES wins even over other rules)
+        ['selectReviewMode', 'system'],
+        ['generateCodeSuggestions', 'system'],
+        // kody rules — analysis, sharded classifiers, PR-level, generation, sync
+        ['kodyRulesAnalyzeCodeWithAI', 'kody_rules'],
+        ['classifierKodyRulesAnalyzeCodeWithAI', 'kody_rules'],
+        ['suggestionGenerationKodyRulesAnalyzeCodeWithAI', 'kody_rules'],
+        ['prLevelKodyRulesAnalyzer', 'kody_rules'],
+        ['generateKodyRules.generate', 'kody_rules'],
+        ['extractKodyRuleIdsFromContent', 'kody_rules'],
+        ['kodyRulesRecommendationFromSuggestions', 'kody_rules'],
+        ['kodyRulesFilesToRulesFastBatch', 'kody_rules'],
+        ['kodyMemoryResolution', 'kody_rules'],
+        // cross-file
+        ['crossFileAnalyzeCodeWithAI', 'cross_file'],
+        ['crossFileContextPlanner', 'cross_file'],
+        ['crossFileContextSufficiency', 'cross_file'],
+        // generalist review agents
+        ['code-review-security', 'review'],
+        ['code-review-bug-verify', 'review'],
+        ['code-review-dedup', 'review'],
+        ['analyzeCodeWithAI', 'review'],
+        ['analyzeCodeWithAI_v2', 'review'],
+        // suggestion refinement
+        ['severityAnalysis', 'suggestions'],
+        ['validateWithLLM', 'suggestions'],
+        ['checkSuggestionSimplicity', 'suggestions'],
+        ['safeguardAgentVerification_turn2', 'suggestions'],
+        ['repeatedCodeReviewSuggestionClustering', 'suggestions'],
+        // PR summary
+        ['generateSummaryPR', 'summary'],
+        ['generateSummaryPR_chunk_3', 'summary'],
+        ['generateSummaryPR_consolidation', 'summary'],
+        // conversation
+        ['conversationAgent', 'conversation'],
+        // everything else
+        ['businessRulesVerify', 'other'],
+        ['kodus-web-search-fetcher', 'other'],
+        ['documentationPlanner:src/index.ts', 'other'],
+        ['commentCategorizer', 'other'],
+        ['', 'other'],
+    ];
+
+    it.each(cases)('%s → %s', (runName, area) => {
+        expect(deriveArea(runName)).toBe(area);
+    });
+
+    it('classifies conversation via agent.phase when the run name is custom', () => {
+        expect(deriveArea('someCustomRun', 'conversation')).toBe(
+            'conversation',
+        );
+    });
+
+    it('handles non-string input', () => {
+        expect(deriveArea(undefined)).toBe('other');
+        expect(deriveArea(42 as any)).toBe('other');
+    });
+
+    // The Mongo backfill mirrors deriveArea as an aggregation $switch with its
+    // own copies of the run-name lists — if these drift, history and new
+    // writes would disagree on where tokens went.
+    it('stays in sync with the backfill run-name lists', () => {
+        expect(new Set(BACKFILL_SYSTEM_RUN_NAMES)).toEqual(
+            new Set(SYSTEM_RUN_NAMES),
+        );
+        expect(new Set(BACKFILL_SUGGESTION_RUN_NAMES)).toEqual(
+            new Set(SUGGESTION_RUN_NAMES),
+        );
     });
 });

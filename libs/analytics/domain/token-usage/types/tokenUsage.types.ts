@@ -59,6 +59,27 @@ export interface UsageByDeveloperResultContract extends BaseUsageContract {
     developer: string;
 }
 
+/**
+ * One review run = one `correlationId` (the ambient observability context id
+ * every usage span of a run inherits). A PR reviewed twice yields two rows.
+ */
+export interface UsageByReviewResultContract extends BaseUsageContract {
+    /** The review run's correlation id. */
+    review: string;
+    prNumber?: number;
+    /** Earliest span timestamp of the run — for chronological ordering. */
+    startedAt?: string;
+}
+
+/**
+ * Token spend grouped by process area (`attributes.tu.area` — see
+ * TokenUsageArea in libs/core/log/token-usage-tu.ts). Rows written before the
+ * area backfill ran surface as 'other'.
+ */
+export interface UsageByAreaResultContract extends BaseUsageContract {
+    area: string;
+}
+
 export interface DailyUsageByDeveloperResultContract
     extends UsageByDeveloperResultContract {
     date: string; // YYYY-MM-DD
@@ -119,6 +140,8 @@ export interface UsageOverviewReportContract {
     summary: UsageSummaryReportContract;
     daily: DailyUsageResultContract[];
     byPr: UsageByPrResultContract[];
+    /** Token spend per process area — powers the "where tokens go" breakdown. */
+    byArea: UsageByAreaResultContract[];
 }
 
 export interface TokenUsageBreakdown {

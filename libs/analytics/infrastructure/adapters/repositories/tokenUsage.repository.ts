@@ -9,7 +9,9 @@ import {
     DailyUsageResultContract,
     TierUsage,
     TokenUsageQueryContract,
+    UsageByAreaResultContract,
     UsageByPrResultContract,
+    UsageByReviewResultContract,
     UsageSummaryContract,
 } from '@libs/analytics/domain/token-usage/types/tokenUsage.types';
 
@@ -27,7 +29,14 @@ type RawAggRow = {
     cacheWrite: number;
     date?: string;
     prNumber?: number;
+    review?: string;
+    startedAt?: Date;
+    area?: string;
 };
+
+// Rows written before the area backfill ran have no `tu.area` — group them
+// under the same bucket new un-mapped runs get.
+const AREA_FALLBACK = 'other';
 
 @Injectable()
 export class TokenUsageRepository implements ITokenUsageRepository {
@@ -187,9 +196,11 @@ export class TokenUsageRepository implements ITokenUsageRepository {
         groupById: Record<string, any> = {},
         projectExtras: Record<string, any> = {},
         prOnly = false,
+        extraMatch: Record<string, any> = {},
+        extraAcc: Record<string, any> = {},
     ): Promise<RawAggRow[]> {
         const pipeline = [
-            { $match: this._tuMatch(query, prOnly) },
+            { $match: { ...this._tuMatch(query, prOnly), ...extraMatch } },
             // Derive the tier per call from the catalog thresholds (not baked).
             { $addFields: { _tier: this._tierExpr(thresholds) } },
             {
@@ -205,6 +216,7 @@ export class TokenUsageRepository implements ITokenUsageRepository {
                     outputReasoning: { $sum: '$attributes.tu.reasoning' },
                     cacheRead: { $sum: '$attributes.tu.cacheRead' },
                     cacheWrite: { $sum: '$attributes.tu.cacheWrite' },
+                    ...extraAcc,
                 },
             },
             {
@@ -370,6 +382,84 @@ export class TokenUsageRepository implements ITokenUsageRepository {
     }
 
     /**
+     * Per review run. One run = one `correlationId` — the ambient
+     * observability-context id every usage span of a job inherits (set by the
+     * workflow consumer per webhook/job), so a PR reviewed twice shows two
+     * rows. Restricted to spans that carry a prNumber (review work), matching
+     * the by-PR view's population. `startedAt` (min span timestamp) orders
+     * runs chronologically.
+     */
+    async getUsageByReview(
+        query: TokenUsageQueryContract,
+    ): Promise<UsageByReviewResultContract[]> {
+        const thresholds = await this._thresholds();
+        const rows = await this._tuRows(
+            query,
+            thresholds,
+            { review: '$correlationId', pr: '$attributes.prNumber' },
+            {
+                review: '$_id.review',
+                prNumber: '$_id.pr',
+                startedAt: 1,
+            },
+            true,
+            // `$gt: ''` = non-empty string; BSON type ordering also excludes
+            // docs where correlationId is missing/null.
+            { correlationId: { $gt: '' } },
+            { startedAt: { $min: '$timestamp' } },
+        );
+
+        const merged = this._mergeTierRows<UsageByReviewResultContract>(
+            rows,
+            thresholds,
+            (r) => `${r.review}|${r.model}`,
+            (base, row) => ({
+                ...base,
+                review: row.review!,
+                prNumber: row.prNumber,
+                startedAt:
+                    row.startedAt instanceof Date
+                        ? row.startedAt.toISOString()
+                        : (row.startedAt as string | undefined),
+            }),
+        );
+        merged.sort((a, b) => {
+            const t = (a.startedAt ?? '').localeCompare(b.startedAt ?? '');
+            return t !== 0 ? t : a.model.localeCompare(b.model);
+        });
+        return merged;
+    }
+
+    /**
+     * Per process area (`attributes.tu.area`, stamped by deriveTu and the
+     * backfill). Pre-backfill rows without an area land in 'other'.
+     */
+    async getUsageByArea(
+        query: TokenUsageQueryContract,
+    ): Promise<UsageByAreaResultContract[]> {
+        const thresholds = await this._thresholds();
+        const rows = await this._tuRows(
+            query,
+            thresholds,
+            { area: { $ifNull: ['$attributes.tu.area', AREA_FALLBACK] } },
+            { area: '$_id.area' },
+        );
+
+        const merged = this._mergeTierRows<UsageByAreaResultContract>(
+            rows,
+            thresholds,
+            (r) => `${r.area}|${r.model}`,
+            (base, row) => ({ ...base, area: row.area! }),
+        );
+        merged.sort((a, b) =>
+            a.area === b.area
+                ? a.model.localeCompare(b.model)
+                : a.area!.localeCompare(b.area!),
+        );
+        return merged;
+    }
+
+    /**
      * Single-pass overview: summary + byModel + daily + byPr + dailyByPr in ONE
      * covered aggregation via `$facet`. The org+timestamp+flag scan happens once
      * instead of ~4 separate covered scans (the screen fires summary=2 + daily +
@@ -389,6 +479,7 @@ export class TokenUsageRepository implements ITokenUsageRepository {
         byModel: BaseUsageContract[];
         daily: DailyUsageResultContract[];
         byPr: UsageByPrResultContract[];
+        byArea: UsageByAreaResultContract[];
     }> {
         const thresholds = await this._thresholds();
         // Project only index fields → $facet works on a lean covered stream.
@@ -400,6 +491,7 @@ export class TokenUsageRepository implements ITokenUsageRepository {
                 model: '$attributes.tu.model',
                 tier: this._tierExpr(thresholds),
                 pr: '$attributes.prNumber',
+                area: { $ifNull: ['$attributes.tu.area', AREA_FALLBACK] },
                 date: {
                     $dateToString: {
                         format: '%Y-%m-%d',
@@ -463,6 +555,10 @@ export class TokenUsageRepository implements ITokenUsageRepository {
                         prPresent,
                         ...groupProject({ pr: '$pr' }, { prNumber: '$_id.pr' }),
                     ],
+                    byArea: groupProject(
+                        { area: '$area' },
+                        { area: '$_id.area' },
+                    ),
                 },
             },
         ];
@@ -472,6 +568,7 @@ export class TokenUsageRepository implements ITokenUsageRepository {
                 byModel: RawAggRow[];
                 daily: RawAggRow[];
                 byPr: RawAggRow[];
+                byArea: RawAggRow[];
             }>(pipeline)
             .exec();
 
@@ -479,6 +576,7 @@ export class TokenUsageRepository implements ITokenUsageRepository {
             byModel: [],
             daily: [],
             byPr: [],
+            byArea: [],
         };
         // `thresholds` fetched above drives both the tier derivation and the
         // byTier merge — same source, no drift.
@@ -530,7 +628,18 @@ export class TokenUsageRepository implements ITokenUsageRepository {
                 : a.prNumber - b.prNumber,
         );
 
-        return { summary, byModel, daily, byPr };
+        const byArea = this._mergeTierRows<UsageByAreaResultContract>(
+            rows.byArea ?? [],
+            thresholds,
+            (r) => `${r.area}|${r.model}`,
+            (base, row) => ({ ...base, area: row.area! }),
+        ).sort((a, b) =>
+            a.area === b.area
+                ? a.model.localeCompare(b.model)
+                : a.area.localeCompare(b.area),
+        );
+
+        return { summary, byModel, daily, byPr, byArea };
     }
 }
 

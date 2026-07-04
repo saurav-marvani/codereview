@@ -110,7 +110,8 @@ export class BuildUsageSummaryUseCase {
         overrides?: ManualPricingOverrides,
     ): string {
         return [
-            'usage:overview:v1',
+            // v2: payload gained the byArea facet (issue #1453).
+            'usage:overview:v2',
             query.organizationId,
             query.byok ? 'byok' : 'sys',
             query.start.getTime(),
@@ -146,6 +147,7 @@ export class BuildUsageSummaryUseCase {
             },
             daily: overview.daily,
             byPr: overview.byPr,
+            byArea: overview.byArea,
         };
     }
 

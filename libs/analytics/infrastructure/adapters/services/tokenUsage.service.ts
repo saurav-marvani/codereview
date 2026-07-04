@@ -8,7 +8,9 @@ import {
     DailyUsageByPrResultContract,
     DailyUsageResultContract,
     TokenUsageQueryContract,
+    UsageByAreaResultContract,
     UsageByPrResultContract,
+    UsageByReviewResultContract,
     UsageSummaryContract,
 } from '@libs/analytics/domain/token-usage/types/tokenUsage.types';
 import { Inject, Injectable } from '@nestjs/common';
@@ -48,6 +50,18 @@ export class TokenUsageService implements ITokenUsageService {
         query: TokenUsageQueryContract,
     ): Promise<DailyUsageByPrResultContract[]> {
         return this.repository.getDailyUsageByPr(query);
+    }
+
+    async getUsageByReview(
+        query: TokenUsageQueryContract,
+    ): Promise<UsageByReviewResultContract[]> {
+        return this.repository.getUsageByReview(query);
+    }
+
+    async getUsageByArea(
+        query: TokenUsageQueryContract,
+    ): Promise<UsageByAreaResultContract[]> {
+        return this.repository.getUsageByArea(query);
     }
 
     async getUsageOverview(query: TokenUsageQueryContract) {
