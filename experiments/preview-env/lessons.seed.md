@@ -1,0 +1,15 @@
+- A health endpoint responding does NOT mean the app is ready: SPAs may serve a "starting up" placeholder page. Poll for a real UI element (reload loop) before interacting; only then start form fills.
+- First boot of an app can take minutes (DB migrations, index building). Use generous waits (120s+) in playbook checks, and never ship a wait you did not see succeed from a cold start.
+- ESM `import` ignores NODE_PATH. To use globally-installed playwright from a standalone .mjs script, use createRequire(import.meta.url) and require('playwright'), or symlink the global package into a local node_modules next to the script.
+- Playwright video files are only flushed on context.close(). Always await context.close() before browser.close(), or the .webm will be 0 bytes.
+- Installing a different Node major (e.g. via `n` or nodesource) changes `npm root -g`; globally-installed packages from the previous Node (like playwright) silently vanish from resolution. Re-check `npm root -g` after switching Node.
+- Any long-running process a check starts (nohup server) must be killed even when the check fails (trap or a dedicated cleanup that always runs), otherwise re-runs fail with port-already-in-use.
+- Buttons in setup wizards are often labeled "Next"/"Continue", not type=submit. Prefer getByRole('button', { name: /next|continue|submit|create/i }) over button[type="submit"].
+- n8n: health endpoint is /healthz at the root (NOT /rest/healthz); N8N_BASIC_AUTH_* env vars were removed — the public REST API requires owner setup + an API key, so prefer exercising flows via the UI or authenticated cookies.
+- Onboarding flows are often a CHAIN of dismissable modals (survey, license offer, tips). Use a dismiss loop clicking Skip/Get started/Maybe later until no modal remains, not a single click.
+- Playwright selector unions like 'text=Foo, [data-test-id=bar]' are invalid — commas only union CSS. Prefer getByRole/getByText, or keyboard shortcuts the app itself advertises.
+- Do not fail UI checks on console.error noise (blocked telemetry 404s, offline license 401s). Fail only on uncaught pageerror exceptions and on missing expected UI state.
+- If the last test stops the server, do not emit a healthcheck phase that curls it afterwards — phase order is setup, build, services, test, healthcheck.
+- n8n: node-creator shortcut is 'N' on the canvas (the UI tooltip says so); the home screen needs a click on "Build a workflow" before any canvas selector exists.
+- A UI check that walks a first-run wizard needs VIRGIN app state: boot its own server instance with a fresh data dir inside the check (and kill it at the end), instead of reusing a server another check started — otherwise the wizard never appears on re-runs.
+- pkill -f '<pattern>' inside a playbook command kills the executing shell itself when the pattern appears verbatim in the command text (bash -lc carries the whole script in its cmdline). Do not use pkill -f at all in playbook text (any literal occurrence of the binary path elsewhere in the script still matches); kill by pid file or by port (fuser -k PORT/tcp).
