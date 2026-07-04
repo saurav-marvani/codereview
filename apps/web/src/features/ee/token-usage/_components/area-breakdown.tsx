@@ -55,13 +55,18 @@ export const AreaBreakdown = ({
         const byArea = new Map<string, number>();
         for (const row of rows) {
             if (!selectedModels.includes(row.model)) continue;
-            byArea.set(row.area, (byArea.get(row.area) ?? 0) + row.total);
+            // Collapse any area without a known label into the single 'other'
+            // bucket BEFORE summing — otherwise two unmapped raw values would
+            // render as separate bars both labeled "Other", splitting the
+            // share and token total.
+            const area = AREA_META[row.area] ? row.area : "other";
+            byArea.set(area, (byArea.get(area) ?? 0) + row.total);
         }
         return Array.from(byArea.entries())
             .map(([area, total]) => ({
                 area,
                 total,
-                meta: AREA_META[area] ?? AREA_META.other,
+                meta: AREA_META[area],
             }))
             .sort((a, b) => b.total - a.total);
     }, [rows, selectedModels]);

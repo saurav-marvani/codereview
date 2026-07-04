@@ -38,6 +38,12 @@ type RawAggRow = {
 // under the same bucket new un-mapped runs get.
 const AREA_FALLBACK = 'other';
 
+// Upper bound on rows returned by the per-review read (rows are per run ×
+// model × tier). ~5 models/run → this covers the heaviest ~1600 runs, far
+// beyond what the chart (top 24) or table (top 100) show, while bounding the
+// payload for an org with a huge date window.
+const REVIEW_ROWS_CAP = 8000;
+
 @Injectable()
 export class TokenUsageRepository implements ITokenUsageRepository {
     constructor(
@@ -202,8 +208,9 @@ export class TokenUsageRepository implements ITokenUsageRepository {
         prOnly = false,
         extraMatch: Record<string, any> = {},
         extraAcc: Record<string, any> = {},
+        maxRows = 0,
     ): Promise<RawAggRow[]> {
-        const pipeline = [
+        const pipeline: Record<string, any>[] = [
             { $match: { ...this._tuMatch(query, prOnly), ...extraMatch } },
             // Derive the tier per call from the catalog thresholds (not baked).
             { $addFields: { _tier: this._tierExpr(thresholds) } },
@@ -238,8 +245,15 @@ export class TokenUsageRepository implements ITokenUsageRepository {
                 },
             },
         ];
+        // Safety valve for unbounded dimensions (by-review): keep the heaviest
+        // rows and cap the payload so a huge window can't ship tens of
+        // thousands of rows. Sorted by total desc, so the top consumers (all
+        // the frontend charts/table show) survive intact.
+        if (maxRows > 0) {
+            pipeline.push({ $sort: { total: -1 } }, { $limit: maxRows });
+        }
         return this.observabilityTelemetryModel
-            .aggregate<RawAggRow>(pipeline)
+            .aggregate<RawAggRow>(pipeline as any)
             .exec();
     }
 
@@ -411,6 +425,7 @@ export class TokenUsageRepository implements ITokenUsageRepository {
             // docs where correlationId is missing/null.
             { correlationId: { $gt: '' } },
             { startedAt: { $min: '$timestamp' } },
+            REVIEW_ROWS_CAP,
         );
 
         const merged = this._mergeTierRows<UsageByReviewResultContract>(

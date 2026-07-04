@@ -12,6 +12,9 @@ const LITELLM_CACHE_KEY = 'token-pricing:litellm-normalized';
 // cache-manager v7 expects TTL in milliseconds.
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 15_000;
+// Hard cap on a pricing-catalog response. Both catalogs are a few MB; 64MB is
+// generous headroom while still blocking a memory-exhaustion payload.
+const MAX_CATALOG_BYTES = 64 * 1024 * 1024;
 
 /** models.dev prices are US$ per 1M tokens; we store per-token. */
 const PER_MILLION = 1_000_000;
@@ -205,10 +208,26 @@ export class TokenPricingUseCase {
     async tieredInputThresholds(): Promise<Map<string, number>> {
         const out = new Map<string, number>();
         // Fallback first, primary second — primary wins on key collisions.
-        for (const catalog of [
-            await this.getLiteLLMCatalog(),
-            await this.getModelsDevCatalog(),
-        ]) {
+        // Each fetch is guarded: this feeds the Token Usage READ (every
+        // summary/overview call), so a catalog outage must degrade to "no
+        // tiers" (everything priced at default), never fail the whole read.
+        const catalogs: PricingCatalog[] = [];
+        for (const [source, getCatalog] of [
+            ['litellm', () => this.getLiteLLMCatalog()],
+            ['models.dev', () => this.getModelsDevCatalog()],
+        ] as const) {
+            try {
+                catalogs.push(await getCatalog());
+            } catch (error) {
+                this.logger.warn({
+                    message: 'Tier-threshold catalog fetch failed',
+                    error,
+                    context: TokenPricingUseCase.name,
+                    metadata: { source },
+                });
+            }
+        }
+        for (const catalog of catalogs) {
             for (const [key, entry] of Object.entries(catalog)) {
                 if (!entry.input.tier) continue;
                 for (const name of this.canonicalNames(key)) {
@@ -289,6 +308,10 @@ export class TokenPricingUseCase {
         const response = await axios.get<unknown>(url, {
             timeout: FETCH_TIMEOUT_MS,
             responseType: 'json',
+            // Bound the response so a compromised/oversized upstream can't
+            // exhaust the process memory (models.dev ~2MB, LiteLLM ~1MB today).
+            maxContentLength: MAX_CATALOG_BYTES,
+            maxBodyLength: MAX_CATALOG_BYTES,
         });
         const parsed =
             typeof response.data === 'string'
@@ -373,12 +396,18 @@ export class TokenPricingUseCase {
         provider: string,
     ): CatalogEntry {
         // Prefer the explicit tier list (carries its own breakpoint); fall
-        // back to the legacy fixed-200k object.
-        const contextTier = cost?.tiers?.find(
-            (t) =>
-                (t?.tier?.type ?? 'context') === 'context' &&
-                typeof t?.tier?.size === 'number',
-        );
+        // back to the legacy fixed-200k object. TokenPrice models a SINGLE
+        // breakpoint, so for the rare multi-tier entry we take the lowest one
+        // deterministically (sorted, not array order): the elevated rate then
+        // applies from the first breakpoint up, which never underprices above
+        // it. Today every tiered model Kodus uses has exactly one (>200k).
+        const contextTier = (cost?.tiers ?? [])
+            .filter(
+                (t) =>
+                    (t?.tier?.type ?? 'context') === 'context' &&
+                    typeof t?.tier?.size === 'number',
+            )
+            .sort((a, b) => a.tier!.size! - b.tier!.size!)[0];
         const threshold = contextTier
             ? contextTier.tier!.size!
             : TIER_THRESHOLD_200K;
@@ -553,15 +582,30 @@ export class TokenPricingUseCase {
         // should resolve against "gemini-3.1-pro-preview-customtools" if
         // that's the only variant present. Matching the key's last segment
         // too lets a bare id land on a provider-prefixed key.
+        //
+        // Deterministic: pick the CLOSEST match (shortest matching segment,
+        // ties broken lexicographically) instead of whatever Object.keys
+        // yields first — otherwise the resolved price depends on catalog
+        // insertion order and can flip between fetches.
+        let best: { id: string; segLen: number } | null = null;
         for (const key of Object.keys(catalog)) {
             const keyLower = key.toLowerCase();
+            const seg = keyLower.split('/').pop()!;
             if (
-                keyLower.startsWith(withoutPrefix) ||
-                keyLower.split('/').pop()!.startsWith(withoutPrefix)
+                !keyLower.startsWith(withoutPrefix) &&
+                !seg.startsWith(withoutPrefix)
             ) {
-                return { id: key, data: catalog[key] };
+                continue;
+            }
+            if (
+                !best ||
+                seg.length < best.segLen ||
+                (seg.length === best.segLen && key < best.id)
+            ) {
+                best = { id: key, segLen: seg.length };
             }
         }
+        if (best) return { id: best.id, data: catalog[best.id] };
 
         return null;
     }
