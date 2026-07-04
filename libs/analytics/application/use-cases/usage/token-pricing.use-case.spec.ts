@@ -67,6 +67,31 @@ const modelsDevFixture = {
             },
         },
     },
+    // Multi-tier model: two context breakpoints, each with its own rate.
+    aihubmix: {
+        id: 'aihubmix',
+        models: {
+            'doubao-seed': {
+                id: 'doubao-seed',
+                cost: {
+                    input: 0.48,
+                    output: 2,
+                    tiers: [
+                        {
+                            input: 0.72,
+                            output: 3,
+                            tier: { type: 'context', size: 32_000 },
+                        },
+                        {
+                            input: 1.45,
+                            output: 6,
+                            tier: { type: 'context', size: 128_000 },
+                        },
+                    ],
+                },
+            },
+        },
+    },
     // A reseller enumerated BEFORE the vendor (`google-vertex` below),
     // exposing the same flagship id with only flat input/output (no tier, no
     // cache). The bare alias must NOT land here — it would strip the tier and
@@ -179,15 +204,14 @@ describe('TokenPricingUseCase', () => {
 
         expect(info.pricing.input).toEqual({
             default: 1.25e-6,
-            tier: { threshold: 200_000, rate: 2.5e-6 },
+            tiers: [{ threshold: 200_000, rate: 2.5e-6 }],
         });
-        expect(info.pricing.output.tier).toEqual({
-            threshold: 200_000,
-            rate: 15e-6,
-        });
+        expect(info.pricing.output.tiers).toEqual([
+            { threshold: 200_000, rate: 15e-6 },
+        ]);
         expect(info.pricing.cacheRead).toEqual({
             default: 0.31e-6,
-            tier: { threshold: 200_000, rate: 0.25e-6 },
+            tiers: [{ threshold: 200_000, rate: 0.25e-6 }],
         });
     });
 
@@ -229,11 +253,10 @@ describe('TokenPricingUseCase', () => {
 
         expect(info.provider).toBe('google-vertex');
         // tier survived
-        expect(info.pricing.input.tier).toEqual({
-            threshold: 200_000,
-            rate: 2.5e-6,
-        });
-        expect(info.pricing.output.tier?.rate).toBeCloseTo(15e-6, 12);
+        expect(info.pricing.input.tiers).toEqual([
+            { threshold: 200_000, rate: 2.5e-6 },
+        ]);
+        expect(info.pricing.output.tiers?.[0]?.rate).toBeCloseTo(15e-6, 12);
         // cache rate survived
         expect(info.pricing.cacheRead.default).toBeCloseTo(0.31e-6, 12);
     });
@@ -266,15 +289,38 @@ describe('TokenPricingUseCase', () => {
             const thresholds = await useCase.tieredInputThresholds();
 
             // models.dev tier (per-model size), bare and prefixed forms.
-            expect(thresholds.get('gemini-2.5-pro')).toBe(200_000);
-            expect(thresholds.get('google/gemini-2.5-pro')).toBe(200_000);
+            expect(thresholds.get('gemini-2.5-pro')).toEqual([200_000]);
+            expect(thresholds.get('google/gemini-2.5-pro')).toEqual([200_000]);
             // LiteLLM *_above_200k_tokens tier.
-            expect(thresholds.get('gemini-1.5-pro-tiered')).toBe(200_000);
-            expect(thresholds.get('vertex_ai/gemini-1.5-pro-tiered')).toBe(
+            expect(thresholds.get('gemini-1.5-pro-tiered')).toEqual([200_000]);
+            expect(thresholds.get('vertex_ai/gemini-1.5-pro-tiered')).toEqual([
                 200_000,
-            );
+            ]);
             // Non-tiered models are absent.
             expect(thresholds.has('kimi-k2.6')).toBe(false);
         });
+
+        it('carries every breakpoint for a multi-tier model, sorted', async () => {
+            mockCatalogs();
+
+            const thresholds = await useCase.tieredInputThresholds();
+
+            // Doubao-style: two context breakpoints (32K + 128K).
+            expect(thresholds.get('doubao-seed')).toEqual([32_000, 128_000]);
+        });
+    });
+
+    it('builds a per-token tier list for a multi-tier (Doubao-style) model', async () => {
+        mockCatalogs();
+
+        const info = await useCase.execute('doubao-seed');
+
+        expect(info.pricing.input.default).toBeCloseTo(0.48e-6, 12);
+        const tiers = info.pricing.input.tiers!;
+        expect(tiers).toHaveLength(2);
+        expect(tiers[0].threshold).toBe(32_000);
+        expect(tiers[0].rate).toBeCloseTo(0.72e-6, 12);
+        expect(tiers[1].threshold).toBe(128_000);
+        expect(tiers[1].rate).toBeCloseTo(1.45e-6, 12);
     });
 });

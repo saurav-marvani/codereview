@@ -16,14 +16,18 @@ export interface RowCost {
     total: number;
 }
 
-const rate = (price: TokenPrice | undefined, tier: "default" | "gt") =>
-    tier === "gt" && price?.tier ? price.tier.rate : (price?.default ?? 0);
+// Per-token rate for a bracket: bracket 0 → default, bracket k → the k-th
+// tier rate (falls back to default when the model has fewer tiers).
+const rate = (price: TokenPrice | undefined, bracket: number) =>
+    bracket > 0
+        ? (price?.tiers?.[bracket - 1]?.rate ?? price?.default ?? 0)
+        : (price?.default ?? 0);
 
 /**
  * USD cost of one usage row, per chart series, mirroring the backend's
  * bucketCost formula (model-cost-calculator.ts): cache reads are billed at
  * the cache rate and subtracted from the full-price input pool; reasoning
- * bills at the output rate; tier-aware rows price each byTier bucket at its
+ * bills at the output rate; tier-aware rows price each byTier bracket at its
  * own rate. Rows without pricing info cost 0 (the per-model table already
  * flags unpriced models).
  */
@@ -41,24 +45,22 @@ export function rowCost(
     };
     if (!pricing) return zero;
 
-    const bucketCost = (bucket: TierUsage, tier: "default" | "gt") => {
+    const bucketCost = (bucket: TierUsage, bracket: number) => {
         const uncached = Math.max(0, bucket.input - bucket.cacheRead);
         const uncachedInput =
-            uncached * rate(pricing.input, tier) +
-            bucket.cacheWrite * rate(pricing.cacheWrite, tier);
-        const cacheRead = bucket.cacheRead * rate(pricing.cacheRead, tier);
+            uncached * rate(pricing.input, bracket) +
+            bucket.cacheWrite * rate(pricing.cacheWrite, bracket);
+        const cacheRead = bucket.cacheRead * rate(pricing.cacheRead, bracket);
         const output =
             Math.max(0, bucket.output - bucket.outputReasoning) *
-            rate(pricing.output, tier);
-        const reasoning = bucket.outputReasoning * rate(pricing.output, tier);
+            rate(pricing.output, bracket);
+        const reasoning =
+            bucket.outputReasoning * rate(pricing.output, bracket);
         return { uncachedInput, cacheRead, output, reasoning };
     };
 
     const buckets = row.byTier
-        ? [
-              bucketCost(row.byTier.le, "default"),
-              bucketCost(row.byTier.gt, "gt"),
-          ]
+        ? row.byTier.map((bucket, i) => bucketCost(bucket, i))
         : [
               bucketCost(
                   {
@@ -69,7 +71,7 @@ export function rowCost(
                       cacheRead: row.cacheRead ?? 0,
                       cacheWrite: row.cacheWrite ?? 0,
                   },
-                  "default",
+                  0,
               ),
           ];
 

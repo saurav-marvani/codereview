@@ -101,13 +101,15 @@ type LiteLLMModel = {
 };
 
 /**
- * Per-token rate with an optional tier breakpoint. When `tier` is set, calls
- * whose input exceeds `tier.threshold` tokens are billed at `tier.rate`; calls
- * at or below the threshold use `default`. The threshold is per-model.
+ * Per-token rate with optional context tiers, sorted ascending by threshold.
+ * A call whose input exceeds `tiers[k].threshold` (and no higher one) bills
+ * entirely at `tiers[k].rate`; at or below the first threshold, `default`.
+ * Per-request-total tiering (Gemini/Doubao), not graduated. Most models have
+ * one tier; a few (Doubao) have several.
  */
 export type TokenPrice = {
     default: number;
-    tier?: { threshold: number; rate: number };
+    tiers?: Array<{ threshold: number; rate: number }>;
 };
 
 /**
@@ -193,20 +195,19 @@ export class TokenPricingUseCase {
     }
 
     /**
-     * Canonical model names the catalog bills at a higher INPUT tier above a
-     * breakpoint, mapped to that input threshold. The Token Usage read derives
-     * each call's tier from `attributes.tu.input` vs this map — so it needs to
-     * know *which models are tiered* without a per-request DB scan to discover
-     * the models present in the window. The catalogs are cached (24h), making
-     * this near-free.
+     * Canonical model name → its sorted INPUT tier breakpoints. The Token
+     * Usage read buckets each call by which of these thresholds its input
+     * exceeds, without a per-request DB scan to discover the models present.
+     * A model with N input tiers maps to N thresholds (Doubao: [32000,
+     * 128000]); a flat model is absent. Catalogs are cached (24h) → near-free.
      *
      * Keys are canonicalized the same way the write path stores
      * `attributes.tu.model` (strip provider prefix, keep the last id segment),
      * so `vertex_ai/gemini-2.5-pro` and a bare `gemini-2.5-pro` both collapse to
      * the stored name and match in the aggregation's `$switch`.
      */
-    async tieredInputThresholds(): Promise<Map<string, number>> {
-        const out = new Map<string, number>();
+    async tieredInputThresholds(): Promise<Map<string, number[]>> {
+        const out = new Map<string, number[]>();
         // Fallback first, primary second — primary wins on key collisions.
         // Each fetch is guarded: this feeds the Token Usage READ (every
         // summary/overview call), so a catalog outage must degrade to "no
@@ -229,9 +230,11 @@ export class TokenPricingUseCase {
         }
         for (const catalog of catalogs) {
             for (const [key, entry] of Object.entries(catalog)) {
-                if (!entry.input.tier) continue;
+                const tiers = entry.input.tiers;
+                if (!tiers?.length) continue;
+                const thresholds = tiers.map((t) => t.threshold);
                 for (const name of this.canonicalNames(key)) {
-                    out.set(name, entry.input.tier.threshold);
+                    out.set(name, thresholds);
                 }
             }
         }
@@ -358,8 +361,8 @@ export class TokenPricingUseCase {
     private aliasRank(entry: CatalogEntry): number {
         const priced = entry.input.default > 0 || entry.output.default > 0;
         const rich =
-            !!entry.input.tier ||
-            !!entry.output.tier ||
+            !!entry.input.tiers?.length ||
+            !!entry.output.tiers?.length ||
             entry.cacheRead.default > 0 ||
             entry.cacheWrite.default > 0 ||
             entry.reasoning !== undefined;
@@ -395,59 +398,52 @@ export class TokenPricingUseCase {
         cost: ModelsDevCost | undefined,
         provider: string,
     ): CatalogEntry {
-        // Prefer the explicit tier list (carries its own breakpoint); fall
-        // back to the legacy fixed-200k object.
-        //
-        // TokenPrice models a SINGLE breakpoint, and the read applies it as a
-        // per-call binary: a call whose input exceeds the threshold is priced
-        // ENTIRELY at the tier rate, otherwise at the default rate (not
-        // graduated). For the rare multi-tier entry we deterministically take
-        // the LOWEST breakpoint (sorted, not array order) — intentionally, not
-        // the highest. With the binary model, the lowest breakpoint elevates
-        // the widest set of large calls (everything above the first tier);
-        // choosing a higher breakpoint would instead leave the whole
-        // first-tier band priced at the default rate, underpricing a far more
-        // common range than the ultra-rare calls above a second breakpoint.
-        // Moot in practice: every tiered model Kodus uses today has exactly
-        // one context tier (>200k), so this only breaks ties of one.
-        const contextTier = (cost?.tiers ?? [])
-            .filter(
-                (t) =>
-                    (t?.tier?.type ?? 'context') === 'context' &&
-                    typeof t?.tier?.size === 'number',
-            )
-            .sort((a, b) => a.tier!.size! - b.tier!.size!)[0];
-        const threshold = contextTier
-            ? contextTier.tier!.size!
-            : TIER_THRESHOLD_200K;
-        const over = contextTier ?? cost?.context_over_200k;
-
         const perToken = (perMillion?: number): number | undefined =>
             typeof perMillion === 'number'
                 ? perMillion / PER_MILLION
                 : undefined;
 
+        // Every context breakpoint (models.dev usually one, Doubao two). The
+        // legacy `context_over_200k` object is treated as a synthetic 200k
+        // tier when no explicit `tiers` list is present.
+        const rawTiers = (cost?.tiers ?? []).filter(
+            (t) =>
+                (t?.tier?.type ?? 'context') === 'context' &&
+                typeof t?.tier?.size === 'number',
+        );
+        const contextTiers: Array<ModelsDevCostTier & { size: number }> =
+            rawTiers.length
+                ? rawTiers.map((t) => ({ ...t, size: t.tier!.size! }))
+                : cost?.context_over_200k
+                  ? [{ ...cost.context_over_200k, size: TIER_THRESHOLD_200K }]
+                  : [];
+
+        // Per-token tier list for one cost field (input/output/cache_*),
+        // keeping only breakpoints that price that field.
+        const tiersFor = (
+            key: 'input' | 'output' | 'cache_read' | 'cache_write',
+        ) =>
+            contextTiers
+                .filter((t) => typeof t[key] === 'number')
+                .map((t) => ({
+                    threshold: t.size,
+                    rate: perToken(t[key])!,
+                }));
+
         return {
             provider,
-            input: this.toTokenPrice(
-                perToken(cost?.input),
-                perToken(over?.input),
-                threshold,
-            ),
+            input: this.toTokenPrice(perToken(cost?.input), tiersFor('input')),
             output: this.toTokenPrice(
                 perToken(cost?.output),
-                perToken(over?.output),
-                threshold,
+                tiersFor('output'),
             ),
             cacheRead: this.toTokenPrice(
                 perToken(cost?.cache_read),
-                perToken(over?.cache_read),
-                threshold,
+                tiersFor('cache_read'),
             ),
             cacheWrite: this.toTokenPrice(
                 perToken(cost?.cache_write),
-                perToken(over?.cache_write),
-                threshold,
+                tiersFor('cache_write'),
             ),
             ...(typeof cost?.reasoning === 'number'
                 ? { reasoning: cost.reasoning / PER_MILLION }
@@ -456,27 +452,27 @@ export class TokenPricingUseCase {
     }
 
     private fromLiteLLM(entry: LiteLLMModel): CatalogEntry {
+        const tier = (rate?: number) =>
+            typeof rate === 'number'
+                ? [{ threshold: TIER_THRESHOLD_200K, rate }]
+                : undefined;
         return {
             provider: entry.litellm_provider,
             input: this.toTokenPrice(
                 entry.input_cost_per_token,
-                entry.input_cost_per_token_above_200k_tokens,
-                TIER_THRESHOLD_200K,
+                tier(entry.input_cost_per_token_above_200k_tokens),
             ),
             output: this.toTokenPrice(
                 entry.output_cost_per_token,
-                entry.output_cost_per_token_above_200k_tokens,
-                TIER_THRESHOLD_200K,
+                tier(entry.output_cost_per_token_above_200k_tokens),
             ),
             cacheRead: this.toTokenPrice(
                 entry.cache_read_input_token_cost,
-                entry.cache_read_input_token_cost_above_200k_tokens,
-                TIER_THRESHOLD_200K,
+                tier(entry.cache_read_input_token_cost_above_200k_tokens),
             ),
             cacheWrite: this.toTokenPrice(
                 entry.cache_creation_input_token_cost,
-                entry.cache_creation_input_token_cost_above_200k_tokens,
-                TIER_THRESHOLD_200K,
+                tier(entry.cache_creation_input_token_cost_above_200k_tokens),
             ),
         };
     }
@@ -641,14 +637,14 @@ export class TokenPricingUseCase {
 
     private toTokenPrice(
         base?: number,
-        tieredRate?: number,
-        threshold: number = TIER_THRESHOLD_200K,
+        tiers?: Array<{ threshold: number; rate: number }>,
     ): TokenPrice {
+        const sorted = (tiers ?? [])
+            .filter((t) => typeof t.rate === 'number')
+            .sort((a, b) => a.threshold - b.threshold);
         return {
             default: typeof base === 'number' ? base : 0,
-            ...(typeof tieredRate === 'number'
-                ? { tier: { threshold, rate: tieredRate } }
-                : {}),
+            ...(sorted.length ? { tiers: sorted } : {}),
         };
     }
 

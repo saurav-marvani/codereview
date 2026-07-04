@@ -32,7 +32,7 @@ export interface TierUsage {
 
 export interface BaseUsageContract {
     model: string;
-    /** Flat totals across both tiers — sum of byTier.le + byTier.gt. */
+    /** Flat totals across every tier bucket — sum of `byTier`. */
     input: number;
     output: number;
     total: number;
@@ -42,14 +42,13 @@ export interface BaseUsageContract {
     /** Input tokens that created cache entries on this call (Anthropic). */
     cacheWrite?: number;
     /**
-     * Per-tier breakdown. `le` = calls at or below the model's threshold;
-     * `gt` = calls above it. Present only when the model has a tier breakpoint
-     * in its pricing; flat-priced models omit this (all usage is on `default`).
+     * Per-tier breakdown, indexed by bracket: `byTier[0]` = calls at or below
+     * the model's first threshold (billed at `default`), `byTier[k]` = calls
+     * above the k-th threshold (billed at the k-th tier rate). Length is
+     * `thresholds + 1`. Present only for tier-aware models; flat models omit
+     * it (all usage on `default`). The UI collapses this to ≤/>threshold.
      */
-    byTier?: {
-        le: TierUsage;
-        gt: TierUsage;
-    };
+    byTier?: TierUsage[];
 }
 
 export type UsageSummaryContract = BaseUsageContract;
@@ -124,10 +123,8 @@ export type ApiPricingSource = 'manual' | 'catalog' | 'missing';
  */
 export interface EnrichedModelUsage extends BaseUsageContract {
     cost: CostBreakdown;
-    costByTier?: {
-        le: CostBreakdown;
-        gt: CostBreakdown;
-    };
+    /** Cost per bracket, aligned index-for-index with `byTier`. */
+    costByTier?: CostBreakdown[];
     pricingSource: ApiPricingSource;
 }
 

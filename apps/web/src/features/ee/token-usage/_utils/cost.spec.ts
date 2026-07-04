@@ -17,7 +17,7 @@ const pricing = (opts: {
     const price = (base: number, tier?: number): TokenPrice => ({
         default: base,
         ...(tier !== undefined
-            ? { tier: { threshold: 200_000, rate: tier } }
+            ? { tiers: [{ threshold: 200_000, rate: tier }] }
             : {}),
     });
     return {
@@ -98,8 +98,8 @@ describe("rowCost", () => {
         const row = flatRow({
             input: 300_000,
             output: 0,
-            byTier: {
-                le: {
+            byTier: [
+                    {
                     input: 100_000,
                     output: 0,
                     total: 100_000,
@@ -107,7 +107,7 @@ describe("rowCost", () => {
                     cacheRead: 0,
                     cacheWrite: 0,
                 },
-                gt: {
+                    {
                     input: 200_000,
                     output: 0,
                     total: 200_000,
@@ -115,7 +115,7 @@ describe("rowCost", () => {
                     cacheRead: 0,
                     cacheWrite: 0,
                 },
-            },
+                ],
         });
         const cost = rowCost(
             row,

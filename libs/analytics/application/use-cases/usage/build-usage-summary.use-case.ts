@@ -160,25 +160,19 @@ export class BuildUsageSummaryUseCase {
         const pricingSource = TO_API_SOURCE[resolved.source];
 
         if (row.byTier) {
-            const leCost = ModelCostCalculator.bucketCost(
-                row.byTier.le,
-                resolved.rates,
-                'default',
-            );
-            const gtCost = ModelCostCalculator.bucketCost(
-                row.byTier.gt,
-                resolved.rates,
-                'tier',
+            // Price each bracket at its own rate (bracket i → i-th tier).
+            const costByTier = row.byTier.map((bucket, i) =>
+                ModelCostCalculator.bucketCost(bucket, resolved.rates, i),
             );
             return {
                 ...row,
-                cost: addCost(leCost, gtCost),
-                costByTier: { le: leCost, gt: gtCost },
+                cost: costByTier.reduce(addCost, zeroCost()),
+                costByTier,
                 pricingSource,
             };
         }
 
-        // Flat row — treat as a single `le` bucket.
+        // Flat row — a single bracket-0 bucket at the default rate.
         const flatBucket: TierUsage = {
             input: row.input,
             output: row.output,
@@ -189,11 +183,7 @@ export class BuildUsageSummaryUseCase {
         };
         return {
             ...row,
-            cost: ModelCostCalculator.bucketCost(
-                flatBucket,
-                resolved.rates,
-                'default',
-            ),
+            cost: ModelCostCalculator.bucketCost(flatBucket, resolved.rates, 0),
             pricingSource,
         };
     }

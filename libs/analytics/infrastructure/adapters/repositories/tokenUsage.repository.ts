@@ -20,7 +20,8 @@ import { PricingResolver } from '@libs/analytics/application/use-cases/usage/pri
 
 type RawAggRow = {
     model: string;
-    tier: 'le' | 'gt';
+    /** Bracket index: 0 = default band, k = above the k-th input threshold. */
+    tier: number;
     input: number;
     output: number;
     total: number;
@@ -63,38 +64,40 @@ export class TokenUsageRepository implements ITokenUsageRepository {
      * instead of an extra ~4.5s distinct-models scan just to discover names.
      * Branches for models absent from the window simply never match.
      */
-    private _thresholds(): Promise<Map<string, number>> {
+    private _thresholds(): Promise<Map<string, number[]>> {
         return this.pricingResolver.tieredInputThresholds();
     }
 
     /**
-     * Aggregation expression that derives a call's tier ('gt'|'le') from the
+     * Aggregation expression that derives a call's BRACKET INDEX from the
      * covered `attributes.tu.model` + `attributes.tu.input` and the catalog
-     * thresholds. Reads only index fields → the pipeline stays covered.
+     * thresholds. 0 = at/below the first threshold (default rate); k = above
+     * the k-th threshold (k-th tier rate). Computed as the count of the
+     * model's thresholds the call's input exceeds. Reads only index fields →
+     * the pipeline stays covered. Supports N thresholds per model (Doubao).
      */
-    private _tierExpr(thresholds: Map<string, number>): any {
-        if (thresholds.size === 0) return 'le';
-        const branches: Array<{ case: any; then: number }> = [];
-        for (const [model, threshold] of thresholds) {
+    private _tierExpr(thresholds: Map<string, number[]>): any {
+        if (thresholds.size === 0) return 0;
+        const branches: Array<{ case: any; then: number[] }> = [];
+        for (const [model, thrs] of thresholds) {
             branches.push({
                 case: { $eq: ['$attributes.tu.model', model] },
-                then: threshold,
+                then: thrs,
             });
         }
         return {
             $let: {
-                vars: { thr: { $switch: { branches, default: 0 } } },
+                vars: { thrs: { $switch: { branches, default: [] } } },
                 in: {
-                    $cond: [
-                        {
-                            $and: [
-                                { $gt: ['$$thr', 0] },
-                                { $gt: ['$attributes.tu.input', '$$thr'] },
-                            ],
+                    $size: {
+                        $filter: {
+                            input: '$$thrs',
+                            as: 't',
+                            cond: {
+                                $gt: ['$attributes.tu.input', '$$t'],
+                            },
                         },
-                        'gt',
-                        'le',
-                    ],
+                    },
                 },
             },
         };
@@ -102,13 +105,14 @@ export class TokenUsageRepository implements ITokenUsageRepository {
 
     /**
      * Returns one BaseUsageContract per logical bucket (per model + per
-     * groupKey), folding the raw tier rows into `byTier`. `byTier` is kept
-     * only for models declared as tier-aware in `thresholds` — flat-priced
-     * models get a clean flat contract.
+     * groupKey), folding the raw bracket rows into `byTier` (an array indexed
+     * by bracket). `byTier` is kept only for models declared as tier-aware in
+     * `thresholds`, sized to `thresholds + 1` buckets; flat-priced models get
+     * a clean flat contract.
      */
     private _mergeTierRows<T extends BaseUsageContract>(
         rows: RawAggRow[],
-        thresholds: Map<string, number>,
+        thresholds: Map<string, number[]>,
         keyOf: (r: RawAggRow) => string,
         finalize: (base: BaseUsageContract, row: RawAggRow) => T,
     ): T[] {
@@ -125,7 +129,7 @@ export class TokenUsageRepository implements ITokenUsageRepository {
                 cacheWrite: row.cacheWrite,
             };
             if (!existing) {
-                const tierAware = thresholds.has(row.model);
+                const modelThresholds = thresholds.get(row.model);
                 const base: BaseUsageContract = {
                     model: row.model,
                     input: row.input,
@@ -134,11 +138,16 @@ export class TokenUsageRepository implements ITokenUsageRepository {
                     outputReasoning: row.outputReasoning,
                     cacheRead: row.cacheRead,
                     cacheWrite: row.cacheWrite,
-                    ...(tierAware
-                        ? { byTier: { le: emptyTier(), gt: emptyTier() } }
+                    ...(modelThresholds
+                        ? {
+                              byTier: Array.from(
+                                  { length: modelThresholds.length + 1 },
+                                  () => emptyTier(),
+                              ),
+                          }
                         : {}),
                 };
-                if (base.byTier) base.byTier[row.tier] = tierBucket;
+                if (base.byTier) addTier(base.byTier[row.tier], tierBucket);
                 grouped.set(key, finalize(base, row));
             } else {
                 existing.input += row.input;
@@ -148,7 +157,9 @@ export class TokenUsageRepository implements ITokenUsageRepository {
                 existing.cacheRead = (existing.cacheRead ?? 0) + row.cacheRead;
                 existing.cacheWrite =
                     (existing.cacheWrite ?? 0) + row.cacheWrite;
-                if (existing.byTier) existing.byTier[row.tier] = tierBucket;
+                if (existing.byTier) {
+                    addTier(existing.byTier[row.tier], tierBucket);
+                }
             }
         }
         return Array.from(grouped.values());
@@ -202,7 +213,7 @@ export class TokenUsageRepository implements ITokenUsageRepository {
 
     private async _tuRows(
         query: TokenUsageQueryContract,
-        thresholds: Map<string, number>,
+        thresholds: Map<string, number[]>,
         groupById: Record<string, any> = {},
         projectExtras: Record<string, any> = {},
         prOnly = false,
@@ -671,4 +682,13 @@ function emptyTier(): TierUsage {
         cacheRead: 0,
         cacheWrite: 0,
     };
+}
+
+function addTier(target: TierUsage, src: TierUsage): void {
+    target.input += src.input;
+    target.output += src.output;
+    target.total += src.total;
+    target.outputReasoning += src.outputReasoning;
+    target.cacheRead += src.cacheRead;
+    target.cacheWrite += src.cacheWrite;
 }
