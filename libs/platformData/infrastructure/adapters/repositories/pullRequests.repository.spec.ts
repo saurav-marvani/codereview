@@ -37,6 +37,45 @@ describe('PullRequestsRepository — multi-tenant filter coverage', () => {
         repo = new PullRequestsRepository(model as any);
     });
 
+    describe('findNumbersByRepositoryId (token-usage repo filter)', () => {
+        const mockFind = (docs: Array<{ number: number }>) => {
+            const findExec = jest.fn().mockResolvedValue(docs);
+            const lean = jest.fn().mockReturnValue({ exec: findExec });
+            model.find = jest.fn().mockReturnValue({ lean });
+            return model.find as jest.Mock;
+        };
+
+        it('filters by org + repository.id and projects only the number', async () => {
+            const find = mockFind([{ number: 7 }, { number: 9 }]);
+
+            const numbers = await repo.findNumbersByRepositoryId(
+                'org-A',
+                'repo-alpha',
+            );
+
+            expect(numbers).toEqual([7, 9]);
+            const [filter, projection] = find.mock.calls[0];
+            expect(filter).toEqual({
+                organizationId: 'org-A',
+                'repository.id': 'repo-alpha',
+            });
+            expect(projection).toEqual({ number: 1 });
+        });
+
+        it('bounds by createdAt when an `until` date is given', async () => {
+            const find = mockFind([]);
+            const until = new Date('2026-06-30');
+
+            await repo.findNumbersByRepositoryId('org-A', 'r', until);
+
+            expect(find.mock.calls[0][0]).toEqual({
+                organizationId: 'org-A',
+                'repository.id': 'r',
+                createdAt: { $lte: until },
+            });
+        });
+    });
+
     describe('addFileToPullRequest', () => {
         it('includes organizationId in the Mongo filter', async () => {
             await repo.addFileToPullRequest(
