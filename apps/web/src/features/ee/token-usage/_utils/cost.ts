@@ -6,7 +6,11 @@ import type {
 } from "@services/usage/types";
 
 export interface RowCost {
-    input: number;
+    /** Full-price input (uncached input + cache writes). */
+    uncachedInput: number;
+    /** Discounted cache-read cost (broken out so the chart can show it). */
+    cacheRead: number;
+    /** Output excluding reasoning. */
     output: number;
     reasoning: number;
     total: number;
@@ -28,19 +32,26 @@ export function rowCost(
     info: ModelPricingInfo | undefined,
 ): RowCost {
     const pricing = info?.pricing;
-    if (!pricing) return { input: 0, output: 0, reasoning: 0, total: 0 };
+    const zero = {
+        uncachedInput: 0,
+        cacheRead: 0,
+        output: 0,
+        reasoning: 0,
+        total: 0,
+    };
+    if (!pricing) return zero;
 
     const bucketCost = (bucket: TierUsage, tier: "default" | "gt") => {
         const uncached = Math.max(0, bucket.input - bucket.cacheRead);
-        const input =
+        const uncachedInput =
             uncached * rate(pricing.input, tier) +
-            bucket.cacheRead * rate(pricing.cacheRead, tier) +
             bucket.cacheWrite * rate(pricing.cacheWrite, tier);
+        const cacheRead = bucket.cacheRead * rate(pricing.cacheRead, tier);
         const output =
             Math.max(0, bucket.output - bucket.outputReasoning) *
             rate(pricing.output, tier);
         const reasoning = bucket.outputReasoning * rate(pricing.output, tier);
-        return { input, output, reasoning };
+        return { uncachedInput, cacheRead, output, reasoning };
     };
 
     const buckets = row.byTier
@@ -64,13 +75,21 @@ export function rowCost(
 
     const summed = buckets.reduce(
         (acc, b) => ({
-            input: acc.input + b.input,
+            uncachedInput: acc.uncachedInput + b.uncachedInput,
+            cacheRead: acc.cacheRead + b.cacheRead,
             output: acc.output + b.output,
             reasoning: acc.reasoning + b.reasoning,
         }),
-        { input: 0, output: 0, reasoning: 0 },
+        { uncachedInput: 0, cacheRead: 0, output: 0, reasoning: 0 },
     );
-    return { ...summed, total: summed.input + summed.output + summed.reasoning };
+    return {
+        ...summed,
+        total:
+            summed.uncachedInput +
+            summed.cacheRead +
+            summed.output +
+            summed.reasoning,
+    };
 }
 
 /**

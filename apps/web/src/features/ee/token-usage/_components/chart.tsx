@@ -23,8 +23,12 @@ import {
     rechartsGridProps,
 } from "../../cockpit/_components/charts/recharts-shared";
 
+// Stacked bottom→top. Input is decomposed into uncached input + cache read
+// so the (discounted) cache spend is visible, matching the KPI cards
+// (Uncached input / Cache read / Output / Reasoning).
 const SERIES = [
     { key: "input", label: "Input", color: CHART_COLORS.info },
+    { key: "cacheRead", label: "Cache", color: CHART_COLORS.purple },
     { key: "output", label: "Output", color: CHART_COLORS.success },
     { key: "outputReasoning", label: "Reasoning", color: CHART_COLORS.warning },
 ] as const;
@@ -41,11 +45,13 @@ const TOP_N = 24;
 type ChartRow = Record<SeriesKey, number> & {
     label: string;
     isCapped: boolean;
-    originalInput: number;
-    originalOutput: number;
-    originalOutputReasoning: number;
+    /** Pre-cap values per series, for the tooltip. */
+    original: Record<SeriesKey, number>;
     capMarker?: number;
 };
+
+const rowTotal = (d: Record<SeriesKey, number>) =>
+    SERIES.reduce((sum, s) => sum + d[s.key], 0);
 
 const formatTokens = (t: number) => {
     if (t === 0) return "0";
@@ -79,11 +85,9 @@ const UsageTooltip = ({
     if (!row) return null;
 
     // Show the REAL values (pre-cap); the bar heights may be scaled down.
-    const originals: Record<SeriesKey, number> = {
-        input: row.originalInput,
-        output: row.originalOutput,
-        outputReasoning: row.originalOutputReasoning,
-    };
+    const originals = row.original;
+    // Drop series that are zero for this bar (e.g. no cache on this run).
+    const rows = SERIES.filter((s) => originals[s.key] > 0);
 
     return (
         <div className="bg-card-lv1 border-card-lv3 min-w-36 rounded-lg border px-3 py-2 shadow-xl">
@@ -95,7 +99,7 @@ const UsageTooltip = ({
                     </span>
                 )}
             </div>
-            {SERIES.map((series) => (
+            {rows.map((series) => (
                 <div
                     key={series.key}
                     className="text-text-secondary flex items-center gap-2 py-0.5 text-xs">
@@ -163,22 +167,29 @@ export const Chart = ({
         }
     }, [filterType]);
 
-    // Rows arrive one-per-model — merge them per x value. In USD mode each
-    // row is priced first (same formula as the API's cost calculator).
+    // Rows arrive one-per-model — merge them per x value. Both modes split
+    // input into uncached + cache read and output into output + reasoning, so
+    // the four disjoint series still sum to the true total (no double count).
     const transformedData = useMemo(() => {
-        const seriesValues = (d: (typeof data)[number]) => {
+        const seriesValues = (
+            d: (typeof data)[number],
+        ): Record<SeriesKey, number> => {
             if (unit === "usd") {
                 const cost = rowCost(d, pricing[d.model]);
                 return {
-                    input: cost.input,
+                    input: cost.uncachedInput,
+                    cacheRead: cost.cacheRead,
                     output: cost.output,
                     outputReasoning: cost.reasoning,
                 };
             }
+            const cacheRead = d.cacheRead ?? 0;
+            const reasoning = d.outputReasoning || 0;
             return {
-                input: d.input || 0,
-                output: d.output || 0,
-                outputReasoning: d.outputReasoning || 0,
+                input: Math.max(0, (d.input || 0) - cacheRead),
+                cacheRead,
+                output: Math.max(0, (d.output || 0) - reasoning),
+                outputReasoning: reasoning,
             };
         };
 
@@ -195,18 +206,13 @@ export const Chart = ({
                     label: key,
                     ...v,
                     isCapped: false,
-                    originalInput: v.input,
-                    originalOutput: v.output,
-                    originalOutputReasoning: v.outputReasoning,
+                    original: { ...v },
                 };
             } else {
-                merged[key].input += v.input;
-                merged[key].output += v.output;
-                merged[key].outputReasoning += v.outputReasoning;
-                merged[key].originalInput = merged[key].input;
-                merged[key].originalOutput = merged[key].output;
-                merged[key].originalOutputReasoning =
-                    merged[key].outputReasoning;
+                for (const s of SERIES) {
+                    merged[key][s.key] += v[s.key];
+                    merged[key].original[s.key] = merged[key][s.key];
+                }
             }
         });
 
@@ -223,9 +229,7 @@ export const Chart = ({
             return { boundedData: transformedData, droppedCount: 0 };
         }
         const sorted = [...transformedData].sort(
-            (a, b) =>
-                b.input + b.output + b.outputReasoning -
-                (a.input + a.output + a.outputReasoning),
+            (a, b) => rowTotal(b) - rowTotal(a),
         );
         return {
             boundedData: sorted.slice(0, TOP_N),
@@ -237,9 +241,7 @@ export const Chart = ({
     // 1.2×p95 so the rest of the chart stays readable; capped bars keep their
     // real values for the tooltip and get a marker dot at the top.
     const { maxDomain, chartData } = useMemo(() => {
-        const totals = boundedData.map(
-            (d) => d.input + d.output + d.outputReasoning,
-        );
+        const totals = boundedData.map(rowTotal);
 
         if (totals.length === 0) {
             return { maxDomain: undefined, chartData: boundedData };
@@ -256,18 +258,13 @@ export const Chart = ({
 
         const capLimit = percentile95 * 1.2;
         const cappedData = boundedData.map((d) => {
-            const total = d.input + d.output + d.outputReasoning;
+            const total = rowTotal(d);
             if (total <= capLimit) return d;
 
             const ratio = capLimit / total;
-            return {
-                ...d,
-                isCapped: true,
-                input: d.input * ratio,
-                output: d.output * ratio,
-                outputReasoning: d.outputReasoning * ratio,
-                capMarker: capLimit * 0.98,
-            };
+            const scaled: ChartRow = { ...d, isCapped: true, capMarker: capLimit * 0.98 };
+            for (const s of SERIES) scaled[s.key] = d[s.key] * ratio;
+            return scaled;
         });
 
         return { maxDomain: capLimit, chartData: cappedData };
@@ -339,32 +336,24 @@ export const Chart = ({
                                     />
                                 }
                             />
-                            <Bar
-                                dataKey="input"
-                                name="Input"
-                                stackId="tokens"
-                                hide={hidden.input}
-                                fill={CHART_COLORS.info}
-                                maxBarSize={28}
-                                radius={[0, 0, 5, 5]}
-                            />
-                            <Bar
-                                dataKey="output"
-                                name="Output"
-                                stackId="tokens"
-                                hide={hidden.output}
-                                fill={CHART_COLORS.success}
-                                maxBarSize={28}
-                            />
-                            <Bar
-                                dataKey="outputReasoning"
-                                name="Reasoning"
-                                stackId="tokens"
-                                hide={hidden.outputReasoning}
-                                fill={CHART_COLORS.warning}
-                                maxBarSize={28}
-                                radius={[5, 5, 0, 0]}
-                            />
+                            {SERIES.map((series, i) => (
+                                <Bar
+                                    key={series.key}
+                                    dataKey={series.key}
+                                    name={series.label}
+                                    stackId="tokens"
+                                    hide={hidden[series.key]}
+                                    fill={series.color}
+                                    maxBarSize={28}
+                                    radius={
+                                        i === 0
+                                            ? [0, 0, 5, 5]
+                                            : i === SERIES.length - 1
+                                              ? [5, 5, 0, 0]
+                                              : undefined
+                                    }
+                                />
+                            ))}
                             {maxDomain && (
                                 <Scatter
                                     dataKey="capMarker"

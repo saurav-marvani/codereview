@@ -35,7 +35,7 @@ const CHART_SECTION: Record<string, { title: string; description: string }> = {
     daily: {
         title: "Usage over time",
         description:
-            "Input, output and reasoning tokens per day in the selected period.",
+            "Daily usage split by uncached input, cache, output and reasoning.",
     },
     "by-pr": {
         title: "Top pull requests",
