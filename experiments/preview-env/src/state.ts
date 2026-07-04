@@ -21,6 +21,14 @@ export const RUNS_DIR = join(STATE_DIR, 'runs');
 /** Prefix shared with scripts/selfhosted so reap.sh TTL-sweeps leaked VMs. */
 export const VM_PREFIX = 'kodus-selfhosted-preview-';
 
+/**
+ * Global lessons file (Devin-style "Knowledge"): non-obvious, generalizable
+ * lessons harvested from previous runs, injected into every agent prompt so
+ * the same mistake is not made twice. Agents append via finish.lessons;
+ * operators via `preview learn "..."`.
+ */
+export const LESSONS_PATH = join(STATE_DIR, 'lessons.md');
+
 export interface PreviewState {
     name: string;
     provider: string;

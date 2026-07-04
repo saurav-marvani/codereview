@@ -11,7 +11,7 @@ import {
     runPlaybook,
 } from './playbook.js';
 import { getProvider } from './providers/index.js';
-import { scpUpload, shellQuote, sshExec, sshInteractive } from './ssh.js';
+import { scpDownloadDir, scpUpload, shellQuote, sshExec, sshInteractive } from './ssh.js';
 import {
     RUNS_DIR,
     SSH_KEY_DIR,
@@ -60,6 +60,7 @@ Usage:
   preview detect  --name <n> [--hint "..."] [--model <id>] [--force]
   preview run     --name <n> [--phase setup|services|build|test] [--playbook <file>] [--timeout <s>]
   preview diagnose --name <n> [--model <id>]   # run tests; on failure, agent finds root cause
+  preview artifacts --name <n>                 # download browser videos/traces/screenshots
   preview exec    --name <n> -- <command...>
   preview ssh     --name <n>
   preview status                    # local state + live VMs (API is source of truth)
@@ -340,6 +341,35 @@ async function cmdDiagnose(args: Args): Promise<void> {
     console.log(`transcript: ${d.transcriptPath}`);
 }
 
+/**
+ * Downloads /opt/kody/artifacts (browser videos, Playwright traces,
+ * screenshots) to the local runs dir — the evidence pack for a validation.
+ */
+async function cmdArtifacts(args: Args): Promise<void> {
+    const name = normalizeName(str(args, 'name') ?? 'default');
+    const state = loadState(name);
+    const check = await sshExec(state, 'ls /opt/kody/artifacts 2>/dev/null | head -50', {
+        timeoutMs: 15_000,
+    });
+    if (check.exitCode !== 0 || !check.stdout.trim()) {
+        console.log('No artifacts on the VM (/opt/kody/artifacts is empty or missing).');
+        return;
+    }
+    const localDir = join(RUNS_DIR, name);
+    mkdirSync(localDir, { recursive: true });
+    scpDownloadDir(state, '/opt/kody/artifacts', localDir);
+    console.log(`artifacts downloaded to ${join(localDir, 'artifacts')}:`);
+    console.log(check.stdout.trim());
+}
+
+/** Manually record a lesson for future agent runs. */
+async function cmdLearn(args: Args): Promise<void> {
+    const lesson = str(args, 'rest') ?? args._.slice(1).join(' ');
+    if (!lesson) throw new Error('Usage: preview learn -- <lesson text>');
+    const { appendLessons } = await import('./agent.js');
+    appendLessons([lesson]);
+}
+
 async function cmdExec(args: Args): Promise<void> {
     const name = normalizeName(str(args, 'name') ?? 'default');
     const state = loadState(name);
@@ -396,6 +426,8 @@ async function main(): Promise<void> {
         case 'detect': return cmdDetect(args);
         case 'run': return cmdRun(args);
         case 'diagnose': return cmdDiagnose(args);
+        case 'artifacts': return cmdArtifacts(args);
+        case 'learn': return cmdLearn(args);
         case 'exec': return cmdExec(args);
         case 'ssh': {
             const state = loadState(normalizeName(str(args, 'name') ?? 'default'));

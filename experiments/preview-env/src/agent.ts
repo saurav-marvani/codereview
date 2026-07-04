@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { LESSONS_PATH } from './state.js';
 import { getEnv } from './config.js';
 import {
     dumpPlaybook,
@@ -19,7 +20,7 @@ import { RUNS_DIR, type PreviewState } from './state.js';
  */
 
 const DEFAULT_MODEL = 'claude-sonnet-5';
-const MAX_TURNS = 80;
+const MAX_TURNS = 120;
 
 const SYSTEM_PROMPT = `You are Kody's environment-detection agent. You have root shell access (via the bash tool) to a fresh Ubuntu 24.04 VM with Docker, docker compose, git, curl and jq preinstalled. A customer's repository has been cloned; every bash command you run already starts at the repository root with the customer's env file (if provided) exported.
 
@@ -31,6 +32,7 @@ Your mission, in order:
    a. Run the repo's test suite if one exists (or a meaningful subset if huge — prefer unit tests first). A partially failing suite can still be success if failures are clearly pre-existing/flaky and the environment itself works.
    b. ALWAYS also exercise the application's core user flows end-to-end against the running app: make real requests that create/read data (e.g. for an API: POST a resource, GET it back, verify the response body; follow redirects; check side effects landed in the database). Each check must be a real assertion — a command that exits non-zero when the expected behavior does not happen (curl + grep/jq -e, psql -c + grep, etc.). "The server is up" is NOT verification.
    c. If the project has a web UI, ALSO verify it in a real browser. Playwright + headless Chromium are preinstalled globally: write a small Node script and run it with NODE_PATH=$(npm root -g) node script.mjs (import { chromium } from 'playwright'; launch with { headless: true }). Drive the actual UI flows a user would (load pages, fill forms, click through wizards/login, create data through the UI), assert on rendered content, and fail the script on page errors or failed expectations (collect page.on('console')/'pageerror' for diagnostics). In the playbook's test phase the browser check must be SELF-CONTAINED: one command that first writes the script via heredoc (cat > /opt/kody/ui-check.mjs <<'EOF' ... EOF) and then runs it — so it reproduces on a fresh VM.
+   d. Record evidence of browser verification. Every browser script must write artifacts under /opt/kody/artifacts/: launch the context with recordVideo: { dir: '/opt/kody/artifacts/video' } AND wrap the flow in a Playwright trace (context.tracing.start({ screenshots: true, snapshots: true }) ... context.tracing.stop({ path: '/opt/kody/artifacts/trace-<flow>.zip' })). Name artifacts after the flow they verify. Also save a final full-page screenshot per flow (page.screenshot({ path: '/opt/kody/artifacts/<flow>.png', fullPage: true })).
 5. Call finish with a playbook capturing the *reproducible* path you found. The playbook's test phase must contain those executable assertions (suite + functional flows), so a future run proves the environment WORKS, not merely boots.
 
 Rules:
@@ -39,9 +41,31 @@ Rules:
 - Long installs/builds are fine, but set a generous timeout_seconds when you expect them.
 - If something fails, read the error and fix the environment; do not brute-force retry the same command.
 - The playbook you emit must work on a FRESH identical VM: include every command that was actually required (toolchain install, services, deps, build, test), in the phases setup/services/build/test. Commands run at the repo root with the customer env sourced. Do not include exploration commands.
+- Never put a command in the playbook that you have not executed EXACTLY as written (same URLs, same flags, same waits). Before calling finish, re-run each playbook test command verbatim and confirm exit 0 — a plausible-looking but unverified check (wrong health endpoint, too-short boot wait) is worse than no check. Waits for first boot must be generous (migrations/index building can take minutes) and long-running processes you start must be stopped even when a check fails (trap/cleanup), so a re-run is idempotent.
 - requiredEnv lists env var NAMES the customer must supply (never values).
 
-Call finish exactly once, when you either succeeded or are certain you cannot proceed (success=false, explain why in summary).`;
+Call finish exactly once, when you either succeeded or are certain you cannot proceed (success=false, explain why in summary). In finish.lessons, report new NON-OBVIOUS, GENERALIZABLE lessons you learned the hard way in this run (tooling gotchas, timing traps, API/version pitfalls) — one line each, project-specific lessons prefixed with the project name. Do not repeat lessons you were already given.`;
+
+export function loadLessons(): string {
+    if (!existsSync(LESSONS_PATH)) return '';
+    const text = readFileSync(LESSONS_PATH, 'utf8').trim();
+    return text
+        ? `\n\nLessons from previous runs — apply them, do not relearn the hard way:\n${text}`
+        : '';
+}
+
+export function appendLessons(lessons: string[] | undefined): void {
+    if (!lessons?.length) return;
+    const existing = existsSync(LESSONS_PATH)
+        ? readFileSync(LESSONS_PATH, 'utf8')
+        : '';
+    const fresh = lessons
+        .map((l) => l.trim().replace(/^[-*]\s*/, ''))
+        .filter((l) => l && !existing.includes(l.slice(0, 60)));
+    if (!fresh.length) return;
+    appendFileSync(LESSONS_PATH, fresh.map((l) => `- ${l}`).join('\n') + '\n');
+    console.log(`\n[lessons] recorded ${fresh.length} new lesson(s) in ${LESSONS_PATH}`);
+}
 
 const TOOLS: Anthropic.Tool[] = [
     {
@@ -76,6 +100,12 @@ const TOOLS: Anthropic.Tool[] = [
                     type: 'string',
                     description:
                         'YAML playbook: version, summary, requiredEnv, setup, services, build, test, healthcheck.',
+                },
+                lessons: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description:
+                        'New non-obvious generalizable lessons from this run (persisted for future runs).',
                 },
             },
             required: ['success', 'summary', 'playbook_yaml'],
@@ -141,7 +171,7 @@ export async function detectEnvironment(
         const response = await client.messages.create({
             model,
             max_tokens: 8192,
-            system: SYSTEM_PROMPT,
+            system: SYSTEM_PROMPT + loadLessons(),
             tools: TOOLS,
             messages,
         });
@@ -178,7 +208,9 @@ export async function detectEnvironment(
                     success: boolean;
                     summary: string;
                     playbook_yaml: string;
+                    lessons?: string[];
                 };
+                appendLessons(input.lessons);
                 let playbook: Playbook | null = null;
                 try {
                     playbook = parsePlaybook(input.playbook_yaml);
@@ -316,7 +348,7 @@ export async function diagnoseFailure(
         const response = await client.messages.create({
             model,
             max_tokens: 8192,
-            system: DIAGNOSE_SYSTEM_PROMPT,
+            system: DIAGNOSE_SYSTEM_PROMPT + loadLessons(),
             tools: DIAGNOSE_TOOLS,
             messages,
         });

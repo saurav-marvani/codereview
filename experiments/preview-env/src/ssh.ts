@@ -87,6 +87,19 @@ export function scpUpload(
     );
 }
 
+/** Recursively downloads a remote directory (e.g. /opt/kody/artifacts). */
+export function scpDownloadDir(
+    state: PreviewState,
+    remotePath: string,
+    localPath: string,
+): void {
+    execFileSync(
+        'scp',
+        ['-r', '-i', state.sshKeyPath, '-P', String(state.sshPort ?? 22), ...SSH_OPTS, `root@${state.serverIp}:${remotePath}`, localPath],
+        { stdio: ['ignore', 'inherit', 'inherit'] },
+    );
+}
+
 /** Opens an interactive SSH session (for `preview ssh <name>`). */
 export function sshInteractive(state: PreviewState): Promise<number> {
     return new Promise((resolve) => {
