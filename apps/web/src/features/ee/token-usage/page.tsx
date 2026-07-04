@@ -232,10 +232,12 @@ export default async function TokenUsagePage({
 
     return (
         <Page.Root>
-            <Page.Header>
+            {/* Full-width like the cockpit (its layout uses the same
+                max-w-full px-6 on header + content). */}
+            <Page.Header className="max-w-full px-6">
                 <Page.Title>Token Usage</Page.Title>
             </Page.Header>
-            <Page.Content>
+            <Page.Content className="max-w-full px-6">
                 <TokenUsagePageClient
                     data={data}
                     byArea={byArea}

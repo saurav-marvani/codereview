@@ -16,11 +16,11 @@ import { Skeleton } from "@components/ui/skeleton";
 export const TokenUsagePageSkeleton = () => {
     return (
         <Page.Root>
-            <Page.Header>
+            <Page.Header className="max-w-full px-6">
                 <Page.Title>Token Usage</Page.Title>
             </Page.Header>
 
-            <Page.Content>
+            <Page.Content className="max-w-full px-6">
                 <p className="text-text-secondary animate-pulse text-sm">
                     Preparing your usage data…
                 </p>
