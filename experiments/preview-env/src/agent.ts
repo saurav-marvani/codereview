@@ -27,8 +27,10 @@ Your mission, in order:
 1. EXPLORE: understand the project — language(s), package manager, frameworks, services it depends on (databases, queues, caches), how it is built and tested. Read manifests (package.json, pyproject.toml, go.mod, Gemfile, pom.xml, Makefile, docker-compose*.yml, Dockerfile, CI workflows under .github/workflows or similar — CI configs are the best source of truth for how to build and test).
 2. PROVISION: install the required toolchain versions (use official installers or apt; mise/nvm/pyenv if versions are pinned). Start required backing services — prefer the repo's own docker-compose if present, otherwise run official Docker images (postgres, redis, etc.) with credentials matching what the app expects.
 3. BOOT: install dependencies, run migrations/seeds if needed, build the project.
-4. VERIFY: run the test suite (or a meaningful subset if the full suite is huge — prefer unit tests first). A partially failing suite can still be success if failures are clearly pre-existing/flaky and the environment itself works.
-5. Call finish with a playbook capturing the *reproducible* path you found.
+4. VERIFY — actually USE the environment, don't just boot it:
+   a. Run the repo's test suite if one exists (or a meaningful subset if huge — prefer unit tests first). A partially failing suite can still be success if failures are clearly pre-existing/flaky and the environment itself works.
+   b. ALWAYS also exercise the application's core user flows end-to-end against the running app: make real requests that create/read data (e.g. for an API: POST a resource, GET it back, verify the response body; follow redirects; check side effects landed in the database). Each check must be a real assertion — a command that exits non-zero when the expected behavior does not happen (curl + grep/jq -e, psql -c + grep, etc.). "The server is up" is NOT verification.
+5. Call finish with a playbook capturing the *reproducible* path you found. The playbook's test phase must contain those executable assertions (suite + functional flows), so a future run proves the environment WORKS, not merely boots.
 
 Rules:
 - Missing env vars: check which are required (env.example, config loaders, CI). Use values from the customer env file when present; invent safe local defaults only for infrastructure you started yourself (e.g. DATABASE_URL pointing at your own postgres container). Never invent third-party API credentials — if a test needs them and they're absent, note it in the playbook summary and skip those tests.
@@ -92,15 +94,25 @@ export async function detectEnvironment(
     state: PreviewState,
     opts: { model?: string; hint?: string } = {},
 ): Promise<DetectResult> {
+    const model = opts.model ?? getEnv('PREVIEW_AGENT_MODEL') ?? DEFAULT_MODEL;
+    // Any Anthropic-surface endpoint works (BYOK-friendly): kimi-* models
+    // default to Moonshot's coding endpoint, otherwise Anthropic proper.
+    const isKimi = model.startsWith('kimi');
+    const baseURL =
+        getEnv('PREVIEW_AGENT_BASE_URL') ??
+        // SDK appends /v1/messages itself, so no /v1 suffix here.
+        (isKimi ? 'https://api.kimi.com/coding' : undefined);
     const apiKey =
-        getEnv('ANTHROPIC_API_KEY') ?? getEnv('BYOK_ANTHROPIC_API_KEY');
+        getEnv('PREVIEW_AGENT_API_KEY') ??
+        (isKimi
+            ? getEnv('KIMI_CODING_PLAN_KEY')
+            : (getEnv('ANTHROPIC_API_KEY') ?? getEnv('BYOK_ANTHROPIC_API_KEY')));
     if (!apiKey) {
         throw new Error(
-            'ANTHROPIC_API_KEY (or BYOK_ANTHROPIC_API_KEY) not set in env or ~/.kodus-dev/config',
+            `No API key for model '${model}' (checked PREVIEW_AGENT_API_KEY, ${isKimi ? 'KIMI_CODING_PLAN_KEY' : 'ANTHROPIC_API_KEY/BYOK_ANTHROPIC_API_KEY'})`,
         );
     }
-    const client = new Anthropic({ apiKey });
-    const model = opts.model ?? getEnv('PREVIEW_AGENT_MODEL') ?? DEFAULT_MODEL;
+    const client = new Anthropic({ apiKey, baseURL });
 
     const runDir = join(RUNS_DIR, state.name);
     mkdirSync(runDir, { recursive: true });

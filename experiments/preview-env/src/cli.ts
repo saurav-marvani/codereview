@@ -273,6 +273,16 @@ async function cmdDetect(args: Args): Promise<void> {
 async function cmdRun(args: Args): Promise<void> {
     const name = normalizeName(str(args, 'name') ?? 'default');
     const state = loadState(name);
+    const localPlaybook = str(args, 'playbook');
+    if (localPlaybook) {
+        if (!existsSync(localPlaybook)) {
+            throw new Error(`playbook file not found: ${localPlaybook}`);
+        }
+        const repoDir = state.repoDir ?? '/opt/repo';
+        await sshExec(state, `mkdir -p ${repoDir}/.kody`, { timeoutMs: 15_000 });
+        scpUpload(state, localPlaybook, `${repoDir}/.kody/environment.yml`);
+        console.log(`uploaded ${localPlaybook} -> ${repoDir}/.kody/environment.yml`);
+    }
     const playbook = await readRemotePlaybook(state);
     if (!playbook) {
         throw new Error(

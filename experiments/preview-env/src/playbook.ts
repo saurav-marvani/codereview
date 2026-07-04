@@ -26,7 +26,9 @@ export interface Playbook {
 }
 
 export const PLAYBOOK_REMOTE_PATH = '.kody/environment.yml';
-export const PHASES = ['setup', 'services', 'build', 'test'] as const;
+// Execution order: backing services declared as docker commands usually live
+// in setup; process-type services (the app itself) must start after build.
+export const PHASES = ['setup', 'build', 'services', 'test'] as const;
 export type Phase = (typeof PHASES)[number];
 
 export function parsePlaybook(raw: string): Playbook {
@@ -74,6 +76,27 @@ export async function readRemotePlaybook(
     return parsePlaybook(res.stdout);
 }
 
+/**
+ * Agents emit entries in a few shapes: plain command strings,
+ * {description, command} objects, and long-running services as
+ * {name, type: 'process', command} (backgrounded) or {name, image, ...}
+ * (declarative docker specs, not executable — skipped).
+ */
+function normalizeEntry(entry: unknown, phase: string): string | null {
+    if (typeof entry === 'string') return entry;
+    if (entry && typeof entry === 'object') {
+        const o = entry as Record<string, unknown>;
+        if (typeof o.command === 'string') {
+            if (phase === 'services') {
+                const name = typeof o.name === 'string' ? o.name : 'service';
+                return `nohup ${o.command} > /tmp/kody-svc-${name}.log 2>&1 & sleep 4`;
+            }
+            return o.command;
+        }
+    }
+    return null;
+}
+
 export interface PhaseResult {
     phase: string;
     command: string;
@@ -97,11 +120,10 @@ export async function runPlaybook(
         const commands = (playbook as any)[phase] as string[] | undefined;
         if (!commands?.length) continue;
         console.log(`\n=== phase: ${phase} (${commands.length} command(s)) ===`);
-        for (const command of commands) {
-            // Agents sometimes emit declarative entries (e.g. services as
-            // {name, image} objects); only strings are executable.
-            if (typeof command !== 'string') {
-                console.log(`(skipping non-command entry: ${JSON.stringify(command)})`);
+        for (const entry of commands) {
+            const command = normalizeEntry(entry, phase);
+            if (!command) {
+                console.log(`(skipping non-command entry: ${JSON.stringify(entry)})`);
                 continue;
             }
             console.log(`\n$ ${command}`);
