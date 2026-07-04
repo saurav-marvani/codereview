@@ -29,6 +29,17 @@ export const VM_PREFIX = 'kodus-selfhosted-preview-';
  */
 export const LESSONS_PATH = join(STATE_DIR, 'lessons.md');
 
+/** Per-project lessons file, keyed by a slug derived from the repo URL. */
+export function projectLessonsPath(repoUrl: string): string {
+    const slug = repoUrl
+        .replace(/^https?:\/\//, '')
+        .replace(/\.git$/, '')
+        .replace(/[^a-zA-Z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .toLowerCase();
+    return join(STATE_DIR, 'lessons', `${slug || 'unknown'}.md`);
+}
+
 export interface PreviewState {
     name: string;
     provider: string;

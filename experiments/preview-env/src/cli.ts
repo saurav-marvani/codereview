@@ -391,9 +391,13 @@ async function cmdValidate(args: Args): Promise<void> {
 /** Manually record a lesson for future agent runs. */
 async function cmdLearn(args: Args): Promise<void> {
     const lesson = str(args, 'rest') ?? args._.slice(1).join(' ');
-    if (!lesson) throw new Error('Usage: preview learn -- <lesson text>');
+    if (!lesson) throw new Error('Usage: preview learn -- <lesson text>  [--repo <url> for project-scoped]');
     const { appendLessons } = await import('./agent.js');
-    appendLessons([lesson]);
+    // --repo scopes the lesson to a project; --name reuses an env's repo.
+    let repoUrl = str(args, 'repo');
+    const name = str(args, 'name');
+    if (!repoUrl && name) repoUrl = loadState(normalizeName(name)).repoUrl;
+    appendLessons([lesson], repoUrl);
 }
 
 async function cmdExec(args: Args): Promise<void> {

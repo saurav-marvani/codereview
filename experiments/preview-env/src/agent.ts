@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { LESSONS_PATH } from './state.js';
+import { dirname, join } from 'node:path';
+import { LESSONS_PATH, projectLessonsPath } from './state.js';
 import { getEnv } from './config.js';
 import {
     dumpPlaybook,
@@ -46,25 +46,45 @@ Rules:
 
 Call finish exactly once, when you either succeeded or are certain you cannot proceed (success=false, explain why in summary). In finish.lessons, report new NON-OBVIOUS, GENERALIZABLE lessons you learned the hard way in this run (tooling gotchas, timing traps, API/version pitfalls) — one line each, project-specific lessons prefixed with the project name. Do not repeat lessons you were already given.`;
 
-export function loadLessons(): string {
-    if (!existsSync(LESSONS_PATH)) return '';
-    const text = readFileSync(LESSONS_PATH, 'utf8').trim();
-    return text
-        ? `\n\nLessons from previous runs — apply them, do not relearn the hard way:\n${text}`
-        : '';
+function readFileIfExists(path: string): string {
+    return existsSync(path) ? readFileSync(path, 'utf8').trim() : '';
 }
 
-export function appendLessons(lessons: string[] | undefined): void {
+/**
+ * Builds the lessons block for a prompt: global (cross-project tooling
+ * gotchas) plus, when a repo is given, that project's own accumulated
+ * knowledge (how to boot it, its quirks) — so project-specific recipes
+ * don't pollute other projects' runs.
+ */
+export function loadLessons(repoUrl?: string): string {
+    const global = readFileIfExists(LESSONS_PATH);
+    const project = repoUrl ? readFileIfExists(projectLessonsPath(repoUrl)) : '';
+    let out = '';
+    if (global) {
+        out += `\n\nLessons from previous runs — apply them, do not relearn the hard way:\n${global}`;
+    }
+    if (project) {
+        out += `\n\nProject-specific knowledge for THIS repository (how it builds/boots and its quirks):\n${project}`;
+    }
+    return out;
+}
+
+/**
+ * Appends deduped lessons. With a repoUrl, they go to that project's file
+ * (operational/boot knowledge specific to the repo); without one, to the
+ * global file (generic technique/tooling lessons).
+ */
+export function appendLessons(lessons: string[] | undefined, repoUrl?: string): void {
     if (!lessons?.length) return;
-    const existing = existsSync(LESSONS_PATH)
-        ? readFileSync(LESSONS_PATH, 'utf8')
-        : '';
+    const path = repoUrl ? projectLessonsPath(repoUrl) : LESSONS_PATH;
+    const existing = readFileIfExists(path);
     const fresh = lessons
         .map((l) => l.trim().replace(/^[-*]\s*/, ''))
         .filter((l) => l && !existing.includes(l.slice(0, 60)));
     if (!fresh.length) return;
-    appendFileSync(LESSONS_PATH, fresh.map((l) => `- ${l}`).join('\n') + '\n');
-    console.log(`\n[lessons] recorded ${fresh.length} new lesson(s) in ${LESSONS_PATH}`);
+    mkdirSync(dirname(path), { recursive: true });
+    appendFileSync(path, fresh.map((l) => `- ${l}`).join('\n') + '\n');
+    console.log(`\n[lessons] recorded ${fresh.length} new lesson(s) in ${path}`);
 }
 
 const TOOLS: Anthropic.Tool[] = [
@@ -171,7 +191,7 @@ export async function detectEnvironment(
         const response = await client.messages.create({
             model,
             max_tokens: 8192,
-            system: SYSTEM_PROMPT + loadLessons(),
+            system: SYSTEM_PROMPT + loadLessons(state.repoUrl),
             tools: TOOLS,
             messages,
         });
@@ -210,7 +230,7 @@ export async function detectEnvironment(
                     playbook_yaml: string;
                     lessons?: string[];
                 };
-                appendLessons(input.lessons);
+                appendLessons(input.lessons, state.repoUrl);
                 let playbook: Playbook | null = null;
                 try {
                     playbook = parsePlaybook(input.playbook_yaml);
