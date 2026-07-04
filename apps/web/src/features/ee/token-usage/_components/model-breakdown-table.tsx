@@ -372,9 +372,7 @@ export const ModelBreakdownTable = ({
     if (rows.length === 0) return null;
     return (
         <div className="flex flex-col gap-3">
-            <h2 className="text-text-secondary text-sm font-medium uppercase tracking-wide">
-                Per-model breakdown
-            </h2>
+            <h2 className="text-sm font-semibold">Per-model breakdown</h2>
             <Accordion type="multiple" className="flex flex-col gap-3">
                 {rows.map((row) => (
                     <ModelBlock

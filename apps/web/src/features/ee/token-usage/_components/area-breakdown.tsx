@@ -1,7 +1,13 @@
 "use client";
 
 import { useMemo } from "react";
-import { Card } from "@components/ui/card";
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from "@components/ui/card";
 import { UsageByAreaResultContract } from "@services/usage/types";
 
 import { CHART_COLORS } from "../../cockpit/_components/charts/recharts-shared";
@@ -65,16 +71,15 @@ export const AreaBreakdown = ({
     if (!areas.length) return null;
 
     return (
-        <Card className="flex flex-col gap-4 p-5">
-            <div>
-                <h2 className="text-sm font-semibold">Where tokens go</h2>
-                <p className="text-text-secondary mt-0.5 text-xs">
+        <Card color="lv1">
+            <CardHeader>
+                <CardTitle className="text-sm">Where tokens go</CardTitle>
+                <CardDescription className="text-xs">
                     Token spend by area of the review process in the selected
                     period.
-                </p>
-            </div>
-
-            <div className="flex flex-col gap-2">
+                </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2">
                 {areas.map(({ area, total, meta }) => (
                     <div key={area} className="flex items-center gap-3">
                         <span
@@ -101,7 +106,7 @@ export const AreaBreakdown = ({
                         </span>
                     </div>
                 ))}
-            </div>
+            </CardContent>
         </Card>
     );
 };

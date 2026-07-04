@@ -19,6 +19,8 @@ import {
     SelectValue,
 } from "@components/ui/select";
 
+import { ChevronDownIcon } from "lucide-react";
+
 import { useTokenUsageFilters } from "../_hooks/filter.hook";
 
 export const Filters = ({
@@ -52,6 +54,7 @@ export const Filters = ({
                         <span className="truncate">
                             {getModelSelectionText()}
                         </span>
+                        <ChevronDownIcon className="size-4 shrink-0 opacity-50" />
                     </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent

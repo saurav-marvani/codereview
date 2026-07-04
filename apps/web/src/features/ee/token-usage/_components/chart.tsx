@@ -263,8 +263,8 @@ export const Chart = ({
         <div className="flex h-full w-full flex-col gap-4">
             {droppedCount > 0 && (
                 <p className="text-text-tertiary text-xs">
-                    Top {TOP_N} by total tokens ({droppedCount} more in the
-                    period — narrow the date range or filters to see them).
+                    Showing the top {TOP_N} of {TOP_N + droppedCount} by total
+                    tokens. Narrow the date range or filters to see the rest.
                 </p>
             )}
             <div className="min-h-0 flex-1">

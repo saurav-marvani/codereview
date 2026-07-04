@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Card } from "@components/ui/card";
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from "@components/ui/card";
 import { Skeleton } from "@components/ui/skeleton";
 import {
     BaseUsageContract,
@@ -14,12 +20,34 @@ import { DateRangePicker } from "src/features/ee/cockpit/_components/date-range-
 import { useTokenUsageFilters } from "../_hooks/filter.hook";
 import { AreaBreakdown } from "./area-breakdown";
 import { Chart } from "./chart";
-import { CostCards } from "./cost-cards";
 import { Filters } from "./filters";
 import { ModelBreakdownTable } from "./model-breakdown-table";
 import { NoData } from "./no-data";
 import { SpendLimitProgress } from "./spend-limit-progress";
 import { SummaryCards } from "./summary-cards";
+
+/** Section header per chart dimension — cockpit card-title/description. */
+const CHART_SECTION: Record<string, { title: string; description: string }> = {
+    daily: {
+        title: "Usage over time",
+        description:
+            "Input, output and reasoning tokens per day in the selected period.",
+    },
+    "by-pr": {
+        title: "Top pull requests",
+        description:
+            "The pull requests that consumed the most tokens in the period.",
+    },
+    "by-review": {
+        title: "Top review runs",
+        description:
+            "Each bar is one review run; a PR reviewed more than once appears once per run.",
+    },
+    "by-developer": {
+        title: "Top developers",
+        description: "Token spend attributed to the pull request author.",
+    },
+};
 
 const ZERO_TOTALS = {
     input: 0,
@@ -153,13 +181,10 @@ export const TokenUsagePageClient = ({
                 />
             </div>
 
-            {/* Token Summary — period totals; identical across chart dimensions,
+            {/* KPI row — period totals; identical across chart dimensions,
                 so they stay put during a view switch (only the chart changes). */}
-            <SummaryCards totalUsage={totalUsage} />
-
-            {/* Cost & Pricing Row */}
-            <CostCards
-                totalCost={totalUsage.totalCost}
+            <SummaryCards
+                totalUsage={totalUsage}
                 avgPerDay={avgPerDay}
                 avgPerPR={avgPerPR}
             />
@@ -171,14 +196,29 @@ export const TokenUsagePageClient = ({
                 skeleton while the new dimension's data loads (consistent with
                 the initial page skeleton) instead of a spinner. */}
             {isPending ? (
-                <Skeleton className="h-[420px] w-full rounded-xl" />
+                <Skeleton className="h-[440px] w-full rounded-xl" />
             ) : (
-                <Card className="h-[420px] p-5">
-                    {filteredData && filteredData.length > 0 ? (
-                        <Chart data={filteredData} filterType={currentFilter} />
-                    ) : (
-                        <NoData />
-                    )}
+                <Card color="lv1" className="h-[440px]">
+                    <CardHeader>
+                        <CardTitle className="text-sm">
+                            {CHART_SECTION[currentFilter]?.title ??
+                                CHART_SECTION.daily.title}
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                            {CHART_SECTION[currentFilter]?.description ??
+                                CHART_SECTION.daily.description}
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="min-h-0 flex-1">
+                        {filteredData && filteredData.length > 0 ? (
+                            <Chart
+                                data={filteredData}
+                                filterType={currentFilter}
+                            />
+                        ) : (
+                            <NoData />
+                        )}
+                    </CardContent>
                 </Card>
             )}
 

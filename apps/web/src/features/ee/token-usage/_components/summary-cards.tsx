@@ -1,18 +1,11 @@
 import { Button } from "@components/ui/button";
-import { Card } from "@components/ui/card";
+import { Card, CardTitle } from "@components/ui/card";
 import {
     Tooltip,
     TooltipContent,
     TooltipTrigger,
 } from "@components/ui/tooltip";
-import {
-    ArrowDownIcon,
-    ArrowUpIcon,
-    DatabaseIcon,
-    HelpCircleIcon,
-    LayersIcon,
-    UploadIcon,
-} from "lucide-react";
+import { HelpCircleIcon } from "lucide-react";
 
 function formatNumber(num: number): string {
     if (num >= 1_000_000) {
@@ -26,35 +19,15 @@ function formatNumber(num: number): string {
 
 function formatCurrency(amount: number): string {
     if (amount >= 1000) {
+        // Truncate instead of round to avoid overstating values
         const truncated = Math.floor((amount / 1000) * 100) / 100;
         return `$${truncated.toFixed(2)}K`;
     }
     return `$${amount.toFixed(2)}`;
 }
 
-const colorStyles = {
-    primary: {
-        bgDark: "bg-primary-dark",
-        text: "text-primary-light",
-    },
-    secondary: {
-        bgDark: "bg-secondary-dark",
-        text: "text-secondary-light",
-    },
-    tertiary: {
-        bgDark: "bg-tertiary-dark",
-        text: "text-tertiary-light",
-    },
-    success: {
-        bgDark: "bg-success/10",
-        text: "text-success",
-    },
-} as const;
-
-type CardColor = keyof typeof colorStyles;
-
 interface TotalUsageShape {
-    input: number;          // uncached input shown to user
+    input: number; // uncached input shown to user
     output: number;
     total: number;
     outputReasoning: number;
@@ -69,41 +42,60 @@ interface TotalUsageShape {
 
 interface CardSpec {
     label: string;
-    tokens: number;
-    cost: number;
-    icon: typeof ArrowDownIcon;
-    color: CardColor;
+    value: string;
+    footer?: string;
     tooltip?: string;
 }
 
-export const SummaryCards = ({ totalUsage }: { totalUsage: TotalUsageShape }) => {
+/**
+ * KPI row in the cockpit MetricCard vocabulary (see
+ * cockpit/@kodusReviewTab/_components/review-cards.tsx): label on top,
+ * one bold value, quiet footer. Cost is the lead metric; the token cards
+ * carry their own billed cost in the footer, so nothing repeats.
+ */
+export const SummaryCards = ({
+    totalUsage,
+    avgPerDay,
+    avgPerPR,
+}: {
+    totalUsage: TotalUsageShape;
+    avgPerDay: number;
+    avgPerPR: number;
+}) => {
     // Backend's `totals.input` already excludes cache reads — name the local
     // alias explicitly so the rendering is unambiguous.
     const uncachedInput = Math.max(0, totalUsage.input - totalUsage.cacheRead);
 
     const cards: CardSpec[] = [
         {
-            label: "Uncached Input",
-            tokens: uncachedInput,
-            cost: totalUsage.inputCost,
-            icon: ArrowDownIcon,
-            color: "primary",
+            label: "Total cost",
+            value: formatCurrency(totalUsage.totalCost),
+            footer: `≈ ${formatCurrency(avgPerDay)}/day · ${formatCurrency(avgPerPR)}/PR`,
         },
         {
-            label: "Cache Read",
-            tokens: totalUsage.cacheRead,
-            cost: totalUsage.cacheReadCost,
-            icon: DatabaseIcon,
-            color: "tertiary",
+            label: "Total tokens",
+            value: formatNumber(totalUsage.total),
+            footer:
+                totalUsage.outputReasoning > 0
+                    ? `incl. ${formatNumber(totalUsage.outputReasoning)} reasoning`
+                    : undefined,
+        },
+        {
+            label: "Uncached input",
+            value: formatNumber(uncachedInput),
+            footer: formatCurrency(totalUsage.inputCost),
+        },
+        {
+            label: "Cache read",
+            value: formatNumber(totalUsage.cacheRead),
+            footer: formatCurrency(totalUsage.cacheReadCost),
             tooltip:
-                "Input tokens served from the provider's prompt cache. Already counted inside Input Tokens — shown separately because they're billed at a discounted rate.",
+                "Input tokens served from the provider's prompt cache. Already counted inside input tokens; shown separately because they're billed at a discounted rate.",
         },
         {
             label: "Output",
-            tokens: totalUsage.output,
-            cost: totalUsage.outputCost,
-            icon: ArrowUpIcon,
-            color: "secondary",
+            value: formatNumber(totalUsage.output),
+            footer: formatCurrency(totalUsage.outputCost),
             tooltip:
                 totalUsage.outputReasoning > 0
                     ? `Includes ${formatNumber(totalUsage.outputReasoning)} reasoning tokens (billed at the output rate).`
@@ -113,73 +105,53 @@ export const SummaryCards = ({ totalUsage }: { totalUsage: TotalUsageShape }) =>
 
     if (totalUsage.cacheWrite > 0) {
         cards.push({
-            label: "Cache Write",
-            tokens: totalUsage.cacheWrite,
-            cost: totalUsage.cacheWriteCost,
-            icon: UploadIcon,
-            color: "tertiary",
+            label: "Cache write",
+            value: formatNumber(totalUsage.cacheWrite),
+            footer: formatCurrency(totalUsage.cacheWriteCost),
             tooltip:
                 "Input tokens that populated a cache entry on this call (Anthropic). Other providers don't charge a write premium.",
         });
     }
 
-    cards.push({
-        label: "Total",
-        tokens: totalUsage.total,
-        cost: totalUsage.totalCost,
-        icon: LayersIcon,
-        color: "success",
-    });
-
     return (
         <div
-            className="grid gap-3"
-            style={{ gridTemplateColumns: `repeat(${cards.length}, minmax(0, 1fr))` }}>
-            {cards.map((card) => {
-                const Icon = card.icon;
-                const styles = colorStyles[card.color];
-                return (
-                    <Card
-                        key={card.label}
-                        className="group relative overflow-hidden p-4">
-                        <div className="relative space-y-2">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <div
-                                        className={`flex size-7 items-center justify-center rounded-md ${styles.bgDark}`}>
-                                        <Icon
-                                            className={`size-4 ${styles.text}`}
-                                        />
-                                    </div>
-                                    <span className="text-text-secondary text-sm">
-                                        {card.label}
-                                    </span>
-                                </div>
-                                {card.tooltip && (
-                                    <Tooltip>
-                                        <TooltipContent className="text-text-primary max-w-64 text-pretty">
-                                            {card.tooltip}
-                                        </TooltipContent>
-                                        <TooltipTrigger asChild>
-                                            <Button
-                                                variant="cancel"
-                                                size="icon-xs">
-                                                <HelpCircleIcon className="size-3.5" />
-                                            </Button>
-                                        </TooltipTrigger>
-                                    </Tooltip>
-                                )}
-                            </div>
-                            <p className="text-text-primary text-2xl font-semibold tabular-nums">
-                                {formatNumber(card.tokens)}
-                            </p>
-                            <p className="text-text-tertiary text-sm tabular-nums">
-                                {formatCurrency(card.cost)}
-                            </p>
-                        </div>
-                    </Card>
-                );
-            })}
+            className="grid gap-2"
+            style={{
+                gridTemplateColumns: `repeat(${cards.length}, minmax(0, 1fr))`,
+            }}>
+            {cards.map((card) => (
+                <Card
+                    key={card.label}
+                    color="lv1"
+                    className="justify-between gap-2 p-5">
+                    <div className="flex items-start justify-between gap-2">
+                        <CardTitle className="text-text-secondary text-xs leading-snug font-semibold">
+                            {card.label}
+                        </CardTitle>
+                        {card.tooltip && (
+                            <Tooltip>
+                                <TooltipContent className="text-text-primary max-w-64 text-pretty">
+                                    {card.tooltip}
+                                </TooltipContent>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="cancel"
+                                        size="icon-xs"
+                                        className="-my-1">
+                                        <HelpCircleIcon className="size-3.5" />
+                                    </Button>
+                                </TooltipTrigger>
+                            </Tooltip>
+                        )}
+                    </div>
+                    <div className="text-3xl font-bold tabular-nums">
+                        {card.value}
+                    </div>
+                    <div className="text-text-tertiary min-h-4 text-xs leading-snug tabular-nums">
+                        {card.footer}
+                    </div>
+                </Card>
+            ))}
         </div>
     );
 };
