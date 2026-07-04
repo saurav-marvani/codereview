@@ -4,21 +4,74 @@ import axios from 'axios';
 
 import { CacheService } from '@libs/core/cache/cache.service';
 
+const MODELS_DEV_URL = 'https://models.dev/api.json';
+const MODELS_DEV_CACHE_KEY = 'token-pricing:modelsdev';
 const LITELLM_PRICING_URL =
     'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json';
-const CACHE_KEY = 'token-pricing:litellm';
+const LITELLM_CACHE_KEY = 'token-pricing:litellm-normalized';
 // cache-manager v7 expects TTL in milliseconds.
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 15_000;
 
+/** models.dev prices are US$ per 1M tokens; we store per-token. */
+const PER_MILLION = 1_000_000;
+
 /**
  * The token threshold encoded in the LiteLLM catalog's `*_above_200k_tokens`
- * field names. Every model with tier-aware pricing in the catalog today uses
- * this single breakpoint. If LiteLLM ever ships a model with a different
- * breakpoint, we'll either parse it from the field name dynamically or carry
- * a per-model override here.
+ * field names and models.dev's `context_over_200k` object. models.dev's
+ * `tiers[].tier.size` carries an explicit per-model breakpoint, which takes
+ * precedence when present.
  */
-const LITELLM_TIER_THRESHOLD_TOKENS = 200_000;
+const TIER_THRESHOLD_200K = 200_000;
+
+/**
+ * models.dev providers that re-sell other vendors' models. When the same bare
+ * model id exists under a native provider and an aggregator, the native entry
+ * wins the bare-id alias (aggregator pricing can differ from list price).
+ */
+const AGGREGATOR_PROVIDERS = new Set([
+    'openrouter',
+    'github-models',
+    'github-copilot',
+    'azure',
+    'huggingface',
+    'fastrouter',
+    'requesty',
+    'vercel',
+]);
+
+type ModelsDevCostTier = {
+    input?: number;
+    output?: number;
+    cache_read?: number;
+    cache_write?: number;
+    tier?: { type?: string; size?: number };
+};
+
+type ModelsDevCost = {
+    input?: number;
+    output?: number;
+    cache_read?: number;
+    cache_write?: number;
+    reasoning?: number;
+    tiers?: ModelsDevCostTier[];
+    context_over_200k?: {
+        input?: number;
+        output?: number;
+        cache_read?: number;
+        cache_write?: number;
+    };
+};
+
+type ModelsDevModel = {
+    id?: string;
+    cost?: ModelsDevCost;
+};
+
+type ModelsDevProvider = {
+    id?: string;
+    models?: Record<string, ModelsDevModel>;
+};
 
 type LiteLLMModel = {
     input_cost_per_token?: number;
@@ -66,6 +119,24 @@ export type ModelPricingInfo = {
     };
 };
 
+/**
+ * Source-agnostic catalog entry, already converted to per-token rates. Both
+ * the models.dev and LiteLLM payloads normalize into this at fetch time (the
+ * normalized form is what gets cached), so lookup and pricing logic never
+ * touch source-specific field names or units again.
+ */
+export type CatalogEntry = {
+    provider?: string;
+    input: TokenPrice;
+    output: TokenPrice;
+    cacheRead: TokenPrice;
+    cacheWrite: TokenPrice;
+    /** Per-token reasoning rate when the source prices it separately. */
+    reasoning?: number;
+};
+
+export type PricingCatalog = Record<string, CatalogEntry>;
+
 @Injectable()
 export class TokenPricingUseCase {
     private readonly logger = createLogger(TokenPricingUseCase.name);
@@ -87,9 +158,9 @@ export class TokenPricingUseCase {
     }
 
     /**
-     * Batch variant: resolve many models in one call. `getCatalog()` is cached,
-     * so this fetches the LiteLLM catalog at most once regardless of model
-     * count — collapsing the screen's per-model N+1 into a single request.
+     * Batch variant: resolve many models in one call. The catalogs are cached,
+     * so this fetches each source at most once regardless of model count —
+     * collapsing the screen's per-model N+1 into a single request.
      */
     async executeMany(
         models: string[],
@@ -109,11 +180,11 @@ export class TokenPricingUseCase {
 
     /**
      * Canonical model names the catalog bills at a higher INPUT tier above a
-     * breakpoint (today: the `*_above_200k_tokens` Gemini models), mapped to
-     * that input threshold. The Token Usage read derives each call's tier from
-     * `attributes.tu.input` vs this map — so it needs to know *which models are
-     * tiered* without a per-request DB scan to discover the models present in
-     * the window. The catalog is cached (24h), making this near-free.
+     * breakpoint, mapped to that input threshold. The Token Usage read derives
+     * each call's tier from `attributes.tu.input` vs this map — so it needs to
+     * know *which models are tiered* without a per-request DB scan to discover
+     * the models present in the window. The catalogs are cached (24h), making
+     * this near-free.
      *
      * Keys are canonicalized the same way the write path stores
      * `attributes.tu.model` (strip provider prefix, keep the last id segment),
@@ -121,15 +192,16 @@ export class TokenPricingUseCase {
      * the stored name and match in the aggregation's `$switch`.
      */
     async tieredInputThresholds(): Promise<Map<string, number>> {
-        const catalog = await this.getCatalog();
         const out = new Map<string, number>();
-        for (const [key, entry] of Object.entries(catalog)) {
-            if (
-                typeof entry?.input_cost_per_token_above_200k_tokens ===
-                'number'
-            ) {
+        // Fallback first, primary second — primary wins on key collisions.
+        for (const catalog of [
+            await this.getLiteLLMCatalog(),
+            await this.getModelsDevCatalog(),
+        ]) {
+            for (const [key, entry] of Object.entries(catalog)) {
+                if (!entry.input.tier) continue;
                 for (const name of this.canonicalNames(key)) {
-                    out.set(name, LITELLM_TIER_THRESHOLD_TOKENS);
+                    out.set(name, entry.input.tier.threshold);
                 }
             }
         }
@@ -153,41 +225,230 @@ export class TokenPricingUseCase {
         return colonStripped === bare ? [colonStripped] : [colonStripped, bare];
     }
 
-    async getCatalog(): Promise<Record<string, LiteLLMModel>> {
+    /**
+     * Primary catalog (models.dev), flattened from its provider-nested shape
+     * into `provider/model` keys plus bare-id aliases, normalized to per-token
+     * rates. Cached post-normalization.
+     */
+    async getModelsDevCatalog(): Promise<PricingCatalog> {
         const cached =
-            await this.cacheService.getFromCache<Record<string, LiteLLMModel>>(
-                CACHE_KEY,
+            await this.cacheService.getFromCache<PricingCatalog>(
+                MODELS_DEV_CACHE_KEY,
             );
         if (cached) return cached;
 
-        const response = await axios.get<unknown>(LITELLM_PRICING_URL, {
+        const raw = await this.fetchJson<Record<string, ModelsDevProvider>>(
+            MODELS_DEV_URL,
+        );
+        const catalog = this.flattenModelsDev(raw);
+        await this.cacheService.addToCache(
+            MODELS_DEV_CACHE_KEY,
+            catalog,
+            CACHE_TTL_MS,
+        );
+        return catalog;
+    }
+
+    /** Secondary catalog (LiteLLM), kept as a fallback during the cutover. */
+    async getLiteLLMCatalog(): Promise<PricingCatalog> {
+        const cached =
+            await this.cacheService.getFromCache<PricingCatalog>(
+                LITELLM_CACHE_KEY,
+            );
+        if (cached) return cached;
+
+        const raw =
+            await this.fetchJson<Record<string, LiteLLMModel>>(
+                LITELLM_PRICING_URL,
+            );
+        const catalog: PricingCatalog = {};
+        for (const [key, entry] of Object.entries(raw)) {
+            if (!entry || typeof entry !== 'object') continue;
+            catalog[key] = this.fromLiteLLM(entry);
+        }
+        await this.cacheService.addToCache(
+            LITELLM_CACHE_KEY,
+            catalog,
+            CACHE_TTL_MS,
+        );
+        return catalog;
+    }
+
+    private async fetchJson<T>(url: string): Promise<T> {
+        const response = await axios.get<unknown>(url, {
             timeout: FETCH_TIMEOUT_MS,
             responseType: 'json',
         });
-
         const parsed =
             typeof response.data === 'string'
-                ? (JSON.parse(response.data) as Record<string, LiteLLMModel>)
-                : (response.data as Record<string, LiteLLMModel>);
-
+                ? (JSON.parse(response.data) as T)
+                : (response.data as T);
         if (!parsed || typeof parsed !== 'object') {
-            throw new Error('Invalid LiteLLM pricing payload');
+            throw new Error(`Invalid pricing payload from ${url}`);
+        }
+        return parsed;
+    }
+
+    private flattenModelsDev(
+        raw: Record<string, ModelsDevProvider>,
+    ): PricingCatalog {
+        const catalog: PricingCatalog = {};
+        const bareOwner = new Map<string, string>();
+
+        for (const [providerKey, provider] of Object.entries(raw)) {
+            const providerId = (provider?.id ?? providerKey).toLowerCase();
+            const models = provider?.models;
+            if (!models || typeof models !== 'object') continue;
+
+            for (const [modelKey, model] of Object.entries(models)) {
+                const modelId = (model?.id ?? modelKey).toLowerCase();
+                const entry = this.fromModelsDev(model?.cost, providerId);
+                catalog[`${providerId}/${modelId}`] = entry;
+
+                if (this.claimBareAlias(catalog, bareOwner, modelId, entry)) {
+                    bareOwner.set(modelId, providerId);
+                }
+            }
+        }
+        return catalog;
+    }
+
+    /**
+     * Whether `entry` should own the bare-id alias for `modelId`. First writer
+     * wins, except that a priced entry beats an unpriced one and a native
+     * provider beats an aggregator — so `kimi-k2.6` resolves to Moonshot's
+     * list price, not whatever reseller happens to enumerate first.
+     */
+    private claimBareAlias(
+        catalog: PricingCatalog,
+        bareOwner: Map<string, string>,
+        modelId: string,
+        entry: CatalogEntry,
+    ): boolean {
+        const existing = bareOwner.has(modelId)
+            ? catalog[modelId]
+            : undefined;
+        if (!existing) {
+            catalog[modelId] = entry;
+            return true;
         }
 
-        await this.cacheService.addToCache(CACHE_KEY, parsed, CACHE_TTL_MS);
-        return parsed;
+        const priced = (e: CatalogEntry) =>
+            e.input.default > 0 || e.output.default > 0;
+        const nativeOwner = !AGGREGATOR_PROVIDERS.has(
+            bareOwner.get(modelId)!,
+        );
+        const nativeNew = !AGGREGATOR_PROVIDERS.has(entry.provider ?? '');
+
+        const wins =
+            (priced(entry) && !priced(existing)) ||
+            (nativeNew && !nativeOwner && priced(entry) === priced(existing));
+        if (wins) {
+            catalog[modelId] = entry;
+            return true;
+        }
+        return false;
+    }
+
+    private fromModelsDev(
+        cost: ModelsDevCost | undefined,
+        provider: string,
+    ): CatalogEntry {
+        // Prefer the explicit tier list (carries its own breakpoint); fall
+        // back to the legacy fixed-200k object.
+        const contextTier = cost?.tiers?.find(
+            (t) =>
+                (t?.tier?.type ?? 'context') === 'context' &&
+                typeof t?.tier?.size === 'number',
+        );
+        const threshold = contextTier
+            ? contextTier.tier!.size!
+            : TIER_THRESHOLD_200K;
+        const over = contextTier ?? cost?.context_over_200k;
+
+        const perToken = (perMillion?: number): number | undefined =>
+            typeof perMillion === 'number'
+                ? perMillion / PER_MILLION
+                : undefined;
+
+        return {
+            provider,
+            input: this.toTokenPrice(
+                perToken(cost?.input),
+                perToken(over?.input),
+                threshold,
+            ),
+            output: this.toTokenPrice(
+                perToken(cost?.output),
+                perToken(over?.output),
+                threshold,
+            ),
+            cacheRead: this.toTokenPrice(
+                perToken(cost?.cache_read),
+                perToken(over?.cache_read),
+                threshold,
+            ),
+            cacheWrite: this.toTokenPrice(
+                perToken(cost?.cache_write),
+                perToken(over?.cache_write),
+                threshold,
+            ),
+            ...(typeof cost?.reasoning === 'number'
+                ? { reasoning: cost.reasoning / PER_MILLION }
+                : {}),
+        };
+    }
+
+    private fromLiteLLM(entry: LiteLLMModel): CatalogEntry {
+        return {
+            provider: entry.litellm_provider,
+            input: this.toTokenPrice(
+                entry.input_cost_per_token,
+                entry.input_cost_per_token_above_200k_tokens,
+                TIER_THRESHOLD_200K,
+            ),
+            output: this.toTokenPrice(
+                entry.output_cost_per_token,
+                entry.output_cost_per_token_above_200k_tokens,
+                TIER_THRESHOLD_200K,
+            ),
+            cacheRead: this.toTokenPrice(
+                entry.cache_read_input_token_cost,
+                entry.cache_read_input_token_cost_above_200k_tokens,
+                TIER_THRESHOLD_200K,
+            ),
+            cacheWrite: this.toTokenPrice(
+                entry.cache_creation_input_token_cost,
+                entry.cache_creation_input_token_cost_above_200k_tokens,
+                TIER_THRESHOLD_200K,
+            ),
+        };
     }
 
     private async getModelInfo(
         model: string,
         provider?: string,
     ): Promise<ModelPricingInfo> {
-        const catalog = await this.getCatalog();
-        const match = this.lookupModel(catalog, model, provider);
+        // models.dev is the source of truth; LiteLLM stays as a fallback so
+        // nothing it priced regresses during the cutover. Each source failing
+        // to fetch is non-fatal as long as the other resolves the model.
+        const match =
+            (await this.lookupIn(
+                () => this.getModelsDevCatalog(),
+                'models.dev',
+                model,
+                provider,
+            )) ??
+            (await this.lookupIn(
+                () => this.getLiteLLMCatalog(),
+                'litellm',
+                model,
+                provider,
+            ));
 
         if (!match) {
             this.logger.warn({
-                message: 'Model not found in LiteLLM catalog',
+                message: 'Model not found in pricing catalogs',
                 context: TokenPricingUseCase.name,
                 metadata: { model, provider },
             });
@@ -197,18 +458,39 @@ export class TokenPricingUseCase {
         return this.toPricingInfo(match.id, match.data, provider);
     }
 
-    /**
-     * LiteLLM keys are typically the bare model id (`claude-sonnet-4-5`,
-     * `gemini-3.1-pro-preview-customtools`), sometimes provider-prefixed
-     * (`vertex_ai/gemini-...`, `openrouter/google/...`). We try exact match,
-     * then the unprefixed variant, then provider-prefixed variants, then a
-     * best-effort prefix search so versioned model ids still resolve.
-     */
-    private lookupModel(
-        catalog: Record<string, LiteLLMModel>,
+    private async lookupIn(
+        getCatalog: () => Promise<PricingCatalog>,
+        source: string,
         model: string,
         provider?: string,
-    ): { id: string; data: LiteLLMModel } | null {
+    ): Promise<{ id: string; data: CatalogEntry } | null> {
+        let catalog: PricingCatalog;
+        try {
+            catalog = await getCatalog();
+        } catch (error) {
+            this.logger.warn({
+                message: 'Pricing catalog fetch failed',
+                error,
+                context: TokenPricingUseCase.name,
+                metadata: { source, model },
+            });
+            return null;
+        }
+        return this.lookupModel(catalog, model, provider);
+    }
+
+    /**
+     * Catalog keys are either the bare model id (`kimi-k2.6`) or
+     * provider-prefixed (`moonshotai/kimi-k2.6`, `vertex_ai/gemini-...`). We
+     * try exact match, then the unprefixed variant, then provider-prefixed
+     * variants, then a best-effort prefix search (on the full key AND its last
+     * segment) so versioned or provider-nested ids still resolve.
+     */
+    private lookupModel(
+        catalog: PricingCatalog,
+        model: string,
+        provider?: string,
+    ): { id: string; data: CatalogEntry } | null {
         if (!model) return null;
 
         const normalized = model.trim();
@@ -224,7 +506,7 @@ export class TokenPricingUseCase {
             ? colonNormalized.split('/').slice(1).join('/')
             : colonNormalized;
 
-        const direct = [normalized, lowered, withoutPrefix];
+        const direct = [normalized, lowered, colonNormalized, withoutPrefix];
         for (const key of direct) {
             if (catalog[key]) return { id: key, data: catalog[key] };
         }
@@ -233,9 +515,11 @@ export class TokenPricingUseCase {
             const providerLower = provider.toLowerCase();
             const providerVariants = [
                 providerLower,
-                // LiteLLM uses `vertex_ai` but our BYOK enum uses `google-vertex`.
+                // LiteLLM uses `vertex_ai`, models.dev `google-vertex`; our
+                // BYOK enum uses `google-vertex`.
                 providerLower.replace('google-vertex', 'vertex_ai'),
                 providerLower.replace('google-gemini', 'gemini'),
+                providerLower.replace('google-gemini', 'google'),
             ];
             for (const prov of providerVariants) {
                 for (const key of direct) {
@@ -247,11 +531,16 @@ export class TokenPricingUseCase {
             }
         }
 
-        // Prefix fallback — e.g. a passed model "gemini-3.1-pro-preview" should
-        // resolve against "gemini-3.1-pro-preview-customtools" if that's the
-        // only variant present.
+        // Prefix fallback — e.g. a passed model "gemini-3.1-pro-preview"
+        // should resolve against "gemini-3.1-pro-preview-customtools" if
+        // that's the only variant present. Matching the key's last segment
+        // too lets a bare id land on a provider-prefixed key.
         for (const key of Object.keys(catalog)) {
-            if (key.toLowerCase().startsWith(withoutPrefix)) {
+            const keyLower = key.toLowerCase();
+            if (
+                keyLower.startsWith(withoutPrefix) ||
+                keyLower.split('/').pop()!.startsWith(withoutPrefix)
+            ) {
                 return { id: key, data: catalog[key] };
             }
         }
@@ -261,51 +550,33 @@ export class TokenPricingUseCase {
 
     private toPricingInfo(
         id: string,
-        entry: LiteLLMModel,
+        entry: CatalogEntry,
         provider?: string,
     ): ModelPricingInfo {
-        const input = this.toTokenPrice(
-            entry.input_cost_per_token,
-            entry.input_cost_per_token_above_200k_tokens,
-        );
-        const output = this.toTokenPrice(
-            entry.output_cost_per_token,
-            entry.output_cost_per_token_above_200k_tokens,
-        );
-        const cacheRead = this.toTokenPrice(
-            entry.cache_read_input_token_cost,
-            entry.cache_read_input_token_cost_above_200k_tokens,
-        );
-        const cacheWrite = this.toTokenPrice(
-            entry.cache_creation_input_token_cost,
-            entry.cache_creation_input_token_cost_above_200k_tokens,
-        );
-
         return {
             id,
-            provider: provider ?? entry.litellm_provider,
+            provider: provider ?? entry.provider,
             pricing: {
-                input,
-                output,
-                cacheRead,
-                cacheWrite,
-                prompt: input.default,
-                completion: output.default,
-                internal_reasoning: output.default,
+                input: entry.input,
+                output: entry.output,
+                cacheRead: entry.cacheRead,
+                cacheWrite: entry.cacheWrite,
+                prompt: entry.input.default,
+                completion: entry.output.default,
+                internal_reasoning: entry.reasoning ?? entry.output.default,
             },
         };
     }
 
-    private toTokenPrice(base?: number, tieredRate?: number): TokenPrice {
+    private toTokenPrice(
+        base?: number,
+        tieredRate?: number,
+        threshold: number = TIER_THRESHOLD_200K,
+    ): TokenPrice {
         return {
             default: typeof base === 'number' ? base : 0,
             ...(typeof tieredRate === 'number'
-                ? {
-                      tier: {
-                          threshold: LITELLM_TIER_THRESHOLD_TOKENS,
-                          rate: tieredRate,
-                      },
-                  }
+                ? { tier: { threshold, rate: tieredRate } }
                 : {}),
         };
     }
