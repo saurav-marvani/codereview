@@ -30,7 +30,10 @@ import * as yaml from 'js-yaml';
 import { decrypt } from '@libs/common/utils/crypto';
 import { ValidateCodeManagementIntegration } from '@libs/common/utils/decorators/validate-code-management-integration.decorator';
 import { deepMerge } from '@libs/common/utils/deep';
-import { getDefaultKodusConfigFile } from '@libs/common/utils/validateCodeReviewConfigFile';
+import {
+    buildDefaultGlobalCodeReviewConfig,
+    getDefaultKodusConfigFile,
+} from '@libs/common/utils/validateCodeReviewConfigFile';
 import { CacheService } from '@libs/core/cache/cache.service';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import {
@@ -125,10 +128,24 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 this.getKodyFineTuningConfigParameter(organizationAndTeamData),
             ]);
 
+            // Self-heal: a team can reach a review without its
+            // `code_review_config` row (created too late in onboarding, or a
+            // creation write that failed). Persist the default global config so
+            // this review — and every one after it — runs on a real row instead
+            // of only the in-memory DEFAULT_CONFIG. Best-effort: if the write
+            // fails, getMergedCodeReviewConfigs still falls back to DEFAULT_CONFIG.
+            let codeReviewConfigValue = parameters?.configValue;
+            if (!parameters) {
+                codeReviewConfigValue =
+                    await this.ensureDefaultCodeReviewConfig(
+                        organizationAndTeamData,
+                    );
+            }
+
             const mergedConfigs = await this.getMergedCodeReviewConfigs(
                 organizationAndTeamData,
                 repository,
-                parameters?.configValue,
+                codeReviewConfigValue,
                 defaultBranch,
                 preliminaryFiles || [],
             );
@@ -323,6 +340,43 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
             severity,
             generation,
         };
+    }
+
+    /**
+     * Persist and return the default global `code_review_config` for a team
+     * that reached a review without one. Best-effort: a write failure logs and
+     * returns the in-memory default so the review still proceeds.
+     */
+    private async ensureDefaultCodeReviewConfig(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<CodeReviewParameter> {
+        const defaultConfig = buildDefaultGlobalCodeReviewConfig();
+
+        try {
+            await this.parametersService.createOrUpdateConfig(
+                ParametersKey.CODE_REVIEW_CONFIG,
+                defaultConfig,
+                organizationAndTeamData,
+            );
+
+            this.logger.log({
+                message:
+                    'Persisted default code_review_config at review time for a team without one',
+                context: CodeBaseConfigService.name,
+                metadata: { organizationAndTeamData },
+            });
+        } catch (error) {
+            this.logger.warn({
+                message:
+                    'Failed to persist default code_review_config at review time; using in-memory default',
+                context: CodeBaseConfigService.name,
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
+                metadata: { organizationAndTeamData },
+            });
+        }
+
+        return defaultConfig;
     }
 
     async getMergedCodeReviewConfigs(
