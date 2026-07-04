@@ -1,10 +1,18 @@
-import { getEnv, requireEnv } from '../config.js';
+import { getEnv } from '../config.js';
 import type { CreateVmParams, LiveVm, VmInfo, VmProvider } from './types.js';
 
 const HCLOUD_API = 'https://api.hetzner.cloud/v1';
 
+function hcloudToken(): string {
+    // HCLOUD_TOKEN is the canonical name; HETZNER_DEV is the alias used in
+    // this operator's ~/.kodus-dev/config.
+    const t = getEnv('HCLOUD_TOKEN') ?? getEnv('HETZNER_DEV');
+    if (!t) throw new Error('Required env HCLOUD_TOKEN (or HETZNER_DEV) is not set');
+    return t;
+}
+
 async function hcloudFetch(path: string, init: RequestInit = {}): Promise<any> {
-    const token = requireEnv('HCLOUD_TOKEN');
+    const token = hcloudToken();
     const res = await fetch(`${HCLOUD_API}${path}`, {
         ...init,
         headers: {

@@ -414,4 +414,161 @@ export async function diagnoseFailure(
     throw new Error(`Diagnosis hit the ${MAX_TURNS}-turn limit`);
 }
 
+const VALIDATE_SYSTEM_PROMPT = `You are Kody's PR-validation agent. You have root shell access (via the bash tool) to a VM where the customer repository is checked out at the repo root (commands start there, customer env exported). The working environment (toolchain, deps, build) is already set up. The pull request under review is the current git working-tree diff (git diff shows it); you also get the PR title and description.
+
+Your mission: decide whether this PR introduces bugs — by ACTUALLY EXERCISING the affected behavior, not by code reading alone. Be ADVERSARIAL, not confirmatory: the PR description is the author's claim, possibly wrong or incomplete. Your job is to try to BREAK it, not to reproduce the happy path it describes.
+1. Read the PR description and diff. List the behaviors it touches and every claim it makes.
+2. For EACH claim, construct the input MOST LIKELY TO FALSIFY IT — deliberately hit the boundary the description hand-waves or excludes. Concretely:
+   - When a claim says "X is handled correctly", test the value that would expose X being handled WRONG, not one that trivially passes.
+   - When the diff transforms one side of a comparison but EXCLUDES the other (e.g. lowercases input but not the pattern; trims one field not the other; casts one operand), test whether the two sides are now INCONSISTENT — that asymmetry is the classic bug. Do not reuse an input that already satisfies both sides (e.g. a regex that already carries an 'i' flag hides a missing-'i' bug — use a pattern with an uppercase literal and lowercase-only input, and vice-versa).
+   - Test the inverse/negated operator too (a bug in a predicate usually inverts into a false positive in its negation).
+   - Cover empty/null/boundary and, for anything touching eval/templating/paths/auth, the malicious input (injection, traversal, scope bypass).
+   Existing unit tests passing means little — they encode the OLD assumptions and rarely cover the new edge. Write NEW probes.
+3. Execute the checks. Prefer end-to-end through the running app (API or UI — playwright+chromium available); a direct probe of the changed function (import the built/source module in a test/script) is acceptable and often the sharpest way to hit the exact edge. For any bug you report, show the executed repro (command + observed vs expected).
+4. Call finish with verdict and bugs. Every bug: what you ran, expected vs actual, and the file/line responsible. Do NOT report style/hypotheticals you could not reproduce. A clean APPROVE is only valid if you actually TRIED the falsifying inputs and they behaved correctly — list them in the summary.
+
+Rules: be economical with output (~12k chars visible per command). Long boots need generous waits. Kill any server you start when done (kill by pid file or port, never pkill -f). If the PR is fine, say so — a clean verdict with evidence of what you exercised is a valid outcome. Call finish exactly once.`;
+
+const VALIDATE_TOOLS: Anthropic.Tool[] = [
+    TOOLS[0], // bash
+    {
+        name: 'finish',
+        description: 'Report the validation verdict.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                verdict: { type: 'string', enum: ['approve', 'request_changes'] },
+                summary: { type: 'string', description: 'What was exercised and how.' },
+                bugs: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            description: { type: 'string' },
+                            evidence: { type: 'string', description: 'Executed repro: command(s), expected vs actual.' },
+                            file: { type: 'string' },
+                            severity: { type: 'string', enum: ['critical', 'major', 'minor'] },
+                        },
+                        required: ['description', 'evidence', 'file', 'severity'],
+                    },
+                },
+                lessons: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['verdict', 'summary', 'bugs'],
+        },
+    },
+];
+
+export interface ValidateResult {
+    verdict: string;
+    summary: string;
+    bugs: Array<{ description: string; evidence: string; file: string; severity: string }>;
+    turns: number;
+    transcriptPath: string;
+}
+
+export async function validatePr(
+    state: PreviewState,
+    pr: { title: string; description: string },
+    opts: { model?: string } = {},
+): Promise<ValidateResult> {
+    const model = opts.model ?? getEnv('PREVIEW_AGENT_MODEL') ?? DEFAULT_MODEL;
+    const isKimi = model.startsWith('kimi');
+    const baseURL =
+        getEnv('PREVIEW_AGENT_BASE_URL') ??
+        (isKimi ? 'https://api.kimi.com/coding' : undefined);
+    const apiKey =
+        getEnv('PREVIEW_AGENT_API_KEY') ??
+        (isKimi
+            ? getEnv('KIMI_CODING_PLAN_KEY')
+            : (getEnv('ANTHROPIC_API_KEY') ?? getEnv('BYOK_ANTHROPIC_API_KEY')));
+    if (!apiKey) throw new Error(`No API key for model '${model}'`);
+    const client = new Anthropic({ apiKey, baseURL });
+
+    const runDir = join(RUNS_DIR, state.name);
+    mkdirSync(runDir, { recursive: true });
+    const transcriptPath = join(
+        runDir,
+        `validate-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`,
+    );
+    const logLine = (obj: unknown) =>
+        appendFileSync(transcriptPath, JSON.stringify(obj) + '\n');
+
+    const messages: Anthropic.MessageParam[] = [
+        {
+            role: 'user',
+            content: `PR title: ${pr.title}\n\nPR description:\n${pr.description}\n\nThe PR's changes are the current git working-tree diff. Validate this PR hands-on and call finish with your verdict.`,
+        },
+    ];
+
+    for (let turn = 1; turn <= MAX_TURNS; turn++) {
+        const response = await client.messages.create({
+            model,
+            max_tokens: 8192,
+            system: VALIDATE_SYSTEM_PROMPT + loadLessons(),
+            tools: VALIDATE_TOOLS,
+            messages,
+        });
+        logLine({ turn, role: 'assistant', content: response.content });
+        const text = response.content
+            .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+            .map((b) => b.text)
+            .join('\n');
+        if (text.trim()) console.log(`\n[agent:${turn}] ${text.trim()}`);
+
+        const toolUses = response.content.filter(
+            (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
+        );
+        if (!toolUses.length) {
+            messages.push(
+                { role: 'assistant', content: response.content },
+                { role: 'user', content: 'Continue validating, or call finish.' },
+            );
+            continue;
+        }
+        messages.push({ role: 'assistant', content: response.content });
+        const toolResults: Anthropic.ToolResultBlockParam[] = [];
+        for (const toolUse of toolUses) {
+            if (toolUse.name === 'finish') {
+                const input = toolUse.input as any;
+                appendLessons(input.lessons);
+                logLine({ turn, finish: input });
+                return {
+                    verdict: input.verdict,
+                    summary: input.summary,
+                    bugs: input.bugs ?? [],
+                    turns: turn,
+                    transcriptPath,
+                };
+            }
+            const input = toolUse.input as {
+                command: string;
+                timeout_seconds?: number;
+            };
+            console.log(`\n[bash:${turn}] $ ${input.command}`);
+            const res = await sshExec(state, wrapCommand(state, input.command), {
+                timeoutMs: (input.timeout_seconds ?? 300) * 1000,
+            });
+            console.log(
+                `[bash:${turn}] exit ${res.exitCode} in ${Math.round(res.durationMs / 1000)}s`,
+            );
+            logLine({ turn, tool: 'bash', input, exitCode: res.exitCode });
+            toolResults.push({
+                type: 'tool_result',
+                tool_use_id: toolUse.id,
+                content:
+                    `exit_code: ${res.exitCode}${res.timedOut ? ' (TIMED OUT)' : ''}\n` +
+                    truncateForModel(
+                        [res.stdout, res.stderr && `--- stderr ---\n${res.stderr}`]
+                            .filter(Boolean)
+                            .join('\n'),
+                    ),
+                is_error: res.exitCode !== 0,
+            });
+        }
+        messages.push({ role: 'user', content: toolResults });
+    }
+    throw new Error(`Validation hit the ${MAX_TURNS}-turn limit`);
+}
+
 export { dumpPlaybook };

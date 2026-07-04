@@ -2,7 +2,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { detectEnvironment, diagnoseFailure, dumpPlaybook } from './agent.js';
+import { detectEnvironment, diagnoseFailure, dumpPlaybook, validatePr } from './agent.js';
 import { getEnv } from './config.js';
 import {
     PHASES,
@@ -227,7 +227,7 @@ async function cmdUp(args: Args): Promise<void> {
     );
     if (clone.exitCode !== 0) {
         // Keep token out of the error output.
-        throw new Error(`git clone failed:\n${clone.stderr.replaceAll(token ?? ' ', '***')}`);
+        throw new Error(`git clone failed:\n${(token ? clone.stderr.replaceAll(token, '***') : clone.stderr)}`);
     }
     console.log(`\nenv '${name}' is up.`);
     console.log(`  next: pnpm run preview detect --name ${name}`);
@@ -362,6 +362,32 @@ async function cmdArtifacts(args: Args): Promise<void> {
     console.log(check.stdout.trim());
 }
 
+/**
+ * Validates "the PR under review" (= the VM's git working-tree diff): the
+ * agent derives targeted checks from the diff + description, exercises the
+ * running app, and reports reproduced bugs with evidence.
+ */
+async function cmdValidate(args: Args): Promise<void> {
+    const name = normalizeName(str(args, 'name') ?? 'default');
+    const state = loadState(name);
+    const title = str(args, 'title') ?? 'Untitled PR';
+    let description = str(args, 'desc') ?? '';
+    const descFile = str(args, 'desc-file');
+    if (descFile) description = readFileSync(descFile, 'utf8');
+    const result = await validatePr(state, { title, description }, {
+        model: str(args, 'model'),
+    });
+    console.log(`\n=== VALIDATION: ${result.verdict.toUpperCase()} (${result.turns} turns, ${result.bugs.length} bug(s)) ===`);
+    console.log(result.summary);
+    for (const bug of result.bugs) {
+        console.log(`\n[${bug.severity}] ${bug.file}`);
+        console.log(`  ${bug.description}`);
+        console.log(`  evidence: ${bug.evidence}`);
+    }
+    console.log(`\ntranscript: ${result.transcriptPath}`);
+    process.exitCode = result.verdict === 'approve' ? 0 : 1;
+}
+
 /** Manually record a lesson for future agent runs. */
 async function cmdLearn(args: Args): Promise<void> {
     const lesson = str(args, 'rest') ?? args._.slice(1).join(' ');
@@ -389,11 +415,11 @@ async function cmdStatus(): Promise<void> {
     for (const s of states) {
         console.log(`  ${s.name}  ${s.serverIp}  ${s.repoUrl ?? ''}  created ${s.createdAt}`);
     }
-    for (const [kind, tokenVar] of [
-        ['digitalocean', 'DIGITALOCEAN_TOKEN'],
-        ['hetzner', 'HCLOUD_TOKEN'],
+    for (const [kind, tokenVars] of [
+        ['digitalocean', ['DIGITALOCEAN_TOKEN']],
+        ['hetzner', ['HCLOUD_TOKEN', 'HETZNER_DEV']],
     ] as const) {
-        if (!getEnv(tokenVar)) continue;
+        if (!tokenVars.some((v) => getEnv(v))) continue;
         const provider = getProvider(kind);
         const live = await provider.listByPrefix(VM_PREFIX);
         console.log(`\nlive VMs on ${provider.kind} (${live.length}):`);
@@ -428,6 +454,7 @@ async function main(): Promise<void> {
         case 'diagnose': return cmdDiagnose(args);
         case 'artifacts': return cmdArtifacts(args);
         case 'learn': return cmdLearn(args);
+        case 'validate': return cmdValidate(args);
         case 'exec': return cmdExec(args);
         case 'ssh': {
             const state = loadState(normalizeName(str(args, 'name') ?? 'default'));
