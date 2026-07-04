@@ -543,6 +543,7 @@ export async function validatePr(
     const messages: Anthropic.MessageParam[] = [
         { role: 'user', content: firstMessage },
     ];
+    let bounced = false; // harness-enforced execution grounding: one bounce max
 
     for (let turn = 1; turn <= MAX_TURNS; turn++) {
         const response = await client.messages.create({
@@ -574,6 +575,30 @@ export async function validatePr(
         for (const toolUse of toolUses) {
             if (toolUse.name === 'finish') {
                 const input = toolUse.input as any;
+                // Harness-enforced execution grounding: a critical/major finding
+                // whose evidence reads as reasoning-not-execution (placeholder or
+                // deferral markers) is bounced back once, demanding a real repro.
+                // (Prompt-requested execution degrades for hard exploits; the
+                // harness must gate on execution artifacts, not the model's word.)
+                const unexecuted = (input.bugs ?? []).filter(
+                    (b: any) =>
+                        (b.severity === 'critical' || b.severity === 'major') &&
+                        /\b(todo|need(s)? (to )?(exercise|test|verify|reproduce)|not (yet )?(exercised|reproduced|verified|tested)|would (likely |probably )?(succeed|work|allow|return)|should (succeed|work|allow|return)|couldn'?t (run|exec|verify)|unable to (run|exec|verify))\b/i.test(
+                            `${b.evidence ?? ''} ${input.summary ?? ''}`,
+                        ),
+                );
+                if (unexecuted.length && !bounced) {
+                    bounced = true;
+                    logLine({ turn, bouncedFinish: input });
+                    toolResults.push({
+                        type: 'tool_result',
+                        tool_use_id: toolUse.id,
+                        is_error: true,
+                        content:
+                            `REJECTED: ${unexecuted.length} finding(s) are reported as reasoned-but-not-executed (e.g. "${(unexecuted[0].evidence ?? '').slice(0, 80)}"). A critical/major finding is not acceptable without an EXECUTED reproduction against the running app. Boot the app now, set up the minimal state the exploit needs (e.g. two users, a resource owned by one), perform the attack as the wrong principal, and capture the REAL command output showing it succeeded (and the control case that should fail). Then call finish with that observed output as evidence.`,
+                    });
+                    break;
+                }
                 appendLessons(input.lessons);
                 logLine({ turn, finish: input });
                 return {
@@ -609,7 +634,9 @@ export async function validatePr(
                 is_error: res.exitCode !== 0,
             });
         }
-        messages.push({ role: 'user', content: toolResults });
+        if (toolResults.length) {
+            messages.push({ role: 'user', content: toolResults });
+        }
     }
     throw new Error(`Validation hit the ${MAX_TURNS}-turn limit`);
 }
