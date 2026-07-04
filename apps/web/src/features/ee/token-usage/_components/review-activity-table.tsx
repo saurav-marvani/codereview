@@ -69,9 +69,10 @@ export const ReviewActivityTable = ({
     const [expanded, setExpanded] = useState(false);
 
     const runs = useMemo(() => {
+        const selected = new Set(selectedModels);
         const byRun = new Map<string, RunRow>();
         for (const row of rows) {
-            if (!selectedModels.includes(row.model)) continue;
+            if (!selected.has(row.model)) continue;
             const existing = byRun.get(row.review);
             const cost = rowCost(row, pricing[row.model]).total;
             if (!existing) {
@@ -97,7 +98,9 @@ export const ReviewActivityTable = ({
                 }
             }
         }
-        return Array.from(byRun.values()).sort((a, b) => b.tokens - a.tokens);
+        // Most expensive first — matches the "sorted by spend" heading and the
+        // Cost column (a cheap high-token run must not outrank a costly one).
+        return Array.from(byRun.values()).sort((a, b) => b.cost - a.cost);
     }, [rows, selectedModels, pricing]);
 
     if (!runs.length) return null;

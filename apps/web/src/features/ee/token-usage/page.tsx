@@ -149,11 +149,12 @@ export default async function TokenUsagePage({
     const prRows = overview.byPr ?? [];
     const byArea: UsageByAreaResultContract[] = overview.byArea ?? [];
 
-    // One review run = one correlationId; label rows "#PR · shortId" so two
-    // runs on the same PR read as siblings, not duplicates.
+    // One review run = one correlationId. Keep the FULL id in the key so two
+    // runs on the same PR never collide into one bar/row; the chart axis and
+    // the table truncate it for display (tooltip shows the full value).
     const reviewRows = (reviewData ?? []).map((r) => ({
         ...r,
-        review: `${r.prNumber != null ? `#${r.prNumber} · ` : ""}${r.review.slice(0, 8)}`,
+        review: `${r.prNumber != null ? `#${r.prNumber} · ` : ""}${r.review}`,
     }));
 
     data =

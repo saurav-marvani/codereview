@@ -52,9 +52,10 @@ export const AreaBreakdown = ({
     selectedModels: string[];
 }) => {
     const areas = useMemo(() => {
+        const selected = new Set(selectedModels);
         const byArea = new Map<string, number>();
         for (const row of rows) {
-            if (!selectedModels.includes(row.model)) continue;
+            if (!selected.has(row.model)) continue;
             // Collapse any area without a known label into the single 'other'
             // bucket BEFORE summing — otherwise two unmapped raw values would
             // render as separate bars both labeled "Other", splitting the

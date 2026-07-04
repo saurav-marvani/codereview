@@ -41,12 +41,17 @@ describe('PullRequestsRepository — multi-tenant filter coverage', () => {
         const mockFind = (docs: Array<{ number: number }>) => {
             const findExec = jest.fn().mockResolvedValue(docs);
             const lean = jest.fn().mockReturnValue({ exec: findExec });
-            model.find = jest.fn().mockReturnValue({ lean });
-            return model.find as jest.Mock;
+            const limit = jest.fn().mockReturnValue({ lean });
+            const sort = jest.fn().mockReturnValue({ limit });
+            model.find = jest.fn().mockReturnValue({ sort });
+            return { find: model.find as jest.Mock, sort, limit };
         };
 
-        it('filters by org + repository.id and projects only the number', async () => {
-            const find = mockFind([{ number: 7 }, { number: 9 }]);
+        it('filters by org + repository.id, projects only the number, and caps the result', async () => {
+            const { find, sort, limit } = mockFind([
+                { number: 7 },
+                { number: 9 },
+            ]);
 
             const numbers = await repo.findNumbersByRepositoryId(
                 'org-A',
@@ -60,10 +65,13 @@ describe('PullRequestsRepository — multi-tenant filter coverage', () => {
                 'repository.id': 'repo-alpha',
             });
             expect(projection).toEqual({ number: 1 });
+            // Newest first, bounded so a huge repo can't blow up the $in.
+            expect(sort).toHaveBeenCalledWith({ createdAt: -1 });
+            expect(limit).toHaveBeenCalledWith(10_000);
         });
 
         it('bounds by createdAt when an `until` date is given', async () => {
-            const find = mockFind([]);
+            const { find } = mockFind([]);
             const until = new Date('2026-06-30');
 
             await repo.findNumbersByRepositoryId('org-A', 'r', until);

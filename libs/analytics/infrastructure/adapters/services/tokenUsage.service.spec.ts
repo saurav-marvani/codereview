@@ -16,7 +16,7 @@ describe('TokenUsageService — repository scope', () => {
             ...over,
         }) as TokenUsageQueryContract;
 
-    const setup = () => {
+    const setup = (opts: { cacheHit?: number[] } = {}) => {
         const repository = {
             getSummary: jest.fn().mockResolvedValue({}),
             getUsageByReview: jest.fn().mockResolvedValue([]),
@@ -27,11 +27,17 @@ describe('TokenUsageService — repository scope', () => {
                 .fn()
                 .mockResolvedValue([101, 202, 303]),
         };
+        // Default: cache miss (pass-through), so per-call assertions hold.
+        const cacheService = {
+            getFromCache: jest.fn().mockResolvedValue(opts.cacheHit ?? null),
+            addToCache: jest.fn(),
+        };
         const service = new TokenUsageService(
             repository as any,
             pullRequestsService as any,
+            cacheService as any,
         );
-        return { service, repository, pullRequestsService };
+        return { service, repository, pullRequestsService, cacheService };
     };
 
     it('resolves repositoryId → PR numbers and scopes the read with them', async () => {
@@ -76,6 +82,21 @@ describe('TokenUsageService — repository scope', () => {
         );
         expect(repository.getUsageOverview).toHaveBeenCalledWith(
             expect.objectContaining({ prNumbers: [101, 202, 303] }),
+        );
+    });
+
+    it('reuses a memoized resolution instead of re-querying (cache hit)', async () => {
+        const { service, repository, pullRequestsService } = setup({
+            cacheHit: [55, 66],
+        });
+
+        await service.getSummary(baseQuery({ repositoryId: 'repo-alpha' }));
+
+        expect(
+            pullRequestsService.findNumbersByRepositoryId,
+        ).not.toHaveBeenCalled();
+        expect(repository.getSummary).toHaveBeenCalledWith(
+            expect.objectContaining({ prNumbers: [55, 66] }),
         );
     });
 
