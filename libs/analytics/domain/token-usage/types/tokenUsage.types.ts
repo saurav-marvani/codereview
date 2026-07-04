@@ -6,6 +6,17 @@ export type TokenUsageQueryContract = {
     prNumber?: number;
     timezone?: string; // for day bucketing
     developer?: string;
+    /**
+     * Scope to one repository. Usage spans don't carry a repository id, so
+     * the service resolves this to the repo's PR numbers (`prNumbers`) and
+     * the read matches `attributes.prNumber ∈ prNumbers` — same join the
+     * by-developer view already relies on (PR numbers are assumed unique
+     * enough within an org; a cross-repo number collision over-includes,
+     * matching the existing by-developer behavior).
+     */
+    repositoryId?: string;
+    /** Internal: PR numbers resolved from `repositoryId`. */
+    prNumbers?: number[];
     byok: boolean;
 };
 

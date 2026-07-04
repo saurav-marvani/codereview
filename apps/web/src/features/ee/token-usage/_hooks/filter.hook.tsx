@@ -52,6 +52,15 @@ export const useTokenUsageFilters = (models: string[]) => {
     );
     const debouncedDeveloper = useDebounce(developer, 500);
 
+    const selectedRepositoryId = searchParams.get("repositoryId") ?? "";
+
+    const handleRepositoryChange = (repositoryId: string) => {
+        const params = new URLSearchParams(searchParams.toString());
+        if (repositoryId) params.set("repositoryId", repositoryId);
+        else params.delete("repositoryId");
+        navigate(`${pathname}?${params.toString()}`);
+    };
+
     const handleFilterChange = (value: string) => {
         const params = new URLSearchParams(searchParams.toString());
         params.set("filter", value);
@@ -147,6 +156,8 @@ export const useTokenUsageFilters = (models: string[]) => {
         selectedModels,
         prNumber,
         developer,
+        selectedRepositoryId,
+        handleRepositoryChange,
         handleFilterChange,
         handleModelChange,
         handlePrNumberChange,

@@ -19,15 +19,19 @@ import {
     SelectValue,
 } from "@components/ui/select";
 
+import { useGetSelectedRepositories } from "@services/codeManagement/hooks";
 import { ChevronDownIcon } from "lucide-react";
+import { safeArray } from "src/core/utils/safe-array";
 
 import { useTokenUsageFilters } from "../_hooks/filter.hook";
 
 export const Filters = ({
     models,
+    teamId,
     filters,
 }: {
     models: string[];
+    teamId: string;
     filters: ReturnType<typeof useTokenUsageFilters>;
 }) => {
     const {
@@ -35,6 +39,8 @@ export const Filters = ({
         selectedModels,
         prNumber,
         developer,
+        selectedRepositoryId,
+        handleRepositoryChange,
         handleFilterChange,
         handleModelChange,
         handlePrNumberChange,
@@ -42,6 +48,9 @@ export const Filters = ({
         setSelectedModels,
         getModelSelectionText,
     } = filters;
+
+    const { data: repositories } = useGetSelectedRepositories(teamId);
+    const repoOptions = safeArray(repositories);
 
     return (
         <div className="flex gap-4">
@@ -98,6 +107,26 @@ export const Filters = ({
                     ))}
                 </DropdownMenuContent>
             </DropdownMenu>
+
+            {repoOptions.length > 0 && (
+                <Select
+                    onValueChange={(v) =>
+                        handleRepositoryChange(v === "all" ? "" : v)
+                    }
+                    value={selectedRepositoryId || "all"}>
+                    <SelectTrigger className="w-[220px]">
+                        <SelectValue placeholder="Repository" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All repositories</SelectItem>
+                        {repoOptions.map((repo) => (
+                            <SelectItem key={repo.id} value={repo.id}>
+                                {repo.name}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            )}
 
             <Select
                 onValueChange={handleFilterChange}

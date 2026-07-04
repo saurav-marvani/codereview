@@ -3,6 +3,8 @@ export type TokenUsageQueryContract = {
     endDate: string;
     prNumber?: number;
     timezone?: string; // for day bucketing
+    /** Scope to one repository (resolved to its PR numbers server-side). */
+    repositoryId?: string;
     byok: boolean;
 };
 

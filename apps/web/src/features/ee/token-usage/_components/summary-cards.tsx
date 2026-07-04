@@ -6,6 +6,7 @@ import {
     TooltipTrigger,
 } from "@components/ui/tooltip";
 import { HelpCircleIcon } from "lucide-react";
+import { PercentageDiff } from "src/features/ee/cockpit/_components/percentage-diff";
 
 function formatNumber(num: number): string {
     if (num >= 1_000_000) {
@@ -45,7 +46,15 @@ interface CardSpec {
     value: string;
     footer?: string;
     tooltip?: string;
+    /** Percent change vs the previous window (cockpit PercentageDiff). */
+    delta?: number;
 }
+
+/** % change current vs previous; null when there's no meaningful baseline. */
+const pctChange = (current: number, previous?: number | null) =>
+    previous && previous > 0
+        ? Math.round(((current - previous) / previous) * 100)
+        : null;
 
 /**
  * KPI row in the cockpit MetricCard vocabulary (see
@@ -57,10 +66,16 @@ export const SummaryCards = ({
     totalUsage,
     avgPerDay,
     avgPerPR,
+    savedByCache = 0,
+    previousTotals,
 }: {
     totalUsage: TotalUsageShape;
     avgPerDay: number;
     avgPerPR: number;
+    /** USD saved by prompt caching vs paying the full input rate. */
+    savedByCache?: number;
+    /** Totals of the same-length window immediately before this one. */
+    previousTotals?: { cost: number; tokens: number } | null;
 }) => {
     // Backend's `totals.input` already excludes cache reads — name the local
     // alias explicitly so the rendering is unambiguous.
@@ -71,6 +86,9 @@ export const SummaryCards = ({
             label: "Total cost",
             value: formatCurrency(totalUsage.totalCost),
             footer: `≈ ${formatCurrency(avgPerDay)}/day · ${formatCurrency(avgPerPR)}/PR`,
+            delta:
+                pctChange(totalUsage.totalCost, previousTotals?.cost) ??
+                undefined,
         },
         {
             label: "Total tokens",
@@ -79,6 +97,9 @@ export const SummaryCards = ({
                 totalUsage.outputReasoning > 0
                     ? `incl. ${formatNumber(totalUsage.outputReasoning)} reasoning`
                     : undefined,
+            delta:
+                pctChange(totalUsage.total, previousTotals?.tokens) ??
+                undefined,
         },
         {
             label: "Uncached input",
@@ -88,9 +109,12 @@ export const SummaryCards = ({
         {
             label: "Cache read",
             value: formatNumber(totalUsage.cacheRead),
-            footer: formatCurrency(totalUsage.cacheReadCost),
+            footer:
+                savedByCache > 0.01
+                    ? `${formatCurrency(totalUsage.cacheReadCost)} · saved ${formatCurrency(savedByCache)}`
+                    : formatCurrency(totalUsage.cacheReadCost),
             tooltip:
-                "Input tokens served from the provider's prompt cache. Already counted inside input tokens; shown separately because they're billed at a discounted rate.",
+                "Input tokens served from the provider's prompt cache. Already counted inside input tokens; shown separately because they're billed at a discounted rate. \"Saved\" compares against paying the full input rate for these tokens.",
         },
         {
             label: "Output",
@@ -144,8 +168,19 @@ export const SummaryCards = ({
                             </Tooltip>
                         )}
                     </div>
-                    <div className="text-3xl font-bold tabular-nums">
-                        {card.value}
+                    <div className="flex items-end justify-between gap-3">
+                        <div className="text-3xl font-bold tabular-nums">
+                            {card.value}
+                        </div>
+                        {card.delta != null && card.delta !== 0 && (
+                            <div className="flex justify-end pb-1 text-xs font-semibold">
+                                <PercentageDiff
+                                    mode="lower-is-better"
+                                    status={card.delta > 0 ? "bad" : "good"}>
+                                    {Math.abs(card.delta)}%
+                                </PercentageDiff>
+                            </div>
+                        )}
                     </div>
                     <div className="text-text-tertiary min-h-4 text-xs leading-snug tabular-nums">
                         {card.footer}

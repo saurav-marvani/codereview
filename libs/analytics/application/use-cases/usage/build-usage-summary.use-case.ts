@@ -119,6 +119,7 @@ export class BuildUsageSummaryUseCase {
             query.timezone || 'UTC',
             query.models || '',
             query.prNumber ?? '',
+            query.repositoryId ?? '',
             JSON.stringify(overrides ?? {}),
         ].join('|');
     }

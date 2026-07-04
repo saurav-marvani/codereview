@@ -382,6 +382,7 @@ export class TokenUsageController {
             end,
             timezone: query.timezone || 'UTC',
             developer: query.developer,
+            repositoryId: query.repositoryId,
             models: query.models,
             byok: byokBoolean,
         };

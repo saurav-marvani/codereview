@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BaseUsageContract } from "@services/usage/types";
+import { BaseUsageContract, ModelPricingInfo } from "@services/usage/types";
 import { cn } from "src/core/utils/components";
+
+import { rowCost } from "../_utils/cost";
 import {
     Bar,
     CartesianGrid,
@@ -52,13 +54,24 @@ const formatTokens = (t: number) => {
     return `${(t / 1000000).toFixed(1)}M`;
 };
 
+const formatUsd = (v: number) => {
+    if (v === 0) return "$0";
+    if (v < 0.01) return "<$0.01";
+    if (v >= 1000) return `$${(v / 1000).toFixed(2)}K`;
+    return `$${v.toFixed(2)}`;
+};
+
+export type ChartUnit = "tokens" | "usd";
+
 const UsageTooltip = ({
     active,
     payload,
     label,
     formatLabel,
+    formatValue = formatTokens,
 }: Partial<TooltipContentProps<number, string>> & {
     formatLabel?: (label: string) => string;
+    formatValue?: (value: number) => string;
 }) => {
     if (!active || !payload?.length) return null;
 
@@ -92,7 +105,7 @@ const UsageTooltip = ({
                     />
                     <span className="flex-1">{series.label}</span>
                     <span className="text-text-primary font-mono font-semibold">
-                        {formatTokens(originals[series.key])}
+                        {formatValue(originals[series.key])}
                     </span>
                 </div>
             ))}
@@ -103,6 +116,8 @@ const UsageTooltip = ({
 export const Chart = ({
     data,
     filterType,
+    unit = "tokens",
+    pricing = {},
 }: {
     data: Array<
         BaseUsageContract & {
@@ -113,6 +128,9 @@ export const Chart = ({
         }
     >;
     filterType: string;
+    /** "usd" prices each row client-side with the same formula as the API. */
+    unit?: ChartUnit;
+    pricing?: Record<string, ModelPricingInfo>;
 }) => {
     const [isMounted, setIsMounted] = useState(false);
     const [hidden, setHidden] = useState<Record<string, boolean>>({});
@@ -145,30 +163,46 @@ export const Chart = ({
         }
     }, [filterType]);
 
-    // Rows arrive one-per-model — merge them per x value.
+    // Rows arrive one-per-model — merge them per x value. In USD mode each
+    // row is priced first (same formula as the API's cost calculator).
     const transformedData = useMemo(() => {
+        const seriesValues = (d: (typeof data)[number]) => {
+            if (unit === "usd") {
+                const cost = rowCost(d, pricing[d.model]);
+                return {
+                    input: cost.input,
+                    output: cost.output,
+                    outputReasoning: cost.reasoning,
+                };
+            }
+            return {
+                input: d.input || 0,
+                output: d.output || 0,
+                outputReasoning: d.outputReasoning || 0,
+            };
+        };
+
         const merged: Record<string, ChartRow> = {};
         data.forEach((d) => {
             const key =
                 filterType === "by-pr"
                     ? `#${d[xAccessor]}`
                     : String(d[xAccessor]);
+            const v = seriesValues(d);
 
             if (!merged[key]) {
                 merged[key] = {
                     label: key,
-                    input: d.input || 0,
-                    output: d.output || 0,
-                    outputReasoning: d.outputReasoning || 0,
+                    ...v,
                     isCapped: false,
-                    originalInput: d.input || 0,
-                    originalOutput: d.output || 0,
-                    originalOutputReasoning: d.outputReasoning || 0,
+                    originalInput: v.input,
+                    originalOutput: v.output,
+                    originalOutputReasoning: v.outputReasoning,
                 };
             } else {
-                merged[key].input += d.input || 0;
-                merged[key].output += d.output || 0;
-                merged[key].outputReasoning += d.outputReasoning || 0;
+                merged[key].input += v.input;
+                merged[key].output += v.output;
+                merged[key].outputReasoning += v.outputReasoning;
                 merged[key].originalInput = merged[key].input;
                 merged[key].originalOutput = merged[key].output;
                 merged[key].originalOutputReasoning =
@@ -177,7 +211,7 @@ export const Chart = ({
         });
 
         return Object.values(merged);
-    }, [data, filterType, xAccessor]);
+    }, [data, filterType, xAccessor, unit, pricing]);
 
     // Cockpit charts never scroll — they bound the series to the container.
     // Daily is bounded by the date range; the categorical dimensions
@@ -239,6 +273,8 @@ export const Chart = ({
         return { maxDomain: capLimit, chartData: cappedData };
     }, [boundedData]);
 
+    const formatValue = unit === "usd" ? formatUsd : formatTokens;
+
     // Tooltip shows the full label; the axis truncates long ones
     // (by-review's "#PR · shortId").
     const formatLabel = (x: string) => {
@@ -290,7 +326,7 @@ export const Chart = ({
                                 domain={maxDomain ? [0, maxDomain] : [0, "auto"]}
                                 allowDataOverflow={Boolean(maxDomain)}
                                 tickFormatter={(value) =>
-                                    formatTokens(Number(value))
+                                    formatValue(Number(value))
                                 }
                                 {...rechartsAxisProps}
                             />
@@ -299,6 +335,7 @@ export const Chart = ({
                                 content={
                                     <UsageTooltip
                                         formatLabel={formatLabel}
+                                        formatValue={formatValue}
                                     />
                                 }
                             />

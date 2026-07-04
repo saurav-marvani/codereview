@@ -178,6 +178,10 @@ export class TokenUsageRepository implements ITokenUsageRepository {
                 : { 'attributes.tu.sys': false }),
         };
         if (query.prNumber) match['attributes.prNumber'] = query.prNumber;
+        // Repository scope, pre-resolved to PR numbers by the service. An
+        // empty list is a repo with no PRs → matches nothing, by design.
+        else if (query.prNumbers)
+            match['attributes.prNumber'] = { $in: query.prNumbers };
         else if (prOnly)
             // `{$type:'number'}` — NOT `{$exists:true,$ne:null}`: $exists in the
             // match forces a FETCH of every candidate doc (docsExamined=1.27M,

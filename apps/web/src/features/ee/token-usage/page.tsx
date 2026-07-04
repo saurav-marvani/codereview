@@ -89,7 +89,25 @@ export default async function TokenUsagePage({
         endDate: selectedDateRange.endDate,
         prNumber: params.prNumber ? Number(params.prNumber) : undefined,
         developer: params.developer,
+        repositoryId:
+            typeof params.repositoryId === "string"
+                ? params.repositoryId
+                : undefined,
         byok: isBYOK,
+    };
+
+    // Same-length window immediately before the selected one — powers the
+    // "vs previous period" deltas on the KPI cards. Served from the overview
+    // cache when warm; a failure only hides the deltas.
+    const rangeStart = new Date(selectedDateRange.startDate);
+    const rangeEnd = new Date(selectedDateRange.endDate);
+    const windowMs = Math.max(0, rangeEnd.getTime() - rangeStart.getTime());
+    const previousFilters = {
+        ...filters,
+        startDate: new Date(rangeStart.getTime() - windowMs - 1)
+            .toISOString()
+            .slice(0, 10),
+        endDate: new Date(rangeStart.getTime() - 1).toISOString().slice(0, 10),
     };
 
     let data: BaseUsageContract[] = [];
@@ -106,15 +124,24 @@ export default async function TokenUsagePage({
     // ONE covered aggregation returns summary + daily + by-pr (the cost cards
     // need day/PR counts regardless of the chart dimension). Only the
     // by-developer dimension isn't part of it, so that mode fetches alongside.
-    const [overview, developerData, reviewData] = await Promise.all([
-        getTokenUsageOverview(filters),
-        filterType === "by-developer"
-            ? getTokenUsageByDeveloper(filters)
-            : Promise.resolve(null),
-        filterType === "by-review"
-            ? getTokenUsageByReview(filters)
-            : Promise.resolve(null),
-    ]);
+    const [overview, developerData, reviewData, previousOverview] =
+        await Promise.all([
+            getTokenUsageOverview(filters),
+            filterType === "by-developer"
+                ? getTokenUsageByDeveloper(filters)
+                : Promise.resolve(null),
+            filterType === "by-review"
+                ? getTokenUsageByReview(filters)
+                : Promise.resolve(null),
+            getTokenUsageOverview(previousFilters).catch(() => null),
+        ]);
+
+    const previousTotals = previousOverview
+        ? {
+              cost: previousOverview.summary.totalCost.total,
+              tokens: previousOverview.summary.totals.total,
+          }
+        : null;
 
     summary = overview.summary;
 
@@ -241,11 +268,14 @@ export default async function TokenUsagePage({
                 <TokenUsagePageClient
                     data={data}
                     byArea={byArea}
+                    reviewRows={reviewData ?? []}
+                    previousTotals={previousTotals}
                     summary={summary}
                     activeDayCount={activeDayCount}
                     uniquePrCount={uniquePrCount}
                     cookieValue={dateRangeCookieValue}
                     models={uniqueModels}
+                    teamId={teamId}
                     pricing={pricing}
                 />
             </Page.Content>
