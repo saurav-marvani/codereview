@@ -1705,6 +1705,17 @@
     }
   },
   {
+    "key": "tokenUsage.controller.ts#getUsageByArea",
+    "httpMethod": "GET",
+    "urlPath": "/usage/tokens/by-area",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "allow",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
     "key": "tokenUsage.controller.ts#getUsageByDeveloper",
     "httpMethod": "GET",
     "urlPath": "/usage/tokens/by-developer",
@@ -1719,6 +1730,17 @@
     "key": "tokenUsage.controller.ts#getUsageByPr",
     "httpMethod": "GET",
     "urlPath": "/usage/tokens/by-pr",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "allow",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
+    "key": "tokenUsage.controller.ts#getUsageByReview",
+    "httpMethod": "GET",
+    "urlPath": "/usage/tokens/by-review",
     "expected": {
       "owner": "allow",
       "billing_manager": "allow",
