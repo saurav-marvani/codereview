@@ -105,24 +105,28 @@ export class CreateTeamUseCase implements IUseCase {
         organizationId: string,
         teamId: string,
     ): Promise<void> {
-        await this.persistWithRetry(
-            () => this.savePlatormConfigsParameters(organizationId, teamId),
-            ParametersKey.PLATFORM_CONFIGS,
-            organizationId,
-            teamId,
-        );
-
-        await this.persistWithRetry(
-            () =>
-                this.createOrUpdateParametersUseCase.execute(
-                    ParametersKey.CODE_REVIEW_CONFIG,
-                    buildDefaultGlobalCodeReviewConfig(),
-                    { organizationId, teamId },
-                ),
-            ParametersKey.CODE_REVIEW_CONFIG,
-            organizationId,
-            teamId,
-        );
+        // Independent rows (different configKeys, so no unique-index contention)
+        // — run them in parallel so signup only waits for the slower of the two,
+        // not their sum. persistWithRetry never rejects, so Promise.all is safe.
+        await Promise.all([
+            this.persistWithRetry(
+                () => this.savePlatormConfigsParameters(organizationId, teamId),
+                ParametersKey.PLATFORM_CONFIGS,
+                organizationId,
+                teamId,
+            ),
+            this.persistWithRetry(
+                () =>
+                    this.createOrUpdateParametersUseCase.execute(
+                        ParametersKey.CODE_REVIEW_CONFIG,
+                        buildDefaultGlobalCodeReviewConfig(),
+                        { organizationId, teamId },
+                    ),
+                ParametersKey.CODE_REVIEW_CONFIG,
+                organizationId,
+                teamId,
+            ),
+        ]);
     }
 
     private async persistWithRetry(

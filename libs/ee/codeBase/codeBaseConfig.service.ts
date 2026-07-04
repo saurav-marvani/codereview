@@ -353,18 +353,27 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         const defaultConfig = buildDefaultGlobalCodeReviewConfig();
 
         try {
-            await this.parametersService.createOrUpdateConfig(
-                ParametersKey.CODE_REVIEW_CONFIG,
-                defaultConfig,
-                organizationAndTeamData,
-            );
+            // Insert-if-absent (not deactivate-and-insert): if a concurrent
+            // writer already populated the config between our read and here,
+            // this is a no-op and returns THEIR config — so a review-time
+            // self-heal can never clobber a populated config with the empty
+            // default.
+            const ensured =
+                await this.parametersService.createActiveVersionIfAbsent(
+                    ParametersKey.CODE_REVIEW_CONFIG,
+                    organizationAndTeamData.teamId,
+                    defaultConfig,
+                );
 
-            this.logger.log({
-                message:
-                    'Persisted default code_review_config at review time for a team without one',
-                context: CodeBaseConfigService.name,
-                metadata: { organizationAndTeamData },
-            });
+            if (ensured?.configValue) {
+                this.logger.log({
+                    message:
+                        'Ensured code_review_config exists at review time for a team without one',
+                    context: CodeBaseConfigService.name,
+                    metadata: { organizationAndTeamData },
+                });
+                return ensured.configValue as CodeReviewParameter;
+            }
         } catch (error) {
             this.logger.warn({
                 message:

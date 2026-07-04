@@ -85,19 +85,17 @@ export class GetCodeReviewParameterUseCase {
 
             // A team can reach the code review settings screen without its
             // config row (created too late in onboarding, or a creation write
-            // that failed silently). Create the default global config and
-            // continue instead of erroring the whole page — get-or-create.
+            // that failed silently). Get-or-create the default global config so
+            // the page loads instead of erroring. Insert-if-absent returns the
+            // active row (ours, or one a concurrent writer just created), so a
+            // race surfaces the real config rather than a transient error.
             if (!parametersEntity) {
-                await this.parametersService.createOrUpdateConfig(
-                    ParametersKey.CODE_REVIEW_CONFIG,
-                    buildDefaultGlobalCodeReviewConfig(),
-                    organizationAndTeamData,
-                );
-
-                parametersEntity = await this.parametersService.findByKey(
-                    ParametersKey.CODE_REVIEW_CONFIG,
-                    organizationAndTeamData,
-                );
+                parametersEntity =
+                    await this.parametersService.createActiveVersionIfAbsent(
+                        ParametersKey.CODE_REVIEW_CONFIG,
+                        organizationAndTeamData.teamId,
+                        buildDefaultGlobalCodeReviewConfig(),
+                    );
             }
 
             if (!parametersEntity) {
