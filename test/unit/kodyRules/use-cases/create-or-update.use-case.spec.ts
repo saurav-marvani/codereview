@@ -11,6 +11,7 @@ import {
     CentralizedPrMetadata,
 } from '@libs/centralized-config/infrastructure/adapters/services/centralized-config-pr.service';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
+import { KodyRuleDetectorCompilerService } from '@libs/ee/kodyRules/service/kody-rule-detector-compiler.service';
 import { CreateOrUpdateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/create-or-update.use-case';
 import { AuthorizationService } from '@libs/identity/infrastructure/adapters/services/permissions/authorization.service';
 import {
@@ -111,6 +112,14 @@ describe('CreateOrUpdateKodyRulesUseCase (centralized pending states)', () => {
                     useValue: {
                         getBYOKConfig: jest.fn().mockResolvedValue(null),
                         getSubscriptionStatus: jest
+                            .fn()
+                            .mockResolvedValue(undefined),
+                    },
+                },
+                {
+                    provide: KodyRuleDetectorCompilerService,
+                    useValue: {
+                        compileAndSave: jest
                             .fn()
                             .mockResolvedValue(undefined),
                     },

@@ -25,6 +25,7 @@ import {
 } from '@libs/identity/domain/permissions/enums/permissions.enum';
 import { AuthorizationService } from '@libs/identity/infrastructure/adapters/services/permissions/authorization.service';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
+import { KodyRuleDetectorCompilerService } from '@libs/ee/kodyRules/service/kody-rule-detector-compiler.service';
 import {
     IKodyRulesService,
     KODY_RULES_SERVICE_TOKEN,
@@ -49,6 +50,7 @@ export class CreateOrUpdateKodyRulesUseCase {
         private readonly contextReferenceDetectionService: ContextReferenceDetectionService,
         private readonly centralizedConfigPrService: CentralizedConfigPrService,
         private readonly permissionValidationService: PermissionValidationService,
+        private readonly detectorCompiler: KodyRuleDetectorCompilerService,
     ) {}
 
     async execute(
@@ -174,6 +176,24 @@ export class CreateOrUpdateKodyRulesUseCase {
                         },
                     });
                 });
+
+                // T0 (#1449): compile a deterministic detector for mechanical
+                // rules so review checks them in pure code. Fire-and-forget,
+                // gated — a rule only gets a detector if it passes the compile
+                // gate; otherwise it stays semantic. Never blocks the save.
+                this.detectorCompiler
+                    .compileAndSave(organizationAndTeamData, result.uuid, {
+                        ...kodyRule,
+                        uuid: result.uuid,
+                    })
+                    .catch((error) => {
+                        this.logger.error({
+                            message: 'Background detector compile failed',
+                            context: CreateOrUpdateKodyRulesUseCase.name,
+                            error: this.normalizeError(error),
+                            metadata: { ruleId: result.uuid },
+                        });
+                    });
             } else {
                 this.logger.warn({
                     message:

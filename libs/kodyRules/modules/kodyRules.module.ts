@@ -10,6 +10,7 @@ import { GlobalCacheModule } from '@libs/core/cache/cache.module';
 import { KodyRulesRepository } from '@libs/ee/kodyRules/repository/kodyRules.repository';
 import { KodyRulesValidationService } from '@libs/ee/kodyRules/service/kody-rules-validation.service';
 import { KodyRulesService } from '@libs/ee/kodyRules/service/kodyRules.service';
+import { KodyRuleDetectorCompilerService } from '@libs/ee/kodyRules/service/kody-rule-detector-compiler.service';
 import { LicenseModule } from '@libs/ee/license/license.module';
 import { PermissionValidationModule } from '@libs/ee/shared/permission-validation.module';
 
@@ -110,6 +111,7 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         CountRulesByRepositoryUseCase,
         ChangeStatusKodyRulesUseCase,
         CreateOrUpdateKodyRulesUseCase,
+        KodyRuleDetectorCompilerService,
         SendRulesNotificationUseCase,
         SyncSelectedRepositoriesKodyRulesUseCase,
         KodyRulesValidationService,

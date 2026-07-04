@@ -9,6 +9,7 @@ import {
 } from '@libs/core/context-resolution/domain/contracts/context-resolution.service.contract';
 import { STATUS } from '@libs/core/infrastructure/config/types/database/status.type';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
+import { KodyRuleDetectorCompilerService } from '@libs/ee/kodyRules/service/kody-rule-detector-compiler.service';
 import { PERMISSIONS_SERVICE_TOKEN } from '@libs/identity/domain/permissions/contracts/permissions.service.contract';
 import { Role } from '@libs/identity/domain/permissions/enums/permissions.enum';
 import { AuthorizationService } from '@libs/identity/infrastructure/adapters/services/permissions/authorization.service';
@@ -154,6 +155,14 @@ describe('CreateOrUpdateKodyRulesUseCase — inheritance toggle authz', () => {
                     useValue: {
                         getBYOKConfig: jest.fn().mockResolvedValue(null),
                         getSubscriptionStatus: jest
+                            .fn()
+                            .mockResolvedValue(undefined),
+                    },
+                },
+                {
+                    provide: KodyRuleDetectorCompilerService,
+                    useValue: {
+                        compileAndSave: jest
                             .fn()
                             .mockResolvedValue(undefined),
                     },

@@ -64,6 +64,15 @@ export interface IKodyRule {
     type?: KodyRulesType;
     extendedContext?: IKodyRulesExtendedContext;
     examples?: IKodyRulesExample[];
+    /**
+     * T0 compiled detector (issue #1449). When present, this rule is mechanical
+     * and is checked at review time by running this pattern over added lines —
+     * no LLM. Compiled once at authoring by the detector compiler and validated
+     * by its gate; absent when the rule is semantic (judged by the LLM). Stored
+     * inline on the embedded rule (the Mongo `rules` array is Mixed, so no
+     * schema migration is needed).
+     */
+    detector?: IKodyRuleDetector;
     repositoryId: string;
     origin?: KodyRulesOrigin;
     createdAt?: Date;
@@ -119,6 +128,22 @@ export interface IKodyRulesExtendedContext {
 export interface IKodyRulesExample {
     snippet: string;
     isCorrect: boolean;
+}
+
+/**
+ * A compiled, deterministic detector for a mechanical rule (T0, issue #1449).
+ * Currently a single regex applied to added-line CONTENT; the multi-clause DSL
+ * (any/all/unless/ast) is a later extension of this shape.
+ */
+export interface IKodyRuleDetector {
+    type: 'regex';
+    /** JS-compatible regex source (no slashes). */
+    pattern: string;
+    flags?: string;
+    /** model that compiled it (audit / recompile). */
+    compiledBy?: string;
+    /** short rationale from the compiler. */
+    reason?: string;
 }
 
 export interface IKodyRulesInheritance {
