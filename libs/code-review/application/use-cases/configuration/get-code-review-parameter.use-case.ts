@@ -29,7 +29,10 @@ import {
     FormattedGlobalCodeReviewConfig,
     IFormattedConfigProperty,
 } from '@libs/core/infrastructure/config/types/general/codeReviewConfig.type';
-import { getDefaultKodusConfigFile } from '@libs/common/utils/validateCodeReviewConfigFile';
+import {
+    buildDefaultGlobalCodeReviewConfig,
+    getDefaultKodusConfigFile,
+} from '@libs/common/utils/validateCodeReviewConfigFile';
 import { CodeReviewConfigWithoutLLMProvider } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { PromptSourceType } from '@libs/ai-engine/domain/prompt/interfaces/promptExternalReference.interface';
 
@@ -75,10 +78,27 @@ export class GetCodeReviewParameterUseCase {
                 teamId: teamId,
             };
 
-            const parametersEntity = await this.parametersService.findByKey(
+            let parametersEntity = await this.parametersService.findByKey(
                 ParametersKey.CODE_REVIEW_CONFIG,
                 organizationAndTeamData,
             );
+
+            // A team can reach the code review settings screen without its
+            // config row (created too late in onboarding, or a creation write
+            // that failed silently). Create the default global config and
+            // continue instead of erroring the whole page — get-or-create.
+            if (!parametersEntity) {
+                await this.parametersService.createOrUpdateConfig(
+                    ParametersKey.CODE_REVIEW_CONFIG,
+                    buildDefaultGlobalCodeReviewConfig(),
+                    organizationAndTeamData,
+                );
+
+                parametersEntity = await this.parametersService.findByKey(
+                    ParametersKey.CODE_REVIEW_CONFIG,
+                    organizationAndTeamData,
+                );
+            }
 
             if (!parametersEntity) {
                 throw new Error('Code review parameters not found');
