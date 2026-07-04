@@ -25,19 +25,30 @@ const PER_MILLION = 1_000_000;
 const TIER_THRESHOLD_200K = 200_000;
 
 /**
- * models.dev providers that re-sell other vendors' models. When the same bare
- * model id exists under a native provider and an aggregator, the native entry
- * wins the bare-id alias (aggregator pricing can differ from list price).
+ * Known first-party vendor ids on models.dev. Used only as a tiebreak when two
+ * providers expose the same bare model id and the richness signal (below)
+ * can't separate them — an incomplete list is safe because it never overrides
+ * a richer entry. models.dev has ~50 providers (many resellers: 302ai, venice,
+ * helicone, openrouter, …); blocklisting them is whack-a-mole, so we prefer the
+ * authoritative entry by its data instead.
  */
-const AGGREGATOR_PROVIDERS = new Set([
-    'openrouter',
-    'github-models',
-    'github-copilot',
-    'azure',
-    'huggingface',
-    'fastrouter',
-    'requesty',
-    'vercel',
+const NATIVE_PROVIDERS = new Set([
+    'openai',
+    'anthropic',
+    'google',
+    'google-vertex',
+    'google-ai-studio',
+    'moonshotai',
+    'zhipuai',
+    'z-ai',
+    'deepseek',
+    'xai',
+    'alibaba',
+    'mistral',
+    'meta',
+    'meta-llama',
+    'cohere',
+    'amazon-bedrock',
 ]);
 
 type ModelsDevCostTier = {
@@ -314,10 +325,28 @@ export class TokenPricingUseCase {
     }
 
     /**
-     * Whether `entry` should own the bare-id alias for `modelId`. First writer
-     * wins, except that a priced entry beats an unpriced one and a native
-     * provider beats an aggregator — so `kimi-k2.6` resolves to Moonshot's
-     * list price, not whatever reseller happens to enumerate first.
+     * Ranks a candidate for the bare-id alias by (priced, rich, native), most
+     * significant first. "Rich" = carries tier/cache/reasoning metadata, which
+     * only the authoritative vendor entry does — a reseller mirroring the list
+     * input/output price strips those. So `gemini-2.5-pro` resolves to Google's
+     * tiered entry, not 302ai's flat one, and cache-priced models keep their
+     * cache rate. `native` is a weak tiebreak (see NATIVE_PROVIDERS).
+     */
+    private aliasRank(entry: CatalogEntry): number {
+        const priced = entry.input.default > 0 || entry.output.default > 0;
+        const rich =
+            !!entry.input.tier ||
+            !!entry.output.tier ||
+            entry.cacheRead.default > 0 ||
+            entry.cacheWrite.default > 0 ||
+            entry.reasoning !== undefined;
+        const native = NATIVE_PROVIDERS.has(entry.provider ?? '');
+        return (priced ? 4 : 0) + (rich ? 2 : 0) + (native ? 1 : 0);
+    }
+
+    /**
+     * Whether `entry` should own the bare-id alias for `modelId`. Highest rank
+     * wins; ties keep the first writer.
      */
     private claimBareAlias(
         catalog: PricingCatalog,
@@ -332,18 +361,7 @@ export class TokenPricingUseCase {
             catalog[modelId] = entry;
             return true;
         }
-
-        const priced = (e: CatalogEntry) =>
-            e.input.default > 0 || e.output.default > 0;
-        const nativeOwner = !AGGREGATOR_PROVIDERS.has(
-            bareOwner.get(modelId)!,
-        );
-        const nativeNew = !AGGREGATOR_PROVIDERS.has(entry.provider ?? '');
-
-        const wins =
-            (priced(entry) && !priced(existing)) ||
-            (nativeNew && !nativeOwner && priced(entry) === priced(existing));
-        if (wins) {
+        if (this.aliasRank(entry) > this.aliasRank(existing)) {
             catalog[modelId] = entry;
             return true;
         }

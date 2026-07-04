@@ -67,6 +67,41 @@ const modelsDevFixture = {
             },
         },
     },
+    // A reseller enumerated BEFORE the vendor (`google-vertex` below),
+    // exposing the same flagship id with only flat input/output (no tier, no
+    // cache). The bare alias must NOT land here — it would strip the tier and
+    // cache the vendor entry carries.
+    '302ai': {
+        id: '302ai',
+        models: {
+            'gemini-flagship': {
+                id: 'gemini-flagship',
+                cost: { input: 1.25, output: 10 },
+            },
+        },
+    },
+    // Native vendor, enumerated AFTER the reseller: same id, but with the
+    // >200k tier and a cache-read rate. Richness must win the bare alias.
+    'google-vertex': {
+        id: 'google-vertex',
+        models: {
+            'gemini-flagship': {
+                id: 'gemini-flagship',
+                cost: {
+                    input: 1.25,
+                    output: 10,
+                    cache_read: 0.31,
+                    tiers: [
+                        {
+                            input: 2.5,
+                            output: 15,
+                            tier: { type: 'context', size: 200_000 },
+                        },
+                    ],
+                },
+            },
+        },
+    },
 };
 
 /** LiteLLM fixture — flat keys, prices already per-token. */
@@ -182,6 +217,25 @@ describe('TokenPricingUseCase', () => {
 
         expect(info.provider).toBe('zhipuai');
         expect(info.pricing.input.default).toBeCloseTo(1e-6, 12);
+    });
+
+    // Regression: a reseller enumerated first exposed the same flagship id
+    // with flat input/output only, and the bare alias landed on it — dropping
+    // the >200k tier and the cache-read rate the vendor entry carries.
+    it('resolves a flagship to the vendor entry that keeps tier + cache, not a flat reseller listed first', async () => {
+        mockCatalogs();
+
+        const info = await useCase.execute('gemini-flagship');
+
+        expect(info.provider).toBe('google-vertex');
+        // tier survived
+        expect(info.pricing.input.tier).toEqual({
+            threshold: 200_000,
+            rate: 2.5e-6,
+        });
+        expect(info.pricing.output.tier?.rate).toBeCloseTo(15e-6, 12);
+        // cache rate survived
+        expect(info.pricing.cacheRead.default).toBeCloseTo(0.31e-6, 12);
     });
 
     it('returns all-zero pricing for an unknown model', async () => {
