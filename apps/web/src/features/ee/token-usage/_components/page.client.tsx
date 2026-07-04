@@ -143,7 +143,10 @@ export const TokenUsagePageClient = ({
             {/* Filters Row */}
             <div className="flex items-center justify-between gap-4">
                 <Filters models={models} filters={filters} />
-                <DateRangePicker cookieValue={cookieValue} />
+                <DateRangePicker
+                    cookieValue={cookieValue}
+                    commitMode="onClose"
+                />
             </div>
 
             {/* Token Summary — period totals; identical across chart dimensions,
