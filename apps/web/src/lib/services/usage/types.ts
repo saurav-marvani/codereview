@@ -53,6 +53,21 @@ export interface UsageByDeveloperResultContract extends BaseUsageContract {
     developer: string;
 }
 
+/**
+ * One review run (correlationId). A PR reviewed more than once yields one row
+ * per run.
+ */
+export interface UsageByReviewResultContract extends BaseUsageContract {
+    review: string;
+    prNumber?: number;
+    startedAt?: string;
+}
+
+/** Token spend grouped by process area (review, kody_rules, cross_file, …). */
+export interface UsageByAreaResultContract extends BaseUsageContract {
+    area: string;
+}
+
 export interface DailyUsageByDeveloperResultContract
     extends UsageByDeveloperResultContract {
     date: string; // YYYY-MM-DD
@@ -89,6 +104,7 @@ export interface UsageOverviewReportContract {
     summary: UsageSummaryContract;
     daily: DailyUsageResultContract[];
     byPr: UsageByPrResultContract[];
+    byArea?: UsageByAreaResultContract[];
 }
 
 export interface UsageSummaryContract {

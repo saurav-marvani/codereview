@@ -1,0 +1,107 @@
+"use client";
+
+import { useMemo } from "react";
+import { Card } from "@components/ui/card";
+import { UsageByAreaResultContract } from "@services/usage/types";
+
+import { CHART_COLORS } from "../../cockpit/_components/charts/recharts-shared";
+
+/**
+ * Human labels + display order for the fixed TokenUsageArea set (see
+ * libs/core/log/token-usage-tu.ts). Unknown values fall through to "Other".
+ */
+const AREA_META: Record<string, { label: string; color: string }> = {
+    review: { label: "Code review agents", color: CHART_COLORS.info },
+    kody_rules: { label: "Kody Rules", color: CHART_COLORS.primary },
+    cross_file: { label: "Cross-file context", color: CHART_COLORS.purple },
+    suggestions: {
+        label: "Suggestion refinement",
+        color: CHART_COLORS.success,
+    },
+    summary: { label: "PR summary", color: CHART_COLORS.warning },
+    conversation: { label: "Conversation", color: CHART_COLORS.danger },
+    system: { label: "System analysis", color: CHART_COLORS.muted },
+    other: { label: "Other", color: CHART_COLORS.muted },
+};
+
+const formatTokens = (t: number) => {
+    if (t === 0) return "0";
+    if (t < 1000) return t.toString();
+    if (t < 1000000) return `${(t / 1000).toFixed(1)}K`;
+    return `${(t / 1000000).toFixed(1)}M`;
+};
+
+const pct = (value: number, total: number) =>
+    total > 0 ? `${((value / total) * 100).toFixed(1)}%` : "0%";
+
+/**
+ * "Where tokens go" — spend per area of the review process. Rows arrive
+ * per area+model; collapse them per area and render share bars.
+ */
+export const AreaBreakdown = ({
+    rows,
+    selectedModels,
+}: {
+    rows: UsageByAreaResultContract[];
+    selectedModels: string[];
+}) => {
+    const areas = useMemo(() => {
+        const byArea = new Map<string, number>();
+        for (const row of rows) {
+            if (!selectedModels.includes(row.model)) continue;
+            byArea.set(row.area, (byArea.get(row.area) ?? 0) + row.total);
+        }
+        return Array.from(byArea.entries())
+            .map(([area, total]) => ({
+                area,
+                total,
+                meta: AREA_META[area] ?? AREA_META.other,
+            }))
+            .sort((a, b) => b.total - a.total);
+    }, [rows, selectedModels]);
+
+    const grandTotal = areas.reduce((sum, a) => sum + a.total, 0);
+
+    if (!areas.length) return null;
+
+    return (
+        <Card className="flex flex-col gap-4 p-5">
+            <div>
+                <h2 className="text-sm font-semibold">Where tokens go</h2>
+                <p className="text-text-secondary mt-0.5 text-xs">
+                    Token spend by area of the review process in the selected
+                    period.
+                </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+                {areas.map(({ area, total, meta }) => (
+                    <div key={area} className="flex items-center gap-3">
+                        <span
+                            className="size-2 shrink-0 rounded-xs"
+                            style={{ backgroundColor: meta.color }}
+                        />
+                        <span className="text-text-secondary w-44 shrink-0 truncate text-xs">
+                            {meta.label}
+                        </span>
+                        <div className="bg-card-lv2 h-2 min-w-0 flex-1 overflow-hidden rounded-full">
+                            <div
+                                className="h-full rounded-full"
+                                style={{
+                                    width: pct(total, grandTotal),
+                                    backgroundColor: meta.color,
+                                }}
+                            />
+                        </div>
+                        <span className="text-text-primary w-16 shrink-0 text-right font-mono text-xs font-semibold">
+                            {formatTokens(total)}
+                        </span>
+                        <span className="text-text-tertiary w-12 shrink-0 text-right font-mono text-xs">
+                            {pct(total, grandTotal)}
+                        </span>
+                    </div>
+                ))}
+            </div>
+        </Card>
+    );
+};

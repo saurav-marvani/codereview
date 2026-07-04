@@ -3,11 +3,13 @@ import { Page } from "@components/ui/page";
 import {
     getTokenPricingBatch,
     getTokenUsageByDeveloper,
+    getTokenUsageByReview,
     getTokenUsageOverview,
 } from "@services/usage/fetch";
 import {
     BaseUsageContract,
     ModelPricingInfo,
+    UsageByAreaResultContract,
     UsageByPrResultContract,
     UsageSummaryContract,
 } from "@services/usage/types";
@@ -104,10 +106,13 @@ export default async function TokenUsagePage({
     // ONE covered aggregation returns summary + daily + by-pr (the cost cards
     // need day/PR counts regardless of the chart dimension). Only the
     // by-developer dimension isn't part of it, so that mode fetches alongside.
-    const [overview, developerData] = await Promise.all([
+    const [overview, developerData, reviewData] = await Promise.all([
         getTokenUsageOverview(filters),
         filterType === "by-developer"
             ? getTokenUsageByDeveloper(filters)
+            : Promise.resolve(null),
+        filterType === "by-review"
+            ? getTokenUsageByReview(filters)
             : Promise.resolve(null),
     ]);
 
@@ -115,13 +120,23 @@ export default async function TokenUsagePage({
 
     const dailyRows = overview.daily ?? [];
     const prRows = overview.byPr ?? [];
+    const byArea: UsageByAreaResultContract[] = overview.byArea ?? [];
+
+    // One review run = one correlationId; label rows "#PR · shortId" so two
+    // runs on the same PR read as siblings, not duplicates.
+    const reviewRows = (reviewData ?? []).map((r) => ({
+        ...r,
+        review: `${r.prNumber != null ? `#${r.prNumber} · ` : ""}${r.review.slice(0, 8)}`,
+    }));
 
     data =
         filterType === "by-pr"
             ? prRows
             : filterType === "by-developer"
               ? (developerData ?? [])
-              : dailyRows;
+              : filterType === "by-review"
+                ? reviewRows
+                : dailyRows;
 
     activeDayCount = new Set(
         dailyRows.map((r) => r.date).filter(Boolean),
@@ -223,6 +238,7 @@ export default async function TokenUsagePage({
             <Page.Content>
                 <TokenUsagePageClient
                     data={data}
+                    byArea={byArea}
                     summary={summary}
                     activeDayCount={activeDayCount}
                     uniquePrCount={uniquePrCount}

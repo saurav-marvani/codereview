@@ -6,11 +6,13 @@ import { Skeleton } from "@components/ui/skeleton";
 import {
     BaseUsageContract,
     ModelPricingInfo,
+    UsageByAreaResultContract,
     UsageSummaryContract,
 } from "@services/usage/types";
 import { DateRangePicker } from "src/features/ee/cockpit/_components/date-range-picker";
 
 import { useTokenUsageFilters } from "../_hooks/filter.hook";
+import { AreaBreakdown } from "./area-breakdown";
 import { Chart } from "./chart";
 import { CostCards } from "./cost-cards";
 import { Filters } from "./filters";
@@ -35,6 +37,7 @@ const ZERO_TOTALS = {
 
 export const TokenUsagePageClient = ({
     data,
+    byArea,
     summary,
     activeDayCount,
     uniquePrCount,
@@ -43,6 +46,7 @@ export const TokenUsagePageClient = ({
     pricing,
 }: {
     data: BaseUsageContract[];
+    byArea: UsageByAreaResultContract[];
     summary: UsageSummaryContract | null;
     activeDayCount: number;
     uniquePrCount: number;
@@ -177,6 +181,9 @@ export const TokenUsagePageClient = ({
                     )}
                 </Card>
             )}
+
+            {/* Where tokens go — spend per area of the review process */}
+            <AreaBreakdown rows={byArea} selectedModels={selectedModels} />
 
             {/* Per-model breakdown (collapsed by default) */}
             <ModelBreakdownTable rows={breakdownRows} pricing={filteredPricing} />

@@ -105,6 +105,7 @@ export const Filters = ({
                 <SelectContent>
                     <SelectItem value="daily">Daily</SelectItem>
                     <SelectItem value="by-pr">By PR</SelectItem>
+                    <SelectItem value="by-review">By Review</SelectItem>
                     <SelectItem value="by-developer">By Developer</SelectItem>
                 </SelectContent>
             </Select>

@@ -51,7 +51,7 @@ const UsageTooltip = ({
     payload,
     label,
     formatLabel,
-}: TooltipContentProps<number, string> & {
+}: Partial<TooltipContentProps<number, string>> & {
     formatLabel?: (label: string) => string;
 }) => {
     if (!active || !payload?.length) return null;
