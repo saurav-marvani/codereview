@@ -489,6 +489,17 @@ async function cmdHarden(args: Args): Promise<void> {
             }
             const fail = results[results.length - 1];
             console.log(`[harden] attempt ${attempt} failed at phase '${fail.phase}': ${fail.command.split('\n')[0]}`);
+            // Self-diagnostic: when a health/connection check fails, dump the
+            // service's own log + port state so a failing service (not just a
+            // failing check) is visible in the harden output.
+            if (/curl|health|connect/i.test(fail.command)) {
+                const diag = await sshExec(
+                    state,
+                    `echo "[svc-log]"; tail -15 /tmp/kody-svc-*.log 2>/dev/null; echo "[ports]"; ss -ltnp 2>/dev/null | grep -E ':3000|:5678' || echo "no service port bound"`,
+                    { timeoutMs: 20_000 },
+                ).catch(() => null);
+                if (diag?.stdout) console.log(`[harden] service diagnostic:\n${diag.stdout.slice(0, 1500)}`);
+            }
             if (attempt === maxAttempts) break;
             console.log(`[harden] repairing playbook (patch-based)...`);
             try {
