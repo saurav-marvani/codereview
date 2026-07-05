@@ -661,7 +661,7 @@ function resolveClient(model: string): { client: Anthropic; model: string } {
 const FIX_PLAYBOOK_SYSTEM = `You repair a preview-environment playbook that FAILED to reproduce on a fresh VM. You are given the current playbook (YAML) and the exact step that failed with its output. Return a CORRECTED full playbook (same YAML shape: version, summary, requiredEnv, setup, services, build, test, healthcheck).
 
 Rules and common fixes (apply what fits the failure):
-- Each playbook command runs as a SEPARATE shell session, so a background service started with 'nohup <svc> &' DIES before later commands. Start long-running services with setsid so they survive: setsid bash -c 'cd <dir>; <svc>' < /dev/null & — then poll a health endpoint before the checks that depend on it. Or put the service-start and its checks in the SAME command.
+- ROOT-CAUSE, don't symptom-patch. A "connection refused"/"couldn't connect" failure on a health check means the SERVICE ISN'T RUNNING — the fix is in the phase that STARTS the service (usually 'services' or 'setup'), NOT the health check. Do NOT just add more polling to the check; that never helps if the service already died. The cause is almost always that the service was started with 'nohup <svc> &' and each playbook command runs as a SEPARATE shell session, so the background process died. FIX THE START COMMAND: replace 'nohup <svc> > log 2>&1 &' with 'setsid bash -c '\"'\"'cd <dir>; <svc> > /tmp/svc.log 2>&1'\"'\"' < /dev/null &' so it survives the session, and keep a short wait/poll after it. Apply this to the services/setup command that launches the app, not to the test phase.
 - The fresh VM only preinstalls git/curl/jq/docker/node/npm/corepack/playwright. If a command uses pnpm/yarn/a global CLI that isn't there, prepend the install/enable step (e.g. 'corepack enable') to setup.
 - Remove spurious host build steps for docker-based apps (the containers are the build).
 - 'command not found' (exit 127) = a missing prerequisite; add it. 'connection refused' on a health check = the service isn't running (background process died — use setsid, or start it in the same command). 'No tests found' / bad flag = fix the exact test invocation.
@@ -687,7 +687,7 @@ export async function fixPlaybook(
         `Return the corrected full playbook YAML.`;
     const response = await client.messages.create({
         model,
-        max_tokens: 8192,
+        max_tokens: 16384,
         system: FIX_PLAYBOOK_SYSTEM,
         messages: [{ role: 'user', content: userMsg }],
     });

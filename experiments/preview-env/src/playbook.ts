@@ -89,7 +89,12 @@ function normalizeEntry(entry: unknown, phase: string): string | null {
         if (typeof o.command === 'string') {
             if (phase === 'services') {
                 const name = typeof o.name === 'string' ? o.name : 'service';
-                return `nohup ${o.command} > /tmp/kody-svc-${name}.log 2>&1 & sleep 4`;
+                // setsid (not nohup) so the service survives — each playbook
+                // command runs in a SEPARATE ssh session, and a plain nohup
+                // child is reaped when that session ends, leaving later
+                // health checks with connection-refused.
+                const cmd = o.command.replace(/'/g, `'\\''`);
+                return `setsid bash -c '${cmd} > /tmp/kody-svc-${name}.log 2>&1' < /dev/null & sleep 4`;
             }
             return o.command;
         }
