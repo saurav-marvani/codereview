@@ -727,8 +727,14 @@ const FIX_PATCH_SYSTEM = `A preview-environment playbook FAILED to reproduce on 
 Return ONLY a JSON object (no prose, no fences):
 {"phase":"<setup|services|build|test|healthcheck>","old_contains":"<a distinctive substring of the ONE command to change>","new_command":"<the full replacement command>","reason":"<one line>"}
 
+Phases run in this FIXED order: setup → build → services → test → healthcheck. So a service in 'services' already has whatever 'setup'/'build' produced (deps installed, migrations run, assets built). Do NOT embed install/build/migrate into the service start command — if those are missing, patch the 'build' or 'setup' phase instead. Make the SMALLEST edit that fixes the cause; never bundle multiple concerns into one command.
+
 Root-cause guidance:
-- "connection refused"/"couldn't connect" on a health check = the service isn't ready or didn't persist. If the failing check is a bare 'curl <url>' with no wait, replace it with a readiness poll on the SAME url: for i in $(seq 1 60); do curl -fsS <url> 2>/dev/null | grep -q '<expected>' && exit 0; sleep 1; done; exit 1  (keep the same url/expected string). If the service is started with a plain 'nohup', the START command is the culprit instead.
+- "connection refused"/"couldn't connect" or a health-poll timeout means the service didn't come up. Diagnose WHY from the service's own log, not by rewriting the start command. Most common causes and where to patch:
+  * The health check is a bare 'curl <url>' with no wait → patch the failing TEST command into a readiness poll on the SAME url: for i in $(seq 1 60); do curl -fsS <url> 2>/dev/null | grep -q '<expected>' && exit 0; sleep 1; done; exit 1  (keep the same url/expected).
+  * A file-backed DB (e.g. SQLite db/data.sqlite) whose directory doesn't exist → patch the BUILD command that migrates to first 'mkdir -p <dir> && ' the migrate.
+  * A missing build/deps → patch the BUILD phase, not services.
+  Pick ONE cause and make ONE minimal edit; the loop will re-run and surface the next cause if any.
 - exit 127 "command not found" = a missing prerequisite; patch the FIRST setup command to install/enable it (e.g. prefix 'corepack enable && ').
 - "No tests found"/bad flag = fix the exact test invocation.
 - Pick old_contains to uniquely identify ONE command (use ~30+ distinctive chars). new_command must be complete and runnable. Never weaken a check to force a pass.`;
