@@ -68,14 +68,27 @@ own log caught it.
 - **Reviewer** → Kody's real review brain replaces the stand-in `validate`
   agent, consuming the executed signal + the redacted-security-pass output.
 
-## Remaining hands-on (not autonomous-loop work)
+## Progress (autonomous productization loop)
 
-1. Snapshots (Devin golden-image) — warm envs so per-PR is seconds not a
-   10-min rebuild; the cost/speed lever from the deep research.
-2. Component scoping (turbo/nx `--filter` + path→component map) so a backend
-   PR doesn't rebuild the web app.
-3. Integration coverage matrix: `integrations: {github: gitea|replay, ...}` in
-   the playbook + honest coverage reporting (`X-Twin-Stub`-style: report what
-   was faked vs not-covered).
-4. Fixer convergence breadth (more app shapes) + the deterministic
-   package.json-script guard already added.
+- **Phase 0 — Devin research + config design: DONE.** `DESIGN-config.md`,
+  grounded in a documented deep-research of Devin's env model (layered
+  Blueprints org→repo, org snapshot, scopeable Knowledge).
+- **Phase 1 — generalization: DONE.** detect succeeds on Go (gophish) + Python
+  Django (wagtail); harden converges on Django/docker-compose too. Both halves
+  generalize across languages. (Rails/mastodon bailed — too heavy, unrepresentative.)
+- **Phase 2 — snapshots: DONE + PROVEN.** `preview snapshot` + `up --image`;
+  live: cold 103s vs warm 48s with deps baked. The warm-boot lever works.
+
+## Remaining (Phase 3 — USER-GATED, touches live Kodus code)
+
+1. `environment:` section parser in `codeBaseConfig.service.ts` (per-repo).
+2. `ISandboxProvider` `type: 'vm'` in `libs/sandbox` (the VM layer).
+3. Per-repo learnings store (reuse kody-rules plumbing) + UI surface.
+4. Org blueprint (provider/secrets/budget) in `centralized-config` + UI.
+5. Kody's real reviewer consumes the executed signal.
+
+## Smaller follow-ups
+- Component scoping (turbo/nx `--filter` + path→component map).
+- Integration coverage matrix (`integrations: {github: gitea|replay}`) + honest
+  coverage reporting. (email→Mailpit already proven.)
+- Auto-discovery of cross-repo deps (v2; declared `dependsOn` ships in v1).
