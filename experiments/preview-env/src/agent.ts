@@ -748,12 +748,15 @@ Root-cause guidance:
 export async function fixPlaybookPatch(
     playbookYaml: string,
     failure: { phase: string; command: string; exitCode: number; output: string },
-    opts: { model?: string } = {},
+    opts: { model?: string; availableScripts?: string[] } = {},
 ): Promise<PlaybookPatch> {
     const model = opts.model ?? getEnv('PREVIEW_AGENT_MODEL') ?? DEFAULT_MODEL;
     const { client } = resolveClient(model);
+    const scriptsNote = opts.availableScripts?.length
+        ? `\nThe repo's package.json defines ONLY these npm scripts: ${opts.availableScripts.join(', ')}. Do NOT reference any run-script outside this list (e.g. only add 'npm run build' if 'build' is listed).\n`
+        : '';
     const userMsg =
-        `Full playbook:\n\n${playbookYaml}\n\n` +
+        `Full playbook:\n\n${playbookYaml}\n${scriptsNote}\n` +
         `FAILED step (phase '${failure.phase}', exit ${failure.exitCode}):\n$ ${failure.command}\n\n` +
         `Output:\n${truncateForModel(failure.output, 5000)}\n\n` +
         `Return the minimal JSON patch.`;

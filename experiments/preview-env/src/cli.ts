@@ -440,6 +440,19 @@ async function cmdHarden(args: Args): Promise<void> {
         await cmdUp(upArgs);
         const state = loadState(name);
         const repoDir = state.repoDir ?? '/opt/repo';
+        // Read the repo's declared npm scripts once, so the fixer can't invent
+        // nonexistent run-scripts (e.g. a bogus `npm run build`).
+        let availableScripts: string[] = [];
+        try {
+            const pj = await sshExec(
+                state,
+                `cat ${repoDir}/package.json 2>/dev/null`,
+                { timeoutMs: 15_000 },
+            );
+            availableScripts = Object.keys(JSON.parse(pj.stdout).scripts ?? {});
+        } catch {
+            /* best effort */
+        }
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             console.log(`\n[harden] === attempt ${attempt}/${maxAttempts} ===`);
@@ -487,7 +500,7 @@ async function cmdHarden(args: Args): Promise<void> {
                         exitCode: fail.exitCode,
                         output: fail.outputTail ?? '',
                     },
-                    { model },
+                    { model, availableScripts },
                 );
                 const applied = applyPatch(playbookYaml, patch);
                 if (!applied) {
