@@ -7,7 +7,6 @@ import { SANDBOX_LEASE_MANAGER_TOKEN } from '@libs/sandbox/domain/contracts/sand
 import { E2BSandboxService } from '@libs/sandbox/infrastructure/providers/e2b-sandbox.service';
 import { LocalSandboxService } from '@libs/sandbox/infrastructure/providers/local-sandbox.service';
 import { NullSandboxProvider } from '@libs/sandbox/infrastructure/providers/null-sandbox.service';
-import { VmSandboxService } from '@libs/sandbox/infrastructure/providers/vm-sandbox.service';
 import {
     SandboxLeaseModel,
     SandboxLeaseSchema,
@@ -39,12 +38,12 @@ import { SandboxLeaseReaperService } from '@libs/sandbox/infrastructure/services
                 if (provider === 'e2b') {
                     return new E2BSandboxService(configService);
                 }
-                // Ephemeral cloud-VM sandbox that can actually RUN the app
-                // (preview environments). Selected explicitly; 'auto' does not
-                // pick it since it provisions real infra per review.
-                if (provider === 'vm') {
-                    return new VmSandboxService(configService);
-                }
+                // NOTE: the preview-env VM is intentionally NOT selectable as
+                // the global sandbox provider — it is COMPLEMENTARY. e2b (or
+                // local) stays the sandbox for the normal review's file tools
+                // (grep/read/cross-file); the preview VM is owned directly by
+                // PreviewEnvService/RunPreviewEnvStage and only boots+exercises
+                // the app. Swapping it here would break the normal review.
 
                 // 'auto' (default): prefer E2B when an API key is configured,
                 // otherwise fall back to LocalSandbox so self-hosted instances
