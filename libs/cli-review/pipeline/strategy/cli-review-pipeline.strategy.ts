@@ -5,6 +5,7 @@ import { CliReviewPipelineContext } from '../context/cli-review-pipeline.context
 
 // Reused stages from code-review pipeline
 import { CreateSandboxStage } from '@libs/code-review/pipeline/stages/create-sandbox.stage';
+import { RunPreviewEnvStage } from '@libs/code-review/pipeline/stages/run-preview-env.stage';
 import { AgentReviewStage } from '@libs/code-review/pipeline/stages/agent-review.stage';
 import { AggregateResultsStage } from '@libs/code-review/pipeline/stages/aggregate-result.stage';
 
@@ -31,6 +32,7 @@ export class CliReviewPipelineStrategy
     constructor(
         // Shared stages (from code-review pipeline)
         private readonly createSandboxStage: CreateSandboxStage,
+        private readonly runPreviewEnvStage: RunPreviewEnvStage,
         private readonly agentReviewStage: AgentReviewStage,
         private readonly aggregateResultsStage: AggregateResultsStage,
 
@@ -53,6 +55,9 @@ export class CliReviewPipelineStrategy
             this.prepareCliFilesStage,
             this.createSandboxStage as any,
             this.agentReviewStage as any,
+            // After agentReview (which overwrites validSuggestions) so preview
+            // findings append to the final list.
+            this.runPreviewEnvStage as any,
             this.aggregateResultsStage as any,
             this.formatCliOutputStage,
         ];

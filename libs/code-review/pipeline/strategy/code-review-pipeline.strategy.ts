@@ -71,9 +71,11 @@ export class CodeReviewPipelineStrategy implements IPipelineStrategy<CodeReviewP
             // Agent is the only engine now: no branch, no engine-selection gate.
             this.businessLogicValidationStage,
             this.createSandboxStage,
-            // Boot & test the PR in the VM (opt-in via environment config).
-            this.runPreviewEnvStage,
             this.agentReviewStage,
+            // Boot & test the PR in a VM (opt-in via environment config) AFTER
+            // agentReview — agentReview overwrites validSuggestions, so preview
+            // findings must be appended to the final list, not before it.
+            this.runPreviewEnvStage,
             ...this.sharedPostStages(),
         ];
     }

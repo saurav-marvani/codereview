@@ -43,8 +43,8 @@ const EXPECTED_ORDER = [
     // agent engine (the only engine)
     'BusinessLogicValidationStage',
     'CreateSandboxStage',
-    'RunPreviewEnvStage',
     'AgentReviewStage',
+    'RunPreviewEnvStage',
     // shared post
     'CreatePrLevelCommentsStage',
     'ValidateSuggestionsStage',
