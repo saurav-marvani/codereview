@@ -729,6 +729,8 @@ Return ONLY a JSON object (no prose, no fences):
 
 Phases run in this FIXED order: setup → build → services → test → healthcheck. So a service in 'services' already has whatever 'setup'/'build' produced (deps installed, migrations run, assets built). Do NOT embed install/build/migrate into the service start command — if those are missing, patch the 'build' or 'setup' phase instead. Make the SMALLEST edit that fixes the cause; never bundle multiple concerns into one command.
 
+NEVER invent a command/script that may not exist (e.g. do NOT add 'npm run build' unless the failure output proves that script exists and is required). Inventing a nonexistent script just adds a new failing step and wastes an attempt. Fix only what the failure output actually shows; if you're unsure a script exists, don't add it.
+
 Root-cause guidance:
 - "connection refused"/"couldn't connect" or a health-poll timeout means the service didn't come up. Diagnose WHY from the service's own log, not by rewriting the start command. Most common causes and where to patch:
   * The health check is a bare 'curl <url>' with no wait → patch the failing TEST command into a readiness poll on the SAME url: for i in $(seq 1 60); do curl -fsS <url> 2>/dev/null | grep -q '<expected>' && exit 0; sleep 1; done; exit 1  (keep the same url/expected).
