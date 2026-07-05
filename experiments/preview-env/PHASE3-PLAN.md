@@ -82,6 +82,17 @@ it's the reviewable plan; each item maps to a real file + signature.
   secrets-binding/budget inherit to all repos, per-repo `environment:` overrides
   additively (the Devin org→repo Blueprint layering, DESIGN-config.md).
 
+## BUILD STATUS (on branch worktree-kody-preview-env, NOT merged)
+- **PR1 — environment: config: DONE** (typechecks). EnvironmentConfig type +
+  default-kodus-config.yml entry + codereview.json schema.
+- **PR2 — VmSandboxProvider: DONE** (typechecks). vm-client.ts + vm-sandbox.service.ts
+  + union widen + module registration.
+- **PR3 — run-preview-env stage: DONE** (typechecks). stage + affected.ts
+  (scoping, ported) + previewEnvSignal context field + strategy/module wiring.
+- **Scoping unit test: DONE + GREEN** (affected.spec.ts, 10/10 pass).
+- PR1+PR2+PR3 = working end-to-end trio: a review can run in a preview VM.
+- **PR4 (learnings) + PR5 (org config): remaining, additive.**
+
 ## Suggested order & risk
 1. PR 2 (VmSandboxProvider) — self-contained in `libs/sandbox`, testable in
    isolation (it's literally this experiment behind the existing interface).
