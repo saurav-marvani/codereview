@@ -190,6 +190,11 @@ export async function detectEnvironment(
         },
     ];
 
+    // Heavy apps (Java/Spring, Rails, big monorepos) tend to make the agent
+    // give up EARLY — call finish(success=false) with a placeholder summary
+    // while it was actually making progress and had ~100 turns left. Bounce the
+    // first such premature give-up once, telling it to push through.
+    let bouncedFinish = false;
     for (let turn = 1; turn <= MAX_TURNS; turn++) {
         const response = await client.messages.create({
             model,
@@ -244,6 +249,30 @@ export async function detectEnvironment(
                         type: 'tool_result',
                         tool_use_id: toolUse.id,
                         content: `Playbook YAML invalid: ${e.message}. Fix it and call finish again.`,
+                        is_error: true,
+                    });
+                    continue;
+                }
+                // Bounce a PREMATURE give-up: success=false (or a placeholder
+                // summary) with plenty of turns left usually means the agent
+                // stalled on a heavy app, not that the env is unbuildable. Push
+                // it once more instead of recording a failure.
+                const placeholder =
+                    /placeholder|exploration in progress|still exploring|accidentally|need to (continue|keep|gather)|in progress/i.test(
+                        input.summary ?? '',
+                    );
+                if (
+                    (!input.success || placeholder) &&
+                    !bouncedFinish &&
+                    turn < MAX_TURNS - 15
+                ) {
+                    bouncedFinish = true;
+                    logLine({ turn, bouncedFinish: input.summary });
+                    toolResults.push({
+                        type: 'tool_result',
+                        tool_use_id: toolUse.id,
+                        content:
+                            "Don't give up yet — you have many turns left and heavy apps (Java/Maven, Rails/bundler, large monorepos, .NET) just need persistence. Keep going: install whatever toolchain/deps are missing, start the required backing services, build, boot the app, and run its tests. Only call finish(success=false) if you've genuinely hit an unrecoverable blocker and can state the specific error. Otherwise continue with the bash tool now.",
                         is_error: true,
                     });
                     continue;
