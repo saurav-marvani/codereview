@@ -82,6 +82,25 @@ export class DigitalOceanProvider implements VmProvider {
         throw new Error(`Droplet ${params.name} did not become active in 5m`);
     }
 
+    async createSnapshot(serverId: string, description: string): Promise<string> {
+        const res = await doFetch(`/droplets/${serverId}/actions`, {
+            method: 'POST',
+            body: JSON.stringify({ type: 'snapshot', name: description }),
+        });
+        const actionId = res.action.id;
+        const deadline = Date.now() + 15 * 60_000;
+        while (Date.now() < deadline) {
+            const a = (await doFetch(`/droplets/${serverId}/actions/${actionId}`)).action;
+            if (a.status === 'completed') break;
+            if (a.status === 'errored') throw new Error('DO snapshot errored');
+            await sleep(5000);
+        }
+        // The snapshot image id is the newest snapshot on the droplet.
+        const snaps = (await doFetch(`/droplets/${serverId}/snapshots?per_page=200`)).snapshots ?? [];
+        if (!snaps.length) throw new Error('DO snapshot completed but none listed');
+        return String(snaps[snaps.length - 1].id);
+    }
+
     async destroy(serverId: string, sshKeyId?: string): Promise<void> {
         try {
             await doFetch(`/droplets/${serverId}`, { method: 'DELETE' });

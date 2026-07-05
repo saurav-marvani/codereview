@@ -79,6 +79,26 @@ export class HetznerProvider implements VmProvider {
         throw new Error(`Server ${params.name} did not become running in 5m`);
     }
 
+    async createSnapshot(serverId: string, description: string): Promise<string> {
+        const res = await hcloudFetch(`/servers/${serverId}/actions/create_image`, {
+            method: 'POST',
+            body: JSON.stringify({ type: 'snapshot', description }),
+        });
+        const imageId = String(res.image.id);
+        const actionId = res.action.id;
+        // Poll the create_image action until the snapshot is fully written.
+        const deadline = Date.now() + 15 * 60_000;
+        while (Date.now() < deadline) {
+            const a = (await hcloudFetch(`/actions/${actionId}`)).action;
+            if (a.status === 'success') return imageId;
+            if (a.status === 'error') {
+                throw new Error(`snapshot failed: ${JSON.stringify(a.error)}`);
+            }
+            await sleep(5000);
+        }
+        throw new Error(`snapshot ${imageId} did not finish in 15m`);
+    }
+
     async destroy(serverId: string, sshKeyId?: string): Promise<void> {
         try {
             await hcloudFetch(`/servers/${serverId}`, { method: 'DELETE' });

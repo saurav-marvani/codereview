@@ -37,4 +37,11 @@ export interface VmProvider {
     destroy(serverId: string, sshKeyId?: string): Promise<void>;
     /** Lists live VMs whose name starts with the given prefix. */
     listByPrefix(prefix: string): Promise<LiveVm[]>;
+    /**
+     * Freezes a running VM's disk into a reusable image ("golden snapshot"):
+     * the Devin lever — detect+verify once, then boot every later PR warm from
+     * the snapshot instead of re-running the whole toolchain/build. Returns the
+     * image id to pass back as CreateVmParams.image.
+     */
+    createSnapshot(serverId: string, description: string): Promise<string>;
 }

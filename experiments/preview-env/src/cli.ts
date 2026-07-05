@@ -16,6 +16,7 @@ import { getProvider } from './providers/index.js';
 import { scpDownloadDir, scpUpload, shellQuote, sshExec, sshInteractive } from './ssh.js';
 import {
     RUNS_DIR,
+    STATE_DIR,
     SSH_KEY_DIR,
     VM_PREFIX,
     deleteState,
@@ -59,6 +60,8 @@ const USAGE = `kody preview-env — ephemeral customer test environments (experi
 Usage:
   preview up      --name <n> --repo <git-url> [--token <t>] [--env-file <path>]
                   [--provider digitalocean] [--region ...] [--size ...] [--branch <b>]
+                  [--image <snapshot-id>]   # warm boot from a golden snapshot
+  preview snapshot --name <n>               # freeze a verified VM into a reusable golden image
   preview detect  --name <n> [--hint "..."] [--model <id>] [--force]
   preview run     --name <n> [--phase setup|services|build|test] [--playbook <file>] [--timeout <s>]
   preview diagnose --name <n> [--model <id>]   # run tests; on failure, agent finds root cause
@@ -173,13 +176,18 @@ async function cmdUp(args: Args): Promise<void> {
 
     const provider = getProvider(str(args, 'provider') ?? getEnv('PREVIEW_VM_PROVIDER') ?? 'digitalocean');
     const vmName = `${VM_PREFIX}${name}`;
-    console.log(`provisioning ${vmName} on ${provider.kind}...`);
+    // Warm path: a golden snapshot already has the toolchain + repo + deps
+    // baked in, so we skip cloud-init/clone below and just refresh the repo.
+    const fromSnapshot = str(args, 'image');
+    console.log(`provisioning ${vmName} on ${provider.kind}${fromSnapshot ? ` from snapshot ${fromSnapshot}` : ''}...`);
+    const bootStart = Date.now();
     const vm = await provider.create({
         name: vmName,
         publicKey,
         userData: CLOUD_INIT,
         region: str(args, 'region'),
         size: str(args, 'size'),
+        image: fromSnapshot,
     });
     console.log(`droplet ${vm.serverId} @ ${vm.ip}`);
 
@@ -199,10 +207,12 @@ async function cmdUp(args: Args): Promise<void> {
     saveState(state);
 
     await waitForSsh(state);
-    console.log('waiting for cloud-init (docker install)...');
-    const ci = await sshExec(state, 'cloud-init status --wait', { timeoutMs: 600_000 });
-    if (ci.exitCode !== 0) {
-        console.warn(`cloud-init reported: ${ci.stdout.trim() || ci.stderr.trim()} (continuing)`);
+    if (!fromSnapshot) {
+        console.log('waiting for cloud-init (docker install)...');
+        const ci = await sshExec(state, 'cloud-init status --wait', { timeoutMs: 600_000 });
+        if (ci.exitCode !== 0) {
+            console.warn(`cloud-init reported: ${ci.stdout.trim() || ci.stderr.trim()} (continuing)`);
+        }
     }
     const docker = await sshExec(state, 'docker version --format {{.Server.Version}}', { timeoutMs: 30_000 });
     if (docker.exitCode !== 0) throw new Error('docker did not come up on the VM');
@@ -221,17 +231,29 @@ async function cmdUp(args: Args): Promise<void> {
     const token = str(args, 'token') ?? getEnv('PREVIEW_GIT_TOKEN');
     const branch = str(args, 'branch');
     const authedUrl = buildAuthedCloneUrl(repoUrl, token);
-    console.log(`cloning ${repoUrl}${branch ? ` (branch ${branch})` : ''}...`);
-    const clone = await sshExec(
-        state,
-        `git clone ${branch ? `--branch ${shellQuote(branch)} ` : ''}${shellQuote(authedUrl)} /opt/repo && cd /opt/repo && git remote set-url origin ${shellQuote(repoUrl)}`,
-        { timeoutMs: 600_000 },
-    );
-    if (clone.exitCode !== 0) {
-        // Keep token out of the error output.
-        throw new Error(`git clone failed:\n${(token ? clone.stderr.replaceAll(token, '***') : clone.stderr)}`);
+    if (fromSnapshot) {
+        // Repo is baked into the snapshot — just fetch the target ref instead
+        // of a full clone (the warm-boot delta, Devin's "startup commands").
+        console.log(`refreshing repo from snapshot${branch ? ` (branch ${branch})` : ''}...`);
+        const pull = await sshExec(
+            state,
+            `cd /opt/repo && git remote set-url origin ${shellQuote(authedUrl)} && git fetch --depth 1 origin ${branch ? shellQuote(branch) : 'HEAD'} && git checkout -f FETCH_HEAD && git remote set-url origin ${shellQuote(repoUrl)}`,
+            { timeoutMs: 120_000 },
+        );
+        if (pull.exitCode !== 0) console.warn(`repo refresh warned (continuing): ${token ? pull.stderr.replaceAll(token, '***') : pull.stderr}`);
+    } else {
+        console.log(`cloning ${repoUrl}${branch ? ` (branch ${branch})` : ''}...`);
+        const clone = await sshExec(
+            state,
+            `git clone ${branch ? `--branch ${shellQuote(branch)} ` : ''}${shellQuote(authedUrl)} /opt/repo && cd /opt/repo && git remote set-url origin ${shellQuote(repoUrl)}`,
+            { timeoutMs: 600_000 },
+        );
+        if (clone.exitCode !== 0) {
+            // Keep token out of the error output.
+            throw new Error(`git clone failed:\n${(token ? clone.stderr.replaceAll(token, '***') : clone.stderr)}`);
+        }
     }
-    console.log(`\nenv '${name}' is up.`);
+    console.log(`\nenv '${name}' is up in ${Math.round((Date.now() - bootStart) / 1000)}s${fromSnapshot ? ' (warm from snapshot)' : ''}.`);
     console.log(`  next: pnpm run preview detect --name ${name}`);
     console.log(`  ssh:  pnpm run preview ssh --name ${name}`);
 }
@@ -677,6 +699,23 @@ async function cmdDown(args: Args): Promise<void> {
     }
 }
 
+async function cmdSnapshot(args: Args): Promise<void> {
+    const name = normalizeName(str(args, 'name') ?? 'default');
+    const state = loadState(name);
+    const provider = getProvider(state.provider);
+    const desc = `${VM_PREFIX}snap-${name}-${state.repoUrl?.split('/').pop() ?? 'repo'}`;
+    console.log(`creating golden snapshot of '${name}' (${state.repoUrl})...`);
+    const imageId = await provider.createSnapshot(state.serverId, desc);
+    // Persist a per-repo snapshot registry so warm boots can find it.
+    const regPath = join(STATE_DIR, "snapshots.json");
+    const reg = existsSync(regPath) ? JSON.parse(readFileSync(regPath, 'utf8')) : {};
+    reg[state.repoUrl ?? name] = { imageId, provider: provider.kind, createdAt: new Date().toISOString() };
+    writeFileSync(regPath, JSON.stringify(reg, null, 2));
+    console.log(`\nsnapshot ready: image ${imageId}`);
+    console.log(`  warm boot: pnpm run preview up --name <new> --repo ${state.repoUrl} --provider ${provider.kind} --image ${imageId}`);
+    console.log(`  registry:  ${regPath}`);
+}
+
 async function main(): Promise<void> {
     const args = parseArgs(process.argv.slice(2));
     const command = args._[0];
@@ -696,6 +735,7 @@ async function main(): Promise<void> {
             process.exitCode = await sshInteractive(state);
             return;
         }
+        case 'snapshot': return cmdSnapshot(args);
         case 'status':
         case 'ls': return cmdStatus();
         case 'down': return cmdDown(args);
