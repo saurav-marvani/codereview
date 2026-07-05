@@ -214,6 +214,20 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     /** Sandbox handle kept alive for safeguard agent verification */
     sandboxHandle?: SandboxInstance;
 
+    /**
+     * Executed-environment signal from the preview-env stage (Phase 3): the
+     * result of actually booting & testing the PR in a VM (setup/build/
+     * services/test), scoped to the PR's affected slice on giant monorepos.
+     * Consumed by the reviewer as EXECUTED evidence (not static reasoning).
+     */
+    previewEnvSignal?: {
+        ran: boolean;
+        ok: boolean;
+        /** Which slice ran (scoping reason) or 'full'. */
+        scope: string;
+        phases: Array<{ phase: string; command: string; exitCode: number; outputTail: string }>;
+    };
+
     /** Parameters used to create the sandbox — kept for renewal if it expires */
     getFreshCloneParams?: () => Promise<CreateSandboxParams>;
 

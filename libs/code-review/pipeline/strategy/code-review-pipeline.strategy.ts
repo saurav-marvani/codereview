@@ -18,6 +18,7 @@ import {
 import { CreateFileCommentsStage } from '../stages/create-file-comments.stage';
 import { CreatePrLevelCommentsStage } from '../stages/create-pr-level-comments.stage';
 import { CreateSandboxStage } from '../stages/create-sandbox.stage';
+import { RunPreviewEnvStage } from '../stages/run-preview-env.stage';
 import { FetchChangedFilesStage } from '../stages/fetch-changed-files.stage';
 import { UpdateCommentsAndGenerateSummaryStage } from '../stages/finish-comments.stage';
 import { RequestChangesOrApproveStage } from '../stages/finish-process-review.stage';
@@ -50,6 +51,7 @@ export class CodeReviewPipelineStrategy implements IPipelineStrategy<CodeReviewP
         private readonly initialCommentStage: InitialCommentStage,
         private readonly businessLogicValidationStage: BusinessLogicValidationStage,
         private readonly createSandboxStage: CreateSandboxStage,
+        private readonly runPreviewEnvStage: RunPreviewEnvStage,
         private readonly agentReviewStage: AgentReviewStage,
         private readonly createPrLevelCommentsStage: CreatePrLevelCommentsStage,
         private readonly validateSuggestionsStage: ValidateSuggestionsStage,
@@ -69,6 +71,8 @@ export class CodeReviewPipelineStrategy implements IPipelineStrategy<CodeReviewP
             // Agent is the only engine now: no branch, no engine-selection gate.
             this.businessLogicValidationStage,
             this.createSandboxStage,
+            // Boot & test the PR in the VM (opt-in via environment config).
+            this.runPreviewEnvStage,
             this.agentReviewStage,
             ...this.sharedPostStages(),
         ];

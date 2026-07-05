@@ -71,6 +71,7 @@ import { SandboxModule } from '@libs/sandbox/modules/sandbox.module';
 
 // V3 Agent-First
 import { CreateSandboxStage } from './stages/create-sandbox.stage';
+import { RunPreviewEnvStage } from './stages/run-preview-env.stage';
 import { AgentReviewStage } from './stages/agent-review.stage';
 import { BugAgentProvider } from '../infrastructure/agents/providers/bug-agent.provider';
 import { SecurityAgentProvider } from '../infrastructure/agents/providers/security-agent.provider';
@@ -156,6 +157,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
 
         // V3 Agent-First stages + providers
         CreateSandboxStage,
+        RunPreviewEnvStage,
         AgentReviewStage,
         BugAgentProvider,
         SecurityAgentProvider,
@@ -209,6 +211,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         ImplementationVerificationProcessor,
         // V3
         CreateSandboxStage,
+        RunPreviewEnvStage,
         AgentReviewStage,
         ReviewOrchestratorService,
     ],
