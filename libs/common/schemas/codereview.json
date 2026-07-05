@@ -253,6 +253,62 @@
             "type": "boolean",
             "default": true,
             "description": "Indicates whether the review should run on draft pull requests."
+        },
+        "environment": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Preview environment: boot & test this repo in an ephemeral VM so a PR can run. Opt-in per repo.",
+            "properties": {
+                "enabled": { "type": "boolean", "default": false },
+                "requiredEnv": { "type": "array", "items": { "type": "string" } },
+                "setup": { "type": "array", "items": { "type": "string" } },
+                "services": { "type": "array", "items": { "type": "string" } },
+                "build": { "type": "array", "items": { "type": "string" } },
+                "test": { "type": "array", "items": { "type": "string" } },
+                "healthcheck": { "type": "array", "items": { "type": "string" } },
+                "dependsOn": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "repo": { "type": "string" },
+                            "ref": { "type": "string" }
+                        },
+                        "required": ["repo"]
+                    }
+                },
+                "scope": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "affected": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "tool": { "type": "string", "enum": ["turbo", "nx", "pnpm"] },
+                                "base": { "type": "string" },
+                                "build": { "type": "array", "items": { "type": "string" } },
+                                "test": { "type": "array", "items": { "type": "string" } }
+                            }
+                        },
+                        "components": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "name": { "type": "string" },
+                                    "paths": { "type": "array", "items": { "type": "string" } },
+                                    "build": { "type": "array", "items": { "type": "string" } },
+                                    "test": { "type": "array", "items": { "type": "string" } }
+                                },
+                                "required": ["name", "paths"]
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "required": [

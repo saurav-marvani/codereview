@@ -303,6 +303,33 @@ export type ImplementedSuggestionsToAnalyze = {
     existingCode: string;
 };
 
+export type EnvironmentComponentScope = {
+    name: string;
+    /** Globs (support ** and *) matched against a PR's changed file paths. */
+    paths: string[];
+    build?: string[];
+    test?: string[];
+};
+
+export type EnvironmentConfig = {
+    /** Opt-in per repo. Default false — no VM is provisioned unless set. */
+    enabled?: boolean;
+    /** Env var NAMES the app needs to boot; values come from the org secret store. */
+    requiredEnv?: string[];
+    setup?: string[];
+    services?: string[];
+    build?: string[];
+    test?: string[];
+    healthcheck?: string[];
+    /** Cross-repo deps to clone into the same VM/snapshot (declared, v1). */
+    dependsOn?: Array<{ repo: string; ref?: string }>;
+    /** Giant-monorepo scoping: build/test only a PR's affected slice. */
+    scope?: {
+        affected?: { tool?: 'turbo' | 'nx' | 'pnpm'; base?: string; build?: string[]; test?: string[] };
+        components?: EnvironmentComponentScope[];
+    };
+};
+
 export type CodeReviewConfig = {
     ignorePaths: string[];
     reviewMode?: 'fast' | 'normal' | 'deep';
@@ -333,6 +360,13 @@ export type CodeReviewConfig = {
     runOnDraft?: boolean;
     codeReviewVersion?: CodeReviewVersion;
     byokConfig?: BYOKConfig;
+    /**
+     * Preview-environment config: how to boot & test this repo in an ephemeral
+     * VM so a PR can actually run (Phase 3). Opt-in per repo via `enabled`.
+     * The phases mirror the detected/authored `.kody/environment.yml` playbook;
+     * `scope` narrows build/test to a PR's affected slice on giant monorepos.
+     */
+    environment?: EnvironmentConfig;
     /**
      * Optional override for the BYOK *main* model used to run code reviews.
      * Empty string '' means "inherit": directory -> repository -> the main

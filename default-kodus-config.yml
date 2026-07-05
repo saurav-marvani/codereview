@@ -209,3 +209,9 @@ v2PromptOverrides:
             - **Strictly technical**: Use only domain-specific terminology. If a bug is a race condition, start with "Race condition identified in..."
             - **Use Active Voice**: "The function leaks memory" instead of "Memory is leaked by the function."
             - **Sentence cap**: Limit the description to 1-2 high-impact sentences.
+
+# Preview environment (Phase 3): boot & test this repo in an ephemeral VM so a
+# PR can actually run. Opt-in per repo. Present here so the committed
+# kodus-config.yml `environment:` section survives the DEFAULT_CONFIG strip.
+environment:
+    enabled: false
