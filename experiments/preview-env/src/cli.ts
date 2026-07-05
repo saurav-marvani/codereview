@@ -445,9 +445,13 @@ async function cmdHarden(args: Args): Promise<void> {
             console.log(`\n[harden] === attempt ${attempt}/${maxAttempts} ===`);
             // Reset to a clean repo state (remove build artifacts/deps/data) and
             // tear down anything the previous attempt left running.
+            // Reset to a pristine repo AND make sure no service from a prior
+            // attempt is still holding a port (setsid servers survive the ssh
+            // session, so they must be killed explicitly or attempt N+1's
+            // server can't bind and its health check fails spuriously).
             await sshExec(
                 state,
-                `cd ${repoDir} && git clean -fdxq && git checkout -- . 2>/dev/null; fuser -k 3000/tcp 5678/tcp 2>/dev/null; docker rm -f $(docker ps -aq) 2>/dev/null; true`,
+                `pkill -f 'server/server.js' 2>/dev/null; pkill -f 'bin/n8n' 2>/dev/null; fuser -k 3000/tcp 5678/tcp 3332/tcp 2>/dev/null; docker rm -f $(docker ps -aq) 2>/dev/null; sleep 2; cd ${repoDir} && git clean -fdxq && git checkout -- . 2>/dev/null; true`,
                 { timeoutMs: 120_000 },
             );
             await sshExec(state, `mkdir -p ${repoDir}/.kody`, { timeoutMs: 15_000 });

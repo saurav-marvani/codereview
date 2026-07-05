@@ -757,19 +757,30 @@ export async function fixPlaybookPatch(
         `FAILED step (phase '${failure.phase}', exit ${failure.exitCode}):\n$ ${failure.command}\n\n` +
         `Output:\n${truncateForModel(failure.output, 5000)}\n\n` +
         `Return the minimal JSON patch.`;
-    const response = await client.messages.create({
-        model,
-        max_tokens: 2048,
-        system: FIX_PATCH_SYSTEM,
-        messages: [{ role: 'user', content: userMsg }],
-    });
-    let text = response.content
-        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-        .map((b) => b.text)
-        .join('\n')
-        .trim();
+    // Retry once if the model returns no usable JSON (occasionally empty).
+    let text = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await client.messages.create({
+            model,
+            max_tokens: 2048,
+            system: FIX_PATCH_SYSTEM,
+            messages: [
+                { role: 'user', content: userMsg },
+                ...(attempt > 0
+                    ? ([{ role: 'assistant', content: '{' }] as Anthropic.MessageParam[])
+                    : []),
+            ],
+        });
+        text = response.content
+            .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+            .map((b) => b.text)
+            .join('\n')
+            .trim();
+        if (attempt > 0 && text && !text.startsWith('{')) text = '{' + text;
+        if (/\{[\s\S]*\}/.test(text)) break;
+    }
     const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error(`fixPlaybookPatch: no JSON in response: ${text.slice(0, 150)}`);
+    if (!jsonMatch) throw new Error(`fixPlaybookPatch: no JSON in response after retry: ${text.slice(0, 150)}`);
     const patch = JSON.parse(jsonMatch[0]) as PlaybookPatch;
     if (!patch.phase || !patch.old_contains || !patch.new_command) {
         throw new Error(`fixPlaybookPatch: incomplete patch: ${JSON.stringify(patch)}`);
