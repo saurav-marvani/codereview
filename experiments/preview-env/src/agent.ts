@@ -644,4 +644,75 @@ export async function validatePr(
     throw new Error(`Validation hit the ${MAX_TURNS}-turn limit`);
 }
 
+function resolveClient(model: string): { client: Anthropic; model: string } {
+    const isKimi = model.startsWith('kimi');
+    const baseURL =
+        getEnv('PREVIEW_AGENT_BASE_URL') ??
+        (isKimi ? 'https://api.kimi.com/coding' : undefined);
+    const apiKey =
+        getEnv('PREVIEW_AGENT_API_KEY') ??
+        (isKimi
+            ? getEnv('KIMI_CODING_PLAN_KEY')
+            : (getEnv('ANTHROPIC_API_KEY') ?? getEnv('BYOK_ANTHROPIC_API_KEY')));
+    if (!apiKey) throw new Error(`No API key for model '${model}'`);
+    return { client: new Anthropic({ apiKey, baseURL }), model };
+}
+
+const FIX_PLAYBOOK_SYSTEM = `You repair a preview-environment playbook that FAILED to reproduce on a fresh VM. You are given the current playbook (YAML) and the exact step that failed with its output. Return a CORRECTED full playbook (same YAML shape: version, summary, requiredEnv, setup, services, build, test, healthcheck).
+
+Rules and common fixes (apply what fits the failure):
+- Each playbook command runs as a SEPARATE shell session, so a background service started with 'nohup <svc> &' DIES before later commands. Start long-running services with setsid so they survive: setsid bash -c 'cd <dir>; <svc>' < /dev/null & — then poll a health endpoint before the checks that depend on it. Or put the service-start and its checks in the SAME command.
+- The fresh VM only preinstalls git/curl/jq/docker/node/npm/corepack/playwright. If a command uses pnpm/yarn/a global CLI that isn't there, prepend the install/enable step (e.g. 'corepack enable') to setup.
+- Remove spurious host build steps for docker-based apps (the containers are the build).
+- 'command not found' (exit 127) = a missing prerequisite; add it. 'connection refused' on a health check = the service isn't running (background process died — use setsid, or start it in the same command). 'No tests found' / bad flag = fix the exact test invocation.
+- Do not weaken checks to make them pass; fix the cause. Keep everything that already worked.
+
+Output ONLY the corrected YAML, no prose, no code fences.`;
+
+/**
+ * Single-shot playbook repair: given a failing playbook + the failing step,
+ * ask the model for a corrected playbook. Used by the auto-harden loop.
+ */
+export async function fixPlaybook(
+    playbookYaml: string,
+    failure: { phase: string; command: string; exitCode: number; output: string },
+    opts: { model?: string } = {},
+): Promise<Playbook> {
+    const model = opts.model ?? getEnv('PREVIEW_AGENT_MODEL') ?? DEFAULT_MODEL;
+    const { client } = resolveClient(model);
+    const userMsg =
+        `Current playbook:\n\n${playbookYaml}\n\n` +
+        `FAILED step (phase '${failure.phase}', exit ${failure.exitCode}):\n$ ${failure.command}\n\n` +
+        `Output:\n${truncateForModel(failure.output, 6000)}\n\n` +
+        `Return the corrected full playbook YAML.`;
+    const response = await client.messages.create({
+        model,
+        max_tokens: 8192,
+        system: FIX_PLAYBOOK_SYSTEM,
+        messages: [{ role: 'user', content: userMsg }],
+    });
+    let text = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n')
+        .trim();
+    // Prefer a fenced ```yaml block if present.
+    const fence = text.match(/```(?:ya?ml)?\s*\n([\s\S]*?)\n```/i);
+    if (fence) text = fence[1].trim();
+    else text = text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+    // If the model prefixed prose, cut to the first top-level playbook key.
+    const keyStart = text.search(/^(version|summary|requiredEnv|setup|services|build|test|healthcheck):/m);
+    if (keyStart > 0) text = text.slice(keyStart);
+    if (!text) {
+        throw new Error(
+            `fixPlaybook: model returned no usable YAML (raw length ${response.content.length} blocks)`,
+        );
+    }
+    try {
+        return parsePlaybook(text);
+    } catch (e: any) {
+        throw new Error(`fixPlaybook: could not parse repaired playbook (${e.message}). First 200 chars: ${text.slice(0, 200)}`);
+    }
+}
+
 export { dumpPlaybook };

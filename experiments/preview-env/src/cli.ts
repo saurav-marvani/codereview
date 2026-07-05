@@ -2,11 +2,13 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { detectEnvironment, diagnoseFailure, dumpPlaybook, validatePr } from './agent.js';
+import { detectEnvironment, diagnoseFailure, dumpPlaybook, fixPlaybook, validatePr } from './agent.js';
 import { getEnv } from './config.js';
 import {
     PHASES,
     PLAYBOOK_REMOTE_PATH,
+    dumpPlaybook as dumpPb,
+    parsePlaybook,
     readRemotePlaybook,
     runPlaybook,
 } from './playbook.js';
@@ -379,6 +381,102 @@ type PhaseResultLite = {
 };
 
 /**
+ * Auto-harden loop (the correction half of the auto-replay gate): on ONE
+ * fresh VM, repeatedly reset to a clean repo state, replay the playbook, and
+ * when it fails feed the failing step to an LLM that repairs the playbook —
+ * until it reproduces from zero or the attempt budget is exhausted. Writes
+ * the hardened, self-verified playbook.
+ */
+async function cmdHarden(args: Args): Promise<void> {
+    const repo = str(args, 'repo');
+    let playbookFile = str(args, 'playbook');
+    if (!repo) throw new Error('--repo <git-url> is required');
+    if (!playbookFile || !existsSync(playbookFile)) {
+        throw new Error('--playbook <local-file> is required and must exist');
+    }
+    const name = normalizeName(str(args, 'name') ?? 'harden');
+    const maxAttempts = Number(str(args, 'attempts') ?? 4);
+    const model = str(args, 'model');
+    const timeoutMs = Number(str(args, 'timeout') ?? 1800) * 1000;
+    const out = str(args, 'out') ?? playbookFile.replace(/\.ya?ml$/, '') + '.hardened.yml';
+    if (stateExists(name)) throw new Error(`Env '${name}' exists; down it first`);
+
+    const upArgs: Args = { _: [], name, repo };
+    for (const k of ['branch', 'token', 'env-file', 'provider', 'region', 'size']) {
+        const v = str(args, k);
+        if (v) upArgs[k] = v;
+    }
+    let playbookYaml = readFileSync(playbookFile, 'utf8');
+    let hardened = false;
+    try {
+        console.log(`[harden] provisioning VM for ${repo}...`);
+        await cmdUp(upArgs);
+        const state = loadState(name);
+        const repoDir = state.repoDir ?? '/opt/repo';
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            console.log(`\n[harden] === attempt ${attempt}/${maxAttempts} ===`);
+            // Reset to a clean repo state (remove build artifacts/deps/data) and
+            // tear down anything the previous attempt left running.
+            await sshExec(
+                state,
+                `cd ${repoDir} && git clean -fdxq && git checkout -- . 2>/dev/null; fuser -k 3000/tcp 5678/tcp 2>/dev/null; docker rm -f $(docker ps -aq) 2>/dev/null; true`,
+                { timeoutMs: 120_000 },
+            );
+            await sshExec(state, `mkdir -p ${repoDir}/.kody`, { timeoutMs: 15_000 });
+            const tmp = join(RUNS_DIR, `${name}-attempt.yml`);
+            mkdirSync(RUNS_DIR, { recursive: true });
+            writeFileSync(tmp, playbookYaml);
+            scpUpload(state, tmp, `${repoDir}/.kody/environment.yml`);
+            const playbook = await readRemotePlaybook(state);
+            if (!playbook) throw new Error('playbook did not parse on VM');
+
+            const { ok, results } = await runPlaybook(
+                state,
+                playbook,
+                [...PHASES, 'healthcheck'],
+                timeoutMs,
+            );
+            if (ok) {
+                hardened = true;
+                writeFileSync(out, playbookYaml);
+                console.log(`\n[harden] PASSED on attempt ${attempt}. Hardened playbook -> ${out}`);
+                break;
+            }
+            const fail = results[results.length - 1];
+            console.log(`[harden] attempt ${attempt} failed at phase '${fail.phase}': ${fail.command.split('\n')[0]}`);
+            if (attempt === maxAttempts) break;
+            console.log(`[harden] repairing playbook...`);
+            try {
+                const fixed = await fixPlaybook(
+                    playbookYaml,
+                    {
+                        phase: fail.phase,
+                        command: fail.command,
+                        exitCode: fail.exitCode,
+                        output: fail.outputTail ?? '',
+                    },
+                    { model },
+                );
+                playbookYaml = dumpPb(fixed);
+            } catch (e: any) {
+                console.warn(`[harden] repair failed: ${e.message} — stopping`);
+                break;
+            }
+        }
+    } finally {
+        if (stateExists(name)) {
+            console.log(`[harden] tearing down ${name}...`);
+            await cmdDown({ _: [], name }).catch((e) =>
+                console.warn(`[harden] teardown warning: ${e.message}`),
+            );
+        }
+    }
+    console.log(`\n=== HARDEN ${hardened ? 'SUCCEEDED — playbook now reproduces from zero' : 'did NOT converge within attempts'} ===`);
+    process.exitCode = hardened ? 0 : 1;
+}
+
+/**
  * Runs the playbook's test phase; on failure, hands the failing check +
  * output to the diagnosis agent, which investigates on the VM and reports
  * root cause + suggested fix (the Kody PR-validation story).
@@ -526,6 +624,7 @@ async function main(): Promise<void> {
         case 'detect': return cmdDetect(args);
         case 'run': return cmdRun(args);
         case 'verify': return cmdVerify(args);
+        case 'harden': return cmdHarden(args);
         case 'diagnose': return cmdDiagnose(args);
         case 'artifacts': return cmdArtifacts(args);
         case 'learn': return cmdLearn(args);
