@@ -310,6 +310,75 @@ async function cmdRun(args: Args): Promise<void> {
 }
 
 /**
+ * From-zero reproducibility gate: provisions a FRESH VM, clones the repo,
+ * and replays a playbook end-to-end (setup→build→services→test) from a truly
+ * clean base — the only way to catch a playbook that silently depends on
+ * ambient state from detection (uncaptured prereqs like pnpm, spurious host
+ * build steps). Reports the first failing command; always tears the VM down.
+ */
+async function cmdVerify(args: Args): Promise<void> {
+    const repo = str(args, 'repo');
+    const playbookFile = str(args, 'playbook');
+    if (!repo) throw new Error('--repo <git-url> is required');
+    if (!playbookFile || !existsSync(playbookFile)) {
+        throw new Error('--playbook <local-file> is required and must exist');
+    }
+    const name = normalizeName(str(args, 'name') ?? 'verify');
+    if (stateExists(name)) {
+        throw new Error(`Env '${name}' exists; pick another --name or down it first`);
+    }
+    // Build a synthetic argv for cmdUp, forwarding provisioning knobs.
+    const upArgs: Args = { _: [], name, repo };
+    for (const k of ['branch', 'token', 'env-file', 'provider', 'region', 'size']) {
+        const v = str(args, k);
+        if (v) upArgs[k] = v;
+    }
+    let ok = false;
+    let firstFail: PhaseResultLite | undefined;
+    try {
+        console.log(`[verify] provisioning fresh VM for ${repo}...`);
+        await cmdUp(upArgs);
+        const state = loadState(name);
+        const repoDir = state.repoDir ?? '/opt/repo';
+        await sshExec(state, `mkdir -p ${repoDir}/.kody`, { timeoutMs: 15_000 });
+        scpUpload(state, playbookFile, `${repoDir}/.kody/environment.yml`);
+        const playbook = await readRemotePlaybook(state);
+        if (!playbook) throw new Error('playbook did not parse on the VM');
+        const timeoutMs = Number(str(args, 'timeout') ?? 1800) * 1000;
+        console.log(`[verify] replaying playbook from zero...`);
+        const res = await runPlaybook(
+            state,
+            playbook,
+            [...PHASES, 'healthcheck'],
+            timeoutMs,
+        );
+        ok = res.ok;
+        if (!ok) firstFail = res.results[res.results.length - 1];
+    } finally {
+        if (stateExists(name)) {
+            console.log(`[verify] tearing down ${name}...`);
+            await cmdDown({ _: [], name }).catch((e) =>
+                console.warn(`[verify] teardown warning: ${e.message}`),
+            );
+        }
+    }
+    console.log(`\n=== VERIFY ${ok ? 'PASSED — playbook reproduces from zero' : 'FAILED — playbook is NOT reproducible from zero'} ===`);
+    if (!ok && firstFail) {
+        console.log(`first failing step (phase ${firstFail.phase}, exit ${firstFail.exitCode}):`);
+        console.log(`  $ ${firstFail.command.split('\n')[0]}`);
+        console.log(`  output tail: ${firstFail.outputTail?.slice(-400)}`);
+    }
+    process.exitCode = ok ? 0 : 1;
+}
+
+type PhaseResultLite = {
+    phase: string;
+    command: string;
+    exitCode: number;
+    outputTail?: string;
+};
+
+/**
  * Runs the playbook's test phase; on failure, hands the failing check +
  * output to the diagnosis agent, which investigates on the VM and reports
  * root cause + suggested fix (the Kody PR-validation story).
@@ -456,6 +525,7 @@ async function main(): Promise<void> {
         case 'up': return cmdUp(args);
         case 'detect': return cmdDetect(args);
         case 'run': return cmdRun(args);
+        case 'verify': return cmdVerify(args);
         case 'diagnose': return cmdDiagnose(args);
         case 'artifacts': return cmdArtifacts(args);
         case 'learn': return cmdLearn(args);
