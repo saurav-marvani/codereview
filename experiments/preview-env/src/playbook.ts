@@ -23,6 +23,34 @@ export interface Playbook {
     test?: string[];
     /** Optional health check run after `services`/`build`. */
     healthcheck?: string[];
+    /**
+     * Giant-project scoping: on a huge monorepo, building/testing everything
+     * per PR is infeasible. `scope` lets `run --changed <files>` build/test
+     * only what the PR affects. Two modes (affected preferred):
+     *  - affected: use the monorepo tool's own affected graph (turbo/nx/pnpm)
+     *    against the PR base — the {base} placeholder is substituted.
+     *  - components: a declared path→component map (fallback for non-tool repos).
+     * If neither matches the changed files, run falls back to the full phases.
+     */
+    scope?: PlaybookScope;
+}
+
+export interface PlaybookScope {
+    affected?: {
+        tool?: 'turbo' | 'nx' | 'pnpm';
+        /** Base ref to diff against, e.g. origin/main. */
+        base?: string;
+        /** Commands with a {base} placeholder, run INSTEAD of build/test. */
+        build?: string[];
+        test?: string[];
+    };
+    components?: Array<{
+        name: string;
+        /** Globs (supports ** and *) matched against changed file paths. */
+        paths: string[];
+        build?: string[];
+        test?: string[];
+    }>;
 }
 
 export const PLAYBOOK_REMOTE_PATH = '.kody/environment.yml';

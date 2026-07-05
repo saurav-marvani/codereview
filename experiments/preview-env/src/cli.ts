@@ -12,6 +12,7 @@ import {
     readRemotePlaybook,
     runPlaybook,
 } from './playbook.js';
+import { resolveScopedRun } from './affected.js';
 import { getProvider } from './providers/index.js';
 import { scpDownloadDir, scpUpload, shellQuote, sshExec, sshInteractive } from './ssh.js';
 import {
@@ -328,7 +329,25 @@ async function cmdRun(args: Args): Promise<void> {
         throw new Error(`Unknown phase '${phaseArg}'`);
     }
     const timeoutMs = Number(str(args, 'timeout') ?? 1800) * 1000;
-    const { ok, results } = await runPlaybook(state, playbook, phases, timeoutMs);
+
+    // Giant-project scoping: with --changed <files>, build/test only the slice
+    // the PR affects (via the monorepo tool's affected graph or a component
+    // map) instead of the whole repo. Falls back to full phases on no match.
+    let effective = playbook;
+    const changedRaw = str(args, 'changed');
+    if (changedRaw && !phaseArg) {
+        const changedFiles = changedRaw.split(/[,\s]+/).filter(Boolean);
+        const base = str(args, 'base') ?? 'origin/main';
+        const scoped = resolveScopedRun(playbook.scope, changedFiles, base);
+        if (scoped) {
+            console.log(`\n[scope] ${changedFiles.length} changed file(s) → ${scoped.reason}`);
+            console.log(`[scope] build/test only the affected slice (full repo build skipped)`);
+            effective = { ...playbook, build: scoped.build, test: scoped.test };
+        } else {
+            console.log(`\n[scope] no scope match for changed files — running full build/test`);
+        }
+    }
+    const { ok, results } = await runPlaybook(state, effective, phases, timeoutMs);
     console.log(`\n=== run ${ok ? 'PASSED' : 'FAILED'} (${results.length} command(s)) ===`);
     process.exitCode = ok ? 0 : 1;
 }
