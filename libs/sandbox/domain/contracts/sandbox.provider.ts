@@ -39,7 +39,7 @@ export interface SandboxInstance {
     remoteCommands: RemoteCommands;
     cleanup: () => Promise<void>;
     /** Which sandbox provider created this instance */
-    type: 'e2b' | 'local' | 'null';
+    type: 'e2b' | 'local' | 'null' | 'vm';
     /**
      * Stable identifier the lease manager persists on the lease doc so a
      * second consumer can warm-resume by reconnecting via the provider.

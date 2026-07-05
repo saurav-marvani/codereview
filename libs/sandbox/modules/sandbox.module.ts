@@ -7,6 +7,7 @@ import { SANDBOX_LEASE_MANAGER_TOKEN } from '@libs/sandbox/domain/contracts/sand
 import { E2BSandboxService } from '@libs/sandbox/infrastructure/providers/e2b-sandbox.service';
 import { LocalSandboxService } from '@libs/sandbox/infrastructure/providers/local-sandbox.service';
 import { NullSandboxProvider } from '@libs/sandbox/infrastructure/providers/null-sandbox.service';
+import { VmSandboxService } from '@libs/sandbox/infrastructure/providers/vm-sandbox.service';
 import {
     SandboxLeaseModel,
     SandboxLeaseSchema,
@@ -37,6 +38,12 @@ import { SandboxLeaseReaperService } from '@libs/sandbox/infrastructure/services
                 }
                 if (provider === 'e2b') {
                     return new E2BSandboxService(configService);
+                }
+                // Ephemeral cloud-VM sandbox that can actually RUN the app
+                // (preview environments). Selected explicitly; 'auto' does not
+                // pick it since it provisions real infra per review.
+                if (provider === 'vm') {
+                    return new VmSandboxService(configService);
                 }
 
                 // 'auto' (default): prefer E2B when an API key is configured,
