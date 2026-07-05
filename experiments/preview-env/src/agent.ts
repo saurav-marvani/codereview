@@ -715,4 +715,58 @@ export async function fixPlaybook(
     }
 }
 
+export interface PlaybookPatch {
+    phase: string;
+    old_contains: string;
+    new_command: string;
+    reason: string;
+}
+
+const FIX_PATCH_SYSTEM = `A preview-environment playbook FAILED to reproduce on a fresh VM. You are given the full playbook (YAML) and the exact failing step + output. Return a MINIMAL PATCH: change exactly ONE command so the ROOT CAUSE is fixed. Do NOT rewrite the playbook — a single surgical edit only, so phases that already passed are never disturbed.
+
+Return ONLY a JSON object (no prose, no fences):
+{"phase":"<setup|services|build|test|healthcheck>","old_contains":"<a distinctive substring of the ONE command to change>","new_command":"<the full replacement command>","reason":"<one line>"}
+
+Root-cause guidance:
+- "connection refused"/"couldn't connect" on a health check = the service isn't ready or didn't persist. If the failing check is a bare 'curl <url>' with no wait, replace it with a readiness poll on the SAME url: for i in $(seq 1 60); do curl -fsS <url> 2>/dev/null | grep -q '<expected>' && exit 0; sleep 1; done; exit 1  (keep the same url/expected string). If the service is started with a plain 'nohup', the START command is the culprit instead.
+- exit 127 "command not found" = a missing prerequisite; patch the FIRST setup command to install/enable it (e.g. prefix 'corepack enable && ').
+- "No tests found"/bad flag = fix the exact test invocation.
+- Pick old_contains to uniquely identify ONE command (use ~30+ distinctive chars). new_command must be complete and runnable. Never weaken a check to force a pass.`;
+
+/**
+ * Patch-based playbook repair: returns a single surgical edit instead of a
+ * whole-playbook rewrite (which thrashes / breaks passing phases / truncates).
+ */
+export async function fixPlaybookPatch(
+    playbookYaml: string,
+    failure: { phase: string; command: string; exitCode: number; output: string },
+    opts: { model?: string } = {},
+): Promise<PlaybookPatch> {
+    const model = opts.model ?? getEnv('PREVIEW_AGENT_MODEL') ?? DEFAULT_MODEL;
+    const { client } = resolveClient(model);
+    const userMsg =
+        `Full playbook:\n\n${playbookYaml}\n\n` +
+        `FAILED step (phase '${failure.phase}', exit ${failure.exitCode}):\n$ ${failure.command}\n\n` +
+        `Output:\n${truncateForModel(failure.output, 5000)}\n\n` +
+        `Return the minimal JSON patch.`;
+    const response = await client.messages.create({
+        model,
+        max_tokens: 2048,
+        system: FIX_PATCH_SYSTEM,
+        messages: [{ role: 'user', content: userMsg }],
+    });
+    let text = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n')
+        .trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error(`fixPlaybookPatch: no JSON in response: ${text.slice(0, 150)}`);
+    const patch = JSON.parse(jsonMatch[0]) as PlaybookPatch;
+    if (!patch.phase || !patch.old_contains || !patch.new_command) {
+        throw new Error(`fixPlaybookPatch: incomplete patch: ${JSON.stringify(patch)}`);
+    }
+    return patch;
+}
+
 export { dumpPlaybook };

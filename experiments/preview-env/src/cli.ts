@@ -2,7 +2,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { detectEnvironment, diagnoseFailure, dumpPlaybook, fixPlaybook, validatePr } from './agent.js';
+import { detectEnvironment, diagnoseFailure, dumpPlaybook, fixPlaybookPatch, validatePr, type PlaybookPatch } from './agent.js';
 import { getEnv } from './config.js';
 import {
     PHASES,
@@ -381,11 +381,38 @@ type PhaseResultLite = {
 };
 
 /**
+ * Applies a surgical single-command patch: finds the one command in the
+ * target phase containing `old_contains` and replaces it. Returns the new
+ * YAML, or null if nothing matched (so the caller can stop rather than
+ * silently no-op). Never touches any other command — passing phases stay put.
+ */
+function applyPatch(yaml: string, patch: PlaybookPatch): string | null {
+    const pb = parsePlaybook(yaml) as unknown as Record<string, unknown>;
+    const arr = pb[patch.phase];
+    if (!Array.isArray(arr)) return null;
+    for (let i = 0; i < arr.length; i++) {
+        const entry = arr[i];
+        const cmd =
+            typeof entry === 'string'
+                ? entry
+                : entry && typeof entry === 'object'
+                  ? (entry as Record<string, unknown>).command
+                  : undefined;
+        if (typeof cmd === 'string' && cmd.includes(patch.old_contains)) {
+            if (typeof entry === 'string') arr[i] = patch.new_command;
+            else (entry as Record<string, unknown>).command = patch.new_command;
+            return dumpPb(pb as any);
+        }
+    }
+    return null;
+}
+
+/**
  * Auto-harden loop (the correction half of the auto-replay gate): on ONE
  * fresh VM, repeatedly reset to a clean repo state, replay the playbook, and
- * when it fails feed the failing step to an LLM that repairs the playbook —
- * until it reproduces from zero or the attempt budget is exhausted. Writes
- * the hardened, self-verified playbook.
+ * when it fails feed the failing step to an LLM that repairs the playbook
+ * with a surgical single-command patch — until it reproduces from zero or the
+ * attempt budget is exhausted. Writes the hardened, self-verified playbook.
  */
 async function cmdHarden(args: Args): Promise<void> {
     const repo = str(args, 'repo');
@@ -446,9 +473,9 @@ async function cmdHarden(args: Args): Promise<void> {
             const fail = results[results.length - 1];
             console.log(`[harden] attempt ${attempt} failed at phase '${fail.phase}': ${fail.command.split('\n')[0]}`);
             if (attempt === maxAttempts) break;
-            console.log(`[harden] repairing playbook...`);
+            console.log(`[harden] repairing playbook (patch-based)...`);
             try {
-                const fixed = await fixPlaybook(
+                const patch = await fixPlaybookPatch(
                     playbookYaml,
                     {
                         phase: fail.phase,
@@ -458,7 +485,13 @@ async function cmdHarden(args: Args): Promise<void> {
                     },
                     { model },
                 );
-                playbookYaml = dumpPb(fixed);
+                const applied = applyPatch(playbookYaml, patch);
+                if (!applied) {
+                    console.warn(`[harden] patch did not match any command (phase ${patch.phase}, "${patch.old_contains.slice(0, 40)}") — stopping`);
+                    break;
+                }
+                console.log(`[harden] patched ${patch.phase}: ${patch.reason}`);
+                playbookYaml = applied;
             } catch (e: any) {
                 console.warn(`[harden] repair failed: ${e.message} — stopping`);
                 break;
