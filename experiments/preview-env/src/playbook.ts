@@ -93,8 +93,13 @@ function normalizeEntry(entry: unknown, phase: string): string | null {
                 // command runs in a SEPARATE ssh session, and a plain nohup
                 // child is reaped when that session ends, leaving later
                 // health checks with connection-refused.
+                // CRITICAL: redirect the WHOLE setsid group's stdout/stderr to
+                // a file (outside the bash -c), not just the inner command —
+                // otherwise setsid/bash keep the ssh channel's fds open while
+                // the server runs forever, and the ssh exec HANGS instead of
+                // returning after `sleep 4`.
                 const cmd = o.command.replace(/'/g, `'\\''`);
-                return `setsid bash -c '${cmd} > /tmp/kody-svc-${name}.log 2>&1' < /dev/null & sleep 4`;
+                return `setsid bash -c '${cmd}' > /tmp/kody-svc-${name}.log 2>&1 < /dev/null & sleep 4`;
             }
             return o.command;
         }
