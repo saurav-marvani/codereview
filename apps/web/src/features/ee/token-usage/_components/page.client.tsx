@@ -16,6 +16,7 @@ import { CostCards } from "./cost-cards";
 import { Filters } from "./filters";
 import { ModelBreakdownTable } from "./model-breakdown-table";
 import { NoData } from "./no-data";
+import { TokenUsageContentSkeleton } from "./page-skeleton";
 import { SpendLimitProgress } from "./spend-limit-progress";
 import { SummaryCards } from "./summary-cards";
 
@@ -134,8 +135,15 @@ export const TokenUsagePageClient = ({
         return result;
     }, [pricing, selectedModels]);
 
+    // Until the client mounts, render the skeleton (not null) so SSR and the
+    // pre-hydration window show the placeholder layout instead of an empty body
+    // that then pops in the real content.
     if (!isMounted) {
-        return null;
+        return (
+            <div className="flex flex-col gap-5">
+                <TokenUsageContentSkeleton />
+            </div>
+        );
     }
 
     return (
