@@ -51,7 +51,7 @@ describe('KodyRuleDetectorSweepService (#1449 continuous T0 sweep)', () => {
         expect(backfill.execute).toHaveBeenCalledTimes(2);
         expect(backfill.execute).toHaveBeenCalledWith(
             { organizationId: 'o1' },
-            { onlyMissing: true },
+            expect.objectContaining({ onlyMissing: true }),
         );
         expect(release).toHaveBeenCalledTimes(1);
         restore();
@@ -95,6 +95,29 @@ describe('KodyRuleDetectorSweepService (#1449 continuous T0 sweep)', () => {
         await svc.sweep();
         expect(backfill.execute).toHaveBeenCalledTimes(2);
         expect(release).toHaveBeenCalledTimes(1);
+        restore();
+    });
+
+    it('stops at the per-run cap and defers remaining orgs', async () => {
+        const prev = process.env.KODY_RULES_DETECTOR_SWEEP_MAX_PER_RUN;
+        process.env.KODY_RULES_DETECTOR_SWEEP_MAX_PER_RUN = '5';
+        const { svc, backfill, restore } = make({
+            docs: [{ organizationId: 'o1' }, { organizationId: 'o2' }],
+            backfillResult: {
+                processed: 5,
+                compiled: 5,
+                declined: 0,
+                errored: 0,
+                skipped: 0,
+                total: 5,
+            },
+        });
+        await svc.sweep();
+        // first org consumes the whole budget (5) → second org deferred
+        expect(backfill.execute).toHaveBeenCalledTimes(1);
+        if (prev === undefined)
+            delete process.env.KODY_RULES_DETECTOR_SWEEP_MAX_PER_RUN;
+        else process.env.KODY_RULES_DETECTOR_SWEEP_MAX_PER_RUN = prev;
         restore();
     });
 

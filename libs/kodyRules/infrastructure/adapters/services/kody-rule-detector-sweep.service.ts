@@ -29,6 +29,15 @@ import {
 export class KodyRuleDetectorSweepService {
     private readonly logger = createLogger(KodyRuleDetectorSweepService.name);
     private readonly enabled: boolean;
+    /**
+     * Hard cap on rules compiled per nightly run. The first run over a large
+     * legacy corpus (prod ~10k) must NOT try to compile everything at once —
+     * that would blow the lock TTL and spike LLM cost. With onlyMissing the
+     * backlog drains a batch per night; steady-state is far below the cap. Use
+     * scripts/backfill-kody-rule-detectors.ts for a faster, operator-controlled
+     * initial turn.
+     */
+    private readonly maxRulesPerRun: number;
 
     constructor(
         @Inject(KODY_RULES_SERVICE_TOKEN)
@@ -39,6 +48,9 @@ export class KodyRuleDetectorSweepService {
         // Default ON; set KODY_RULES_DETECTOR_SWEEP_ENABLED=false to disable.
         this.enabled =
             process.env.KODY_RULES_DETECTOR_SWEEP_ENABLED !== 'false';
+        this.maxRulesPerRun = Number(
+            process.env.KODY_RULES_DETECTOR_SWEEP_MAX_PER_RUN ?? 2000,
+        );
     }
 
     @Cron('0 4 * * *') // daily at 04:00 (low-traffic window)
@@ -50,9 +62,17 @@ export class KodyRuleDetectorSweepService {
 
         const start = Date.now();
         const totals = { orgs: 0, processed: 0, compiled: 0, errored: 0 };
+        let budget = this.maxRulesPerRun;
         try {
             const docs = await this.kodyRulesService.find();
             for (const doc of docs) {
+                if (budget <= 0) {
+                    this.logger.log({
+                        message: `Detector sweep hit per-run cap (${this.maxRulesPerRun}); remaining orgs deferred to the next run`,
+                        context: KodyRuleDetectorSweepService.name,
+                    });
+                    break;
+                }
                 const organizationId =
                     (doc as any)?.organizationId ??
                     (doc as any)?.toObject?.()?.organizationId;
@@ -61,11 +81,12 @@ export class KodyRuleDetectorSweepService {
                 try {
                     const r = await this.backfill.execute(
                         { organizationId } as any,
-                        { onlyMissing: true },
+                        { onlyMissing: true, limit: budget },
                     );
                     totals.processed += r.processed;
                     totals.compiled += r.compiled;
                     totals.errored += r.errored;
+                    budget -= r.processed;
                 } catch (error) {
                     this.logger.warn({
                         message: `Detector sweep failed for org ${organizationId}`,
