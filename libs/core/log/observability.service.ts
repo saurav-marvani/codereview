@@ -703,6 +703,8 @@ export class ObservabilityService implements OnModuleInit {
         options: ObservabilityConfig,
     ) {
         const uri = this.buildConnectionString(config);
+        const mongoExporterEnabled =
+            process.env.OBSERVABILITY_MONGO_ENABLED !== 'false';
 
         const collections =
             options.enableCollections !== false
@@ -718,26 +720,28 @@ export class ObservabilityService implements OnModuleInit {
 
         return {
             logging: { enabled: true },
-            mongodb: {
-                type: 'mongodb' as const,
-                connectionString: uri,
-                database: config.database,
-                ...(collections && { collections }),
-                batchSize:
-                    options.customSettings?.batchSize ??
-                    ObservabilityService.DEFAULT_SETTINGS.batchSize,
-                flushIntervalMs:
-                    options.customSettings?.flushIntervalMs ??
-                    ObservabilityService.DEFAULT_SETTINGS.flushIntervalMs,
-                ttlDays: 0,
-                enableObservability: true,
-                secondaryIndexes:
-                    options.customSettings?.secondaryIndexes ??
-                    ObservabilityService.DEFAULT_SETTINGS.secondaryIndexes,
-                bucketKeys:
-                    options.customSettings?.bucketKeys ??
-                    ObservabilityService.DEFAULT_SETTINGS.bucketKeys,
-            },
+            ...(mongoExporterEnabled && {
+                mongodb: {
+                    type: 'mongodb' as const,
+                    connectionString: uri,
+                    database: config.database,
+                    ...(collections && { collections }),
+                    batchSize:
+                        options.customSettings?.batchSize ??
+                        ObservabilityService.DEFAULT_SETTINGS.batchSize,
+                    flushIntervalMs:
+                        options.customSettings?.flushIntervalMs ??
+                        ObservabilityService.DEFAULT_SETTINGS.flushIntervalMs,
+                    ttlDays: 0,
+                    enableObservability: true,
+                    secondaryIndexes:
+                        options.customSettings?.secondaryIndexes ??
+                        ObservabilityService.DEFAULT_SETTINGS.secondaryIndexes,
+                    bucketKeys:
+                        options.customSettings?.bucketKeys ??
+                        ObservabilityService.DEFAULT_SETTINGS.bucketKeys,
+                },
+            }),
             telemetry: {
                 enabled: true,
                 serviceName: options.serviceName,
