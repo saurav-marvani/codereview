@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { Button } from "@components/ui/button";
+import { Skeleton } from "@components/ui/skeleton";
 import { Spinner } from "@components/ui/spinner";
 import {
     Table,
@@ -11,6 +13,7 @@ import {
     TableHeader,
     TableRow,
 } from "@components/ui/table";
+import { GitPullRequestIcon } from "lucide-react";
 
 import { PrListItem } from "./pr-list-item";
 import type { PullRequestExecutionGroup } from "./types";
@@ -21,6 +24,8 @@ interface PrDataTableProps {
     hasNextPage?: boolean;
     isFetchingNextPage?: boolean;
     fetchNextPage?: () => void;
+    hasActiveFilters?: boolean;
+    onClearFilters?: () => void;
 }
 
 export const PrDataTable = ({
@@ -29,6 +34,8 @@ export const PrDataTable = ({
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
+    hasActiveFilters,
+    onClearFilters,
 }: PrDataTableProps) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -43,7 +50,11 @@ export const PrDataTable = ({
             (entries) => {
                 const [entry] = entries;
 
-                if (entry?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+                if (
+                    entry?.isIntersecting &&
+                    hasNextPage &&
+                    !isFetchingNextPage
+                ) {
                     fetchNextPage();
                 }
             },
@@ -57,18 +68,48 @@ export const PrDataTable = ({
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center py-12">
-                <Spinner className="size-7" />
+            <div className="border-card-lv3/40 bg-card-lv1/50 flex flex-col gap-px overflow-hidden rounded-xl border">
+                {Array.from({ length: 8 }).map((_, i) => (
+                    <div
+                        key={i}
+                        className="flex items-center gap-4 px-4 py-3.5">
+                        <Skeleton className="size-4 shrink-0 rounded" />
+                        <Skeleton className="h-4 w-10 shrink-0" />
+                        <Skeleton className="h-4 flex-1" />
+                        <Skeleton className="h-4 w-24 shrink-0" />
+                        <Skeleton className="hidden h-4 w-28 shrink-0 lg:block" />
+                        <Skeleton className="h-5 w-16 shrink-0 rounded-md" />
+                    </div>
+                ))}
             </div>
         );
     }
 
     if (!data.length) {
         return (
-            <div className="py-12 text-center">
-                <p className="text-text-secondary text-sm">
-                    No pull requests found.
-                </p>
+            <div className="border-card-lv3/40 bg-card-lv1/50 flex flex-col items-center justify-center gap-3 rounded-xl border py-16 text-center">
+                <div className="bg-card-lv2/60 text-text-tertiary flex size-11 items-center justify-center rounded-full">
+                    <GitPullRequestIcon className="size-5" />
+                </div>
+                {hasActiveFilters ? (
+                    <>
+                        <p className="text-text-secondary text-sm">
+                            No pull requests match these filters.
+                        </p>
+                        {onClearFilters && (
+                            <Button
+                                size="xs"
+                                variant="helper"
+                                onClick={onClearFilters}>
+                                Clear filters
+                            </Button>
+                        )}
+                    </>
+                ) : (
+                    <p className="text-text-secondary text-sm">
+                        No pull requests reviewed yet.
+                    </p>
+                )}
             </div>
         );
     }
@@ -76,8 +117,7 @@ export const PrDataTable = ({
     return (
         <TableContainer
             ref={containerRef}
-            className="border-card-lv3/40 bg-card-lv1/50 max-h-[calc(100vh-13rem)] overflow-auto rounded-xl border"
-        >
+            className="border-card-lv3/40 bg-card-lv1/50 max-h-[calc(100vh-13rem)] overflow-auto rounded-xl border">
             <Table className="w-full">
                 <TableHeader sticky>
                     <TableRow className="hover:bg-transparent">

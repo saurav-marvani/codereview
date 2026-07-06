@@ -270,6 +270,8 @@ export function PullRequestsPageClient() {
                         hasNextPage={hasNextPage}
                         isFetchingNextPage={isFetchingNextPage}
                         fetchNextPage={fetchNextPage}
+                        hasActiveFilters={activeChips.length > 0}
+                        onClearFilters={clearAllFilters}
                     />
                 )}
             </Page.Content>
