@@ -12,6 +12,8 @@ const makeStage = (over: {
     available?: boolean;
     apiKey?: string;
     cleanup?: jest.Mock;
+    summary?: string;
+    transcript?: any[];
 } = {}) => {
     const cleanup = over.cleanup ?? jest.fn().mockResolvedValue(undefined);
     const fakeSandbox = {
@@ -19,7 +21,7 @@ const makeStage = (over: {
         sandboxId: 's1',
         repoDir: '/opt/repo',
         run: jest.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
-        readFile: jest.fn(),
+        readFile: jest.fn().mockResolvedValue(''),
         writeFile: jest.fn().mockResolvedValue(undefined),
         cleanup,
         remoteCommands: {} as any,
@@ -44,8 +46,9 @@ const makeStage = (over: {
     const agent = {
         run: jest.fn().mockResolvedValue({
             findings: over.findings ?? [],
-            summary: 'ok',
+            summary: over.summary ?? 'ok',
             turns: 3,
+            transcript: over.transcript ?? [],
         }),
     } as any;
     const vmSvc = {
@@ -158,6 +161,35 @@ describe('RunPreviewEnvStage (alpha spine)', () => {
             expect.anything(),
             infra,
         );
+    });
+
+    it('records the full run (transcript + phases) on context.runtimeRun with secrets redacted', async () => {
+        const { stage, secretsService } = makeStage({
+            findings: [{ severity: 'high', description: 'bug', file: 'db.js', evidence: 'x' }],
+            summary: 'exercised with token hunter2-the-secret',
+            transcript: [
+                {
+                    turn: 1,
+                    reasoning: 'run it',
+                    commands: [
+                        { command: 'echo hunter2-the-secret', exitCode: 0, stdout: 'hunter2-the-secret', stderr: '', durationMs: 3 },
+                    ],
+                },
+            ],
+        });
+        secretsService.resolveSecrets.mockResolvedValue({ TOKEN: 'hunter2-the-secret' });
+
+        const out = await stage.execute(
+            ctx({ organizationAndTeamData: { organizationId: 'o1', teamId: 't1' } }),
+        );
+
+        expect(out.runtimeRun).toBeDefined();
+        expect(out.runtimeRun.ran).toBe(true);
+        expect(out.runtimeRun.turns).toBe(3);
+        expect(out.runtimeRun.findingsCount).toBe(1);
+        const blob = JSON.stringify(out.runtimeRun);
+        expect(blob).not.toContain('hunter2-the-secret'); // scrubbed everywhere
+        expect(blob).toContain('‹redacted:TOKEN›');
     });
 
     it('warm-boots from a fresh registry snapshot (passes snapshotImage to the provisioner)', async () => {

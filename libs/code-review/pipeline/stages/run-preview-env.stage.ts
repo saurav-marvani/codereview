@@ -20,6 +20,12 @@ import {
 import { PreviewEnvSecretsService } from '../services/preview-env-secrets.service';
 import { PreviewEnvInfraService } from '../services/preview-env-infra.service';
 import { PreviewEnvSnapshotService } from '../services/preview-env-snapshot.service';
+import {
+    RuntimeRunRecord,
+    redactPhases,
+    redactSecrets,
+    redactTranscript,
+} from '../services/preview-env-run';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 
 /**
@@ -113,6 +119,7 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
         const cliContext = isCli ? (context as unknown as CliReviewPipelineContext) : undefined;
 
         let vm: SandboxInstance | undefined;
+        const startedAt = new Date().toISOString();
         try {
             const cloneInfo = await this.cloneParamsResolver.resolve(context, cliContext);
             if (!cloneInfo) return context;
@@ -183,6 +190,30 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
             // to Mongo, never silently dropped). The count is logged above.
             const clean = suggestions.map(({ postPrLevel, ...s }) => s);
 
+            // Assemble the full, user-facing run record — everything the model
+            // did + the environment output — with the injected secret VALUES
+            // scrubbed everywhere (they appear in env/output). This is what the
+            // PR-side viewer renders so the reviewer can see 100% of the run.
+            const serviceLog = await vm
+                .readFile('/tmp/kody-svc.log')
+                .catch(() => '');
+            const runtimeRun: RuntimeRunRecord = {
+                ran: true,
+                ok,
+                scope: scopeLabel,
+                phases: redactPhases(phases, secrets),
+                serviceLog: serviceLog
+                    ? redactSecrets(serviceLog.slice(-20_000), secrets)
+                    : undefined,
+                transcript: redactTranscript(agentRes.transcript ?? [], secrets),
+                summary: redactSecrets(agentRes.summary ?? '', secrets),
+                findingsCount: agentRes.findings.length,
+                turns: agentRes.turns,
+                model,
+                startedAt,
+                finishedAt: new Date().toISOString(),
+            };
+
             return this.updateContext(context, (draft) => {
                 draft.validSuggestions = [
                     ...(draft.validSuggestions ?? []),
@@ -194,6 +225,7 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
                     scope: scopeLabel,
                     phases,
                 };
+                draft.runtimeRun = runtimeRun;
             });
         } catch (error) {
             this.logger.error({

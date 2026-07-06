@@ -39,10 +39,30 @@ export interface PreviewAgentParams {
     maxTurns?: number;
 }
 
+/** One executed command in the agent's session (for the run transcript). */
+export interface RuntimeCommand {
+    command: string;
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+    durationMs: number;
+}
+
+/** One agent turn: what it reasoned + the commands it ran that turn. */
+export interface RuntimeTurn {
+    turn: number;
+    reasoning: string;
+    commands: RuntimeCommand[];
+}
+
 export interface PreviewAgentResult {
     findings: PreviewFinding[];
     summary: string;
     turns: number;
+    /** Full replayable record of what the agent did — every command + output +
+     *  the model's reasoning per turn. RAW (unredacted): the STAGE redacts the
+     *  injected secret values before persisting, since only it holds them. */
+    transcript: RuntimeTurn[];
 }
 
 const SYSTEM_PROMPT = `You are Kody's preview-environment validation agent. You have a \`bash\` tool that runs commands INSIDE a VM where the customer's repository is checked out and the app is already BOOTED (services running, DB migrated). The pull request under review is applied to the working tree — you are given its diff. You are given NO author title/description/intent — judge ONLY what the code now does.
@@ -127,6 +147,15 @@ export class PreviewEnvAgentService {
             },
         ];
 
+        // Replayable record of the whole session (commands + output + reasoning).
+        const transcript: RuntimeTurn[] = [];
+        const reasoningText = (content: Anthropic.Message['content']): string =>
+            content
+                .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+                .map((b) => b.text)
+                .join('\n')
+                .trim();
+
         for (let turn = 1; turn <= maxTurns; turn++) {
             const response = await client.messages.create({
                 model: params.model,
@@ -135,6 +164,9 @@ export class PreviewEnvAgentService {
                 tools: TOOLS,
                 messages,
             });
+
+            const record: RuntimeTurn = { turn, reasoning: reasoningText(response.content), commands: [] };
+            transcript.push(record);
 
             const toolUses = response.content.filter(
                 (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
@@ -157,15 +189,24 @@ export class PreviewEnvAgentService {
                         findings: (input.findings ?? []).filter((f) => f && f.description),
                         summary: input.summary ?? '',
                         turns: turn,
+                        transcript,
                     };
                 }
                 const input = toolUse.input as { command: string; timeout_seconds?: number };
                 let out: PreviewExecResult;
+                const started = Date.now();
                 try {
                     out = await params.exec(input.command, (input.timeout_seconds ?? 300) * 1000);
                 } catch (e: any) {
                     out = { stdout: '', stderr: String(e?.message ?? e), exitCode: 1 };
                 }
+                record.commands.push({
+                    command: input.command,
+                    exitCode: out.exitCode,
+                    stdout: (out.stdout ?? '').slice(0, 20_000),
+                    stderr: (out.stderr ?? '').slice(0, 20_000),
+                    durationMs: Date.now() - started,
+                });
                 const body = `exit=${out.exitCode}\n${(out.stdout + out.stderr).slice(0, 12_000)}`;
                 toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: body });
             }
@@ -176,6 +217,6 @@ export class PreviewEnvAgentService {
             message: `Preview-env agent hit the ${maxTurns}-turn limit without finishing`,
             context: PreviewEnvAgentService.name,
         });
-        return { findings: [], summary: `Hit ${maxTurns}-turn limit`, turns: maxTurns };
+        return { findings: [], summary: `Hit ${maxTurns}-turn limit`, turns: maxTurns, transcript };
     }
 }

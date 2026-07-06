@@ -228,6 +228,11 @@ export interface CodeReviewPipelineContext extends PipelineContext {
         phases: Array<{ phase: string; command: string; exitCode: number; outputTail: string }>;
     };
 
+    /** The full, redacted Kody Runtime run record (transcript + phase/service
+     *  logs + summary) for the PR-side viewer — everything the model did, so the
+     *  reviewer can see 100% of what happened in the VM. Persisted downstream. */
+    runtimeRun?: import('../services/preview-env-run').RuntimeRunRecord;
+
     /** Kody Runtime was explicitly requested for THIS run (`@kody runtime`
      *  PR command / CLI --runtime). With `environment.trigger: 'command'`
      *  (the default), the runtime stage only runs when this is set. */
