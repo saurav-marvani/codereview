@@ -9,6 +9,7 @@ import {
     IsIn,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { AutomationStatus } from '@libs/automation/domain/automation/enum/automation-status';
 import { PULL_REQUEST_AUTHOR_POLICIES } from './pull-request-author-policy.constants';
 
 export class EnrichedPullRequestsQueryDto {
@@ -77,4 +78,13 @@ export class EnrichedPullRequestsQueryDto {
             'Filter pull requests by author policy: all, reviewable (not excluded), or excluded.',
     })
     authorPolicy?: (typeof PULL_REQUEST_AUTHOR_POLICIES)[number];
+
+    @IsOptional()
+    @IsString()
+    @IsIn(Object.values(AutomationStatus))
+    @ApiPropertyOptional({
+        enum: AutomationStatus,
+        description: 'Filter by the execution review status.',
+    })
+    status?: AutomationStatus;
 }

@@ -87,6 +87,7 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
             pullRequestNumber,
             teamId,
             authorPolicy = 'all',
+            status,
         } = query;
 
         if (!this.request.user?.organization?.uuid) {
@@ -222,6 +223,7 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                             repositoryName: repositoryNameFilter,
                             pullRequestNumber,
                             prFilters,
+                            status,
                             // First batch: page offset. Subsequent batches:
                             // keyset cursor (no OFFSET over-scan).
                             skip: loopCursor ? undefined : initialSkip,

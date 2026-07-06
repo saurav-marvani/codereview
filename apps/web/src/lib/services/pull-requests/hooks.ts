@@ -74,6 +74,10 @@ export const useInfinitePullRequestExecutions = (
             next.authorPolicy = filters.authorPolicy;
         }
 
+        if (filters?.status) {
+            next.status = filters.status;
+        }
+
         return next;
     }, [
         filters?.teamId,
@@ -83,6 +87,7 @@ export const useInfinitePullRequestExecutions = (
         filters?.pullRequestNumber,
         filters?.hasSentSuggestions,
         filters?.authorPolicy,
+        filters?.status,
         pageSize,
     ]);
 

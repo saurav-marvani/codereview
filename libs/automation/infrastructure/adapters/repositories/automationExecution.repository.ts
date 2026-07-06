@@ -238,6 +238,7 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
         pullRequestNumber?: number;
         pullRequestTitle?: string;
         prFilters?: Array<{ number: number; repositoryId: string }>;
+        status?: string;
         skip?: number;
         // Keyset cursor: the (createdAt, uuid) of the last row of the previous
         // page. When supplied, pagination uses an indexed range scan instead of
@@ -257,6 +258,7 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
             pullRequestNumber,
             pullRequestTitle: _pullRequestTitle,
             prFilters,
+            status,
             skip = 0,
             cursor,
             take = 30,
@@ -337,6 +339,13 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                 queryBuilder.andWhere(
                     'automation_execution.pullRequestNumber = :pullRequestNumber',
                     { pullRequestNumber },
+                );
+            }
+
+            if (status) {
+                queryBuilder.andWhere(
+                    'automation_execution.status = :status',
+                    { status },
                 );
             }
 

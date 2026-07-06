@@ -33,6 +33,22 @@ import { hasPermission } from "src/core/utils/permission-map";
 
 type SuggestionsFilterValue = "all" | "true" | "false";
 type AuthorPolicyFilterValue = "all" | "reviewable" | "excluded";
+type StatusFilterValue =
+    | "success"
+    | "error"
+    | "partial_error"
+    | "skipped"
+    | "in_progress"
+    | "pending";
+
+const STATUS_OPTIONS: { value: StatusFilterValue; label: string }[] = [
+    { value: "success", label: "Success" },
+    { value: "error", label: "Error" },
+    { value: "partial_error", label: "Partial error" },
+    { value: "skipped", label: "Skipped" },
+    { value: "in_progress", label: "In progress" },
+    { value: "pending", label: "Pending" },
+];
 
 interface PullRequestsFiltersProps {
     teamId: string;
@@ -46,6 +62,8 @@ interface PullRequestsFiltersProps {
     onSuggestionsFilterChange: (value: SuggestionsFilterValue) => void;
     authorPolicy: AuthorPolicyFilterValue;
     onAuthorPolicyChange: (value: AuthorPolicyFilterValue) => void;
+    status?: StatusFilterValue | null;
+    onStatusChange: (value: StatusFilterValue | null) => void;
 }
 
 export const PullRequestsFilters = ({
@@ -60,6 +78,8 @@ export const PullRequestsFilters = ({
     onSuggestionsFilterChange,
     authorPolicy,
     onAuthorPolicyChange,
+    status,
+    onStatusChange,
 }: PullRequestsFiltersProps) => {
     const [open, setOpen] = useState(false);
     const [mounted, setMounted] = useState(false);
@@ -89,6 +109,7 @@ export const PullRequestsFilters = ({
         (pullRequestNumber?.trim().length > 0 ? 1 : 0) +
         (suggestionsFilter !== "all" ? 1 : 0) +
         (authorPolicy !== "reviewable" ? 1 : 0) +
+        (status ? 1 : 0) +
         (selectedRepository ? 1 : 0);
 
     useEffect(() => {
@@ -148,6 +169,7 @@ export const PullRequestsFilters = ({
                             onPullRequestNumberChange("");
                             onSuggestionsFilterChange("all");
                             onAuthorPolicyChange("reviewable");
+                            onStatusChange(null);
                         }}>
                         Clear
                     </Button>
@@ -234,6 +256,37 @@ export const PullRequestsFilters = ({
                                 <SelectItem value="excluded">
                                     Excluded by policy only
                                 </SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                        <Label className="text-text-secondary text-xs">
+                            Review status
+                        </Label>
+                        <Select
+                            value={status ?? "all"}
+                            onValueChange={(value) =>
+                                onStatusChange(
+                                    value === "all"
+                                        ? null
+                                        : (value as StatusFilterValue),
+                                )
+                            }>
+                            <SelectTrigger size="md">
+                                <SelectValue placeholder="Status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">
+                                    Any status (default)
+                                </SelectItem>
+                                {STATUS_OPTIONS.map((option) => (
+                                    <SelectItem
+                                        key={option.value}
+                                        value={option.value}>
+                                        {option.label}
+                                    </SelectItem>
+                                ))}
                             </SelectContent>
                         </Select>
                     </div>

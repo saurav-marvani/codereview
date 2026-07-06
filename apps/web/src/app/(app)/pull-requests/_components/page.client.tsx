@@ -23,6 +23,22 @@ import { PullRequestsFilters } from "./pull-requests-filters";
 const urlOpts = { shallow: true, history: "replace" } as const;
 const SUGGESTIONS = ["all", "true", "false"] as const;
 const AUTHOR_POLICIES = ["all", "reviewable", "excluded"] as const;
+const STATUSES = [
+    "success",
+    "error",
+    "partial_error",
+    "skipped",
+    "in_progress",
+    "pending",
+] as const;
+const STATUS_LABEL: Record<(typeof STATUSES)[number], string> = {
+    success: "Success",
+    error: "Error",
+    partial_error: "Partial error",
+    skipped: "Skipped",
+    in_progress: "In progress",
+    pending: "Pending",
+};
 
 export function PullRequestsPageClient() {
     const { teamId } = useSelectedTeamId();
@@ -50,6 +66,10 @@ export function PullRequestsPageClient() {
         parseAsStringLiteral(AUTHOR_POLICIES)
             .withDefault("reviewable")
             .withOptions(urlOpts),
+    );
+    const [statusFilter, setStatusFilter] = useQueryState(
+        "status",
+        parseAsStringLiteral(STATUSES).withOptions(urlOpts),
     );
 
     const debouncedTitle = useDebounce(pullRequestTitle, 400);
@@ -79,6 +99,7 @@ export function PullRequestsPageClient() {
             pullRequestNumber: normalizedNumber ? normalizedNumber : undefined,
             hasSentSuggestions: hasSentSuggestionsParam,
             authorPolicy,
+            status: statusFilter ?? undefined,
         },
         // This view mounts usePullRequestExecutionSSE (above), which invalidates
         // the query on every execution_updated event — so skip the redundant
@@ -129,6 +150,7 @@ export function PullRequestsPageClient() {
         setPullRequestNumber("");
         setSuggestionsFilter("all");
         setAuthorPolicy("reviewable");
+        setStatusFilter(null);
     };
 
     // Surface the applied filters as removable chips (the popover only shows a
@@ -172,6 +194,13 @@ export function PullRequestsPageClient() {
             label: authorChipLabel[authorPolicy],
             clear: () => {
                 setAuthorPolicy("reviewable");
+            },
+        },
+        statusFilter && {
+            key: "status",
+            label: `Status: ${STATUS_LABEL[statusFilter]}`,
+            clear: () => {
+                setStatusFilter(null);
             },
         },
     ].filter(
@@ -230,6 +259,8 @@ export function PullRequestsPageClient() {
                             onAuthorPolicyChange={(value) =>
                                 setAuthorPolicy(value)
                             }
+                            status={statusFilter}
+                            onStatusChange={(value) => setStatusFilter(value)}
                         />
                     </div>
                 </div>

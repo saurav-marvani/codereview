@@ -10,7 +10,16 @@ export interface PullRequestFilters {
     pullRequestNumber?: string;
     hasSentSuggestions?: boolean;
     authorPolicy?: "all" | "reviewable" | "excluded";
+    status?: PullRequestStatusFilter;
 }
+
+export type PullRequestStatusFilter =
+    | "success"
+    | "error"
+    | "partial_error"
+    | "skipped"
+    | "in_progress"
+    | "pending";
 
 export const PULL_REQUEST_SSE = {
     EXECUTION_EVENTS: pathToApiUrl("/pull-requests/executions/events"),
@@ -38,6 +47,9 @@ export const PULL_REQUEST_API = {
             );
         if (filters?.authorPolicy) {
             params.append("authorPolicy", filters.authorPolicy);
+        }
+        if (filters?.status) {
+            params.append("status", filters.status);
         }
 
         const queryString = params.toString();

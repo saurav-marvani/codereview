@@ -155,6 +155,7 @@ export class AutomationExecutionService implements IAutomationExecutionService {
         pullRequestNumber?: number;
         pullRequestTitle?: string;
         prFilters?: Array<{ number: number; repositoryId: string }>;
+        status?: string;
         skip?: number;
         cursor?: { createdAt: string | Date; uuid: string };
         take?: number;
