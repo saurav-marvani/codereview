@@ -1,7 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import { Button } from "@components/ui/button";
 import { Checkbox } from "@components/ui/checkbox";
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from "@components/ui/command";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -12,6 +21,11 @@ import {
 } from "@components/ui/dropdown-menu";
 import { Input } from "@components/ui/input";
 import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@components/ui/popover";
+import {
     Select,
     SelectContent,
     SelectItem,
@@ -20,7 +34,7 @@ import {
 } from "@components/ui/select";
 
 import { useGetSelectedRepositories } from "@services/codeManagement/hooks";
-import { ChevronDownIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import { safeArray } from "src/core/utils/safe-array";
 
 import { useTokenUsageFilters } from "../_hooks/filter.hook";
@@ -51,6 +65,11 @@ export const Filters = ({
 
     const { data: repositories } = useGetSelectedRepositories(teamId);
     const repoOptions = safeArray(repositories);
+    const [repoOpen, setRepoOpen] = useState(false);
+    const selectedRepoName = selectedRepositoryId
+        ? (repoOptions.find((r) => r.id === selectedRepositoryId)?.name ??
+          "All repositories")
+        : "All repositories";
 
     return (
         <div className="flex gap-4">
@@ -109,23 +128,61 @@ export const Filters = ({
             </DropdownMenu>
 
             {repoOptions.length > 0 && (
-                <Select
-                    onValueChange={(v) =>
-                        handleRepositoryChange(v === "all" ? "" : v)
-                    }
-                    value={selectedRepositoryId || "all"}>
-                    <SelectTrigger className="w-[220px]">
-                        <SelectValue placeholder="Repository" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">All repositories</SelectItem>
-                        {repoOptions.map((repo) => (
-                            <SelectItem key={repo.id} value={repo.id}>
-                                {repo.name}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+                <Popover open={repoOpen} onOpenChange={setRepoOpen} modal>
+                    <PopoverTrigger asChild>
+                        <Button
+                            size="md"
+                            variant="helper"
+                            role="combobox"
+                            aria-expanded={repoOpen}
+                            className="w-[220px] justify-between">
+                            <span className="truncate">
+                                {selectedRepoName}
+                            </span>
+                            <ChevronDownIcon className="size-4 shrink-0 opacity-50" />
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[260px] p-0" align="start">
+                        <Command>
+                            <CommandInput placeholder="Search repositories..." />
+                            <CommandList className="max-h-64 overflow-y-auto">
+                                <CommandEmpty>
+                                    No repository found.
+                                </CommandEmpty>
+                                <CommandGroup>
+                                    <CommandItem
+                                        value="All repositories"
+                                        onSelect={() => {
+                                            handleRepositoryChange("");
+                                            setRepoOpen(false);
+                                        }}>
+                                        <span>All repositories</span>
+                                        {!selectedRepositoryId && (
+                                            <CheckIcon className="text-primary-light -mr-2 size-5" />
+                                        )}
+                                    </CommandItem>
+                                    {repoOptions.map((repo) => (
+                                        <CommandItem
+                                            key={repo.id}
+                                            value={repo.name}
+                                            onSelect={() => {
+                                                handleRepositoryChange(repo.id);
+                                                setRepoOpen(false);
+                                            }}>
+                                            <span className="truncate">
+                                                {repo.name}
+                                            </span>
+                                            {selectedRepositoryId ===
+                                                repo.id && (
+                                                <CheckIcon className="text-primary-light -mr-2 size-5 shrink-0" />
+                                            )}
+                                        </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                            </CommandList>
+                        </Command>
+                    </PopoverContent>
+                </Popover>
             )}
 
             <Select
