@@ -83,24 +83,18 @@ export function findingToSuggestion(
 }
 
 /**
- * Focus filter: when the reviewer set a focus directive, keep only findings
- * that match it — EXCEPT always keep reproduced critical security/data defects
- * (a real breach shouldn't be silenced by a narrow focus). Best-effort keyword
- * match on the directive; the agent already prioritizes focus, this is a
- * belt-and-suspenders filter.
+ * Focus STEERS, it never SUPPRESSES. The directive is handed to the agent so it
+ * prioritizes what to execute (see the `focus` arg on agent.run) — a keyword
+ * filter on the OUTPUT then discards real, reproduced findings whose wording
+ * didn't happen to echo the directive's terms. That fired on a live run of a
+ * real PR: the agent returned 1 reproduced finding and this filter dropped it to
+ * 0 because a prose directive's terms didn't match. So this is now a no-op that
+ * returns every finding; the review directive is a hint that only prioritizes,
+ * never silences (same contract as the normal reviewer's <ReviewFocus>).
+ * Kept as a function (stable signature) so callers/tests don't churn.
  */
-export function applyFocus(findings: PreviewFinding[], focus?: string): PreviewFinding[] {
-    if (!focus?.trim()) return findings;
-    const terms = focus
-        .toLowerCase()
-        .split(/[^a-z0-9]+/)
-        .filter((t) => t.length > 3);
-    if (!terms.length) return findings;
-    return findings.filter((f) => {
-        if (f.severity === 'critical') return true;
-        const hay = `${f.description} ${f.file}`.toLowerCase();
-        return terms.some((t) => hay.includes(t));
-    });
+export function applyFocus(findings: PreviewFinding[], _focus?: string): PreviewFinding[] {
+    return findings;
 }
 
 export function findingsToSuggestions(

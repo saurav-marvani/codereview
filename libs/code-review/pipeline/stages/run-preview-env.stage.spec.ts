@@ -121,19 +121,24 @@ describe('RunPreviewEnvStage (alpha spine)', () => {
         expect((out.validSuggestions[0] as any).postPrLevel).toBeUndefined(); // marker stripped
     });
 
-    it('passes the focus directive to the agent and filters non-matching findings', async () => {
+    it('passes the focus directive to the agent as a steer, but never drops findings', async () => {
         const findings = [
-            { severity: 'critical', description: 'SSRF', file: 'db.js', evidence: 'x' }, // critical → always kept, on-diff
-            { severity: 'low', description: 'css nit', file: 'style.css', evidence: 'x' }, // no focus match → dropped
+            { severity: 'critical', description: 'SSRF', file: 'db.js', evidence: 'x' }, // on-diff → inline
+            { severity: 'low', description: 'css nit', file: 'style.css', evidence: 'x' }, // off-diff, still reported
         ];
         const { stage, agent } = makeStage({ findings });
         const out = await stage.execute(ctx({ reviewDirective: 'security vulnerabilities' }));
 
+        // The directive steers the agent (input)…
         expect(agent.run).toHaveBeenCalledWith(
             expect.objectContaining({ focus: 'security vulnerabilities' }),
         );
-        expect(out.validSuggestions).toHaveLength(1); // only the critical survives the focus
-        expect(out.validSuggestions[0].relevantFile).toBe('db.js');
+        // …but does NOT suppress the agent's output — both findings survive.
+        expect(out.validSuggestions).toHaveLength(2);
+        expect(out.validSuggestions.map((s: any) => s.relevantFile).sort()).toEqual([
+            'db.js',
+            'style.css',
+        ]);
     });
 
     it('org-level infra config (BYO-cloud) makes the stage runnable without the env token', async () => {

@@ -91,21 +91,17 @@ describe('preview-env findings mapping', () => {
         });
     });
 
-    describe('applyFocus', () => {
+    describe('applyFocus steers, never suppresses', () => {
         const findings = [
             f({ severity: 'medium', description: 'database count is wrong', file: 'db.js' }),
-            f({ severity: 'medium', description: 'styling spacing off', file: 'style.css' }),
+            f({ severity: 'low', description: 'styling spacing off', file: 'style.css' }),
             f({ severity: 'critical', description: 'SSRF reachable', file: 'net.js' }),
         ];
-        it('keeps only findings matching the focus terms', () => {
-            const kept = applyFocus(findings, 'database queries').map((x) => x.file);
-            expect(kept).toContain('db.js'); // matches 'database'
-            expect(kept).not.toContain('style.css'); // no focus term
-        });
-        it('always keeps reproduced critical defects regardless of focus', () => {
-            const kept = applyFocus(findings, 'styling appearance').map((x) => x.file);
-            expect(kept).toContain('net.js'); // critical SSRF survives a narrow focus
-            expect(kept).toContain('style.css'); // matches 'styling'
+        it('returns EVERY finding even when a directive is set (no output filtering)', () => {
+            // regression: a prose directive whose terms don't echo a finding's
+            // wording must NOT drop that finding (fired live on a real PR).
+            const kept = applyFocus(findings, 'the token cost pricing math').map((x) => x.file);
+            expect(kept).toEqual(['db.js', 'style.css', 'net.js']);
         });
         it('no focus → all findings pass', () => {
             expect(applyFocus(findings, undefined)).toHaveLength(3);
@@ -113,13 +109,12 @@ describe('preview-env findings mapping', () => {
         });
     });
 
-    it('findingsToSuggestions applies focus then maps', () => {
+    it('findingsToSuggestions maps ALL findings regardless of directive', () => {
         const out = findingsToSuggestions(
             [f({ severity: 'low', description: 'perf', file: 'p.js' }), f()],
-            'security',
+            'security', // directive present, but nothing is suppressed
         );
-        // 'p.js' (low, no security term) dropped; critical price-tampering kept
-        expect(out).toHaveLength(1);
-        expect(out[0].label).toBe(PREVIEW_ENV_LABEL);
+        expect(out).toHaveLength(2);
+        expect(out.every((s) => s.label === PREVIEW_ENV_LABEL)).toBe(true);
     });
 });

@@ -167,7 +167,7 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
             );
             const offDiffCount = suggestions.filter((s) => s.postPrLevel).length;
             this.logger.log({
-                message: `Preview env done (playbook ${ok ? 'ok' : 'failed'}, scope ${scopeLabel}, ${agentRes.findings.length} finding(s) → ${suggestions.length} after focus; ${offDiffCount} off-diff [no changed line → may fail lines-mismatch])`,
+                message: `Preview env done (playbook ${ok ? 'ok' : 'failed'}, scope ${scopeLabel}, ${agentRes.findings.length} finding(s) → ${suggestions.length} suggestion(s); ${offDiffCount} off-diff [no changed line → may fail lines-mismatch])`,
                 context: this.stageName,
             });
 
