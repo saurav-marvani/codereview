@@ -83,8 +83,21 @@ const formatTokens = (t: number) => {
     return `${(t / 1000000).toFixed(1)}M`;
 };
 
-const pct = (value: number, total: number) =>
-    total > 0 ? `${((value / total) * 100).toFixed(1)}%` : "0%";
+const rawPct = (value: number, total: number) =>
+    total > 0 ? (value / total) * 100 : 0;
+
+// Label: distinguish a true zero from a share too small to round to 0.1%.
+// Showing "0.0%" on a row that actually spent tokens reads as "nothing".
+const pctLabel = (value: number, total: number) => {
+    const p = rawPct(value, total);
+    if (p === 0) return "0%";
+    if (p < 0.1) return "<0.1%";
+    return `${p.toFixed(1)}%`;
+};
+
+// Bar width keeps the real fraction (CSS-safe) so a tiny area still renders a
+// sliver instead of vanishing.
+const barWidth = (value: number, total: number) => `${rawPct(value, total)}%`;
 
 /**
  * "Where tokens go" — spend per area of the review process. Rows arrive
@@ -152,7 +165,7 @@ export const AreaBreakdown = ({
                             <div
                                 className="h-full rounded-full"
                                 style={{
-                                    width: pct(total, grandTotal),
+                                    width: barWidth(total, grandTotal),
                                     backgroundColor: meta.color,
                                 }}
                             />
@@ -161,7 +174,7 @@ export const AreaBreakdown = ({
                             {formatTokens(total)}
                         </span>
                         <span className="text-text-tertiary w-12 shrink-0 text-right font-mono text-xs">
-                            {pct(total, grandTotal)}
+                            {pctLabel(total, grandTotal)}
                         </span>
                     </div>
                 ))}
