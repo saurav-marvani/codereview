@@ -348,3 +348,167 @@ describe('KodyRulesAgentProvider — rule formatting and applicability', () => {
         });
     });
 });
+
+// ── end-to-end wiring of the sharded execute() (#1449) ───────────────────────
+// Drives the REAL execute() — model resolution, BYOK runner construction, the
+// mechanical/semantic split, the sharded judge, and the merge through
+// mapAgentFindings — with the LLM mocked at the builder boundary. Catches
+// provider wiring bugs without a live model or a Nest bootstrap.
+describe('KodyRulesAgentProvider.execute — sharded end-to-end (#1449)', () => {
+    // Chainable builder mock: config methods return `this`; execute() returns
+    // the next canned response (one per shard call).
+    function makeProvider(responses: any[]) {
+        let i = 0;
+        const builder: any = {};
+        for (const m of [
+            'setProviders',
+            'setParser',
+            'setLLMJsonMode',
+            'addPrompt',
+            'setRunName',
+            'setBYOKConfig',
+            'setPayload',
+        ]) {
+            builder[m] = jest.fn(() => builder);
+        }
+        builder.execute = jest.fn(
+            async () => responses[i++] ?? { violations: [] },
+        );
+        const provider = new KodyRulesAgentProvider(
+            { builder: () => builder } as any, // promptRunnerService
+            { getBYOKConfig: jest.fn(async () => null) } as any, // permission (system model)
+            {} as any, // observability
+        );
+        return { provider, builder };
+    }
+
+    const input = (over: any = {}) => ({
+        prNumber: 1,
+        organizationAndTeamData: {
+            organizationId: '11111111-1111-1111-1111-111111111111',
+            teamId: '22222222-2222-2222-2222-222222222222',
+        },
+        changedFiles: [
+            {
+                filename: 'src/a.ts',
+                patchWithLinesStr:
+                    '10 +console.log(1)\n11 +const x: any = 2',
+                patch: '10 +console.log(1)\n11 +const x: any = 2',
+            },
+        ],
+        remoteCommands: undefined,
+        prTitle: 'test',
+        prBody: '',
+        ...over,
+    });
+
+    it('semantic path: judge violations become tagged CodeSuggestions', async () => {
+        const { provider } = makeProvider([
+            {
+                violations: [
+                    {
+                        ruleUuid: 'no-any',
+                        relevantLinesStart: 11,
+                        relevantLinesEnd: 11,
+                        existingCode: 'const x: any = 2',
+                        suggestionContent: 'avoid any',
+                        oneSentenceSummary: 'no any',
+                    },
+                ],
+            },
+        ]);
+        const out = await provider.execute(
+            input({
+                kodyRules: [
+                    {
+                        uuid: 'no-any',
+                        title: 'no any',
+                        rule: 'do not use any',
+                        status: 'active',
+                        severity: 'high',
+                        path: '**/*.ts',
+                    },
+                ],
+            }) as any,
+        );
+        expect(out.suggestions).toHaveLength(1);
+        expect((out.suggestions[0] as any).brokenKodyRulesIds).toEqual([
+            'no-any',
+        ]);
+        expect(out.suggestions[0].relevantFile).toBe('src/a.ts');
+    });
+
+    it('mechanical path: detector regex fires with ZERO LLM calls', async () => {
+        const { provider, builder } = makeProvider([]);
+        const out = await provider.execute(
+            input({
+                kodyRules: [
+                    {
+                        uuid: 'no-console',
+                        title: 'no console',
+                        rule: 'no console.log',
+                        status: 'active',
+                        severity: 'high',
+                        path: '**/*.ts',
+                        detector: {
+                            type: 'regex',
+                            pattern: 'console\\.(log|warn|error)\\(',
+                        },
+                    },
+                ],
+            }) as any,
+        );
+        expect(builder.execute).not.toHaveBeenCalled();
+        expect(out.suggestions).toHaveLength(1);
+        expect((out.suggestions[0] as any).brokenKodyRulesIds).toEqual([
+            'no-console',
+        ]);
+        expect(out.suggestions[0].relevantLinesStart).toBe(10);
+    });
+
+    it('mixed: detector + judge merge into one output (one LLM call)', async () => {
+        const { provider, builder } = makeProvider([
+            {
+                violations: [
+                    {
+                        ruleUuid: 'no-any',
+                        relevantLinesStart: 11,
+                        suggestionContent: 'avoid any',
+                        oneSentenceSummary: 'no any',
+                    },
+                ],
+            },
+        ]);
+        const out = await provider.execute(
+            input({
+                kodyRules: [
+                    {
+                        uuid: 'no-console',
+                        title: 'no console',
+                        rule: 'no console.log',
+                        status: 'active',
+                        severity: 'high',
+                        path: '**/*.ts',
+                        detector: {
+                            type: 'regex',
+                            pattern: 'console\\.(log|warn|error)\\(',
+                        },
+                    },
+                    {
+                        uuid: 'no-any',
+                        title: 'no any',
+                        rule: 'do not use any',
+                        status: 'active',
+                        severity: 'high',
+                        path: '**/*.ts',
+                    },
+                ],
+            }) as any,
+        );
+        expect(builder.execute).toHaveBeenCalledTimes(1); // only the semantic rule
+        const ids = out.suggestions
+            .map((s: any) => s.brokenKodyRulesIds?.[0])
+            .sort();
+        expect(ids).toEqual(['no-any', 'no-console']);
+    });
+});
