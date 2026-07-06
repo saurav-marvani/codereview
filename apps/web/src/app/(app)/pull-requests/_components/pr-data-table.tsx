@@ -4,19 +4,34 @@ import { useEffect, useRef } from "react";
 import { Button } from "@components/ui/button";
 import { Skeleton } from "@components/ui/skeleton";
 import { Spinner } from "@components/ui/spinner";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@components/ui/table";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { GitPullRequestIcon } from "lucide-react";
 
 import { PrListItem } from "./pr-list-item";
 import type { PullRequestExecutionGroup } from "./types";
+
+// Shared column template for the header + every row so a virtualized `<div>`
+// grid stays aligned (a real `<table>` can't be virtualized with the expandable
+// variable-height rows this list has). Responsive column hiding was dropped in
+// favor of horizontal scroll on narrow viewports.
+export const PR_GRID_COLS =
+    "2rem 4.5rem minmax(16rem,1fr) 8rem 9rem 9rem 4.5rem 8rem 8rem 6rem 7rem";
+export const PR_MIN_WIDTH = "72rem";
+
+const HEADERS = [
+    "",
+    "PR",
+    "Title",
+    "Repository",
+    "Branch",
+    "Author",
+    "Reviews",
+    "Last Review",
+    "Created",
+    "Suggestions",
+    "Status",
+];
+const CENTERED = new Set([6, 9, 10]);
 
 interface PrDataTableProps {
     data: PullRequestExecutionGroup[];
@@ -37,32 +52,37 @@ export const PrDataTable = ({
     hasActiveFilters,
     onClearFilters,
 }: PrDataTableProps) => {
-    const containerRef = useRef<HTMLDivElement | null>(null);
+    const scrollRef = useRef<HTMLDivElement | null>(null);
     const loadMoreRef = useRef<HTMLDivElement | null>(null);
+
+    const virtualizer = useVirtualizer({
+        count: data.length,
+        getScrollElement: () => scrollRef.current,
+        // Collapsed row height; measureElement corrects it (and any expanded
+        // row) to the real value via ResizeObserver.
+        estimateSize: () => 52,
+        overscan: 8,
+        getItemKey: (index) => data[index]?.prId ?? index,
+    });
 
     useEffect(() => {
         const node = loadMoreRef.current;
-        const root = containerRef.current;
-
+        const root = scrollRef.current;
         if (!node || !root || !fetchNextPage) return;
 
         const observer = new IntersectionObserver(
             (entries) => {
-                const [entry] = entries;
-
                 if (
-                    entry?.isIntersecting &&
+                    entries[0]?.isIntersecting &&
                     hasNextPage &&
                     !isFetchingNextPage
                 ) {
                     fetchNextPage();
                 }
             },
-            { root, rootMargin: "0px 0px 200px 0px" },
+            { root, rootMargin: "0px 0px 400px 0px" },
         );
-
         observer.observe(node);
-
         return () => observer.disconnect();
     }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
@@ -114,58 +134,58 @@ export const PrDataTable = ({
         );
     }
 
+    const items = virtualizer.getVirtualItems();
+
     return (
-        <TableContainer
-            ref={containerRef}
+        <div
+            ref={scrollRef}
             className="border-card-lv3/40 bg-card-lv1/50 max-h-[calc(100vh-13rem)] overflow-auto rounded-xl border">
-            <Table className="w-full">
-                <TableHeader sticky>
-                    <TableRow className="hover:bg-transparent">
-                        <TableHead className="w-8"></TableHead>
-                        <TableHead className="text-text-tertiary w-20 text-xs font-medium tracking-wide uppercase">
-                            PR
-                        </TableHead>
-                        <TableHead className="text-text-tertiary min-w-[18rem] text-xs font-medium tracking-wide uppercase">
-                            Title
-                        </TableHead>
-                        <TableHead className="text-text-tertiary w-32 text-xs font-medium tracking-wide uppercase">
-                            Repository
-                        </TableHead>
-                        <TableHead className="text-text-tertiary w-40 text-xs font-medium tracking-wide uppercase">
-                            Branch
-                        </TableHead>
-                        <TableHead className="text-text-tertiary w-40 text-xs font-medium tracking-wide uppercase">
-                            Author
-                        </TableHead>
-                        <TableHead className="text-text-tertiary w-20 text-center text-xs font-medium tracking-wide uppercase">
-                            Reviews
-                        </TableHead>
-                        <TableHead className="text-text-tertiary w-32 text-xs font-medium tracking-wide uppercase">
-                            Last Review
-                        </TableHead>
-                        <TableHead className="text-text-tertiary w-32 text-xs font-medium tracking-wide uppercase">
-                            Created
-                        </TableHead>
-                        <TableHead className="text-text-tertiary w-20 text-center text-xs font-medium tracking-wide uppercase">
-                            Suggestions
-                        </TableHead>
-                        <TableHead className="text-text-tertiary w-32 text-center text-xs font-medium tracking-wide uppercase">
-                            Status
-                        </TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {data.map((group) => (
-                        <PrListItem key={group.prId} group={group} />
+            <div style={{ minWidth: PR_MIN_WIDTH }}>
+                {/* Sticky header */}
+                <div
+                    className="bg-card-lv1 border-card-lv3/40 sticky top-0 z-10 grid items-center gap-x-3 border-b px-4 py-2.5"
+                    style={{ gridTemplateColumns: PR_GRID_COLS }}>
+                    {HEADERS.map((label, i) => (
+                        <div
+                            key={i}
+                            className={`text-text-tertiary min-w-0 truncate text-xs font-medium tracking-wide uppercase ${
+                                CENTERED.has(i) ? "text-center" : ""
+                            }`}>
+                            {label}
+                        </div>
                     ))}
-                </TableBody>
-            </Table>
-            <div ref={loadMoreRef} className="h-1 w-full" aria-hidden />
-            {isFetchingNextPage && data.length > 0 && (
-                <div className="flex justify-center py-4">
-                    <Spinner className="size-5" />
                 </div>
-            )}
-        </TableContainer>
+
+                {/* Virtualized body */}
+                <div
+                    style={{
+                        height: `${virtualizer.getTotalSize()}px`,
+                        position: "relative",
+                    }}>
+                    {items.map((virtualRow) => (
+                        <div
+                            key={virtualRow.key}
+                            data-index={virtualRow.index}
+                            ref={virtualizer.measureElement}
+                            style={{
+                                position: "absolute",
+                                top: 0,
+                                left: 0,
+                                width: "100%",
+                                transform: `translateY(${virtualRow.start}px)`,
+                            }}>
+                            <PrListItem group={data[virtualRow.index]} />
+                        </div>
+                    ))}
+                </div>
+
+                <div ref={loadMoreRef} className="h-1 w-full" aria-hidden />
+                {isFetchingNextPage && (
+                    <div className="flex justify-center py-4">
+                        <Spinner className="size-5" />
+                    </div>
+                )}
+            </div>
+        </div>
     );
 };

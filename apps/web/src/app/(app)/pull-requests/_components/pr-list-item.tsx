@@ -1,12 +1,11 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import NextLink from "next/link";
 import { Badge } from "@components/ui/badge";
 import { buttonVariants } from "@components/ui/button";
 import { Link } from "@components/ui/link";
 import { Spinner } from "@components/ui/spinner";
-import { TableCell, TableRow } from "@components/ui/table";
 import {
     Tooltip,
     TooltipContent,
@@ -28,6 +27,7 @@ import {
 } from "lucide-react";
 import { cn } from "src/core/utils/components";
 
+import { PR_GRID_COLS } from "./pr-data-table";
 import type { PullRequestExecutionGroup } from "./types";
 
 interface PrListItemProps {
@@ -421,34 +421,37 @@ export const PrListItem = ({ group }: PrListItemProps) => {
     };
 
     return (
-        <Fragment>
-            <TableRow
+        <div className="border-card-lv3/30 border-b">
+            <div
+                role="button"
+                tabIndex={0}
                 className={cn(
-                    "cursor-pointer",
+                    "grid cursor-pointer items-center gap-x-3 px-4 py-3",
                     isOpen
                         ? "bg-card-lv2/40 hover:bg-card-lv2/50"
                         : "hover:bg-card-lv1/70",
                 )}
+                style={{ gridTemplateColumns: PR_GRID_COLS }}
                 onClick={() => setIsOpen(!isOpen)}>
-                <TableCell className="w-8 px-4">
+                <div>
                     <ChevronDownIcon
                         className={cn(
                             "text-text-tertiary size-4 shrink-0 transition-transform duration-200",
                             isOpen && "text-text-secondary rotate-180",
                         )}
                     />
-                </TableCell>
-                <TableCell className="text-text-secondary w-20 font-mono text-sm tabular-nums">
+                </div>
+                <div className="text-text-secondary font-mono text-sm tabular-nums">
                     #{latest.prNumber}
-                </TableCell>
-                <TableCell className="max-w-[240px] min-w-0">
+                </div>
+                <div className="min-w-0">
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Link
                                 href={prUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-text-primary hover:text-primary-light flex max-w-[240px] items-center gap-1.5 font-medium hover:underline"
+                                className="text-text-primary hover:text-primary-light flex items-center gap-1.5 font-medium hover:underline"
                                 onClick={(e) => e.stopPropagation()}>
                                 <span className="truncate">{latest.title}</span>
                                 <ExternalLinkIcon className="text-text-tertiary size-3 shrink-0" />
@@ -458,14 +461,14 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                             {latest.title}
                         </TooltipContent>
                     </Tooltip>
-                </TableCell>
-                <TableCell className="w-32">
+                </div>
+                <div className="min-w-0">
                     <span className="text-text-secondary block truncate text-sm">
                         {latest.repositoryName}
                     </span>
-                </TableCell>
-                <TableCell className="hidden w-32 xl:table-cell">
-                    <div className="text-text-tertiary flex w-full max-w-[10rem] items-center gap-1.5 text-sm">
+                </div>
+                <div className="min-w-0">
+                    <div className="text-text-tertiary flex items-center gap-1.5 text-sm">
                         <GitBranchIcon className="size-3 shrink-0" />
                         <Tooltip>
                             <TooltipTrigger asChild>
@@ -478,38 +481,40 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                             </TooltipContent>
                         </Tooltip>
                     </div>
-                </TableCell>
-                <TableCell className="hidden w-32 lg:table-cell">
+                </div>
+                <div className="min-w-0">
                     <span className="text-text-secondary block truncate text-sm">
                         {latest.author.name}
                     </span>
-                </TableCell>
-                <TableCell className="w-20 text-center">
+                </div>
+                <div className="text-center">
                     <span className="text-text-primary text-sm font-medium tabular-nums">
                         {reviewCount}
                     </span>
-                </TableCell>
-                <TableCell className="hidden w-28 lg:table-cell">
+                </div>
+                <div className="min-w-0">
                     <span className="text-text-tertiary text-sm tabular-nums">
                         {latest.automationExecution?.createdAt ? (
                             <TimeAgoDisplay
-                                dateString={latest.automationExecution.createdAt}
+                                dateString={
+                                    latest.automationExecution.createdAt
+                                }
                                 timezone={timezone}
                             />
                         ) : (
                             "—"
                         )}
                     </span>
-                </TableCell>
-                <TableCell className="hidden w-28 lg:table-cell">
+                </div>
+                <div className="min-w-0">
                     <span className="text-text-tertiary text-sm tabular-nums">
                         <TimeAgoDisplay
                             dateString={latest.createdAt}
                             timezone={timezone}
                         />
                     </span>
-                </TableCell>
-                <TableCell className="w-20 text-center">
+                </div>
+                <div className="text-center">
                     <NextLink
                         href={`/pull-requests/${latest.repositoryId}/${latest.prNumber}`}
                         onClick={(e) => e.stopPropagation()}
@@ -535,534 +540,515 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                             </TooltipContent>
                         </Tooltip>
                     </NextLink>
-                </TableCell>
-                <TableCell className="w-32 text-center">
+                </div>
+                <div className="flex justify-center">
                     {getStatusBadge(
                         latest.automationExecution?.status || "pending",
                         latest.merged,
                     )}
-                </TableCell>
-            </TableRow>
+                </div>
+            </div>
 
             {isOpen && (
-                <TableRow className="hover:bg-transparent">
-                    <TableCell
-                        colSpan={11}
-                        className="border-b-card-lv3/60 bg-card-lv2/20 p-0">
-                        <div className="max-w-[calc(100vw-6rem)] px-4 pt-2 pb-6">
-                            {/* Quiet entry into the full review screen. Lives
+                <div className="bg-card-lv2/20">
+                    <div className="px-4 pt-2 pb-6">
+                        {/* Quiet entry into the full review screen. Lives
                                 here (not on the row/title) because the row click
                                 is the inline expand and the title links out to
                                 the provider. Kept low-key — a text link, not a
                                 filled button — so it reads as "there's more"
                                 without competing with the timeline below. */}
-                            <div className="mt-1 mb-1 flex justify-end">
-                                <NextLink
-                                    href={`/pull-requests/${latest.repositoryId}/${latest.prNumber}`}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="text-text-tertiary hover:text-primary-light inline-flex items-center gap-1 text-xs font-medium transition-colors">
-                                    Open full review
-                                    <ArrowRightIcon className="size-3.5" />
-                                </NextLink>
-                            </div>
-                            <div className="pt-2">
-                                <div className="space-y-3">
-                                    {executions.map((execution, index) => {
-                                        const executionKey =
-                                            execution.executionId ||
-                                            execution.automationExecution
-                                                ?.uuid ||
-                                            `${execution.prId}-${execution.automationExecution?.createdAt ?? execution.updatedAt ?? execution.createdAt}-${index}`;
-                                        const executionOrigin =
-                                            execution.automationExecution
-                                                ?.origin || "";
-                                        const executionStartedAt =
-                                            execution.automationExecution
-                                                ?.createdAt ??
-                                            execution.createdAt;
-                                        const executionFinishedAt =
-                                            execution.automationExecution
-                                                ?.updatedAt ??
-                                            execution.updatedAt;
-                                        const executionDuration =
-                                            formatDuration(
-                                                executionStartedAt,
-                                                executionFinishedAt,
-                                            );
-                                        const executionStatus =
-                                            execution.automationExecution
-                                                ?.status || "pending";
-                                        const isReviewCollapsed =
-                                            collapsedReviews.has(index);
-                                        const hasSecondarySteps =
-                                            execution.codeReviewTimeline.some(
-                                                (item) =>
-                                                    item.metadata &&
-                                                    typeof item.metadata ===
-                                                        "object" &&
-                                                    (
-                                                        item.metadata as Record<
-                                                            string,
-                                                            any
-                                                        >
-                                                    ).visibility ===
-                                                        "secondary",
-                                            );
-                                        // Always show all timeline items including agent traces (secondary)
-                                        const timelineItems =
-                                            execution.codeReviewTimeline;
-                                        const timelineItemsSorted = [
-                                            ...timelineItems,
-                                        ].sort((a, b) => {
-                                            const aTime = Date.parse(
-                                                a.createdAt ?? "",
-                                            );
-                                            const bTime = Date.parse(
-                                                b.createdAt ?? "",
-                                            );
-                                            const safeATime = Number.isNaN(
-                                                aTime,
-                                            )
-                                                ? 0
-                                                : aTime;
-                                            const safeBTime = Number.isNaN(
-                                                bTime,
-                                            )
-                                                ? 0
-                                                : bTime;
+                        <div className="mt-1 mb-1 flex justify-end">
+                            <NextLink
+                                href={`/pull-requests/${latest.repositoryId}/${latest.prNumber}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-text-tertiary hover:text-primary-light inline-flex items-center gap-1 text-xs font-medium transition-colors">
+                                Open full review
+                                <ArrowRightIcon className="size-3.5" />
+                            </NextLink>
+                        </div>
+                        <div className="pt-2">
+                            <div className="space-y-3">
+                                {executions.map((execution, index) => {
+                                    const executionKey =
+                                        execution.executionId ||
+                                        execution.automationExecution?.uuid ||
+                                        `${execution.prId}-${execution.automationExecution?.createdAt ?? execution.updatedAt ?? execution.createdAt}-${index}`;
+                                    const executionOrigin =
+                                        execution.automationExecution?.origin ||
+                                        "";
+                                    const executionStartedAt =
+                                        execution.automationExecution
+                                            ?.createdAt ?? execution.createdAt;
+                                    const executionFinishedAt =
+                                        execution.automationExecution
+                                            ?.updatedAt ?? execution.updatedAt;
+                                    const executionDuration = formatDuration(
+                                        executionStartedAt,
+                                        executionFinishedAt,
+                                    );
+                                    const executionStatus =
+                                        execution.automationExecution?.status ||
+                                        "pending";
+                                    const isReviewCollapsed =
+                                        collapsedReviews.has(index);
+                                    const hasSecondarySteps =
+                                        execution.codeReviewTimeline.some(
+                                            (item) =>
+                                                item.metadata &&
+                                                typeof item.metadata ===
+                                                    "object" &&
+                                                (
+                                                    item.metadata as Record<
+                                                        string,
+                                                        any
+                                                    >
+                                                ).visibility === "secondary",
+                                        );
+                                    // Always show all timeline items including agent traces (secondary)
+                                    const timelineItems =
+                                        execution.codeReviewTimeline;
+                                    const timelineItemsSorted = [
+                                        ...timelineItems,
+                                    ].sort((a, b) => {
+                                        const aTime = Date.parse(
+                                            a.createdAt ?? "",
+                                        );
+                                        const bTime = Date.parse(
+                                            b.createdAt ?? "",
+                                        );
+                                        const safeATime = Number.isNaN(aTime)
+                                            ? 0
+                                            : aTime;
+                                        const safeBTime = Number.isNaN(bTime)
+                                            ? 0
+                                            : bTime;
 
-                                            return safeATime - safeBTime;
-                                        });
+                                        return safeATime - safeBTime;
+                                    });
 
-                                        return (
-                                            <div
-                                                key={executionKey}
-                                                className="border-card-lv3/50 bg-card-lv1/60 rounded-xl border">
-                                                <button
-                                                    type="button"
-                                                    className="flex w-full cursor-pointer items-center justify-between gap-2 p-4"
-                                                    onClick={() =>
-                                                        toggleReview(index)
-                                                    }>
-                                                    <div className="flex flex-wrap items-center gap-2.5">
-                                                        <ChevronDownIcon
-                                                            className={cn(
-                                                                "text-text-tertiary size-4 shrink-0 transition-transform duration-200",
-                                                                !isReviewCollapsed &&
-                                                                    "text-text-secondary rotate-180",
-                                                            )}
-                                                        />
-                                                        <span className="text-text-primary text-sm font-semibold tabular-nums">
-                                                            Review{" "}
-                                                            {reviewCount -
-                                                                index}
-                                                        </span>
-                                                        {getStatusBadge(
-                                                            executionStatus,
-                                                            false,
+                                    return (
+                                        <div
+                                            key={executionKey}
+                                            className="border-card-lv3/50 bg-card-lv1/60 rounded-xl border">
+                                            <button
+                                                type="button"
+                                                className="flex w-full cursor-pointer items-center justify-between gap-2 p-4"
+                                                onClick={() =>
+                                                    toggleReview(index)
+                                                }>
+                                                <div className="flex flex-wrap items-center gap-2.5">
+                                                    <ChevronDownIcon
+                                                        className={cn(
+                                                            "text-text-tertiary size-4 shrink-0 transition-transform duration-200",
+                                                            !isReviewCollapsed &&
+                                                                "text-text-secondary rotate-180",
                                                         )}
-                                                        {executionDuration && (
-                                                            <span className="text-text-tertiary text-xs tabular-nums">
-                                                                {executionStatus ===
-                                                                "in_progress"
-                                                                    ? "Elapsed: "
-                                                                    : "Duration: "}
-                                                                {
-                                                                    executionDuration
-                                                                }
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    {executionStartedAt && (
+                                                    />
+                                                    <span className="text-text-primary text-sm font-semibold tabular-nums">
+                                                        Review{" "}
+                                                        {reviewCount - index}
+                                                    </span>
+                                                    {getStatusBadge(
+                                                        executionStatus,
+                                                        false,
+                                                    )}
+                                                    {executionDuration && (
                                                         <span className="text-text-tertiary text-xs tabular-nums">
-                                                            <TimeAgoDisplay
-                                                                dateString={
-                                                                    executionStartedAt
-                                                                }
-                                                                timezone={
-                                                                    timezone
-                                                                }
-                                                            />
+                                                            {executionStatus ===
+                                                            "in_progress"
+                                                                ? "Elapsed: "
+                                                                : "Duration: "}
+                                                            {executionDuration}
                                                         </span>
                                                     )}
-                                                </button>
-                                                {!isReviewCollapsed && (
-                                                    <div className="border-card-lv3/30 border-t px-4 pt-3 pb-4">
-                                                        {(execution.reviewedCommitSha ||
-                                                            execution.reviewedCommitUrl) && (
-                                                            <div className="mb-4 flex flex-wrap items-center gap-3 text-xs">
-                                                                {execution.reviewedCommitUrl ? (
-                                                                    <Link
-                                                                        href={
-                                                                            execution.reviewedCommitUrl
-                                                                        }
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        className="text-text-secondary hover:text-primary-light font-mono">
+                                                </div>
+                                                {executionStartedAt && (
+                                                    <span className="text-text-tertiary text-xs tabular-nums">
+                                                        <TimeAgoDisplay
+                                                            dateString={
+                                                                executionStartedAt
+                                                            }
+                                                            timezone={timezone}
+                                                        />
+                                                    </span>
+                                                )}
+                                            </button>
+                                            {!isReviewCollapsed && (
+                                                <div className="border-card-lv3/30 border-t px-4 pt-3 pb-4">
+                                                    {(execution.reviewedCommitSha ||
+                                                        execution.reviewedCommitUrl) && (
+                                                        <div className="mb-4 flex flex-wrap items-center gap-3 text-xs">
+                                                            {execution.reviewedCommitUrl ? (
+                                                                <Link
+                                                                    href={
+                                                                        execution.reviewedCommitUrl
+                                                                    }
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-text-secondary hover:text-primary-light font-mono">
+                                                                    {formatSha(
+                                                                        execution.reviewedCommitSha,
+                                                                    ) ||
+                                                                        "View commit"}
+                                                                </Link>
+                                                            ) : (
+                                                                execution.reviewedCommitSha && (
+                                                                    <span className="text-text-secondary font-mono">
                                                                         {formatSha(
                                                                             execution.reviewedCommitSha,
-                                                                        ) ||
-                                                                            "View commit"}
-                                                                    </Link>
-                                                                ) : (
-                                                                    execution.reviewedCommitSha && (
-                                                                        <span className="text-text-secondary font-mono">
-                                                                            {formatSha(
-                                                                                execution.reviewedCommitSha,
-                                                                            )}
-                                                                        </span>
-                                                                    )
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                        {execution.reviewWarnings &&
-                                                            execution
-                                                                .reviewWarnings
-                                                                .length > 0 && (
-                                                                <ReviewFidelityNotice
-                                                                    warnings={
-                                                                        execution.reviewWarnings
-                                                                    }
-                                                                />
+                                                                        )}
+                                                                    </span>
+                                                                )
                                                             )}
-                                                        <div className="relative pl-6">
-                                                            <div className="bg-card-lv3/70 absolute top-2 left-[0.5625rem] h-[calc(100%-0.75rem)] w-px" />
-                                                            <div className="space-y-3">
-                                                                {timelineItemsSorted.map(
-                                                                    (item) => {
-                                                                        const isActiveStage =
-                                                                            item.status ===
-                                                                                "in_progress" &&
-                                                                            !isAutomationStartMessage(
-                                                                                item.message,
-                                                                            );
-                                                                        const stageInfo =
-                                                                            getStageDisplay(
-                                                                                item,
-                                                                            );
-                                                                        const isAutomationStart =
-                                                                            isAutomationStartMessage(
-                                                                                item.message,
-                                                                            );
+                                                        </div>
+                                                    )}
+                                                    {execution.reviewWarnings &&
+                                                        execution.reviewWarnings
+                                                            .length > 0 && (
+                                                            <ReviewFidelityNotice
+                                                                warnings={
+                                                                    execution.reviewWarnings
+                                                                }
+                                                            />
+                                                        )}
+                                                    <div className="relative pl-6">
+                                                        <div className="bg-card-lv3/70 absolute top-2 left-[0.5625rem] h-[calc(100%-0.75rem)] w-px" />
+                                                        <div className="space-y-3">
+                                                            {timelineItemsSorted.map(
+                                                                (item) => {
+                                                                    const isActiveStage =
+                                                                        item.status ===
+                                                                            "in_progress" &&
+                                                                        !isAutomationStartMessage(
+                                                                            item.message,
+                                                                        );
+                                                                    const stageInfo =
+                                                                        getStageDisplay(
+                                                                            item,
+                                                                        );
+                                                                    const isAutomationStart =
+                                                                        isAutomationStartMessage(
+                                                                            item.message,
+                                                                        );
 
-                                                                        return (
-                                                                            <div
-                                                                                key={
-                                                                                    item.uuid
-                                                                                }
-                                                                                className={cn(
-                                                                                    "group flex gap-3",
-                                                                                    isActiveStage &&
-                                                                                        "border-in-progress bg-card-lv2/60 rounded-lg border-l-2 px-3 py-2",
-                                                                                )}>
-                                                                                <div className="relative flex w-4 justify-center">
+                                                                    return (
+                                                                        <div
+                                                                            key={
+                                                                                item.uuid
+                                                                            }
+                                                                            className={cn(
+                                                                                "group flex gap-3",
+                                                                                isActiveStage &&
+                                                                                    "border-in-progress bg-card-lv2/60 rounded-lg border-l-2 px-3 py-2",
+                                                                            )}>
+                                                                            <div className="relative flex w-4 justify-center">
+                                                                                <span
+                                                                                    className={cn(
+                                                                                        "mt-1.5 size-2.5 rounded-full border-2",
+                                                                                        isActiveStage &&
+                                                                                            "size-3",
+                                                                                        getTimelineStatusColor(
+                                                                                            isAutomationStart
+                                                                                                ? "skipped"
+                                                                                                : item.status,
+                                                                                        ),
+                                                                                    )}
+                                                                                />
+                                                                            </div>
+                                                                            <div className="min-w-0 flex-1 py-0.5">
+                                                                                <div className="mb-0.5 flex flex-wrap items-center gap-2">
                                                                                     <span
                                                                                         className={cn(
-                                                                                            "mt-1.5 size-2.5 rounded-full border-2",
-                                                                                            isActiveStage &&
-                                                                                                "size-3",
-                                                                                            getTimelineStatusColor(
-                                                                                                isAutomationStart
-                                                                                                    ? "skipped"
-                                                                                                    : item.status,
-                                                                                            ),
-                                                                                        )}
-                                                                                    />
-                                                                                </div>
-                                                                                <div className="min-w-0 flex-1 py-0.5">
-                                                                                    <div className="mb-0.5 flex flex-wrap items-center gap-2">
-                                                                                        <span
-                                                                                            className={cn(
-                                                                                                "text-sm",
-                                                                                                isAutomationStart
-                                                                                                    ? "text-text-tertiary"
-                                                                                                    : "text-text-primary font-medium",
-                                                                                            )}>
-                                                                                            {
-                                                                                                stageInfo.label
-                                                                                            }
-                                                                                        </span>
-                                                                                        {!isAutomationStart &&
-                                                                                            item.status ===
-                                                                                                "in_progress" && (
-                                                                                                <Spinner className="text-in-progress size-3" />
-                                                                                            )}
-                                                                                        {!isAutomationStart &&
-                                                                                            getStatusBadge(
-                                                                                                item.status,
-                                                                                                false,
-                                                                                            )}
-                                                                                        {executionOrigin &&
-                                                                                            isAutomationStart && (
-                                                                                                <Tooltip>
-                                                                                                    <TooltipTrigger
-                                                                                                        asChild>
-                                                                                                        <span className="text-text-tertiary text-xs whitespace-nowrap">
-                                                                                                            ·{" "}
-                                                                                                            {getOriginLabel(
-                                                                                                                executionOrigin,
-                                                                                                            )}
-                                                                                                        </span>
-                                                                                                    </TooltipTrigger>
-                                                                                                    <TooltipContent className="text-xs">
-                                                                                                        {executionOrigin?.toLowerCase?.() ===
-                                                                                                        "system"
-                                                                                                            ? "Triggered automatically by system"
-                                                                                                            : "Triggered by user command"}
-                                                                                                    </TooltipContent>
-                                                                                                </Tooltip>
-                                                                                            )}
-                                                                                    </div>
-                                                                                    <p className="text-text-tertiary text-xs">
+                                                                                            "text-sm",
+                                                                                            isAutomationStart
+                                                                                                ? "text-text-tertiary"
+                                                                                                : "text-text-primary font-medium",
+                                                                                        )}>
                                                                                         {
-                                                                                            stageInfo.message
+                                                                                            stageInfo.label
                                                                                         }
-                                                                                    </p>
-                                                                                    {stageInfo.duration &&
-                                                                                        !isAutomationStart && (
-                                                                                            <p className="text-text-tertiary text-xs tabular-nums">
-                                                                                                {item.status ===
-                                                                                                "in_progress"
-                                                                                                    ? "Elapsed: "
-                                                                                                    : "Duration: "}
-                                                                                                {
-                                                                                                    stageInfo.duration
-                                                                                                }
-                                                                                            </p>
+                                                                                    </span>
+                                                                                    {!isAutomationStart &&
+                                                                                        item.status ===
+                                                                                            "in_progress" && (
+                                                                                            <Spinner className="text-in-progress size-3" />
                                                                                         )}
-                                                                                    {item.createdAt &&
-                                                                                        !isAutomationStart && (
-                                                                                            <p className="text-text-tertiary text-xs tabular-nums">
-                                                                                                Started:{" "}
-                                                                                                {formatDateTime(
-                                                                                                    item.createdAt,
-                                                                                                    timezone,
-                                                                                                )}
-                                                                                            </p>
+                                                                                    {!isAutomationStart &&
+                                                                                        getStatusBadge(
+                                                                                            item.status,
+                                                                                            false,
                                                                                         )}
-                                                                                    {stageInfo.agentTrace &&
-                                                                                        stageInfo
-                                                                                            .agentTrace
-                                                                                            .toolSummary && (
-                                                                                            <details className="text-text-tertiary mt-2 text-xs">
-                                                                                                <summary className="cursor-pointer">
-                                                                                                    {formatToolSummary(
-                                                                                                        stageInfo
-                                                                                                            .agentTrace
-                                                                                                            .toolSummary,
-                                                                                                    )}
-                                                                                                </summary>
-                                                                                                {stageInfo
-                                                                                                    .agentTrace
-                                                                                                    .toolCalls &&
+                                                                                    {executionOrigin &&
+                                                                                        isAutomationStart && (
+                                                                                            <Tooltip>
+                                                                                                <TooltipTrigger
+                                                                                                    asChild>
+                                                                                                    <span className="text-text-tertiary text-xs whitespace-nowrap">
+                                                                                                        ·{" "}
+                                                                                                        {getOriginLabel(
+                                                                                                            executionOrigin,
+                                                                                                        )}
+                                                                                                    </span>
+                                                                                                </TooltipTrigger>
+                                                                                                <TooltipContent className="text-xs">
+                                                                                                    {executionOrigin?.toLowerCase?.() ===
+                                                                                                    "system"
+                                                                                                        ? "Triggered automatically by system"
+                                                                                                        : "Triggered by user command"}
+                                                                                                </TooltipContent>
+                                                                                            </Tooltip>
+                                                                                        )}
+                                                                                </div>
+                                                                                <p className="text-text-tertiary text-xs">
+                                                                                    {
+                                                                                        stageInfo.message
+                                                                                    }
+                                                                                </p>
+                                                                                {stageInfo.duration &&
+                                                                                    !isAutomationStart && (
+                                                                                        <p className="text-text-tertiary text-xs tabular-nums">
+                                                                                            {item.status ===
+                                                                                            "in_progress"
+                                                                                                ? "Elapsed: "
+                                                                                                : "Duration: "}
+                                                                                            {
+                                                                                                stageInfo.duration
+                                                                                            }
+                                                                                        </p>
+                                                                                    )}
+                                                                                {item.createdAt &&
+                                                                                    !isAutomationStart && (
+                                                                                        <p className="text-text-tertiary text-xs tabular-nums">
+                                                                                            Started:{" "}
+                                                                                            {formatDateTime(
+                                                                                                item.createdAt,
+                                                                                                timezone,
+                                                                                            )}
+                                                                                        </p>
+                                                                                    )}
+                                                                                {stageInfo.agentTrace &&
+                                                                                    stageInfo
+                                                                                        .agentTrace
+                                                                                        .toolSummary && (
+                                                                                        <details className="text-text-tertiary mt-2 text-xs">
+                                                                                            <summary className="cursor-pointer">
+                                                                                                {formatToolSummary(
                                                                                                     stageInfo
                                                                                                         .agentTrace
-                                                                                                        .toolCalls
-                                                                                                        .length >
-                                                                                                        0 && (
-                                                                                                        <ul className="mt-2 space-y-1 pl-4">
-                                                                                                            {stageInfo.agentTrace.toolCalls
-                                                                                                                .slice(
-                                                                                                                    0,
-                                                                                                                    MAX_TOOL_CALLS_DISPLAY,
-                                                                                                                )
-                                                                                                                .map(
-                                                                                                                    (
-                                                                                                                        tc,
-                                                                                                                        tcIdx,
-                                                                                                                    ) => (
-                                                                                                                        <li
-                                                                                                                            key={
-                                                                                                                                tcIdx
-                                                                                                                            }
-                                                                                                                            className="truncate font-mono text-xs">
-                                                                                                                            {
-                                                                                                                                tc.tool
-                                                                                                                            }
+                                                                                                        .toolSummary,
+                                                                                                )}
+                                                                                            </summary>
+                                                                                            {stageInfo
+                                                                                                .agentTrace
+                                                                                                .toolCalls &&
+                                                                                                stageInfo
+                                                                                                    .agentTrace
+                                                                                                    .toolCalls
+                                                                                                    .length >
+                                                                                                    0 && (
+                                                                                                    <ul className="mt-2 space-y-1 pl-4">
+                                                                                                        {stageInfo.agentTrace.toolCalls
+                                                                                                            .slice(
+                                                                                                                0,
+                                                                                                                MAX_TOOL_CALLS_DISPLAY,
+                                                                                                            )
+                                                                                                            .map(
+                                                                                                                (
+                                                                                                                    tc,
+                                                                                                                    tcIdx,
+                                                                                                                ) => (
+                                                                                                                    <li
+                                                                                                                        key={
+                                                                                                                            tcIdx
+                                                                                                                        }
+                                                                                                                        className="truncate font-mono text-xs">
+                                                                                                                        {
+                                                                                                                            tc.tool
+                                                                                                                        }
 
-                                                                                                                            (
-                                                                                                                            {typeof tc.args ===
-                                                                                                                            "string"
-                                                                                                                                ? tc.args
-                                                                                                                                : JSON.stringify(
-                                                                                                                                      tc.args,
-                                                                                                                                  )}
+                                                                                                                        (
+                                                                                                                        {typeof tc.args ===
+                                                                                                                        "string"
+                                                                                                                            ? tc.args
+                                                                                                                            : JSON.stringify(
+                                                                                                                                  tc.args,
+                                                                                                                              )}
 
-                                                                                                                            )
-                                                                                                                        </li>
-                                                                                                                    ),
-                                                                                                                )}
-                                                                                                            {stageInfo
-                                                                                                                .agentTrace
-                                                                                                                .toolCalls
-                                                                                                                .length >
-                                                                                                                MAX_TOOL_CALLS_DISPLAY && (
-                                                                                                                <li className="text-text-tertiary text-xs italic">
-                                                                                                                    ...
-                                                                                                                    and{" "}
-                                                                                                                    {stageInfo
-                                                                                                                        .agentTrace
-                                                                                                                        .toolCalls
-                                                                                                                        .length -
-                                                                                                                        MAX_TOOL_CALLS_DISPLAY}{" "}
-                                                                                                                    more
-                                                                                                                </li>
+                                                                                                                        )
+                                                                                                                    </li>
+                                                                                                                ),
                                                                                                             )}
-                                                                                                        </ul>
-                                                                                                    )}
-                                                                                            </details>
-                                                                                        )}
-                                                                                    {(item.status ===
-                                                                                        "partial_error" ||
-                                                                                        item.status ===
-                                                                                            "error") &&
-                                                                                        // Only render the collapsible when there
-                                                                                        // are multiple distinct errors — for a
-                                                                                        // single error the stage's top-level
-                                                                                        // message already shows it, and the
-                                                                                        // collapsible just repeats the same text.
-                                                                                        stageInfo
-                                                                                            .partialErrors
-                                                                                            .length >
-                                                                                            1 && (
-                                                                                            <details className="text-warning/90 mt-2 text-xs">
-                                                                                                <summary className="cursor-pointer">
-                                                                                                    View
-                                                                                                    failed
-                                                                                                    files
-                                                                                                    (
-                                                                                                    {
-                                                                                                        stageInfo
-                                                                                                            .partialErrors
-                                                                                                            .length
-                                                                                                    }
-
-                                                                                                    )
-                                                                                                </summary>
-                                                                                                <ul className="mt-2 space-y-1 pl-4">
-                                                                                                    {stageInfo.partialErrors.map(
-                                                                                                        (
-                                                                                                            entry,
-                                                                                                        ) => (
-                                                                                                            <li
-                                                                                                                key={
-                                                                                                                    entry
-                                                                                                                }
-                                                                                                                className="text-text-tertiary font-mono text-xs">
-                                                                                                                {
-                                                                                                                    entry
-                                                                                                                }
+                                                                                                        {stageInfo
+                                                                                                            .agentTrace
+                                                                                                            .toolCalls
+                                                                                                            .length >
+                                                                                                            MAX_TOOL_CALLS_DISPLAY && (
+                                                                                                            <li className="text-text-tertiary text-xs italic">
+                                                                                                                ...
+                                                                                                                and{" "}
+                                                                                                                {stageInfo
+                                                                                                                    .agentTrace
+                                                                                                                    .toolCalls
+                                                                                                                    .length -
+                                                                                                                    MAX_TOOL_CALLS_DISPLAY}{" "}
+                                                                                                                more
                                                                                                             </li>
-                                                                                                        ),
-                                                                                                    )}
-                                                                                                </ul>
-                                                                                            </details>
-                                                                                        )}
-                                                                                    {stageInfo.fileTimings &&
-                                                                                        stageInfo
-                                                                                            .fileTimings
-                                                                                            .length >
-                                                                                            0 && (
-                                                                                            <details className="text-text-tertiary mt-2 text-xs">
-                                                                                                <summary className="cursor-pointer">
-                                                                                                    File
-                                                                                                    timings
-                                                                                                    (
-                                                                                                    {
-                                                                                                        stageInfo
-                                                                                                            .fileTimings
-                                                                                                            .length
-                                                                                                    }
-
-                                                                                                    )
-                                                                                                </summary>
-                                                                                                <ul className="mt-2 space-y-1 pl-4">
-                                                                                                    {stageInfo.fileTimings.map(
-                                                                                                        (
-                                                                                                            ft,
-                                                                                                        ) => (
-                                                                                                            <li
-                                                                                                                key={
-                                                                                                                    ft.file
-                                                                                                                }
-                                                                                                                className="font-mono text-xs">
-                                                                                                                {
-                                                                                                                    ft.file
-                                                                                                                }{" "}
-                                                                                                                &mdash;{" "}
-                                                                                                                {formatFileTime(
-                                                                                                                    ft.durationMs,
-                                                                                                                )}{" "}
-                                                                                                                {ft.status ===
-                                                                                                                "timeout"
-                                                                                                                    ? "\u23F1 timeout"
-                                                                                                                    : ft.status ===
-                                                                                                                        "error"
-                                                                                                                      ? "\u2717"
-                                                                                                                      : "\u2713"}
-                                                                                                            </li>
-                                                                                                        ),
-                                                                                                    )}
-                                                                                                </ul>
-                                                                                            </details>
-                                                                                        )}
-                                                                                    {stageInfo.cta && (
-                                                                                        <NextLink
-                                                                                            href={
-                                                                                                stageInfo
-                                                                                                    .cta
-                                                                                                    .href
-                                                                                            }
-                                                                                            target={
-                                                                                                stageInfo
-                                                                                                    .cta
-                                                                                                    .external
-                                                                                                    ? "_blank"
-                                                                                                    : undefined
-                                                                                            }
-                                                                                            rel={
-                                                                                                stageInfo
-                                                                                                    .cta
-                                                                                                    .external
-                                                                                                    ? "noopener noreferrer"
-                                                                                                    : undefined
-                                                                                            }
-                                                                                            className={cn(
-                                                                                                buttonVariants(
-                                                                                                    {
-                                                                                                        variant:
-                                                                                                            "helper",
-                                                                                                        size: "xs",
-                                                                                                    },
-                                                                                                ),
-                                                                                                "mt-1.5",
-                                                                                            )}>
-                                                                                            {
-                                                                                                stageInfo
-                                                                                                    .cta
-                                                                                                    .label
-                                                                                            }
-                                                                                        </NextLink>
+                                                                                                        )}
+                                                                                                    </ul>
+                                                                                                )}
+                                                                                        </details>
                                                                                     )}
-                                                                                </div>
+                                                                                {(item.status ===
+                                                                                    "partial_error" ||
+                                                                                    item.status ===
+                                                                                        "error") &&
+                                                                                    // Only render the collapsible when there
+                                                                                    // are multiple distinct errors — for a
+                                                                                    // single error the stage's top-level
+                                                                                    // message already shows it, and the
+                                                                                    // collapsible just repeats the same text.
+                                                                                    stageInfo
+                                                                                        .partialErrors
+                                                                                        .length >
+                                                                                        1 && (
+                                                                                        <details className="text-warning/90 mt-2 text-xs">
+                                                                                            <summary className="cursor-pointer">
+                                                                                                View
+                                                                                                failed
+                                                                                                files
+                                                                                                (
+                                                                                                {
+                                                                                                    stageInfo
+                                                                                                        .partialErrors
+                                                                                                        .length
+                                                                                                }
+
+                                                                                                )
+                                                                                            </summary>
+                                                                                            <ul className="mt-2 space-y-1 pl-4">
+                                                                                                {stageInfo.partialErrors.map(
+                                                                                                    (
+                                                                                                        entry,
+                                                                                                    ) => (
+                                                                                                        <li
+                                                                                                            key={
+                                                                                                                entry
+                                                                                                            }
+                                                                                                            className="text-text-tertiary font-mono text-xs">
+                                                                                                            {
+                                                                                                                entry
+                                                                                                            }
+                                                                                                        </li>
+                                                                                                    ),
+                                                                                                )}
+                                                                                            </ul>
+                                                                                        </details>
+                                                                                    )}
+                                                                                {stageInfo.fileTimings &&
+                                                                                    stageInfo
+                                                                                        .fileTimings
+                                                                                        .length >
+                                                                                        0 && (
+                                                                                        <details className="text-text-tertiary mt-2 text-xs">
+                                                                                            <summary className="cursor-pointer">
+                                                                                                File
+                                                                                                timings
+                                                                                                (
+                                                                                                {
+                                                                                                    stageInfo
+                                                                                                        .fileTimings
+                                                                                                        .length
+                                                                                                }
+
+                                                                                                )
+                                                                                            </summary>
+                                                                                            <ul className="mt-2 space-y-1 pl-4">
+                                                                                                {stageInfo.fileTimings.map(
+                                                                                                    (
+                                                                                                        ft,
+                                                                                                    ) => (
+                                                                                                        <li
+                                                                                                            key={
+                                                                                                                ft.file
+                                                                                                            }
+                                                                                                            className="font-mono text-xs">
+                                                                                                            {
+                                                                                                                ft.file
+                                                                                                            }{" "}
+                                                                                                            &mdash;{" "}
+                                                                                                            {formatFileTime(
+                                                                                                                ft.durationMs,
+                                                                                                            )}{" "}
+                                                                                                            {ft.status ===
+                                                                                                            "timeout"
+                                                                                                                ? "\u23F1 timeout"
+                                                                                                                : ft.status ===
+                                                                                                                    "error"
+                                                                                                                  ? "\u2717"
+                                                                                                                  : "\u2713"}
+                                                                                                        </li>
+                                                                                                    ),
+                                                                                                )}
+                                                                                            </ul>
+                                                                                        </details>
+                                                                                    )}
+                                                                                {stageInfo.cta && (
+                                                                                    <NextLink
+                                                                                        href={
+                                                                                            stageInfo
+                                                                                                .cta
+                                                                                                .href
+                                                                                        }
+                                                                                        target={
+                                                                                            stageInfo
+                                                                                                .cta
+                                                                                                .external
+                                                                                                ? "_blank"
+                                                                                                : undefined
+                                                                                        }
+                                                                                        rel={
+                                                                                            stageInfo
+                                                                                                .cta
+                                                                                                .external
+                                                                                                ? "noopener noreferrer"
+                                                                                                : undefined
+                                                                                        }
+                                                                                        className={cn(
+                                                                                            buttonVariants(
+                                                                                                {
+                                                                                                    variant:
+                                                                                                        "helper",
+                                                                                                    size: "xs",
+                                                                                                },
+                                                                                            ),
+                                                                                            "mt-1.5",
+                                                                                        )}>
+                                                                                        {
+                                                                                            stageInfo
+                                                                                                .cta
+                                                                                                .label
+                                                                                        }
+                                                                                    </NextLink>
+                                                                                )}
                                                                             </div>
-                                                                        );
-                                                                    },
-                                                                )}
-                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                },
+                                                            )}
                                                         </div>
                                                     </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
-                    </TableCell>
-                </TableRow>
+                    </div>
+                </div>
             )}
-        </Fragment>
+        </div>
     );
 };
 
@@ -1072,10 +1058,8 @@ const WARNING_KIND_LABEL: Record<ReviewWarningKind, string> = {
     HUNK_HEADERS_ONLY:
         "File diffs sent as hunk headers only; agent reads on demand",
     DIFF_TRUNCATED: "Long file diffs truncated to fit the window",
-    LOW_SIGNAL_FILES_DROPPED:
-        "Low-signal files (tests, docs, styles) dropped",
-    HEAVY_PASSES_SKIPPED:
-        "Verifier / second-chance / rescue passes skipped",
+    LOW_SIGNAL_FILES_DROPPED: "Low-signal files (tests, docs, styles) dropped",
+    HEAVY_PASSES_SKIPPED: "Verifier / second-chance / rescue passes skipped",
 };
 
 /**
@@ -1115,8 +1099,8 @@ const ReviewFidelityNotice = ({ warnings }: { warnings: ReviewWarning[] }) => {
                 <span className="tabular-nums">
                     {head.contextWindowTokens.toLocaleString()}
                 </span>{" "}
-                tokens — the pipeline applied the following counter-measures
-                to fit:
+                tokens — the pipeline applied the following counter-measures to
+                fit:
             </p>
             <ul className="text-text-secondary space-y-1 text-xs">
                 {unique.map((w, idx) => (
