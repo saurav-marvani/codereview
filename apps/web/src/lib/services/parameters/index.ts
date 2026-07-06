@@ -13,6 +13,10 @@ export const PARAMETERS_PATHS = {
     GET_ENVIRONMENT_SECRETS_STATUS: pathToApiUrl(
         "/parameters/environment-secrets/status",
     ),
+    SET_ENVIRONMENT_INFRA: pathToApiUrl("/parameters/environment-infra"),
+    GET_ENVIRONMENT_INFRA_STATUS: pathToApiUrl(
+        "/parameters/environment-infra/status",
+    ),
     UPDATE_CODE_REVIEW_PARAMETER_REPOSITORIES: pathToApiUrl(
         "/parameters/update-code-review-parameter-repositories",
     ),

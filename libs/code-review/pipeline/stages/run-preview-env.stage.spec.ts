@@ -53,8 +53,9 @@ const makeStage = (over: {
         createSandboxWithRepo: jest.fn().mockResolvedValue(fakeSandbox),
     } as any;
     const secretsService = { resolveSecrets: jest.fn().mockResolvedValue({}) } as any;
-    const stage = new RunPreviewEnvStage(config, cloneParamsResolver, agent, vmSvc, secretsService);
-    return { stage, vmSvc, agent, cleanup, cloneParamsResolver, fakeSandbox, secretsService };
+    const infraService = { resolveInfra: jest.fn().mockResolvedValue(null) } as any;
+    const stage = new RunPreviewEnvStage(config, cloneParamsResolver, agent, vmSvc, secretsService, infraService);
+    return { stage, vmSvc, agent, cleanup, cloneParamsResolver, fakeSandbox, secretsService, infraService };
 };
 
 const ctx = (over: any = {}): any => ({
@@ -114,6 +115,21 @@ describe('RunPreviewEnvStage (alpha spine)', () => {
         );
         expect(out.validSuggestions).toHaveLength(1); // only the critical survives the focus
         expect(out.validSuggestions[0].relevantFile).toBe('net.js');
+    });
+
+    it('org-level infra config (BYO-cloud) makes the stage runnable without the env token', async () => {
+        const { stage, agent, vmSvc, infraService } = makeStage({ available: false });
+        const infra = { provider: 'hetzner', token: 'org-cloud-token', region: 'hil' };
+        infraService.resolveInfra.mockResolvedValue(infra);
+
+        await stage.execute(ctx({ organizationAndTeamData: { organizationId: 'o1', teamId: 't1' } }));
+
+        expect(agent.run).toHaveBeenCalledTimes(1);
+        // The org config is handed to the VM provisioner (their cloud account).
+        expect(vmSvc.createSandboxWithRepo).toHaveBeenCalledWith(
+            expect.anything(),
+            infra,
+        );
     });
 
     it('tears the VM down even when the agent throws', async () => {

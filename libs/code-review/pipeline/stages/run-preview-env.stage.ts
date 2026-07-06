@@ -18,6 +18,7 @@ import {
     findingsToSuggestions,
 } from '../services/preview-env-findings';
 import { PreviewEnvSecretsService } from '../services/preview-env-secrets.service';
+import { PreviewEnvInfraService } from '../services/preview-env-infra.service';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 
 /**
@@ -55,6 +56,8 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
         private readonly vmSvc: VmSandboxService,
         // The encrypted per-repo secrets vault (settings UI → VM env).
         private readonly secretsService: PreviewEnvSecretsService,
+        // Org-level "which cloud" config (self-hosted BYO-cloud from the UI).
+        private readonly infraService: PreviewEnvInfraService,
     ) {
         super();
     }
@@ -66,9 +69,16 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
         if (!env?.enabled) return context;
 
         const vmSvc = this.vmSvc;
-        if (!vmSvc.isAvailable()) {
+        // Org-level cloud config (self-hosted BYO-cloud) takes precedence over
+        // the server-level env token; either one makes the stage runnable.
+        const infra = context.organizationAndTeamData
+            ? await this.infraService
+                  .resolveInfra(context.organizationAndTeamData)
+                  .catch(() => null)
+            : null;
+        if (!infra && !vmSvc.isAvailable()) {
             this.logger.log({
-                message: 'Preview env enabled but no VM token configured (PREVIEW_VM_TOKEN/HCLOUD_TOKEN); skipping',
+                message: 'Preview env enabled but no VM token configured (org infra config or PREVIEW_VM_TOKEN/HCLOUD_TOKEN); skipping',
                 context: this.stageName,
             });
             return context;
@@ -91,17 +101,20 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
             const cloneInfo = await this.cloneParamsResolver.resolve(context, cliContext);
             if (!cloneInfo) return context;
 
-            vm = await vmSvc.createSandboxWithRepo({
-                cloneUrl: cloneInfo.url,
-                authToken: cloneInfo.authToken,
-                authUsername: cloneInfo.authUsername,
-                branch: cloneInfo.branch,
-                baseBranch: cloneInfo.baseBranch,
-                prNumber: cloneInfo.prNumber,
-                platform: cloneInfo.platform,
-                checkoutSha: cloneInfo.checkoutSha,
-                sandboxMetadata: this.snapshotMetadata(context),
-            });
+            vm = await vmSvc.createSandboxWithRepo(
+                {
+                    cloneUrl: cloneInfo.url,
+                    authToken: cloneInfo.authToken,
+                    authUsername: cloneInfo.authUsername,
+                    branch: cloneInfo.branch,
+                    baseBranch: cloneInfo.baseBranch,
+                    prNumber: cloneInfo.prNumber,
+                    platform: cloneInfo.platform,
+                    checkoutSha: cloneInfo.checkoutSha,
+                    sandboxMetadata: this.snapshotMetadata(context),
+                },
+                infra ?? undefined,
+            );
 
             // Inject the app's secrets (the .env the booted app needs).
             const secrets = await this.resolveSecrets(context, env.requiredEnv);

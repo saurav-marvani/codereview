@@ -236,6 +236,51 @@ export const setEnvironmentSecrets = async (
     }
 };
 
+export type EnvironmentInfraStatus = {
+    provider: "hetzner";
+    region?: string;
+    serverType?: string;
+    tokenConfigured: boolean;
+};
+
+/**
+ * Preview-env infrastructure (org-level BYO-cloud, advanced/self-hosted).
+ * `token`: `''` removes, omitted keeps the stored one; never returned.
+ */
+export const setEnvironmentInfra = async (
+    teamId: string,
+    infra: {
+        provider: "hetzner";
+        token?: string;
+        region?: string;
+        serverType?: string;
+    },
+) => {
+    try {
+        const response = await axiosAuthorized.post<any>(
+            PARAMETERS_PATHS.SET_ENVIRONMENT_INFRA,
+            { organizationAndTeamData: { teamId }, ...infra },
+        );
+
+        return response.data as EnvironmentInfraStatus;
+    } catch (error: any) {
+        return { error: error.response?.status || "Unknown error" };
+    }
+};
+
+export const getEnvironmentInfraStatus = async (teamId: string) => {
+    try {
+        const response = await axiosAuthorized.fetcher<EnvironmentInfraStatus>(
+            PARAMETERS_PATHS.GET_ENVIRONMENT_INFRA_STATUS,
+            { params: { teamId } },
+        );
+
+        return response as EnvironmentInfraStatus | null;
+    } catch (error: any) {
+        return { error: error.response?.status || "Unknown error" };
+    }
+};
+
 /** Names (never values) of the secrets configured for a repo. */
 export const getEnvironmentSecretsStatus = async (
     teamId: string,

@@ -61,13 +61,20 @@ export class VmSandboxService implements ISandboxProvider {
 
     async createSandboxWithRepo(
         params: CreateSandboxParams,
+        // Org-level infra override (self-hosted "bring your own cloud" from the
+        // settings UI). Absent → the server-level env token/region/size.
+        infra?: { token: string; region?: string; serverType?: string },
     ): Promise<SandboxInstance> {
-        const token = this.token();
+        const token = infra?.token ?? this.token();
         if (!token) throw new Error('VmSandboxService: no VM token configured');
 
         const client = new VmClient(token, {
-            region: this.configService.get<string>('PREVIEW_VM_REGION'),
-            size: this.configService.get<string>('PREVIEW_VM_SIZE'),
+            region:
+                infra?.region ??
+                this.configService.get<string>('PREVIEW_VM_REGION'),
+            size:
+                infra?.serverType ??
+                this.configService.get<string>('PREVIEW_VM_SIZE'),
         });
 
         const snapshotImage = params.sandboxMetadata?.snapshotImage;

@@ -18,6 +18,7 @@ import { useCodeReviewSettingsMutation } from "../../_hooks/use-code-review-sett
 import { type CodeReviewFormType } from "../../_types";
 import { useCodeReviewRouteParams } from "../../../_hooks";
 import { EnvironmentEnabled } from "./_components/environment-enabled";
+import { InfrastructureAdvanced } from "./_components/infrastructure-advanced";
 import { PlaybookPhase } from "./_components/playbook-phase";
 import { RequiredEnv } from "./_components/required-env";
 import { SecretsVault } from "./_components/secrets-vault";
@@ -168,6 +169,10 @@ export default function PreviewEnvironment() {
                         repositoryId={repositoryId}
                         canEdit={canEdit}
                     />
+                )}
+
+                {isGlobal && (
+                    <InfrastructureAdvanced teamId={teamId} canEdit={canEdit} />
                 )}
             </Page.Content>
         </Page.Root>

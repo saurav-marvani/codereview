@@ -1243,6 +1243,17 @@
     }
   },
   {
+    "key": "parameters.controller.ts#getEnvironmentInfraStatus",
+    "httpMethod": "GET",
+    "urlPath": "/parameters/environment-infra/status",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "allow",
+      "repo_admin": "allow",
+      "contributor": "allow"
+    }
+  },
+  {
     "key": "parameters.controller.ts#getEnvironmentSecretsStatus",
     "httpMethod": "GET",
     "urlPath": "/parameters/environment-secrets/status",
@@ -1284,6 +1295,17 @@
       "billing_manager": "allow",
       "repo_admin": "allow",
       "contributor": "allow"
+    }
+  },
+  {
+    "key": "parameters.controller.ts#setEnvironmentInfra",
+    "httpMethod": "POST",
+    "urlPath": "/parameters/environment-infra",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "deny"
     }
   },
   {

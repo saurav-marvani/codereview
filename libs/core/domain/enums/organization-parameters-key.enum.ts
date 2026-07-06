@@ -20,4 +20,12 @@ export enum OrganizationParametersKey {
      * returned by the API (only a "configured" descriptor).
      */
     ENVIRONMENT_SECRETS = 'environment_secrets',
+    /**
+     * Preview-environment (Alpha) infrastructure — WHERE the ephemeral VM is
+     * provisioned. Org-level so self-hosted customers point at their own cloud
+     * from the UI: `{ provider, token: <encrypted>, region?, serverType? }`.
+     * The token is never returned by the API. Absent → the server-level
+     * PREVIEW_VM_TOKEN/HCLOUD_TOKEN env fallback applies (cloud alpha).
+     */
+    ENVIRONMENT_INFRA = 'environment_infra',
 }

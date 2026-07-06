@@ -70,7 +70,9 @@ import { FindByKeyParametersUseCase } from '@libs/organization/application/use-c
 import { GetDefaultConfigUseCase } from '@libs/organization/application/use-cases/parameters/get-default-config.use-case';
 import { CreateOrUpdateCodeReviewParameterDto } from '@libs/organization/dtos/create-or-update-code-review-parameter.dto';
 import { SetEnvironmentSecretsDto } from '@libs/organization/dtos/environment-secrets.dto';
+import { SetEnvironmentInfraDto } from '@libs/organization/dtos/environment-infra.dto';
 import { PreviewEnvSecretsService } from '@libs/code-review/pipeline/services/preview-env-secrets.service';
+import { PreviewEnvInfraService } from '@libs/code-review/pipeline/services/preview-env-infra.service';
 import { DeleteRepositoryCodeReviewParameterDto } from '@libs/organization/dtos/delete-repository-code-review-parameter.dto';
 import { PreviewPrSummaryDto } from '@libs/organization/dtos/preview-pr-summary.dto';
 import { finished } from 'stream/promises';
@@ -103,8 +105,9 @@ export class ParametersController {
         @Inject(CODE_BASE_CONFIG_SERVICE_TOKEN)
         private readonly codeBaseConfigService: ICodeBaseConfigService,
 
-        // Preview-env alpha: encrypted per-repo secrets vault.
+        // Preview-env alpha: encrypted per-repo secrets vault + org infra.
         private readonly previewEnvSecretsService: PreviewEnvSecretsService,
+        private readonly previewEnvInfraService: PreviewEnvInfraService,
     ) {}
 
     //#region Parameters
@@ -444,6 +447,66 @@ export class ParametersController {
             repositoryId,
         );
         return { configured: names };
+    }
+
+    // Org-level infrastructure config (advanced / self-hosted BYO-cloud):
+    // WHERE the preview VM is provisioned. The cloud token is encrypted at
+    // rest and never returned; absent config → server-level env fallback.
+    @Post('/environment-infra')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Create,
+            resource: ResourceType.CodeReviewSettings,
+        }),
+    )
+    @ApiOperation({
+        summary: 'Set preview-env infrastructure',
+        description:
+            'Configure the cloud where preview-env VMs run (org-level). Token: empty removes, omitted keeps. Never returned.',
+    })
+    @ApiCreatedResponse({ type: ApiStringResponseDto })
+    public async setEnvironmentInfra(@Body() body: SetEnvironmentInfraDto) {
+        const organizationId = this.request?.user?.organization?.uuid;
+        if (!organizationId) {
+            throw new Error('Organization ID is missing from request');
+        }
+
+        const orgAndTeam = { ...body.organizationAndTeamData, organizationId };
+        await this.previewEnvInfraService.setInfra(orgAndTeam, {
+            provider: body.provider,
+            token: body.token,
+            region: body.region,
+            serverType: body.serverType,
+        });
+        return this.previewEnvInfraService.getStatus(orgAndTeam);
+    }
+
+    @Get('/environment-infra/status')
+    @ApiQuery({ name: 'teamId', type: String, required: true })
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.CodeReviewSettings,
+        }),
+    )
+    @ApiOperation({
+        summary: 'Get preview-env infrastructure status',
+        description:
+            'Provider/region/serverType + whether a token is configured (never the token).',
+    })
+    @ApiOkResponse({ type: ApiStringResponseDto })
+    public async getEnvironmentInfraStatus(@Query('teamId') teamId: string) {
+        const organizationId = this.request?.user?.organization?.uuid;
+        if (!organizationId) {
+            throw new Error('Organization ID is missing from request');
+        }
+
+        return this.previewEnvInfraService.getStatus({
+            teamId,
+            organizationId,
+        });
     }
     //#endregion
 
