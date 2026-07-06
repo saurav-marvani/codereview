@@ -167,6 +167,14 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
             let accumulatedExecutions = 0;
             let totalExecutions = 0;
             let hasMoreExecutions = true;
+            // Keyset cursor for the intra-request loop. The page offset
+            // (initialSkip) still positions the first batch, but once the
+            // author-policy filter drops a batch this loop used to re-query with
+            // `skip: initialSkip + accumulatedExecutions` — an ever-deeper OFFSET
+            // that, under aggressive filtering, walked thousands of rows per
+            // request (the #1432 slowdown). After the first batch we continue via
+            // the last row's (createdAt, uuid) instead — an indexed range scan.
+            let loopCursor: { createdAt: Date | string; uuid: string } | undefined;
             const authorPolicyConfig = await this.getCompiledAuthorPolicyConfig(
                 authorPolicy,
                 organizationAndTeamData,
@@ -214,7 +222,10 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                             repositoryName: repositoryNameFilter,
                             pullRequestNumber,
                             prFilters,
-                            skip: initialSkip + accumulatedExecutions,
+                            // First batch: page offset. Subsequent batches:
+                            // keyset cursor (no OFFSET over-scan).
+                            skip: loopCursor ? undefined : initialSkip,
+                            cursor: loopCursor,
                             take: limit,
                             order: 'DESC',
                             includeTotal: totalExecutions === 0,
@@ -229,6 +240,15 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                     hasMoreExecutions = false;
                     break;
                 }
+
+                // Advance the cursor to the last row of this batch (same
+                // createdAt DESC, uuid ASC ordering the repository applies) so
+                // the next iteration continues right after it.
+                const lastBatchRow = executionsBatch[executionsBatch.length - 1];
+                loopCursor = {
+                    createdAt: lastBatchRow.createdAt,
+                    uuid: lastBatchRow.uuid,
+                };
 
                 // Prepare bulk fetch criteria
                 const prCriteria = executionsBatch

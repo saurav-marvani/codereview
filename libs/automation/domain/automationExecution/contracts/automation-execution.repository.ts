@@ -31,6 +31,7 @@ export interface IAutomationExecutionRepository {
         pullRequestTitle?: string;
         prFilters?: Array<{ number: number; repositoryId: string }>;
         skip?: number;
+        cursor?: { createdAt: string | Date; uuid: string };
         take?: number;
         order?: 'ASC' | 'DESC';
         includeTotal?: boolean;

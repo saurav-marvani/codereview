@@ -239,6 +239,13 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
         pullRequestTitle?: string;
         prFilters?: Array<{ number: number; repositoryId: string }>;
         skip?: number;
+        // Keyset cursor: the (createdAt, uuid) of the last row of the previous
+        // page. When supplied, pagination uses an indexed range scan instead of
+        // OFFSET (which scans+discards `skip` rows and, under aggressive
+        // author-policy filtering, made the enriched-PR loop walk ever-deeper
+        // offsets — the source of the prod slowdown). `skip` stays for callers
+        // that haven't migrated.
+        cursor?: { createdAt: string | Date; uuid: string };
         take?: number;
         order?: 'ASC' | 'DESC';
         includeTotal?: boolean;
@@ -251,6 +258,7 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
             pullRequestTitle: _pullRequestTitle,
             prFilters,
             skip = 0,
+            cursor,
             take = 30,
             order = 'DESC',
             includeTotal = true,
@@ -360,6 +368,20 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                 queryBuilder.andWhere(`(${prConditions})`, prParams);
             }
 
+            if (cursor) {
+                // Rows strictly after the cursor in the (createdAt <order>,
+                // uuid ASC) ordering below. The uuid tiebreaker is always ASC
+                // (see addOrderBy), so it compares with '>' regardless of order.
+                const cmp = order === 'DESC' ? '<' : '>';
+                queryBuilder.andWhere(
+                    `(automation_execution.createdAt ${cmp} :cursorCreatedAt OR (automation_execution.createdAt = :cursorCreatedAt AND automation_execution.uuid > :cursorUuid))`,
+                    {
+                        cursorCreatedAt: cursor.createdAt,
+                        cursorUuid: cursor.uuid,
+                    },
+                );
+            }
+
             let total = 0;
             if (includeTotal) {
                 // COUNT(*) instead of TypeORM's getCount() (COUNT(DISTINCT uuid)).
@@ -389,8 +411,10 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                 // safely across to-many joins. There are none here (all ManyToOne
                 // + EXISTS), so that wrapper only added a full-set sort that
                 // spilled ~52GB of temp files. Raw offset/limit returns the
-                // identical rows without the DISTINCT pass.
-                .offset(skip)
+                // identical rows without the DISTINCT pass. When a keyset cursor
+                // is supplied the WHERE above already positions the page, so the
+                // offset is skipped entirely (indexed range scan, no over-scan).
+                .offset(cursor ? 0 : skip)
                 .limit(take)
                 .getMany();
 
