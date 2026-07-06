@@ -77,6 +77,7 @@ export const TokenUsagePageClient = ({
     uniquePrCount,
     cookieValue,
     models,
+    developers,
     teamId,
     pricing,
 }: {
@@ -91,6 +92,8 @@ export const TokenUsagePageClient = ({
     uniquePrCount: number;
     cookieValue: string | undefined;
     models: string[];
+    /** Distinct developer names for the by-developer picker (full roster). */
+    developers: string[];
     teamId: string;
     pricing: Record<string, ModelPricingInfo>;
 }) => {
@@ -196,7 +199,12 @@ export const TokenUsagePageClient = ({
         <div className="flex flex-col gap-5">
             {/* Filters Row */}
             <div className="flex items-center justify-between gap-4">
-                <Filters models={models} teamId={teamId} filters={filters} />
+                <Filters
+                    models={models}
+                    developers={developers}
+                    teamId={teamId}
+                    filters={filters}
+                />
                 <DateRangePicker
                     cookieValue={cookieValue}
                     commitMode="onClose"

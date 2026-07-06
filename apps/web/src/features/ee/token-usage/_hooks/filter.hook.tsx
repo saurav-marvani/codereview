@@ -61,6 +61,17 @@ export const useTokenUsageFilters = (models: string[]) => {
         navigate(`${pathname}?${params.toString()}`);
     };
 
+    // Direct selection from the developer combobox — set (or clear) the
+    // developer scope immediately, mirroring the repo picker. Keep the local
+    // `developer` state in sync so the debounced effect below doesn't fight it.
+    const handleDeveloperSelect = (developerName: string) => {
+        setDeveloper(developerName);
+        const params = new URLSearchParams(searchParams.toString());
+        if (developerName) params.set("developer", developerName);
+        else params.delete("developer");
+        navigate(`${pathname}?${params.toString()}`);
+    };
+
     const handleFilterChange = (value: string) => {
         const params = new URLSearchParams(searchParams.toString());
         params.set("filter", value);
@@ -162,6 +173,7 @@ export const useTokenUsageFilters = (models: string[]) => {
         handleModelChange,
         handlePrNumberChange,
         handleDeveloperChange,
+        handleDeveloperSelect,
         getModelSelectionText,
         setSelectedModels,
     };

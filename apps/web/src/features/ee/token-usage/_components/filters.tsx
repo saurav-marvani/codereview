@@ -41,10 +41,12 @@ import { useTokenUsageFilters } from "../_hooks/filter.hook";
 
 export const Filters = ({
     models,
+    developers,
     teamId,
     filters,
 }: {
     models: string[];
+    developers: string[];
     teamId: string;
     filters: ReturnType<typeof useTokenUsageFilters>;
 }) => {
@@ -59,9 +61,11 @@ export const Filters = ({
         handleModelChange,
         handlePrNumberChange,
         handleDeveloperChange,
+        handleDeveloperSelect,
         setSelectedModels,
         getModelSelectionText,
     } = filters;
+    const [developerOpen, setDeveloperOpen] = useState(false);
 
     const { data: repositories } = useGetSelectedRepositories(teamId);
     const repoOptions = safeArray(repositories);
@@ -207,15 +211,78 @@ export const Filters = ({
                     className="w-[150px]"
                 />
             )}
-            {currentFilter === "by-developer" && (
-                <Input
-                    type="text"
-                    placeholder="Developer"
-                    value={developer}
-                    onChange={handleDeveloperChange}
-                    className="w-[150px]"
-                />
-            )}
+            {currentFilter === "by-developer" &&
+                (developers.length > 0 ? (
+                    <Popover
+                        open={developerOpen}
+                        onOpenChange={setDeveloperOpen}
+                        modal>
+                        <PopoverTrigger asChild>
+                            <Button
+                                size="md"
+                                variant="helper"
+                                role="combobox"
+                                aria-expanded={developerOpen}
+                                className="w-[200px] justify-between">
+                                <span className="truncate">
+                                    {developer || "All developers"}
+                                </span>
+                                <ChevronDownIcon className="size-4 shrink-0 opacity-50" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                            className="w-[240px] p-0"
+                            align="start">
+                            <Command>
+                                <CommandInput placeholder="Search developers..." />
+                                <CommandList className="max-h-64 overflow-y-auto">
+                                    <CommandEmpty>
+                                        No developer found.
+                                    </CommandEmpty>
+                                    <CommandGroup>
+                                        <CommandItem
+                                            value="All developers"
+                                            onSelect={() => {
+                                                handleDeveloperSelect("");
+                                                setDeveloperOpen(false);
+                                            }}>
+                                            <span>All developers</span>
+                                            {!developer && (
+                                                <CheckIcon className="text-primary-light -mr-2 size-5" />
+                                            )}
+                                        </CommandItem>
+                                        {developers.map((dev) => (
+                                            <CommandItem
+                                                key={dev}
+                                                value={dev}
+                                                onSelect={() => {
+                                                    handleDeveloperSelect(dev);
+                                                    setDeveloperOpen(false);
+                                                }}>
+                                                <span className="truncate">
+                                                    {dev}
+                                                </span>
+                                                {developer === dev && (
+                                                    <CheckIcon className="text-primary-light -mr-2 size-5 shrink-0" />
+                                                )}
+                                            </CommandItem>
+                                        ))}
+                                    </CommandGroup>
+                                </CommandList>
+                            </Command>
+                        </PopoverContent>
+                    </Popover>
+                ) : (
+                    // Fallback to free text when the roster is empty (e.g. the
+                    // window has no attributable PR authors yet).
+                    <Input
+                        type="text"
+                        placeholder="Developer"
+                        value={developer}
+                        onChange={handleDeveloperChange}
+                        className="w-[150px]"
+                    />
+                ))}
         </div>
     );
 };

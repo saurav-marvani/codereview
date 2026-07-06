@@ -124,17 +124,40 @@ export default async function TokenUsagePage({
     // ONE covered aggregation returns summary + daily + by-pr (the cost cards
     // need day/PR counts regardless of the chart dimension). Only the
     // by-developer dimension isn't part of it, so that mode fetches alongside.
-    const [overview, developerData, reviewData, previousOverview] =
-        await Promise.all([
-            getTokenUsageOverview(filters),
-            filterType === "by-developer"
-                ? getTokenUsageByDeveloper(filters)
-                : Promise.resolve(null),
-            filterType === "by-review"
-                ? getTokenUsageByReview(filters)
-                : Promise.resolve(null),
-            getTokenUsageOverview(previousFilters).catch(() => null),
-        ]);
+    // Developer picker options: the by-developer aggregation WITHOUT a
+    // developer scope returns one row per developer, i.e. the full roster.
+    // Fetch it whenever the developer dimension is active so the combobox
+    // keeps every name even after one is selected (a scoped fetch collapses
+    // to a single developer). Cache-shared with the view fetch when no
+    // developer is selected (identical key), so it's usually free.
+    const developerListFilters = { ...filters, developer: undefined };
+    const [
+        overview,
+        developerData,
+        developerOptionsData,
+        reviewData,
+        previousOverview,
+    ] = await Promise.all([
+        getTokenUsageOverview(filters),
+        filterType === "by-developer"
+            ? getTokenUsageByDeveloper(filters)
+            : Promise.resolve(null),
+        filterType === "by-developer"
+            ? getTokenUsageByDeveloper(developerListFilters).catch(() => null)
+            : Promise.resolve(null),
+        filterType === "by-review"
+            ? getTokenUsageByReview(filters)
+            : Promise.resolve(null),
+        getTokenUsageOverview(previousFilters).catch(() => null),
+    ]);
+
+    const developerOptions = [
+        ...new Set(
+            (developerOptionsData ?? [])
+                .map((d) => d.developer)
+                .filter((d): d is string => !!d),
+        ),
+    ].sort((a, b) => a.localeCompare(b));
 
     const previousTotals = previousOverview
         ? {
@@ -276,6 +299,7 @@ export default async function TokenUsagePage({
                     uniquePrCount={uniquePrCount}
                     cookieValue={dateRangeCookieValue}
                     models={uniqueModels}
+                    developers={developerOptions}
                     teamId={teamId}
                     pricing={pricing}
                 />
