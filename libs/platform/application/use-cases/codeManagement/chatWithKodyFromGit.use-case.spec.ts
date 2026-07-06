@@ -14,12 +14,17 @@ describe('ChatWithKodyFromGitUseCase', () => {
     let codeManagementService: {
         findTeamAndOrganizationIdByConfigKey: jest.Mock;
         addReactionToComment: jest.Mock;
+        getPullRequestReviewComment: jest.Mock;
+        createResponseToComment: jest.Mock;
     };
     let conversationAgentUseCase: {
         execute: jest.Mock;
     };
     let businessRulesValidationAgentUseCase: {
         execute: jest.Mock;
+    };
+    let permissionValidationService: {
+        validateExecutionPermissions: jest.Mock;
     };
 
     beforeEach(() => {
@@ -35,12 +40,19 @@ describe('ChatWithKodyFromGitUseCase', () => {
                 },
             }),
             addReactionToComment: jest.fn().mockResolvedValue(undefined),
+            getPullRequestReviewComment: jest.fn().mockResolvedValue([]),
+            createResponseToComment: jest.fn().mockResolvedValue({ id: 999 }),
         };
         conversationAgentUseCase = {
-            execute: jest.fn(),
+            execute: jest.fn().mockResolvedValue('an answer'),
         };
         businessRulesValidationAgentUseCase = {
             execute: jest.fn().mockResolvedValue(undefined),
+        };
+        permissionValidationService = {
+            validateExecutionPermissions: jest
+                .fn()
+                .mockResolvedValue({ allowed: true }),
         };
 
         const leaseManager = {
@@ -57,6 +69,7 @@ describe('ChatWithKodyFromGitUseCase', () => {
             codeManagementService as any,
             conversationAgentUseCase as any,
             businessRulesValidationAgentUseCase as any,
+            permissionValidationService as any,
             leaseManager as any,
         );
     });
@@ -181,5 +194,106 @@ describe('ChatWithKodyFromGitUseCase', () => {
                 }),
             }),
         );
+    });
+
+    describe('conversation plan gate', () => {
+        const conversationPayload = () =>
+            ({
+                event: 'issue_comment',
+                platformType: PlatformType.GITHUB,
+                payload: {
+                    action: 'created',
+                    repository: {
+                        id: 'repo-1',
+                        name: 'kodus-extension',
+                    },
+                    issue: {
+                        id: 456,
+                        body: 'PR description body',
+                        pull_request: {
+                            url: 'https://api.github.com/repos/kodus/kodus-extension/pulls/132',
+                        },
+                    },
+                    pull_request: {
+                        head: { ref: 'feature/improve-refs' },
+                        base: { ref: 'main' },
+                    },
+                    comment: {
+                        id: 123,
+                        body: '@kody can we use optional chaining here?',
+                    },
+                    sender: {
+                        id: 'user-1',
+                        login: 'alice',
+                    },
+                },
+            }) as any;
+
+        beforeEach(() => {
+            codeManagementService.getPullRequestReviewComment.mockResolvedValue(
+                [
+                    {
+                        id: 123,
+                        body: '@kody can we use optional chaining here?',
+                        user: { login: 'alice' },
+                    },
+                ],
+            );
+        });
+
+        it('runs the agent when the org has BYOK (any plan)', async () => {
+            permissionValidationService.validateExecutionPermissions.mockResolvedValue(
+                {
+                    allowed: true,
+                    byokConfig: { main: { provider: 'anthropic' } },
+                },
+            );
+
+            await useCase.execute(conversationPayload());
+
+            expect(
+                permissionValidationService.validateExecutionPermissions,
+            ).toHaveBeenCalledWith(
+                { organizationId: 'org-1', teamId: 'team-1' },
+                undefined,
+                'ChatWithKodyFromGitUseCase',
+            );
+            expect(conversationAgentUseCase.execute).toHaveBeenCalled();
+        });
+
+        it('runs the agent on the default model for a trial org without BYOK', async () => {
+            permissionValidationService.validateExecutionPermissions.mockResolvedValue(
+                {
+                    allowed: true,
+                    byokConfig: null,
+                    subscriptionStatus: 'trial',
+                },
+            );
+
+            await useCase.execute(conversationPayload());
+
+            expect(conversationAgentUseCase.execute).toHaveBeenCalled();
+        });
+
+        it('replies with BYOK guidance and skips the agent for a cloud org past the trial without BYOK', async () => {
+            permissionValidationService.validateExecutionPermissions.mockResolvedValue(
+                {
+                    allowed: false,
+                    errorType: 'byok_required',
+                },
+            );
+
+            await useCase.execute(conversationPayload());
+
+            expect(conversationAgentUseCase.execute).not.toHaveBeenCalled();
+            expect(
+                codeManagementService.createResponseToComment,
+            ).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    body: expect.stringContaining('trial has ended'),
+                    prNumber: 132,
+                }),
+            );
+        });
     });
 });
