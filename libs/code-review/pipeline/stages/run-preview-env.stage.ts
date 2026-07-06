@@ -175,18 +175,28 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
         const scoped = resolveScopedRun(env?.scope, changedFiles, base);
         const scopeLabel = scoped?.reason ?? 'full';
 
-        const phaseList: Array<{ phase: string; commands: string[] }> = [
-            { phase: 'setup', commands: env?.setup ?? [] },
-            { phase: 'build', commands: scoped ? scoped.build : env?.build ?? [] },
-            { phase: 'services', commands: (env?.services ?? []).map(wrapService) },
-            { phase: 'test', commands: scoped ? scoped.test : env?.test ?? [] },
-            { phase: 'healthcheck', commands: env?.healthcheck ?? [] },
+        // Playbook entries may be plain strings OR {name,type,command} objects
+        // (the detect agent emits process-type services as objects). Normalize
+        // to a command string; services get setsid-backgrounded.
+        const phaseList: Array<{ phase: string; commands: Array<string | null> }> = [
+            { phase: 'setup', commands: (env?.setup ?? []).map(normalizeCmd) },
+            { phase: 'build', commands: (scoped ? scoped.build : env?.build ?? []).map(normalizeCmd) },
+            {
+                phase: 'services',
+                commands: (env?.services ?? []).map((e) => {
+                    const c = normalizeCmd(e);
+                    return c ? wrapService(c) : null;
+                }),
+            },
+            { phase: 'test', commands: (scoped ? scoped.test : env?.test ?? []).map(normalizeCmd) },
+            { phase: 'healthcheck', commands: (env?.healthcheck ?? []).map(normalizeCmd) },
         ];
 
         const phases: NonNullable<CodeReviewPipelineContext['previewEnvSignal']>['phases'] = [];
         let ok = true;
         for (const { phase, commands } of phaseList) {
             for (const command of commands) {
+                if (!command) continue;
                 const r = await vm.run(command, { timeoutMs: PHASE_TIMEOUT_MS });
                 phases.push({
                     phase,
@@ -253,4 +263,18 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
 function wrapService(command: string): string {
     const escaped = command.replace(/'/g, `'\\''`);
     return `setsid bash -c '${escaped}' > /tmp/kody-svc.log 2>&1 < /dev/null & sleep 4`;
+}
+
+/**
+ * A playbook entry is either a command string or an object carrying a
+ * `command` field ({name,type:'process',command} for services,
+ * {description,command} for annotated steps). Reduce to the command string;
+ * anything else (declarative image specs, etc.) → null (skipped).
+ */
+function normalizeCmd(entry: unknown): string | null {
+    if (typeof entry === 'string') return entry;
+    if (entry && typeof entry === 'object' && typeof (entry as any).command === 'string') {
+        return (entry as any).command;
+    }
+    return null;
 }

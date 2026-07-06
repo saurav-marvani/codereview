@@ -79,6 +79,14 @@ export class VmSandboxService implements ISandboxProvider {
         });
 
         try {
+            // Wait for cloud-init (docker/node/ripgrep + /opt/kody) to finish
+            // before using the VM — otherwise the toolchain and the secrets dir
+            // aren't ready. Skipped on snapshot warm-boot (image is pre-baked).
+            if (!snapshotImage) {
+                await client.exec(handle, 'cloud-init status --wait 2>/dev/null || true', 600_000);
+            }
+            await client.exec(handle, 'mkdir -p /opt/kody', 30_000);
+
             await this.cloneRepo(client, handle, params, !!snapshotImage);
 
             const remoteCommands = this.buildRemoteCommands(client, handle);
