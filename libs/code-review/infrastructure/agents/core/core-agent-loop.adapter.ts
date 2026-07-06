@@ -255,12 +255,25 @@ export async function runAgentLoopViaCore(
                   ],
               };
 
+    // When the finder run errored (a provider/model throw the harness caught
+    // and turned into an error-status result), surface the underlying message
+    // so the caller can classify it and fall back / fail loudly instead of
+    // returning a silent empty review.
+    const errorEvent =
+        r.finderState.status === 'error'
+            ? r.finderState.trace.find((e) => e.kind === 'error')
+            : undefined;
+
     return {
         findings: { reasoning: r.reasoning, suggestions: r.kept as any },
         text: r.reasoning,
         steps: r.finderState.steps.length,
         toolCalls,
         finishReason: r.finderState.status,
+        ...(errorEvent && {
+            errorMessage: (errorEvent.detail?.message as string) || undefined,
+            errorName: (errorEvent.detail?.name as string) || undefined,
+        }),
         source: r.kept.length || r.reasoning ? 'json-parse' : 'empty',
         usage: {
             inputTokens,

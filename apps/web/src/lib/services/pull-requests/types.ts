@@ -70,7 +70,8 @@ export type ReviewWarningKind =
     | "HUNK_HEADERS_ONLY"
     | "DIFF_TRUNCATED"
     | "LOW_SIGNAL_FILES_DROPPED"
-    | "HEAVY_PASSES_SKIPPED";
+    | "HEAVY_PASSES_SKIPPED"
+    | "PROVIDER_FALLBACK";
 
 export interface ReviewWarning {
     kind: ReviewWarningKind;

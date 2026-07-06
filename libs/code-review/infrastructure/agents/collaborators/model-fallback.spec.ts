@@ -1,5 +1,6 @@
 import {
     runWithProviderFallback,
+    providerErrorFromResult,
     type ProviderFallbackOptions,
 } from './model-fallback';
 import type { AgentModelParams } from './model-factory';
@@ -114,5 +115,37 @@ describe('runWithProviderFallback', () => {
         ).rejects.toThrow('aborted');
         expect(attempt).toHaveBeenCalledTimes(1);
         expect(onFallback).not.toHaveBeenCalled();
+    });
+});
+
+describe('providerErrorFromResult', () => {
+    it('returns null for a healthy result', () => {
+        expect(
+            providerErrorFromResult({ finishReason: 'stop' }),
+        ).toBeNull();
+    });
+
+    it('returns null for a non-error stop (timeout/budget)', () => {
+        expect(
+            providerErrorFromResult({ finishReason: 'timeout' }),
+        ).toBeNull();
+        expect(providerErrorFromResult(undefined)).toBeNull();
+    });
+
+    it('reconstructs a classifiable error carrying the provider message/name', () => {
+        const err = providerErrorFromResult({
+            finishReason: 'error',
+            errorMessage: 'Not found the model kimi-x or Permission denied',
+            errorName: 'AI_APICallError',
+        });
+        expect(err).toBeInstanceOf(Error);
+        expect(err!.message).toContain('Not found the model kimi-x');
+        expect(err!.name).toBe('AI_APICallError');
+    });
+
+    it('falls back to a generic message when none is present', () => {
+        const err = providerErrorFromResult({ finishReason: 'error' });
+        expect(err).toBeInstanceOf(Error);
+        expect(err!.message).toMatch(/provider call returned an error/i);
     });
 });

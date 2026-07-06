@@ -390,6 +390,11 @@ export interface AgentLoopOutput {
         result?: string;
     }>;
     finishReason: string;
+    /** Present only when finishReason === 'error': the underlying provider/model
+     *  error surfaced by the harness. Used to classify the failure and surface a
+     *  friendly reason in the end-review comment. */
+    errorMessage?: string;
+    errorName?: string;
     /** Whether findings came from direct JSON parse or fallback generateObject */
     source: 'json-parse' | 'generate-object' | 'empty';
     usage: {

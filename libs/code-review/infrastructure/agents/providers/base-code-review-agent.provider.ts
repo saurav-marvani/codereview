@@ -21,7 +21,10 @@ import {
     type PromptAgentMeta,
 } from '@libs/code-review/infrastructure/agents/prompts/prompt-builder';
 import { resolveContextWindow } from '@libs/llm/model-context-window';
-import type { ReviewWarning } from '@libs/code-review/infrastructure/agents/engine/review-warnings';
+import {
+    buildProviderFallbackWarning,
+    type ReviewWarning,
+} from '@libs/code-review/infrastructure/agents/engine/review-warnings';
 import { resolveAdaptiveProfile } from '@libs/code-review/infrastructure/agents/engine/adaptive-fit';
 import { runAgentLoopViaCore } from '@libs/code-review/infrastructure/agents/core/core-agent-loop.adapter';
 import {
@@ -37,7 +40,10 @@ import {
     resolveAgentModel,
     type AgentModelParams,
 } from '@libs/code-review/infrastructure/agents/collaborators/model-factory';
-import { runWithProviderFallback } from '@libs/code-review/infrastructure/agents/collaborators/model-fallback';
+import {
+    runWithProviderFallback,
+    providerErrorFromResult,
+} from '@libs/code-review/infrastructure/agents/collaborators/model-fallback';
 import {
     recordAgentUsageSpans,
     runAgentWithTrace,
@@ -639,6 +645,7 @@ export abstract class BaseCodeReviewAgentProvider {
                 );
             };
 
+            let usedFallback = false;
             const agentResult = await runWithProviderFallback({
                 main: mainModel,
                 fallback: fallbackModel,
@@ -653,6 +660,7 @@ export abstract class BaseCodeReviewAgentProvider {
                 // genuine main-provider failure.
                 shouldFallback: () => !input.parentSignal?.aborted,
                 onFallback: (reason) => {
+                    usedFallback = true;
                     const failMsg =
                         reason instanceof Error
                             ? reason.message
@@ -672,6 +680,30 @@ export abstract class BaseCodeReviewAgentProvider {
                     });
                 },
             });
+
+            // Every provider attempt failed (main errored, and either no
+            // fallback or the fallback errored too). Throw so the orchestrator
+            // records a real failure — otherwise the harness's swallowed error
+            // would surface as a silent "0 suggestions, 0 failures" SUCCESS,
+            // masking a total provider outage. The thrown message is classified
+            // (classifyLLMError) into the end-review comment's failure reason.
+            const providerError = providerErrorFromResult(agentResult);
+            if (providerError) {
+                throw providerError;
+            }
+
+            // The fallback rescued the run: surface a dashboard notice so the
+            // user can see the main provider failed and the review ran on the
+            // fallback (dataExecution.reviewWarnings → web Pull Requests view).
+            if (usedFallback) {
+                agentWarnings.push(
+                    buildProviderFallbackWarning({
+                        failedModel: mainModel.modelName,
+                        usedModel: effectiveModelName,
+                        agentName: identity.name,
+                    }),
+                );
+            }
 
             const durationMs = Date.now() - startTime;
 

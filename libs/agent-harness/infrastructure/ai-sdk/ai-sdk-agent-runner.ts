@@ -249,9 +249,10 @@ export class AiSdkAgentRunner implements AgentRunner {
             // the steps collected so far + an error TraceEvent — never a bare
             // exception the caller has to reconstruct from a stack trace.
             const message = err instanceof Error ? err.message : String(err);
+            const name = err instanceof Error ? err.name : undefined;
             emit('runner', {
                 kind: 'error',
-                detail: { message, step: steps.length },
+                detail: { message, name, step: steps.length },
             });
             const errView = buildView(steps.length, messages, allToolNames);
 

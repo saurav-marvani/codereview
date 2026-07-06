@@ -79,3 +79,36 @@ export async function runWithProviderFallback<T>(
 
     return mainResult;
 }
+
+/** Minimal shape of an agent-loop result this module reasons about. */
+export interface ProviderRunResult {
+    finishReason?: string;
+    errorMessage?: string;
+    errorName?: string;
+}
+
+/**
+ * When every provider attempt ended in a harness-swallowed error result
+ * (finishReason 'error'), reconstruct a throwable error so the caller can fail
+ * the agent LOUDLY instead of returning a silent empty review. Returns null for
+ * a healthy result (including a legit empty or a 'timeout'/budget stop).
+ *
+ * The reconstructed error carries the original provider message so downstream
+ * `classifyLLMError` can categorise it (model-not-found, quota, auth, …) for the
+ * end-review comment.
+ */
+export function providerErrorFromResult(
+    result: ProviderRunResult | undefined,
+): Error | null {
+    if (result?.finishReason !== 'error') {
+        return null;
+    }
+    const error = new Error(
+        result.errorMessage ??
+            'agent run failed: BYOK provider call returned an error',
+    );
+    if (result.errorName) {
+        error.name = result.errorName;
+    }
+    return error;
+}
