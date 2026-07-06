@@ -211,31 +211,8 @@ export class LocalSandboxService implements ISandboxProvider {
                 }
             };
 
-            // Path safety: reads go through `resolveSafePath` so absolute
-            // paths, `..` traversals, and symlink escapes are all rejected
-            // at the boundary. Writes can target files that don't exist
-            // yet (so `lstat`/`realpath` don't apply), but we still
-            // normalize and compare against the repo root so the final
-            // target can't escape — `validatePath` plus the prefix check
-            // covers `../..`, `/etc/...`, and embedded traversals.
-            const sandboxReadFile = async (path: string): Promise<string> => {
-                const fullPath = path.startsWith('/')
-                    ? path
-                    : join(capturedRepoDir, path);
-                return readFile(fullPath, 'utf-8');
-            };
-
-            const sandboxWriteFile = async (
-                path: string,
-                content: string,
-            ): Promise<void> => {
-                const fullPath = path.startsWith('/')
-                    ? path
-                    : join(capturedRepoDir, path);
-                const dir = join(fullPath, '..');
-                await mkdir(dir, { recursive: true });
-                await writeFile(fullPath, content, 'utf-8');
-            };
+            const { readFile: sandboxReadFile, writeFile: sandboxWriteFile } =
+                this.buildSandboxFileAccess(capturedRepoDir);
 
             return {
                 remoteCommands,
@@ -570,6 +547,24 @@ export class LocalSandboxService implements ISandboxProvider {
         };
     }
 
+    private buildSandboxFileAccess(repoDir: string): {
+        readFile: (path: string) => Promise<string>;
+        writeFile: (path: string, content: string) => Promise<void>;
+    } {
+        return {
+            readFile: async (path: string): Promise<string> => {
+                const safePath = await this.resolveSafePath(repoDir, path);
+                return readFile(safePath, 'utf-8');
+            },
+            writeFile: async (path: string, content: string): Promise<void> => {
+                const safePath = await this.resolveSafeWritePath(repoDir, path);
+                const dir = join(safePath, '..');
+                await mkdir(dir, { recursive: true });
+                await writeFile(safePath, content, 'utf-8');
+            },
+        };
+    }
+
     /**
      * Apply a unified diff on top of the currently-checked-out commit. Used
      * in CLI mode so the agent sees the user's actual local working state.
@@ -600,7 +595,13 @@ export class LocalSandboxService implements ISandboxProvider {
         try {
             await execFileAsync(
                 'git',
-                ['-C', repoDir, 'config', 'user.email', 'kodus-cli@kodus.local'],
+                [
+                    '-C',
+                    repoDir,
+                    'config',
+                    'user.email',
+                    'kodus-cli@kodus.local',
+                ],
                 { timeout: 5_000 },
             );
             await execFileAsync(
@@ -626,8 +627,7 @@ export class LocalSandboxService implements ISandboxProvider {
                 { timeout: CLONE_TIMEOUT_MS },
             );
             this.logger.log({
-                message:
-                    'CLI diff applied successfully on top of merge-base',
+                message: 'CLI diff applied successfully on top of merge-base',
                 context: LocalSandboxService.name,
             });
             return;
@@ -700,6 +700,79 @@ export class LocalSandboxService implements ISandboxProvider {
         const repoReal = await realpath(repoDir);
         if (!real.startsWith(repoReal + '/') && real !== repoReal) {
             throw new Error(`Path escapes repo boundary: ${path}`);
+        }
+
+        return candidate;
+    }
+
+    /**
+     * Resolve a relative write path within the repo. The target file may not
+     * exist yet, so we cannot rely on lstat/realpath of the target itself;
+     * instead we validate every existing parent directory is a real directory
+     * under the repo root and reject any symlink in the path or target.
+     */
+    private async resolveSafeWritePath(
+        repoDir: string,
+        path: string,
+    ): Promise<string> {
+        this.validatePath(path);
+        const repoReal = await realpath(repoDir);
+        const candidate = join(repoDir, path);
+
+        try {
+            const targetStat = await lstat(candidate);
+            if (targetStat.isSymbolicLink()) {
+                throw new Error(
+                    `Symlink detected, refusing to write through: ${path}`,
+                );
+            }
+        } catch (error: unknown) {
+            const isEnoent =
+                typeof error === 'object' &&
+                error !== null &&
+                'code' in error &&
+                (error as { code: string }).code === 'ENOENT';
+            if (!isEnoent) {
+                throw error;
+            }
+        }
+
+        let current = candidate;
+        while (true) {
+            const parent = join(current, '..');
+            if (parent === current || !parent.startsWith(repoDir + '/')) {
+                break;
+            }
+            try {
+                const stat = await lstat(parent);
+                if (stat.isSymbolicLink()) {
+                    throw new Error(
+                        `Symlinked parent directory detected: ${path}`,
+                    );
+                }
+                if (!stat.isDirectory()) {
+                    throw new Error(`Non-directory parent in path: ${path}`);
+                }
+                const parentReal = await realpath(parent);
+                if (
+                    !parentReal.startsWith(repoReal + '/') &&
+                    parentReal !== repoReal
+                ) {
+                    throw new Error(`Path escapes repo boundary: ${path}`);
+                }
+                break;
+            } catch (error: unknown) {
+                const isEnoent =
+                    typeof error === 'object' &&
+                    error !== null &&
+                    'code' in error &&
+                    (error as { code: string }).code === 'ENOENT';
+                if (isEnoent) {
+                    current = parent;
+                    continue;
+                }
+                throw error;
+            }
         }
 
         return candidate;

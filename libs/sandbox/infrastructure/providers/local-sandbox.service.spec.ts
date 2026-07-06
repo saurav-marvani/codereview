@@ -1,3 +1,7 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
 import { PlatformType } from '@libs/core/domain/enums';
 import { LocalSandboxService } from './local-sandbox.service';
 
@@ -16,9 +20,10 @@ describe('LocalSandboxService.buildAuthHeader', () => {
         (service as any).buildAuthHeader(platform, token, username) as string;
 
     const decode = (header: string) =>
-        Buffer.from(header.replace('Authorization: Basic ', ''), 'base64').toString(
-            'utf8',
-        );
+        Buffer.from(
+            header.replace('Authorization: Basic ', ''),
+            'base64',
+        ).toString('utf8');
 
     it('uses x-access-token for GitHub', () => {
         expect(decode(build(PlatformType.GITHUB, 'ghtok'))).toBe(
@@ -27,7 +32,9 @@ describe('LocalSandboxService.buildAuthHeader', () => {
     });
 
     it('uses oauth2 for GitLab and Azure', () => {
-        expect(decode(build(PlatformType.GITLAB, 'gltok'))).toBe('oauth2:gltok');
+        expect(decode(build(PlatformType.GITLAB, 'gltok'))).toBe(
+            'oauth2:gltok',
+        );
         expect(decode(build(PlatformType.AZURE_REPOS, 'aztok'))).toBe(
             'oauth2:aztok',
         );
@@ -47,7 +54,9 @@ describe('LocalSandboxService.buildAuthHeader', () => {
 
         it('uses the account username for classic app passwords', () => {
             expect(
-                decode(build(PlatformType.BITBUCKET, 'classicapppw', 'kodususer')),
+                decode(
+                    build(PlatformType.BITBUCKET, 'classicapppw', 'kodususer'),
+                ),
             ).toBe('kodususer:classicapppw');
         });
 
@@ -62,5 +71,97 @@ describe('LocalSandboxService.buildAuthHeader', () => {
                 /Bitbucket authentication requires/i,
             );
         });
+    });
+});
+
+describe('LocalSandboxService sandbox file access', () => {
+    let dir: string;
+    let outsideDir: string;
+    let sandbox: {
+        readFile: (path: string) => Promise<string>;
+        writeFile: (path: string, content: string) => Promise<void>;
+    };
+
+    beforeEach(() => {
+        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kodus-sandbox-files-'));
+        outsideDir = fs.mkdtempSync(
+            path.join(os.tmpdir(), 'kodus-sandbox-outside-'),
+        );
+        const svc = new LocalSandboxService({} as any);
+        sandbox = (svc as any).buildSandboxFileAccess(dir);
+    });
+
+    afterEach(() => {
+        fs.rmSync(dir, { recursive: true, force: true });
+        fs.rmSync(outsideDir, { recursive: true, force: true });
+    });
+
+    it('reads a repo-relative file', async () => {
+        fs.writeFileSync(path.join(dir, 'a.txt'), 'hello');
+        await expect(sandbox.readFile('a.txt')).resolves.toBe('hello');
+    });
+
+    it('writes a repo-relative file and creates parent directories', async () => {
+        await sandbox.writeFile('sub/b.txt', 'world');
+        expect(fs.readFileSync(path.join(dir, 'sub/b.txt'), 'utf-8')).toBe(
+            'world',
+        );
+    });
+
+    it('rejects absolute read paths', async () => {
+        await expect(sandbox.readFile('/etc/passwd')).rejects.toThrow(
+            /Absolute paths are not allowed/,
+        );
+    });
+
+    it('rejects absolute write paths', async () => {
+        await expect(sandbox.writeFile('/etc/passwd', 'x')).rejects.toThrow(
+            /Absolute paths are not allowed/,
+        );
+    });
+
+    it('rejects .. traversal reads', async () => {
+        await expect(sandbox.readFile('../outside.txt')).rejects.toThrow(
+            /Path traversal using "\.\." is not allowed/,
+        );
+    });
+
+    it('rejects .. traversal writes', async () => {
+        await expect(sandbox.writeFile('../outside.txt', 'x')).rejects.toThrow(
+            /Path traversal using "\.\." is not allowed/,
+        );
+    });
+
+    it('rejects reading through a symlink that escapes the repo', async () => {
+        const outsideFile = path.join(outsideDir, 'secret.txt');
+        fs.writeFileSync(outsideFile, 'secret');
+        fs.symlinkSync(outsideFile, path.join(dir, 'escape-link'));
+        await expect(sandbox.readFile('escape-link')).rejects.toThrow(
+            /Symlink detected/,
+        );
+    });
+
+    it('rejects writing through a symlinked parent directory', async () => {
+        fs.symlinkSync(outsideDir, path.join(dir, 'linkdir'));
+        await expect(
+            sandbox.writeFile('linkdir/nested/file.txt', 'x'),
+        ).rejects.toThrow(/Symlink/);
+    });
+
+    it('rejects overwriting a symlinked target file', async () => {
+        const outsideFile = path.join(outsideDir, 'target.txt');
+        fs.writeFileSync(outsideFile, 'secret');
+        fs.symlinkSync(outsideFile, path.join(dir, 'linkfile.txt'));
+        await expect(sandbox.writeFile('linkfile.txt', 'x')).rejects.toThrow(
+            /Symlink/,
+        );
+    });
+
+    it('writes a new file under an existing safe parent directory', async () => {
+        fs.mkdirSync(path.join(dir, 'safe'));
+        await sandbox.writeFile('safe/new.txt', 'ok');
+        expect(fs.readFileSync(path.join(dir, 'safe/new.txt'), 'utf-8')).toBe(
+            'ok',
+        );
     });
 });
