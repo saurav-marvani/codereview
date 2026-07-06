@@ -100,7 +100,7 @@ describe('KodyRuleDetectorCompilerService.compileAndSave (#1449 T0)', () => {
         });
         await expect(
             svc.compileAndSave(org, 'r1', mechanicalRule),
-        ).resolves.toBeUndefined();
+        ).resolves.toEqual({ compiled: false, declineReason: 'error' });
         expect(kodyRulesService.updateRuleDetector).not.toHaveBeenCalled();
     });
 });

@@ -26,6 +26,7 @@ import { ChangeStatusKodyRulesUseCase } from '../application/use-cases/change-st
 import { CheckSyncStatusUseCase } from '../application/use-cases/check-sync-status.use-case';
 import { ConvertPendingUpdatesToNewUseCase } from '../application/use-cases/convert-pending-updates-to-new.use-case';
 import { CreateOrUpdateKodyRulesUseCase } from '../application/use-cases/create-or-update.use-case';
+import { BackfillRuleDetectorsUseCase } from '../application/use-cases/backfill-rule-detectors.use-case';
 import { DeleteRuleInOrganizationByIdKodyRulesUseCase } from '../application/use-cases/delete-rule-in-organization-by-id.use-case';
 import { FastSyncIdeRulesUseCase } from '../application/use-cases/fast-sync-ide-rules.use-case';
 import { FindByOrganizationIdKodyRulesUseCase } from '../application/use-cases/find-by-organization-id.use-case';
@@ -112,6 +113,7 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         ChangeStatusKodyRulesUseCase,
         CreateOrUpdateKodyRulesUseCase,
         KodyRuleDetectorCompilerService,
+        BackfillRuleDetectorsUseCase,
         SendRulesNotificationUseCase,
         SyncSelectedRepositoriesKodyRulesUseCase,
         KodyRulesValidationService,
@@ -148,6 +150,7 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         CountRulesByRepositoryUseCase,
         ChangeStatusKodyRulesUseCase,
         CreateOrUpdateKodyRulesUseCase,
+        BackfillRuleDetectorsUseCase,
         SendRulesNotificationUseCase,
         KodyRulesValidationService,
         KodyRulesSyncService,

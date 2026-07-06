@@ -55,7 +55,7 @@ export class KodyRuleDetectorCompilerService {
         organizationAndTeamData: OrganizationAndTeamData,
         ruleUuid: string,
         rule: Partial<IKodyRule>,
-    ): Promise<void> {
+    ): Promise<{ compiled: boolean; declineReason?: string }> {
         try {
             const byokConfig =
                 await this.permissionValidationService.getBYOKConfig(
@@ -99,22 +99,23 @@ export class KodyRuleDetectorCompilerService {
                     context: KodyRuleDetectorCompilerService.name,
                     metadata: { ruleUuid, pattern: detector.pattern },
                 });
-            } else {
-                // Edited rule that used to be mechanical but no longer is:
-                // clear the stale detector so review stops using it.
-                if (rule.detector) {
-                    await this.kodyRulesService.updateRuleDetector(
-                        orgId,
-                        ruleUuid,
-                        null,
-                    );
-                }
-                this.logger.log({
-                    message: `Rule ${ruleUuid} stays semantic (${declineReason})`,
-                    context: KodyRuleDetectorCompilerService.name,
-                    metadata: { ruleUuid, declineReason },
-                });
+                return { compiled: true };
             }
+            // Edited rule that used to be mechanical but no longer is:
+            // clear the stale detector so review stops using it.
+            if (rule.detector) {
+                await this.kodyRulesService.updateRuleDetector(
+                    orgId,
+                    ruleUuid,
+                    null,
+                );
+            }
+            this.logger.log({
+                message: `Rule ${ruleUuid} stays semantic (${declineReason})`,
+                context: KodyRuleDetectorCompilerService.name,
+                metadata: { ruleUuid, declineReason },
+            });
+            return { compiled: false, declineReason };
         } catch (error) {
             this.logger.warn({
                 message: `Detector compile failed for rule ${ruleUuid}; rule stays semantic`,
@@ -122,6 +123,7 @@ export class KodyRuleDetectorCompilerService {
                 error,
                 metadata: { ruleUuid },
             });
+            return { compiled: false, declineReason: 'error' };
         }
     }
 }
