@@ -42,7 +42,9 @@ const authPaths = [
     "/api/auth",
 ];
 
-export default auth(async (req) => {
+// Next 16: `middleware.ts` foi renomeado para `proxy.ts` e roda no runtime
+// nodejs (não mais edge). O Auth.js expõe o wrapper via export nomeado `proxy`.
+export const proxy = auth(async (req) => {
     const pathname = req.nextUrl.pathname;
 
     if (pathname === "/register") {
