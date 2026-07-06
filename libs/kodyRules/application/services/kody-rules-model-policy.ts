@@ -5,19 +5,21 @@ import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 
 /**
- * Model forced for Kody Rules generation on cloud trial (no BYOK). Routed to
- * the Moonshot official API (`API_MOONSHOT_API_KEY`) by `byokToVercelModel`'s
- * `kimi-*` prefix detection.
+ * The Kodus-funded model for Kody Rules generation when there's no BYOK:
+ * Kimi K2.7 Code via the Moonshot official API (`API_MOONSHOT_API_KEY`),
+ * routed by `byokToVercelModel`'s `kimi-*` prefix detection. Gemini is dead
+ * (project denied access) and must never be used here — see item 9 of
+ * docs/plans/fix-kody-rules-generation.md.
  */
-export const KODY_RULES_TRIAL_MODEL = 'kimi-k2.7-code';
+export const KODY_RULES_KODUS_MODEL = 'kimi-k2.7-code';
 
 /**
  * Resolved model policy for a Kody Rules generation run.
  *
  * `generate: false` means the run must be skipped (no model the org is
  * entitled to). `byokConfig`/`modelOverride` feed `byokToVercelModel`:
- * BYOK wins when present; otherwise `modelOverride` forces the trial model;
- * self-hosted resolves the env model (both undefined).
+ * BYOK wins when present; otherwise `modelOverride` forces the Kodus model
+ * (Kimi); self-hosted resolves the env model (both undefined).
  */
 export interface KodyRulesModelPolicy {
     generate: boolean;
@@ -30,11 +32,12 @@ export interface KodyRulesModelPolicy {
 /**
  * Decides which model (if any) a Kody Rules generation run may use.
  *
- * Policy (see docs/plans/fix-kody-rules-generation.md):
- * - BYOK configured        → generate with the client's BYOK model.
- * - Self-hosted / dev       → generate with the env model (no BYOK/trial concept).
- * - Cloud, no BYOK, trial   → generate with Kimi K2.7 (Kodus-funded, Moonshot).
- * - Cloud, no BYOK, other   → SKIP (free/paid without BYOK generates nothing).
+ * Policy (see docs/plans/fix-kody-rules-generation.md). The Kodus-funded model
+ * is ALWAYS Kimi — Gemini is dead and must never be reached from this flow:
+ * - BYOK configured              → client's BYOK model.
+ * - Self-hosted (not cloud)      → the deployment's env model (customer keys).
+ * - Cloud + dev OR trial         → Kimi K2.7 (Kodus pays).
+ * - Cloud + free/paid, no BYOK   → SKIP (generates nothing).
  */
 export async function resolveKodyRulesModelPolicy(
     permissionValidationService: PermissionValidationService,
@@ -47,20 +50,22 @@ export async function resolveKodyRulesModelPolicy(
         return { generate: true, byokConfig };
     }
 
-    // Self-hosted / dev have no BYOK/trial concept — the model comes from the
-    // deployment's env config. Always generate; byokToVercelModel(undefined)
-    // resolves the env model.
-    if (!environment.API_CLOUD_MODE || environment.API_DEVELOPMENT_MODE) {
+    // Self-hosted deployments bring their own model via env (customer keys),
+    // not a Kodus-funded model. byokToVercelModel(undefined) resolves it.
+    if (!environment.API_CLOUD_MODE) {
         return { generate: true };
     }
 
+    // Cloud. When Kodus foots the bill (local dev, or an active trial) the model
+    // is Kimi — explicitly overridden so byokToVercelModel never falls back to
+    // its dead Gemini default.
     const subscriptionStatus =
         await permissionValidationService.getSubscriptionStatus(
             organizationAndTeamData,
         );
 
-    if (subscriptionStatus === 'trial') {
-        return { generate: true, modelOverride: KODY_RULES_TRIAL_MODEL };
+    if (environment.API_DEVELOPMENT_MODE || subscriptionStatus === 'trial') {
+        return { generate: true, modelOverride: KODY_RULES_KODUS_MODEL };
     }
 
     return {

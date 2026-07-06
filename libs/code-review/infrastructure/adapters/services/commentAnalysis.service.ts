@@ -6,7 +6,8 @@ import filteredLibraryKodyRules from '@libs/code-review/infrastructure/data/filt
 import { Injectable } from '@nestjs/common';
 import { v4 } from 'uuid';
 
-import { withStructuredOutputFallback } from '@libs/llm/byok-to-vercel';
+import { byokToVercelModel, getModelName } from '@libs/llm/byok-to-vercel';
+import { wrapByokModel } from '@libs/llm/byok-model-wrapper';
 import {
     LLM_CALL_TIMEOUT_MS,
     timeoutSignal,
@@ -69,11 +70,15 @@ export class CommentAnalysisService {
     ) {}
 
     /**
-     * Runs a structured-output LLM call through libs/llm (no @kodus/kodus-common
-     * PromptRunner). Resolves the model from the caller's `modelConfig`
-     * (BYOK / trial-Kimi / env), retries json_schema→json_object on upstream
-     * rejection, and records token usage in the observability span. LLM
-     * failures propagate — callers must not treat them as "no result".
+     * Runs a structured-output LLM call, resolving the model the SAME way the
+     * code-review agents do (see `resolveAgentModel` / model-factory):
+     * `byokToVercelModel(byokConfig, 'main', {}, override)` — BYOK wins;
+     * self-hosted resolves the env model; cloud trial forces Kimi via the
+     * override; cloud without BYOK is already skipped upstream by the model
+     * policy. `wrapByokModel` adds the shared concurrency limiter + error
+     * classification. Non-strict structured output (options `{}`) so schemas
+     * with optional fields work across providers. LLM failures propagate —
+     * callers must not treat them as "no result".
      */
     private async runStructuredLLM<S extends z.ZodType>(args: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -94,45 +99,43 @@ export class CommentAnalysisService {
             attrs,
         } = args;
 
+        const baseModel = byokToVercelModel(
+            modelConfig.byokConfig ?? undefined,
+            'main',
+            {},
+            modelConfig.modelOverride,
+        );
+        const model = wrapByokModel(baseModel, {
+            byokConfig: modelConfig.byokConfig ?? undefined,
+            organizationId: organizationAndTeamData.organizationId,
+            role: 'main',
+        });
+
         const result = await this.observabilityService.runAiSdkLLMInSpan<any>({
             spanName: `${CommentAnalysisService.name}::${runName}`,
             runName,
-            model:
-                modelConfig.byokConfig?.main?.model ??
-                modelConfig.modelOverride ??
-                'internal',
+            model: getModelName(
+                modelConfig.byokConfig ?? undefined,
+                modelConfig.modelOverride,
+            ),
             attrs,
+            // Structured output via generateText + Output.object (generateObject
+            // is deprecated in ai@6). The casts bridge the generic
+            // `S extends z.ZodType` to the SDK's schema type while the public
+            // return stays typed as `z.infer<S>`.
             exec: () =>
-                withStructuredOutputFallback(
-                    {
-                        byokConfig: modelConfig.byokConfig ?? undefined,
+                tracedGenerateText({
+                    model: model as any,
+                    system,
+                    prompt: user,
+                    output: Output.object({ schema: schema as any }),
+                    abortSignal: timeoutSignal(LLM_CALL_TIMEOUT_MS),
+                    experimental_telemetry: buildLangfuseTelemetry(runName, {
                         organizationId:
                             organizationAndTeamData.organizationId,
-                        defaultModelOverride: modelConfig.modelOverride,
-                        label: runName,
-                    },
-                    (model) =>
-                        // Structured output via generateText + Output.object
-                        // (generateObject is deprecated in ai@6). The casts
-                        // bridge the generic `S extends z.ZodType` to the SDK's
-                        // schema type while the public return stays typed as
-                        // `z.infer<S>`.
-                        tracedGenerateText({
-                            model: model as any,
-                            system,
-                            prompt: user,
-                            output: Output.object({ schema: schema as any }),
-                            abortSignal: timeoutSignal(LLM_CALL_TIMEOUT_MS),
-                            experimental_telemetry: buildLangfuseTelemetry(
-                                runName,
-                                {
-                                    organizationId:
-                                        organizationAndTeamData.organizationId,
-                                    teamId: organizationAndTeamData.teamId,
-                                },
-                            ),
-                        } as any),
-                ),
+                        teamId: organizationAndTeamData.teamId,
+                    }),
+                } as any),
         });
 
         return (result.experimental_output ?? result.output) as z.infer<S>;

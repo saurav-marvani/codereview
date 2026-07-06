@@ -322,4 +322,51 @@ describe('GenerateKodyRulesUseCase', () => {
 
         expect(createOrUpdateRuleUseCaseMock.execute).toHaveBeenCalledTimes(1);
     });
+
+    it('throws (not "200, 0 rules") when PR fetch fails for every repo', async () => {
+        parametersServiceMock.findByKey.mockImplementation((key: any) => {
+            if (key === ParametersKey.CODE_REVIEW_CONFIG) {
+                return Promise.resolve({
+                    configValue: {
+                        repositories: [
+                            {
+                                id: 'repo-1',
+                                name: 'repo-one',
+                                isSelected: true,
+                                directories: [],
+                            },
+                        ],
+                    },
+                });
+            }
+            if (key === ParametersKey.PLATFORM_CONFIGS) {
+                return Promise.resolve({
+                    configValue: { kodyLearningStatus: 'enabled' },
+                });
+            }
+            return Promise.resolve(null);
+        });
+
+        // null = fetch error (e.g. GitHub App install 404), distinct from [].
+        codeManagementServiceMock.getPullRequestsByRepository.mockResolvedValue(
+            null,
+        );
+
+        await expect(
+            useCase.execute({ teamId: 'team-1', months: 3 } as any, 'org-1'),
+        ).rejects.toThrow(
+            /Could not fetch pull requests from the code management integration/,
+        );
+
+        // No rule persisted...
+        expect(createOrUpdateRuleUseCaseMock.execute).not.toHaveBeenCalled();
+        // ...and kodyLearningStatus is reset to ENABLED so the run isn't stuck.
+        expect(
+            createOrUpdateParametersUseCaseMock.execute,
+        ).toHaveBeenCalledWith(
+            ParametersKey.PLATFORM_CONFIGS,
+            expect.objectContaining({ kodyLearningStatus: 'enabled' }),
+            expect.anything(),
+        );
+    });
 });

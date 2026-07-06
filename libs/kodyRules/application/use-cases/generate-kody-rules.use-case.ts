@@ -2,6 +2,7 @@ import { createLogger } from '@libs/core/log/logger';
 import {
     Inject,
     Injectable,
+    ServiceUnavailableException,
     UnprocessableEntityException,
     forwardRef,
 } from '@nestjs/common';
@@ -235,6 +236,12 @@ export class GenerateKodyRulesUseCase {
             // Repos that received ≥1 persisted rule — promoted to isSelected:true
             // after the loop so the generated rules are visible in the UI.
             const reposWithRules = new Map<string, Repositories>();
+            // Repos whose PR fetch errored (auth/integration/rate-limit) rather
+            // than genuinely having no PRs. `getPullRequestsByRepository`
+            // returns null on failure and [] when the repo has no PRs in the
+            // window — collapsing them turned a broken GitHub integration into
+            // a misleading "200, 0 rules".
+            const failedRepositories: string[] = [];
 
             for (const repository of filteredRepositories) {
                 const pullRequests =
@@ -248,7 +255,24 @@ export class GenerateKodyRulesUseCase {
                         },
                     );
 
-                if (!pullRequests || pullRequests.length === 0) {
+                // null/undefined = fetch failed (e.g. GitHub App install
+                // returning 404 on the access token); an empty array is a
+                // legitimate "no PRs in this window".
+                if (pullRequests == null) {
+                    this.logger.error({
+                        message:
+                            'Failed to fetch pull requests (code management integration/auth error)',
+                        context: GenerateKodyRulesUseCase.name,
+                        metadata: {
+                            dateFilter,
+                            repositoryId: repository?.id ?? 'repository not found',
+                        },
+                    });
+                    failedRepositories.push(repository?.id ?? 'unknown');
+                    continue;
+                }
+
+                if (pullRequests.length === 0) {
                     this.logger.log({
                         message: 'No pull requests found',
                         context: GenerateKodyRulesUseCase.name,
@@ -401,6 +425,18 @@ export class GenerateKodyRulesUseCase {
                 }
 
                 allRules.push(rules);
+            }
+
+            // If every worked repo failed to even fetch PRs and nothing was
+            // generated, this is an integration/auth failure — not "no rules to
+            // learn". Throw so the run surfaces a non-2xx (the outer catch
+            // resets kodyLearningStatus to ENABLED) instead of a misleading
+            // "200, 0 rules". Partial success (some repos produced rules) still
+            // completes; the failures are already logged above.
+            if (failedRepositories.length > 0 && allRules.length === 0) {
+                throw new ServiceUnavailableException(
+                    'Could not fetch pull requests from the code management integration; no rules were generated',
+                );
             }
 
             // Make the generated rules visible: every repo that received a rule
