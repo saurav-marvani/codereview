@@ -56,6 +56,11 @@ export class MongoDBExporter implements LogProcessor, ObservabilityExporter {
     private maxLogDocumentBytes = 12 * 1024 * 1024;
     private maxLogInsertBatchBytes = 14 * 1024 * 1024;
     private maxLogBufferBytes = 64 * 1024 * 1024;
+    // Memoized serialized size per log item. Items are stable references
+    // (never mutated after creation) and flow unchanged through screening,
+    // oversize checks, and batch splitting — so each is serialized once
+    // instead of 3-4x per flush. WeakMap lets dropped items be GC'd freely.
+    private readonly serializedByteCache = new WeakMap<object, number>();
 
     // Flush timers
     private logFlushTimer: NodeJS.Timeout | null = null;
@@ -1170,24 +1175,30 @@ export class MongoDBExporter implements LogProcessor, ObservabilityExporter {
     }
 
     private estimateSerializedBytes(value: unknown): number {
+        const isObject = typeof value === 'object' && value !== null;
+        if (isObject) {
+            const cached = this.serializedByteCache.get(value as object);
+            if (cached !== undefined) {
+                return cached;
+            }
+        }
+
+        let size: number;
         try {
-            return Buffer.byteLength(JSON.stringify(value), 'utf8');
+            size = Buffer.byteLength(JSON.stringify(value), 'utf8');
         } catch {
             // Items that can't be serialized are screened out by screenForBson.
-            return Number.MAX_SAFE_INTEGER;
+            size = Number.MAX_SAFE_INTEGER;
         }
+
+        if (isObject) {
+            this.serializedByteCache.set(value as object, size);
+        }
+        return size;
     }
 
     private isLogItemOversized(item: MongoDBLogItem): boolean {
         return this.estimateSerializedBytes(item) > this.maxLogDocumentBytes;
-    }
-
-    private computeLogBufferBytes(items: MongoDBLogItem[] = this.logBuffer): number {
-        let total = 0;
-        for (const item of items) {
-            total += this.estimateSerializedBytes(item);
-        }
-        return total;
     }
 
     private trimLogBufferToCapacity(): void {
@@ -1197,7 +1208,13 @@ export class MongoDBExporter implements LogProcessor, ObservabilityExporter {
 
         let droppedCount = 0;
         let droppedBytes = 0;
-        let totalBytes = this.computeLogBufferBytes(this.logBuffer);
+        // Cache-backed: each item is serialized once (WeakMap memo) and the
+        // running total is decremented as we drop, so this stays a cheap scan
+        // even when the buffer is large during a Mongo outage.
+        let totalBytes = 0;
+        for (const item of this.logBuffer) {
+            totalBytes += this.estimateSerializedBytes(item);
+        }
 
         while (
             this.logBuffer.length > this.maxBufferSize ||
