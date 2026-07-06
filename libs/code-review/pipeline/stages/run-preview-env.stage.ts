@@ -48,6 +48,10 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
         private readonly configService: ConfigService,
         private readonly cloneParamsResolver: CloneParamsResolverService,
         private readonly agent: PreviewEnvAgentService,
+        // Injected (not `new`-ed) so the stage is testable and the VM lifecycle
+        // is mockable. This is the COMPLEMENTARY VM — separate from the global
+        // sandbox provider (e2b), which the normal review keeps using.
+        private readonly vmSvc: VmSandboxService,
     ) {
         super();
     }
@@ -58,7 +62,7 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
         const env = context.codeReviewConfig?.environment;
         if (!env?.enabled) return context;
 
-        const vmSvc = new VmSandboxService(this.configService);
+        const vmSvc = this.vmSvc;
         if (!vmSvc.isAvailable()) {
             this.logger.log({
                 message: 'Preview env enabled but no VM token configured (PREVIEW_VM_TOKEN/HCLOUD_TOKEN); skipping',

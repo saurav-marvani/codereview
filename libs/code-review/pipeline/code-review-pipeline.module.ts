@@ -73,6 +73,7 @@ import { SandboxModule } from '@libs/sandbox/modules/sandbox.module';
 import { CreateSandboxStage } from './stages/create-sandbox.stage';
 import { RunPreviewEnvStage } from './stages/run-preview-env.stage';
 import { PreviewEnvAgentService } from '@libs/sandbox/infrastructure/services/preview-env-agent.service';
+import { VmSandboxService } from '@libs/sandbox/infrastructure/providers/vm-sandbox.service';
 import { AgentReviewStage } from './stages/agent-review.stage';
 import { BugAgentProvider } from '../infrastructure/agents/providers/bug-agent.provider';
 import { SecurityAgentProvider } from '../infrastructure/agents/providers/security-agent.provider';
@@ -160,6 +161,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         CreateSandboxStage,
         RunPreviewEnvStage,
         PreviewEnvAgentService,
+        VmSandboxService,
         AgentReviewStage,
         BugAgentProvider,
         SecurityAgentProvider,
@@ -215,6 +217,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         CreateSandboxStage,
         RunPreviewEnvStage,
         PreviewEnvAgentService,
+        VmSandboxService,
         AgentReviewStage,
         ReviewOrchestratorService,
     ],
