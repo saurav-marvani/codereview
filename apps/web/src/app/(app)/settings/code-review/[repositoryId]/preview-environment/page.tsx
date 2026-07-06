@@ -1,0 +1,175 @@
+"use client";
+
+import { Button } from "@components/ui/button";
+import { Heading } from "@components/ui/heading";
+import { Page } from "@components/ui/page";
+import { toast } from "@components/ui/toaster/use-toast";
+import { usePermission } from "@services/permissions/hooks";
+import { Action, ResourceType } from "@services/permissions/types";
+import { RotateCcwIcon, SaveIcon } from "lucide-react";
+import { useFormContext } from "react-hook-form";
+import { useSelectedTeamId } from "src/core/providers/selected-team-context";
+import { unformatConfig } from "src/core/utils/helpers";
+
+import { CodeReviewPagesBreadcrumb } from "../../_components/breadcrumb";
+import { CentralizedConfigReadOnlyAlert } from "../../_components/centralized-config-readonly-alert";
+import { CodeReviewSaveButton } from "../../_components/save-button";
+import { useCodeReviewSettingsMutation } from "../../_hooks/use-code-review-settings-mutation";
+import { type CodeReviewFormType } from "../../_types";
+import { useCodeReviewRouteParams } from "../../../_hooks";
+import { EnvironmentEnabled } from "./_components/environment-enabled";
+import { PlaybookPhase } from "./_components/playbook-phase";
+import { RequiredEnv } from "./_components/required-env";
+import { SecretsVault } from "./_components/secrets-vault";
+
+export default function PreviewEnvironment() {
+    const form = useFormContext<CodeReviewFormType>();
+    const { teamId } = useSelectedTeamId();
+    const { repositoryId, directoryId } = useCodeReviewRouteParams();
+    const { saveSettings } = useCodeReviewSettingsMutation({
+        teamId,
+        repositoryId,
+        directoryId,
+        form,
+    });
+
+    const canEdit = usePermission(
+        Action.Update,
+        ResourceType.CodeReviewSettings,
+        repositoryId,
+    );
+
+    const handleSubmit = form.handleSubmit(async (formData) => {
+        const { language, ...config } = formData;
+        const unformattedConfig = unformatConfig(config);
+
+        try {
+            await saveSettings(formData, {
+                prepare: async () => ({
+                    savedFormData: { ...config, language },
+                    codeReviewConfig: unformattedConfig,
+                }),
+            });
+            toast({ description: "Settings saved", variant: "success" });
+        } catch (error) {
+            console.error("Error saving settings:", error);
+            toast({
+                title: "Error",
+                description:
+                    "An error occurred while saving the settings. Please try again.",
+                variant: "danger",
+            });
+        }
+    });
+
+    const {
+        isDirty: formIsDirty,
+        isValid: formIsValid,
+        isSubmitting: formIsSubmitting,
+    } = form.formState;
+
+    const isGlobal = repositoryId === "global";
+
+    return (
+        <Page.Root>
+            <Page.Header>
+                <CodeReviewPagesBreadcrumb pageName="Preview Environment" />
+            </Page.Header>
+
+            <Page.Header>
+                <Page.Title>Preview Environment</Page.Title>
+                <Page.HeaderActions>
+                    {formIsDirty && (
+                        <Button
+                            size="md"
+                            variant="cancel"
+                            leftIcon={<RotateCcwIcon />}
+                            onClick={() => form.reset()}
+                            disabled={formIsSubmitting}>
+                            Reset
+                        </Button>
+                    )}
+                    <CodeReviewSaveButton
+                        size="md"
+                        variant="primary"
+                        leftIcon={<SaveIcon />}
+                        onClick={handleSubmit}
+                        disabled={!canEdit || !formIsDirty || !formIsValid}
+                        loading={formIsSubmitting}>
+                        Save settings
+                    </CodeReviewSaveButton>
+                </Page.HeaderActions>
+            </Page.Header>
+
+            <Page.Content>
+                <CentralizedConfigReadOnlyAlert />
+
+                <div data-field-name="environment.enabled">
+                    <EnvironmentEnabled />
+                </div>
+
+                <div className="flex flex-col gap-4 rounded-xl border border-card-lv2 p-5">
+                    <div className="flex flex-col gap-1">
+                        <Heading variant="h3">Playbook</Heading>
+                        <p className="text-text-secondary text-sm">
+                            How to boot the app on the VM. Each phase runs in
+                            order; one shell command per line. Long-running
+                            services are backgrounded automatically.
+                        </p>
+                    </div>
+
+                    <PlaybookPhase
+                        name="environment.setup.value"
+                        label="Setup"
+                        helper="Install dependencies (e.g. npm ci, pip install -r requirements.txt)."
+                        placeholder={"npm ci\ncp .env.example .env"}
+                    />
+                    <PlaybookPhase
+                        name="environment.build.value"
+                        label="Build"
+                        helper="Compile / prepare the app (e.g. npm run build, migrations)."
+                        placeholder={"npm run build\nnpm run db:migrate"}
+                    />
+                    <PlaybookPhase
+                        name="environment.services.value"
+                        label="Services"
+                        helper="Long-running processes to start (server, worker). These are backgrounded."
+                        placeholder={"npm run start\nredis-server"}
+                    />
+                    <PlaybookPhase
+                        name="environment.test.value"
+                        label="Test"
+                        helper="Optional smoke/tests to run after boot."
+                        placeholder={"npm test"}
+                    />
+                    <PlaybookPhase
+                        name="environment.healthcheck.value"
+                        label="Health check"
+                        helper="Commands that verify the app is up (e.g. curl the health endpoint)."
+                        placeholder={"curl -sf http://localhost:3000/health"}
+                    />
+                </div>
+
+                <div className="flex flex-col gap-4 rounded-xl border border-card-lv2 p-5">
+                    <RequiredEnv />
+                </div>
+
+                {isGlobal ? (
+                    <div className="rounded-xl border border-card-lv2 p-5">
+                        <p className="text-text-secondary text-sm">
+                            Secrets are configured per repository. Open a specific
+                            repository&apos;s Preview Environment settings to add
+                            its <code>.env</code> values.
+                        </p>
+                    </div>
+                ) : (
+                    <SecretsVault
+                        teamId={teamId}
+                        repositoryId={repositoryId}
+                        canEdit={canEdit}
+                    />
+                )}
+            </Page.Content>
+        </Page.Root>
+    );
+}

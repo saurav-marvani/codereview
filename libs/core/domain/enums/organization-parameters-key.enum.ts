@@ -13,4 +13,11 @@ export enum OrganizationParametersKey {
     LICENSE_ASSIGNED_USERS = 'license_assigned_users',
     FIRST_REVIEW_AT = 'first_review_at',
     SPEND_LIMIT_CONFIG = 'spend_limit_config',
+    /**
+     * Preview-environment (Alpha) app secrets — the customer's `.env` values
+     * the booted app needs. Stored encrypted, keyed by repo:
+     * `{ [repositoryId]: { ENV_NAME: <encrypted> } }`. Values are never
+     * returned by the API (only a "configured" descriptor).
+     */
+    ENVIRONMENT_SECRETS = 'environment_secrets',
 }

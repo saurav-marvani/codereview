@@ -456,6 +456,62 @@ class CodeReviewConfigWithoutLLMProviderDto {
     @IsOptional()
     @IsString()
     byokModel?: string;
+
+    /**
+     * Preview-environment (Alpha): boot & test the PR in an ephemeral VM.
+     * The command lists are entered as plain strings in the settings UI; the
+     * app's secret VALUES are stored separately in the encrypted environment
+     * secrets vault (only requiredEnv NAMES live here).
+     */
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => EnvironmentConfigDto)
+    environment?: EnvironmentConfigDto;
+}
+
+export class EnvironmentConfigDto {
+    @IsOptional()
+    @IsBoolean()
+    enabled?: boolean;
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    requiredEnv?: string[];
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    setup?: string[];
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    services?: string[];
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    build?: string[];
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    test?: string[];
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    healthcheck?: string[];
+
+    /** Cross-repo deps + giant-monorepo scope — loosely validated for the alpha. */
+    @IsOptional()
+    @IsArray()
+    dependsOn?: any[];
+
+    @IsOptional()
+    @IsObject()
+    scope?: Record<string, any>;
 }
 
 export class CreateOrUpdateCodeReviewParameterDto {

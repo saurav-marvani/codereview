@@ -1243,6 +1243,17 @@
     }
   },
   {
+    "key": "parameters.controller.ts#getEnvironmentSecretsStatus",
+    "httpMethod": "GET",
+    "urlPath": "/parameters/environment-secrets/status",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "allow",
+      "repo_admin": "allow",
+      "contributor": "allow"
+    }
+  },
+  {
     "key": "parameters.controller.ts#initializeCentralizedConfig",
     "httpMethod": "POST",
     "urlPath": "/parameters/centralized-config-init",
@@ -1273,6 +1284,17 @@
       "billing_manager": "allow",
       "repo_admin": "allow",
       "contributor": "allow"
+    }
+  },
+  {
+    "key": "parameters.controller.ts#setEnvironmentSecrets",
+    "httpMethod": "POST",
+    "urlPath": "/parameters/environment-secrets",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "deny"
     }
   },
   {

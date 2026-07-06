@@ -129,6 +129,23 @@ export type CodeReviewGlobalConfig = {
     /** BYOK main-model override for code reviews. '' = inherit
      *  (directory -> repository -> the main model set in BYOK settings). */
     byokModel?: string;
+    /** Preview-environment (alpha): the playbook that boots the client's app on
+     *  an ephemeral VM so Kody can EXECUTE the PR. Secrets are NOT stored here —
+     *  they live in the encrypted vault (see the environment-secrets endpoint). */
+    environment?: EnvironmentConfig;
+};
+
+/** Preview-environment playbook — each phase is a list of shell commands run in
+ *  order on the VM. `requiredEnv` names the secrets the app needs (matched
+ *  against the encrypted vault at run time). */
+export type EnvironmentConfig = {
+    enabled: boolean;
+    requiredEnv: string[];
+    setup: string[];
+    build: string[];
+    services: string[];
+    test: string[];
+    healthcheck: string[];
 };
 
 export type CodeReviewBaseConfig = {

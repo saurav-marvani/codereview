@@ -210,6 +210,50 @@ export const centralizedConfigSync = async (teamId: string) => {
     }
 };
 
+/**
+ * Preview-env secrets vault (alpha). `secrets` is a flat NAME->value map; an
+ * empty value REMOVES a key, omitted keys are kept. The API stores values
+ * encrypted and returns only the set of configured NAMES.
+ */
+export const setEnvironmentSecrets = async (
+    teamId: string,
+    repositoryId: string,
+    secrets: Record<string, string>,
+) => {
+    try {
+        const response = await axiosAuthorized.post<any>(
+            PARAMETERS_PATHS.SET_ENVIRONMENT_SECRETS,
+            {
+                organizationAndTeamData: { teamId },
+                repositoryId,
+                secrets,
+            },
+        );
+
+        return response.data as { configured: string[] };
+    } catch (error: any) {
+        return { error: error.response?.status || "Unknown error" };
+    }
+};
+
+/** Names (never values) of the secrets configured for a repo. */
+export const getEnvironmentSecretsStatus = async (
+    teamId: string,
+    repositoryId: string,
+) => {
+    try {
+        const response = await axiosAuthorized.fetcher<{
+            configured: string[];
+        }>(PARAMETERS_PATHS.GET_ENVIRONMENT_SECRETS_STATUS, {
+            params: { teamId, repositoryId },
+        });
+
+        return response as { configured: string[] };
+    } catch (error: any) {
+        return { error: error.response?.status || "Unknown error" };
+    }
+};
+
 export const centralizedConfigInit = async (body: {
     teamId: string;
     repository: { id: string; name: string };

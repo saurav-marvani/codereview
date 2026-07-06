@@ -9,6 +9,10 @@ export const PARAMETERS_PATHS = {
     CREATE_OR_UPDATE_CODE_REVIEW_PARAMETER: pathToApiUrl(
         "/parameters/create-or-update-code-review",
     ),
+    SET_ENVIRONMENT_SECRETS: pathToApiUrl("/parameters/environment-secrets"),
+    GET_ENVIRONMENT_SECRETS_STATUS: pathToApiUrl(
+        "/parameters/environment-secrets/status",
+    ),
     UPDATE_CODE_REVIEW_PARAMETER_REPOSITORIES: pathToApiUrl(
         "/parameters/update-code-review-parameter-repositories",
     ),

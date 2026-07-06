@@ -69,6 +69,8 @@ import { CreateOrUpdateParametersUseCase } from '@libs/organization/application/
 import { FindByKeyParametersUseCase } from '@libs/organization/application/use-cases/parameters/find-by-key-use-case';
 import { GetDefaultConfigUseCase } from '@libs/organization/application/use-cases/parameters/get-default-config.use-case';
 import { CreateOrUpdateCodeReviewParameterDto } from '@libs/organization/dtos/create-or-update-code-review-parameter.dto';
+import { SetEnvironmentSecretsDto } from '@libs/organization/dtos/environment-secrets.dto';
+import { PreviewEnvSecretsService } from '@libs/code-review/pipeline/services/preview-env-secrets.service';
 import { DeleteRepositoryCodeReviewParameterDto } from '@libs/organization/dtos/delete-repository-code-review-parameter.dto';
 import { PreviewPrSummaryDto } from '@libs/organization/dtos/preview-pr-summary.dto';
 import { finished } from 'stream/promises';
@@ -100,6 +102,9 @@ export class ParametersController {
 
         @Inject(CODE_BASE_CONFIG_SERVICE_TOKEN)
         private readonly codeBaseConfigService: ICodeBaseConfigService,
+
+        // Preview-env alpha: encrypted per-repo secrets vault.
+        private readonly previewEnvSecretsService: PreviewEnvSecretsService,
     ) {}
 
     //#region Parameters
@@ -366,6 +371,81 @@ export class ParametersController {
             teamId,
         );
     }
+
+    //#region Preview-env secrets vault (alpha)
+    // The encrypted per-repo `.env` for the preview-environment feature. Values
+    // are stored encrypted and NEVER returned — only the set of NAMES via the
+    // status endpoint. The playbook config itself rides the normal code-review
+    // config save (the `environment` field), so it needs no endpoint here.
+    @Post('/environment-secrets')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkRepoPermissions({
+            action: Action.Create,
+            resource: ResourceType.CodeReviewSettings,
+            repo: { key: { body: 'repositoryId' } },
+        }),
+    )
+    @ApiOperation({
+        summary: 'Set preview-env secrets',
+        description:
+            'Create/update the encrypted per-repo secrets for the preview environment. An empty value removes a key; omitted keys are kept. Values are never returned.',
+    })
+    @ApiCreatedResponse({ type: ApiStringResponseDto })
+    public async setEnvironmentSecrets(
+        @Body() body: SetEnvironmentSecretsDto,
+    ) {
+        const organizationId = this.request?.user?.organization?.uuid;
+        if (!organizationId) {
+            throw new Error('Organization ID is missing from request');
+        }
+
+        await this.previewEnvSecretsService.setSecrets(
+            { ...body.organizationAndTeamData, organizationId },
+            body.repositoryId,
+            body.secrets ?? {},
+        );
+
+        const names = await this.previewEnvSecretsService.getStatus(
+            { ...body.organizationAndTeamData, organizationId },
+            body.repositoryId,
+        );
+        return { configured: names };
+    }
+
+    @Get('/environment-secrets/status')
+    @ApiQuery({ name: 'teamId', type: String, required: true })
+    @ApiQuery({ name: 'repositoryId', type: String, required: true })
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkRepoPermissions({
+            action: Action.Read,
+            resource: ResourceType.CodeReviewSettings,
+            repo: { key: { query: 'repositoryId' } },
+        }),
+    )
+    @ApiOperation({
+        summary: 'Get preview-env secrets status',
+        description:
+            'Return the NAMES of the secrets configured for a repo (never the values).',
+    })
+    @ApiOkResponse({ type: ApiStringResponseDto })
+    public async getEnvironmentSecretsStatus(
+        @Query('teamId') teamId: string,
+        @Query('repositoryId') repositoryId: string,
+    ) {
+        const organizationId = this.request?.user?.organization?.uuid;
+        if (!organizationId) {
+            throw new Error('Organization ID is missing from request');
+        }
+
+        const names = await this.previewEnvSecretsService.getStatus(
+            { teamId, organizationId },
+            repositoryId,
+        );
+        return { configured: names };
+    }
+    //#endregion
 
     @Get('/default-code-review-parameter')
     @UseGuards(PolicyGuard)

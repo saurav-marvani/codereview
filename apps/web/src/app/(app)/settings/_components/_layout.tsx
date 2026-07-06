@@ -69,6 +69,7 @@ const routes = [
     { label: "PR Summary", href: "pr-summary" },
     { label: "Kody Rules", href: "kody-rules" },
     { label: "Custom Messages", href: "custom-messages" },
+    { label: "Preview Environment", href: "preview-environment" },
 ] satisfies Array<{
     label: string;
     href: string;

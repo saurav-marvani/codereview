@@ -40,6 +40,7 @@ import { OrganizationOnboardingModule } from '@libs/organization/modules/organiz
 import { OrganizationModule } from '@libs/organization/modules/organization.module';
 import { OrganizationParametersModule } from '@libs/organization/modules/organizationParameters.module';
 import { ParametersModule } from '@libs/organization/modules/parameters.module';
+import { PreviewEnvSecretsService } from '@libs/code-review/pipeline/services/preview-env-secrets.service';
 import { TeamModule } from '@libs/organization/modules/team.module';
 import { TeamMembersModule } from '@libs/organization/modules/teamMembers.module';
 import { PlatformModule } from '@libs/platform/modules/platform.module';
@@ -194,6 +195,12 @@ import { NotificationController } from './controllers/notification.controller';
         CockpitReviewAnalyticsController,
         NotificationController,
     ],
-    providers: [LangfuseShutdownProvider, TrialExtensionNotifierService],
+    providers: [
+        LangfuseShutdownProvider,
+        TrialExtensionNotifierService,
+        // Preview-env alpha: encrypted per-repo secrets vault (settings UI).
+        // Deps (org-params service token) come from OrganizationParametersModule.
+        PreviewEnvSecretsService,
+    ],
 })
 export class ApiModule {}

@@ -217,6 +217,8 @@ export const codeReviewConfigRemovePropertiesNotInType = (
         "byokModel",
         // New v2 prompt overrides for categories/severity customization
         "v2PromptOverrides",
+        // Preview-environment (Alpha) playbook config
+        "environment",
     ];
 
     expectedKeys.forEach((key) => {

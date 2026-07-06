@@ -52,8 +52,9 @@ const makeStage = (over: {
         isAvailable: jest.fn().mockReturnValue(over.available ?? true),
         createSandboxWithRepo: jest.fn().mockResolvedValue(fakeSandbox),
     } as any;
-    const stage = new RunPreviewEnvStage(config, cloneParamsResolver, agent, vmSvc);
-    return { stage, vmSvc, agent, cleanup, cloneParamsResolver, fakeSandbox };
+    const secretsService = { resolveSecrets: jest.fn().mockResolvedValue({}) } as any;
+    const stage = new RunPreviewEnvStage(config, cloneParamsResolver, agent, vmSvc, secretsService);
+    return { stage, vmSvc, agent, cleanup, cloneParamsResolver, fakeSandbox, secretsService };
 };
 
 const ctx = (over: any = {}): any => ({

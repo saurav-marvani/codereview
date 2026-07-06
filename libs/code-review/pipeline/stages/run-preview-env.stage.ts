@@ -17,6 +17,7 @@ import {
     buildDiffFromChangedFiles,
     findingsToSuggestions,
 } from '../services/preview-env-findings';
+import { PreviewEnvSecretsService } from '../services/preview-env-secrets.service';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 
 /**
@@ -52,6 +53,8 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
         // is mockable. This is the COMPLEMENTARY VM — separate from the global
         // sandbox provider (e2b), which the normal review keeps using.
         private readonly vmSvc: VmSandboxService,
+        // The encrypted per-repo secrets vault (settings UI → VM env).
+        private readonly secretsService: PreviewEnvSecretsService,
     ) {
         super();
     }
@@ -240,11 +243,21 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
         context: CodeReviewPipelineContext,
         requiredEnv?: string[],
     ): Promise<Record<string, string>> {
+        // Preferred: the encrypted per-repo vault (configured in the settings
+        // UI). Reads decrypted values only here, at injection time.
+        const repoId = context.repository?.id;
+        if (context.organizationAndTeamData && repoId) {
+            const fromVault = await this.secretsService
+                .resolveSecrets(context.organizationAndTeamData, repoId, requiredEnv)
+                .catch(() => ({}));
+            if (Object.keys(fromVault).length) return fromVault;
+        }
+        // Fallback: a config JSON (PREVIEW_ENV_SECRETS) for local/ops use.
         const raw = this.configService.get<string>('PREVIEW_ENV_SECRETS');
         if (!raw) return {};
         try {
             const all = JSON.parse(raw) as Record<string, Record<string, string>>;
-            const forRepo = all[context.repository?.id ?? ''] ?? {};
+            const forRepo = all[repoId ?? ''] ?? {};
             if (!requiredEnv?.length) return forRepo;
             return Object.fromEntries(
                 Object.entries(forRepo).filter(([k]) => requiredEnv.includes(k)),
