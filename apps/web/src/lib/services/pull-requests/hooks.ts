@@ -7,7 +7,6 @@ import {
     type InfiniteData,
 } from "@tanstack/react-query";
 import { axiosAuthorized } from "src/core/utils/axios";
-import { getJWTToken } from "src/core/utils/session";
 
 import {
     PULL_REQUEST_API,
@@ -40,9 +39,15 @@ const DEFAULT_PAGE_SIZE = 30;
 
 export const useInfinitePullRequestExecutions = (
     filters?: PullRequestFilters,
-    options?: { pageSize?: number },
+    options?: { pageSize?: number; poll?: boolean },
 ) => {
     const pageSize = options?.pageSize ?? filters?.limit ?? DEFAULT_PAGE_SIZE;
+    // Poll the first page as a fallback refresh. Callers that already mount
+    // `usePullRequestExecutionSSE` (which invalidates this query on every
+    // `execution_updated` event) should pass `poll: false` to avoid the
+    // redundant 30s refetch. Defaults to true so views without SSE (e.g. the
+    // PR detail page) keep auto-refreshing.
+    const poll = options?.poll ?? true;
     const baseFilters = useMemo<PullRequestFilters>(() => {
         const next: PullRequestFilters = { limit: pageSize };
 
@@ -108,14 +113,18 @@ export const useInfinitePullRequestExecutions = (
         retry: false,
     });
 
-    // Poll only the first page every 30s (avoids refetching all loaded pages)
+    // Poll every 30s as a fallback refresh. Skipped when `poll` is false — the
+    // caller relies on SSE instead. (React Query v5 dropped the v4 `refetchPage`
+    // option, so refetch() refreshes all loaded pages; kept minimal since the
+    // only remaining poller is the PR detail view, which loads a single page.)
     const { refetch } = query;
     useEffect(() => {
+        if (!poll) return;
         const id = setInterval(() => {
-            refetch({ refetchPage: (_page, index) => index === 0 });
+            refetch();
         }, 30_000);
         return () => clearInterval(id);
-    }, [refetch]);
+    }, [refetch, poll]);
 
     const items = useMemo(() => {
         const pages = infiniteData?.pages ?? [];
@@ -216,11 +225,13 @@ export const usePullRequestExecutionSSE = (enabled = true) => {
             const controller = new AbortController();
             controllerRef.current = controller;
 
-            const accessToken = await getJWTToken();
-            if (!accessToken || cancelled) return;
+            if (cancelled) return;
 
             await fetchEventSource(PULL_REQUEST_SSE.EXECUTION_EVENTS, {
-                headers: { Authorization: `Bearer ${accessToken}` },
+                // The /api/proxy route injects the Bearer from the httpOnly
+                // session cookie server-side (and ignores any client-sent
+                // Authorization), so the browser only needs to send the cookie
+                // — no need to fetch /api/auth/session for a token here.
                 signal: controller.signal,
                 openWhenHidden: false,
 

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
-import { getJWTToken } from "src/core/utils/session";
 import { addSearchParamsToUrl } from "src/core/utils/url";
 
 import { DRY_RUN_PATHS } from ".";
@@ -140,12 +139,10 @@ export const useDryRun = ({
                 teamId,
             });
 
-            const accessToken = await getJWTToken();
-
             return fetchEventSource(finalUrl, {
-                headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                },
+                // The /api/proxy route injects the Bearer from the httpOnly
+                // session cookie server-side, so the browser only needs to send
+                // the cookie — no /api/auth/session round-trip for a token.
                 signal: controller.signal,
 
                 onopen: async (response) => {

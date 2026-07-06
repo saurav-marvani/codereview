@@ -54,7 +54,10 @@ export function PullRequestsPageClient() {
             hasSentSuggestions: hasSentSuggestionsParam,
             authorPolicy,
         },
-        { pageSize: 30 },
+        // This view mounts usePullRequestExecutionSSE (above), which invalidates
+        // the query on every execution_updated event — so skip the redundant
+        // 30s first-page poll.
+        { pageSize: 30, poll: false },
     );
 
     const groupedPullRequests = useMemo(() => {
