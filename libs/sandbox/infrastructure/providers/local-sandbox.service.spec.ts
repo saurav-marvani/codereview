@@ -127,9 +127,23 @@ describe('LocalSandboxService sandbox file access', () => {
     });
 
     it('accepts absolute paths that resolve inside the repo (write)', async () => {
-        const absPath = path.join(dir, 'sub', 'abs.txt');
+        const absPath = path.join(dir, 'sub', 'c.txt');
         await sandbox.writeFile(absPath, 'content');
         expect(fs.readFileSync(absPath, 'utf-8')).toBe('content');
+    });
+
+    it('rejects absolute paths with .. traversal even under repoDir', async () => {
+        const escapePath = dir + '/../outside';
+        await expect(sandbox.readFile(escapePath)).rejects.toThrow(
+            /Path traversal using ".." is not allowed/,
+        );
+    });
+
+    it('rejects absolute write paths with .. traversal even under repoDir', async () => {
+        const escapePath = dir + '/../outside';
+        await expect(sandbox.writeFile(escapePath, 'x')).rejects.toThrow(
+            /Path traversal using ".." is not allowed/,
+        );
     });
 
     it('rejects .. traversal reads', async () => {

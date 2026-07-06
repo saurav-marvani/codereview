@@ -568,6 +568,7 @@ export class LocalSandboxService implements ISandboxProvider {
                     safePath,
                     fsConstants.O_WRONLY |
                         fsConstants.O_CREAT |
+                        fsConstants.O_TRUNC |
                         fsConstants.O_NOFOLLOW,
                     0o644,
                 );
@@ -685,6 +686,11 @@ export class LocalSandboxService implements ISandboxProvider {
     }
 
     private validatePath(path: string, repoDir?: string): void {
+        // Check for .. traversal FIRST, before any absolute-path logic,
+        // so paths like /repo/../../../etc/passwd are always rejected.
+        if (path.includes('..')) {
+            throw new Error('Path traversal using ".." is not allowed');
+        }
         if (path.startsWith('/')) {
             if (
                 repoDir &&
@@ -695,9 +701,6 @@ export class LocalSandboxService implements ISandboxProvider {
                 return;
             }
             throw new Error('Absolute paths are not allowed');
-        }
-        if (path.includes('..')) {
-            throw new Error('Path traversal using ".." is not allowed');
         }
     }
 
