@@ -100,7 +100,7 @@ ENV SERVICE_TYPE=${SERVICE_TYPE}
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-    ca-certificates procps \
+    ca-certificates procps openssh-client \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --chown=1000:1000 --from=prod-deps /usr/src/app/node_modules ./node_modules

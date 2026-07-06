@@ -163,7 +163,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
     rm -f /etc/apt/apt.conf.d/docker-clean \
   && apt-get update \
   && apt-get install -y --no-install-recommends \
-    ca-certificates procps git ripgrep
+    ca-certificates procps git ripgrep openssh-client
 
 # Copy the bun binary from the official image.
 COPY --from=bun-source /usr/local/bin/bun /usr/local/bin/bun
