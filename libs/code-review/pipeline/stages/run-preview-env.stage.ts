@@ -160,16 +160,29 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
                 focus: context.reviewDirective,
             });
 
-            const suggestions = findingsToSuggestions(agentRes.findings, context.reviewDirective);
+            const suggestions = findingsToSuggestions(
+                agentRes.findings,
+                context.reviewDirective,
+                context.changedFiles,
+            );
+            const offDiffCount = suggestions.filter((s) => s.postPrLevel).length;
             this.logger.log({
-                message: `Preview env done (playbook ${ok ? 'ok' : 'failed'}, scope ${scopeLabel}, ${agentRes.findings.length} finding(s) → ${suggestions.length} after focus)`,
+                message: `Preview env done (playbook ${ok ? 'ok' : 'failed'}, scope ${scopeLabel}, ${agentRes.findings.length} finding(s) → ${suggestions.length} after focus; ${offDiffCount} off-diff [no changed line → may fail lines-mismatch])`,
                 context: this.stageName,
             });
+
+            // Strip the internal `postPrLevel` marker before the suggestions
+            // enter the shared downstream. On-diff findings are anchored to a
+            // real changed line (post inline cleanly); off-diff ones keep the
+            // line-1 anchor and degrade gracefully in the comment manager
+            // (3-attempt line-adjust → marked FAILED_LINES_MISMATCH + persisted
+            // to Mongo, never silently dropped). The count is logged above.
+            const clean = suggestions.map(({ postPrLevel, ...s }) => s);
 
             return this.updateContext(context, (draft) => {
                 draft.validSuggestions = [
                     ...(draft.validSuggestions ?? []),
-                    ...suggestions,
+                    ...clean,
                 ];
                 draft.previewEnvSignal = {
                     ran: true,

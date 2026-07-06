@@ -24,23 +24,61 @@ export function proofBlock(evidence: string): string {
 }
 
 /**
+ * The line number of the first ADDED line of `file` in the PR diff (RIGHT
+ * side), parsed from the unified patch. Runtime findings carry no line (the
+ * agent finds bugs by EXECUTION, not by pointing at a diff line), so anchoring
+ * to line 1 made GitHub 422 the inline comment every time (line 1 is almost
+ * never in the diff). Anchoring to a real changed line of the file makes the
+ * comment postable. Returns null when the file isn't in the diff (or has no
+ * added line) — the caller then posts it PR-level instead of dropping it.
+ */
+export function firstChangedLineForFile(
+    changedFiles: FileChange[] = [],
+    file?: string,
+): number | null {
+    const patch = changedFiles.find((f) => f?.filename === file)?.patch;
+    if (!patch) return null;
+    let newLine = 0;
+    for (const raw of patch.split('\n')) {
+        const hunk = raw.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+        if (hunk) {
+            newLine = parseInt(hunk[1], 10);
+            continue;
+        }
+        if (raw.startsWith('+') && !raw.startsWith('+++')) return newLine; // first added line
+        if (raw.startsWith('-') || raw.startsWith('---')) continue; // removals don't advance RIGHT
+        newLine++; // context line
+    }
+    return null;
+}
+
+/**
  * Map one preview finding → Partial<CodeSuggestion>. Proof goes into
  * suggestionContent (no evidence field on the comment). label marks provenance
  * so the UI/summary can badge "verified by execution". No improvedCode — these
  * aren't auto-fixable one-liners; empty string keeps the type happy and drops
- * the Apply button.
+ * the Apply button. Anchored to a real changed line of the finding's file so
+ * the inline comment doesn't 422 (see firstChangedLineForFile); when the file
+ * isn't in the diff, `postPrLevel` tells the stage to post it PR-level.
  */
-export function findingToSuggestion(finding: PreviewFinding): Partial<CodeSuggestion> {
+export function findingToSuggestion(
+    finding: PreviewFinding,
+    changedFiles: FileChange[] = [],
+): Partial<CodeSuggestion> & { postPrLevel?: boolean } {
+    const anchor = firstChangedLineForFile(changedFiles, finding.file);
     return {
         relevantFile: finding.file,
         language: '',
         suggestionContent: (finding.description ?? '').trim() + proofBlock(finding.evidence),
         oneSentenceSummary: (finding.description ?? '').split('\n')[0].slice(0, 160),
         improvedCode: '',
-        relevantLinesStart: 1,
-        relevantLinesEnd: 1,
+        relevantLinesStart: anchor ?? 1,
+        relevantLinesEnd: anchor ?? 1,
         label: PREVIEW_ENV_LABEL,
         severity: finding.severity,
+        // No changed line to attach to → the stage posts this PR-level so the
+        // executed finding is never silently lost to a 422.
+        postPrLevel: anchor == null,
     };
 }
 
@@ -68,6 +106,9 @@ export function applyFocus(findings: PreviewFinding[], focus?: string): PreviewF
 export function findingsToSuggestions(
     findings: PreviewFinding[],
     focus?: string,
-): Partial<CodeSuggestion>[] {
-    return applyFocus(findings, focus).map(findingToSuggestion);
+    changedFiles: FileChange[] = [],
+): Array<Partial<CodeSuggestion> & { postPrLevel?: boolean }> {
+    return applyFocus(findings, focus).map((f) =>
+        findingToSuggestion(f, changedFiles),
+    );
 }

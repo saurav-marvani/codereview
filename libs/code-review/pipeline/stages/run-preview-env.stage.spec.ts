@@ -84,8 +84,9 @@ describe('RunPreviewEnvStage (alpha spine)', () => {
     });
 
     it('boots the VM, runs the agent, appends findings to validSuggestions with proof, tears down', async () => {
+        // file matches the changed file → anchored on-diff → inline
         const findings = [
-            { severity: 'critical', description: 'SSRF reachable', file: 'net.js', evidence: '$ curl 169.254... -> 200' },
+            { severity: 'critical', description: 'SSRF reachable', file: 'db.js', evidence: '$ curl 169.254... -> 200' },
         ];
         const { stage, agent, cleanup } = makeStage({ findings });
         const out = await stage.execute(ctx());
@@ -93,7 +94,9 @@ describe('RunPreviewEnvStage (alpha spine)', () => {
         expect(agent.run).toHaveBeenCalledTimes(1);
         expect(out.validSuggestions).toHaveLength(1);
         const s = out.validSuggestions[0];
-        expect(s.relevantFile).toBe('net.js');
+        expect(s.relevantFile).toBe('db.js');
+        expect(s.relevantLinesStart).toBe(1); // anchored to the changed line, not hard-1
+        expect((s as any).postPrLevel).toBeUndefined(); // marker stripped before context
         expect(s.severity).toBe('critical');
         expect(s.label).toBe(PREVIEW_ENV_LABEL);
         expect(s.suggestionContent).toContain('SSRF reachable');
@@ -102,9 +105,25 @@ describe('RunPreviewEnvStage (alpha spine)', () => {
         expect(cleanup).toHaveBeenCalledTimes(1); // VM always torn down
     });
 
+    it('an off-diff finding still flows through (line-1 anchor → comment manager degrades gracefully), marker stripped', async () => {
+        // file is NOT among the changed files → no postable line. It stays in
+        // validSuggestions (persisted + line-adjust-retried downstream), never
+        // silently dropped; the internal postPrLevel marker is stripped.
+        const findings = [
+            { severity: 'high', description: 'runtime regression', file: 'not-in-diff.js', evidence: '$ ran -> 500' },
+        ];
+        const { stage } = makeStage({ findings });
+        const out = await stage.execute(ctx());
+
+        expect(out.validSuggestions).toHaveLength(1);
+        expect(out.validSuggestions[0].relevantFile).toBe('not-in-diff.js');
+        expect(out.validSuggestions[0].relevantLinesStart).toBe(1); // no changed line → line-1 anchor
+        expect((out.validSuggestions[0] as any).postPrLevel).toBeUndefined(); // marker stripped
+    });
+
     it('passes the focus directive to the agent and filters non-matching findings', async () => {
         const findings = [
-            { severity: 'critical', description: 'SSRF', file: 'net.js', evidence: 'x' }, // critical → always kept
+            { severity: 'critical', description: 'SSRF', file: 'db.js', evidence: 'x' }, // critical → always kept, on-diff
             { severity: 'low', description: 'css nit', file: 'style.css', evidence: 'x' }, // no focus match → dropped
         ];
         const { stage, agent } = makeStage({ findings });
@@ -114,7 +133,7 @@ describe('RunPreviewEnvStage (alpha spine)', () => {
             expect.objectContaining({ focus: 'security vulnerabilities' }),
         );
         expect(out.validSuggestions).toHaveLength(1); // only the critical survives the focus
-        expect(out.validSuggestions[0].relevantFile).toBe('net.js');
+        expect(out.validSuggestions[0].relevantFile).toBe('db.js');
     });
 
     it('org-level infra config (BYO-cloud) makes the stage runnable without the env token', async () => {
