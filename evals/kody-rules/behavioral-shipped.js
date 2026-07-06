@@ -27,7 +27,9 @@ require('tsconfig-paths/register');
 const dotenv = require('dotenv');
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 dotenv.config({ path: path.join(__dirname, '../../.env.local'), override: true });
-dotenv.config({ path: path.join(process.env.HOME, '.kodus-dev/config'), override: true });
+if (process.env.HOME) {
+    dotenv.config({ path: path.join(process.env.HOME, '.kodus-dev/config'), override: true });
+}
 if (!process.env.API_CRYPTO_KEY) process.env.API_CRYPTO_KEY = '0'.repeat(64);
 
 const args = Object.fromEntries(
@@ -40,8 +42,11 @@ const MODELKEY = args.model || 'gpt-5.4-mini';
 const CONC = Number(args.conc || 4);
 const TEMP = args.temp === 'none' ? undefined : Number(args.temp ?? 0);
 const LINE_TOL = 2;
+// Optional floor: fail (exit 1) if occurrence-recall < this. Advisory when unset.
+const GATE = args.gate !== undefined ? Number(args.gate) : null;
+const DATASET = String(args.dataset || 'github-cases').replace(/\.json$/, '');
 
-const cases = require('./github-cases.json');
+const cases = require(`./${DATASET}.json`);
 const { judgeKodyRulesSharded } = require(
     '../../libs/code-review/infrastructure/agents/collaborators/kody-rules-sharded.judge.ts',
 );
@@ -127,6 +132,19 @@ async function main() {
     console.log(
         `\nBaseline for comparison (old agentic path, prior measured): gpt-5.4 ~40%, kimi ~58% occurrence-recall.`,
     );
+
+    const recall = occTotal ? (100 * occCaught) / occTotal : 0;
+    if (GATE !== null) {
+        if (recall + 1e-9 < GATE) {
+            console.error(
+                `\n❌ GATE FAILED: occurrence-recall ${recall.toFixed(0)}% < floor ${GATE}% (${MODELKEY})`,
+            );
+            process.exit(1);
+        }
+        console.log(
+            `\n✅ GATE PASSED: occurrence-recall ${recall.toFixed(0)}% ≥ floor ${GATE}% (${MODELKEY})`,
+        );
+    }
 }
 
 main().catch((e) => {
