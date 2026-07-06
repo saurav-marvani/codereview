@@ -5,8 +5,11 @@ apps/*/dist
 
 # pnpm's content-addressable store — should live in the global store
 # (~/Library/pnpm/store). A local copy here is an orphan from a stray
-# `pnpm install --store-dir .pnpm-store`; never commit it.
+# `pnpm install --store-dir .pnpm-store`; never commit it. The nested pattern
+# covers stores leaked into workspace packages (e.g. apps/web/.pnpm-store via
+# the dev container bind-mount).
 /.pnpm-store/
+**/.pnpm-store/
 
 # selfhosted dev VM state (scripts/selfhosted/*.sh)
 .kodus-dev/
