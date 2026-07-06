@@ -71,6 +71,14 @@ export function PullRequestsPageClient() {
         "status",
         parseAsStringLiteral(STATUSES).withOptions(urlOpts),
     );
+    const [createdAtFrom, setCreatedAtFrom] = useQueryState(
+        "from",
+        parseAsString.withOptions(urlOpts),
+    );
+    const [createdAtTo, setCreatedAtTo] = useQueryState(
+        "to",
+        parseAsString.withOptions(urlOpts),
+    );
 
     const debouncedTitle = useDebounce(pullRequestTitle, 400);
     const debouncedNumber = useDebounce(pullRequestNumber, 400);
@@ -100,6 +108,11 @@ export function PullRequestsPageClient() {
             hasSentSuggestions: hasSentSuggestionsParam,
             authorPolicy,
             status: statusFilter ?? undefined,
+            createdAtFrom: createdAtFrom ?? undefined,
+            // Make the "to" bound inclusive of the whole selected day.
+            createdAtTo: createdAtTo
+                ? `${createdAtTo}T23:59:59.999`
+                : undefined,
         },
         // This view mounts usePullRequestExecutionSSE (above), which invalidates
         // the query on every execution_updated event — so skip the redundant
@@ -151,6 +164,8 @@ export function PullRequestsPageClient() {
         setSuggestionsFilter("all");
         setAuthorPolicy("reviewable");
         setStatusFilter(null);
+        setCreatedAtFrom(null);
+        setCreatedAtTo(null);
     };
 
     // Surface the applied filters as removable chips (the popover only shows a
@@ -201,6 +216,14 @@ export function PullRequestsPageClient() {
             label: `Status: ${STATUS_LABEL[statusFilter]}`,
             clear: () => {
                 setStatusFilter(null);
+            },
+        },
+        (createdAtFrom || createdAtTo) && {
+            key: "date",
+            label: `Date: ${createdAtFrom || "…"} → ${createdAtTo || "…"}`,
+            clear: () => {
+                setCreatedAtFrom(null);
+                setCreatedAtTo(null);
             },
         },
     ].filter(
@@ -261,6 +284,14 @@ export function PullRequestsPageClient() {
                             }
                             status={statusFilter}
                             onStatusChange={(value) => setStatusFilter(value)}
+                            createdAtFrom={createdAtFrom}
+                            createdAtTo={createdAtTo}
+                            onCreatedAtFromChange={(value) =>
+                                setCreatedAtFrom(value || null)
+                            }
+                            onCreatedAtToChange={(value) =>
+                                setCreatedAtTo(value || null)
+                            }
                         />
                     </div>
                 </div>

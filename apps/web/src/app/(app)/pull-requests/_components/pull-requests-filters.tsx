@@ -64,6 +64,10 @@ interface PullRequestsFiltersProps {
     onAuthorPolicyChange: (value: AuthorPolicyFilterValue) => void;
     status?: StatusFilterValue | null;
     onStatusChange: (value: StatusFilterValue | null) => void;
+    createdAtFrom?: string | null;
+    createdAtTo?: string | null;
+    onCreatedAtFromChange: (value: string) => void;
+    onCreatedAtToChange: (value: string) => void;
 }
 
 export const PullRequestsFilters = ({
@@ -80,6 +84,10 @@ export const PullRequestsFilters = ({
     onAuthorPolicyChange,
     status,
     onStatusChange,
+    createdAtFrom,
+    createdAtTo,
+    onCreatedAtFromChange,
+    onCreatedAtToChange,
 }: PullRequestsFiltersProps) => {
     const [open, setOpen] = useState(false);
     const [mounted, setMounted] = useState(false);
@@ -110,6 +118,7 @@ export const PullRequestsFilters = ({
         (suggestionsFilter !== "all" ? 1 : 0) +
         (authorPolicy !== "reviewable" ? 1 : 0) +
         (status ? 1 : 0) +
+        (createdAtFrom || createdAtTo ? 1 : 0) +
         (selectedRepository ? 1 : 0);
 
     useEffect(() => {
@@ -170,6 +179,8 @@ export const PullRequestsFilters = ({
                             onSuggestionsFilterChange("all");
                             onAuthorPolicyChange("reviewable");
                             onStatusChange(null);
+                            onCreatedAtFromChange("");
+                            onCreatedAtToChange("");
                         }}>
                         Clear
                     </Button>
@@ -289,6 +300,35 @@ export const PullRequestsFilters = ({
                                 ))}
                             </SelectContent>
                         </Select>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                        <Label className="text-text-secondary text-xs">
+                            Review date
+                        </Label>
+                        <div className="flex items-center gap-2">
+                            <Input
+                                type="date"
+                                size="md"
+                                value={createdAtFrom ?? ""}
+                                max={createdAtTo ?? undefined}
+                                onChange={(event) =>
+                                    onCreatedAtFromChange(event.target.value)
+                                }
+                            />
+                            <span className="text-text-tertiary text-xs">
+                                to
+                            </span>
+                            <Input
+                                type="date"
+                                size="md"
+                                value={createdAtTo ?? ""}
+                                min={createdAtFrom ?? undefined}
+                                onChange={(event) =>
+                                    onCreatedAtToChange(event.target.value)
+                                }
+                            />
+                        </div>
                     </div>
 
                     <div className="flex flex-col gap-1.5">

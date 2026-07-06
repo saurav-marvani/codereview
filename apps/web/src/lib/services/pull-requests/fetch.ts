@@ -11,6 +11,8 @@ export interface PullRequestFilters {
     hasSentSuggestions?: boolean;
     authorPolicy?: "all" | "reviewable" | "excluded";
     status?: PullRequestStatusFilter;
+    createdAtFrom?: string;
+    createdAtTo?: string;
 }
 
 export type PullRequestStatusFilter =
@@ -51,6 +53,10 @@ export const PULL_REQUEST_API = {
         if (filters?.status) {
             params.append("status", filters.status);
         }
+        if (filters?.createdAtFrom)
+            params.append("createdAtFrom", filters.createdAtFrom);
+        if (filters?.createdAtTo)
+            params.append("createdAtTo", filters.createdAtTo);
 
         const queryString = params.toString();
         return pathToApiUrl(

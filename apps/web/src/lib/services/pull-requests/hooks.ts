@@ -78,6 +78,9 @@ export const useInfinitePullRequestExecutions = (
             next.status = filters.status;
         }
 
+        if (filters?.createdAtFrom) next.createdAtFrom = filters.createdAtFrom;
+        if (filters?.createdAtTo) next.createdAtTo = filters.createdAtTo;
+
         return next;
     }, [
         filters?.teamId,
@@ -88,6 +91,8 @@ export const useInfinitePullRequestExecutions = (
         filters?.hasSentSuggestions,
         filters?.authorPolicy,
         filters?.status,
+        filters?.createdAtFrom,
+        filters?.createdAtTo,
         pageSize,
     ]);
 

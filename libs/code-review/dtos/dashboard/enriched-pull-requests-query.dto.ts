@@ -87,4 +87,18 @@ export class EnrichedPullRequestsQueryDto {
         description: 'Filter by the execution review status.',
     })
     status?: AutomationStatus;
+
+    @IsOptional()
+    @IsString()
+    @ApiPropertyOptional({
+        description: 'Only executions created on/after this ISO date.',
+    })
+    createdAtFrom?: string;
+
+    @IsOptional()
+    @IsString()
+    @ApiPropertyOptional({
+        description: 'Only executions created on/before this ISO date.',
+    })
+    createdAtTo?: string;
 }
