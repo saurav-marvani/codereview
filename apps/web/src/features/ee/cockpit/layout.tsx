@@ -139,7 +139,6 @@ export default async function Layout({
 
                         {tabsVisibility.productivity && (
                             <TabsContent
-                                forceMount
                                 value={"productivity" satisfies TabValue}
                                 className="flex flex-col gap-2">
                                 <div className="grid grid-cols-4 gap-2 *:h-56">
