@@ -562,6 +562,21 @@ export class LocalSandboxService implements ISandboxProvider {
                 const safePath = await this.resolveSafeWritePath(repoDir, path);
                 const dir = join(safePath, '..');
                 await mkdir(dir, { recursive: true });
+
+                // Re-validate after mkdir to shrink TOCTOU window.
+                // A concurrent actor could swap a parent dir for a symlink
+                // between resolveSafeWritePath and the actual write.
+                const repoReal = await realpath(repoDir);
+                const finalCheck = await realpath(dir);
+                if (
+                    !finalCheck.startsWith(repoReal + '/') &&
+                    finalCheck !== repoReal
+                ) {
+                    throw new Error(
+                        `Path escapes repo boundary after mkdir: ${path}`,
+                    );
+                }
+
                 // Open with O_NOFOLLOW to prevent TOCTOU symlink swap
                 // between validation and write.
                 const fd = await open(

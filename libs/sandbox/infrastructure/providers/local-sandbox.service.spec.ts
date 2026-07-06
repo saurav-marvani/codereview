@@ -190,4 +190,29 @@ describe('LocalSandboxService sandbox file access', () => {
             'ok',
         );
     });
+
+    it('rejects write when parent directory realpath escapes repo after mkdir (TOCTOU post-mkdir check)', async () => {
+        const fsPromises = require('fs/promises');
+        const originalRealpath = fsPromises.realpath;
+        // Track the nested subdir path — the post-mkdir finalCheck resolves
+        // the immediate parent of the target file.
+        const nestedDir = path.join(dir, 'escape', 'nested');
+
+        jest.spyOn(fsPromises, 'realpath').mockImplementation(
+            async (p: string) => {
+                if (p === nestedDir) {
+                    return '/tmp/outside-escape';
+                }
+                return originalRealpath(p);
+            },
+        );
+
+        try {
+            await expect(
+                sandbox.writeFile('escape/nested/file.txt', 'pwned'),
+            ).rejects.toThrow(/Path escapes repo boundary after mkdir/);
+        } finally {
+            jest.restoreAllMocks();
+        }
+    });
 });
