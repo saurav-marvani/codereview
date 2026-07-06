@@ -316,6 +316,10 @@ export interface AgentLoopInput {
     /** BYOK provider type — needed to map reasoning effort to the correct
      *  provider-specific format in providerOptions. */
     byokProvider?: BYOKProvider | string;
+    /** Which BYOK role this attempt is running as. Selects the concurrency
+     *  limiter bucket in the model wrapper ('main' vs 'fallback'). Defaults to
+     *  'main' when omitted. */
+    byokRole?: 'main' | 'fallback';
     /** Pin OpenRouter requests to specific upstream providers (in order).
      *  Ignored when byokProvider !== 'openrouter'. */
     openrouterProviderOrder?: string[];

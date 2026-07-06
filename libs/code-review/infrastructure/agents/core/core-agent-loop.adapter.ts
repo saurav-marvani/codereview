@@ -63,6 +63,7 @@ export async function runAgentLoopViaCore(
             typeof input.byokProvider === 'string'
                 ? input.byokProvider
                 : undefined,
+        role: input.byokRole ?? 'main',
         queueTimeoutMs: secrets.byokQueueTimeoutMs,
         reporter: secrets.byokErrorReporter,
     });
