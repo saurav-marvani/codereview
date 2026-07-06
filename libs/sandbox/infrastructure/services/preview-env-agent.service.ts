@@ -52,7 +52,15 @@ Mission: determine whether this change is safe and correct by EXERCISING the aff
 2. DATA BUGS: if the diff touches queries/filters/JOINs/aggregations/pagination/migrations/tenant-scoping, SEED representative rows, exercise the path, then QUERY THE DATABASE DIRECTLY (psql/sqlite3/mysql/mongosh — find the connection string in the env) and compare actual rows/counts to what you computed by hand. Never trust the endpoint's 200. Check query-level tenant isolation (seed users A+B, read as B, verify B can't see A's rows) and migration data-safety.
 3. A change that ALLOWS something previously blocked is a security regression even if it looks like a feature — name it (e.g. "reintroduces SSRF: X reachable") with the executed repro and concrete impact.
 4. EXECUTION IS MANDATORY. Reasoning from the diff is NOT sufficient — OBSERVE the defect by running code. Prefer isolating the changed unit (call it via node/python/etc against the real DB and print the raw result) over a full authenticated flow; stop at the cheapest conclusive proof. Put the exact command + its real output in every finding's evidence.
-5. Call finish exactly once with your findings. request_changes only for defects you reproduced by execution. Be economical.`;
+5. Call finish exactly once. Be economical.
+
+WHAT COUNTS AS A FINDING — read carefully:
+- A finding is a DEFECT you REPRODUCED by execution: the code does something wrong, unsafe, broken, or incorrect, and you have the command + real output that shows it.
+- NEVER report a confirmation as a finding. "The tests pass", "the math is correct", "the catalog fetch works", "behaves as expected", "no issue found" are NOT findings — they are the ABSENCE of a finding. Put that reassurance in \`summary\` and leave \`findings\` empty.
+- An empty \`findings\` array is the correct, expected result for a correct PR. Returning [] is a success, not a failure — do NOT invent low-severity findings to fill the array.
+- Before adding anything to \`findings\`, ask: "does my evidence show something WRONG?" If the evidence shows something RIGHT, it does not belong in \`findings\`.
+- Severity reflects real impact of a real defect. If you're tempted to file "low" just to have something, that's the signal it isn't a finding — drop it.
+- A pre-existing defect in code the PR touches is reportable, but say so and only if you reproduced concrete wrong behavior (not a style/opinion).`;
 
 const TOOLS: Anthropic.Tool[] = [
     {
@@ -69,18 +77,25 @@ const TOOLS: Anthropic.Tool[] = [
     },
     {
         name: 'finish',
-        description: 'Report the validation findings.',
+        description:
+            'Finish the review. `findings` holds ONLY reproduced defects; if the PR is correct, pass an empty `findings` array and explain in `summary`.',
         input_schema: {
             type: 'object',
             properties: {
-                summary: { type: 'string' },
+                summary: {
+                    type: 'string',
+                    description:
+                        'What you exercised and concluded. Confirmations that things WORK go here (never in findings).',
+                },
                 findings: {
                     type: 'array',
+                    description:
+                        'Reproduced DEFECTS only — something the code does WRONG, with executed proof. Empty when the PR is correct. Never a confirmation that something works.',
                     items: {
                         type: 'object',
                         properties: {
-                            description: { type: 'string' },
-                            evidence: { type: 'string', description: 'Executed repro: command(s), expected vs actual.' },
+                            description: { type: 'string', description: 'The defect: what is wrong and its impact.' },
+                            evidence: { type: 'string', description: 'Executed repro: command(s), expected vs actual — must show WRONG behavior.' },
                             file: { type: 'string' },
                             severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
                         },
