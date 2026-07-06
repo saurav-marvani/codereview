@@ -171,7 +171,7 @@ describe('Process E2E — session hooks', { timeout: 60_000 }, () => {
         );
         cliEntryPoint = path.join(cliRoot, 'dist', 'index.js');
 
-        // Verify the entry point exists (requires `yarn build` beforehand)
+        // Verify the entry point exists (requires `pnpm build` beforehand)
         await fs.access(cliEntryPoint);
 
         // Create a temp directory that acts as HOME + git repo
