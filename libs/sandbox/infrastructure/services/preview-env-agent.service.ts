@@ -60,7 +60,7 @@ WHAT COUNTS AS A FINDING — read carefully:
 - An empty \`findings\` array is the correct, expected result for a correct PR. Returning [] is a success, not a failure — do NOT invent low-severity findings to fill the array.
 - Before adding anything to \`findings\`, ask: "does my evidence show something WRONG?" If the evidence shows something RIGHT, it does not belong in \`findings\`.
 - Severity reflects real impact of a real defect. If you're tempted to file "low" just to have something, that's the signal it isn't a finding — drop it.
-- A pre-existing defect in code the PR touches is reportable, but say so and only if you reproduced concrete wrong behavior (not a style/opinion).`;
+- SCOPE: report ONLY defects this PR's change INTRODUCES or newly exhibits (a regression). A defect that already existed before this change — unchanged behavior the PR merely touches nearby — is OUT OF SCOPE: do not file it; note it in \`summary\` at most. To decide, ask "did THIS diff cause the wrong behavior?" — if the same bug reproduces on the base revision, it's pre-existing, not a finding.`;
 
 const TOOLS: Anthropic.Tool[] = [
     {
