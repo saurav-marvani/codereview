@@ -45,24 +45,8 @@ const cases = require('./github-cases.json');
 const { judgeKodyRulesSharded } = require(
     '../../libs/code-review/infrastructure/agents/collaborators/kody-rules-sharded.judge.ts',
 );
-
-const normalizePath = (p) => String(p || '').replace(/^\/+/, '').trim();
-
-function parseViolations(text) {
-    if (!text) return [];
-    let t = text.trim();
-    const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
-    if (fence) t = fence[1].trim();
-    const start = t.indexOf('{');
-    const end = t.lastIndexOf('}');
-    if (start >= 0 && end > start) t = t.slice(start, end + 1);
-    try {
-        const o = JSON.parse(t);
-        return Array.isArray(o.violations) ? o.violations : [];
-    } catch {
-        return [];
-    }
-}
+// Pure parse+score core, unit-tested in behavioral-scoring.spec.ts.
+const { parseViolations, scoreCase, normalizePath } = require('./behavioral-scoring.ts');
 
 async function main() {
     const { applyModelEnv } = require('../shared/tier0-models');
@@ -116,16 +100,7 @@ async function main() {
             line: v.relevantLinesStart,
         }));
 
-        const covered = sites.filter((g) =>
-            flags.some(
-                (x) => x.file === g.file && Math.abs(x.line - g.line) <= LINE_TOL,
-            ),
-        ).length;
-        const onTarget = flags.filter((x) =>
-            sites.some(
-                (g) => x.file === g.file && Math.abs(x.line - g.line) <= LINE_TOL,
-            ),
-        ).length;
+        const { caught: covered, onTarget } = scoreCase(sites, flags, LINE_TOL);
 
         occTotal += sites.length;
         occCaught += covered;
