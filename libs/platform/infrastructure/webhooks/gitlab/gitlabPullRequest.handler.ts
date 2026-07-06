@@ -15,6 +15,7 @@ import { EnqueueImplementationCheckUseCase } from '@libs/code-review/application
 import {
     hasReviewMarker,
     isForceReviewCommand,
+    isRuntimeCommand,
     isKodyMentionNonReview,
     isReviewCommand,
     parseReviewDirective,
@@ -500,6 +501,7 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
                             origin: isForceCommand ? 'command-force' : 'command',
                             triggerCommentId: comment?.id,
                             reviewDirective: parseReviewDirective(comment.body),
+                            runtimeRequested: isRuntimeCommand(comment.body),
                         },
                     };
 

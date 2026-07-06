@@ -184,6 +184,8 @@ export class CodeReviewHandlerService {
         parentSignal?: AbortSignal,
         // Free-text steering directive from `@kody review <directive>`.
         reviewDirective?: string,
+        // `@kody runtime` — this run explicitly asked for the Kody Runtime stage.
+        runtimeRequested?: boolean,
     ) {
         let initialContext: CodeReviewPipelineContext;
 
@@ -212,6 +214,7 @@ export class CodeReviewHandlerService {
                 triggerCommentId,
                 userGitId,
                 reviewDirective,
+                runtimeRequested,
                 pipelineMetadata: {
                     lastExecution: {
                         ...(lastExecutionData || null),

@@ -4,6 +4,7 @@ import { EnqueueImplementationCheckUseCase } from '@libs/code-review/application
 import {
     hasReviewMarker,
     isForceReviewCommand,
+    isRuntimeCommand,
     isKodyMentionNonReview,
     isReviewCommand,
     parseReviewDirective,
@@ -638,6 +639,7 @@ export class ForgejoPullRequestHandler implements IWebhookEventHandler {
                                 : 'command',
                             triggerCommentId: comment?.id,
                             reviewDirective: parseReviewDirective(comment.body),
+                            runtimeRequested: isRuntimeCommand(comment.body),
                             pull_request:
                                 pullRequestData ||
                                 pullRequest ||

@@ -230,6 +230,7 @@ export class RunCodeReviewAutomationUseCase implements IUseCase {
                 action,
                 triggerCommentId: sanitizedPayload?.triggerCommentId,
                 reviewDirective: sanitizedPayload?.reviewDirective,
+                runtimeRequested: sanitizedPayload?.runtimeRequested,
                 userGitId,
                 workflowJobId,
                 correlationId,

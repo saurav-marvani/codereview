@@ -8,6 +8,8 @@ import {
     parseReviewDirective,
     normalizeReviewDirective,
     isReviewCommand,
+    isRuntimeCommand,
+    isKodyMentionNonReview,
 } from './codeCommentMarkers';
 
 describe('parseReviewDirective', () => {
@@ -134,6 +136,35 @@ describe('normalizeReviewDirective (shared by the CLI --focus path)', () => {
     it('keeps a legit focus untouched', () => {
         expect(normalizeReviewDirective('the `topCodes` sort logic')).toBe(
             'the `topCodes` sort logic',
+        );
+    });
+});
+
+describe('@kody runtime (Kody Runtime on-demand trigger)', () => {
+    it('matches the runtime command and rides the review-command path', () => {
+        expect(isRuntimeCommand('@kody runtime')).toBe(true);
+        expect(isReviewCommand('@kody runtime')).toBe(true); // same enqueue path
+    });
+
+    it('is not routed to chat (non-review mention must NOT match)', () => {
+        expect(isKodyMentionNonReview('@kody runtime')).toBe(false);
+        expect(isKodyMentionNonReview('@kody what does this do?')).toBe(true);
+    });
+
+    it('plain review commands are not runtime requests', () => {
+        expect(isRuntimeCommand('@kody review')).toBe(false);
+        expect(isRuntimeCommand('@kody start-review')).toBe(false);
+        expect(isRuntimeCommand(undefined)).toBe(false);
+    });
+
+    it('does not match lookalikes (word boundary)', () => {
+        expect(isRuntimeCommand('@kody runtime-error in prod')).toBe(false);
+        expect(isRuntimeCommand('@kody runtimes')).toBe(false);
+    });
+
+    it('carries a steering directive like the review command', () => {
+        expect(parseReviewDirective('@kody runtime focus on the checkout flow')).toBe(
+            'focus on the checkout flow',
         );
     });
 });

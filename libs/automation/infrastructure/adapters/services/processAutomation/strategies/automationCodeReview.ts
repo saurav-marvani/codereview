@@ -96,6 +96,7 @@ export class AutomationCodeReviewService implements Omit<
             action,
             triggerCommentId,
             reviewDirective,
+            runtimeRequested,
             userGitId,
             signal,
         } = payload as Record<string, any>;
@@ -264,6 +265,7 @@ export class AutomationCodeReviewService implements Omit<
                     correlationId,
                     signal, // parentSignal — forwarded to pipeline context
                     reviewDirective, // @kody review <directive> steering text
+                    runtimeRequested, // @kody runtime — on-demand Kody Runtime run
                 );
 
             await this._handleExecutionCompletion(execution, result, payload);

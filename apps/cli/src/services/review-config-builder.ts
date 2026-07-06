@@ -15,6 +15,7 @@ export async function buildReviewConfig({
         commit?: string;
         branch?: string;
         focus?: string;
+        runtime?: boolean;
         quiet?: boolean;
     };
     getFullFileContents: (
@@ -32,6 +33,7 @@ export async function buildReviewConfig({
         fast,
         // Steering directive (the backend sanitizes + caps it before use).
         focus: options?.focus,
+        runtime: options?.runtime,
     };
 
     // Skip inlining file contents when:

@@ -60,7 +60,7 @@ const makeStage = (over: {
 
 const ctx = (over: any = {}): any => ({
     codeReviewConfig: {
-        environment: { enabled: true, setup: [], build: [], services: [], test: [], healthcheck: [] },
+        environment: { enabled: true, trigger: 'auto', setup: [], build: [], services: [], test: [], healthcheck: [] },
     },
     changedFiles: [{ filename: 'db.js', patch: '@@ -1 +1 @@\n-a\n+b' }],
     repository: { id: 'r1' },

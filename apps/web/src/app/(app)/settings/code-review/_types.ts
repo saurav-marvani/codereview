@@ -140,6 +140,9 @@ export type CodeReviewGlobalConfig = {
  *  against the encrypted vault at run time). */
 export type EnvironmentConfig = {
     enabled: boolean;
+    /** 'command' (default) = on-demand only (@kody runtime / CLI --runtime);
+     *  'auto' = on every automatic review. */
+    trigger?: "auto" | "command";
     requiredEnv: string[];
     setup: string[];
     build: string[];

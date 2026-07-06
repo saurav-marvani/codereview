@@ -7,7 +7,7 @@ import { PreviewFinding } from '@libs/sandbox/infrastructure/services/preview-en
  * (dedup → comments → critical gating) as the normal review. Kept pure and
  * unit-tested; the stage does the I/O.
  */
-export const PREVIEW_ENV_LABEL = 'kody_preview_env';
+export const PREVIEW_ENV_LABEL = 'kody_runtime';
 
 /** Reconstruct a unified diff from the PR's changed files (for the agent). */
 export function buildDiffFromChangedFiles(changedFiles: FileChange[] = []): string {

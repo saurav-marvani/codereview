@@ -14,6 +14,7 @@ import { EnqueueAstGraphUpdateOnMergedUseCase } from '@libs/code-review/applicat
 import { EnqueueImplementationCheckUseCase } from '@libs/code-review/application/use-cases/enqueue-implementation-check.use-case';
 import {
     isForceReviewCommand,
+    isRuntimeCommand,
     isKodyMentionNonReview,
     isReviewCommand,
     parseReviewDirective,
@@ -541,6 +542,7 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
                         origin: isForceCommand ? 'command-force' : 'command',
                         triggerCommentId: comment?.id,
                         reviewDirective: parseReviewDirective(comment.body),
+                        runtimeRequested: isRuntimeCommand(comment.body),
                     },
                 };
 

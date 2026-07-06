@@ -21,9 +21,10 @@ import { EnvironmentEnabled } from "./_components/environment-enabled";
 import { InfrastructureAdvanced } from "./_components/infrastructure-advanced";
 import { PlaybookPhase } from "./_components/playbook-phase";
 import { RequiredEnv } from "./_components/required-env";
+import { RuntimeTrigger } from "./_components/runtime-trigger";
 import { SecretsVault } from "./_components/secrets-vault";
 
-export default function PreviewEnvironment() {
+export default function KodyRuntime() {
     const form = useFormContext<CodeReviewFormType>();
     const { teamId } = useSelectedTeamId();
     const { repositoryId, directoryId } = useCodeReviewRouteParams();
@@ -74,11 +75,11 @@ export default function PreviewEnvironment() {
     return (
         <Page.Root>
             <Page.Header>
-                <CodeReviewPagesBreadcrumb pageName="Preview Environment" />
+                <CodeReviewPagesBreadcrumb pageName="Kody Runtime" />
             </Page.Header>
 
             <Page.Header>
-                <Page.Title>Preview Environment</Page.Title>
+                <Page.Title>Kody Runtime</Page.Title>
                 <Page.HeaderActions>
                     {formIsDirty && (
                         <Button
@@ -107,6 +108,10 @@ export default function PreviewEnvironment() {
 
                 <div data-field-name="environment.enabled">
                     <EnvironmentEnabled />
+                </div>
+
+                <div data-field-name="environment.trigger">
+                    <RuntimeTrigger />
                 </div>
 
                 <div className="flex flex-col gap-4 rounded-xl border border-card-lv2 p-5">
@@ -159,7 +164,7 @@ export default function PreviewEnvironment() {
                     <div className="rounded-xl border border-card-lv2 p-5">
                         <p className="text-text-secondary text-sm">
                             Secrets are configured per repository. Open a specific
-                            repository&apos;s Preview Environment settings to add
+                            repository&apos;s Kody Runtime settings to add
                             its <code>.env</code> values.
                         </p>
                     </div>

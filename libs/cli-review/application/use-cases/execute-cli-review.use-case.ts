@@ -208,6 +208,7 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                 // CLI equivalent of `@kody review focus on X` — same sanitize +
                 // cap as the PR-comment path. Steers the finder when set.
                 reviewDirective: normalizeReviewDirective(input.config?.focus),
+                runtimeRequested: !!input.config?.runtime,
                 validSuggestions: [],
                 discardedSuggestions: [],
                 preparedFileContexts: [],

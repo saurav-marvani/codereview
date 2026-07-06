@@ -314,6 +314,11 @@ export type EnvironmentComponentScope = {
 export type EnvironmentConfig = {
     /** Opt-in per repo. Default false — no VM is provisioned unless set. */
     enabled?: boolean;
+    /** When Kody Runtime runs: 'command' (default) = only on demand
+     *  (`@kody runtime` on the PR / `--runtime` on the CLI); 'auto' = on
+     *  every automatic review of the repo. On-demand is the alpha default —
+     *  a VM per PR has real cost/latency the dev should opt into per run. */
+    trigger?: 'auto' | 'command';
     /** Env var NAMES the app needs to boot; values come from the org secret store. */
     requiredEnv?: string[];
     setup?: string[];

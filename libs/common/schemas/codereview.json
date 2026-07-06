@@ -257,9 +257,10 @@
         "environment": {
             "type": "object",
             "additionalProperties": false,
-            "description": "Preview environment: boot & test this repo in an ephemeral VM so a PR can run. Opt-in per repo.",
+            "description": "Kody Runtime: boot & test this repo in an ephemeral VM so a PR can run (executed evidence). Opt-in per repo.",
             "properties": {
                 "enabled": { "type": "boolean", "default": false },
+                "trigger": { "type": "string", "enum": ["auto", "command"], "default": "command", "description": "'command' = on-demand only (@kody runtime / CLI --runtime); 'auto' = every automatic review." },
                 "requiredEnv": { "type": "array", "items": { "type": "string" } },
                 "setup": { "type": "array", "items": { "type": "string" } },
                 "services": { "type": "array", "items": { "type": "string" } },

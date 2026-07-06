@@ -68,6 +68,19 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
         const env = context.codeReviewConfig?.environment;
         if (!env?.enabled) return context;
 
+        // Trigger gating: default is ON-DEMAND ('command') — a VM per PR has
+        // real cost/latency, so unless the repo opted into 'auto', the stage
+        // only runs when this run explicitly asked for it (@kody runtime on
+        // the PR / --runtime on the CLI).
+        const trigger = env.trigger ?? 'command';
+        if (trigger !== 'auto' && !context.runtimeRequested) {
+            this.logger.log({
+                message: `Kody Runtime enabled with trigger '${trigger}' but not requested for this run; skipping`,
+                context: this.stageName,
+            });
+            return context;
+        }
+
         const vmSvc = this.vmSvc;
         // Org-level cloud config (self-hosted BYO-cloud) takes precedence over
         // the server-level env token; either one makes the stage runnable.

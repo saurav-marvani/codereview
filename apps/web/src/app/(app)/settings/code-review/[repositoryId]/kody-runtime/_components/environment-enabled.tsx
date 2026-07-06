@@ -26,7 +26,7 @@ export const EnvironmentEnabled = () => {
                     <CardHeader className="flex flex-row items-center justify-between gap-6">
                         <div className="flex flex-col gap-1">
                             <Heading variant="h3">
-                                Enable Preview Environment (alpha)
+                                Enable Kody Runtime (alpha)
                             </Heading>
                             <p className="text-text-secondary text-sm">
                                 When enabled, Kody boots this repository&apos;s

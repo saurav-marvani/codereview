@@ -228,6 +228,11 @@ export interface CodeReviewPipelineContext extends PipelineContext {
         phases: Array<{ phase: string; command: string; exitCode: number; outputTail: string }>;
     };
 
+    /** Kody Runtime was explicitly requested for THIS run (`@kody runtime`
+     *  PR command / CLI --runtime). With `environment.trigger: 'command'`
+     *  (the default), the runtime stage only runs when this is set. */
+    runtimeRequested?: boolean;
+
     /** Parameters used to create the sandbox — kept for renewal if it expires */
     getFreshCloneParams?: () => Promise<CreateSandboxParams>;
 

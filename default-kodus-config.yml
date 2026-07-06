@@ -210,8 +210,11 @@ v2PromptOverrides:
             - **Use Active Voice**: "The function leaks memory" instead of "Memory is leaked by the function."
             - **Sentence cap**: Limit the description to 1-2 high-impact sentences.
 
-# Preview environment (Phase 3): boot & test this repo in an ephemeral VM so a
-# PR can actually run. Opt-in per repo. Present here so the committed
-# kodus-config.yml `environment:` section survives the DEFAULT_CONFIG strip.
+# Kody Runtime: boot & test this repo in an ephemeral VM so a PR can actually
+# run. Opt-in per repo. Present here so the committed kodus-config.yml
+# `environment:` section survives the DEFAULT_CONFIG strip.
+# trigger: 'command' (default) = on-demand only (@kody runtime / CLI --runtime);
+#          'auto' = every automatic review.
 environment:
     enabled: false
+    trigger: command

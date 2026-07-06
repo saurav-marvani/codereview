@@ -63,6 +63,8 @@ export interface CliReviewConfig {
      * before it reaches the prompt.
      */
     focus?: string;
+    /** Kody Runtime (`--runtime`): boot + execute the PR on an ephemeral VM. */
+    runtime?: boolean;
     files?: CliFileInput[];
 }
 

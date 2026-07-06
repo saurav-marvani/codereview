@@ -54,6 +54,7 @@ type ReviewCommandOptions = {
     rulesOnly?: boolean;
     fast?: boolean;
     focus?: string;
+    runtime?: boolean;
     interactive?: boolean;
     fix?: boolean;
     promptOnly?: boolean;
@@ -109,6 +110,10 @@ Examples:
         .option(
             '--focus <text>',
             'Steer the review at a specific area, e.g. --focus "the auth and session logic"',
+        )
+        .option(
+            '--runtime',
+            'Kody Runtime: boot the app on an ephemeral VM and execute the PR (repo must have the environment playbook configured)',
         )
         .option(
             '-i, --interactive',
@@ -227,6 +232,7 @@ async function reviewAction(
                         commit: options.commit,
                         branch: options.branch,
                         focus: options.focus,
+                        runtime: options.runtime,
                         quiet: globalOpts.quiet,
                         onProgress: (status) => {
                             if (globalOpts.quiet || ctx.isAgent) {return;}

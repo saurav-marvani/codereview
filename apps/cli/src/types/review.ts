@@ -110,6 +110,8 @@ export interface ReviewConfig {
     fast?: boolean;
     /** Free-text steering directive (`--focus`); sanitized + capped server-side. */
     focus?: string;
+    /** Kody Runtime (`--runtime`): boot + execute the PR on an ephemeral VM. */
+    runtime?: boolean;
     files?: FileContent[];
 }
 

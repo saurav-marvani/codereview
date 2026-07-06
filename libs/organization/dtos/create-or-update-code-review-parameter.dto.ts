@@ -474,6 +474,11 @@ export class EnvironmentConfigDto {
     @IsBoolean()
     enabled?: boolean;
 
+    /** 'command' (default) = on-demand only; 'auto' = every automatic review. */
+    @IsOptional()
+    @IsIn(['auto', 'command'])
+    trigger?: 'auto' | 'command';
+
     @IsOptional()
     @IsArray()
     @IsString({ each: true })
