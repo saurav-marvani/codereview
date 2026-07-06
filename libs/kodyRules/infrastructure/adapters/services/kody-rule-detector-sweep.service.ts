@@ -30,12 +30,12 @@ export class KodyRuleDetectorSweepService {
     private readonly logger = createLogger(KodyRuleDetectorSweepService.name);
     private readonly enabled: boolean;
     /**
-     * Hard cap on rules compiled per nightly run. The first run over a large
+     * Hard cap on rules compiled per nightly run. The first runs over a large
      * legacy corpus (prod ~10k) must NOT try to compile everything at once —
      * that would blow the lock TTL and spike LLM cost. With onlyMissing the
-     * backlog drains a batch per night; steady-state is far below the cap. Use
-     * scripts/backfill-kody-rule-detectors.ts for a faster, operator-controlled
-     * initial turn.
+     * backlog drains a batch per night (10k ≈ 5 nights at the default cap) and
+     * steady-state is far below it — so the cron alone activates the legacy on
+     * both cloud and self-hosted, no manual step required.
      */
     private readonly maxRulesPerRun: number;
 
