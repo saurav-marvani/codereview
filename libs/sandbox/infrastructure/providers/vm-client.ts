@@ -67,14 +67,19 @@ export class VmClient {
     }
 
     async provision(params: VmProvisionParams): Promise<VmHandle> {
+        // Unique per provision so a leaked SSH key / server from a previous
+        // run (e.g. one killed before cleanup) never blocks a retry with a
+        // 409 "not unique". Keeps the `kodus-selfhosted-preview-` prefix the
+        // reaper keys off. Cloud-provider names cap ~64 chars; base36 ts fits.
+        const uniqueName = `${params.name}-${Date.now().toString(36)}`;
         const keyDir = await mkdtemp(join(tmpdir(), 'kody-vm-'));
         const keyPath = join(keyDir, 'id_ed25519');
-        await execFileAsync('ssh-keygen', ['-t', 'ed25519', '-f', keyPath, '-N', '', '-C', params.name]);
+        await execFileAsync('ssh-keygen', ['-t', 'ed25519', '-f', keyPath, '-N', '', '-C', uniqueName]);
         const publicKey = (await readFile(`${keyPath}.pub`, 'utf8')).trim();
 
         const key = await this.api('/ssh_keys', {
             method: 'POST',
-            body: JSON.stringify({ name: params.name, public_key: publicKey }),
+            body: JSON.stringify({ name: uniqueName, public_key: publicKey }),
         });
         const sshKeyId = Number(key.ssh_key.id);
 
@@ -83,7 +88,7 @@ export class VmClient {
             server = await this.api('/servers', {
                 method: 'POST',
                 body: JSON.stringify({
-                    name: params.name,
+                    name: uniqueName,
                     location: params.region ?? this.opts.region ?? 'hil',
                     server_type: params.size ?? this.opts.size ?? 'cpx31',
                     image: params.image ?? 'ubuntu-24.04',

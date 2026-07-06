@@ -322,6 +322,56 @@ class KodyKnowledgeApprovalDto {
     enabled: boolean;
 }
 
+export class EnvironmentConfigDto {
+    @IsOptional()
+    @IsBoolean()
+    enabled?: boolean;
+
+    /** 'command' (default) = on-demand only; 'auto' = every automatic review. */
+    @IsOptional()
+    @IsIn(['auto', 'command'])
+    trigger?: 'auto' | 'command';
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    requiredEnv?: string[];
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    setup?: string[];
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    services?: string[];
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    build?: string[];
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    test?: string[];
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    healthcheck?: string[];
+
+    /** Cross-repo deps + giant-monorepo scope — loosely validated for the alpha. */
+    @IsOptional()
+    @IsArray()
+    dependsOn?: any[];
+
+    @IsOptional()
+    @IsObject()
+    scope?: Record<string, any>;
+}
+
 class CodeReviewConfigWithoutLLMProviderDto {
     @IsOptional()
     @IsString()
@@ -469,55 +519,6 @@ class CodeReviewConfigWithoutLLMProviderDto {
     environment?: EnvironmentConfigDto;
 }
 
-export class EnvironmentConfigDto {
-    @IsOptional()
-    @IsBoolean()
-    enabled?: boolean;
-
-    /** 'command' (default) = on-demand only; 'auto' = every automatic review. */
-    @IsOptional()
-    @IsIn(['auto', 'command'])
-    trigger?: 'auto' | 'command';
-
-    @IsOptional()
-    @IsArray()
-    @IsString({ each: true })
-    requiredEnv?: string[];
-
-    @IsOptional()
-    @IsArray()
-    @IsString({ each: true })
-    setup?: string[];
-
-    @IsOptional()
-    @IsArray()
-    @IsString({ each: true })
-    services?: string[];
-
-    @IsOptional()
-    @IsArray()
-    @IsString({ each: true })
-    build?: string[];
-
-    @IsOptional()
-    @IsArray()
-    @IsString({ each: true })
-    test?: string[];
-
-    @IsOptional()
-    @IsArray()
-    @IsString({ each: true })
-    healthcheck?: string[];
-
-    /** Cross-repo deps + giant-monorepo scope — loosely validated for the alpha. */
-    @IsOptional()
-    @IsArray()
-    dependsOn?: any[];
-
-    @IsOptional()
-    @IsObject()
-    scope?: Record<string, any>;
-}
 
 export class CreateOrUpdateCodeReviewParameterDto {
     @IsObject()
