@@ -4,7 +4,6 @@ export type TabValue = keyof typeof tabs;
 // (suggestions by category/repository) were absorbed as implementation-rate
 // versions inside the review tab.
 export const tabs = {
-    "flow-metrics": "Flow metrics",
     "kodus-review": "Kodus Review",
     "productivity": "Productivity",
 } satisfies Record<string, string>;
