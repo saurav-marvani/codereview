@@ -106,28 +106,21 @@ export class CheckSyncStatusUseCase {
             ) {
                 syncStatusFlags.kodyRulesGeneratorEnabledFirstTime = false;
             } else {
-                // Same shape as the IDE-rules check above: "first time" means no
-                // rule has ever been generated from past reviews for this
-                // repo/org. The old code returned the current toggle value,
-                // which is always false the instant the user re-enables it — so
-                // the off→on cycle never fired the modal. The settings toggle
-                // stays as the manual re-trigger.
+                // "First time" means no rule has ever been generated from past
+                // reviews for this repo/org. The old code returned the current
+                // toggle value, which is always false the instant the user
+                // re-enables it — so the off→on cycle never fired the modal.
+                // The settings toggle stays as the manual re-trigger. execute()
+                // returns a flat list already filtered by the predicate, so any
+                // result means a past-review rule exists.
                 const rules =
                     await this.findRulesInOrganizationByRuleFilterKodyRulesUseCase.execute(
                         organizationAndTeamData.organizationId,
-                        {},
+                        { origin: KodyRulesOrigin.PAST_REVIEWS },
                         repositoryId,
                     );
 
-                const hasPastReviewRule = rules?.some((rule) =>
-                    rule?.rules?.some(
-                        (r: IKodyRule) =>
-                            r.origin === KodyRulesOrigin.PAST_REVIEWS,
-                    ),
-                );
-
-                syncStatusFlags.kodyRulesGeneratorEnabledFirstTime =
-                    !hasPastReviewRule;
+                syncStatusFlags.kodyRulesGeneratorEnabledFirstTime = !rules?.length;
             }
 
             return syncStatusFlags;

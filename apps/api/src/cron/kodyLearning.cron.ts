@@ -9,10 +9,7 @@ import { ParametersKey } from '@libs/core/domain/enums/parameters-key.enum';
 import { STATUS } from '@libs/core/infrastructure/config/types/database/status.type';
 import { GenerateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/generate-kody-rules.use-case';
 import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/find-rules-in-organization-by-filter.use-case';
-import {
-    IKodyRule,
-    KodyRulesOrigin,
-} from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
+import { KodyRulesOrigin } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
@@ -57,21 +54,16 @@ export class KodyLearningCronProvider {
         repositoryId?: string,
     ): Promise<boolean> {
         try {
+            // execute() returns a flat list of rules already filtered by the
+            // predicate, so any result means a past-review rule exists.
             const rules =
                 await this.findRulesInOrganizationByRuleFilterKodyRulesUseCase.execute(
                     organizationId,
-                    {},
+                    { origin: KodyRulesOrigin.PAST_REVIEWS },
                     repositoryId,
                 );
 
-            return Boolean(
-                rules?.some((rule) =>
-                    rule?.rules?.some(
-                        (r: IKodyRule) =>
-                            r.origin === KodyRulesOrigin.PAST_REVIEWS,
-                    ),
-                ),
-            );
+            return Boolean(rules?.length);
         } catch (error) {
             // On lookup failure, assume not-first so we don't accidentally
             // re-run an expensive 3-month backfill every week.
@@ -365,21 +357,18 @@ export class KodyLearningCronProvider {
             ));
             const lookback = isFirstGeneration ? { months: 3 } : { weeks: 1 };
 
-            // Prefer the individually selected repos; when none are selected
-            // (the normal post-onboarding state) pass no ids and let the
-            // use-case resolve the source repos — it falls back to the
-            // integration's repositories instead of skipping.
-            const selectedRepositoryIds = enabledRepos
-                .filter((repo) => repo.isSelected)
-                .map((repo) => repo.id);
+            // Always scope to the generator-enabled repos (which include
+            // post-onboarding repos still sitting at isSelected=false). Passing
+            // them explicitly respects kodyRulesGeneratorEnabled instead of
+            // letting the use-case fall back to every integration repo — which
+            // would process repos where the generator was turned off.
+            const enabledRepositoryIds = enabledRepos.map((repo) => repo.id);
 
             await this.generateKodyRulesUseCase.execute(
                 {
                     teamId,
                     ...lookback,
-                    ...(selectedRepositoryIds.length > 0
-                        ? { repositoriesIds: selectedRepositoryIds }
-                        : {}),
+                    repositoriesIds: enabledRepositoryIds,
                 },
                 organizationId,
             );

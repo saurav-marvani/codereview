@@ -56,15 +56,11 @@ import {
     Delete,
     Get,
     Inject,
-    NotFoundException,
     Post,
     Query,
     UseGuards,
 } from '@nestjs/common';
-import {
-    ITeamService,
-    TEAM_SERVICE_TOKEN,
-} from '@libs/organization/domain/team/contracts/team.service.contract';
+import { KodyRulesTenantGuard } from '../guards/kody-rules-tenant.guard';
 import { REQUEST } from '@nestjs/core';
 import {
     ApiBearerAuth,
@@ -128,33 +124,9 @@ export class KodyRulesController {
         private readonly convertPendingUpdatesToNewUseCase: ConvertPendingUpdatesToNewUseCase,
         private readonly manageImportedKodyRulesUseCase: ManageImportedKodyRulesUseCase,
         private readonly countRulesByRepositoryUseCase: CountRulesByRepositoryUseCase,
-        @Inject(TEAM_SERVICE_TOKEN)
-        private readonly teamService: ITeamService,
         @Inject(REQUEST)
         private readonly request: UserRequest,
     ) {}
-
-    /**
-     * Guards against cross-tenant access: the JWT carries the org, the teamId
-     * comes from the request body/query. Without this, a token from org A could
-     * pass a teamId from org B and read/write that team's parameters. Returns
-     * 404 (never 403) so the response doesn't leak whether the team exists in
-     * another org.
-     */
-    private async assertTeamBelongsToOrg(teamId: string): Promise<void> {
-        const organizationId = this.request.user?.organization?.uuid;
-
-        if (!organizationId || !teamId) {
-            throw new NotFoundException('Team not found');
-        }
-
-        const teamOrganizationId =
-            await this.teamService.findOneOrganizationIdByTeamId(teamId);
-
-        if (!teamOrganizationId || teamOrganizationId !== organizationId) {
-            throw new NotFoundException('Team not found');
-        }
-    }
 
     @ApiBearerAuth('jwt')
     @Post('/create-or-update')
@@ -447,7 +419,7 @@ export class KodyRulesController {
 
     @ApiBearerAuth('jwt')
     @Post('/generate-kody-rules')
-    @UseGuards(PolicyGuard)
+    @UseGuards(PolicyGuard, KodyRulesTenantGuard)
     @CheckPolicies(
         checkPermissions({
             action: Action.Create,
@@ -463,8 +435,6 @@ export class KodyRulesController {
         if (!this.request.user.organization.uuid) {
             throw new Error('Organization ID not found');
         }
-
-        await this.assertTeamBelongsToOrg(body.teamId);
 
         return this.generateKodyRulesUseCase.execute(
             body,
@@ -550,7 +520,7 @@ export class KodyRulesController {
 
     @ApiBearerAuth('jwt')
     @Get('/check-sync-status')
-    @UseGuards(PolicyGuard)
+    @UseGuards(PolicyGuard, KodyRulesTenantGuard)
     @CheckPolicies(
         checkPermissions({
             action: Action.Read,
@@ -570,8 +540,6 @@ export class KodyRulesController {
         @Query('repositoryId')
         repositoryId?: string,
     ) {
-        await this.assertTeamBelongsToOrg(teamId);
-
         const cacheKey = `check-sync-status:${this.request.user.organization.uuid}:${teamId}:${repositoryId || 'no-repo'}`;
 
         // Tenta buscar do cache primeiro
@@ -594,7 +562,7 @@ export class KodyRulesController {
 
     @ApiBearerAuth('jwt')
     @Post('/sync-ide-rules')
-    @UseGuards(PolicyGuard)
+    @UseGuards(PolicyGuard, KodyRulesTenantGuard)
     @CheckPolicies(
         checkPermissions({
             action: Action.Create,
@@ -609,8 +577,6 @@ export class KodyRulesController {
     public async syncIdeRules(
         @Body() body: { teamId: string; repositoryId: string },
     ) {
-        await this.assertTeamBelongsToOrg(body.teamId);
-
         const respositories = [body.repositoryId];
 
         return this.syncSelectedReposKodyRulesUseCase.execute({
@@ -621,7 +587,7 @@ export class KodyRulesController {
 
     @ApiBearerAuth('jwt')
     @Post('/fast-sync-ide-rules')
-    @UseGuards(PolicyGuard)
+    @UseGuards(PolicyGuard, KodyRulesTenantGuard)
     @CheckPolicies(
         checkPermissions({
             action: Action.Create,
@@ -643,8 +609,6 @@ export class KodyRulesController {
             maxTotalBytes?: number;
         },
     ) {
-        await this.assertTeamBelongsToOrg(body.teamId);
-
         return this.fastSyncIdeRulesUseCase.execute(body);
     }
 
@@ -670,7 +634,7 @@ export class KodyRulesController {
 
     @ApiBearerAuth('jwt')
     @Get('/pending-ide-rules')
-    @UseGuards(PolicyGuard)
+    @UseGuards(PolicyGuard, KodyRulesTenantGuard)
     @CheckPolicies(
         checkPermissions({
             action: Action.Read,
@@ -689,8 +653,6 @@ export class KodyRulesController {
         @Query('teamId') teamId: string,
         @Query('repositoryId') repositoryId?: string,
     ) {
-        await this.assertTeamBelongsToOrg(teamId);
-
         const organizationId = this.request.user.organization.uuid;
         return this.findRulesInOrganizationByRuleFilterKodyRulesUseCase.execute(
             organizationId,
@@ -755,7 +717,7 @@ export class KodyRulesController {
 
     @ApiBearerAuth('jwt')
     @Get('/inherited-rules')
-    @UseGuards(PolicyGuard)
+    @UseGuards(PolicyGuard, KodyRulesTenantGuard)
     @CheckPolicies(
         checkRepoPermissions({
             action: Action.Read,
@@ -789,8 +751,6 @@ export class KodyRulesController {
             throw new Error('Repository ID is required');
         }
 
-        await this.assertTeamBelongsToOrg(teamId);
-
         return this.getInheritedRulesKodyRulesUseCase.execute(
             {
                 organizationId: this.request.user.organization.uuid,
@@ -804,7 +764,7 @@ export class KodyRulesController {
     // NOT USED IN WEB - INTERNAL USE ONLY
     @ApiBearerAuth('jwt')
     @Post('/resync-ide-rules')
-    @UseGuards(PolicyGuard)
+    @UseGuards(PolicyGuard, KodyRulesTenantGuard)
     @CheckPolicies(
         checkPermissions({
             action: Action.Create,
@@ -819,8 +779,6 @@ export class KodyRulesController {
     public async resyncIdeRules(
         @Body() body: { teamId: string; repositoryId: string; path?: string },
     ) {
-        await this.assertTeamBelongsToOrg(body.teamId);
-
         const respositories = [body.repositoryId];
 
         return this.resyncRulesFromIdeUseCase.execute({
