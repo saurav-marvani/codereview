@@ -703,8 +703,17 @@ export class ObservabilityService implements OnModuleInit {
         options: ObservabilityConfig,
     ) {
         const uri = this.buildConnectionString(config);
+        // Emergency kill-switch: be liberal in what counts as "off" (this is
+        // the operational escape hatch for the observability OOM path, so a
+        // mistyped `FALSE`/`0` must not silently leave it enabled). Default
+        // (unset) stays enabled.
+        const mongoEnabledFlag =
+            process.env.OBSERVABILITY_MONGO_ENABLED?.trim().toLowerCase();
         const mongoExporterEnabled =
-            process.env.OBSERVABILITY_MONGO_ENABLED !== 'false';
+            mongoEnabledFlag !== 'false' &&
+            mongoEnabledFlag !== '0' &&
+            mongoEnabledFlag !== 'off' &&
+            mongoEnabledFlag !== 'no';
 
         const collections =
             options.enableCollections !== false

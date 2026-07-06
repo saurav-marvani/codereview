@@ -43,4 +43,34 @@ describe('ObservabilityService Mongo exporter toggle', () => {
 
         expect(cfg.mongodb).toBeUndefined();
     });
+
+    it.each([' FALSE ', 'False', '0', 'off', 'No'])(
+        'treats %p as disabled (kill-switch is liberal in what counts as off)',
+        (value) => {
+            process.env.OBSERVABILITY_MONGO_ENABLED = value;
+            const service = buildService();
+
+            const cfg = (service as any).createObservabilityConfig(
+                baseDbConfig,
+                {
+                    serviceName: 'kodus-worker',
+                    enableCollections: true,
+                },
+            );
+
+            expect(cfg.mongodb).toBeUndefined();
+        },
+    );
+
+    it('keeps mongodb exporter enabled for non-off values', () => {
+        process.env.OBSERVABILITY_MONGO_ENABLED = 'true';
+        const service = buildService();
+
+        const cfg = (service as any).createObservabilityConfig(baseDbConfig, {
+            serviceName: 'kodus-worker',
+            enableCollections: true,
+        });
+
+        expect(cfg.mongodb).toBeDefined();
+    });
 });

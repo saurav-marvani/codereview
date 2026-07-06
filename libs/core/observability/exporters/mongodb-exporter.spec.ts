@@ -122,6 +122,44 @@ describe('MongoDBExporter (log flush resilience)', () => {
         expect((exporter as any).logBuffer).toHaveLength(0);
     });
 
+    it('re-buffers remaining batches instead of hitting a null handle after a mid-flush connection loss', async () => {
+        const exporter = new MongoDBExporter({
+            batchSize: 9999,
+            flushIntervalMs: 60_000,
+        });
+        // Force two separate insert batches.
+        (exporter as any).maxLogInsertBatchBytes = 1024;
+
+        const transient = new Error('Topology is closed');
+        transient.name = 'MongoNetworkError';
+        const insertMany = jest.fn().mockRejectedValue(transient);
+        (exporter as any).collections = {
+            logs: { insertMany },
+            telemetry: { insertMany: jest.fn() },
+        };
+        // Mimic the real handleConnectionError -> resetConnection nulling the handle.
+        (exporter as any).handleConnectionError = jest
+            .fn()
+            .mockImplementation(async () => {
+                (exporter as any).collections = null;
+            });
+        const errorSpy = jest.spyOn((exporter as any).logger, 'error');
+        (exporter as any).logBuffer = [
+            buildLog('batch-one', 800),
+            buildLog('batch-two', 800),
+        ];
+
+        await expect((exporter as any).flushLogs()).resolves.toBeUndefined();
+
+        // Only the first batch is actually attempted; the second sees a null
+        // handle and is re-buffered rather than throwing a (logged) TypeError.
+        expect(insertMany).toHaveBeenCalledTimes(1);
+        expect(errorSpy).toHaveBeenCalledTimes(1);
+        const messages = (exporter as any).logBuffer.map((l: any) => l.message);
+        expect(messages).toContain('batch-one');
+        expect(messages).toContain('batch-two');
+    });
+
     it('does not buffer logs when Mongo observability is disabled', async () => {
         const exporter = new MongoDBExporter({
             batchSize: 500,

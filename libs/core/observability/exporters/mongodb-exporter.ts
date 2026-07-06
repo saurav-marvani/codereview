@@ -1479,6 +1479,14 @@ export class MongoDBExporter implements LogProcessor, ObservabilityExporter {
 
         try {
             for (const batch of insertBatches) {
+                // A connection error on an earlier batch nulls `collections`
+                // (via handleConnectionError -> resetConnection). Don't touch a
+                // null handle — re-buffer the remaining batches and let the
+                // scheduled reconnect pick them up next flush.
+                if (!this.collections) {
+                    retryCandidates.push(...batch);
+                    continue;
+                }
                 try {
                     // ordered: false so one bad doc doesn't stop healthy docs.
                     await this.collections.logs.insertMany(batch, {
