@@ -24,7 +24,10 @@ import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
 } from '@libs/organization/domain/parameters/contracts/parameters.service.contract';
-import { IKodyRule } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
+import {
+    IKodyRule,
+    KodyRulesOrigin,
+} from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 
 @Injectable()
 export class CheckSyncStatusUseCase {
@@ -97,17 +100,34 @@ export class CheckSyncStatusUseCase {
                 syncStatusFlags.ideRulesSyncEnabledFirstTime = !ideRules;
             }
 
-            const kodyRulesGeneratorEnabled =
-                currentRepositoryConfig.configs.kodyRulesGeneratorEnabled;
-
             if (
                 platformConfig.configValue.kodyLearningStatus ===
                 KodyLearningStatus.DISABLED
             ) {
                 syncStatusFlags.kodyRulesGeneratorEnabledFirstTime = false;
             } else {
+                // Same shape as the IDE-rules check above: "first time" means no
+                // rule has ever been generated from past reviews for this
+                // repo/org. The old code returned the current toggle value,
+                // which is always false the instant the user re-enables it — so
+                // the off→on cycle never fired the modal. The settings toggle
+                // stays as the manual re-trigger.
+                const rules =
+                    await this.findRulesInOrganizationByRuleFilterKodyRulesUseCase.execute(
+                        organizationAndTeamData.organizationId,
+                        {},
+                        repositoryId,
+                    );
+
+                const hasPastReviewRule = rules?.some((rule) =>
+                    rule?.rules?.some(
+                        (r: IKodyRule) =>
+                            r.origin === KodyRulesOrigin.PAST_REVIEWS,
+                    ),
+                );
+
                 syncStatusFlags.kodyRulesGeneratorEnabledFirstTime =
-                    kodyRulesGeneratorEnabled;
+                    !hasPastReviewRule;
             }
 
             return syncStatusFlags;

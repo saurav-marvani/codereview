@@ -540,6 +540,13 @@ export function getModelName(
 export function getInternalModel(
     byokConfig?: BYOKConfig,
     options: ByokModelOptions = {},
+    /**
+     * Force a specific model when there's no BYOK config — mirrors
+     * `byokToVercelModel`'s `defaultModelOverride`. Used by the kody-rules
+     * trial flow to route helper calls to Kimi (Moonshot) instead of the
+     * internal cloud default. Ignored when BYOK is present (BYOK wins).
+     */
+    defaultModelOverride?: string,
 ): LanguageModel | null {
     const envMode = process.env.API_LLM_PROVIDER_MODEL ?? 'auto';
 
@@ -549,6 +556,13 @@ export function getInternalModel(
     }
     if (byokConfig?.main) {
         return byokToVercelModel(byokConfig, 'main', options);
+    }
+
+    // No BYOK but caller forced a model (e.g. trial → Kimi). Route through
+    // byokToVercelModel so the model-name prefix picks the right SDK
+    // (kimi-* → Moonshot OpenAI-compatible endpoint).
+    if (defaultModelOverride) {
+        return byokToVercelModel(undefined, 'main', options, defaultModelOverride);
     }
 
     // Self-hosted mode: match byokToVercelModel's provider selection so
@@ -903,6 +917,11 @@ export interface StructuredFallbackParams {
      * process-wide self-hosted mode.
      */
     organizationId?: string;
+    /**
+     * Force a specific model when there's no BYOK config (e.g. trial → Kimi).
+     * Threaded to `getInternalModel`; ignored when BYOK is present.
+     */
+    defaultModelOverride?: string;
 }
 
 /**
@@ -930,9 +949,11 @@ export async function withStructuredOutputFallback<T>(
     const cacheKey = structuredFallbackCacheKey(params.byokConfig);
     const tryStructured = !noJsonSchemaCache.has(cacheKey);
 
-    const firstModel = getInternalModel(params.byokConfig, {
-        structuredOutputs: tryStructured,
-    });
+    const firstModel = getInternalModel(
+        params.byokConfig,
+        { structuredOutputs: tryStructured },
+        params.defaultModelOverride,
+    );
     if (!firstModel) {
         throw new NoStructuredFallbackModelError();
     }
@@ -961,9 +982,11 @@ export async function withStructuredOutputFallback<T>(
         console.warn(
             `[STRUCTURED-OUTPUT-FALLBACK] Upstream rejected json_schema${label} (cacheKey=${cacheKey}). Retrying with response_format=json_object. Reason: ${(err as Error).message}`,
         );
-        const retryModel = getInternalModel(params.byokConfig, {
-            structuredOutputs: false,
-        });
+        const retryModel = getInternalModel(
+            params.byokConfig,
+            { structuredOutputs: false },
+            params.defaultModelOverride,
+        );
         if (!retryModel) {
             throw new NoStructuredFallbackModelError();
         }

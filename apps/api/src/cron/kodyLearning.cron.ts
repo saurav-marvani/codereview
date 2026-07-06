@@ -8,6 +8,11 @@ import { IntegrationCategory } from '@libs/core/domain/enums/integration-categor
 import { ParametersKey } from '@libs/core/domain/enums/parameters-key.enum';
 import { STATUS } from '@libs/core/infrastructure/config/types/database/status.type';
 import { GenerateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/generate-kody-rules.use-case';
+import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/find-rules-in-organization-by-filter.use-case';
+import {
+    IKodyRule,
+    KodyRulesOrigin,
+} from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
@@ -39,8 +44,48 @@ export class KodyLearningCronProvider {
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
         private readonly generateKodyRulesUseCase: GenerateKodyRulesUseCase,
+        private readonly findRulesInOrganizationByRuleFilterKodyRulesUseCase: FindRulesInOrganizationByRuleFilterKodyRulesUseCase,
         private readonly distributedLockService: DistributedLockService,
     ) {}
+
+    /**
+     * A team's first-ever generation looks back 3 months (bootstrap); once any
+     * past-review rule exists, later runs only need the incremental last week.
+     */
+    private async hasPastReviewRules(
+        organizationId: string,
+        repositoryId?: string,
+    ): Promise<boolean> {
+        try {
+            const rules =
+                await this.findRulesInOrganizationByRuleFilterKodyRulesUseCase.execute(
+                    organizationId,
+                    {},
+                    repositoryId,
+                );
+
+            return Boolean(
+                rules?.some((rule) =>
+                    rule?.rules?.some(
+                        (r: IKodyRule) =>
+                            r.origin === KodyRulesOrigin.PAST_REVIEWS,
+                    ),
+                ),
+            );
+        } catch (error) {
+            // On lookup failure, assume not-first so we don't accidentally
+            // re-run an expensive 3-month backfill every week.
+            this.logger.warn({
+                message:
+                    'Could not determine past-review rule history; defaulting to incremental lookback',
+                context: KodyLearningCronProvider.name,
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
+                metadata: { organizationId, repositoryId },
+            });
+            return true;
+        }
+    }
 
     @Cron(CRON_KODY_LEARNING, {
         name: 'Kody Learning',
@@ -284,9 +329,11 @@ export class KodyLearningCronProvider {
                 codeReviewConfig.configValue.configs ?? {},
             );
 
-            const filteredRepos = repos.filter((repo) => {
-                if (!repo.isSelected) return false;
-
+            // Repos whose resolved config has the generator enabled. Note this
+            // does NOT gate on isSelected: right after onboarding repos sit in
+            // the config with isSelected=false, and requiring it here meant the
+            // cron never generated for a fresh team.
+            const enabledRepos = repos.filter((repo) => {
                 const resolvedRepoConfig = deepMerge(
                     resolvedGlobalConfig,
                     repo.configs ?? {},
@@ -298,7 +345,7 @@ export class KodyLearningCronProvider {
                 );
             });
 
-            if (!filteredRepos || filteredRepos.length === 0) {
+            if (enabledRepos.length === 0) {
                 this.logger.log({
                     message: 'Kody rules generator is disabled',
                     context: KodyLearningCronProvider.name,
@@ -311,11 +358,28 @@ export class KodyLearningCronProvider {
                 return;
             }
 
+            // First run for this team → 3-month bootstrap; later runs →
+            // incremental last week.
+            const isFirstGeneration = !(await this.hasPastReviewRules(
+                organizationId,
+            ));
+            const lookback = isFirstGeneration ? { months: 3 } : { weeks: 1 };
+
+            // Prefer the individually selected repos; when none are selected
+            // (the normal post-onboarding state) pass no ids and let the
+            // use-case resolve the source repos — it falls back to the
+            // integration's repositories instead of skipping.
+            const selectedRepositoryIds = enabledRepos
+                .filter((repo) => repo.isSelected)
+                .map((repo) => repo.id);
+
             await this.generateKodyRulesUseCase.execute(
                 {
                     teamId,
-                    weeks: 1,
-                    repositoriesIds: filteredRepos.map((repo) => repo.id),
+                    ...lookback,
+                    ...(selectedRepositoryIds.length > 0
+                        ? { repositoriesIds: selectedRepositoryIds }
+                        : {}),
                 },
                 organizationId,
             );

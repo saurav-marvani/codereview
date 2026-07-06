@@ -18,6 +18,7 @@ import {
 import { CreateOrUpdateParametersUseCase } from '@libs/organization/application/use-cases/parameters/create-or-update-use-case';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { CommentAnalysisService } from '@libs/code-review/infrastructure/adapters/services/commentAnalysis.service';
+import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import { SendRulesNotificationUseCase } from '@libs/kodyRules/application/use-cases/send-rules-notification.use-case';
 import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/find-rules-in-organization-by-filter.use-case';
 import { CreateOrUpdateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/create-or-update.use-case';
@@ -163,6 +164,19 @@ describe('GenerateKodyRulesUseCase', () => {
                 {
                     provide: CODE_BASE_CONFIG_SERVICE_TOKEN,
                     useValue: codeBaseConfigServiceMock,
+                },
+                {
+                    provide: PermissionValidationService,
+                    useValue: {
+                        // Truthy BYOK → model policy resolves to "generate with
+                        // BYOK", so these tests exercise the persistence flow.
+                        getBYOKConfig: jest
+                            .fn()
+                            .mockResolvedValue({ main: { model: 'test-model' } }),
+                        getSubscriptionStatus: jest
+                            .fn()
+                            .mockResolvedValue('trial'),
+                    },
                 },
             ],
         }).compile();
