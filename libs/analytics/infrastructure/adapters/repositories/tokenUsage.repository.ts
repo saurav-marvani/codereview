@@ -77,7 +77,11 @@ export class TokenUsageRepository implements ITokenUsageRepository {
      * the pipeline stays covered. Supports N thresholds per model (Doubao).
      */
     private _tierExpr(thresholds: Map<string, number[]>): any {
-        if (thresholds.size === 0) return 0;
+        // `$literal`, not a bare 0: in a `$project` (the overview `$facet`
+        // path) a plain 0 is read as field EXCLUSION and crashes the mixed
+        // projection. `$literal` forces the VALUE 0 (bracket 0 = default
+        // band) — the safe degradation when no model is tiered.
+        if (thresholds.size === 0) return { $literal: 0 };
         const branches: Array<{ case: any; then: number[] }> = [];
         for (const [model, thrs] of thresholds) {
             branches.push({
