@@ -137,6 +137,78 @@ export class VmSandboxService implements ISandboxProvider {
         }
     }
 
+    /**
+     * Build a golden snapshot for warm boot: cold-provision from the BASE
+     * branch, install + build (setup/build phases only — no services, no PR
+     * delta), then snapshot the disk and tear the build VM down. Returns the
+     * image id + region to record in the snapshot registry. A later PR provision
+     * passes this image back as `sandboxMetadata.snapshotImage` and skips
+     * cloud-init + full clone + install + build.
+     */
+    async buildSnapshot(
+        params: {
+            cloneUrl: string;
+            authToken?: string;
+            authUsername?: string;
+            baseBranch: string;
+            platform: PlatformType;
+            setup: string[];
+            build: string[];
+            secrets?: Record<string, string>;
+            name?: string;
+        },
+        infra?: { token: string; region?: string; serverType?: string },
+    ): Promise<{ imageId: string; region?: string }> {
+        const token = infra?.token ?? this.token();
+        if (!token) throw new Error('VmSandboxService: no VM token configured');
+        const region = infra?.region ?? this.configService.get<string>('PREVIEW_VM_REGION');
+
+        const vm = await this.createSandboxWithRepo(
+            {
+                cloneUrl: params.cloneUrl,
+                authToken: params.authToken,
+                authUsername: params.authUsername,
+                branch: params.baseBranch,
+                baseBranch: params.baseBranch,
+                platform: params.platform,
+            },
+            infra,
+        );
+        try {
+            if (params.secrets && Object.keys(params.secrets).length) {
+                const envFile = Object.entries(params.secrets)
+                    .map(([k, v]) => `${k}=${v}`)
+                    .join('\n');
+                await vm.writeFile('/opt/kody/customer.env', envFile);
+            }
+            for (const command of [...params.setup, ...params.build]) {
+                if (!command) continue;
+                const r = await vm.run(command, { timeoutMs: 30 * 60_000 });
+                if (r.exitCode !== 0) {
+                    throw new Error(
+                        `snapshot build failed at "${command}" (exit ${r.exitCode}): ${(r.stderr || r.stdout).slice(-500)}`,
+                    );
+                }
+            }
+            // A stateless REST call — reuse the server id, no ssh handle needed.
+            const client = new VmClient(token, { region });
+            const imageId = await client.createSnapshot(
+                vm.sandboxId,
+                params.name ?? `kody-runtime-snapshot-${Date.now()}`,
+            );
+            return { imageId, region };
+        } finally {
+            await vm.cleanup().catch(() => undefined);
+        }
+    }
+
+    /** GC a superseded snapshot image (best-effort). */
+    async deleteSnapshot(imageId: string, infra?: { token: string }): Promise<void> {
+        const token = infra?.token ?? this.token();
+        if (!token) return;
+        await new VmClient(token).deleteImage(imageId).catch(() => undefined);
+    }
+
     private async cloneRepo(
         client: VmClient,
         handle: VmHandle,

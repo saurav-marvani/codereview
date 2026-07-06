@@ -183,4 +183,33 @@ export class VmClient {
         });
         if (keyDir) await rm(keyDir, { recursive: true, force: true }).catch(() => {});
     }
+
+    /**
+     * Snapshot a running server into a reusable golden image (Devin-style warm
+     * boot). Polls the create_image action until the image is fully written.
+     * Returns the image id to pass back as `image` on a later provision().
+     */
+    async createSnapshot(serverId: string, description: string): Promise<string> {
+        const res = await this.api(`/servers/${serverId}/actions/create_image`, {
+            method: 'POST',
+            body: JSON.stringify({ type: 'snapshot', description }),
+        });
+        const imageId = String(res.image.id);
+        const actionId = res.action.id;
+        const deadline = Date.now() + 15 * 60_000;
+        while (Date.now() < deadline) {
+            const a = (await this.api(`/actions/${actionId}`)).action;
+            if (a.status === 'success') return imageId;
+            if (a.status === 'error') {
+                throw new Error(`snapshot failed: ${JSON.stringify(a.error)}`);
+            }
+            await new Promise((r) => setTimeout(r, 5000));
+        }
+        throw new Error(`snapshot ${imageId} did not finish in 15m`);
+    }
+
+    /** Delete a golden image (GC of a superseded snapshot). Best-effort. */
+    async deleteImage(imageId: string): Promise<void> {
+        await this.api(`/images/${imageId}`, { method: 'DELETE' }).catch(() => undefined);
+    }
 }

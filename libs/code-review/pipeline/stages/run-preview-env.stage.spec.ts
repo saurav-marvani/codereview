@@ -54,8 +54,12 @@ const makeStage = (over: {
     } as any;
     const secretsService = { resolveSecrets: jest.fn().mockResolvedValue({}) } as any;
     const infraService = { resolveInfra: jest.fn().mockResolvedValue(null) } as any;
-    const stage = new RunPreviewEnvStage(config, cloneParamsResolver, agent, vmSvc, secretsService, infraService);
-    return { stage, vmSvc, agent, cleanup, cloneParamsResolver, fakeSandbox, secretsService, infraService };
+    const snapshotService = {
+        computeKey: jest.fn().mockReturnValue('k'),
+        resolveFresh: jest.fn().mockResolvedValue(null),
+    } as any;
+    const stage = new RunPreviewEnvStage(config, cloneParamsResolver, agent, vmSvc, secretsService, infraService, snapshotService);
+    return { stage, vmSvc, agent, cleanup, cloneParamsResolver, fakeSandbox, secretsService, infraService, snapshotService };
 };
 
 const ctx = (over: any = {}): any => ({
@@ -153,6 +157,29 @@ describe('RunPreviewEnvStage (alpha spine)', () => {
         expect(vmSvc.createSandboxWithRepo).toHaveBeenCalledWith(
             expect.anything(),
             infra,
+        );
+    });
+
+    it('warm-boots from a fresh registry snapshot (passes snapshotImage to the provisioner)', async () => {
+        const { stage, vmSvc, snapshotService } = makeStage();
+        snapshotService.resolveFresh.mockResolvedValue({ imageId: 'img-42', key: 'k' });
+
+        await stage.execute(ctx({ organizationAndTeamData: { organizationId: 'o1', teamId: 't1' } }));
+
+        expect(vmSvc.createSandboxWithRepo).toHaveBeenCalledWith(
+            expect.objectContaining({
+                sandboxMetadata: { snapshotImage: 'img-42' },
+            }),
+            undefined,
+        );
+    });
+
+    it('cold-boots (no snapshotImage) when there is no fresh snapshot', async () => {
+        const { stage, vmSvc } = makeStage(); // resolveFresh → null by default
+        await stage.execute(ctx({ organizationAndTeamData: { organizationId: 'o1', teamId: 't1' } }));
+        expect(vmSvc.createSandboxWithRepo).toHaveBeenCalledWith(
+            expect.objectContaining({ sandboxMetadata: {} }),
+            undefined,
         );
     });
 

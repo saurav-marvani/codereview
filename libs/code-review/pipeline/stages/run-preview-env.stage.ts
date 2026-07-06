@@ -19,6 +19,7 @@ import {
 } from '../services/preview-env-findings';
 import { PreviewEnvSecretsService } from '../services/preview-env-secrets.service';
 import { PreviewEnvInfraService } from '../services/preview-env-infra.service';
+import { PreviewEnvSnapshotService } from '../services/preview-env-snapshot.service';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 
 /**
@@ -58,6 +59,8 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
         private readonly secretsService: PreviewEnvSecretsService,
         // Org-level "which cloud" config (self-hosted BYO-cloud from the UI).
         private readonly infraService: PreviewEnvInfraService,
+        // Golden-snapshot registry for warm boot (skip cold install/build).
+        private readonly snapshotService: PreviewEnvSnapshotService,
     ) {
         super();
     }
@@ -114,6 +117,7 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
             const cloneInfo = await this.cloneParamsResolver.resolve(context, cliContext);
             if (!cloneInfo) return context;
 
+            const snapshotImage = await this.resolveSnapshotImage(context, env);
             vm = await vmSvc.createSandboxWithRepo(
                 {
                     cloneUrl: cloneInfo.url,
@@ -124,7 +128,7 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
                     prNumber: cloneInfo.prNumber,
                     platform: cloneInfo.platform,
                     checkoutSha: cloneInfo.checkoutSha,
-                    sandboxMetadata: this.snapshotMetadata(context),
+                    sandboxMetadata: snapshotImage ? { snapshotImage } : {},
                 },
                 infra ?? undefined,
             );
@@ -264,12 +268,35 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
         );
     }
 
-    private snapshotMetadata(context: CodeReviewPipelineContext): Record<string, string> {
-        // A per-repo golden-snapshot id would be resolved here (Phase 2 warm
-        // boot). Left to config for the alpha; empty = cold boot.
-        const repoId = context.repository?.id ?? '';
-        const img = this.configService.get<string>(`PREVIEW_SNAPSHOT_${repoId}`);
-        return img ? { snapshotImage: img } : {};
+    /**
+     * The golden-snapshot image to warm-boot from, or undefined for a cold
+     * boot. Prefers the per-repo registry (a snapshot whose fingerprint still
+     * matches the current playbook), falling back to a static config override
+     * (PREVIEW_SNAPSHOT_<repoId>) for ops/local use. Building/refreshing the
+     * snapshot is a separate trigger — the review path only CONSUMES it, so a
+     * missing/stale snapshot just means this PR cold-boots (never blocks).
+     */
+    private async resolveSnapshotImage(
+        context: CodeReviewPipelineContext,
+        env: NonNullable<CodeReviewPipelineContext['codeReviewConfig']>['environment'],
+    ): Promise<string | undefined> {
+        const repoId = context.repository?.id;
+        if (context.organizationAndTeamData && repoId) {
+            // v1 fingerprint = playbook only. Lockfile-SHA invalidation (rebuild
+            // when deps change) is the follow-up — computeKey already accepts it.
+            const key = this.snapshotService.computeKey(env);
+            const fresh = await this.snapshotService
+                .resolveFresh(context.organizationAndTeamData, repoId, key)
+                .catch(() => null);
+            if (fresh) {
+                this.logger.log({
+                    message: `Warm boot from snapshot ${fresh.imageId} (key ${key})`,
+                    context: this.stageName,
+                });
+                return fresh.imageId;
+            }
+        }
+        return this.configService.get<string>(`PREVIEW_SNAPSHOT_${repoId ?? ''}`) || undefined;
     }
 
     /**

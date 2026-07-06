@@ -76,6 +76,7 @@ import { PreviewEnvAgentService } from '@libs/sandbox/infrastructure/services/pr
 import { VmSandboxService } from '@libs/sandbox/infrastructure/providers/vm-sandbox.service';
 import { PreviewEnvSecretsService } from './services/preview-env-secrets.service';
 import { PreviewEnvInfraService } from './services/preview-env-infra.service';
+import { PreviewEnvSnapshotService } from './services/preview-env-snapshot.service';
 import { AgentReviewStage } from './stages/agent-review.stage';
 import { BugAgentProvider } from '../infrastructure/agents/providers/bug-agent.provider';
 import { SecurityAgentProvider } from '../infrastructure/agents/providers/security-agent.provider';
@@ -166,6 +167,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         VmSandboxService,
         PreviewEnvSecretsService,
         PreviewEnvInfraService,
+        PreviewEnvSnapshotService,
         AgentReviewStage,
         BugAgentProvider,
         SecurityAgentProvider,
@@ -224,6 +226,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         VmSandboxService,
         PreviewEnvSecretsService,
         PreviewEnvInfraService,
+        PreviewEnvSnapshotService,
         AgentReviewStage,
         ReviewOrchestratorService,
     ],

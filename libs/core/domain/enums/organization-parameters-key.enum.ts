@@ -28,4 +28,12 @@ export enum OrganizationParametersKey {
      * PREVIEW_VM_TOKEN/HCLOUD_TOKEN env fallback applies (cloud alpha).
      */
     ENVIRONMENT_INFRA = 'environment_infra',
+    /**
+     * Kody Runtime golden-snapshot registry (warm boot). Per-repo baked VM
+     * image + the fingerprint it was built from, so a PR warm-boots from the
+     * snapshot instead of cold-installing every time:
+     * `{ [repositoryId]: { imageId, key, region, createdAt } }`. Rebuilt only
+     * when the fingerprint (playbook + lockfiles) changes. Not secret.
+     */
+    ENVIRONMENT_SNAPSHOTS = 'environment_snapshots',
 }
