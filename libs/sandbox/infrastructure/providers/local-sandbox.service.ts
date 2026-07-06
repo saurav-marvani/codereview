@@ -6,12 +6,14 @@ import { exec, execFile, ExecFileOptions, spawn } from 'child_process';
 import {
     lstat,
     mkdtemp,
+    open,
     readFile,
     realpath,
     rm,
     writeFile,
     mkdir,
 } from 'fs/promises';
+import { constants as fsConstants } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { promisify } from 'util';
@@ -560,7 +562,20 @@ export class LocalSandboxService implements ISandboxProvider {
                 const safePath = await this.resolveSafeWritePath(repoDir, path);
                 const dir = join(safePath, '..');
                 await mkdir(dir, { recursive: true });
-                await writeFile(safePath, content, 'utf-8');
+                // Open with O_NOFOLLOW to prevent TOCTOU symlink swap
+                // between validation and write.
+                const fd = await open(
+                    safePath,
+                    fsConstants.O_WRONLY |
+                        fsConstants.O_CREAT |
+                        fsConstants.O_NOFOLLOW,
+                    0o644,
+                );
+                try {
+                    await fd.writeFile(content, 'utf-8');
+                } finally {
+                    await fd.close();
+                }
             },
         };
     }
@@ -669,8 +684,16 @@ export class LocalSandboxService implements ISandboxProvider {
         }
     }
 
-    private validatePath(path: string): void {
+    private validatePath(path: string, repoDir?: string): void {
         if (path.startsWith('/')) {
+            if (
+                repoDir &&
+                (path.startsWith(repoDir + '/') || path === repoDir)
+            ) {
+                // Absolute path under repoDir — OK, will be validated by
+                // the realpath check in resolveSafePath / resolveSafeWritePath.
+                return;
+            }
             throw new Error('Absolute paths are not allowed');
         }
         if (path.includes('..')) {
@@ -686,8 +709,8 @@ export class LocalSandboxService implements ISandboxProvider {
         repoDir: string,
         path: string,
     ): Promise<string> {
-        this.validatePath(path);
-        const candidate = join(repoDir, path);
+        this.validatePath(path, repoDir);
+        const candidate = path.startsWith('/') ? path : join(repoDir, path);
 
         // Check if the target itself is a symlink before resolving
         const stat = await lstat(candidate);
@@ -715,9 +738,9 @@ export class LocalSandboxService implements ISandboxProvider {
         repoDir: string,
         path: string,
     ): Promise<string> {
-        this.validatePath(path);
+        this.validatePath(path, repoDir);
         const repoReal = await realpath(repoDir);
-        const candidate = join(repoDir, path);
+        const candidate = path.startsWith('/') ? path : join(repoDir, path);
 
         try {
             const targetStat = await lstat(candidate);

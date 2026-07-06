@@ -108,16 +108,28 @@ describe('LocalSandboxService sandbox file access', () => {
         );
     });
 
-    it('rejects absolute read paths', async () => {
+    it('rejects absolute read paths outside the repo', async () => {
         await expect(sandbox.readFile('/etc/passwd')).rejects.toThrow(
             /Absolute paths are not allowed/,
         );
     });
 
-    it('rejects absolute write paths', async () => {
+    it('rejects absolute write paths outside the repo', async () => {
         await expect(sandbox.writeFile('/etc/passwd', 'x')).rejects.toThrow(
             /Absolute paths are not allowed/,
         );
+    });
+
+    it('accepts absolute paths that resolve inside the repo (read)', async () => {
+        const absPath = path.join(dir, 'a.txt');
+        fs.writeFileSync(absPath, 'hello');
+        await expect(sandbox.readFile(absPath)).resolves.toBe('hello');
+    });
+
+    it('accepts absolute paths that resolve inside the repo (write)', async () => {
+        const absPath = path.join(dir, 'sub', 'abs.txt');
+        await sandbox.writeFile(absPath, 'content');
+        expect(fs.readFileSync(absPath, 'utf-8')).toBe('content');
     });
 
     it('rejects .. traversal reads', async () => {
