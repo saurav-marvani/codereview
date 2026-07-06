@@ -8,26 +8,72 @@ import {
     CardHeader,
     CardTitle,
 } from "@components/ui/card";
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from "@components/ui/tooltip";
 import { UsageByAreaResultContract } from "@services/usage/types";
 
 import { CHART_COLORS } from "../../cockpit/_components/charts/recharts-shared";
 
 /**
- * Human labels + display order for the fixed TokenUsageArea set (see
- * libs/core/log/token-usage-tu.ts). Unknown values fall through to "Other".
+ * Human labels, display color and a plain-language description for the fixed
+ * TokenUsageArea set (see libs/core/log/token-usage-tu.ts). The description
+ * powers the hover tooltip — "area of the review process" is internal jargon,
+ * so each row explains what actually spent the tokens. Unknown values fall
+ * through to "Other".
  */
-const AREA_META: Record<string, { label: string; color: string }> = {
-    review: { label: "Code review agents", color: CHART_COLORS.info },
-    kody_rules: { label: "Kody Rules", color: CHART_COLORS.primary },
-    cross_file: { label: "Cross-file context", color: CHART_COLORS.purple },
+const AREA_META: Record<
+    string,
+    { label: string; color: string; description: string }
+> = {
+    review: {
+        label: "Code review agents",
+        color: CHART_COLORS.info,
+        description:
+            "The main review agents that read the diff and find issues — usually the bulk of every review.",
+    },
+    kody_rules: {
+        label: "Kody Rules",
+        color: CHART_COLORS.primary,
+        description:
+            "Checking the diff against your Kody Rules and generating rule-based findings.",
+    },
+    cross_file: {
+        label: "Cross-file context",
+        color: CHART_COLORS.purple,
+        description:
+            "Pulling related code from other files so the review agents have wider context than just the diff.",
+    },
     suggestions: {
         label: "Suggestion refinement",
         color: CHART_COLORS.success,
+        description:
+            "Polishing raw findings before they're posted — severity, deduplication, simplicity and safeguard checks.",
     },
-    summary: { label: "PR summary", color: CHART_COLORS.warning },
-    conversation: { label: "Conversation", color: CHART_COLORS.danger },
-    system: { label: "System analysis", color: CHART_COLORS.muted },
-    other: { label: "Other", color: CHART_COLORS.muted },
+    summary: {
+        label: "PR summary",
+        color: CHART_COLORS.warning,
+        description: "Writing the PR summary comment.",
+    },
+    conversation: {
+        label: "Conversation",
+        color: CHART_COLORS.danger,
+        description: "Answering your @kody replies in review threads.",
+    },
+    system: {
+        label: "System analysis",
+        color: CHART_COLORS.muted,
+        description:
+            "Internal steps like picking the review mode or validating implemented suggestions — not review output itself.",
+    },
+    other: {
+        label: "Other",
+        color: CHART_COLORS.muted,
+        description:
+            "Steps not attributed to a specific review phase (e.g. issue resolution, external-reference detection).",
+    },
 };
 
 const formatTokens = (t: number) => {
@@ -92,9 +138,16 @@ export const AreaBreakdown = ({
                             className="size-2 shrink-0 rounded-xs"
                             style={{ backgroundColor: meta.color }}
                         />
-                        <span className="text-text-secondary w-44 shrink-0 truncate text-xs">
-                            {meta.label}
-                        </span>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <span className="text-text-secondary w-44 shrink-0 cursor-help truncate text-xs underline decoration-dotted decoration-from-font underline-offset-4">
+                                    {meta.label}
+                                </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="text-text-primary max-w-64 text-pretty">
+                                {meta.description}
+                            </TooltipContent>
+                        </Tooltip>
                         <div className="bg-card-lv2 h-2 min-w-0 flex-1 overflow-hidden rounded-full">
                             <div
                                 className="h-full rounded-full"
