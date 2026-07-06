@@ -163,8 +163,6 @@ export const useDryRun = ({
                         return;
                     }
 
-                    console.log("Received SSE event:", event);
-
                     let parsedEvent: IDryRunEvent | undefined;
                     try {
                         parsedEvent = JSON.parse(event.data) as IDryRunEvent;
@@ -183,7 +181,6 @@ export const useDryRun = ({
                             const payload =
                                 parsedEvent.payload as IDryRunMessageAddedPayload;
 
-                            console.log("Adding message:", payload.message);
                             setMessages((prev) => {
                                 const index = prev.findIndex(
                                     (msg) => msg.id === payload.message.id,
@@ -247,7 +244,6 @@ export const useDryRun = ({
                 },
 
                 onclose: () => {
-                    console.log("SSE connection closed.");
                     setIsConnected(false);
                     setIsLoading(false);
                 },
@@ -268,7 +264,6 @@ export const useDryRun = ({
         checkAndConnect();
 
         return () => {
-            console.log("Aborting event source from effect cleanup.");
             eventSourceRef.current?.abort();
             setIsConnected(false);
             setIsLoading(false);
