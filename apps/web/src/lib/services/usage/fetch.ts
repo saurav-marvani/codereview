@@ -9,6 +9,7 @@ import {
     TokenUsageQueryContract,
     UsageByDeveloperResultContract,
     UsageByPrResultContract,
+    UsageByReviewResultContract,
     UsageOverviewReportContract,
     UsageSummaryContract,
 } from "./types";
@@ -63,6 +64,17 @@ export const getDailyTokenUsageByPR = async (
 ) => {
     return await authorizedFetch<DailyUsageByPrResultContract[]>(
         TOKEN_USAGE_PATHS.GET_DAILY_BY_PR,
+        {
+            params: { ...filters },
+        },
+    );
+};
+
+export const getTokenUsageByReview = async (
+    filters: TokenUsageQueryContract,
+) => {
+    return await authorizedFetch<UsageByReviewResultContract[]>(
+        TOKEN_USAGE_PATHS.GET_BY_REVIEW,
         {
             params: { ...filters },
         },
