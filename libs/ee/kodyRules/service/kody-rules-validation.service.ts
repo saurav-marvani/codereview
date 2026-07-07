@@ -418,6 +418,41 @@ export class KodyRulesValidationService {
     }
 
     /**
+     * Splits a rule's `path` into its individual glob patterns.
+     *
+     * Kody Rules support OR-joined globs in a single `path` string — the
+     * IDE-rule importer comma-joins declared globs (e.g. a frontmatter
+     * `path: ["app/**", "lib/**"]` is persisted as "app/**,lib/**") and
+     * `pathMatchesIdeRuleDir` has always split on commas. The review-time
+     * matchers below, however, used to pass the whole string to picomatch
+     * as ONE pattern, where a comma is a literal character — so any
+     * multi-glob rule silently matched zero files.
+     *
+     * Commas inside braces are NOT separators: "{app,lib}/**" is a single
+     * valid picomatch alternation and must stay intact.
+     */
+    private splitRulePathGlobs(rulePath: string): string[] {
+        const globs: string[] = [];
+        let current = '';
+        let braceDepth = 0;
+
+        for (const char of rulePath) {
+            if (char === '{') braceDepth++;
+            else if (char === '}' && braceDepth > 0) braceDepth--;
+
+            if (char === ',' && braceDepth === 0) {
+                if (current.trim()) globs.push(current.trim());
+                current = '';
+                continue;
+            }
+            current += char;
+        }
+        if (current.trim()) globs.push(current.trim());
+
+        return globs;
+    }
+
+    /**
      * Private helper to check if a rule's path matches a specific *file*.
      */
     private isFilePathMatch(
@@ -441,8 +476,12 @@ export class KodyRulesValidationService {
             return true;
         }
 
-        // Use glob matching to check if the file matches the rule's path pattern.
-        return isFileMatchingGlob(normalizedFilename, [rulePath]);
+        // Use glob matching to check if the file matches any of the rule's
+        // path patterns (comma-joined globs are OR-ed).
+        return isFileMatchingGlob(
+            normalizedFilename,
+            this.splitRulePathGlobs(rulePath),
+        );
     }
 
     /**
@@ -467,11 +506,19 @@ export class KodyRulesValidationService {
             return true;
         }
 
-        if (isFileMatchingGlob(normalizedFolder, [rulePath])) {
+        // Comma-joined globs are OR-ed: the folder matches if ANY of the
+        // individual patterns matches it.
+        return this.splitRulePathGlobs(rulePath).some((glob) =>
+            this.isFolderGlobMatch(glob, normalizedFolder),
+        );
+    }
+
+    private isFolderGlobMatch(glob: string, normalizedFolder: string): boolean {
+        if (isFileMatchingGlob(normalizedFolder, [glob])) {
             return true;
         }
 
-        const ruleBasePath = this.getGlobBasePath(rulePath);
+        const ruleBasePath = this.getGlobBasePath(glob);
 
         if (ruleBasePath === '') {
             return true;
@@ -486,7 +533,7 @@ export class KodyRulesValidationService {
         }
 
         if (
-            rulePath.startsWith('**') &&
+            glob.startsWith('**') &&
             normalizedFolder.endsWith('/' + ruleBasePath)
         ) {
             return true;
