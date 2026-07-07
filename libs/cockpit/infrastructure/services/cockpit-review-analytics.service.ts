@@ -57,9 +57,7 @@ const EXPLORER_MAX_PAGE_SIZE = 100;
 const IGNORED_CRITICALS_MAX_ITEMS = 50;
 
 @Injectable()
-export class CockpitReviewAnalyticsService
-    implements ICockpitReviewAnalyticsService
-{
+export class CockpitReviewAnalyticsService implements ICockpitReviewAnalyticsService {
     constructor(
         @InjectDataSource(ANALYTICS_DATA_SOURCE)
         private readonly ds: DataSource,
@@ -492,8 +490,7 @@ export class CockpitReviewAnalyticsService
 
         // No feedback last period → there's no baseline to compare against,
         // so don't fabricate a "+100%" trend.
-        const hadPreviousBaseline =
-            previous.thumbsUp + previous.thumbsDown > 0;
+        const hadPreviousBaseline = previous.thumbsUp + previous.thumbsDown > 0;
         const comparison = hadPreviousBaseline
             ? computeTrend(current.negativeRate, previous.negativeRate, 'down')
             : { percentageChange: 0, trend: 'unchanged' as const };
@@ -727,9 +724,7 @@ export class CockpitReviewAnalyticsService
      * Rule metadata (title, status, zero-trigger rules) lives in Mongo;
      * `GetKodyRulesHealthUseCase` does the merge.
      */
-    async getKodyRulesUsage(
-        q: CockpitRangeQuery,
-    ): Promise<KodyRuleUsageRow[]> {
+    async getKodyRulesUsage(q: CockpitRangeQuery): Promise<KodyRuleUsageRow[]> {
         const params: unknown[] = [];
         const scope = this.closedPrScope(q, params);
 
@@ -892,12 +887,26 @@ export class CockpitReviewAnalyticsService
             );
         }
 
-        params.push(pageSize, (page - 1) * pageSize);
-        const limitIdx = params.length - 1;
-        const offsetIdx = params.length;
+        // Shared FROM/WHERE for the page slice and the total count. The total is
+        // a SEPARATE COUNT(*) run in parallel — NOT a `COUNT(*) OVER ()` window.
+        // The window variant forces the planner to materialize and join the
+        // entire matching set (~1M rows at prod scale, spilling the sort to
+        // disk) just to fill the pager, turning a 20-row page into a multi-second
+        // scan; a plain COUNT + top-N page each stay well under a second.
+        const fromWhere = `FROM "analytics"."suggestions_mv" s
+             JOIN "analytics"."pull_requests_opt" pr ON pr."_id" = s."pullRequestId"
+             WHERE pr."organizationId" = $1
+               AND s."suggestionDeliveryStatus" = 'sent'
+               AND s."suggestionCreatedAt" BETWEEN $2::timestamptz AND $3::timestamptz
+               ${filters.join('\n               ')}`;
 
-        const rows = (await this.ds.query(
-            `SELECT
+        const pageParams = [...params, pageSize, (page - 1) * pageSize];
+        const limitIdx = pageParams.length - 1;
+        const offsetIdx = pageParams.length;
+
+        const [rows, countRows] = await Promise.all([
+            this.ds.query(
+                `SELECT
                 s."suggestion_id" AS suggestion_id,
                 pr.repo_full_name AS repository,
                 s."filePath" AS file_path,
@@ -912,35 +921,35 @@ export class CockpitReviewAnalyticsService
                 s."repositoryId" AS repository_id,
                 pr."pr_number" AS pr_number,
                 (s."raw"->'comment'->>'id')::bigint AS comment_id,
-                to_char(s."suggestionCreatedAt", 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
-                COUNT(*) OVER ()::int AS total
-             FROM "analytics"."suggestions_mv" s
-             JOIN "analytics"."pull_requests_opt" pr ON pr."_id" = s."pullRequestId"
-             WHERE pr."organizationId" = $1
-               AND s."suggestionDeliveryStatus" = 'sent'
-               AND s."suggestionCreatedAt" BETWEEN $2::timestamptz AND $3::timestamptz
-               ${filters.join('\n               ')}
+                to_char(s."suggestionCreatedAt", 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+             ${fromWhere}
              ORDER BY s."suggestionCreatedAt" DESC NULLS LAST, s."suggestion_id"
              LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
-            params,
-        )) as Array<{
-            suggestion_id: string;
-            repository: string | null;
-            file_path: string | null;
-            category: string | null;
-            severity: string | null;
-            implementation_status: string | null;
-            summary: string | null;
-            existing_code: string | null;
-            improved_code: string | null;
-            language: string | null;
-            pull_request_id: string;
-            repository_id: string | null;
-            pr_number: number | null;
-            comment_id: string | number | null;
-            created_at: string | null;
-            total: number;
-        }>;
+                pageParams,
+            ) as Promise<
+                Array<{
+                    suggestion_id: string;
+                    repository: string | null;
+                    file_path: string | null;
+                    category: string | null;
+                    severity: string | null;
+                    implementation_status: string | null;
+                    summary: string | null;
+                    existing_code: string | null;
+                    improved_code: string | null;
+                    language: string | null;
+                    pull_request_id: string;
+                    repository_id: string | null;
+                    pr_number: number | null;
+                    comment_id: string | number | null;
+                    created_at: string | null;
+                }>
+            >,
+            this.ds.query(
+                `SELECT COUNT(*)::int AS total ${fromWhere}`,
+                params,
+            ) as Promise<Array<{ total: number }>>,
+        ]);
 
         const items: SuggestionsExplorerItem[] = rows.map((r) => ({
             suggestionId: r.suggestion_id,
@@ -961,7 +970,7 @@ export class CockpitReviewAnalyticsService
         }));
 
         return {
-            total: rows.length ? Number(rows[0].total) : 0,
+            total: Number(countRows?.[0]?.total ?? 0),
             page,
             pageSize,
             items,
