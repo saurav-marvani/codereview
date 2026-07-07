@@ -30,7 +30,6 @@ import { TelemetryModule } from '@libs/telemetry/modules/telemetry.module';
 import { FeatureGateModule } from '@libs/feature-gate/modules/feature-gate.module';
 import { SandboxModule } from '@libs/sandbox/modules/sandbox.module';
 import { NotificationModule } from '@libs/notifications/modules/notification.module';
-import { KodyRulesModule } from '@libs/kodyRules/modules/kodyRules.module';
 
 import { AnalyticsClassifierCron } from './cron/analytics-classifier.cron';
 import { AnalyticsIngestionCron } from './cron/analytics-ingestion.cron';
@@ -82,17 +81,6 @@ export class WorkerModule {
                     SandboxModule, // provides SANDBOX_LEASE_MANAGER_TOKEN for OutboxRelayService
                     NotificationModule,
                     SelfHostedBeaconModule,
-                    // The webhook queue consumer runs HERE (WorkflowModule
-                    // workerProviders), so the `pull-request.closed` event
-                    // the PR handlers emit is an IN-PROCESS EventEmitter2
-                    // event of this app. KodyRulesSyncListener (repo rule-
-                    // file sync on merged PRs) was only registered in the
-                    // API module tree, so the event had no listener in the
-                    // worker and PR-driven rule sync silently never ran on
-                    // the split topology (self-hosted default). Importing
-                    // the module here instantiates the listener (and the
-                    // centralized-config sync listener transitively).
-                    KodyRulesModule,
                 ],
                 providers: [
                     WorkerDrainService,
