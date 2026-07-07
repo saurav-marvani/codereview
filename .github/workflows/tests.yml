@@ -111,6 +111,18 @@ jobs:
             - name: Install dependencies
               run: pnpm install --frozen-lockfile
 
+            - name: Install apps/web dependencies
+              # apps/web is NOT a pnpm workspace member (pnpm-workspace.yaml
+              # has no `packages:` entry for it) — it's a separate,
+              # yarn-managed project (see the root `web:install` script).
+              # The root pnpm install above never touches its
+              # node_modules, so any spec that imports a real apps/web
+              # runtime dependency (e.g. @radix-ui/*, class-variance-authority)
+              # fails with "Cannot find module" unless this also runs.
+              # This job only started needing it once component specs
+              # under apps/web/src began rendering real UI components.
+              run: cd apps/web && yarn install --frozen-lockfile
+
             - name: Create environment.ts for tests
               run: |
                   cat <<'EOF' > libs/ee/configs/environment/environment.ts
