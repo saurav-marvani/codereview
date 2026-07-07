@@ -322,16 +322,41 @@ export const BYOKModelSelectorSection = () => {
                             )}
 
                             {isUnknownModel && (
-                                <p className="text-warning mt-2 flex items-start gap-1.5 text-xs">
-                                    <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
-                                    <span>
-                                        <strong>{currentValue}</strong> isn't in
-                                        your BYOK provider's model list.
-                                        Double-check the id — an invalid model
-                                        makes reviews fail, or fall back to your
-                                        BYOK fallback model.
-                                    </span>
-                                </p>
+                                <div className="border-warning/30 bg-warning/5 mt-3 rounded-lg border p-3">
+                                    <div className="flex items-start gap-2">
+                                        <AlertTriangleIcon className="text-warning mt-0.5 size-4 shrink-0" />
+                                        <div className="flex-1">
+                                            <p className="text-text-primary text-sm font-medium">
+                                                This override doesn&apos;t match
+                                                your current provider
+                                            </p>
+                                            <p className="text-text-secondary mt-1 text-xs">
+                                                <code>{currentValue}</code> isn&apos;t
+                                                offered by{" "}
+                                                <strong>
+                                                    {provider ??
+                                                        "your BYOK provider"}
+                                                </strong>
+                                                . Reviews for this {scopeLabel}{" "}
+                                                will fail or fall back until it&apos;s
+                                                updated. Use{" "}
+                                                <strong>Test model</strong> to
+                                                verify it, or reset to inherit your
+                                                BYOK main model.
+                                            </p>
+                                            <Button
+                                                variant="tertiary"
+                                                size="xs"
+                                                disabled={field.disabled}
+                                                className="mt-2"
+                                                onClick={() =>
+                                                    selectModel(parentValue)
+                                                }>
+                                                Reset to inherit
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
                             )}
 
                             {effectiveModelId && (
