@@ -690,6 +690,13 @@ export class KodyRulesSyncService {
                     repositoryId: repository.id,
                     content: decoded,
                     organizationAndTeamData,
+                    fileRef: {
+                        repository: {
+                            id: repository.id,
+                            name: repository.name,
+                        },
+                        pullRequest: pullRequestParam,
+                    },
                 });
 
                 if (!Array.isArray(rules) || rules.length === 0) {
@@ -1052,6 +1059,13 @@ export class KodyRulesSyncService {
                     repositoryId: repository.id,
                     content: decoded,
                     organizationAndTeamData,
+                    fileRef: {
+                        repository: {
+                            id: repository.id,
+                            name: repository.name,
+                        },
+                        branch,
+                    },
                 });
 
                 const oneRule = rules?.find(
@@ -1261,6 +1275,10 @@ export class KodyRulesSyncService {
             repositoryId: repository.id,
             content,
             organizationAndTeamData,
+            fileRef: {
+                repository: { id: repository.id, name: repository.name },
+                branch,
+            },
         });
 
         const oneRule = rules?.find(
@@ -1842,12 +1860,137 @@ export class KodyRulesSyncService {
         }
     }
 
+    /**
+     * File-reference tokens like `@AGENTS.md` or `@docs/standards.md`:
+     * an `@` at a word boundary followed by a path-ish token that ends in
+     * a file extension. Markers without an extension (`@kody-sync`) and
+     * extglobs (`@(a,b)`) don't match.
+     */
+    private static readonly AT_FILE_REF_RE =
+        /(?:^|[\s(<"'`])@([A-Za-z0-9_\-./]+\.[A-Za-z0-9]{1,8})\b/g;
+
+    /**
+     * Resolves `@file` references in a rule file's content and appends the
+     * referenced files' content, so LLM extraction sees the guidance that
+     * the author factored out (the standard CLAUDE.md → `@AGENTS.md`
+     * convention). Depth 1 (references inside referenced files are NOT
+     * followed), max 5 references, 100KB per file. Each reference is tried
+     * relative to the referencing file's directory first, then repo-root.
+     * Failures are logged and skipped — they never fail the sync (the
+     * context-reference subsystem separately surfaces them as sync errors).
+     */
+    private async inlineAtFileReferences(params: {
+        content: string;
+        filePath: string;
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        branch?: string;
+        pullRequest?: any;
+    }): Promise<string> {
+        const MAX_REFS = 5;
+        const MAX_BYTES_PER_FILE = 100_000;
+
+        const refs = new Set<string>();
+        for (const match of params.content.matchAll(
+            KodyRulesSyncService.AT_FILE_REF_RE,
+        )) {
+            refs.add(match[1]);
+            if (refs.size >= MAX_REFS) break;
+        }
+        if (!refs.size) return params.content;
+
+        const baseDir = path.posix.dirname(params.filePath.replace(/\\/g, '/'));
+        const sections: string[] = [];
+
+        for (const ref of refs) {
+            const candidates = Array.from(
+                new Set([
+                    baseDir && baseDir !== '.'
+                        ? path.posix.join(baseDir, ref)
+                        : ref,
+                    ref,
+                ]),
+            );
+
+            let resolvedPath: string | null = null;
+            let refContent: string | null = null;
+            for (const candidate of candidates) {
+                try {
+                    const content = await this.getFileContent({
+                        organizationAndTeamData: params.organizationAndTeamData,
+                        repository: params.repository,
+                        filename: candidate,
+                        branch: params.branch,
+                        pullRequest: params.pullRequest,
+                    });
+                    if (content) {
+                        resolvedPath = candidate;
+                        refContent = content.slice(0, MAX_BYTES_PER_FILE);
+                        break;
+                    }
+                } catch {
+                    // try next candidate
+                }
+            }
+
+            if (resolvedPath && refContent) {
+                sections.push(
+                    `<referenced-file path="${resolvedPath}" via="@${ref}">\n${refContent}\n</referenced-file>`,
+                );
+            } else {
+                this.logger.warn({
+                    message:
+                        '[kody-rules-sync] could not resolve @file reference while importing rule file',
+                    context: KodyRulesSyncService.name,
+                    metadata: {
+                        reference: `@${ref}`,
+                        referencedFrom: params.filePath,
+                        candidatesTried: candidates,
+                        repositoryId: params.repository.id,
+                    },
+                });
+            }
+        }
+
+        if (!sections.length) return params.content;
+
+        this.logger.log({
+            message: `[kody-rules-sync] inlined ${sections.length} @file reference(s) before rule extraction`,
+            context: KodyRulesSyncService.name,
+            metadata: {
+                filePath: params.filePath,
+                repositoryId: params.repository.id,
+                inlinedCount: sections.length,
+            },
+        });
+
+        return [
+            params.content,
+            '',
+            '<!-- The sections below are files referenced via @file from the content above; treat them as part of the same guidance. -->',
+            ...sections,
+        ].join('\n');
+    }
+
+    /**
+     * `@file` references (e.g. `@AGENTS.md` inside CLAUDE.md) are resolved
+     * and inlined before LLM extraction when the caller provides `fileRef`,
+     * so the referenced content isn't silently dropped from the imported
+     * rules. Verbatim `.kody/rules` templates are exempt (returned before
+     * inlining) — user-authored bodies are never mutated.
+     */
     private async convertFileToKodyRules(
         params: {
             filePath: string;
             repositoryId: string;
             content: string;
             organizationAndTeamData: OrganizationAndTeamData;
+            /** Enables @file reference inlining (needs repo name + ref). */
+            fileRef?: {
+                repository: { id: string; name: string };
+                branch?: string;
+                pullRequest?: any;
+            };
         },
         options?: {
             mainProvider?: LLMModelProvider;
@@ -1937,6 +2080,22 @@ export class KodyRulesSyncService {
             }
         }
 
+        // Resolve @file references before the LLM sees the content, so
+        // guidance split across files (CLAUDE.md → @AGENTS.md) is imported
+        // instead of silently dropped. Verbatim templates never get here
+        // (returned above), so user-authored bodies are never mutated.
+        let effectiveContent = params.content;
+        if (params.fileRef) {
+            effectiveContent = await this.inlineAtFileReferences({
+                content: params.content,
+                filePath: params.filePath,
+                organizationAndTeamData: params.organizationAndTeamData,
+                repository: params.fileRef.repository,
+                branch: params.fileRef.branch,
+                pullRequest: params.fileRef.pullRequest,
+            });
+        }
+
         const mainProvider =
             options?.mainProvider ?? LLMModelProvider.GEMINI_2_5_FLASH;
         const mainFallback =
@@ -1977,7 +2136,7 @@ export class KodyRulesSyncService {
                         .setPayload({
                             filePath: params.filePath,
                             repositoryId: params.repositoryId,
-                            content: params.content,
+                            content: effectiveContent,
                         })
                         .addPrompt({
                             role: PromptRole.SYSTEM,
@@ -2035,7 +2194,7 @@ export class KodyRulesSyncService {
                         })
                         .addPrompt({
                             role: PromptRole.USER,
-                            prompt: `File: ${params.filePath}\n\nContent:\n${params.content}`,
+                            prompt: `File: ${params.filePath}\n\nContent:\n${effectiveContent}`,
                         })
                         .addCallbacks(callbacks) // <- injeta tracker
                         .addMetadata({ runName: mainRun })
@@ -2133,7 +2292,7 @@ export class KodyRulesSyncService {
                                 .setPayload({
                                     filePath: params.filePath,
                                     repositoryId: params.repositoryId,
-                                    content: params.content,
+                                    content: effectiveContent,
                                 })
                                 .addPrompt({
                                     role: PromptRole.SYSTEM,
@@ -2141,7 +2300,7 @@ export class KodyRulesSyncService {
                                 })
                                 .addPrompt({
                                     role: PromptRole.USER,
-                                    prompt: `File: ${params.filePath}\n\nContent:\n${params.content}`,
+                                    prompt: `File: ${params.filePath}\n\nContent:\n${effectiveContent}`,
                                 })
                                 .addCallbacks(callbacks)
                                 .addMetadata({ runName: fbRun })
