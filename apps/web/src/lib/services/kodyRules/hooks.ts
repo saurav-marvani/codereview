@@ -4,7 +4,6 @@ import {
     useSuspenseFetch,
     useSuspenseFetchMany,
 } from "src/core/utils/reactQuery";
-import { useSubscriptionStatus } from "src/features/ee/subscription/_hooks/use-subscription-status";
 
 import {
     resolveRepoCount,
@@ -25,36 +24,6 @@ export const useSuspenseFindLibraryKodyRules = () => {
     );
 
     return Object.values(rules).flat();
-};
-
-export const useSuspenseKodyRulesTotalQuantity = () => {
-    return useSuspenseFetch<{ total: number }>(
-        KODY_RULES_PATHS.GET_KODY_RULES_TOTAL_QUANTITY,
-    ).total;
-};
-
-export const useKodyRulesLimits = () => {
-    const subscription = useSubscriptionStatus();
-    const total = useSuspenseKodyRulesTotalQuantity();
-
-    if (!subscription.valid)
-        return {
-            total,
-            canAddMoreRules: false,
-            limit: Number.POSITIVE_INFINITY,
-        };
-
-    if (subscription.status === "free" || subscription.status === "self-hosted")
-        return { canAddMoreRules: total < 10, total, limit: 10 };
-
-    if (subscription.status === "licensed-self-hosted")
-        return {
-            canAddMoreRules: true,
-            total,
-            limit: Number.POSITIVE_INFINITY,
-        };
-
-    return { canAddMoreRules: true, total, limit: Number.POSITIVE_INFINITY };
 };
 
 export const useSuspenseKodyRulesByRepositoryId = (

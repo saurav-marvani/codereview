@@ -27,6 +27,13 @@ export type KodyRule = {
      * Auto-sync badge can render a pin affordance.
      */
     pinnedSync?: boolean;
+    /**
+     * True when this rule is PAUSED because activating it would exceed
+     * the free plan's active-rule quota, rather than a user-initiated
+     * pause. Rendered as "Locked" with an upgrade CTA instead of a plain
+     * resume toggle.
+     */
+    lockedByPlan?: boolean;
     centralizedConfig?: {
         path: string;
         status: KodyRuleCentralizedStatus;

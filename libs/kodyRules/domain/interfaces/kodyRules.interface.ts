@@ -91,6 +91,17 @@ export interface IKodyRule {
      * the Auto-sync origin badge.
      */
     pinnedSync?: boolean;
+    /**
+     * Set when this rule was auto-paused at creation/reactivation time
+     * because activating it would have exceeded the free plan's active-rule
+     * quota (`KodyRulesService.ensureFreePlanLimit`). Distinguishes a
+     * plan-limit lock from a rule the user paused themselves — the web UI
+     * renders these as "Locked" with an upgrade CTA instead of a plain
+     * pause toggle. Cleared whenever the rule transitions to `ACTIVE`
+     * (`KodyRulesService.createOrUpdate` clears it once the org is back
+     * under quota or the plan changes).
+     */
+    lockedByPlan?: boolean;
 }
 
 export interface IKodyRuleCentralizedConfig {
