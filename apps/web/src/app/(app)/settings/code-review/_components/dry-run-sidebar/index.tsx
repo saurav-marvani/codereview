@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { SelectPullRequest } from "@components/system/select-pull-requests";
 import { Button } from "@components/ui/button";
 import { Label } from "@components/ui/label";
@@ -17,9 +17,9 @@ import { getPrsByRepository } from "@services/codeManagement/fetch";
 import { executeDryRun } from "@services/dryRun/fetch";
 import { PREVIEW_JOB_ID_KEY, useDryRun } from "@services/dryRun/hooks";
 import { DryRunStatus, IDryRunData } from "@services/dryRun/types";
+import { useQuery } from "@tanstack/react-query";
 import { FlaskConical, Info, Loader2 } from "lucide-react";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
-import { AwaitedReturnType } from "src/core/types";
 
 import { useCodeReviewRouteParams } from "../../../_hooks";
 import { EmptyState } from "./empty";
@@ -36,30 +36,18 @@ export const DryRunSidebar = () => {
     const { teamId } = useSelectedTeamId();
     const { repositoryId } = useCodeReviewRouteParams();
 
-    const [pullRequests, setPullRequests] = useState<
-        AwaitedReturnType<typeof getPrsByRepository>
-    >([]);
-    const [isPrsLoading, setIsPrsLoading] = useState(false);
+    // Lazy: only fetch the closed-PR list once the user opens the picker, so the
+    // settings page load no longer pays this ~4s query for users who never run a
+    // dry-run.
+    const [prsOpen, setPrsOpen] = useState(false);
 
-    useEffect(() => {
-        const fetchPrs = async () => {
-            setIsPrsLoading(true);
-            try {
-                const prs = await getPrsByRepository(teamId, repositoryId, {
-                    state: "closed",
-                });
-                setPullRequests(prs);
-            } catch (err) {
-                console.error("Failed to fetch pull requests:", err);
-            } finally {
-                setIsPrsLoading(false);
-            }
-        };
-
-        if (teamId && repositoryId) {
-            fetchPrs();
-        }
-    }, [teamId, repositoryId]);
+    const { data: pullRequests = [], isFetching: isPrsLoading } = useQuery({
+        queryKey: ["dry-run-closed-prs", teamId, repositoryId],
+        queryFn: () =>
+            getPrsByRepository(teamId, repositoryId, { state: "closed" }),
+        enabled: prsOpen && !!teamId && !!repositoryId,
+        staleTime: 5 * 60 * 1000,
+    });
 
     useEffectOnce(() => {
         const activeJobId = sessionStorage.getItem(PREVIEW_JOB_ID_KEY);
@@ -68,7 +56,6 @@ export const DryRunSidebar = () => {
         }
     });
 
-    const [prsOpen, setPrsOpen] = useState(false);
     const [selectedPR, setSelectedPR] = useState<
         NonNullable<typeof pullRequests>[number] | undefined
     >();
