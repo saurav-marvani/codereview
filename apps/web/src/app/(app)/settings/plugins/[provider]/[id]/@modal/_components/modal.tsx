@@ -46,6 +46,7 @@ import { EditIcon, PlugIcon, RefreshCwIcon, Trash } from "lucide-react";
 import type { AwaitedReturnType } from "src/core/types";
 import { revalidateServerSidePath } from "src/core/utils/revalidate-server-side";
 import { useMCPPluginsLimit } from "@services/mcp-manager/use-mcp-plugins-limit";
+import { countInstalledPlugins } from "src/core/utils/mcp-plugins/compute-locked-plugins";
 
 import { AuthMethodConnect } from "./auth-method-connect";
 import { RequiredConfiguration } from "./required-configuration";
@@ -62,7 +63,13 @@ export const PluginModal = ({
 }) => {
     const router = useRouter();
     const { toast } = useToast();
-    const mcpPluginsLimits = useMCPPluginsLimit(installedPlugins.length);
+    // Must agree with PluginsGrid's count — default (system-managed)
+    // plugins like "Kodus MCP" don't consume the free-plan cap, so
+    // counting raw `.length` here could block a valid install that the
+    // grid itself would've allowed.
+    const mcpPluginsLimits = useMCPPluginsLimit(
+        countInstalledPlugins(installedPlugins),
+    );
 
     const isConnected = plugin.isConnected;
     const isDefault = plugin.isDefault;
