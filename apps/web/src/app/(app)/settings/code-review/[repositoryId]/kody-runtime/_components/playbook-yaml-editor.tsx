@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+// js-yaml is pinned to 4.x (the version already in the lockfile) and ships no
+// bundled types; @types/js-yaml isn't in the lockfile, so type it locally.
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
 import { dump as dumpYaml, load as loadYaml } from "js-yaml";
 import { useFormContext } from "react-hook-form";
 import { CodeInputSimple } from "@components/ui/code-input-simple";
