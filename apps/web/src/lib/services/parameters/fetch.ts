@@ -243,6 +243,46 @@ export type EnvironmentInfraStatus = {
     tokenConfigured: boolean;
 };
 
+export type RuntimeRunCommand = {
+    command: string;
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+    durationMs: number;
+};
+export type RuntimeRunTurn = {
+    turn: number;
+    reasoning: string;
+    commands: RuntimeRunCommand[];
+};
+export type RuntimeRunRecord = {
+    runId?: string;
+    ran: boolean;
+    ok: boolean;
+    scope: string;
+    phases: Array<{ phase: string; command: string; exitCode: number; outputTail: string }>;
+    serviceLog?: string;
+    transcript: RuntimeRunTurn[];
+    summary: string;
+    findingsCount: number;
+    turns: number;
+    model?: string;
+    startedAt?: string;
+    finishedAt?: string;
+};
+
+/** The full redacted record for the run viewer (transcript + logs). */
+export const getRuntimeRun = async (runId: string) => {
+    try {
+        const response = await axiosAuthorized.fetcher<RuntimeRunRecord>(
+            `${PARAMETERS_PATHS.GET_RUNTIME_RUN}/${encodeURIComponent(runId)}`,
+        );
+        return response as RuntimeRunRecord | null;
+    } catch (error: any) {
+        return { error: error.response?.status || "Unknown error" };
+    }
+};
+
 /**
  * Preview-env infrastructure (org-level BYO-cloud, advanced/self-hosted).
  * `token`: `''` removes, omitted keeps the stored one; never returned.

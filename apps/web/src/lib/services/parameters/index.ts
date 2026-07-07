@@ -17,6 +17,8 @@ export const PARAMETERS_PATHS = {
     GET_ENVIRONMENT_INFRA_STATUS: pathToApiUrl(
         "/parameters/environment-infra/status",
     ),
+    GET_RUNTIME_RUN: pathToApiUrl("/parameters/runtime-run"),
+    LIST_RUNTIME_RUNS: pathToApiUrl("/parameters/runtime-runs"),
     UPDATE_CODE_REVIEW_PARAMETER_REPOSITORIES: pathToApiUrl(
         "/parameters/update-code-review-parameter-repositories",
     ),
