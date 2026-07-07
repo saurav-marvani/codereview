@@ -86,7 +86,19 @@ jobs:
                   node-version: "22"
 
             - name: Install pnpm
-              run: npm i -g pnpm@10.34.1
+              # Must match package.json's "packageManager" (pnpm@11.9.0).
+              # pnpm-workspace.yaml's `nodeLinker: hoisted` — the flat,
+              # yarn-like node_modules layout this repo requires for
+              # phantom-dependency resolution — is only read from that
+              # file by pnpm 11+; pnpm 10 ignores it (and .npmrc no
+              # longer carries the old `node-linker` key either, per the
+              # comment in pnpm-workspace.yaml), silently falling back to
+              # pnpm's strict/isolated linker. That's what broke this job:
+              # a phantom dep (`@radix-ui/react-avatar`, never declared in
+              # apps/web/package.json) and even declared-but-workspace-only
+              # deps (`class-variance-authority`) stopped resolving once
+              # apps/web's new component specs actually required them.
+              run: npm i -g pnpm@11.9.0
 
             - name: Cache pnpm store
               uses: actions/cache@v5.0.5
