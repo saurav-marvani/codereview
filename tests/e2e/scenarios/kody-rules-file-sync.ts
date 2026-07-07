@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { KodusSession, RunContext, Scenario } from "../lib/types.js";
@@ -107,7 +108,7 @@ export const kodyRulesFileSync: Scenario = {
         await ctx.kodus.finishOnboarding(session, repo);
         await ensureLicenseSeat(ctx.target, session, ctx.provider);
 
-        const runTag = ctx.runId.slice(0, 8);
+        const runTag = `${ctx.runId.slice(-6)}-${randomUUID().slice(0, 6)}`;
         const ruleTitle = `e2e-file-sync-rule ${runTag}`;
         let syncedRuleId: string | undefined;
 

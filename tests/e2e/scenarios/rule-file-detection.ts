@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { RunContext, Scenario } from "../lib/types.js";
 import { http } from "../lib/http.js";
 import { ensureLicenseSeat } from "../lib/onboarding.js";
@@ -85,7 +86,7 @@ export const ruleFileDetection: Scenario = {
         await ctx.kodus.finishOnboarding(session, repo);
         await ensureLicenseSeat(ctx.target, session, ctx.provider);
 
-        const runTag = ctx.runId.slice(0, 8);
+        const runTag = `${ctx.runId.slice(-6)}-${randomUUID().slice(0, 6)}`;
         // @kody-sync in every file so the merged PR force-syncs them even
         // with the repo's auto-sync toggle off (scenario stays independent
         // of tenant configuration).
