@@ -122,16 +122,19 @@ export class CrossProcessEventsBridge implements OnModuleInit, OnModuleDestroy {
         );
     }
 
+    /** Exposed for tests. */
+    readonly instanceId = INSTANCE_ID;
+
     /**
      * Whether a received envelope should be re-emitted locally: never our
-     * own (pid guard — a monolith already delivered it via the local bus).
+     * own (instance guard — the local bus already delivered it here).
      */
     shouldReemit(envelope: BridgeEnvelope | null | undefined): boolean {
         return Boolean(
             envelope &&
             envelope.name &&
             FORWARDED_EVENTS.includes(envelope.name) &&
-            envelope.pid !== process.pid,
+            envelope.instanceId !== INSTANCE_ID,
         );
     }
 
