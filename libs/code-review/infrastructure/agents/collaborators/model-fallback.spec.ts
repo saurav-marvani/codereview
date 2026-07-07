@@ -104,6 +104,22 @@ describe('runWithProviderFallback', () => {
         expect(attempt).toHaveBeenCalledTimes(1);
     });
 
+    it('still runs the fallback when the onFallback hook throws', async () => {
+        const attempt = jest.fn(async (p: AgentModelParams) => {
+            if (p.role === 'main') throw new Error('main down');
+            return p.modelName;
+        });
+        const onFallback = jest.fn(() => {
+            throw new Error('telemetry hook exploded');
+        });
+
+        const result = await run({ attempt, onFallback });
+
+        expect(result).toBe('anthropic:claude-fallback');
+        expect(attempt).toHaveBeenCalledTimes(2);
+        expect(onFallback).toHaveBeenCalledTimes(1);
+    });
+
     it('rethrows without falling back when shouldFallback vetoes (e.g. job cancelled)', async () => {
         const onFallback = jest.fn();
         const attempt = jest.fn(async () => {

@@ -75,7 +75,7 @@ export type ReviewWarningKind =
 
 export interface ReviewWarning {
     kind: ReviewWarningKind;
-    reason: "small_context_window";
+    reason: "small_context_window" | "provider_failover";
     contextWindowTokens: number;
     modelName: string;
     detail?: string;

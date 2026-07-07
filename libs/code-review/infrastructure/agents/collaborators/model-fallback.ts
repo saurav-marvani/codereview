@@ -60,6 +60,17 @@ export async function runWithProviderFallback<T>(
     const fallbackAllowed = (reason: unknown) =>
         !!opts.fallback && (opts.shouldFallback?.(reason) ?? true);
 
+    // Isolate the caller's hook: a failing logging/telemetry callback must
+    // never prevent the fallback retry from running (that would mask the very
+    // provider error we're recovering from).
+    const notifyFallback = (reason: unknown) => {
+        try {
+            opts.onFallback?.(reason);
+        } catch {
+            /* hook failures are non-fatal to the retry */
+        }
+    };
+
     let mainResult: T;
     try {
         mainResult = await opts.attempt(opts.main);
@@ -67,13 +78,13 @@ export async function runWithProviderFallback<T>(
         if (!fallbackAllowed(error)) {
             throw error;
         }
-        opts.onFallback?.(error);
+        notifyFallback(error);
         return opts.attempt(opts.fallback!);
     }
 
     // Non-throwing failure (harness-swallowed provider error): fall back too.
     if (opts.isFailure?.(mainResult) && fallbackAllowed(mainResult)) {
-        opts.onFallback?.(mainResult);
+        notifyFallback(mainResult);
         return opts.attempt(opts.fallback!);
     }
 
