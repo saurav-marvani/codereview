@@ -17,7 +17,16 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@components/ui/popover";
-import { AlertTriangleIcon, ChevronsUpDownIcon } from "lucide-react";
+import {
+    testBYOKModel,
+    type TestBYOKResult,
+} from "@services/organizationParameters/fetch";
+import {
+    AlertTriangleIcon,
+    CheckCircle2Icon,
+    ChevronsUpDownIcon,
+    XCircleIcon,
+} from "lucide-react";
 import { Controller, useFormContext } from "react-hook-form";
 import {
     useCodeReviewConfig,
@@ -53,6 +62,37 @@ export const BYOKModelSelectorSection = () => {
     const [open, setOpen] = useState(false);
     const [manual, setManual] = useState(false);
     const [search, setSearch] = useState("");
+    const [test, setTest] = useState<
+        | { status: "idle" }
+        | { status: "testing" }
+        | { status: "success" }
+        | { status: "error"; message?: string }
+    >({ status: "idle" });
+
+    const runModelTest = async (modelId: string) => {
+        if (!provider || !modelId.trim()) return;
+        setTest({ status: "testing" });
+        try {
+            const res: TestBYOKResult = await testBYOKModel({
+                provider,
+                model: modelId.trim(),
+            });
+            setTest(
+                res.ok
+                    ? { status: "success" }
+                    : {
+                          status: "error",
+                          message: res.providerMessage || res.message,
+                      },
+            );
+        } catch (error) {
+            setTest({
+                status: "error",
+                message:
+                    error instanceof Error ? error.message : "Test failed",
+            });
+        }
+    };
 
     // No main BYOK provider configured — feature hidden entirely.
     if (!provider) {
@@ -99,6 +139,7 @@ export const BYOKModelSelectorSection = () => {
 
                 const selectModel = (modelId: string) => {
                     field.onChange(modelId);
+                    setTest({ status: "idle" });
                     setOpen(false);
                 };
 
@@ -150,9 +191,10 @@ export const BYOKModelSelectorSection = () => {
                                         value={currentValue}
                                         placeholder="Type a model id"
                                         className="w-full"
-                                        onChange={(ev) =>
-                                            field.onChange(ev.target.value)
-                                        }
+                                        onChange={(ev) => {
+                                            field.onChange(ev.target.value);
+                                            setTest({ status: "idle" });
+                                        }}
                                     />
                                     <Button
                                         variant="tertiary"
@@ -290,6 +332,40 @@ export const BYOKModelSelectorSection = () => {
                                         BYOK fallback model.
                                     </span>
                                 </p>
+                            )}
+
+                            {effectiveModelId && (
+                                <div className="mt-3 flex flex-wrap items-center gap-2">
+                                    <Button
+                                        variant="helper"
+                                        size="xs"
+                                        disabled={
+                                            field.disabled ||
+                                            test.status === "testing"
+                                        }
+                                        loading={test.status === "testing"}
+                                        onClick={() =>
+                                            runModelTest(effectiveModelId)
+                                        }>
+                                        Test model
+                                    </Button>
+
+                                    {test.status === "success" && (
+                                        <span className="text-success flex items-center gap-1 text-xs">
+                                            <CheckCircle2Icon className="size-3.5" />
+                                            Works on your provider
+                                        </span>
+                                    )}
+                                    {test.status === "error" && (
+                                        <span className="text-error flex items-start gap-1 text-xs">
+                                            <XCircleIcon className="mt-0.5 size-3.5 shrink-0" />
+                                            <span>
+                                                {test.message ||
+                                                    "This model failed on your provider."}
+                                            </span>
+                                        </span>
+                                    )}
+                                </div>
                             )}
                         </CardContent>
                     </Card>

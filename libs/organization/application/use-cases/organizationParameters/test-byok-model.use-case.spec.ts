@@ -6,52 +6,87 @@ jest.mock('@libs/common/utils/crypto', () => ({
     decrypt: (v: string) => `dec:${v}`,
 }));
 
-function build(configValue: unknown) {
+function build(opts: {
+    configValue: unknown;
+    catalog?: Array<{ id: string; name: string }> | Error;
+}) {
     const orgParams = {
         findByKey: jest.fn().mockResolvedValue(
-            configValue ? { configValue } : null,
+            opts.configValue ? { configValue: opts.configValue } : null,
         ),
     } as any;
     const connectionUseCase = {
         execute: jest.fn().mockResolvedValue({ ok: true, code: 'ok', latencyMs: 5 }),
     } as any;
+    const getModels = {
+        execute: jest.fn(async () => {
+            if (opts.catalog instanceof Error) throw opts.catalog;
+            return { models: opts.catalog ?? [] };
+        }),
+    } as any;
     return {
-        useCase: new TestByokModelUseCase(orgParams, connectionUseCase),
+        useCase: new TestByokModelUseCase(orgParams, connectionUseCase, getModels),
         connectionUseCase,
     };
 }
 
 const org = { organizationId: 'org-1' };
+const moonshot = {
+    main: { provider: 'openai_compatible', apiKey: 'enc', baseURL: 'https://api.moonshot.ai/v1' },
+};
 
 describe('TestByokModelUseCase', () => {
-    it('probes the model against the saved provider with decrypted credentials', async () => {
+    it('returns ok when the model IS in the provider catalog', async () => {
         const { useCase, connectionUseCase } = build({
-            main: {
-                provider: 'openai_compatible',
-                apiKey: 'enc',
-                baseURL: 'https://api.moonshot.ai/v1',
-            },
+            configValue: moonshot,
+            catalog: [{ id: 'kimi-k2.7-code', name: 'Kimi' }],
         });
-
         const res = await useCase.execute({
             provider: 'openai_compatible',
             model: 'kimi-k2.7-code',
             organizationAndTeamData: org,
         });
-
         expect(res.ok).toBe(true);
+        expect(connectionUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('fails (not_found) when the model is NOT in the provider catalog', async () => {
+        const { useCase } = build({
+            configValue: moonshot,
+            catalog: [{ id: 'kimi-k2.7-code', name: 'Kimi' }],
+        });
+        const res = await useCase.execute({
+            provider: 'openai_compatible',
+            model: 'kimi-DOES-NOT-EXIST',
+            organizationAndTeamData: org,
+        });
+        expect(res.ok).toBe(false);
+        expect(res.code).toBe('not_found');
+    });
+
+    it('falls back to a real provider probe when there is no catalog', async () => {
+        const { useCase, connectionUseCase } = build({
+            configValue: {
+                main: { provider: 'anthropic_compatible', apiKey: 'enc', baseURL: 'https://x' },
+            },
+            catalog: new Error('listing unavailable'),
+        });
+        await useCase.execute({
+            provider: 'anthropic_compatible',
+            model: 'some-model',
+            organizationAndTeamData: org,
+        });
         expect(connectionUseCase.execute).toHaveBeenCalledWith(
             expect.objectContaining({
-                provider: 'openai_compatible',
-                model: 'kimi-k2.7-code',
+                provider: 'anthropic_compatible',
+                model: 'some-model',
                 apiKey: 'dec:enc',
-                baseURL: 'https://api.moonshot.ai/v1',
             }),
         );
     });
 
     it('rejects when the org has no saved slot for the provider', async () => {
-        const { useCase } = build(null);
+        const { useCase } = build({ configValue: null });
         await expect(
             useCase.execute({
                 provider: 'openai_compatible',
@@ -62,10 +97,10 @@ describe('TestByokModelUseCase', () => {
     });
 
     it('rejects an empty model id', async () => {
-        const { useCase } = build({ main: { provider: 'x', apiKey: 'e' } });
+        const { useCase } = build({ configValue: moonshot });
         await expect(
             useCase.execute({
-                provider: 'x',
+                provider: 'openai_compatible',
                 model: '  ',
                 organizationAndTeamData: org,
             }),

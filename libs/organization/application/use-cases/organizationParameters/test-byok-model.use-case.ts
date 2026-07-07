@@ -6,6 +6,7 @@ import {
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 
 import { resolveByokSlot } from './byok-credentials.util';
+import { GetModelsByProviderUseCase } from './get-models-by-provider.use-case';
 import {
     TestByokConnectionUseCase,
     TestByokResult,
@@ -19,11 +20,19 @@ export interface TestByokModelInput {
 
 /**
  * Validate a specific model id against the org's ACTUAL saved BYOK provider —
- * the truthful "will this model work?" check the static model catalog can't give
- * (the catalog is best-effort and, for openai_compatible, points at the wrong
- * endpoint). Resolves the stored credentials server-side and delegates to the
- * connection probe. The client sends only {provider, model}; the apiKey never
- * leaves the server.
+ * the truthful "will this model work?" check the static model catalog on its own
+ * can't give.
+ *
+ * Strategy:
+ *  1. Check the provider's REAL model catalog (fetched with the org's own
+ *     credentials, so it reflects e.g. a Moonshot proxy rather than OpenAI).
+ *     If the model isn't offered → fail fast, no inference spend.
+ *  2. When the provider can't be listed (anthropic_compatible, curated sets,
+ *     or a listing error), fall back to the connection probe — which for
+ *     baseURL providers sends a real 1-token request with the model.
+ *
+ * The client sends only {provider, model}; credentials are resolved server-side
+ * and never leave the server.
  */
 @Injectable()
 export class TestByokModelUseCase {
@@ -31,10 +40,12 @@ export class TestByokModelUseCase {
         @Inject(ORGANIZATION_PARAMETERS_SERVICE_TOKEN)
         private readonly organizationParametersService: IOrganizationParametersService,
         private readonly testByokConnectionUseCase: TestByokConnectionUseCase,
+        private readonly getModelsByProviderUseCase: GetModelsByProviderUseCase,
     ) {}
 
     async execute(input: TestByokModelInput): Promise<TestByokResult> {
-        if (!input.model?.trim()) {
+        const model = input.model?.trim();
+        if (!model) {
             throw new BadRequestException('model is required');
         }
 
@@ -49,9 +60,29 @@ export class TestByokModelUseCase {
             );
         }
 
+        // 1) Authoritative catalog check (accurate — uses the org's own creds).
+        const start = Date.now();
+        const catalog = await this.getModelsByProviderUseCase
+            .execute(input.provider, input.organizationAndTeamData)
+            .catch(() => null);
+
+        if (catalog?.models?.length) {
+            const found = catalog.models.some((m) => m.id === model);
+            return found
+                ? { ok: true, code: 'ok', latencyMs: Date.now() - start }
+                : {
+                      ok: false,
+                      code: 'not_found',
+                      latencyMs: Date.now() - start,
+                      message: `"${model}" isn't offered by your ${input.provider} provider.`,
+                      providerMessage: `Model "${model}" is not in the provider's model list.`,
+                  };
+        }
+
+        // 2) No catalog available → probe the provider directly with the model.
         return this.testByokConnectionUseCase.execute({
             provider: input.provider,
-            model: input.model,
+            model,
             apiKey: slot.apiKey,
             baseURL: slot.baseURL,
             vertexLocation: slot.vertexLocation,

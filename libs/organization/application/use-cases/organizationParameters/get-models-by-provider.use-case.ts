@@ -409,9 +409,20 @@ export class GetModelsByProviderUseCase {
         }
 
         try {
-            const modelsUrl = baseUrl.endsWith('/')
-                ? `${baseUrl}v1/models`
-                : `${baseUrl}/v1/models`;
+            // Trim trailing slashes without a regex (backtracking-safe), then
+            // only add `/v1` when the base URL doesn't already end in a version
+            // segment — a stored openai_compatible baseURL usually includes
+            // `/v1` (e.g. Moonshot's `https://api.moonshot.ai/v1`), so a naive
+            // `${baseUrl}/v1/models` would 404 on `/v1/v1/models`. Mirrors the
+            // connection probe's URL logic.
+            let trimmed = baseUrl;
+            while (trimmed.endsWith('/')) {
+                trimmed = trimmed.slice(0, -1);
+            }
+            const needsV1 = !/\/v\d+$/i.test(trimmed);
+            const modelsUrl = needsV1
+                ? `${trimmed}/v1/models`
+                : `${trimmed}/models`;
 
             const response = await axios.get<OpenAIResponse>(modelsUrl, {
                 headers: {

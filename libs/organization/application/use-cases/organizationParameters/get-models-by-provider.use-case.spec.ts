@@ -44,7 +44,8 @@ describe('GetModelsByProviderUseCase — BYOK-aware model listing', () => {
 
         expect(res.models.map((m) => m.id)).toContain('kimi-k2.7-code');
         const [url, cfg] = mockedAxios.get.mock.calls[0];
-        expect(url).toBe('https://api.moonshot.ai/v1/v1/models');
+        // baseURL already ends in /v1 → must NOT double it.
+        expect(url).toBe('https://api.moonshot.ai/v1/models');
         expect(cfg?.headers?.Authorization).toBe('Bearer decrypted:enc-key');
     });
 

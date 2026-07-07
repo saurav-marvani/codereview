@@ -29,6 +29,7 @@ import { revalidateServerSidePath } from "src/core/utils/revalidate-server-side"
 import type { BYOKConfig } from "../_types";
 import { CuratedCatalog } from "./catalog/catalog";
 import { ConfiguredSummary } from "./configured-summary";
+import { ModelOverridesBanner } from "./model-overrides-banner";
 import { SpendLimitSection } from "./spend-limit-section";
 
 type SlotState = "idle" | "editing";
@@ -352,6 +353,8 @@ export const ByokPageClient = ({
                 {showEnvNotice && llmConfigStatus && (
                     <EnvConfigNotice env={llmConfigStatus.env} />
                 )}
+
+                <ModelOverridesBanner />
 
                 <section className="flex flex-col gap-3">
                     <SlotHeader

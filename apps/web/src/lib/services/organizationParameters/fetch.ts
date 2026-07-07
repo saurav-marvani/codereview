@@ -95,6 +95,62 @@ export const testBYOK = async (params: {
     return envelope.data;
 };
 
+/**
+ * Validate a model id against the org's SAVED BYOK provider (credentials
+ * resolved server-side). Truthful "will this model work?" check.
+ */
+export const testBYOKModel = async (params: {
+    provider: string;
+    model: string;
+}): Promise<TestBYOKResult> => {
+    const envelope = await axiosAuthorized.post<{ data: TestBYOKResult }>(
+        ORGANIZATION_PARAMETERS_PATHS.TEST_BYOK_MODEL,
+        params,
+    );
+    return envelope.data;
+};
+
+export type ModelOverrideEntry = {
+    scope: "global" | "repository" | "directory";
+    repositoryId?: string;
+    repositoryName?: string;
+    directoryId?: string;
+    directoryName?: string;
+    model: string;
+    /** null when we can't judge (provider catalog unavailable). */
+    inCurrentProviderCatalog: boolean | null;
+};
+
+export type ListModelOverridesResult = {
+    provider?: string;
+    overrides: ModelOverrideEntry[];
+    mismatchedCount: number;
+};
+
+export type ClearOverrideTarget = {
+    repositoryId?: string;
+    directoryId?: string;
+};
+
+/** List per-repo/dir byokModel overrides + which mismatch the current provider. */
+export const listModelOverrides =
+    async (): Promise<ListModelOverridesResult> => {
+        const envelope = await axiosAuthorized.get<{
+            data: ListModelOverridesResult;
+        }>(ORGANIZATION_PARAMETERS_PATHS.MODEL_OVERRIDES);
+        return envelope.data;
+    };
+
+/** Bulk-clear byokModel overrides at the given targets (set to inherit). */
+export const clearModelOverrides = async (
+    targets: ClearOverrideTarget[],
+): Promise<{ clearedCount: number }> => {
+    const envelope = await axiosAuthorized.post<{
+        data: { clearedCount: number };
+    }>(ORGANIZATION_PARAMETERS_PATHS.MODEL_OVERRIDES_CLEAR, { targets });
+    return envelope.data;
+};
+
 export type LLMConfigSource = "byok" | "env" | "none";
 
 export type LLMConfigStatus = {
