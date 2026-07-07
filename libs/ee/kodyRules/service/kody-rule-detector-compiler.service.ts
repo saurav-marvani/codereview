@@ -65,10 +65,12 @@ export class KodyRuleDetectorCompilerService
                     organizationAndTeamData,
                 );
 
+            // System default (Kimi K2 + GPT-OSS-120B, no Gemini) — only used
+            // when the org has no BYOK; a BYOK org overrides via byokConfig.
             const runner = new BYOKPromptRunnerService(
                 this.promptRunnerService,
-                LLMModelProvider.GEMINI_2_5_FLASH,
-                LLMModelProvider.GEMINI_2_5_PRO,
+                LLMModelProvider.GROQ_MOONSHOTAI_KIMI_K2_,
+                LLMModelProvider.GROQ_GPT_OSS_120B,
                 byokConfig,
             );
 

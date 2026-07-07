@@ -169,10 +169,14 @@ export class KodyRulesAgentProvider extends BaseCodeReviewAgentProvider {
             });
 
             // Single-shot runner on the customer's model — no tools, no loop.
+            // The provider/fallback here are only the SYSTEM default (used when
+            // the org has no BYOK); a BYOK org overrides both via byokConfig.
+            // Kimi K2 + GPT-OSS-120B, matching the current kody-rules default —
+            // NOT the stale Gemini the v1 path hardcoded.
             const runner = new BYOKPromptRunnerService(
                 this.promptRunnerService,
-                LLMModelProvider.GEMINI_2_5_FLASH,
-                LLMModelProvider.GEMINI_2_5_PRO,
+                LLMModelProvider.GROQ_MOONSHOTAI_KIMI_K2_,
+                LLMModelProvider.GROQ_GPT_OSS_120B,
                 byokConfig,
             );
             const runJudge: RunJudge = async ({ system, user, filename }) => {
