@@ -75,6 +75,10 @@ import { SetEnvironmentInfraDto } from '@libs/organization/dtos/environment-infr
 import { PreviewEnvSecretsService } from '@libs/code-review/pipeline/services/preview-env-secrets.service';
 import { PreviewEnvInfraService } from '@libs/code-review/pipeline/services/preview-env-infra.service';
 import { RuntimeRunRepository } from '@libs/code-review/infrastructure/adapters/repositories/runtimeRun.repository';
+import { RuntimePlaybookDraftRepository } from '@libs/code-review/infrastructure/adapters/repositories/runtimePlaybookDraft.repository';
+import { PreviewEnvGenerateService } from '@libs/code-review/pipeline/services/preview-env-generate.service';
+import { GenerateRuntimePlaybookDto } from '@libs/organization/dtos/generate-runtime-playbook.dto';
+import { randomUUID } from 'crypto';
 import { transcriptToAsciicast } from '@libs/code-review/pipeline/services/preview-env-run';
 import { DeleteRepositoryCodeReviewParameterDto } from '@libs/organization/dtos/delete-repository-code-review-parameter.dto';
 import { PreviewPrSummaryDto } from '@libs/organization/dtos/preview-pr-summary.dto';
@@ -113,6 +117,9 @@ export class ParametersController {
         private readonly previewEnvInfraService: PreviewEnvInfraService,
         // Kody Runtime run records for the PR-side viewer.
         private readonly runtimeRunRepository: RuntimeRunRepository,
+        // "Generate config" — detect-agent orchestration + async draft store.
+        private readonly previewEnvGenerateService: PreviewEnvGenerateService,
+        private readonly runtimePlaybookDraftRepository: RuntimePlaybookDraftRepository,
     ) {}
 
     //#region Parameters
@@ -452,6 +459,86 @@ export class ParametersController {
             repositoryId,
         );
         return { configured: names };
+    }
+
+    // "Generate config" — the detect agent drafts the playbook from the real
+    // repo so the user never hand-writes it. A VM boot + agent run is minutes,
+    // too long to block on, so this kicks it off and returns a draftId to poll.
+    @Post('/runtime/generate')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkRepoPermissions({
+            action: Action.Create,
+            resource: ResourceType.CodeReviewSettings,
+            repo: { key: { body: 'repositoryId' } },
+        }),
+    )
+    @ApiOperation({
+        summary: 'Generate a Kody Runtime playbook',
+        description:
+            'Spin up an ephemeral VM, run the detect agent to draft a .kody/runtime.yml, and store it under a draftId to poll.',
+    })
+    public async generateRuntimePlaybook(
+        @Body() body: GenerateRuntimePlaybookDto,
+    ) {
+        const organizationId = this.request?.user?.organization?.uuid;
+        if (!organizationId) {
+            throw new Error('Organization ID is missing from request');
+        }
+        const org = { ...body.organizationAndTeamData, organizationId };
+        const draftId = randomUUID();
+        await this.runtimePlaybookDraftRepository.create({
+            draftId,
+            organizationId,
+            teamId: body.organizationAndTeamData.teamId,
+            repositoryId: body.repositoryId,
+        });
+        // Out-of-band: the detect run takes minutes; the UI polls the draft.
+        void this.previewEnvGenerateService
+            .generate({
+                organizationAndTeamData: org,
+                repository: {
+                    id: body.repositoryId,
+                    name: body.repositoryName,
+                    defaultBranch: body.defaultBranch,
+                },
+                platformType: body.platformType,
+                branch: body.branch,
+            })
+            .then((result) =>
+                this.runtimePlaybookDraftRepository.complete(
+                    draftId,
+                    result.success ? 'done' : 'error',
+                    result,
+                ),
+            )
+            .catch((error) =>
+                this.runtimePlaybookDraftRepository.complete(draftId, 'error', {
+                    success: false,
+                    error: String(error?.message ?? error),
+                }),
+            );
+        return { draftId, status: 'running' };
+    }
+
+    @Get('/runtime/generate/:draftId')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.CodeReviewSettings,
+        }),
+    )
+    @ApiOperation({
+        summary: 'Poll a Generate-config job',
+        description:
+            'Returns { status: running | done | error, result } for a draftId.',
+    })
+    public async getRuntimePlaybookDraft(@Param('draftId') draftId: string) {
+        const draft =
+            await this.runtimePlaybookDraftRepository.findByDraftId(draftId);
+        if (!draft) return { status: 'not_found', result: null };
+        return { status: draft.status, result: draft.result ?? null };
     }
 
     // Org-level infrastructure config (advanced / self-hosted BYO-cloud):

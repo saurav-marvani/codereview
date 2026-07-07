@@ -1,3 +1,4 @@
+import { Injectable } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import * as yaml from 'js-yaml';
 import { createLogger } from '@libs/core/log/logger';
@@ -110,6 +111,7 @@ const TOOLS: Anthropic.Tool[] = [
     },
 ];
 
+@Injectable()
 export class PreviewEnvDetectService {
     private readonly logger = createLogger(PreviewEnvDetectService.name);
 

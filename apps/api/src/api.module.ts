@@ -45,6 +45,11 @@ import { PreviewEnvInfraService } from '@libs/code-review/pipeline/services/prev
 import { MongooseModule } from '@nestjs/mongoose';
 import { RuntimeRunModel, RuntimeRunSchema } from '@libs/code-review/infrastructure/adapters/repositories/schemas/mongoose/runtimeRun.model';
 import { RuntimeRunRepository } from '@libs/code-review/infrastructure/adapters/repositories/runtimeRun.repository';
+import { RuntimePlaybookDraftModel, RuntimePlaybookDraftSchema } from '@libs/code-review/infrastructure/adapters/repositories/schemas/mongoose/runtimePlaybookDraft.model';
+import { RuntimePlaybookDraftRepository } from '@libs/code-review/infrastructure/adapters/repositories/runtimePlaybookDraft.repository';
+import { PreviewEnvGenerateService } from '@libs/code-review/pipeline/services/preview-env-generate.service';
+import { PreviewEnvDetectService } from '@libs/sandbox/infrastructure/services/preview-env-detect.service';
+import { VmSandboxService } from '@libs/sandbox/infrastructure/providers/vm-sandbox.service';
 import { TeamModule } from '@libs/organization/modules/team.module';
 import { TeamMembersModule } from '@libs/organization/modules/teamMembers.module';
 import { PlatformModule } from '@libs/platform/modules/platform.module';
@@ -128,6 +133,7 @@ import { NotificationController } from './controllers/notification.controller';
         WorkflowModule.register({ type: 'api' }),
         MongooseModule.forFeature([
             { name: RuntimeRunModel.name, schema: RuntimeRunSchema },
+            { name: RuntimePlaybookDraftModel.name, schema: RuntimePlaybookDraftSchema },
         ]),
         PlatformModule,
         AIEngineModule,
@@ -210,6 +216,10 @@ import { NotificationController } from './controllers/notification.controller';
         PreviewEnvSecretsService,
         PreviewEnvInfraService,
         RuntimeRunRepository,
+        RuntimePlaybookDraftRepository,
+        PreviewEnvGenerateService,
+        PreviewEnvDetectService,
+        VmSandboxService,
     ],
 })
 export class ApiModule {}
