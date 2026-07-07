@@ -1133,6 +1133,28 @@
     }
   },
   {
+    "key": "organizationParameters.controller.ts#listModelOverrides",
+    "httpMethod": "GET",
+    "urlPath": "/organization-parameters/model-overrides",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "deny",
+      "contributor": "deny"
+    }
+  },
+  {
+    "key": "organizationParameters.controller.ts#clearModelOverrides",
+    "httpMethod": "POST",
+    "urlPath": "/organization-parameters/model-overrides/clear",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "deny",
+      "contributor": "deny"
+    }
+  },
+  {
     "key": "organizationParameters.controller.ts#updateAutoLicenseAllowedUsers",
     "httpMethod": "POST",
     "urlPath": "/organization-parameters/auto-license/allowed-users",

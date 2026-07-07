@@ -30,6 +30,11 @@ import {
 } from '@libs/organization/application/use-cases/organizationParameters/test-byok-connection.use-case';
 import { TestByokModelUseCase } from '@libs/organization/application/use-cases/organizationParameters/test-byok-model.use-case';
 import {
+    ListModelOverridesUseCase,
+    ListModelOverridesResult,
+} from '@libs/organization/application/use-cases/organizationParameters/list-model-overrides.use-case';
+import { ClearModelOverridesUseCase } from '@libs/organization/application/use-cases/organizationParameters/clear-model-overrides.use-case';
+import {
     GetCockpitMetricsVisibilityUseCase,
     GET_COCKPIT_METRICS_VISIBILITY_USE_CASE_TOKEN,
 } from '@libs/organization/application/use-cases/organizationParameters/get-cockpit-metrics-visibility.use-case';
@@ -82,6 +87,8 @@ export class OrganizationParametersController {
         private readonly getLLMConfigStatusUseCase: GetLLMConfigStatusUseCase,
         private readonly testByokConnectionUseCase: TestByokConnectionUseCase,
         private readonly testByokModelUseCase: TestByokModelUseCase,
+        private readonly listModelOverridesUseCase: ListModelOverridesUseCase,
+        private readonly clearModelOverridesUseCase: ClearModelOverridesUseCase,
         @Inject(GET_COCKPIT_METRICS_VISIBILITY_USE_CASE_TOKEN)
         private readonly getCockpitMetricsVisibilityUseCase: GetCockpitMetricsVisibilityUseCase,
         private readonly ignoreBotsUseCase: IgnoreBotsUseCase,
@@ -333,6 +340,78 @@ export class OrganizationParametersController {
             model: body.model,
             organizationAndTeamData: { organizationId },
         });
+    }
+
+    @Get('/model-overrides')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.OrganizationSettings,
+        }),
+    )
+    @ApiOperation({
+        summary: 'List per-repo/dir BYOK model overrides',
+        description:
+            "Enumerate every code-review byokModel override and flag which don't match the org's current main BYOK provider — powers the provider-change banner.",
+    })
+    public async listModelOverrides(): Promise<ListModelOverridesResult> {
+        const organizationId = this.request?.user?.organization?.uuid;
+        if (!organizationId) {
+            throw new BadRequestException(
+                'Organization ID is missing from request',
+            );
+        }
+        return await this.listModelOverridesUseCase.execute({ organizationId });
+    }
+
+    @Post('/model-overrides/clear')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Create,
+            resource: ResourceType.OrganizationSettings,
+        }),
+    )
+    @ApiBody({
+        schema: {
+            type: 'object',
+            required: ['targets'],
+            properties: {
+                targets: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            repositoryId: { type: 'string' },
+                            directoryId: { type: 'string' },
+                        },
+                    },
+                },
+            },
+        },
+    })
+    @ApiOperation({
+        summary: 'Bulk-clear BYOK model overrides',
+        description:
+            'Reset byokModel to inherit ("") at the given repo/dir targets (no repositoryId = global). Only the byokModel field is touched.',
+    })
+    public async clearModelOverrides(
+        @Body()
+        body: {
+            targets?: Array<{ repositoryId?: string; directoryId?: string }>;
+        },
+    ): Promise<{ clearedCount: number }> {
+        const organizationId = this.request?.user?.organization?.uuid;
+        if (!organizationId) {
+            throw new BadRequestException(
+                'Organization ID is missing from request',
+            );
+        }
+        return await this.clearModelOverridesUseCase.execute(
+            { organizationId },
+            body?.targets ?? [],
+        );
     }
 
     @Get('/llm-config/status')

@@ -17,16 +17,20 @@ import {
     GetModelsByProviderUseCase,
     TestByokConnectionUseCase,
     TestByokModelUseCase,
+    ListModelOverridesUseCase,
+    ClearModelOverridesUseCase,
 } from '../application/use-cases/organizationParameters';
 import { PlatformModule } from '@libs/platform/modules/platform.module';
 import { CodebaseModule } from '@libs/code-review/modules/codebase.module';
 import { ProviderModule } from '@libs/core/infrastructure/services/providers/provider.module';
+import { ParametersModule } from './parameters.module';
 
 @Module({
     imports: [
         TypeOrmModule.forFeature([OrganizationParametersModel]),
         forwardRef(() => PlatformModule),
         forwardRef(() => CodebaseModule),
+        forwardRef(() => ParametersModule),
         ProviderModule,
     ],
     providers: [
@@ -50,6 +54,8 @@ import { ProviderModule } from '@libs/core/infrastructure/services/providers/pro
         GetModelsByProviderUseCase,
         TestByokConnectionUseCase,
         TestByokModelUseCase,
+        ListModelOverridesUseCase,
+        ClearModelOverridesUseCase,
     ],
     exports: [
         ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
@@ -63,6 +69,8 @@ import { ProviderModule } from '@libs/core/infrastructure/services/providers/pro
         GetModelsByProviderUseCase,
         TestByokConnectionUseCase,
         TestByokModelUseCase,
+        ListModelOverridesUseCase,
+        ClearModelOverridesUseCase,
         ProviderModule, // Added
     ],
 })
