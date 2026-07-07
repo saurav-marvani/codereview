@@ -2,6 +2,7 @@ import {
     redactPhases,
     redactSecrets,
     redactTranscript,
+    transcriptToAsciicast,
 } from './preview-env-run';
 
 /**
@@ -56,6 +57,39 @@ describe('preview-env run redaction', () => {
         expect(blob).not.toContain('sup3r-secret-value');
         expect(blob).toContain('‹redacted:JWT_SECRET›');
         expect(t[0].commands[0].durationMs).toBe(5); // non-text untouched
+    });
+
+    it('renders an asciinema v2 .cast (valid header + one output event per command)', () => {
+        const cast = transcriptToAsciicast({
+            runId: 'r1',
+            ran: true,
+            ok: true,
+            scope: 'full',
+            phases: [],
+            transcript: [
+                {
+                    turn: 1,
+                    reasoning: 'run it',
+                    commands: [
+                        { command: 'echo hi', exitCode: 0, stdout: 'hi\n', stderr: '', durationMs: 100 },
+                        { command: 'false', exitCode: 1, stdout: '', stderr: 'boom', durationMs: 50 },
+                    ],
+                },
+            ],
+            summary: 's',
+            findingsCount: 0,
+            turns: 1,
+        });
+        const lines = cast.trim().split('\n');
+        const header = JSON.parse(lines[0]);
+        expect(header.version).toBe(2); // asciinema v2
+        // events are [time, "o", text] with non-decreasing time
+        const events = lines.slice(1).map((l) => JSON.parse(l));
+        expect(events.every((e) => e[1] === 'o')).toBe(true);
+        const times = events.map((e) => e[0]);
+        expect(times).toEqual([...times].sort((a, b) => a - b));
+        expect(cast).toContain('echo hi');
+        expect(cast).toContain('boom');
     });
 
     it('redacts phase logs', () => {

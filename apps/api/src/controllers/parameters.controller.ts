@@ -75,6 +75,7 @@ import { SetEnvironmentInfraDto } from '@libs/organization/dtos/environment-infr
 import { PreviewEnvSecretsService } from '@libs/code-review/pipeline/services/preview-env-secrets.service';
 import { PreviewEnvInfraService } from '@libs/code-review/pipeline/services/preview-env-infra.service';
 import { RuntimeRunRepository } from '@libs/code-review/infrastructure/adapters/repositories/runtimeRun.repository';
+import { transcriptToAsciicast } from '@libs/code-review/pipeline/services/preview-env-run';
 import { DeleteRepositoryCodeReviewParameterDto } from '@libs/organization/dtos/delete-repository-code-review-parameter.dto';
 import { PreviewPrSummaryDto } from '@libs/organization/dtos/preview-pr-summary.dto';
 import { finished } from 'stream/promises';
@@ -531,6 +532,34 @@ export class ParametersController {
     public async getRuntimeRun(@Param('runId') runId: string) {
         const run = await this.runtimeRunRepository.findByRunId(runId);
         return run?.record ?? null;
+    }
+
+    @Get('/runtime-run/:runId/cast')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.CodeReviewSettings,
+        }),
+    )
+    @ApiOperation({
+        summary: 'Download the run as an asciinema recording',
+        description: 'The agent session as a .cast terminal recording (plays in any asciinema player).',
+    })
+    public async getRuntimeRunCast(
+        @Param('runId') runId: string,
+        @Res() response: Response,
+    ) {
+        const run = await this.runtimeRunRepository.findByRunId(runId);
+        if (!run?.record) {
+            response.status(404).send('not found');
+            return;
+        }
+        response.set({
+            'Content-Type': 'application/x-asciicast',
+            'Content-Disposition': `attachment; filename="kody-runtime-${runId}.cast"`,
+        });
+        response.send(transcriptToAsciicast(run.record));
     }
 
     @Get('/runtime-runs')

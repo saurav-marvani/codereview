@@ -75,6 +75,47 @@ export function redactTranscript(
     }));
 }
 
+/**
+ * Render the run as an asciinema v2 `.cast` — a portable terminal recording of
+ * the agent's session that plays in any asciinema player (the "video" for a
+ * headless bash agent). Times are cumulative seconds; each command is shown at
+ * a prompt, then its output, advancing the clock by the command's real
+ * duration. Input is the ALREADY-redacted record, so no secrets leak.
+ */
+export function transcriptToAsciicast(
+    record: RuntimeRunRecord,
+    startTimestamp = 0,
+): string {
+    const header = {
+        version: 2,
+        width: 120,
+        height: 30,
+        timestamp: startTimestamp,
+        title: `Kody Runtime run ${record.runId ?? ''}`.trim(),
+    };
+    const lines: string[] = [JSON.stringify(header)];
+    const crlf = (s: string) => s.replace(/\r?\n/g, '\r\n');
+    let t = 0;
+    const ev = (text: string) => lines.push(JSON.stringify([Number(t.toFixed(3)), 'o', text]));
+
+    for (const turn of record.transcript ?? []) {
+        if (turn.reasoning) {
+            ev(crlf(`\n[2m# turn ${turn.turn}: ${turn.reasoning.slice(0, 400)}[0m\n`));
+            t += 0.6;
+        }
+        for (const c of turn.commands) {
+            ev(`[32m$[0m ${crlf(c.command)}\r\n`);
+            t += 0.3;
+            const out = ((c.stdout ?? '') + (c.stderr ?? '')).slice(0, 8000);
+            if (out) ev(crlf(out.endsWith('\n') ? out : out + '\n'));
+            // Advance by the command's real wall time (capped so a 30-min build
+            // doesn't make an unwatchable recording).
+            t += Math.min(Math.max((c.durationMs ?? 0) / 1000, 0.2), 8);
+        }
+    }
+    return lines.join('\n') + '\n';
+}
+
 /** Deep-redact phase logs. */
 export function redactPhases(
     phases: RuntimeRunPhase[],

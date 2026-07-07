@@ -1276,6 +1276,17 @@
     }
   },
   {
+    "key": "parameters.controller.ts#getRuntimeRunCast",
+    "httpMethod": "GET",
+    "urlPath": "/parameters/runtime-run/:runId/cast",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "allow",
+      "repo_admin": "allow",
+      "contributor": "allow"
+    }
+  },
+  {
     "key": "parameters.controller.ts#initializeCentralizedConfig",
     "httpMethod": "POST",
     "urlPath": "/parameters/centralized-config-init",

@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { Heading } from "@components/ui/heading";
 import { Page } from "@components/ui/page";
 import { getRuntimeRun, type RuntimeRunRecord } from "@services/parameters/fetch";
+import { PARAMETERS_PATHS } from "@services/parameters";
 
 const PHASE_ORDER = ["setup", "build", "services", "test", "healthcheck"];
 
@@ -140,9 +141,20 @@ export default function RuntimeRunViewer() {
 
                 {/* Agent transcript — the "see 100%" replay */}
                 <div className="flex flex-col gap-3 rounded-xl border border-card-lv2 p-5">
-                    <Heading variant="h3">
-                        Agent session ({run.transcript?.length ?? 0} turns)
-                    </Heading>
+                    <div className="flex flex-row items-center justify-between">
+                        <Heading variant="h3">
+                            Agent session ({run.transcript?.length ?? 0} turns)
+                        </Heading>
+                        {runId && (
+                            <a
+                                href={`${PARAMETERS_PATHS.GET_RUNTIME_RUN}/${encodeURIComponent(runId)}/cast`}
+                                className="text-primary text-xs underline"
+                                target="_blank"
+                                rel="noreferrer">
+                                ▶ Download recording (.cast)
+                            </a>
+                        )}
+                    </div>
                     {(run.transcript ?? []).map((t) => (
                         <div key={t.turn} className="flex flex-col gap-2 border-t border-card-lv2 pt-3 first:border-0 first:pt-0">
                             <span className="text-text-secondary text-xs uppercase">
