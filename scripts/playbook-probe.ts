@@ -24,7 +24,14 @@ function cfgVal(name: string): string {
 // bash -c so the ssh channel fds free (hard-won from the experiment).
 function wrapService(command: string): string {
     const escaped = command.replace(/'/g, `'\\''`);
-    return `setsid bash -c '${escaped}' > /tmp/kody-svc.log 2>&1 < /dev/null & sleep 5`;
+    return `setsid bash -c '${escaped}' > /tmp/kody-svc.log 2>&1 < /dev/null & sleep 3`;
+}
+
+// Readiness POLL instead of a fixed sleep: many apps take variable time to bind
+// (gophish inits its DB on first run, Django/Node compile on boot). Retry up to
+// ~60s. `-k` tolerates gophish's self-signed admin TLS.
+function poll(url: string): string {
+    return `for i in $(seq 1 30); do curl -skf "${url}" -o /dev/null && echo HEALTH_OK && exit 0; sleep 2; done; echo "TIMEOUT waiting for ${url}"; exit 1`;
 }
 
 const REPOS = [
@@ -40,7 +47,7 @@ const REPOS = [
         ],
         build: ['npm run migrate 2>&1 | tail -3'],
         services: ['npm start'],
-        healthcheck: ['sleep 6 && curl -sf http://localhost:3000/api/health && echo HEALTH_OK'],
+        healthcheck: [poll('http://localhost:3000/api/health')],
     },
     {
         name: 'bakerydemo-django',
@@ -55,8 +62,10 @@ const REPOS = [
             '. .venv/bin/activate && python manage.py migrate --noinput 2>&1 | tail -4',
             '. .venv/bin/activate && python manage.py load_initial_data 2>&1 | tail -3 || true',
         ],
-        services: ['. .venv/bin/activate && python manage.py runserver 0.0.0.0:8000'],
-        healthcheck: ['sleep 6 && curl -sf http://localhost:8000/ -o /dev/null && echo HEALTH_OK'],
+        // --skip-checks: wagtail vs treebeard raises a system-check error
+        // (treebeard.E001) that otherwise aborts runserver on boot.
+        services: ['. .venv/bin/activate && python manage.py runserver --skip-checks --noreload 0.0.0.0:8000'],
+        healthcheck: [poll('http://localhost:8000/')],
     },
     {
         name: 'gophish-go',
@@ -66,10 +75,12 @@ const REPOS = [
         setup: [
             'curl -fsSL https://go.dev/dl/go1.22.5.linux-amd64.tar.gz -o /tmp/go.tgz && tar -C /usr/local -xzf /tmp/go.tgz && /usr/local/go/bin/go version',
         ],
-        build: ['export PATH=$PATH:/usr/local/go/bin && go build -v 2>&1 | tail -3'],
+        // -o gophish: bare `go build` names the binary after the checkout dir,
+        // not the module → ./gophish wouldn't exist.
+        build: ['export PATH=$PATH:/usr/local/go/bin && go build -o gophish -v 2>&1 | tail -3'],
         // admin listens on 127.0.0.1:3333 by default
         services: ['export PATH=$PATH:/usr/local/go/bin && ./gophish'],
-        healthcheck: ['sleep 6 && curl -skf https://localhost:3333/ -o /dev/null && echo HEALTH_OK || curl -sf http://localhost:3333/ -o /dev/null && echo HEALTH_OK'],
+        healthcheck: [poll('https://localhost:3333/')],
     },
 ];
 
@@ -101,8 +112,20 @@ async function probe(repo: (typeof REPOS)[number]) {
             let tail = '';
             for (const cmd of cmds) {
                 const r = await vm.run(cmd, { timeoutMs: 20 * 60_000 });
-                tail = (r.stdout + r.stderr).slice(-600);
-                if (r.exitCode !== 0) { ok = false; break; }
+                tail = `exit=${r.exitCode} :: ${(r.stdout + r.stderr).slice(-600)}`;
+                // services is fire-and-forget (setsid-backgrounded → spurious
+                // 255 over ssh); the healthcheck is the real readiness gate.
+                if (r.exitCode !== 0 && phase !== 'services') { ok = false; break; }
+            }
+            // Instrument: on any services/healthcheck failure, dump the booted
+            // service's OWN log — the phase output is empty (it's backgrounded),
+            // the real reason (crash on startup, missing env, wrong port) is here.
+            if (!ok && (phase === 'services' || phase === 'healthcheck')) {
+                const svc = await vm
+                    .run('tail -40 /tmp/kody-svc.log 2>/dev/null; echo "--- listening ports ---"; (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | tail -15')
+                    .then((x: any) => (x.stdout + x.stderr).slice(-1400))
+                    .catch(() => '');
+                tail += `\n      [svc.log + ports]\n${svc}`;
             }
             phases.push({ phase, ok, tail });
             if (!ok) break;

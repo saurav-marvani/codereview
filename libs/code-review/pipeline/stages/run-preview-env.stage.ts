@@ -311,7 +311,14 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
                     exitCode: r.exitCode,
                     outputTail: (r.stdout + r.stderr).slice(-2000),
                 });
-                if (r.exitCode !== 0) {
+                // The `services` phase is fire-and-forget: each service is
+                // setsid-backgrounded, and backgrounding a long-running process
+                // over SSH returns a spurious non-zero (255) even when the app
+                // came up fine. Never gate readiness on it — the healthcheck is
+                // the real gate (a crashed service fails the curl). Gating here
+                // marked healthy runs as "playbook failed" and skipped the
+                // healthcheck entirely.
+                if (r.exitCode !== 0 && phase !== 'services') {
                     ok = false;
                     break;
                 }
