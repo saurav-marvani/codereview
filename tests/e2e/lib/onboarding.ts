@@ -5,7 +5,7 @@ import type {
     TargetContext,
     TenantCredentials,
 } from "./types.js";
-import { ensureOk, http } from "./http.js";
+import { ensureOk, http, type HttpResponse } from "./http.js";
 import { logger } from "./log.js";
 
 const log = logger("onboarding");
@@ -136,6 +136,23 @@ export async function login(
 // integration removes one at a time (the category's current first), so loop
 // until the active platform is ours or there's nothing left. Self-hosted
 // uses a fresh tenant, so this is a no-op there (at most our own platform).
+// Reads the tenant's ACTIVE code-management platform (uppercased), or ""
+// when none is connected. Shared by clearConflictingIntegrations and the
+// registerIntegration timeout-recovery path below.
+async function activeCodeManagementPlatform(
+    target: TargetContext,
+    session: KodusSession,
+): Promise<string> {
+    const resp = await http<{ data?: Array<{ platformName?: string; category?: string }> }>(
+        `${target.apiBaseUrl}/integration/connections?teamId=${encodeURIComponent(session.teamId)}`,
+        { headers: { Authorization: `Bearer ${session.accessToken}` }, timeoutMs: 15_000 },
+    );
+    const active = (resp.body?.data ?? []).find(
+        (c) => (c.category ?? "CODE_MANAGEMENT") === "CODE_MANAGEMENT",
+    );
+    return (active?.platformName ?? "").toUpperCase();
+}
+
 async function clearConflictingIntegrations(
     target: TargetContext,
     provider: Provider,
@@ -143,14 +160,7 @@ async function clearConflictingIntegrations(
 ): Promise<void> {
     const wanted = provider.integrationType.toUpperCase();
     for (let i = 0; i < 8; i++) {
-        const resp = await http<{ data?: Array<{ platformName?: string; category?: string }> }>(
-            `${target.apiBaseUrl}/integration/connections?teamId=${encodeURIComponent(session.teamId)}`,
-            { headers: { Authorization: `Bearer ${session.accessToken}` }, timeoutMs: 15_000 },
-        );
-        const active = (resp.body?.data ?? []).find(
-            (c) => (c.category ?? "CODE_MANAGEMENT") === "CODE_MANAGEMENT",
-        );
-        const platform = (active?.platformName ?? "").toUpperCase();
+        const platform = await activeCodeManagementPlatform(target, session);
         if (!platform || platform === wanted) return; // clean or already ours
         log.info(`Dropping stale ${platform} integration before connecting ${wanted}`);
         await http(
@@ -161,11 +171,34 @@ async function clearConflictingIntegrations(
     }
 }
 
+// Within a single matrix run a tenant's integration only needs to be
+// registered ONCE — mirroring registeredRepoCache above. Re-POSTing
+// /code-management/auth-integration on every scenario makes the backend
+// re-validate the token against the provider's API each time; ~20
+// scenarios (plus the runner's transient retries, plus http()'s own
+// transport retries when a call hangs) is enough for Bitbucket Cloud to
+// start throttling the shared test account's auth calls — observed on
+// release run 28888685303 where every scenario after the 4th died at
+// "Registering BITBUCKET integration" with 30s-timeout aborts. Caching
+// per (apiBaseUrl, org, platform) means one validation per tenant per
+// run. Keyed on apiBaseUrl so hermetic mock servers (unique localhost
+// ports) never share a slot; scenarios that use throwaway orgs (e.g.
+// centralized-config-sync, which delete-integrations at teardown) have
+// their own organizationId and therefore their own key.
+const registeredIntegrationCache = new Set<string>();
+
 export async function registerIntegration(
     target: TargetContext,
     provider: Provider,
     session: KodusSession,
 ): Promise<void> {
+    const cacheKey = `${target.apiBaseUrl}:${session.organizationId}:${provider.integrationType}`;
+    if (registeredIntegrationCache.has(cacheKey)) {
+        log.info(
+            `${provider.integrationType} integration already registered this run — reusing (skips provider-side token re-validation)`,
+        );
+        return;
+    }
     // Cloud only: persistent tenants accumulate cross-provider integrations
     // that hijack getTypeIntegration. Self-hosted's fresh tenant never does.
     if (target.target === "cloud") {
@@ -195,21 +228,64 @@ export async function registerIntegration(
     } else {
         body.token = provider.authToken();
     }
-    const resp = await http<{ data: { status?: string } }>(
-        `${target.apiBaseUrl}/code-management/auth-integration`,
-        {
-            method: "POST",
-            headers: { Authorization: `Bearer ${session.accessToken}` },
-            body,
-            timeoutMs: 30_000,
-        },
-    );
+    let resp: HttpResponse<{ data: { status?: string } }>;
+    try {
+        resp = await http<{ data: { status?: string } }>(
+            `${target.apiBaseUrl}/code-management/auth-integration`,
+            {
+                method: "POST",
+                headers: { Authorization: `Bearer ${session.accessToken}` },
+                body,
+                timeoutMs: 60_000,
+            },
+        );
+    } catch (err) {
+        // http() only rethrows after exhausting its transport retries —
+        // meaning every attempt hung past the timeout ("This operation was
+        // aborted"). auth-integration's server side validates the token
+        // against the provider and can outlive our client timeout while
+        // still COMMITTING the integration (same eventual-consistency
+        // shape finishOnboarding handles for proxy 504s). Before failing
+        // the scenario, poll the connections list: if our platform landed,
+        // the registration succeeded and we proceed.
+        if (await pollIntegrationLanded(target, provider, session)) {
+            log.info(
+                `registerIntegration: POST timed out but the ${provider.integrationType} integration landed server-side — continuing`,
+            );
+            registeredIntegrationCache.add(cacheKey);
+            return;
+        }
+        throw err;
+    }
     ensureOk(resp, "onboarding:registerIntegration");
     if (resp.body.data?.status !== "SUCCESS") {
         throw new Error(
             `auth-integration did not return SUCCESS: ${resp.raw.slice(0, 400)}`,
         );
     }
+    registeredIntegrationCache.add(cacheKey);
+}
+
+// Post-timeout recovery probe for registerIntegration: true when the
+// wanted platform shows up as the tenant's active code-management
+// integration within ~60s. Short window on purpose — if the backend is
+// genuinely stuck we want the scenario's own failure, not a long stall.
+async function pollIntegrationLanded(
+    target: TargetContext,
+    provider: Provider,
+    session: KodusSession,
+): Promise<boolean> {
+    const wanted = provider.integrationType.toUpperCase();
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+        const platform = await activeCodeManagementPlatform(
+            target,
+            session,
+        ).catch(() => "");
+        if (platform === wanted) return true;
+        await new Promise((r) => setTimeout(r, 10_000));
+    }
+    return false;
 }
 
 // Within a single matrix run a tenant's repo only needs to be registered

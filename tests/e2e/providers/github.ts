@@ -379,6 +379,41 @@ export class GitHubProvider extends BaseProvider {
         };
     }
 
+    // GitHub list endpoints return a JSON *error envelope* ({message,
+    // documentation_url}) instead of an array when the request is rejected
+    // — most commonly the per-account primary/secondary rate limit (HTTP
+    // 403/429). Downstream code iterates these responses, so the raw
+    // symptom is an opaque `items is not iterable` FAIL that the runner
+    // can't classify (observed gating release run 28888685303 on
+    // license-attribution). Name the failure at the source instead: a
+    // rate-limit envelope becomes an explicit "rate limit exceeded" error
+    // (which isGithubRateLimit maps to a loud non-gating SKIP), anything
+    // else keeps the status + body for diagnosis.
+    private listOrThrow<T>(
+        resp: { status: number; body: T[]; raw: string },
+        label: string,
+    ): T[] {
+        if (Array.isArray(resp.body)) return resp.body;
+        // 2xx with an empty body (no JSON to parse) — treat as an empty
+        // list rather than an envelope.
+        if (
+            resp.status >= 200 &&
+            resp.status < 300 &&
+            (resp.raw ?? '').trim() === ''
+        ) {
+            return [];
+        }
+        const raw = (resp.raw ?? '').slice(0, 300);
+        if (/rate limit|abuse/i.test(raw)) {
+            throw new Error(
+                `${label}: GitHub API rate limit exceeded (HTTP ${resp.status}): ${raw}`,
+            );
+        }
+        throw new Error(
+            `${label}: expected an array from GitHub, got HTTP ${resp.status}: ${raw}`,
+        );
+    }
+
     async pollForReview(
         pr: { number: number },
         opts: { sinceIso: string; triggerId?: string; timeoutSec?: number },
@@ -463,9 +498,16 @@ export class GitHubProvider extends BaseProvider {
                     }
                     return { reviews, licenseNotice };
                 };
-                const rcRes = filterNonTrigger(reviewComments.body ?? []);
-                const icRes = filterNonTrigger(issueComments.body ?? []);
-                const reviewsList = (reviews.body ?? []).filter((r) => {
+                const rcRes = filterNonTrigger(
+                    this.listOrThrow(reviewComments, 'github:pollForReview:reviewComments'),
+                );
+                const icRes = filterNonTrigger(
+                    this.listOrThrow(issueComments, 'github:pollForReview:issueComments'),
+                );
+                const reviewsList = this.listOrThrow(
+                    reviews,
+                    'github:pollForReview:reviews',
+                ).filter((r) => {
                     const ts = r.submitted_at ?? r.created_at ?? '';
                     if (ts <= opts.sinceIso) return false;
                     const body = r.body ?? '';
