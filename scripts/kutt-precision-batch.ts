@@ -26,41 +26,20 @@ const SP = process.env.SP as string;
 
 // Ground truth. recall = a real kutt bug reintroduced (should be caught);
 // precision = a correct no-op (should yield zero findings).
+// RUNTIME-ONLY bug panel: bugs that are static-invisible (the diff looks fine)
+// but only manifest when the app actually RUNS — the class that justifies the
+// VM. A strong static reviewer can't catch these from the diff alone.
 const CASES = [
     {
-        name: 'recall-filter',
-        sha: '5862bc359cc9234f5a6740e61cf8aeb55dd6e735',
-        diff: 'diff-recall-filter.json',
-        expect: 'FIND (search/filter breaks on sqlite — raw ILIKE unsupported)',
+        name: 'runtime-nanoid-esm',
+        sha: 'ecba1327dd98e9c72912bcf7c91c517c83894cc1',
+        diff: 'diff-runtime-nanoid.json',
+        // package.json: "nanoid": "3.3.8" → "^5.0.9". nanoid v4+ is ESM-only, so
+        // the codebase's `require("nanoid")` throws ERR_REQUIRE_ESM at boot. The
+        // diff is a 1-line version bump — no static reviewer knows v5 dropped CJS
+        // without running it. Running: the app won't start.
+        expect: 'FIND (app fails to boot — nanoid ^5 is ESM-only, breaks require())',
         kind: 'recall',
-    },
-    {
-        name: 'recall-count',
-        sha: '828a32f045bc33954ad1cd4b77694d12b125aa8a',
-        diff: 'diff-recall-count.json',
-        expect: 'FIND (link/visit count wrong on sqlite — count() aliasing)',
-        kind: 'recall',
-    },
-    {
-        name: 'recall-null',
-        sha: '6afa9309d2c3d092e63982c90af5f2f5f4fb837a',
-        diff: 'diff-recall-null.json',
-        expect: 'FIND (NaN in visit stats — dropped ?? 0 guard on a new country/referrer)',
-        kind: 'recall',
-    },
-    {
-        name: 'precision-clean',
-        sha: '6093ae39e2840cc40cd7d317943b15bf1367c133',
-        diff: 'diff-precision-clean.json',
-        expect: 'NONE (a clarifying comment, no behavior change)',
-        kind: 'precision',
-    },
-    {
-        name: 'precision-refactor',
-        sha: '84b4e7c0ca33c64601d87949f022340e711b11a7',
-        diff: 'diff-precision-refactor.json',
-        expect: 'NONE (a query-ordering annotation, no behavior change)',
-        kind: 'precision',
     },
 ];
 
