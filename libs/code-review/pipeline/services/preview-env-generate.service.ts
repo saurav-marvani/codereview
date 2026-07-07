@@ -24,8 +24,8 @@ import {
  */
 export interface GeneratePlaybookInput {
     organizationAndTeamData: OrganizationAndTeamData;
-    repository: { id: string; name: string; defaultBranch?: string };
-    platformType: string;
+    repositoryId: string;
+    /** Optional override; defaults to the repo's default branch. */
     branch?: string;
 }
 
@@ -84,17 +84,29 @@ export class PreviewEnvGenerateService {
             return fail('No VM token configured (org infra config or PREVIEW_VM_TOKEN).');
         }
 
-        // Resolve the repo's clone URL + auth from the org's git integration.
-        const cloneParams: any = await this.codeManagement.getCloneParams(
-            {
-                repository: input.repository as any,
-                organizationAndTeamData: input.organizationAndTeamData,
-            },
-            input.platformType as any,
-        );
+        // Resolve the repo (+ its platform) from the org's git integration —
+        // the caller only knows the repositoryId.
+        const repos: any[] = await this.codeManagement
+            .getRepositories({ organizationAndTeamData: input.organizationAndTeamData })
+            .catch(() => []);
+        const repo = repos.find((r) => String(r?.id) === String(input.repositoryId));
+        if (!repo) {
+            return fail(`Repository ${input.repositoryId} not found in the org integration.`);
+        }
+
+        const cloneParams: any = await this.codeManagement.getCloneParams({
+            repository: {
+                id: repo.id,
+                name: repo.name,
+                fullName: repo.fullName ?? repo.full_name ?? repo.name,
+                defaultBranch: repo.defaultBranch ?? repo.default_branch,
+            } as any,
+            organizationAndTeamData: input.organizationAndTeamData,
+        });
         if (!cloneParams?.url) return fail('Could not resolve the repository clone URL.');
 
-        const branch = input.branch || input.repository.defaultBranch;
+        const platformType = cloneParams.platformType ?? repo.platform;
+        const branch = input.branch || repo.defaultBranch || repo.default_branch;
         let vm: Awaited<ReturnType<VmSandboxService['createSandboxWithRepo']>> | undefined;
         try {
             vm = await this.vmSvc.createSandboxWithRepo(
@@ -104,7 +116,7 @@ export class PreviewEnvGenerateService {
                     authUsername: cloneParams.auth?.username || undefined,
                     branch,
                     baseBranch: branch,
-                    platform: input.platformType as any,
+                    platform: platformType as any,
                 },
                 infra ?? undefined,
             );

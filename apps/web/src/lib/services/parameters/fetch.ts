@@ -271,6 +271,63 @@ export type RuntimeRunRecord = {
     finishedAt?: string;
 };
 
+export type GeneratedPlaybook = {
+    success: boolean;
+    summary: string;
+    playbookYaml: string | null;
+    config: {
+        setup?: string[];
+        build?: string[];
+        services?: string[];
+        test?: string[];
+        healthcheck?: string[];
+        requiredEnv?: string[];
+    } | null;
+    requiredEnv: string[];
+    verified: boolean;
+    error?: string;
+};
+export type RuntimePlaybookDraft = {
+    status: "running" | "done" | "error" | "not_found";
+    result: GeneratedPlaybook | null;
+};
+
+/**
+ * Kick off the async "Generate config" job (detect agent boots a VM + drafts the
+ * playbook). Returns a draftId to poll with getRuntimePlaybookDraft.
+ */
+export const generateRuntimePlaybook = async (params: {
+    teamId: string;
+    repositoryId: string;
+    branch?: string;
+}) => {
+    try {
+        const response = await axiosAuthorized.post<any>(
+            PARAMETERS_PATHS.GENERATE_RUNTIME_PLAYBOOK,
+            {
+                organizationAndTeamData: { teamId: params.teamId },
+                repositoryId: params.repositoryId,
+                branch: params.branch,
+            },
+        );
+        return response.data as { draftId: string; status: string };
+    } catch (error: any) {
+        return { error: error.response?.status || "Unknown error" };
+    }
+};
+
+/** Poll a Generate-config job by draftId. */
+export const getRuntimePlaybookDraft = async (draftId: string) => {
+    try {
+        const response = await axiosAuthorized.fetcher<RuntimePlaybookDraft>(
+            `${PARAMETERS_PATHS.GENERATE_RUNTIME_PLAYBOOK}/${encodeURIComponent(draftId)}`,
+        );
+        return response as RuntimePlaybookDraft;
+    } catch (error: any) {
+        return { error: error.response?.status || "Unknown error" } as any;
+    }
+};
+
 /** The full redacted record for the run viewer (transcript + logs). */
 export const getRuntimeRun = async (runId: string) => {
     try {

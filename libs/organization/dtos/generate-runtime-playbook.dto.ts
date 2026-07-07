@@ -18,9 +18,9 @@ class OrgTeamDto {
 }
 
 /**
- * Kick off the async "Generate config" job for a repo. The repo identity comes
- * from the settings UI (which already knows it), so the server doesn't re-look
- * it up. Returns a draftId the UI polls.
+ * Kick off the async "Generate config" job for a repo. The server resolves the
+ * repo (name/platform/clone URL) from the org integration, so the UI only sends
+ * the id. Returns a draftId the UI polls.
  */
 export class GenerateRuntimePlaybookDto {
     @IsObject()
@@ -31,18 +31,6 @@ export class GenerateRuntimePlaybookDto {
     @IsNotEmpty()
     @IsString()
     repositoryId: string;
-
-    @IsNotEmpty()
-    @IsString()
-    repositoryName: string;
-
-    @IsNotEmpty()
-    @IsString()
-    platformType: string;
-
-    @IsOptional()
-    @IsString()
-    defaultBranch?: string;
 
     @IsOptional()
     @IsString()

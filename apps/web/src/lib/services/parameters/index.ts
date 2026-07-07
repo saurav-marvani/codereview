@@ -19,6 +19,7 @@ export const PARAMETERS_PATHS = {
     ),
     GET_RUNTIME_RUN: pathToApiUrl("/parameters/runtime-run"),
     LIST_RUNTIME_RUNS: pathToApiUrl("/parameters/runtime-runs"),
+    GENERATE_RUNTIME_PLAYBOOK: pathToApiUrl("/parameters/runtime/generate"),
     UPDATE_CODE_REVIEW_PARAMETER_REPOSITORIES: pathToApiUrl(
         "/parameters/update-code-review-parameter-repositories",
     ),

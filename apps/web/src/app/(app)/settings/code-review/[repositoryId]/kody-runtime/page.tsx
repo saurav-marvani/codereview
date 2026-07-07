@@ -18,6 +18,7 @@ import { useCodeReviewSettingsMutation } from "../../_hooks/use-code-review-sett
 import { type CodeReviewFormType } from "../../_types";
 import { useCodeReviewRouteParams } from "../../../_hooks";
 import { EnvironmentEnabled } from "./_components/environment-enabled";
+import { GenerateConfigButton } from "./_components/generate-config-button";
 import { InfrastructureAdvanced } from "./_components/infrastructure-advanced";
 import { PlaybookPhase } from "./_components/playbook-phase";
 import { RequiredEnv } from "./_components/required-env";
@@ -120,9 +121,18 @@ export default function KodyRuntime() {
                         <p className="text-text-secondary text-sm">
                             How to boot the app on the VM. Each phase runs in
                             order; one shell command per line. Long-running
-                            services are backgrounded automatically.
+                            services are backgrounded automatically. Not sure
+                            what to put? Let Kody detect it from your repo.
                         </p>
                     </div>
+
+                    {repositoryId && (
+                        <GenerateConfigButton
+                            teamId={teamId}
+                            repositoryId={repositoryId}
+                            disabled={!canEdit}
+                        />
+                    )}
 
                     <PlaybookPhase
                         name="environment.setup.value"

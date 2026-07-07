@@ -21,14 +21,18 @@ describe('PreviewEnvGenerateService', () => {
         vmSvc = { isAvailable: () => true, createSandboxWithRepo: jest.fn().mockResolvedValue(vm) };
         detectAgent = { detect: jest.fn().mockResolvedValue({ success: true, summary: 'node app', playbookYaml: validYaml, playbook: {}, turns: 3, transcript: [] }) };
         infraService = { resolveInfra: jest.fn().mockResolvedValue(null) };
-        codeManagement = { getCloneParams: jest.fn().mockResolvedValue({ url: 'https://x/repo.git', auth: { token: 'tok' } }) };
+        codeManagement = {
+            getRepositories: jest.fn().mockResolvedValue([{ id: 'r1', name: 'repo', fullName: 'org/repo', defaultBranch: 'main', platform: 'github' }]),
+            getCloneParams: jest.fn().mockResolvedValue({ url: 'https://x/repo.git', auth: { token: 'tok' }, platformType: 'github' }),
+        };
         svc = new PreviewEnvGenerateService(config, vmSvc, detectAgent, infraService, codeManagement);
     });
 
-    const run = () => svc.generate({ organizationAndTeamData: org, repository, platformType: 'github' });
+    const run = () => svc.generate({ organizationAndTeamData: org, repositoryId: 'r1' });
 
-    it('orchestrates clone → provision → detect → validate and returns the playbook', async () => {
+    it('orchestrates resolve-repo → clone → provision → detect → validate and returns the playbook', async () => {
         const res = await run();
+        expect(codeManagement.getRepositories).toHaveBeenCalled();
         expect(codeManagement.getCloneParams).toHaveBeenCalled();
         expect(vmSvc.createSandboxWithRepo).toHaveBeenCalledWith(
             expect.objectContaining({ cloneUrl: 'https://x/repo.git', authToken: 'tok', branch: 'main' }),
@@ -61,6 +65,14 @@ describe('PreviewEnvGenerateService', () => {
         const res = await run();
         expect(res.success).toBe(false);
         expect(res.error).toMatch(/VM token/);
+    });
+
+    it('fails when the repo is not found in the org integration', async () => {
+        codeManagement.getRepositories.mockResolvedValueOnce([]);
+        const res = await run();
+        expect(res.success).toBe(false);
+        expect(res.error).toMatch(/not found/);
+        expect(vmSvc.createSandboxWithRepo).not.toHaveBeenCalled();
     });
 
     it('fails when the clone URL cannot be resolved', async () => {

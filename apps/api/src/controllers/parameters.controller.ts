@@ -497,12 +497,7 @@ export class ParametersController {
         void this.previewEnvGenerateService
             .generate({
                 organizationAndTeamData: org,
-                repository: {
-                    id: body.repositoryId,
-                    name: body.repositoryName,
-                    defaultBranch: body.defaultBranch,
-                },
-                platformType: body.platformType,
+                repositoryId: body.repositoryId,
                 branch: body.branch,
             })
             .then((result) =>
