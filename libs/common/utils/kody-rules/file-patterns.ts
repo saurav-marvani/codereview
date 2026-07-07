@@ -12,6 +12,7 @@ export const RULE_FILE_PATTERNS = [
     '.github/instructions/**/*.instructions.md',
 
     // Agentic
+    'AGENTS.md',
     '.agents.md',
     '.agent.md',
 
@@ -41,6 +42,23 @@ export const RULE_FILE_PATTERNS = [
 export type RuleFilePattern = (typeof RULE_FILE_PATTERNS)[number];
 
 /**
+ * Patterns used to DISCOVER rule files anywhere in a repository: every
+ * base pattern plus its `**\/`-prefixed variant, so root-level names like
+ * `CLAUDE.md` or `AGENTS.md` are also found in subdirectories (the
+ * common monorepo convention of per-directory guidance files).
+ *
+ * Discovery and recognition (`isIdeRuleSource`) intentionally share this
+ * list — a file the sync imports must always be recognised as IDE-synced
+ * afterwards. Nested sources are scoped to their subdirectory by
+ * `extractRepoSubdirFromIdeSource`, so a `services/foo/CLAUDE.md` rule
+ * applies to `services/foo/**`, not repo-wide.
+ */
+export const RULE_FILE_DISCOVERY_PATTERNS: ReadonlyArray<string> = [
+    ...RULE_FILE_PATTERNS,
+    ...RULE_FILE_PATTERNS.map((p) => `**/${p}`),
+];
+
+/**
  * Whether `sourcePath` came from an IDE rule file recognised by the auto-sync
  * importer (i.e. it matches one of `RULE_FILE_PATTERNS`, anywhere in the repo).
  *
@@ -60,11 +78,7 @@ export function isIdeRuleSource(
     sourcePath: string | null | undefined,
 ): boolean {
     if (!sourcePath) return false;
-    const patterns: string[] = [
-        ...RULE_FILE_PATTERNS,
-        ...RULE_FILE_PATTERNS.map((p) => `**/${p}`),
-    ];
-    return isFileMatchingGlob(sourcePath, patterns);
+    return isFileMatchingGlob(sourcePath, [...RULE_FILE_DISCOVERY_PATTERNS]);
 }
 
 /**
