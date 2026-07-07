@@ -168,6 +168,14 @@
     }
   },
   {
+    "route": "/runtime-run/x",
+    "expected": {
+      "billing_manager": "allow",
+      "repo_admin": "allow",
+      "contributor": "allow"
+    }
+  },
+  {
     "route": "/settings",
     "expected": {
       "billing_manager": "allow",
