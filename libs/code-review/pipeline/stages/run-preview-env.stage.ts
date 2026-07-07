@@ -20,12 +20,14 @@ import {
 import { PreviewEnvSecretsService } from '../services/preview-env-secrets.service';
 import { PreviewEnvInfraService } from '../services/preview-env-infra.service';
 import { PreviewEnvSnapshotService } from '../services/preview-env-snapshot.service';
+import { randomUUID } from 'crypto';
 import {
     RuntimeRunRecord,
     redactPhases,
     redactSecrets,
     redactTranscript,
 } from '../services/preview-env-run';
+import { RuntimeRunRepository } from '../../infrastructure/adapters/repositories/runtimeRun.repository';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 
 /**
@@ -67,6 +69,8 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
         private readonly infraService: PreviewEnvInfraService,
         // Golden-snapshot registry for warm boot (skip cold install/build).
         private readonly snapshotService: PreviewEnvSnapshotService,
+        // Durable store for the full run record (the PR-side viewer reads it).
+        private readonly runRepository: RuntimeRunRepository,
     ) {
         super();
     }
@@ -197,7 +201,9 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
             const serviceLog = await vm
                 .readFile('/tmp/kody-svc.log')
                 .catch(() => '');
+            const runId = randomUUID();
             const runtimeRun: RuntimeRunRecord = {
+                runId,
                 ran: true,
                 ok,
                 scope: scopeLabel,
@@ -213,6 +219,27 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
                 startedAt,
                 finishedAt: new Date().toISOString(),
             };
+
+            // Persist durably so the PR-side viewer can replay 100% of the run.
+            // Non-fatal: a store hiccup must not fail the review.
+            if (context.organizationAndTeamData?.organizationId) {
+                await this.runRepository
+                    .save({
+                        runId,
+                        organizationId: context.organizationAndTeamData.organizationId,
+                        teamId: context.organizationAndTeamData.teamId,
+                        repositoryId: context.repository?.id,
+                        prNumber: context.pullRequest?.number,
+                        record: runtimeRun,
+                    })
+                    .catch((error) =>
+                        this.logger.warn({
+                            message: 'Failed to persist runtime run record',
+                            context: this.stageName,
+                            error,
+                        }),
+                    );
+            }
 
             return this.updateContext(context, (draft) => {
                 draft.validSuggestions = [

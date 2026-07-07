@@ -61,8 +61,9 @@ const makeStage = (over: {
         computeKey: jest.fn().mockReturnValue('k'),
         resolveFresh: jest.fn().mockResolvedValue(null),
     } as any;
-    const stage = new RunPreviewEnvStage(config, cloneParamsResolver, agent, vmSvc, secretsService, infraService, snapshotService);
-    return { stage, vmSvc, agent, cleanup, cloneParamsResolver, fakeSandbox, secretsService, infraService, snapshotService };
+    const runRepository = { save: jest.fn().mockResolvedValue(undefined) } as any;
+    const stage = new RunPreviewEnvStage(config, cloneParamsResolver, agent, vmSvc, secretsService, infraService, snapshotService, runRepository);
+    return { stage, vmSvc, agent, cleanup, cloneParamsResolver, fakeSandbox, secretsService, infraService, snapshotService, runRepository };
 };
 
 const ctx = (over: any = {}): any => ({
@@ -187,9 +188,30 @@ describe('RunPreviewEnvStage (alpha spine)', () => {
         expect(out.runtimeRun.ran).toBe(true);
         expect(out.runtimeRun.turns).toBe(3);
         expect(out.runtimeRun.findingsCount).toBe(1);
+        expect(out.runtimeRun.runId).toBeTruthy();
         const blob = JSON.stringify(out.runtimeRun);
         expect(blob).not.toContain('hunter2-the-secret'); // scrubbed everywhere
         expect(blob).toContain('‹redacted:TOKEN›');
+    });
+
+    it('persists the run record durably (redacted) for the viewer', async () => {
+        const { stage, runRepository, secretsService } = makeStage({
+            findings: [{ severity: 'high', description: 'bug', file: 'db.js', evidence: 'x' }],
+            summary: 'ran with sup3r-secret-value',
+            transcript: [],
+        });
+        secretsService.resolveSecrets.mockResolvedValue({ TOK: 'sup3r-secret-value' });
+
+        await stage.execute(
+            ctx({ organizationAndTeamData: { organizationId: 'o1', teamId: 't1' }, pullRequest: { number: 9 } }),
+        );
+
+        expect(runRepository.save).toHaveBeenCalledTimes(1);
+        const saved = runRepository.save.mock.calls[0][0];
+        expect(saved.organizationId).toBe('o1');
+        expect(saved.prNumber).toBe(9);
+        expect(saved.runId).toBe(saved.record.runId);
+        expect(JSON.stringify(saved.record)).not.toContain('sup3r-secret-value');
     });
 
     it('warm-boots from a fresh registry snapshot (passes snapshotImage to the provisioner)', async () => {

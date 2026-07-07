@@ -15,6 +15,8 @@ export interface RuntimeRunPhase {
 }
 
 export interface RuntimeRunRecord {
+    /** Unique id for this run — the viewer link key. Set by the stage. */
+    runId?: string;
     ran: boolean;
     ok: boolean;
     scope: string;

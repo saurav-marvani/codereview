@@ -3,6 +3,7 @@ import {
     Controller,
     Get,
     Inject,
+    Param,
     Post,
     Query,
     Res,
@@ -73,6 +74,7 @@ import { SetEnvironmentSecretsDto } from '@libs/organization/dtos/environment-se
 import { SetEnvironmentInfraDto } from '@libs/organization/dtos/environment-infra.dto';
 import { PreviewEnvSecretsService } from '@libs/code-review/pipeline/services/preview-env-secrets.service';
 import { PreviewEnvInfraService } from '@libs/code-review/pipeline/services/preview-env-infra.service';
+import { RuntimeRunRepository } from '@libs/code-review/infrastructure/adapters/repositories/runtimeRun.repository';
 import { DeleteRepositoryCodeReviewParameterDto } from '@libs/organization/dtos/delete-repository-code-review-parameter.dto';
 import { PreviewPrSummaryDto } from '@libs/organization/dtos/preview-pr-summary.dto';
 import { finished } from 'stream/promises';
@@ -108,6 +110,8 @@ export class ParametersController {
         // Preview-env alpha: encrypted per-repo secrets vault + org infra.
         private readonly previewEnvSecretsService: PreviewEnvSecretsService,
         private readonly previewEnvInfraService: PreviewEnvInfraService,
+        // Kody Runtime run records for the PR-side viewer.
+        private readonly runtimeRunRepository: RuntimeRunRepository,
     ) {}
 
     //#region Parameters
@@ -507,6 +511,57 @@ export class ParametersController {
             teamId,
             organizationId,
         });
+    }
+
+    // Kody Runtime run viewer — the full redacted record (transcript + logs) so
+    // the reviewer can see 100% of what happened in the VM.
+    @Get('/runtime-run/:runId')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.CodeReviewSettings,
+        }),
+    )
+    @ApiOperation({
+        summary: 'Get a Kody Runtime run',
+        description: 'The full redacted run record (transcript, phase/service logs, summary, findings).',
+    })
+    @ApiOkResponse({ type: ApiStringResponseDto })
+    public async getRuntimeRun(@Param('runId') runId: string) {
+        const run = await this.runtimeRunRepository.findByRunId(runId);
+        return run?.record ?? null;
+    }
+
+    @Get('/runtime-runs')
+    @ApiQuery({ name: 'teamId', type: String, required: true })
+    @ApiQuery({ name: 'repositoryId', type: String, required: true })
+    @ApiQuery({ name: 'prNumber', type: Number, required: true })
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.CodeReviewSettings,
+        }),
+    )
+    @ApiOperation({
+        summary: 'List Kody Runtime runs for a PR',
+        description: 'Lightweight history (status, findings count, timings) — no transcript.',
+    })
+    @ApiOkResponse({ type: ApiStringResponseDto })
+    public async listRuntimeRuns(
+        @Query('repositoryId') repositoryId: string,
+        @Query('prNumber') prNumber: string,
+    ) {
+        const organizationId = this.request?.user?.organization?.uuid;
+        if (!organizationId) {
+            throw new Error('Organization ID is missing from request');
+        }
+        return this.runtimeRunRepository.listByPr(
+            organizationId,
+            repositoryId,
+            Number(prNumber),
+        );
     }
     //#endregion
 

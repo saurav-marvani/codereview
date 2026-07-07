@@ -1265,6 +1265,17 @@
     }
   },
   {
+    "key": "parameters.controller.ts#getRuntimeRun",
+    "httpMethod": "GET",
+    "urlPath": "/parameters/runtime-run/:runId",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "allow",
+      "repo_admin": "allow",
+      "contributor": "allow"
+    }
+  },
+  {
     "key": "parameters.controller.ts#initializeCentralizedConfig",
     "httpMethod": "POST",
     "urlPath": "/parameters/centralized-config-init",
@@ -1279,6 +1290,17 @@
     "key": "parameters.controller.ts#listCodeReviewAutomationLabels",
     "httpMethod": "GET",
     "urlPath": "/parameters/list-code-review-automation-labels",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "allow",
+      "repo_admin": "allow",
+      "contributor": "allow"
+    }
+  },
+  {
+    "key": "parameters.controller.ts#listRuntimeRuns",
+    "httpMethod": "GET",
+    "urlPath": "/parameters/runtime-runs",
     "expected": {
       "owner": "allow",
       "billing_manager": "allow",

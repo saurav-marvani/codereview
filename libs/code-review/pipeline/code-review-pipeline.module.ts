@@ -1,6 +1,9 @@
 import { CloneParamsResolverService } from './services/clone-params-resolver.service';
 import { Module, forwardRef } from '@nestjs/common';
+import { MongooseModule } from '@nestjs/mongoose';
 import { McpCoreModule } from '@libs/mcp-server/mcp-core.module';
+import { RuntimeRunModel, RuntimeRunSchema } from '../infrastructure/adapters/repositories/schemas/mongoose/runtimeRun.model';
+import { RuntimeRunRepository } from '../infrastructure/adapters/repositories/runtimeRun.repository';
 
 // Stages
 import { AggregateResultsStage } from './stages/aggregate-result.stage';
@@ -112,6 +115,9 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         SandboxModule,
         NotificationModule,
         UserCoreModule,
+        MongooseModule.forFeature([
+            { name: RuntimeRunModel.name, schema: RuntimeRunSchema },
+        ]),
     ],
     providers: [
         // Strategy
@@ -168,6 +174,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         PreviewEnvSecretsService,
         PreviewEnvInfraService,
         PreviewEnvSnapshotService,
+        RuntimeRunRepository,
         AgentReviewStage,
         BugAgentProvider,
         SecurityAgentProvider,
@@ -227,6 +234,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         PreviewEnvSecretsService,
         PreviewEnvInfraService,
         PreviewEnvSnapshotService,
+        RuntimeRunRepository,
         AgentReviewStage,
         ReviewOrchestratorService,
     ],

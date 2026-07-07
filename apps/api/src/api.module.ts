@@ -42,6 +42,9 @@ import { OrganizationParametersModule } from '@libs/organization/modules/organiz
 import { ParametersModule } from '@libs/organization/modules/parameters.module';
 import { PreviewEnvSecretsService } from '@libs/code-review/pipeline/services/preview-env-secrets.service';
 import { PreviewEnvInfraService } from '@libs/code-review/pipeline/services/preview-env-infra.service';
+import { MongooseModule } from '@nestjs/mongoose';
+import { RuntimeRunModel, RuntimeRunSchema } from '@libs/code-review/infrastructure/adapters/repositories/schemas/mongoose/runtimeRun.model';
+import { RuntimeRunRepository } from '@libs/code-review/infrastructure/adapters/repositories/runtimeRun.repository';
 import { TeamModule } from '@libs/organization/modules/team.module';
 import { TeamMembersModule } from '@libs/organization/modules/teamMembers.module';
 import { PlatformModule } from '@libs/platform/modules/platform.module';
@@ -123,6 +126,9 @@ import { NotificationController } from './controllers/notification.controller';
         OrganizationParametersModule,
         ParametersModule,
         WorkflowModule.register({ type: 'api' }),
+        MongooseModule.forFeature([
+            { name: RuntimeRunModel.name, schema: RuntimeRunSchema },
+        ]),
         PlatformModule,
         AIEngineModule,
         AgentsModule,
@@ -203,6 +209,7 @@ import { NotificationController } from './controllers/notification.controller';
         // (settings UI). Deps come from OrganizationParametersModule.
         PreviewEnvSecretsService,
         PreviewEnvInfraService,
+        RuntimeRunRepository,
     ],
 })
 export class ApiModule {}
