@@ -25,18 +25,43 @@ describe('CrossProcessEventsBridge', () => {
         pullRequestNumber: 42,
     };
 
-    it('forwards a local pull-request.closed via pg_notify with pid', async () => {
-        const { bridge, query } = makeBridge();
+    it('stores the envelope in a row and notifies only its id', async () => {
+        const query = jest
+            .fn()
+            .mockResolvedValueOnce([{ id: 77 }]) // INSERT ... RETURNING id
+            .mockResolvedValueOnce(undefined); // pg_notify
+        const { bridge } = makeBridge(query);
 
         await bridge.forwardPullRequestClosed(payload);
 
-        expect(query).toHaveBeenCalledWith('SELECT pg_notify($1, $2)', [
-            'kodus_cross_process_events',
-            expect.stringContaining('"pullRequestNumber":42'),
-        ]);
-        const envelope = JSON.parse(query.mock.calls[0][1][1]);
+        const [insertSql, insertArgs] = query.mock.calls[0];
+        expect(insertSql).toContain('INSERT INTO kodus_cross_process_events');
+        const envelope = JSON.parse(insertArgs[0]);
         expect(envelope.pid).toBe(process.pid);
         expect(envelope.name).toBe('pull-request.closed');
+        expect(envelope.payload.pullRequestNumber).toBe(42);
+
+        expect(query).toHaveBeenCalledWith('SELECT pg_notify($1, $2)', [
+            'kodus_cross_process_events',
+            '77',
+        ]);
+    });
+
+    it('large payloads are not dropped (row transport has no NOTIFY cap)', async () => {
+        const query = jest
+            .fn()
+            .mockResolvedValueOnce([{ id: 78 }])
+            .mockResolvedValueOnce(undefined);
+        const { bridge } = makeBridge(query);
+
+        await bridge.forwardPullRequestClosed({
+            files: Array.from({ length: 500 }, (_, i) => ({
+                filename: `src/file-${i}.ts`,
+                status: 'modified',
+            })),
+        });
+
+        expect(query).toHaveBeenCalledTimes(2);
     });
 
     it('does NOT re-forward bridged payloads (no ping-pong)', async () => {
@@ -58,16 +83,6 @@ describe('CrossProcessEventsBridge', () => {
         await expect(
             bridge.forwardPrExecutionUpdated(payload),
         ).resolves.toBeUndefined();
-    });
-
-    it('drops oversized payloads instead of failing', async () => {
-        const { bridge, query } = makeBridge();
-
-        await bridge.forwardPullRequestClosed({
-            files: 'x'.repeat(10_000),
-        });
-
-        expect(query).not.toHaveBeenCalled();
     });
 
     it('re-emits only foreign, known events', () => {

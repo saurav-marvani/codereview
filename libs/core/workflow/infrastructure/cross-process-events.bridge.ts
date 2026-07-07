@@ -7,6 +7,9 @@ import { Client } from 'pg';
 import { createLogger } from '@libs/core/log/logger';
 
 const PG_CHANNEL = 'kodus_cross_process_events';
+const PG_TABLE = 'kodus_cross_process_events';
+/** Rows older than this are garbage; cleaned opportunistically. */
+const ROW_TTL_MINUTES = 60;
 
 /**
  * Events that must survive the process boundary. Everything else on the
@@ -136,27 +139,73 @@ export class CrossProcessEventsBridge implements OnModuleInit, OnModuleDestroy {
         } catch {
             return; // non-serializable payload — local-only event
         }
-        if (serialized.length > 7_500) {
-            this.logger.warn({
-                message: `Cross-process event ${name} exceeds the NOTIFY payload limit — delivered locally only`,
-                context: CrossProcessEventsBridge.name,
-                metadata: { name, size: serialized.length },
-            });
-            return;
-        }
 
         try {
-            // pg_notify via the shared TypeORM pool — the publish half
-            // needs no dedicated connection.
+            // NOTIFY payloads are capped at 8KB by Postgres, and
+            // pull-request.closed carries the PR's file list (unbounded).
+            // Store the envelope in a row and notify only the id, so
+            // payload size can never silently drop an event.
+            const rows = await this.dataSource.query(
+                `INSERT INTO ${PG_TABLE} (envelope) VALUES ($1::jsonb) RETURNING id`,
+                [serialized],
+            );
+            const id = rows?.[0]?.id;
+            if (id === undefined || id === null) {
+                throw new Error('insert returned no id');
+            }
             await this.dataSource.query('SELECT pg_notify($1, $2)', [
                 PG_CHANNEL,
-                serialized,
+                String(id),
             ]);
         } catch (error) {
             this.logger.warn({
                 message: `Failed to forward ${name} across processes (local delivery unaffected)`,
                 context: CrossProcessEventsBridge.name,
                 error,
+            });
+        }
+    }
+
+    /**
+     * Table + trigger-free schema, created idempotently at boot. Rows are
+     * read by every OTHER process (multiple listeners), so reads never
+     * delete; expired rows are swept opportunistically on connect.
+     */
+    private async ensureInfra(): Promise<void> {
+        await this.dataSource.query(
+            `CREATE TABLE IF NOT EXISTS ${PG_TABLE} (
+                id bigserial PRIMARY KEY,
+                envelope jsonb NOT NULL,
+                created_at timestamptz NOT NULL DEFAULT now()
+            )`,
+        );
+        await this.dataSource.query(
+            `DELETE FROM ${PG_TABLE} WHERE created_at < now() - interval '${ROW_TTL_MINUTES} minutes'`,
+        );
+    }
+
+    private async deliverById(rawId: string): Promise<void> {
+        const id = Number(rawId);
+        if (!Number.isFinite(id)) return;
+        try {
+            const rows = await this.dataSource.query(
+                `SELECT envelope FROM ${PG_TABLE} WHERE id = $1`,
+                [id],
+            );
+            const envelope = rows?.[0]?.envelope as BridgeEnvelope | undefined;
+            if (this.shouldReemit(envelope)) {
+                this.eventEmitter.emit(envelope!.name, {
+                    ...envelope!.payload,
+                    [BRIDGED_FLAG]: true,
+                });
+            }
+        } catch (error) {
+            this.logger.warn({
+                message:
+                    'Failed to fetch cross-process event envelope — event skipped in this process',
+                context: CrossProcessEventsBridge.name,
+                error,
+                metadata: { id },
             });
         }
     }
@@ -186,22 +235,12 @@ export class CrossProcessEventsBridge implements OnModuleInit, OnModuleDestroy {
 
         client.on('notification', (msg) => {
             if (msg.channel !== PG_CHANNEL || !msg.payload) return;
-            let envelope: BridgeEnvelope | null = null;
-            try {
-                envelope = JSON.parse(msg.payload) as BridgeEnvelope;
-            } catch {
-                return;
-            }
-            if (this.shouldReemit(envelope)) {
-                this.eventEmitter.emit(envelope!.name, {
-                    ...envelope!.payload,
-                    [BRIDGED_FLAG]: true,
-                });
-            }
+            void this.deliverById(msg.payload);
         });
 
         try {
             await client.connect();
+            await this.ensureInfra();
             await client.query(`LISTEN ${PG_CHANNEL}`);
             this.client = client;
             this.reconnectDelayMs = 1_000;
