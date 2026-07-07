@@ -73,11 +73,16 @@ const REPOS = [
         branch: 'master',
         auth: undefined,
         setup: [
+            // gcc: go-sqlite3 (gophish's DB driver via goose) needs CGO; without
+            // a C compiler CGO is off and sqlite3.Error is stubbed → build fails.
+            'apt-get install -y -qq gcc >/dev/null 2>&1 && gcc --version | head -1',
             'curl -fsSL https://go.dev/dl/go1.22.5.linux-amd64.tar.gz -o /tmp/go.tgz && tar -C /usr/local -xzf /tmp/go.tgz && /usr/local/go/bin/go version',
         ],
         // -o gophish: bare `go build` names the binary after the checkout dir,
-        // not the module → ./gophish wouldn't exist.
-        build: ['export PATH=$PATH:/usr/local/go/bin && go build -o gophish -v 2>&1 | tail -3'],
+        // not the module → ./gophish wouldn't exist. `test -f` gates the phase on
+        // the binary actually existing — `| tail` alone masks a build failure's
+        // exit code (same trap as a piped `... | tail`), marking build falsely ✓.
+        build: ['export PATH=$PATH:/usr/local/go/bin CGO_ENABLED=1 && (go build -o gophish 2>&1 | tail -20); test -f ./gophish || { echo GOPHISH_BUILD_FAILED; exit 1; }'],
         // admin listens on 127.0.0.1:3333 by default
         services: ['export PATH=$PATH:/usr/local/go/bin && ./gophish'],
         healthcheck: [poll('https://localhost:3333/')],
@@ -140,8 +145,12 @@ async function probe(repo: (typeof REPOS)[number]) {
 }
 
 async function main() {
-    console.log('[probe] provisioning + booting 3 stacks in parallel…');
-    const results = await Promise.all(REPOS.map(probe));
+    // PROBE_ONLY=gophish-go,kutt-node re-tests a subset after a fix without
+    // burning VMs on already-green stacks.
+    const only = (process.env.PROBE_ONLY ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    const repos = only.length ? REPOS.filter((r) => only.includes(r.name)) : REPOS;
+    console.log(`[probe] provisioning + booting ${repos.length} stack(s) in parallel…`);
+    const results = await Promise.all(repos.map(probe));
     console.log('\n########## PLAYBOOK PROBE RESULTS');
     for (const r of results) {
         console.log(`\n=== ${r.name}: ${r.green ? 'GREEN ✓' : 'FAILED ✕'} ${r.error ? '('+r.error+')' : ''}`);
@@ -150,7 +159,7 @@ async function main() {
         }
     }
     const greens = results.filter((r) => r.green).length;
-    console.log(`\n########## ${greens}/${results.length} stacks booted GREEN from zero`);
+    console.log(`\n########## ${greens}/${results.length} stack(s) booted GREEN from zero`);
 }
 
 main().catch((e) => { console.error('[probe] FAILED:', e?.message ?? e); process.exit(1); });
