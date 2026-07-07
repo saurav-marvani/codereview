@@ -310,5 +310,29 @@ describe('ChatWithKodyFromGitUseCase', () => {
                 }),
             );
         });
+
+        it('runs the agent for a managed/BYOK plan that returns NOT_ERROR (no per-seat block)', async () => {
+            // A paid managed (or BYOK) org validated without a userGitId comes
+            // back allowed:false + errorType NOT_ERROR — the "we skipped the
+            // per-user check" signal, which the code-review pipeline treats as
+            // a pass. The gate must NOT block it (it's not trial-ended).
+            permissionValidationService.validateExecutionPermissions.mockResolvedValue(
+                {
+                    allowed: false,
+                    errorType: 'NOT_ERROR',
+                },
+            );
+
+            await useCase.execute(conversationPayload());
+
+            expect(conversationAgentUseCase.execute).toHaveBeenCalled();
+            expect(
+                codeManagementService.createResponseToComment,
+            ).not.toHaveBeenCalledWith(
+                expect.objectContaining({
+                    body: expect.stringContaining('trial has ended'),
+                }),
+            );
+        });
     });
 });

@@ -7,7 +7,10 @@ import { ConversationAgentUseCase } from '@libs/agents/application/use-cases/con
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { IntegrationConfigEntity } from '@libs/integrations/domain/integrationConfigs/entities/integration-config.entity';
-import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
+import {
+    PermissionValidationService,
+    ValidationErrorType,
+} from '@libs/ee/shared/services/permissionValidation.service';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import {
     ISandboxLeaseManager,
@@ -713,7 +716,16 @@ export class ChatWithKodyFromGitUseCase {
         // BYOK always allowed (any plan); managed trial and development mode
         // run on the Kodus default model; cloud orgs past the trial without
         // BYOK are not funded by Kodus — reply with a pointer to connect a
-        // key instead of running the agent (or staying silent).
+        // key instead of running the agent.
+        //
+        // userGitId is intentionally omitted: the gate is an ORG-level plan
+        // check (does this org get replies at all), NOT per-seat licensing.
+        // Passing the commenter's id would make BYOK/managed plans run the
+        // per-user license check and block unlicensed commenters — which
+        // contradicts "BYOK orgs always get replies regardless of plan".
+        // NOT_ERROR is exactly that "no userGitId, so we skipped the per-user
+        // check" signal — the code-review pipeline treats it as a pass
+        // (validate-prerequisites.stage.ts), so we do too.
         const permission =
             await this.permissionValidationService.validateExecutionPermissions(
                 organizationAndTeamData,
@@ -721,7 +733,11 @@ export class ChatWithKodyFromGitUseCase {
                 ChatWithKodyFromGitUseCase.name,
             );
 
-        if (!permission.allowed) {
+        const permissionBlocked =
+            !permission.allowed &&
+            permission.errorType !== ValidationErrorType.NOT_ERROR;
+
+        if (permissionBlocked) {
             this.logger.warn({
                 message:
                     'Conversation blocked by plan policy (no BYOK outside trial); replying with BYOK guidance',
