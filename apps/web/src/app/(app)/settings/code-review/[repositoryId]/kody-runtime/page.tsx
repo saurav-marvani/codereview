@@ -121,54 +121,71 @@ export default function KodyRuntime() {
                         <p className="text-text-secondary text-sm">
                             How to boot the app on the VM. Each phase runs in
                             order; one shell command per line. Long-running
-                            services are backgrounded automatically. Not sure
-                            what to put? Let Kody detect it from your repo.
+                            services are backgrounded automatically.
+                            {!isGlobal &&
+                                " Not sure what to put? Let Kody detect it from your repo."}
                         </p>
                     </div>
 
-                    {repositoryId && (
-                        <GenerateConfigButton
-                            teamId={teamId}
-                            repositoryId={repositoryId}
-                            disabled={!canEdit}
-                        />
+                    {isGlobal ? (
+                        // The playbook (how to boot the app) is specific to each
+                        // repo, so it — and "Generate config", which needs a real
+                        // repo to inspect — only make sense per repository.
+                        <p className="text-text-secondary text-sm">
+                            The playbook is specific to each app, so it&apos;s
+                            configured per repository. Open a repository&apos;s
+                            Kody Runtime settings to set it up (or let Kody
+                            generate it).
+                        </p>
+                    ) : (
+                        <>
+                            {repositoryId && (
+                                <GenerateConfigButton
+                                    teamId={teamId}
+                                    repositoryId={repositoryId}
+                                    disabled={!canEdit}
+                                />
+                            )}
+
+                            <PlaybookPhase
+                                name="environment.setup.value"
+                                label="Setup"
+                                helper="Install dependencies (e.g. npm ci, pip install -r requirements.txt)."
+                                placeholder={"npm ci\ncp .env.example .env"}
+                            />
+                            <PlaybookPhase
+                                name="environment.build.value"
+                                label="Build"
+                                helper="Compile / prepare the app (e.g. npm run build, migrations)."
+                                placeholder={"npm run build\nnpm run db:migrate"}
+                            />
+                            <PlaybookPhase
+                                name="environment.services.value"
+                                label="Services"
+                                helper="Long-running processes to start (server, worker). These are backgrounded."
+                                placeholder={"npm run start\nredis-server"}
+                            />
+                            <PlaybookPhase
+                                name="environment.test.value"
+                                label="Test"
+                                helper="Optional smoke/tests to run after boot."
+                                placeholder={"npm test"}
+                            />
+                            <PlaybookPhase
+                                name="environment.healthcheck.value"
+                                label="Health check"
+                                helper="Commands that verify the app is up (e.g. curl the health endpoint)."
+                                placeholder={"curl -sf http://localhost:3000/health"}
+                            />
+                        </>
                     )}
-
-                    <PlaybookPhase
-                        name="environment.setup.value"
-                        label="Setup"
-                        helper="Install dependencies (e.g. npm ci, pip install -r requirements.txt)."
-                        placeholder={"npm ci\ncp .env.example .env"}
-                    />
-                    <PlaybookPhase
-                        name="environment.build.value"
-                        label="Build"
-                        helper="Compile / prepare the app (e.g. npm run build, migrations)."
-                        placeholder={"npm run build\nnpm run db:migrate"}
-                    />
-                    <PlaybookPhase
-                        name="environment.services.value"
-                        label="Services"
-                        helper="Long-running processes to start (server, worker). These are backgrounded."
-                        placeholder={"npm run start\nredis-server"}
-                    />
-                    <PlaybookPhase
-                        name="environment.test.value"
-                        label="Test"
-                        helper="Optional smoke/tests to run after boot."
-                        placeholder={"npm test"}
-                    />
-                    <PlaybookPhase
-                        name="environment.healthcheck.value"
-                        label="Health check"
-                        helper="Commands that verify the app is up (e.g. curl the health endpoint)."
-                        placeholder={"curl -sf http://localhost:3000/health"}
-                    />
                 </div>
 
-                <div className="flex flex-col gap-4 rounded-xl border border-card-lv2 p-5">
-                    <RequiredEnv />
-                </div>
+                {!isGlobal && (
+                    <div className="flex flex-col gap-4 rounded-xl border border-card-lv2 p-5">
+                        <RequiredEnv />
+                    </div>
+                )}
 
                 {isGlobal ? (
                     <div className="rounded-xl border border-card-lv2 p-5">
