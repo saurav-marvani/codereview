@@ -55,7 +55,13 @@ const KUTT_ENV = {
     build: ['npm run migrate 2>&1 | tail -3'],
     services: ['npm start'],
     test: [] as string[],
-    healthcheck: ['sleep 6 && curl -sf http://localhost:3000/api/health && echo HEALTH_OK'],
+    // Readiness POLL (not a fixed sleep) — the proven-green probe pattern. A
+    // fixed `sleep 6` marked the app not-ready before Node finished binding, so
+    // the agent booted into an env with no running app and couldn't reproduce
+    // the search/filter bug → false recall miss.
+    healthcheck: [
+        'for i in $(seq 1 30); do curl -sf http://localhost:3000/api/health -o /dev/null && echo HEALTH_OK && exit 0; sleep 2; done; echo TIMEOUT; exit 1',
+    ],
 };
 
 async function runCase(c: (typeof CASES)[number]) {
@@ -81,6 +87,7 @@ async function runCase(c: (typeof CASES)[number]) {
     };
     const changedFiles = JSON.parse(fs.readFileSync(`${SP}/${c.diff}`, 'utf8'));
 
+    const captured: { rec?: any } = {};
     const stage = new RunPreviewEnvStage(
         config,
         cloneParamsResolver,
@@ -89,7 +96,7 @@ async function runCase(c: (typeof CASES)[number]) {
         { resolveSecrets: async () => ({ JWT_SECRET: 'kutt-batch-secret-9931' }) } as any,
         { resolveInfra: async () => null } as any,
         { computeKey: () => 'k', resolveFresh: async () => null } as any,
-        { save: async () => undefined } as any,
+        { save: async (r: any) => { captured.rec = r; } } as any,
     );
 
     const context: any = {
@@ -102,7 +109,18 @@ async function runCase(c: (typeof CASES)[number]) {
 
     const out: any = await stage.execute(context);
     const findings = out.validSuggestions ?? [];
-    return { name: c.name, kind: c.kind, expect: c.expect, findings };
+    // The stub runRepository.save is gated (no org context), so read the record
+    // straight off the returned context (draft.runtimeRun + previewEnvSignal) to
+    // diagnose env-vs-judgment: app up (healthcheck ok) + agent worked (turns)?
+    const rec = captured.rec?.record ?? out.runtimeRun ?? {};
+    const sig = out.previewEnvSignal ?? {};
+    const phases = (sig.phases ?? rec.phases ?? [])
+        .map((p: any) => `${p.phase}:${p.exitCode}`)
+        .join(' ');
+    return {
+        name: c.name, kind: c.kind, expect: c.expect, findings,
+        diag: { ok: sig.ok ?? rec.ok, turns: rec.turns, phases, summary: (rec.summary ?? '').slice(0, 400) },
+    };
 }
 
 async function main() {
@@ -112,7 +130,8 @@ async function main() {
         try {
             const r = await runCase(c);
             results.push(r);
-            console.log(`>>> ${c.name}: ${r.findings.length} finding(s)`);
+            console.log(`>>> ${c.name}: ${r.findings.length} finding(s) | env-ok=${r.diag?.ok} turns=${r.diag?.turns} phases=[${r.diag?.phases}]`);
+            console.log(`    agent summary: ${r.diag?.summary}`);
             for (const f of r.findings) {
                 console.log(`    [${f.severity}] ${f.relevantFile}: ${(f.oneSentenceSummary || f.suggestionContent || '').slice(0, 160)}`);
             }
