@@ -125,9 +125,29 @@ describe('isDetectorRegexSafe — ReDoS guard', () => {
         expect(isDetectorRegexSafe('(a*)*')).toBe(false);
         expect(isDetectorRegexSafe('([a-z]+)*')).toBe(false);
     });
+    it('rejects bounded outer quantifiers on an inner-quantified group (#1480 review)', () => {
+        // `{n,}`/`{n,m}` are just as catastrophic as a bare `*`/`+` when
+        // applied to a group that already contains its own quantifier —
+        // the pre-fix heuristic only matched a bare `*`/`+` right after
+        // the group, so these slipped through.
+        expect(isDetectorRegexSafe('(a+){3,}')).toBe(false);
+        expect(isDetectorRegexSafe('(a*){5}')).toBe(false);
+        expect(isDetectorRegexSafe('(a+){1,100}')).toBe(false);
+    });
     it('accepts ordinary detector patterns', () => {
         expect(isDetectorRegexSafe('console\\.(log|warn|error)\\(')).toBe(true);
         expect(isDetectorRegexSafe('\\bDateTime\\.now\\s*\\(')).toBe(true);
+    });
+    it('accepts a plain quantified char class — not a nested-quantifier shape (#1480 review)', () => {
+        // Regression guard: the char-class branch of the ReDoS regex
+        // used to flag ANY class followed by a quantifier, regardless of
+        // the class's content — so `[a-z]+`, one of the most common
+        // regex shapes, was wrongly declined as unsafe. A class only
+        // becomes suspect when it itself contains a quantifier-ish
+        // char (e.g. `[a-z+]{2,}`), mirroring the group check.
+        expect(isDetectorRegexSafe('[a-z]+')).toBe(true);
+        expect(isDetectorRegexSafe('[a-zA-Z0-9_]+')).toBe(true);
+        expect(isDetectorRegexSafe('[a-z]*')).toBe(true);
     });
     it('rejects an over-long pattern', () => {
         expect(isDetectorRegexSafe('a'.repeat(201))).toBe(false);
