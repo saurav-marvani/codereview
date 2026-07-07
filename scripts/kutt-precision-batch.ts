@@ -35,10 +35,31 @@ const CASES = [
         kind: 'recall',
     },
     {
+        name: 'recall-count',
+        sha: '828a32f045bc33954ad1cd4b77694d12b125aa8a',
+        diff: 'diff-recall-count.json',
+        expect: 'FIND (link/visit count wrong on sqlite — count() aliasing)',
+        kind: 'recall',
+    },
+    {
+        name: 'recall-null',
+        sha: '6afa9309d2c3d092e63982c90af5f2f5f4fb837a',
+        diff: 'diff-recall-null.json',
+        expect: 'FIND (NaN in visit stats — dropped ?? 0 guard on a new country/referrer)',
+        kind: 'recall',
+    },
+    {
         name: 'precision-clean',
         sha: '6093ae39e2840cc40cd7d317943b15bf1367c133',
         diff: 'diff-precision-clean.json',
         expect: 'NONE (a clarifying comment, no behavior change)',
+        kind: 'precision',
+    },
+    {
+        name: 'precision-refactor',
+        sha: '84b4e7c0ca33c64601d87949f022340e711b11a7',
+        diff: 'diff-precision-refactor.json',
+        expect: 'NONE (a query-ordering annotation, no behavior change)',
         kind: 'precision',
     },
 ];
@@ -50,7 +71,12 @@ const KUTT_ENV = {
     setup: [
         'apt-get install -y -qq nodejs npm >/dev/null 2>&1 && node --version',
         'npm install --no-audit --no-fund 2>&1 | tail -2',
-        "grep -v '^JWT_SECRET=' .example.env > .env && cat /opt/kody/customer.env >> .env",
+        // Robust env: seed from .example.env, append the injected customer.env
+        // IF it exists (the product path), and GUARANTEE JWT_SECRET is set so the
+        // app actually boots. The old `&& cat /opt/kody/customer.env` aborted the
+        // whole setup (exit 1) when the file wasn't present → app never booted →
+        // the agent could only reason statically. Never let this line fail.
+        "cp .example.env .env; [ -f /opt/kody/customer.env ] && cat /opt/kody/customer.env >> .env; grep -q '^JWT_SECRET=..' .env || echo 'JWT_SECRET=kutt-batch-secret-9931' >> .env; true",
     ],
     build: ['npm run migrate 2>&1 | tail -3'],
     services: ['npm start'],
@@ -124,26 +150,37 @@ async function runCase(c: (typeof CASES)[number]) {
 }
 
 async function main() {
-    const results: any[] = [];
-    for (const c of CASES) {
-        console.log(`\n########## CASE ${c.name} (${c.kind}) — expect: ${c.expect}`);
-        try {
-            const r = await runCase(c);
-            results.push(r);
-            console.log(`>>> ${c.name}: ${r.findings.length} finding(s) | env-ok=${r.diag?.ok} turns=${r.diag?.turns} phases=[${r.diag?.phases}]`);
-            console.log(`    agent summary: ${r.diag?.summary}`);
-            for (const f of r.findings) {
-                console.log(`    [${f.severity}] ${f.relevantFile}: ${(f.oneSentenceSummary || f.suggestionContent || '').slice(0, 160)}`);
+    // Parallel (cold): each case provisions its own VM; the parallel-safe VM
+    // name (randomBytes) makes concurrent provisions collision-free. ~15min for
+    // the whole panel instead of ~75min sequential.
+    console.log(`[batch] running ${CASES.length} cases in parallel…`);
+    const results = await Promise.all(
+        CASES.map(async (c) => {
+            try {
+                const r = await runCase(c);
+                console.log(`>>> ${c.name} (${c.kind}): ${r.findings.length} finding(s) | env-ok=${r.diag?.ok} turns=${r.diag?.turns} phases=[${r.diag?.phases}]`);
+                for (const f of r.findings) {
+                    console.log(`    [${f.severity}] ${f.relevantFile}: ${(f.oneSentenceSummary || f.suggestionContent || '').slice(0, 160)}`);
+                }
+                return r;
+            } catch (e: any) {
+                console.log(`>>> ${c.name}: ERROR ${e?.message ?? e}`);
+                return { name: c.name, kind: c.kind, expect: c.expect, error: String(e?.message ?? e), findings: [] };
             }
-        } catch (e: any) {
-            console.log(`>>> ${c.name}: ERROR ${e?.message ?? e}`);
-            results.push({ name: c.name, kind: c.kind, error: String(e?.message ?? e) });
-        }
-    }
+        }),
+    );
+    // Score: recall = caught / recall-cases; precision noise = precision-cases
+    // that (wrongly) produced findings.
+    const recallCases = results.filter((r) => r.kind === 'recall');
+    const precisionCases = results.filter((r) => r.kind === 'precision');
+    const caught = recallCases.filter((r) => (r.findings?.length ?? 0) > 0);
+    const noisy = precisionCases.filter((r) => (r.findings?.length ?? 0) > 0);
     console.log('\n########## BATCH SUMMARY');
-    for (const r of results) {
-        console.log(`${r.name} (${r.kind}): ${r.error ? 'ERROR' : `${r.findings.length} finding(s)`} — expected ${r.expect ?? ''}`);
+    for (const r of results as any[]) {
+        const mark = r.error ? 'ERROR' : r.kind === 'recall' ? ((r.findings.length > 0) ? 'CAUGHT ✓' : 'MISSED ✕') : ((r.findings.length === 0) ? 'CLEAN ✓' : 'NOISE ✕');
+        console.log(`${mark}  ${r.name} (${r.kind}): ${r.findings?.length ?? 0} finding(s) — expected ${r.expect ?? ''}`);
     }
+    console.log(`\n########## RECALL ${caught.length}/${recallCases.length} · PRECISION ${precisionCases.length - noisy.length}/${precisionCases.length} clean (${noisy.length} noisy)`);
 }
 
 main().catch((e) => {
