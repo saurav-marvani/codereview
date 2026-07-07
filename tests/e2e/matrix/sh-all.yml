@@ -19,6 +19,9 @@ scenarios:
     # verbatim + multi-glob path enforced on a file matching the 2nd glob.
     # github-only (needs mergePR).
     - kody-rules-file-sync
+    # Detection semantics (no review step, cheap): root AGENTS.md,
+    # nested CLAUDE.md scoped to its subdir, lowercase claude.md.
+    - rule-file-detection
     - license-attribution
     # Cockpit analytics availability (github × license-paid cell only via
     # appliesTo): proves the analytics warehouse is up (API) AND the /cockpit

@@ -9,6 +9,7 @@ import commandReview from './command-review.js';
 import commandReviewFocus from './command-review-focus.js';
 import kodyRulesCreateAndApply from './kody-rules.js';
 import kodyRulesFileSync from './kody-rules-file-sync.js';
+import ruleFileDetection from './rule-file-detection.js';
 import licenseAttribution from './license-attribution.js';
 import onboardingWebhookRegistration from './onboarding-webhook-registration.js';
 import perSeatLicenseToggle from './per-seat-license-toggle.js';
@@ -36,6 +37,7 @@ export const allScenarios: Record<string, Scenario> = {
     [cockpitAnalytics.id]: cockpitAnalytics,
     [kodyRulesCreateAndApply.id]: kodyRulesCreateAndApply,
     [kodyRulesFileSync.id]: kodyRulesFileSync,
+    [ruleFileDetection.id]: ruleFileDetection,
     [licenseAttribution.id]: licenseAttribution,
     [perSeatLicenseToggle.id]: perSeatLicenseToggle,
     [publicPrDemo.id]: publicPrDemo,
@@ -73,6 +75,7 @@ export {
     commandReviewFocus,
     kodyRulesCreateAndApply,
     kodyRulesFileSync,
+    ruleFileDetection,
     licenseAttribution,
     onboardingWebhookRegistration,
     perSeatLicenseToggle,

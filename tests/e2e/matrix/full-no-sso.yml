@@ -27,6 +27,9 @@ scenarios:
     # verbatim + multi-glob path enforced on a file matching the 2nd glob.
     # github-only (needs mergePR).
     - kody-rules-file-sync
+    # Detection semantics (no review step, cheap): root AGENTS.md,
+    # nested CLAUDE.md scoped to its subdir, lowercase claude.md.
+    - rule-file-detection
     - license-attribution
     # Per-seat gate: appliesTo restricts to self-hosted × github × license-paid
     # (one cell). Skipped automatically when SH_LICENSE_KEY_PATH (default
