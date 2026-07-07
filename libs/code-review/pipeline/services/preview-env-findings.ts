@@ -17,10 +17,13 @@ export function buildDiffFromChangedFiles(changedFiles: FileChange[] = []): stri
         .join('\n');
 }
 
-/** Wrap the executed repro as a collapsed proof block for the PR comment. */
-export function proofBlock(evidence: string): string {
+/** Wrap the executed repro as a collapsed proof block for the PR comment.
+ *  When a run viewer URL is given, a link to the full run (transcript + logs)
+ *  is appended so the reviewer can open the whole session from the PR. */
+export function proofBlock(evidence: string, runUrl?: string): string {
     const body = (evidence ?? '').slice(0, 6000).trim();
-    return `\n\n<details><summary>✅ Reproduced by running the PR in a preview environment</summary>\n\n\`\`\`\n${body}\n\`\`\`\n</details>`;
+    const link = runUrl ? `\n\n▶ [View the full Kody Runtime run](${runUrl})` : '';
+    return `\n\n<details><summary>✅ Reproduced by running the PR in a preview environment</summary>\n\n\`\`\`\n${body}\n\`\`\`\n</details>${link}`;
 }
 
 /**
@@ -64,12 +67,13 @@ export function firstChangedLineForFile(
 export function findingToSuggestion(
     finding: PreviewFinding,
     changedFiles: FileChange[] = [],
+    runUrl?: string,
 ): Partial<CodeSuggestion> & { postPrLevel?: boolean } {
     const anchor = firstChangedLineForFile(changedFiles, finding.file);
     return {
         relevantFile: finding.file,
         language: '',
-        suggestionContent: (finding.description ?? '').trim() + proofBlock(finding.evidence),
+        suggestionContent: (finding.description ?? '').trim() + proofBlock(finding.evidence, runUrl),
         oneSentenceSummary: (finding.description ?? '').split('\n')[0].slice(0, 160),
         improvedCode: '',
         relevantLinesStart: anchor ?? 1,
@@ -101,8 +105,9 @@ export function findingsToSuggestions(
     findings: PreviewFinding[],
     focus?: string,
     changedFiles: FileChange[] = [],
+    runUrl?: string,
 ): Array<Partial<CodeSuggestion> & { postPrLevel?: boolean }> {
     return applyFocus(findings, focus).map((f) =>
-        findingToSuggestion(f, changedFiles),
+        findingToSuggestion(f, changedFiles, runUrl),
     );
 }

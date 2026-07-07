@@ -35,6 +35,14 @@ describe('preview-env findings mapping', () => {
         expect(b).toContain('$ ran');
     });
 
+    it('proofBlock appends the run viewer link when a URL is given', () => {
+        const b = proofBlock('$ ran', 'https://app.kodus.io/runtime-run/abc');
+        expect(b).toContain('[View the full Kody Runtime run](https://app.kodus.io/runtime-run/abc)');
+        // and the finding maps it through
+        const s = findingToSuggestion(f(), [], 'https://app.kodus.io/runtime-run/xyz');
+        expect(s.suggestionContent).toContain('/runtime-run/xyz');
+    });
+
     it('findingToSuggestion maps fields + label + embeds proof', () => {
         const s = findingToSuggestion(f());
         expect(s.relevantFile).toBe('src/Web/Pages/Basket/Index.cshtml.cs');

@@ -175,10 +175,13 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
                 focus: context.reviewDirective,
             });
 
+            const runId = randomUUID();
+            const runUrl = this.runViewerUrl(runId);
             const suggestions = findingsToSuggestions(
                 agentRes.findings,
                 context.reviewDirective,
                 context.changedFiles,
+                runUrl,
             );
             const offDiffCount = suggestions.filter((s) => s.postPrLevel).length;
             this.logger.log({
@@ -201,7 +204,6 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
             const serviceLog = await vm
                 .readFile('/tmp/kody-svc.log')
                 .catch(() => '');
-            const runId = randomUUID();
             const runtimeRun: RuntimeRunRecord = {
                 runId,
                 ran: true,
@@ -317,6 +319,13 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
             if (!ok) break;
         }
         return { ok, scopeLabel, phases };
+    }
+
+    /** The web viewer URL for a run, appended to findings so the reviewer can
+     *  open the full session (transcript + logs) from the PR. */
+    private runViewerUrl(runId: string): string | undefined {
+        const base = this.configService.get<string>('API_FRONTEND_URL');
+        return base ? `${base.replace(/\/$/, '')}/runtime-run/${runId}` : undefined;
     }
 
     private agentApiKey(): string | undefined {
