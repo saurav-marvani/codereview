@@ -3,10 +3,17 @@ import {
     getModelCapabilities,
     ReasoningConfig,
 } from '@kodus/kodus-common/llm';
+import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { ProviderService } from '@libs/core/infrastructure/services/providers/provider.service';
 import { createLogger } from '@libs/core/log/logger';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+    IOrganizationParametersService,
+    ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
+} from '@libs/organization/domain/organizationParameters/contracts/organizationParameters.service.contract';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import axios from 'axios';
+
+import { resolveByokSlot } from './byok-credentials.util';
 
 // Interfaces for API responses
 interface OpenAIModel {
@@ -60,43 +67,69 @@ export interface ModelResponse {
 export class GetModelsByProviderUseCase {
     private readonly logger = createLogger(GetModelsByProviderUseCase.name);
 
-    constructor(private readonly providerService: ProviderService) {}
+    constructor(
+        private readonly providerService: ProviderService,
+        @Inject(ORGANIZATION_PARAMETERS_SERVICE_TOKEN)
+        private readonly organizationParametersService: IOrganizationParametersService,
+    ) {}
 
-    async execute(provider: string): Promise<ModelResponse> {
+    async execute(
+        provider: string,
+        organizationAndTeamData?: OrganizationAndTeamData,
+    ): Promise<ModelResponse> {
         if (!this.providerService.isProviderSupported(provider)) {
             throw new BadRequestException(`Unsupported provider: ${provider}`);
         }
 
         const byokProvider = provider as BYOKProvider;
 
+        // Prefer the org's OWN saved BYOK credentials so the catalog reflects
+        // the user's actual endpoint/key (e.g. an openai_compatible proxy like
+        // Moonshot) rather than Kodus' bundled env keys — otherwise the list is
+        // for the wrong account and the user's real models all look "unknown".
+        // Falls back to env when no saved slot matches (e.g. the setup wizard,
+        // before the config is saved).
+        const creds = await resolveByokSlot(
+            this.organizationParametersService,
+            byokProvider,
+            organizationAndTeamData,
+        );
+
         switch (byokProvider) {
             case BYOKProvider.OPENAI:
-                return this.getOpenAIModels(process.env.API_OPEN_AI_API_KEY);
+                return this.getOpenAIModels(
+                    creds?.apiKey ?? process.env.API_OPEN_AI_API_KEY,
+                );
 
             case BYOKProvider.ANTHROPIC:
                 return this.getAnthropicModels(
-                    process.env.API_ANTHROPIC_API_KEY,
+                    creds?.apiKey ?? process.env.API_ANTHROPIC_API_KEY,
                 );
 
             case BYOKProvider.GOOGLE_GEMINI:
-                return this.getGeminiModels(process.env.API_GOOGLE_AI_API_KEY);
+                return this.getGeminiModels(
+                    creds?.apiKey ?? process.env.API_GOOGLE_AI_API_KEY,
+                );
 
             case BYOKProvider.GOOGLE_VERTEX:
                 return this.getVertexModels();
 
             case BYOKProvider.OPEN_ROUTER:
                 return this.getOpenRouterModels(
-                    process.env.API_OPEN_ROUTER_API_KEY,
+                    creds?.apiKey ?? process.env.API_OPEN_ROUTER_API_KEY,
                 );
 
             case BYOKProvider.NOVITA:
-                return this.getNovitaModels(process.env.API_NOVITA_AI_API_KEY);
+                return this.getNovitaModels(
+                    creds?.apiKey ?? process.env.API_NOVITA_AI_API_KEY,
+                );
 
             case BYOKProvider.OPENAI_COMPATIBLE:
                 return this.getOpenAICompatibleModels(
-                    process.env.API_OPEN_AI_API_KEY,
-                    process.env.API_OPENAI_FORCE_BASE_URL ||
-                        'https://api.openai.com',
+                    creds?.apiKey ?? process.env.API_OPEN_AI_API_KEY,
+                    creds?.baseURL ??
+                        (process.env.API_OPENAI_FORCE_BASE_URL ||
+                            'https://api.openai.com'),
                 );
 
             case BYOKProvider.AMAZON_BEDROCK:

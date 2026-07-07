@@ -28,6 +28,7 @@ import {
     TestByokConnectionUseCase,
     TestByokResult,
 } from '@libs/organization/application/use-cases/organizationParameters/test-byok-connection.use-case';
+import { TestByokModelUseCase } from '@libs/organization/application/use-cases/organizationParameters/test-byok-model.use-case';
 import {
     GetCockpitMetricsVisibilityUseCase,
     GET_COCKPIT_METRICS_VISIBILITY_USE_CASE_TOKEN,
@@ -80,6 +81,7 @@ export class OrganizationParametersController {
         private readonly deleteByokConfigUseCase: DeleteByokConfigUseCase,
         private readonly getLLMConfigStatusUseCase: GetLLMConfigStatusUseCase,
         private readonly testByokConnectionUseCase: TestByokConnectionUseCase,
+        private readonly testByokModelUseCase: TestByokModelUseCase,
         @Inject(GET_COCKPIT_METRICS_VISIBILITY_USE_CASE_TOKEN)
         private readonly getCockpitMetricsVisibilityUseCase: GetCockpitMetricsVisibilityUseCase,
         private readonly ignoreBotsUseCase: IgnoreBotsUseCase,
@@ -205,7 +207,11 @@ export class OrganizationParametersController {
     public async listModels(
         @Query('provider') provider: string,
     ): Promise<ModelResponse> {
-        return await this.getModelsByProviderUseCase.execute(provider);
+        const organizationId = this.request?.user?.organization?.uuid;
+        return await this.getModelsByProviderUseCase.execute(
+            provider,
+            organizationId ? { organizationId } : undefined,
+        );
     }
 
     @Delete('/delete-byok-config')
@@ -288,6 +294,45 @@ export class OrganizationParametersController {
         },
     ): Promise<TestByokResult> {
         return await this.testByokConnectionUseCase.execute(body);
+    }
+
+    @Post('/test-byok-model')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Create,
+            resource: ResourceType.OrganizationSettings,
+        }),
+    )
+    @ApiBody({
+        schema: {
+            type: 'object',
+            required: ['provider', 'model'],
+            properties: {
+                provider: { type: 'string' },
+                model: { type: 'string' },
+            },
+        },
+    })
+    @ApiOperation({
+        summary: 'Test a BYOK model id',
+        description:
+            "Validate a model id against the org's SAVED BYOK provider (credentials resolved server-side). Surfaces the provider's real error (e.g. model-not-found) at config time instead of at review time.",
+    })
+    public async testByokModel(
+        @Body() body: { provider: string; model: string },
+    ): Promise<TestByokResult> {
+        const organizationId = this.request?.user?.organization?.uuid;
+        if (!organizationId) {
+            throw new BadRequestException(
+                'Organization ID is missing from request',
+            );
+        }
+        return await this.testByokModelUseCase.execute({
+            provider: body.provider,
+            model: body.model,
+            organizationAndTeamData: { organizationId },
+        });
     }
 
     @Get('/llm-config/status')

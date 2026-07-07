@@ -16,6 +16,7 @@ import {
     GetCockpitMetricsVisibilityUseCase,
     GetModelsByProviderUseCase,
     TestByokConnectionUseCase,
+    TestByokModelUseCase,
 } from '../application/use-cases/organizationParameters';
 import { PlatformModule } from '@libs/platform/modules/platform.module';
 import { CodebaseModule } from '@libs/code-review/modules/codebase.module';
@@ -48,6 +49,7 @@ import { ProviderModule } from '@libs/core/infrastructure/services/providers/pro
         IgnoreBotsUseCase,
         GetModelsByProviderUseCase,
         TestByokConnectionUseCase,
+        TestByokModelUseCase,
     ],
     exports: [
         ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
@@ -60,6 +62,7 @@ import { ProviderModule } from '@libs/core/infrastructure/services/providers/pro
         GET_COCKPIT_METRICS_VISIBILITY_USE_CASE_TOKEN,
         GetModelsByProviderUseCase,
         TestByokConnectionUseCase,
+        TestByokModelUseCase,
         ProviderModule, // Added
     ],
 })
