@@ -118,7 +118,10 @@ export class PullRequestsModel extends CoreDocument {
     @Prop({ type: String, required: false })
     public provider: string;
 
-    @Prop({ type: { id: String, username: String, name: String, email: String }, required: false })
+    @Prop({
+        type: { id: String, username: String, name: String, email: String },
+        required: false,
+    })
     public user: {
         id: string;
         username: string;
@@ -210,4 +213,16 @@ PullRequestsSchema.index(
 PullRequestsSchema.index(
     { createdAt: 1 },
     { name: 'idx_createdAt_for_analytics_backfill' },
+);
+
+// PR-dashboard segment facets count DISTINCT PRs that delivered a suggestion
+// (see PullRequestsRepository.countDeliveredPullRequests). The document-level
+// countDocuments needs this multikey index to resolve the org + delivery match
+// from the index instead of a full collection scan + files×suggestions unwind
+// (multi-second at scale). Multikey on the nested files→suggestions path.
+// Em prod criar com `{ background: true }` antes de virar a flag (autoIndex
+// pode travar startup em coleções grandes).
+PullRequestsSchema.index(
+    { 'organizationId': 1, 'files.suggestions.deliveryStatus': 1 },
+    { name: 'idx_org_files_suggestions_delivery' },
 );

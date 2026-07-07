@@ -478,12 +478,12 @@ export class PullRequestsRepository implements IPullRequestsRepository {
         repositoryIds: string[] | undefined,
         opts: { severities?: string[]; authorEmail?: string },
     ): Promise<number> {
-        const match: Record<string, any> = { organizationId };
+        const filter: Record<string, any> = { organizationId };
         if (repositoryIds?.length) {
-            match['repository.id'] = { $in: repositoryIds };
+            filter['repository.id'] = { $in: repositoryIds };
         }
         if (opts.authorEmail) {
-            match.$expr = {
+            filter.$expr = {
                 $eq: [
                     { $toLower: { $ifNull: ['$user.email', ''] } },
                     opts.authorEmail.toLowerCase(),
@@ -491,44 +491,30 @@ export class PullRequestsRepository implements IPullRequestsRepository {
             };
         }
 
-        const pipeline: any[] = [
-            { $match: match },
-            { $unwind: '$files' },
-            { $unwind: '$files.suggestions' },
-            {
-                $match: {
-                    'files.suggestions.deliveryStatus': DeliveryStatus.SENT,
-                },
-            },
-        ];
-
+        // Count each qualifying PR once, WITHOUT $unwind of files×suggestions —
+        // that explosion turned a distinct-PR count into a multi-second
+        // collection scan at scale. A PR qualifies when it carries a delivered
+        // suggestion; when severities are given, the delivered + severity
+        // conditions must hold on the SAME suggestion, so they go inside a
+        // nested $elemMatch. Severity is stored lowercase, matching the
+        // already-lowercased `opts.severities`. Backed by the
+        // {organizationId, 'files.suggestions.deliveryStatus'} index.
         if (opts.severities?.length) {
-            pipeline.push({
-                $match: {
-                    $expr: {
-                        $in: [
-                            {
-                                $toLower: {
-                                    $ifNull: [
-                                        '$files.suggestions.severity',
-                                        '',
-                                    ],
-                                },
-                            },
-                            opts.severities,
-                        ],
+            filter.files = {
+                $elemMatch: {
+                    suggestions: {
+                        $elemMatch: {
+                            deliveryStatus: DeliveryStatus.SENT,
+                            severity: { $in: opts.severities },
+                        },
                     },
                 },
-            });
+            };
+        } else {
+            filter['files.suggestions.deliveryStatus'] = DeliveryStatus.SENT;
         }
 
-        pipeline.push(
-            { $group: { _id: { r: '$repository.id', n: '$number' } } },
-            { $count: 'count' },
-        );
-
-        const result = await this.pullRequestsModel.aggregate(pipeline).exec();
-        return result[0]?.count ?? 0;
+        return this.pullRequestsModel.countDocuments(filter).exec();
     }
 
     async findFileWithSuggestions(
