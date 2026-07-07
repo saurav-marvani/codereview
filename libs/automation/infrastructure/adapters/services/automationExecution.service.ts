@@ -1,6 +1,5 @@
 import { createLogger } from '@libs/core/log/logger';
-import { Inject, Injectable, Optional } from '@nestjs/common';
-import { PrExecutionEventsBridge } from './pr-execution-events.bridge';
+import { Inject, Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { AutomationStatus } from '@libs/automation/domain/automation/enum/automation-status';
@@ -32,8 +31,6 @@ export class AutomationExecutionService implements IAutomationExecutionService {
         private readonly codeReviewExecutionService: ICodeReviewExecutionService<IAutomationExecution>,
         private readonly cacheService: CacheService,
         private readonly eventEmitter: EventEmitter2,
-        @Optional()
-        private readonly prExecutionEventsBridge?: PrExecutionEventsBridge,
     ) {}
 
     private emitExecutionUpdate(execution: AutomationExecutionEntity) {
@@ -42,17 +39,15 @@ export class AutomationExecutionService implements IAutomationExecutionService {
                 execution?.dataExecution?.organizationAndTeamData
                     ?.organizationId;
             if (orgId) {
-                const event = {
+                // Cross-process delivery to the API's SSE endpoint happens
+                // via CrossProcessEventsBridge, which forwards this local
+                // emit over Postgres NOTIFY.
+                this.eventEmitter.emit(PR_EXECUTION_UPDATED_EVENT, {
                     organizationId: orgId,
                     executionUuid: execution.uuid,
                     status: execution.status,
                     timestamp: new Date().toISOString(),
-                };
-                this.eventEmitter.emit(PR_EXECUTION_UPDATED_EVENT, event);
-                // Cross-process delivery: the SSE consumer lives in the
-                // API while executions update in the worker. See
-                // PrExecutionEventsBridge.
-                void this.prExecutionEventsBridge?.publish(event);
+                });
             }
         } catch {
             // fire-and-forget

@@ -33,7 +33,6 @@ import { AUTOMATION_SERVICE_TOKEN } from '../domain/automation/contracts/automat
 import { AutomationService } from '../infrastructure/adapters/services/automation.service';
 import { AUTOMATION_EXECUTION_SERVICE_TOKEN } from '../domain/automationExecution/contracts/automation-execution.service';
 import { AutomationExecutionService } from '../infrastructure/adapters/services/automationExecution.service';
-import { PrExecutionEventsBridge } from '../infrastructure/adapters/services/pr-execution-events.bridge';
 import { AUTOMATION_EXECUTION_REPOSITORY_TOKEN } from '../domain/automationExecution/contracts/automation-execution.repository';
 import { AutomationExecutionRepository } from '../infrastructure/adapters/repositories/automationExecution.repository';
 import { AutomationCodeReviewService } from '../infrastructure/adapters/services/processAutomation/strategies/automationCodeReview';
@@ -69,7 +68,6 @@ import { CodeReviewCoreModule } from '@libs/code-review/modules/code-review-core
         forwardRef(() => OrganizationParametersModule),
     ],
     providers: [
-        PrExecutionEventsBridge,
         SaveCodeReviewFeedbackUseCase,
         RunCodeReviewAutomationUseCase,
         {
