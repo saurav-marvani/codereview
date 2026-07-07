@@ -229,7 +229,19 @@ describe('ChatWithKodyFromGitUseCase', () => {
                 },
             }) as any;
 
+        // buildPrKey (used once the gate allows the run) requires a real UUID
+        // organizationId, so the gate tests use valid UUIDs rather than the
+        // 'org-1' placeholder the business-logic tests get away with.
+        const ORG_UUID = '11111111-1111-4111-8111-111111111111';
+        const TEAM_UUID = '22222222-2222-4222-8222-222222222222';
+
         beforeEach(() => {
+            codeManagementService.findTeamAndOrganizationIdByConfigKey.mockResolvedValue(
+                {
+                    integration: { organization: { uuid: ORG_UUID } },
+                    team: { uuid: TEAM_UUID },
+                },
+            );
             codeManagementService.getPullRequestReviewComment.mockResolvedValue(
                 [
                     {
@@ -239,6 +251,9 @@ describe('ChatWithKodyFromGitUseCase', () => {
                     },
                 ],
             );
+            codeManagementService.getCloneParams = jest
+                .fn()
+                .mockResolvedValue(undefined);
         });
 
         it('runs the agent when the org has BYOK (any plan)', async () => {
@@ -254,7 +269,7 @@ describe('ChatWithKodyFromGitUseCase', () => {
             expect(
                 permissionValidationService.validateExecutionPermissions,
             ).toHaveBeenCalledWith(
-                { organizationId: 'org-1', teamId: 'team-1' },
+                { organizationId: ORG_UUID, teamId: TEAM_UUID },
                 undefined,
                 'ChatWithKodyFromGitUseCase',
             );
