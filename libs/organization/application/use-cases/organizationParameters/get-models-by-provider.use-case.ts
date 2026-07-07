@@ -446,6 +446,12 @@ export class GetModelsByProviderUseCase {
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json',
                 },
+                // The SSRF guard only validates the base host: without these a
+                // public URL could 302-redirect the request onto a private IP /
+                // the cloud metadata endpoint (169.254.169.254), or hang. Mirror
+                // the connection probe: never follow redirects, bounded timeout.
+                maxRedirects: 0,
+                timeout: 15_000,
             });
 
             return {

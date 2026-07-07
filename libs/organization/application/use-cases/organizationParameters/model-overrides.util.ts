@@ -112,9 +112,14 @@ export function clearModelOverrides(
     };
 
     // Index repos by id once so repeated targets don't rescan the array.
-    const repoById = new Map<string, any>(
-        (config?.repositories ?? []).map((r: any) => [r?.id, r]),
-    );
+    // Keep first-match semantics (matching the previous `.find()`): if an id
+    // somehow appears twice, only the first occurrence is addressable.
+    const repoById = new Map<string, any>();
+    for (const r of config?.repositories ?? []) {
+        if (r?.id && !repoById.has(r.id)) {
+            repoById.set(r.id, r);
+        }
+    }
 
     for (const target of targets) {
         if (!target.repositoryId) {
