@@ -20,6 +20,11 @@ import {
 import { PreviewEnvSecretsService } from '../services/preview-env-secrets.service';
 import { PreviewEnvInfraService } from '../services/preview-env-infra.service';
 import { PreviewEnvSnapshotService } from '../services/preview-env-snapshot.service';
+import {
+    parseRuntimeYaml,
+    resolveRuntimePlaybook,
+    RUNTIME_YAML_PATH,
+} from '../services/runtime-playbook.service';
 import { randomUUID } from 'crypto';
 import {
     RuntimeRunRecord,
@@ -144,8 +149,29 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
                 infra ?? undefined,
             );
 
+            // A committed `.kody/runtime.yml` is the single source of truth for
+            // HOW to run (repo wins over the UI config; no merge). Activation
+            // (enabled/trigger) stays a UI/org decision — already gated above.
+            let effectiveEnv = env;
+            try {
+                const raw = await vm.readFile(RUNTIME_YAML_PATH);
+                if (raw && raw.trim()) {
+                    const resolved = resolveRuntimePlaybook(parseRuntimeYaml(raw), env);
+                    effectiveEnv = resolved.config ?? env;
+                    this.logger.log({
+                        message: `Kody Runtime playbook source: ${resolved.source} (${RUNTIME_YAML_PATH} present)`,
+                        context: this.stageName,
+                    });
+                }
+            } catch (error) {
+                this.logger.warn({
+                    message: `Ignoring ${RUNTIME_YAML_PATH} (${(error as Error)?.message ?? error}); falling back to the UI config`,
+                    context: this.stageName,
+                });
+            }
+
             // Inject the app's secrets (the .env the booted app needs).
-            const secrets = await this.resolveSecrets(context, env.requiredEnv);
+            const secrets = await this.resolveSecrets(context, effectiveEnv.requiredEnv);
             if (Object.keys(secrets).length) {
                 const envFile = Object.entries(secrets)
                     .map(([k, v]) => `${k}=${v}`)
@@ -153,7 +179,7 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
                 await vm.writeFile('/opt/kody/customer.env', envFile);
             }
 
-            const { ok, phases, scopeLabel } = await this.bootPlaybook(vm, env, context);
+            const { ok, phases, scopeLabel } = await this.bootPlaybook(vm, effectiveEnv, context);
 
             // Run the bug-finding agent (execution-based, focus-aware).
             const exec = async (
