@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { InjectDataSource } from '@nestjs/typeorm';
@@ -8,6 +10,14 @@ import { createLogger } from '@libs/core/log/logger';
 
 const PG_CHANNEL = 'kodus_cross_process_events';
 const PG_TABLE = 'kodus_cross_process_events';
+
+/**
+ * Self-delivery guard. NOT process.pid: every containerized app is PID 1,
+ * so a pid-based guard makes the worker and the API look like the SAME
+ * process and every envelope gets dropped (found live on the hotfix
+ * droplet — rows written, nothing ever re-emitted).
+ */
+const INSTANCE_ID = randomUUID();
 /** Rows older than this are garbage; cleaned opportunistically. */
 const ROW_TTL_MINUTES = 60;
 
@@ -41,7 +51,7 @@ const FORWARDED_EVENTS = ['pull-request.closed', 'pr-execution.updated'];
 const BRIDGED_FLAG = '__kodusBridged';
 
 interface BridgeEnvelope {
-    pid: number;
+    instanceId: string;
     name: string;
     payload: Record<string, unknown>;
 }
@@ -129,7 +139,7 @@ export class CrossProcessEventsBridge implements OnModuleInit, OnModuleDestroy {
         if (!this.shouldForward(payload)) return;
 
         const envelope: BridgeEnvelope = {
-            pid: process.pid,
+            instanceId: INSTANCE_ID,
             name,
             payload,
         };

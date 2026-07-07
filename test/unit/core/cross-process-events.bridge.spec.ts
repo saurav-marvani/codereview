@@ -37,7 +37,7 @@ describe('CrossProcessEventsBridge', () => {
         const [insertSql, insertArgs] = query.mock.calls[0];
         expect(insertSql).toContain('INSERT INTO kodus_cross_process_events');
         const envelope = JSON.parse(insertArgs[0]);
-        expect(envelope.pid).toBe(process.pid);
+        expect(envelope.instanceId).toBe(bridge.instanceId);
         expect(envelope.name).toBe('pull-request.closed');
         expect(envelope.payload.pullRequestNumber).toBe(42);
 
