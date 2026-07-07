@@ -8,7 +8,7 @@ import {
     getRuntimePlaybookDraft,
     type GeneratedPlaybook,
 } from "@services/parameters/fetch";
-import { SparklesIcon, Loader2Icon, CopyIcon } from "lucide-react";
+import { ScanSearchIcon, CopyIcon } from "lucide-react";
 import { useFormContext } from "react-hook-form";
 
 import { type CodeReviewFormType } from "../../../_types";
@@ -104,18 +104,20 @@ export function GenerateConfigButton({
                 <Button
                     type="button"
                     variant="secondary"
+                    size="sm"
+                    leftIcon={<ScanSearchIcon />}
+                    loading={running}
                     onClick={onGenerate}
                     disabled={disabled || running}>
-                    {running ? (
-                        <Loader2Icon className="size-4 animate-spin" />
-                    ) : (
-                        <SparklesIcon className="size-4" />
-                    )}
-                    {running ? "Generating… (a sandbox is figuring out how to run your app)" : "Generate config"}
+                    {running ? "Detecting…" : "Detect from repo"}
                 </Button>
                 {result?.playbookYaml && (
-                    <Button type="button" variant="ghost" onClick={copyYaml}>
-                        <CopyIcon className="size-4" />
+                    <Button
+                        type="button"
+                        variant="tertiary"
+                        size="sm"
+                        leftIcon={<CopyIcon />}
+                        onClick={copyYaml}>
                         Copy as .kody/runtime.yml
                     </Button>
                 )}
