@@ -45,7 +45,7 @@ import { Action, ResourceType } from "@services/permissions/types";
 import { EditIcon, PlugIcon, RefreshCwIcon, Trash } from "lucide-react";
 import type { AwaitedReturnType } from "src/core/types";
 import { revalidateServerSidePath } from "src/core/utils/revalidate-server-side";
-import { useSubscriptionStatus } from "src/features/ee/subscription/_hooks/use-subscription-status";
+import { useMCPPluginsLimit } from "@services/mcp-manager/use-mcp-plugins-limit";
 
 import { AuthMethodConnect } from "./auth-method-connect";
 import { RequiredConfiguration } from "./required-configuration";
@@ -62,37 +62,7 @@ export const PluginModal = ({
 }) => {
     const router = useRouter();
     const { toast } = useToast();
-    const subscription = useSubscriptionStatus();
-
-    const mcpPluginsLimits = useMemo(() => {
-        const total = installedPlugins.length;
-
-        if (!subscription.valid)
-            return {
-                total,
-                canAddMoreRules: false,
-                limit: Number.POSITIVE_INFINITY,
-            };
-
-        if (
-            subscription.status === "free" ||
-            subscription.status === "self-hosted"
-        )
-            return { canAddMoreRules: total < 3, total, limit: 3 };
-
-        if (subscription.status === "licensed-self-hosted")
-            return {
-                canAddMoreRules: true,
-                total,
-                limit: Number.POSITIVE_INFINITY,
-            };
-
-        return {
-            canAddMoreRules: true,
-            total,
-            limit: Number.POSITIVE_INFINITY,
-        };
-    }, [subscription, installedPlugins]);
+    const mcpPluginsLimits = useMCPPluginsLimit(installedPlugins.length);
 
     const isConnected = plugin.isConnected;
     const isDefault = plugin.isDefault;
@@ -547,7 +517,7 @@ export const PluginModal = ({
 
                                 {!isConnected ? (
                                     <>
-                                        {mcpPluginsLimits.canAddMoreRules ? (
+                                        {mcpPluginsLimits.canInstallMore ? (
                                             <Button
                                                 size="md"
                                                 variant="primary"

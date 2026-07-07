@@ -11,7 +11,12 @@ export default {
     // helper under apps/web/src/ that imports a web-only package would fail
     // to resolve when its spec runs from the root.
     moduleDirectories: ['node_modules', 'apps/web/node_modules'],
-    testMatch: ['**/*.spec.ts', '**/*.integration.spec.ts', '**/*.e2e-spec.ts'],
+    testMatch: [
+        '**/*.spec.ts',
+        '**/*.spec.tsx',
+        '**/*.integration.spec.ts',
+        '**/*.e2e-spec.ts',
+    ],
     transform: {
         '^.+\\.(t|j)sx?$': [
             '@swc/jest',
@@ -38,10 +43,28 @@ export default {
         // which Jest cannot parse. Map to a stub to prevent ESM parse errors.
         '^e2b$': '<rootDir>/test/__mocks__/e2b.ts',
 
+        // Force a single React copy for component specs. Root and
+        // apps/web each install their own React (different patch
+        // versions) — without this, `next/link` (built against
+        // apps/web's copy) and @testing-library/react (resolved from
+        // root) end up with two React instances in the same render,
+        // which React detects as an "Invalid hook call".
+        '^react$': '<rootDir>/apps/web/node_modules/react',
+        '^react-dom$': '<rootDir>/apps/web/node_modules/react-dom',
+        '^react-dom/(.*)$': '<rootDir>/apps/web/node_modules/react-dom/$1',
+        '^react/jsx-runtime$':
+            '<rootDir>/apps/web/node_modules/react/jsx-runtime',
+        '^react/jsx-dev-runtime$':
+            '<rootDir>/apps/web/node_modules/react/jsx-dev-runtime',
+
         // Web app aliases
         '^@enums$': '<rootDir>/apps/web/src/core/enums',
         '^@services$': '<rootDir>/apps/web/src/lib/services',
         '^@services/(.*)$': '<rootDir>/apps/web/src/lib/services/$1',
+        '^@hooks/(.*)$': '<rootDir>/apps/web/src/core/hooks/$1',
+        '^@components/(.*)$': '<rootDir>/apps/web/src/core/components/$1',
+        '^@providers/(.*)$': '<rootDir>/apps/web/src/core/providers/$1',
+        '^@config/(.*)$': '<rootDir>/apps/web/src/core/config/$1',
         '^src/(.*)$': '<rootDir>/apps/web/src/$1',
 
         // Shared domain enums
@@ -197,7 +220,11 @@ export default {
         '^@kodus/kodus-common$': '<rootDir>/packages/kodus-common/src',
     },
     transformIgnorePatterns: [
-        'node_modules/(?!(@octokit|universal-user-agent|p-limit|uuid|universal-github-app-jwt|before-after-hook|yocto-queue)/)',
+        // `jose` (used by apps/web's helpers.ts for JWT decoding) ships
+        // ESM-only — any component spec that transitively imports
+        // helpers.ts (even for an unrelated export like `greeting()`)
+        // needs it transformed too, or Jest chokes on its `export` syntax.
+        'node_modules/(?!(@octokit|universal-user-agent|p-limit|uuid|universal-github-app-jwt|before-after-hook|yocto-queue|jose)/)',
     ],
     modulePathIgnorePatterns: [
         '<rootDir>/dist',
