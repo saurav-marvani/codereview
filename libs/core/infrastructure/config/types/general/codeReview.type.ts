@@ -306,6 +306,9 @@ export type ImplementedSuggestionsToAnalyze = {
 export type CodeReviewConfig = {
     ignorePaths: string[];
     reviewMode?: 'fast' | 'normal' | 'deep';
+    /** HEAVY mode — extra critic pass in the finder for more recall. Opt-in per
+     *  review (CLI `--heavy` / PR `@kody review --heavy`). Off by default. */
+    heavy?: boolean;
     reviewOptions: ReviewOptions;
     ignoredTitleKeywords: string[];
     baseBranches: string[];

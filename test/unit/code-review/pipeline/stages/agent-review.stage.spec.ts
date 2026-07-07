@@ -4,6 +4,8 @@ import { ReviewOrchestratorService } from '@/code-review/infrastructure/agents/r
 import { ObservabilityService } from '@/core/log/observability.service';
 import { AUTOMATION_EXECUTION_SERVICE_TOKEN } from '@/automation/domain/automationExecution/contracts/automation-execution.service';
 import { GraphContextService } from '@/code-review/infrastructure/adapters/services/graph/graph-context.service';
+import { FeatureGateService } from '@libs/feature-gate';
+import { ORGANIZATION_SERVICE_TOKEN } from '@libs/organization/domain/organization/contracts/organization.service.contract';
 import { REPOSITORY_SERVICE_TOKEN } from '@/code-review/domain/contracts/RepositoryService.contract';
 import { CodeReviewPipelineContext } from '@/code-review/pipeline/context/code-review-pipeline.context';
 import { PlatformType } from '@/core/domain/enums';
@@ -174,6 +176,20 @@ describe('AgentReviewStage', () => {
                         findOrCreate: jest.fn(),
                         findByExternalId: jest.fn(),
                         updateStatus: jest.fn(),
+                    },
+                },
+                {
+                    // HEAVY is an alpha-gated opt-in; default the gate to OFF so
+                    // these tests exercise the normal review path.
+                    provide: FeatureGateService,
+                    useValue: {
+                        isEnabled: jest.fn().mockResolvedValue(false),
+                    },
+                },
+                {
+                    provide: ORGANIZATION_SERVICE_TOKEN,
+                    useValue: {
+                        getReleaseTrack: jest.fn().mockResolvedValue('beta'),
                     },
                 },
             ],

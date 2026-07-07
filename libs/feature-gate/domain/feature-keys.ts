@@ -6,6 +6,7 @@
  */
 export const FEATURE_KEYS = {
     githubEnterpriseServerPat: 'github-enterprise-server-pat',
+    heavyReview: 'heavy-review',
 } as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[keyof typeof FEATURE_KEYS];

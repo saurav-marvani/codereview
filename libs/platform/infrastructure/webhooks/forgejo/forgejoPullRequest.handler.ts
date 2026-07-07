@@ -7,6 +7,7 @@ import {
     isKodyMentionNonReview,
     isReviewCommand,
     parseReviewDirective,
+    isHeavyReviewCommand
 } from '@libs/common/utils/codeManagement/codeCommentMarkers';
 import { getMappedPlatform } from '@libs/common/utils/webhooks';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
@@ -638,6 +639,7 @@ export class ForgejoPullRequestHandler implements IWebhookEventHandler {
                                 : 'command',
                             triggerCommentId: comment?.id,
                             reviewDirective: parseReviewDirective(comment.body),
+                            heavy: isHeavyReviewCommand(comment.body),
                             pull_request:
                                 pullRequestData ||
                                 pullRequest ||

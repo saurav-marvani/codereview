@@ -34,6 +34,11 @@ import { PriorityStatus } from '@libs/platformData/domain/pullRequests/enums/pri
 import { ReviewOrchestratorService } from '@libs/code-review/infrastructure/agents/review-orchestrator.service';
 import { buildOrchestratorInput } from './build-orchestrator-input';
 import { ObservabilityService } from '@libs/core/log/observability.service';
+import { FeatureGateService, FEATURE_KEYS } from '@libs/feature-gate';
+import {
+    ORGANIZATION_SERVICE_TOKEN,
+    IOrganizationService,
+} from '@libs/organization/domain/organization/contracts/organization.service.contract';
 import {
     AUTOMATION_EXECUTION_SERVICE_TOKEN,
     IAutomationExecutionService,
@@ -243,8 +248,59 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
         private readonly reviewOrchestrator: ReviewOrchestratorService,
         private readonly observabilityService: ObservabilityService,
         private readonly graphContext: GraphContextService,
+        private readonly featureGate: FeatureGateService,
+        @Inject(ORGANIZATION_SERVICE_TOKEN)
+        private readonly organizationService: IOrganizationService,
     ) {
         super();
+    }
+
+    /**
+     * Resolve whether HEAVY mode actually runs: the per-review opt-in (CLI
+     * `--heavy` / `@kody review --heavy`) AND the `heavy-review` feature gate,
+     * which is an ALPHA feature — cloud gates it by the org's release track +
+     * PostHog allowlist, self-hosted keeps it off until it's promoted to beta.
+     * A denied request degrades silently to a normal review.
+     */
+    private async resolveHeavy(
+        context: CodeReviewPipelineContext,
+    ): Promise<boolean> {
+        const requested =
+            context.heavy || context.codeReviewConfig?.heavy || false;
+        if (!requested) {
+            return false;
+        }
+        const org = context.organizationAndTeamData;
+        try {
+            const releaseTrack = await this.organizationService.getReleaseTrack(
+                org.organizationId,
+            );
+            const enabled = await this.featureGate.isEnabled(
+                FEATURE_KEYS.heavyReview,
+                {
+                    identifier: org.organizationId,
+                    organizationAndTeamData: org,
+                    releaseTrack,
+                },
+            );
+            if (!enabled) {
+                this.logger.log({
+                    message: `[AGENT] Heavy review requested but not enabled for org (alpha feature) — running normal review`,
+                    context: this.stageName,
+                    metadata: { organizationId: org.organizationId },
+                });
+            }
+            return enabled;
+        } catch (err) {
+            // Fail safe: if the gate can't be evaluated, do NOT silently run the
+            // alpha path — degrade to normal.
+            this.logger.warn({
+                message: `[AGENT] Heavy feature-gate check failed; running normal review`,
+                context: this.stageName,
+                error: err,
+            });
+            return false;
+        }
     }
 
     protected async executeStage(
@@ -458,6 +514,12 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             // dropped — is unit-testable and can't drift from a second inline
             // copy. A committed merge conflict once kept an inline builder that
             // silently dropped reviewDirective; this is the single source now.
+            // Resolve HEAVY once (opt-in AND the alpha feature gate) and write it
+            // back onto the context so the SAME gated value flows to both the
+            // finder and the persisted PR record (create-file-comments stage).
+            const resolvedHeavy = await this.resolveHeavy(context);
+            context.heavy = resolvedHeavy;
+
             const result = await this.reviewOrchestrator.execute(
                 buildOrchestratorInput(context, {
                     changedFiles,
@@ -468,6 +530,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     gitHubToken: await this.resolveGitHubToken(context),
                     callGraph,
                     adaptiveProfile,
+                    heavy: resolvedHeavy,
                 }),
             );
 
