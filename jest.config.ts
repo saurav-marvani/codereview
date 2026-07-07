@@ -6,11 +6,18 @@ export default {
     testEnvironment: 'node',
     setupFiles: ['<rootDir>/test/jest.setup.ts'],
     moduleFileExtensions: ['ts', 'tsx', 'js', 'json'],
-    // Web app deps (e.g. tiny-invariant) live in apps/web/node_modules, not
-    // at the root. The default ['node_modules'] would miss them, so any
-    // helper under apps/web/src/ that imports a web-only package would fail
-    // to resolve when its spec runs from the root.
+    // Web app deps (e.g. tiny-invariant, @radix-ui/*, class-variance-authority)
+    // live in apps/web/node_modules, not at the root — pnpm only hoists a
+    // workspace member's direct deps into ITS OWN node_modules, not
+    // necessarily the workspace root's. moduleDirectories resolves its
+    // path-like entry per-ancestor-directory (works, but only once upward
+    // walking happens to reach a level whose join lands exactly on this
+    // path — brittle and, in practice, inconsistent between this dev
+    // machine's node_modules and a clean CI install). modulePaths is the
+    // unambiguous version: an absolute location always searched directly,
+    // like NODE_PATH.
     moduleDirectories: ['node_modules', 'apps/web/node_modules'],
+    modulePaths: ['<rootDir>/apps/web/node_modules'],
     testMatch: [
         '**/*.spec.ts',
         '**/*.spec.tsx',
