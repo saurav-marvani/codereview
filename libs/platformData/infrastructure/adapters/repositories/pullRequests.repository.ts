@@ -637,8 +637,13 @@ export class PullRequestsRepository implements IPullRequestsRepository {
         const fileSuggestions = await this.pullRequestsModel
             .aggregate([
                 {
+                    // Pre-filter to PRs that reference this rule BEFORE the
+                    // files×suggestions unwind — otherwise every PR in the org
+                    // is exploded just to surface the few carrying the rule.
+                    // Backed by {organizationId, files.suggestions.brokenKodyRulesIds}.
                     $match: {
-                        organizationId: organizationId,
+                        'organizationId': organizationId,
+                        'files.suggestions.brokenKodyRulesIds': ruleId,
                     },
                 },
                 {
@@ -674,8 +679,11 @@ export class PullRequestsRepository implements IPullRequestsRepository {
         const prLevelSuggestions = await this.pullRequestsModel
             .aggregate([
                 {
+                    // Same pre-filter for PR-level suggestions: keep only PRs
+                    // that reference the rule before unwinding.
                     $match: {
-                        organizationId: organizationId,
+                        'organizationId': organizationId,
+                        'prLevelSuggestions.brokenKodyRulesIds': ruleId,
                     },
                 },
                 {

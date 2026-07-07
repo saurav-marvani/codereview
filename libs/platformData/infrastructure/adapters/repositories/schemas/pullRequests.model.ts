@@ -226,3 +226,13 @@ PullRequestsSchema.index(
     { 'organizationId': 1, 'files.suggestions.deliveryStatus': 1 },
     { name: 'idx_org_files_suggestions_delivery' },
 );
+
+// "Find suggestions by rule" (kody-rules screen) filters PRs by a broken-rule
+// id. Without this index the query scanned the whole org and unwound
+// files×suggestions to find the few PRs referencing the rule. Multikey on the
+// nested files→suggestions→brokenKodyRulesIds path. Em prod criar com
+// `{ background: true }` (autoIndex pode travar startup em coleções grandes).
+PullRequestsSchema.index(
+    { 'organizationId': 1, 'files.suggestions.brokenKodyRulesIds': 1 },
+    { name: 'idx_org_broken_kody_rules' },
+);
