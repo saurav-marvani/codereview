@@ -33,37 +33,18 @@ import { hasPermission } from "src/core/utils/permission-map";
 
 type SuggestionsFilterValue = "all" | "true" | "false";
 type AuthorPolicyFilterValue = "all" | "reviewable" | "excluded";
-type StatusFilterValue =
-    | "success"
-    | "error"
-    | "partial_error"
-    | "skipped"
-    | "in_progress"
-    | "pending";
 
-const STATUS_OPTIONS: { value: StatusFilterValue; label: string }[] = [
-    { value: "success", label: "Success" },
-    { value: "error", label: "Error" },
-    { value: "partial_error", label: "Partial error" },
-    { value: "skipped", label: "Skipped" },
-    { value: "in_progress", label: "In progress" },
-    { value: "pending", label: "Pending" },
-];
-
+// Advanced / long-tail filters only. Severity, status, category and the title
+// search live inline in the filter bar, so they are intentionally NOT here —
+// no duplication.
 interface PullRequestsFiltersProps {
     teamId: string;
     selectedRepository?: string;
     onRepositoryChange: (repoName?: string) => void;
-    pullRequestTitle: string;
-    onTitleChange: (value: string) => void;
-    pullRequestNumber: string;
-    onPullRequestNumberChange: (value: string) => void;
     suggestionsFilter: SuggestionsFilterValue;
     onSuggestionsFilterChange: (value: SuggestionsFilterValue) => void;
     authorPolicy: AuthorPolicyFilterValue;
     onAuthorPolicyChange: (value: AuthorPolicyFilterValue) => void;
-    status?: StatusFilterValue | null;
-    onStatusChange: (value: StatusFilterValue | null) => void;
     createdAtFrom?: string | null;
     createdAtTo?: string | null;
     onCreatedAtFromChange: (value: string) => void;
@@ -74,16 +55,10 @@ export const PullRequestsFilters = ({
     teamId,
     selectedRepository,
     onRepositoryChange,
-    pullRequestTitle,
-    onTitleChange,
-    pullRequestNumber,
-    onPullRequestNumberChange,
     suggestionsFilter,
     onSuggestionsFilterChange,
     authorPolicy,
     onAuthorPolicyChange,
-    status,
-    onStatusChange,
     createdAtFrom,
     createdAtTo,
     onCreatedAtFromChange,
@@ -113,11 +88,8 @@ export const PullRequestsFilters = ({
     }, [allRepositories, organizationId, permissions]);
 
     const appliedFiltersCount =
-        (pullRequestTitle.trim().length > 0 ? 1 : 0) +
-        (pullRequestNumber?.trim().length > 0 ? 1 : 0) +
         (suggestionsFilter !== "all" ? 1 : 0) +
         (authorPolicy !== "reviewable" ? 1 : 0) +
-        (status ? 1 : 0) +
         (createdAtFrom || createdAtTo ? 1 : 0) +
         (selectedRepository ? 1 : 0);
 
@@ -131,6 +103,7 @@ export const PullRequestsFilters = ({
                 size="xs"
                 variant="helper"
                 loading={isLoading}
+                className="h-9 rounded-lg px-3"
                 leftIcon={<ListFilterIcon />}>
                 Filters
                 {appliedFiltersCount > 0 && (
@@ -149,6 +122,7 @@ export const PullRequestsFilters = ({
                     size="xs"
                     variant="helper"
                     loading={isLoading}
+                    className="h-9 rounded-lg px-3"
                     leftIcon={<ListFilterIcon />}>
                     Filters
                     {appliedFiltersCount > 0 && (
@@ -166,7 +140,7 @@ export const PullRequestsFilters = ({
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <ListFilterIcon className="size-4" />
-                        <Label>Filters</Label>
+                        <Label>More filters</Label>
                     </div>
 
                     <Button
@@ -174,11 +148,8 @@ export const PullRequestsFilters = ({
                         variant="cancel"
                         onClick={() => {
                             onRepositoryChange(undefined);
-                            onTitleChange("");
-                            onPullRequestNumberChange("");
                             onSuggestionsFilterChange("all");
                             onAuthorPolicyChange("reviewable");
-                            onStatusChange(null);
                             onCreatedAtFromChange("");
                             onCreatedAtToChange("");
                         }}>
@@ -187,34 +158,6 @@ export const PullRequestsFilters = ({
                 </div>
 
                 <div className="flex flex-col gap-3">
-                    <div className="flex flex-col gap-1.5">
-                        <Label className="text-text-secondary text-xs">
-                            PR title
-                        </Label>
-                        <Input
-                            size="md"
-                            placeholder="Title contains..."
-                            value={pullRequestTitle}
-                            onChange={(event) =>
-                                onTitleChange(event.target.value)
-                            }
-                        />
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                        <Label className="text-text-secondary text-xs">
-                            PR number
-                        </Label>
-                        <Input
-                            size="md"
-                            placeholder="PR number..."
-                            value={pullRequestNumber}
-                            onChange={(event) =>
-                                onPullRequestNumberChange(event.target.value)
-                            }
-                        />
-                    </div>
-
                     <div className="flex flex-col gap-1.5">
                         <Label className="text-text-secondary text-xs">
                             Kody suggestions
@@ -267,37 +210,6 @@ export const PullRequestsFilters = ({
                                 <SelectItem value="excluded">
                                     Excluded by policy only
                                 </SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                        <Label className="text-text-secondary text-xs">
-                            Review status
-                        </Label>
-                        <Select
-                            value={status ?? "all"}
-                            onValueChange={(value) =>
-                                onStatusChange(
-                                    value === "all"
-                                        ? null
-                                        : (value as StatusFilterValue),
-                                )
-                            }>
-                            <SelectTrigger size="md">
-                                <SelectValue placeholder="Status" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">
-                                    Any status (default)
-                                </SelectItem>
-                                {STATUS_OPTIONS.map((option) => (
-                                    <SelectItem
-                                        key={option.value}
-                                        value={option.value}>
-                                        {option.label}
-                                    </SelectItem>
-                                ))}
                             </SelectContent>
                         </Select>
                     </div>

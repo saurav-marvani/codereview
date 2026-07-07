@@ -14,10 +14,13 @@ import {
     type PullRequestFilters,
 } from "./fetch";
 import type {
+    AwaitingPullRequestsResponse,
     PullRequestExecution,
     PullRequestExecutionsPayload,
     PullRequestExecutionsResponse,
     PullRequestFilesResponse,
+    PullRequestsDailyDigestResponse,
+    PullRequestsFacetsResponse,
     PullRequestSuggestionsResponse,
 } from "./types";
 
@@ -80,6 +83,10 @@ export const useInfinitePullRequestExecutions = (
 
         if (filters?.createdAtFrom) next.createdAtFrom = filters.createdAtFrom;
         if (filters?.createdAtTo) next.createdAtTo = filters.createdAtTo;
+        if (filters?.severity) next.severity = filters.severity;
+        if (filters?.category) next.category = filters.category;
+        if (filters?.needsAttention) next.needsAttention = true;
+        if (filters?.author) next.author = filters.author;
 
         return next;
     }, [
@@ -93,6 +100,10 @@ export const useInfinitePullRequestExecutions = (
         filters?.status,
         filters?.createdAtFrom,
         filters?.createdAtTo,
+        filters?.severity,
+        filters?.category,
+        filters?.needsAttention,
+        filters?.author,
         pageSize,
     ]);
 
@@ -166,6 +177,48 @@ export const useInfinitePullRequestExecutions = (
     return { ...query, data: infiniteData, items };
 };
 
+export const usePullRequestsDailyDigest = (teamId?: string) => {
+    return useQuery({
+        queryKey: ["pull-requests-daily-digest", teamId],
+        queryFn: () =>
+            axiosAuthorized.fetcher<PullRequestsDailyDigestResponse>(
+                PULL_REQUEST_API.GET_DAILY_DIGEST(teamId),
+            ),
+        enabled: !!teamId,
+        retry: false,
+        staleTime: 60_000,
+        select: (response) => response.data,
+    });
+};
+
+export const usePullRequestsFacets = (teamId?: string) => {
+    return useQuery({
+        queryKey: ["pull-requests-facets", teamId],
+        queryFn: () =>
+            axiosAuthorized.fetcher<PullRequestsFacetsResponse>(
+                PULL_REQUEST_API.GET_FACETS(teamId),
+            ),
+        enabled: !!teamId,
+        retry: false,
+        staleTime: 60_000,
+        select: (response) => response.data,
+    });
+};
+
+export const usePullRequestsAwaiting = (teamId?: string) => {
+    return useQuery({
+        queryKey: ["pull-requests-awaiting", teamId],
+        queryFn: () =>
+            axiosAuthorized.fetcher<AwaitingPullRequestsResponse>(
+                PULL_REQUEST_API.GET_AWAITING(teamId),
+            ),
+        enabled: !!teamId,
+        retry: false,
+        staleTime: 60_000,
+        select: (response) => response.data,
+    });
+};
+
 export const usePullRequestSuggestions = (
     repositoryId: string | undefined,
     prNumber: number | undefined,
@@ -222,6 +275,9 @@ export const usePullRequestExecutionSSE = (enabled = true) => {
     const invalidate = useCallback(() => {
         queryClient.invalidateQueries({
             queryKey: ["pull-request-executions"],
+        });
+        queryClient.invalidateQueries({
+            queryKey: ["pull-requests-daily-digest"],
         });
     }, [queryClient]);
 

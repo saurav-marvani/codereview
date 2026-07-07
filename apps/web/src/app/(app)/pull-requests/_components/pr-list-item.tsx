@@ -24,10 +24,10 @@ import {
     ChevronDownIcon,
     ExternalLinkIcon,
     GitBranchIcon,
+    UserIcon,
 } from "lucide-react";
 import { cn } from "src/core/utils/components";
 
-import { PR_GRID_COLS } from "./pr-data-table";
 import type { PullRequestExecutionGroup } from "./types";
 
 interface PrListItemProps {
@@ -377,6 +377,45 @@ const getStageDisplay = (item: CodeReviewTimelineItem) => {
     };
 };
 
+// Severity breakdown of DELIVERED suggestions, shown under the PR title as the
+// "needs attention" signal. critical/high are colored to draw the eye;
+// medium/low stay muted so a noisy PR doesn't shout. Hidden entirely when the
+// backend aggregation didn't return a breakdown (older payloads) or all zero.
+const SEVERITY_PILL: Record<"critical" | "high" | "medium" | "low", string> = {
+    critical: "bg-danger/10 text-danger ring-danger/30",
+    high: "bg-warning/10 text-warning ring-warning/30",
+    medium: "text-text-secondary ring-card-lv3/60",
+    low: "text-text-tertiary ring-card-lv3/50",
+};
+
+const SeverityPills = ({
+    bySeverity,
+}: {
+    bySeverity?: Record<"critical" | "high" | "medium" | "low", number>;
+}) => {
+    if (!bySeverity) return null;
+
+    const order = ["critical", "high", "medium", "low"] as const;
+    const shown = order.filter((level) => (bySeverity[level] ?? 0) > 0);
+    if (!shown.length) return null;
+
+    return (
+        <div className="flex flex-wrap items-center justify-end gap-1">
+            {shown.map((level) => (
+                <span
+                    key={level}
+                    className={cn(
+                        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium tracking-wide uppercase ring-1",
+                        SEVERITY_PILL[level],
+                    )}>
+                    <span className="tabular-nums">{bySeverity[level]}</span>
+                    {level}
+                </span>
+            ))}
+        </div>
+    );
+};
+
 const getOriginLabel = (origin: string) => {
     const o = origin?.toLowerCase?.() || "";
     if (o === "system") return "Automatic";
@@ -426,126 +465,117 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                 role="button"
                 tabIndex={0}
                 className={cn(
-                    "grid cursor-pointer items-center gap-x-3 px-4 py-3",
+                    "flex cursor-pointer items-start gap-3 px-5 py-4",
                     isOpen
                         ? "bg-card-lv2/40 hover:bg-card-lv2/50"
                         : "hover:bg-card-lv1/70",
                 )}
-                style={{ gridTemplateColumns: PR_GRID_COLS }}
                 onClick={() => setIsOpen(!isOpen)}>
-                <div>
-                    <ChevronDownIcon
-                        className={cn(
-                            "text-text-tertiary size-4 shrink-0 transition-transform duration-200",
-                            isOpen && "text-text-secondary rotate-180",
-                        )}
-                    />
-                </div>
-                <div className="text-text-secondary font-mono text-sm tabular-nums">
-                    #{latest.prNumber}
-                </div>
-                <div className="min-w-0">
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Link
-                                href={prUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-text-primary hover:text-primary-light flex items-center gap-1.5 font-medium hover:underline"
-                                onClick={(e) => e.stopPropagation()}>
-                                <span className="truncate">{latest.title}</span>
-                                <ExternalLinkIcon className="text-text-tertiary size-3 shrink-0" />
-                            </Link>
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-sm">
-                            {latest.title}
-                        </TooltipContent>
-                    </Tooltip>
-                </div>
-                <div className="min-w-0">
-                    <span className="text-text-secondary block truncate text-sm">
-                        {latest.repositoryName}
-                    </span>
-                </div>
-                <div className="min-w-0">
-                    <div className="text-text-tertiary flex items-center gap-1.5 text-sm">
-                        <GitBranchIcon className="size-3 shrink-0" />
+                <ChevronDownIcon
+                    className={cn(
+                        "text-text-tertiary mt-1 size-4 shrink-0 transition-transform duration-200",
+                        isOpen && "text-text-secondary rotate-180",
+                    )}
+                />
+
+                {/* Left: title-dominant identity + metadata subline. */}
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                        <span className="text-text-tertiary shrink-0 font-mono text-xs tabular-nums">
+                            #{latest.prNumber}
+                        </span>
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <span className="truncate font-mono text-xs">
-                                    {latest.headBranchRef}
-                                </span>
+                                <Link
+                                    href={prUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-text-primary hover:text-primary-light group/title flex min-w-0 items-center gap-1.5 text-sm font-semibold hover:underline"
+                                    onClick={(e) => e.stopPropagation()}>
+                                    <span className="truncate">
+                                        {latest.title}
+                                    </span>
+                                    <ExternalLinkIcon className="text-text-tertiary size-3 shrink-0 opacity-0 transition-opacity group-hover/title:opacity-100" />
+                                </Link>
                             </TooltipTrigger>
-                            <TooltipContent>
-                                {latest.headBranchRef}
+                            <TooltipContent className="max-w-sm">
+                                {latest.title}
                             </TooltipContent>
                         </Tooltip>
                     </div>
-                </div>
-                <div className="min-w-0">
-                    <span className="text-text-secondary block truncate text-sm">
-                        {latest.author.name}
-                    </span>
-                </div>
-                <div className="text-center">
-                    <span className="text-text-primary text-sm font-medium tabular-nums">
-                        {reviewCount}
-                    </span>
-                </div>
-                <div className="min-w-0">
-                    <span className="text-text-tertiary text-sm tabular-nums">
-                        {latest.automationExecution?.createdAt ? (
+
+                    <div className="text-text-tertiary mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                        <span className="text-text-secondary max-w-[16rem] min-w-0 truncate">
+                            {latest.repositoryName}
+                        </span>
+                        <span className="flex max-w-[14rem] min-w-0 items-center gap-1">
+                            <GitBranchIcon className="size-3 shrink-0" />
+                            <span className="truncate font-mono">
+                                {latest.headBranchRef}
+                            </span>
+                        </span>
+                        {latest.author?.name && (
+                            <span className="flex items-center gap-1">
+                                <UserIcon className="size-3 shrink-0" />
+                                <span className="truncate">
+                                    {latest.author.name}
+                                </span>
+                            </span>
+                        )}
+                        <span className="tabular-nums">
+                            opened{" "}
                             <TimeAgoDisplay
-                                dateString={
-                                    latest.automationExecution.createdAt
-                                }
+                                dateString={latest.createdAt}
                                 timezone={timezone}
                             />
-                        ) : (
-                            "—"
+                        </span>
+                        {reviewCount > 1 && (
+                            <span className="tabular-nums">
+                                {reviewCount} reviews
+                            </span>
                         )}
-                    </span>
+                    </div>
                 </div>
-                <div className="min-w-0">
-                    <span className="text-text-tertiary text-sm tabular-nums">
-                        <TimeAgoDisplay
-                            dateString={latest.createdAt}
-                            timezone={timezone}
-                        />
-                    </span>
-                </div>
-                <div className="text-center">
-                    <NextLink
-                        href={`/pull-requests/${latest.repositoryId}/${latest.prNumber}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="hover:bg-card-lv3/50 flex justify-center gap-1.5 rounded-md px-1 py-0.5 transition-colors">
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <span className="bg-success/10 text-success inline-flex min-w-7 items-center justify-center rounded-md px-2 py-0.5 text-xs font-medium tabular-nums">
-                                    {latest.suggestionsCount.sent}
-                                </span>
-                            </TooltipTrigger>
-                            <TooltipContent className="text-xs">
-                                View review details
-                            </TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <span className="bg-danger/10 text-danger inline-flex min-w-7 items-center justify-center rounded-md px-2 py-0.5 text-xs font-medium tabular-nums">
-                                    {latest.suggestionsCount.filtered}
-                                </span>
-                            </TooltipTrigger>
-                            <TooltipContent className="text-xs">
-                                Suggestions filtered out by your configuration
-                            </TooltipContent>
-                        </Tooltip>
-                    </NextLink>
-                </div>
-                <div className="flex justify-center">
+
+                {/* Right: the signal — status + delivered findings. */}
+                <div className="flex shrink-0 flex-col items-end gap-2">
                     {getStatusBadge(
                         latest.automationExecution?.status || "pending",
                         latest.merged,
                     )}
+                    <NextLink
+                        href={`/pull-requests/${latest.repositoryId}/${latest.prNumber}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="hover:bg-card-lv3/40 -mr-1.5 flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors">
+                        {latest.suggestionsCount.bySeverity &&
+                        latest.suggestionsCount.sent > 0 ? (
+                            <SeverityPills
+                                bySeverity={latest.suggestionsCount.bySeverity}
+                            />
+                        ) : latest.suggestionsCount.sent > 0 ? (
+                            <span className="bg-primary/10 text-primary-light rounded px-1.5 py-0.5 text-[11px] font-medium tabular-nums">
+                                {latest.suggestionsCount.sent} delivered
+                            </span>
+                        ) : (
+                            <span className="text-text-tertiary text-xs">
+                                No findings
+                            </span>
+                        )}
+                        {latest.suggestionsCount.filtered > 0 && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <span className="text-text-tertiary text-[11px] tabular-nums">
+                                        +{latest.suggestionsCount.filtered}{" "}
+                                        filtered
+                                    </span>
+                                </TooltipTrigger>
+                                <TooltipContent className="text-xs">
+                                    Suggestions filtered out by your
+                                    configuration
+                                </TooltipContent>
+                            </Tooltip>
+                        )}
+                    </NextLink>
                 </div>
             </div>
 

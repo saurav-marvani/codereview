@@ -1,18 +1,28 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Button } from "@components/ui/button";
 import { Page } from "@components/ui/page";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@components/ui/select";
 import { useDebounce } from "@hooks/use-debounce";
 import {
     useInfinitePullRequestExecutions,
     usePullRequestExecutionSSE,
+    usePullRequestsFacets,
     type PullRequestExecution,
 } from "@services/pull-requests";
-import { XIcon } from "lucide-react";
+import { ClockIcon, SearchIcon, XIcon } from "lucide-react";
 import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
+import { cn } from "src/core/utils/components";
 
+import { AwaitingList } from "./pr-awaiting-list";
 import { PrDataTable } from "./pr-data-table";
 import { PullRequestsFilters } from "./pull-requests-filters";
 
@@ -39,6 +49,21 @@ const STATUS_LABEL: Record<(typeof STATUSES)[number], string> = {
     in_progress: "In progress",
     pending: "Pending",
 };
+const SEVERITIES = ["critical", "high", "medium", "low"] as const;
+const SEVERITY_LABEL: Record<(typeof SEVERITIES)[number], string> = {
+    critical: "Critical",
+    high: "High",
+    medium: "Medium",
+    low: "Low",
+};
+// Severity color dot shown in the severity dropdown — keeps the color cue
+// without loud always-on chips in the bar.
+const SEVERITY_DOT: Record<(typeof SEVERITIES)[number], string> = {
+    critical: "bg-danger",
+    high: "bg-warning",
+    medium: "bg-warning/60",
+    low: "bg-text-tertiary",
+};
 
 export function PullRequestsPageClient() {
     const { teamId } = useSelectedTeamId();
@@ -47,13 +72,16 @@ export function PullRequestsPageClient() {
         "repo",
         parseAsString.withOptions(urlOpts),
     );
-    const [pullRequestTitle, setPullRequestTitle] = useQueryState(
-        "title",
+    // Search box with an explicit Title|Number scope toggle inside it.
+    const [searchQuery, setSearchQuery] = useQueryState(
+        "q",
         parseAsString.withDefault("").withOptions(urlOpts),
     );
-    const [pullRequestNumber, setPullRequestNumber] = useQueryState(
-        "pr",
-        parseAsString.withDefault("").withOptions(urlOpts),
+    const [searchMode, setSearchMode] = useQueryState(
+        "by",
+        parseAsStringLiteral(["title", "number"] as const)
+            .withDefault("title")
+            .withOptions(urlOpts),
     );
     const [suggestionsFilter, setSuggestionsFilter] = useQueryState(
         "suggestions",
@@ -71,6 +99,10 @@ export function PullRequestsPageClient() {
         "status",
         parseAsStringLiteral(STATUSES).withOptions(urlOpts),
     );
+    const [severityFilter, setSeverityFilter] = useQueryState(
+        "severity",
+        parseAsStringLiteral(SEVERITIES).withOptions(urlOpts),
+    );
     const [createdAtFrom, setCreatedAtFrom] = useQueryState(
         "from",
         parseAsString.withOptions(urlOpts),
@@ -79,12 +111,51 @@ export function PullRequestsPageClient() {
         "to",
         parseAsString.withOptions(urlOpts),
     );
+    // Segment-tab params. needsAttention (crit/high) and author=me are dedicated;
+    // the "errored" segment reuses statusFilter; "awaiting" is a distinct view.
+    const [needsAttention, setNeedsAttention] = useQueryState(
+        "needsAttention",
+        parseAsString.withOptions(urlOpts),
+    );
+    const [authorFilter, setAuthorFilter] = useQueryState(
+        "author",
+        parseAsString.withOptions(urlOpts),
+    );
+    const [view, setView] = useQueryState(
+        "view",
+        parseAsStringLiteral(["awaiting"] as const).withOptions(urlOpts),
+    );
 
-    const debouncedTitle = useDebounce(pullRequestTitle, 400);
-    const debouncedNumber = useDebounce(pullRequestNumber, 400);
+    const searchRef = useRef<HTMLInputElement>(null);
 
-    const normalizedTitle = debouncedTitle.trim();
-    const normalizedNumber = debouncedNumber.trim();
+    // Press "/" anywhere (outside a field) to focus the search — same shortcut
+    // the Kody Rules screen uses.
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== "/") return;
+            const target = event.target as HTMLElement | null;
+            const tag = target?.tagName;
+            if (
+                tag === "INPUT" ||
+                tag === "TEXTAREA" ||
+                target?.isContentEditable
+            ) {
+                return;
+            }
+            event.preventDefault();
+            searchRef.current?.focus();
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, []);
+
+    const debouncedQuery = useDebounce(searchQuery, 400);
+
+    // The scope toggle decides where the query is applied.
+    const trimmedQuery = debouncedQuery.trim();
+    const titleQuery = searchMode === "title" ? trimmedQuery : "";
+    const numberQuery =
+        searchMode === "number" ? trimmedQuery.replace(/^#/, "") : "";
     const hasSentSuggestionsParam =
         suggestionsFilter === "true"
             ? true
@@ -103,11 +174,14 @@ export function PullRequestsPageClient() {
         {
             teamId,
             repositoryName: selectedRepository ?? undefined,
-            pullRequestTitle: normalizedTitle ? normalizedTitle : undefined,
-            pullRequestNumber: normalizedNumber ? normalizedNumber : undefined,
+            pullRequestTitle: titleQuery || undefined,
+            pullRequestNumber: numberQuery || undefined,
             hasSentSuggestions: hasSentSuggestionsParam,
             authorPolicy,
             status: statusFilter ?? undefined,
+            severity: severityFilter ?? undefined,
+            needsAttention: needsAttention === "true" ? true : undefined,
+            author: authorFilter ?? undefined,
             createdAtFrom: createdAtFrom ?? undefined,
             // Make the "to" bound inclusive of the whole selected day.
             createdAtTo: createdAtTo
@@ -159,14 +233,23 @@ export function PullRequestsPageClient() {
 
     const clearAllFilters = () => {
         setSelectedRepository(null);
-        setPullRequestTitle("");
-        setPullRequestNumber("");
+        setSearchQuery("");
         setSuggestionsFilter("all");
         setAuthorPolicy("reviewable");
         setStatusFilter(null);
+        setSeverityFilter(null);
+        setNeedsAttention(null);
+        setAuthorFilter(null);
+        setView(null);
         setCreatedAtFrom(null);
         setCreatedAtTo(null);
     };
+
+    // "Awaiting review" is a distinct dataset (open PRs with no review), so it's
+    // a toggle in the filter bar rather than a filter value. Its count comes
+    // from the facets endpoint.
+    const isAwaiting = view === "awaiting";
+    const { data: facets } = usePullRequestsFacets(teamId);
 
     // Surface the applied filters as removable chips (the popover only shows a
     // count). Defaults — suggestions "all", authors "reviewable" — are not chips.
@@ -183,18 +266,14 @@ export function PullRequestsPageClient() {
                 setSelectedRepository(null);
             },
         },
-        pullRequestTitle.trim() && {
-            key: "title",
-            label: `Title: "${pullRequestTitle.trim()}"`,
+        searchQuery.trim() && {
+            key: "q",
+            label:
+                searchMode === "number"
+                    ? `PR #${searchQuery.trim().replace(/^#/, "")}`
+                    : `Title: "${searchQuery.trim()}"`,
             clear: () => {
-                setPullRequestTitle("");
-            },
-        },
-        pullRequestNumber.trim() && {
-            key: "pr",
-            label: `PR #${pullRequestNumber.trim()}`,
-            clear: () => {
-                setPullRequestNumber("");
+                setSearchQuery("");
             },
         },
         suggestionsFilter !== "all" && {
@@ -216,6 +295,13 @@ export function PullRequestsPageClient() {
             label: `Status: ${STATUS_LABEL[statusFilter]}`,
             clear: () => {
                 setStatusFilter(null);
+            },
+        },
+        severityFilter && {
+            key: "severity",
+            label: `Severity: ${SEVERITY_LABEL[severityFilter]}`,
+            clear: () => {
+                setSeverityFilter(null);
             },
         },
         (createdAtFrom || createdAtTo) && {
@@ -256,23 +342,146 @@ export function PullRequestsPageClient() {
                             </span>
                         )}
                     </div>
+                </div>
+            </Page.Header>
 
-                    <div className="ml-auto flex flex-wrap items-center gap-3">
+            <Page.Content className="max-w-full px-6">
+                {/* Filter toolbar — search + labeled dropdowns, one paradigm. */}
+                <div className="flex flex-wrap items-center gap-2 py-4">
+                    <div className="border-card-lv3 bg-card-lv2 focus-within:border-primary-light/50 focus-within:ring-primary-light/15 flex h-9 min-w-[17rem] flex-1 items-center gap-2 rounded-xl border pr-1.5 pl-3 transition focus-within:ring-3">
+                        <SearchIcon className="text-text-tertiary size-4 shrink-0" />
+                        <input
+                            ref={searchRef}
+                            className="text-text-primary placeholder:text-text-tertiary/70 h-full min-w-0 flex-1 bg-transparent text-sm outline-none"
+                            inputMode={
+                                searchMode === "number" ? "numeric" : "text"
+                            }
+                            placeholder={
+                                searchMode === "number"
+                                    ? "Search by PR number…  (press /)"
+                                    : "Search by title…  (press /)"
+                            }
+                            value={searchQuery}
+                            onChange={(event) =>
+                                setSearchQuery(
+                                    searchMode === "number"
+                                        ? event.target.value.replace(
+                                              /[^\d]/g,
+                                              "",
+                                          )
+                                        : event.target.value,
+                                )
+                            }
+                        />
+                        <div className="bg-card-lv1/80 flex shrink-0 items-center gap-0.5 rounded-lg p-0.5">
+                            {(["title", "number"] as const).map((mode) => (
+                                <button
+                                    key={mode}
+                                    type="button"
+                                    onClick={() => {
+                                        setSearchMode(mode);
+                                        setSearchQuery("");
+                                    }}
+                                    className={cn(
+                                        "rounded-md px-2.5 py-1 text-xs font-medium transition",
+                                        searchMode === mode
+                                            ? "bg-card-lv3 text-text-primary"
+                                            : "text-text-tertiary hover:text-text-secondary",
+                                    )}>
+                                    {mode === "number" ? "Number" : "Title"}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <Select
+                        value={severityFilter ?? "all"}
+                        onValueChange={(value) =>
+                            setSeverityFilter(
+                                value === "all"
+                                    ? null
+                                    : (value as (typeof SEVERITIES)[number]),
+                            )
+                        }>
+                        <SelectTrigger
+                            size="sm"
+                            className={cn(
+                                "h-9 w-auto gap-1.5 rounded-lg",
+                                severityFilter && "border-primary-light/50",
+                            )}>
+                            <SelectValue placeholder="Severity" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Any severity</SelectItem>
+                            {SEVERITIES.map((sev) => (
+                                <SelectItem key={sev} value={sev}>
+                                    <span className="flex items-center gap-2">
+                                        <span
+                                            className={cn(
+                                                "size-2 rounded-full",
+                                                SEVERITY_DOT[sev],
+                                            )}
+                                        />
+                                        {SEVERITY_LABEL[sev]}
+                                    </span>
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+
+                    <Select
+                        value={statusFilter ?? "all"}
+                        onValueChange={(value) =>
+                            setStatusFilter(
+                                value === "all"
+                                    ? null
+                                    : (value as (typeof STATUSES)[number]),
+                            )
+                        }>
+                        <SelectTrigger
+                            size="sm"
+                            className={cn(
+                                "h-9 w-auto gap-1.5 rounded-lg",
+                                statusFilter && "border-primary-light/50",
+                            )}>
+                            <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Any status</SelectItem>
+                            {STATUSES.map((s) => (
+                                <SelectItem key={s} value={s}>
+                                    {STATUS_LABEL[s]}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+
+                    <div className="ml-auto flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() =>
+                                setView(isAwaiting ? null : "awaiting")
+                            }
+                            className={cn(
+                                "flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-all",
+                                isAwaiting
+                                    ? "border-warning/60 bg-warning/10 text-warning"
+                                    : "border-card-lv3 text-text-secondary hover:bg-card-lv2/60",
+                            )}>
+                            <ClockIcon className="size-4" />
+                            Awaiting review
+                            {facets?.awaiting ? (
+                                <span className="tabular-nums opacity-80">
+                                    {facets.awaiting}
+                                </span>
+                            ) : null}
+                        </button>
+
                         <PullRequestsFilters
                             teamId={teamId}
                             selectedRepository={selectedRepository ?? undefined}
                             onRepositoryChange={(value) =>
                                 setSelectedRepository(value ?? null)
-                            }
-                            pullRequestTitle={pullRequestTitle}
-                            onTitleChange={(value) =>
-                                setPullRequestTitle(value)
-                            }
-                            pullRequestNumber={pullRequestNumber}
-                            onPullRequestNumberChange={(value) =>
-                                setPullRequestNumber(
-                                    value.replace(/[^\d]/g, ""),
-                                )
                             }
                             suggestionsFilter={suggestionsFilter}
                             onSuggestionsFilterChange={(value) =>
@@ -282,8 +491,6 @@ export function PullRequestsPageClient() {
                             onAuthorPolicyChange={(value) =>
                                 setAuthorPolicy(value)
                             }
-                            status={statusFilter}
-                            onStatusChange={(value) => setStatusFilter(value)}
                             createdAtFrom={createdAtFrom}
                             createdAtTo={createdAtTo}
                             onCreatedAtFromChange={(value) =>
@@ -295,9 +502,7 @@ export function PullRequestsPageClient() {
                         />
                     </div>
                 </div>
-            </Page.Header>
 
-            <Page.Content className="max-w-full px-6">
                 {activeChips.length > 0 && (
                     <div className="flex flex-wrap items-center gap-2 pb-4">
                         {activeChips.map((chip) => (
@@ -319,7 +524,9 @@ export function PullRequestsPageClient() {
                     </div>
                 )}
 
-                {error ? (
+                {isAwaiting ? (
+                    <AwaitingList teamId={teamId} />
+                ) : error ? (
                     <div className="py-12 text-center">
                         <p className="text-sm text-red-600">
                             Error loading pull requests. Please try again.

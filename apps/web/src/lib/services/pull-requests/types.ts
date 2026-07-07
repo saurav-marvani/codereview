@@ -4,6 +4,47 @@ export interface Author {
     name: string;
 }
 
+// Daily digest ("PRs do dia") shown as the summary cards at the top of the list.
+export interface PullRequestsDailyDigest {
+    date: string;
+    reviewedToday: number;
+    needsAttention: number;
+    erroredToday: number;
+    awaitingReview: number;
+}
+
+export interface PullRequestsDailyDigestResponse {
+    data: PullRequestsDailyDigest;
+}
+
+// All-time counts per segment tab.
+export interface PullRequestsFacets {
+    all: number;
+    needsAttention: number;
+    errored: number;
+    awaiting: number;
+    mine: number;
+}
+
+export interface PullRequestsFacetsResponse {
+    data: PullRequestsFacets;
+}
+
+export interface AwaitingPullRequest {
+    prId: string;
+    prNumber: number;
+    title: string;
+    url: string;
+    repositoryName: string;
+    repositoryId: string;
+    author: { username: string; name?: string };
+    openedAt: string;
+}
+
+export interface AwaitingPullRequestsResponse {
+    data: AwaitingPullRequest[];
+}
+
 export interface AutomationExecution {
     uuid: string;
     status:
@@ -102,7 +143,12 @@ export interface PullRequestExecution {
     automationExecution: AutomationExecution | null;
     codeReviewTimeline: CodeReviewTimelineItem[];
     enrichedData: Record<string, any>;
-    suggestionsCount: { sent: number; filtered: number };
+    suggestionsCount: {
+        sent: number;
+        filtered: number;
+        bySeverity?: Record<"critical" | "high" | "medium" | "low", number>;
+        categories?: string[];
+    };
     reviewedCommitSha?: string | null;
     reviewedCommitUrl?: string | null;
     compareUrl?: string | null;
