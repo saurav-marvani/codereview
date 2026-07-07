@@ -45,7 +45,7 @@ export interface ProviderFallbackOptions<T> {
     isFailure?: (result: T) => boolean;
     /** Side-effect hook (logging/telemetry) fired just before the retry.
      *  Receives the thrown error or the failed result. */
-    onFallback?: (reason: unknown) => void;
+    onFallback?: (reason: unknown) => void | Promise<void>;
 }
 
 /**
@@ -63,9 +63,9 @@ export async function runWithProviderFallback<T>(
     // Isolate the caller's hook: a failing logging/telemetry callback must
     // never prevent the fallback retry from running (that would mask the very
     // provider error we're recovering from).
-    const notifyFallback = (reason: unknown) => {
+    const notifyFallback = async (reason: unknown) => {
         try {
-            opts.onFallback?.(reason);
+            await opts.onFallback?.(reason);
         } catch {
             /* hook failures are non-fatal to the retry */
         }
@@ -78,13 +78,13 @@ export async function runWithProviderFallback<T>(
         if (!fallbackAllowed(error)) {
             throw error;
         }
-        notifyFallback(error);
+        await notifyFallback(error);
         return opts.attempt(opts.fallback!);
     }
 
     // Non-throwing failure (harness-swallowed provider error): fall back too.
     if (opts.isFailure?.(mainResult) && fallbackAllowed(mainResult)) {
-        notifyFallback(mainResult);
+        await notifyFallback(mainResult);
         return opts.attempt(opts.fallback!);
     }
 
