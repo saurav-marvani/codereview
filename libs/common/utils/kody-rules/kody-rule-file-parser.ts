@@ -187,5 +187,10 @@ export function isKodyRuleTemplateFile(
     filePath: string | null | undefined,
 ): boolean {
     if (!filePath) return false;
-    return /(?:^|\/)\.kody\/rules\/.+/i.test(filePath.replace(/\\/g, '/'));
+    const normalized = filePath.replace(/\\/g, '/');
+    return (
+        /(?:^|\/)\.kody\/rules\/.+/i.test(normalized) ||
+        // `rules/**/*.md` is the second documented template location.
+        /(?:^|\/)rules\/.+\.md$/i.test(normalized)
+    );
 }

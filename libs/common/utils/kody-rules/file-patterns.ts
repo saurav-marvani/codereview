@@ -36,6 +36,9 @@ export const RULE_FILE_PATTERNS = [
     // Generic / internal
     '.rules/**/*',
     '.kody/rules/**',
+    // Documented alongside `.kody/rules/**` on the "Repository Rules"
+    // page; `.md`-only to avoid sweeping arbitrary `rules/` code dirs.
+    'rules/**/*.md',
     'docs/coding-standards/**/*',
 ] as const;
 
