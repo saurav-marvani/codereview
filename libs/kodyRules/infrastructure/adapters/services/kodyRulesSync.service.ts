@@ -22,10 +22,11 @@ import {
 import { ParametersKey } from '@libs/core/domain/enums';
 import {
     RULE_FILE_PATTERNS,
+    RULE_FILE_DISCOVERY_PATTERNS,
     isIdeRuleSource,
     validateAndScopeIdeRulePath,
 } from '@libs/common/utils/kody-rules/file-patterns';
-import { isFileMatchingGlob } from '@libs/common/utils/glob-utils';
+import { isFileMatchingGlobCaseInsensitive } from '@libs/common/utils/glob-utils';
 import {
     CreateKodyRuleDto,
     KodyRuleSeverity,
@@ -386,9 +387,12 @@ export class KodyRulesSyncService {
                     organizationAndTeamData,
                     repository.id,
                 );
-                const patterns = [...RULE_FILE_PATTERNS, ...directoryPatterns];
+                const patterns = [
+                    ...RULE_FILE_DISCOVERY_PATTERNS,
+                    ...directoryPatterns,
+                ];
                 const isRuleFile = (fp?: string) =>
-                    !!fp && isFileMatchingGlob(fp, patterns);
+                    !!fp && isFileMatchingGlobCaseInsensitive(fp, patterns);
 
                 const ruleChanges = files.filter(
                     (f) =>
@@ -494,9 +498,12 @@ export class KodyRulesSyncService {
                 repository.id,
             );
 
-            const patterns = [...RULE_FILE_PATTERNS, ...directoryPatterns];
+            const patterns = [
+                ...RULE_FILE_DISCOVERY_PATTERNS,
+                ...directoryPatterns,
+            ];
             const isRuleFile = (fp?: string) =>
-                !!fp && isFileMatchingGlob(fp, patterns);
+                !!fp && isFileMatchingGlobCaseInsensitive(fp, patterns);
 
             let ruleChanges = files.filter(
                 (f) =>
@@ -533,19 +540,22 @@ export class KodyRulesSyncService {
                 // Reuse cached content from the @kody-sync scan when
                 // available to avoid a duplicate API call for the same
                 // file (the scan already fetched it moments ago).
-                let decoded: string | null = contentCache.get(f.filename) ?? null;
+                let decoded: string | null =
+                    contentCache.get(f.filename) ?? null;
 
                 if (!decoded) {
                     const contentResp =
-                        await this.codeManagementService.getRepositoryContentFile({
-                            organizationAndTeamData,
-                            repository: {
-                                id: repository.id,
-                                name: repository.name,
+                        await this.codeManagementService.getRepositoryContentFile(
+                            {
+                                organizationAndTeamData,
+                                repository: {
+                                    id: repository.id,
+                                    name: repository.name,
+                                },
+                                file: { filename: f.filename },
+                                pullRequest: pullRequestParam,
                             },
-                            file: { filename: f.filename },
-                            pullRequest: pullRequestParam,
-                        });
+                        );
                     // Fallbacks if the source branch was deleted on merge (e.g., GitLab):
                     // 1) Try with base as head
                     // 2) Try with default branch as head
@@ -563,7 +573,9 @@ export class KodyRulesSyncService {
                                                 name: repository.name,
                                             },
                                             file: { filename: f.filename },
-                                            pullRequest: { head: { ref: baseRef } },
+                                            pullRequest: {
+                                                head: { ref: baseRef },
+                                            },
                                         },
                                     );
                                 if (baseAsHead?.data?.content) {
@@ -577,13 +589,15 @@ export class KodyRulesSyncService {
                     if (!effectiveContent?.data?.content) {
                         try {
                             const defaultBranch =
-                                await this.codeManagementService.getDefaultBranch({
-                                    organizationAndTeamData,
-                                    repository: {
-                                        id: repository.id,
-                                        name: repository.name,
+                                await this.codeManagementService.getDefaultBranch(
+                                    {
+                                        organizationAndTeamData,
+                                        repository: {
+                                            id: repository.id,
+                                            name: repository.name,
+                                        },
                                     },
-                                });
+                                );
                             if (defaultBranch) {
                                 const defAsHead =
                                     await this.codeManagementService.getRepositoryContentFile(
@@ -615,7 +629,9 @@ export class KodyRulesSyncService {
 
                     decoded =
                         effectiveContent?.data?.encoding === 'base64'
-                            ? Buffer.from(rawContent, 'base64').toString('utf-8')
+                            ? Buffer.from(rawContent, 'base64').toString(
+                                  'utf-8',
+                              )
                             : rawContent;
                 }
 
@@ -798,7 +814,10 @@ export class KodyRulesSyncService {
                 repository.id,
             );
 
-            const patterns = [...RULE_FILE_PATTERNS, ...directoryPatterns];
+            const patterns = [
+                ...RULE_FILE_DISCOVERY_PATTERNS,
+                ...directoryPatterns,
+            ];
 
             if (requestedPath) {
                 const normalizedRequestedPath = requestedPath
@@ -806,7 +825,12 @@ export class KodyRulesSyncService {
                     .replace(/^\.\/+/, '')
                     .replace(/^\/+/, '');
 
-                if (!isFileMatchingGlob(normalizedRequestedPath, patterns)) {
+                if (
+                    !isFileMatchingGlobCaseInsensitive(
+                        normalizedRequestedPath,
+                        patterns,
+                    )
+                ) {
                     this.logger.log({
                         message:
                             'Requested file path is not a supported IDE rule file',
@@ -888,9 +912,7 @@ export class KodyRulesSyncService {
                 //     marker dropped → depin (no-op if already not pinned).
                 //   - sourcePath in `forceSyncFiles` → will be re-synced
                 //     below, which writes `pinnedSync: true` again.
-                const allFilePaths = new Set(
-                    allFiles.map((f: any) => f.path),
-                );
+                const allFilePaths = new Set(allFiles.map((f: any) => f.path));
                 const forceSyncFilePaths = new Set(forceSyncFiles);
                 const existing =
                     await this.kodyRulesService.findByOrganizationId(
@@ -1346,7 +1368,10 @@ export class KodyRulesSyncService {
                 organizationAndTeamData,
                 repository.id,
             );
-            const patterns = [...RULE_FILE_PATTERNS, ...directoryPatterns];
+            const patterns = [
+                ...RULE_FILE_DISCOVERY_PATTERNS,
+                ...directoryPatterns,
+            ];
 
             const allFiles =
                 await this.codeManagementService.getRepositoryAllFiles({

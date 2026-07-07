@@ -1,11 +1,13 @@
 import {
     IDE_RULE_DIR_MARKERS,
     RULE_FILE_PATTERNS,
+    RULE_FILE_DISCOVERY_PATTERNS,
     extractRepoSubdirFromIdeSource,
     isIdeRuleSource,
     pathMatchesIdeRuleDir,
     validateAndScopeIdeRulePath,
 } from '../../../libs/common/utils/kody-rules/file-patterns';
+import { isFileMatchingGlobCaseInsensitive } from '../../../libs/common/utils/glob-utils';
 
 describe('IDE_RULE_DIR_MARKERS', () => {
     it('is derived from RULE_FILE_PATTERNS — every pattern with a directory part contributes a marker', () => {
@@ -157,6 +159,66 @@ describe('isIdeRuleSource — sanity check', () => {
         expect(isIdeRuleSource(undefined)).toBe(false);
         expect(isIdeRuleSource('')).toBe(false);
     });
+
+    it('recognises AGENTS.md at root and under subdirs (#1484)', () => {
+        expect(isIdeRuleSource('AGENTS.md')).toBe(true);
+        expect(isIdeRuleSource('apps/web/AGENTS.md')).toBe(true);
+    });
+});
+
+describe('RULE_FILE_DISCOVERY_PATTERNS (#1484/#1485)', () => {
+    // The sync service discovers rule files with these patterns matched
+    // case-insensitively (same matcher the provider services use for
+    // repo-tree listings). Pins the customer-reported gaps: root AGENTS.md
+    // was never fetched, and nested CLAUDE.md files were only discovered
+    // under directories explicitly configured in code review settings.
+    const discovers = (filePath: string) =>
+        isFileMatchingGlobCaseInsensitive(filePath, [
+            ...RULE_FILE_DISCOVERY_PATTERNS,
+        ]);
+
+    it('discovers root AGENTS.md (uppercase, no leading dot)', () => {
+        expect(discovers('AGENTS.md')).toBe(true);
+    });
+
+    it('discovers nested guidance files (monorepo convention)', () => {
+        expect(discovers('apps/api/CLAUDE.md')).toBe(true);
+        expect(discovers('services/billing/AGENTS.md')).toBe(true);
+        expect(discovers('packages/ui/.kody/rules/naming.md')).toBe(true);
+    });
+
+    it('matches case-insensitively (claude.md == CLAUDE.md)', () => {
+        expect(discovers('claude.md')).toBe(true);
+        expect(discovers('agents.md')).toBe(true);
+    });
+
+    it('still ignores unrelated files', () => {
+        expect(discovers('README.md')).toBe(false);
+        expect(discovers('src/agents/index.ts')).toBe(false);
+        expect(discovers('docs/AGENTS-guide.md')).toBe(false);
+    });
+
+    it('every base pattern has its **/ variant', () => {
+        expect(RULE_FILE_DISCOVERY_PATTERNS).toHaveLength(
+            RULE_FILE_PATTERNS.length * 2,
+        );
+    });
+});
+
+describe('extractRepoSubdirFromIdeSource — nested guidance files', () => {
+    it('scopes nested CLAUDE.md/AGENTS.md to their subdirectory', () => {
+        expect(extractRepoSubdirFromIdeSource('apps/api/CLAUDE.md')).toBe(
+            'apps/api',
+        );
+        expect(extractRepoSubdirFromIdeSource('services/x/AGENTS.md')).toBe(
+            'services/x',
+        );
+    });
+
+    it('keeps root-level files repo-wide', () => {
+        expect(extractRepoSubdirFromIdeSource('AGENTS.md')).toBeNull();
+        expect(extractRepoSubdirFromIdeSource('CLAUDE.md')).toBeNull();
+    });
 });
 
 describe('pathMatchesIdeRuleDir', () => {
@@ -192,9 +254,9 @@ describe('pathMatchesIdeRuleDir', () => {
     it('flags any glob in a comma-separated list that hits an IDE dir', () => {
         // Defensive: even if the LLM slips an IDE glob into a list of
         // otherwise legit globs, we want to catch it.
-        expect(
-            pathMatchesIdeRuleDir('src/**/*.ts,.cursor/rules/**/*'),
-        ).toBe(true);
+        expect(pathMatchesIdeRuleDir('src/**/*.ts,.cursor/rules/**/*')).toBe(
+            true,
+        );
     });
 
     it('returns false for empty / nullish input', () => {
