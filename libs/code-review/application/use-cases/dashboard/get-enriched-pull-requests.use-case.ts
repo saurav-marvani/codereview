@@ -15,7 +15,10 @@ import {
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@libs/platformData/domain/pullRequests/contracts/pullRequests.service.contracts';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
-import { IPullRequests } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
+import {
+    IPullRequests,
+    SuggestionCountsBySeverity,
+} from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
 
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
 import { createLogger } from '@libs/core/log/logger';
@@ -90,6 +93,10 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
             status,
             createdAtFrom,
             createdAtTo,
+            severity,
+            category,
+            needsAttention,
+            author,
         } = query;
 
         if (!this.request.user?.organization?.uuid) {
@@ -177,7 +184,9 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
             // that, under aggressive filtering, walked thousands of rows per
             // request (the #1432 slowdown). After the first batch we continue via
             // the last row's (createdAt, uuid) instead — an indexed range scan.
-            let loopCursor: { createdAt: Date | string; uuid: string } | undefined;
+            let loopCursor:
+                | { createdAt: Date | string; uuid: string }
+                | undefined;
             const authorPolicyConfig = await this.getCompiledAuthorPolicyConfig(
                 authorPolicy,
                 organizationAndTeamData,
@@ -250,7 +259,8 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                 // Advance the cursor to the last row of this batch (same
                 // createdAt DESC, uuid ASC ordering the repository applies) so
                 // the next iteration continues right after it.
-                const lastBatchRow = executionsBatch[executionsBatch.length - 1];
+                const lastBatchRow =
+                    executionsBatch[executionsBatch.length - 1];
                 loopCursor = {
                     createdAt: lastBatchRow.createdAt,
                     uuid: lastBatchRow.uuid,
@@ -374,7 +384,7 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                                 });
                                 return new Map<
                                     string,
-                                    { sent: number; filtered: number }
+                                    SuggestionCountsBySeverity
                                 >();
                             }),
                         this.codeReviewExecutionService
@@ -489,6 +499,51 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                         } else if (
                             hasSentSuggestions === false &&
                             suggestionsCount?.sent > 0
+                        ) {
+                            continue;
+                        }
+
+                        // Severity filter: keep only PRs that delivered at least
+                        // one suggestion of the requested severity. Applied
+                        // post-aggregation like hasSentSuggestions (same caveat:
+                        // does not adjust totalItems, which counts executions).
+                        if (
+                            severity &&
+                            !(
+                                (suggestionsCount?.bySeverity?.[severity] ??
+                                    0) > 0
+                            )
+                        ) {
+                            continue;
+                        }
+
+                        // Category filter: keep only PRs with a delivered
+                        // suggestion of the requested category (same post-query
+                        // caveat as severity re: totalItems).
+                        if (
+                            category &&
+                            !(
+                                suggestionsCount as {
+                                    categories?: string[];
+                                }
+                            )?.categories?.includes(category)
+                        ) {
+                            continue;
+                        }
+
+                        // Needs-attention filter: delivered critical OR high.
+                        if (needsAttention) {
+                            const bs = suggestionsCount?.bySeverity;
+                            if (!bs || bs.critical + bs.high <= 0) {
+                                continue;
+                            }
+                        }
+
+                        // "Mine" filter: PR authored by the current user (matched
+                        // by git identity — email / username / name).
+                        if (
+                            author &&
+                            !this.matchesCurrentUser(author, pullRequest)
                         ) {
                             continue;
                         }
@@ -640,6 +695,30 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                 hasPreviousPage: false,
             },
         };
+    }
+
+    // Best-effort "mine" match: the logged-in user only reliably exposes an
+    // email, so we match it against the PR author's git identity fields. author
+    // === 'me' uses the request user; any other value matches that literal.
+    private matchesCurrentUser(
+        author: string,
+        pullRequest: IPullRequests,
+    ): boolean {
+        const prUser = (pullRequest.user || {}) as {
+            email?: string;
+            username?: string;
+            name?: string;
+        };
+        const candidates = [prUser.email, prUser.username, prUser.name]
+            .filter(Boolean)
+            .map((value) => String(value).toLowerCase());
+
+        if (author.toLowerCase() === 'me') {
+            const email = this.request.user?.email?.toLowerCase();
+            return Boolean(email) && candidates.includes(email);
+        }
+
+        return candidates.includes(author.toLowerCase());
     }
 
     private async getCompiledAuthorPolicyConfig(
@@ -833,26 +912,36 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
         }
     }
 
-    private extractSuggestionsCount(pullRequest: IPullRequests): {
-        sent: number;
-        filtered: number;
-    } {
+    private extractSuggestionsCount(
+        pullRequest: IPullRequests,
+    ): SuggestionCountsBySeverity {
+        const bySeverity = { critical: 0, high: 0, medium: 0, low: 0 };
+        const categorySet = new Set<string>();
+        let sent = 0;
+        let filtered = 0;
+
         // Optimized: check if we have pre-computed counts
         if ((pullRequest as any).suggestionsCount) {
             const precomputed = (pullRequest as any).suggestionsCount;
             return {
                 sent: precomputed.sent ?? 0,
                 filtered: precomputed.filtered ?? 0,
+                bySeverity: {
+                    critical: precomputed.bySeverity?.critical ?? 0,
+                    high: precomputed.bySeverity?.high ?? 0,
+                    medium: precomputed.bySeverity?.medium ?? 0,
+                    low: precomputed.bySeverity?.low ?? 0,
+                },
+                categories: Array.isArray(precomputed.categories)
+                    ? precomputed.categories
+                    : [],
             };
         }
 
         // Fallback: compute from files (slower)
-        let sent = 0;
-        let filtered = 0;
-
         const files = pullRequest.files;
         if (!files || files.length === 0) {
-            return { sent: 0, filtered: 0 };
+            return { sent: 0, filtered: 0, bySeverity, categories: [] };
         }
 
         for (let i = 0; i < files.length; i++) {
@@ -860,15 +949,31 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
             if (!suggestions) continue;
 
             for (let j = 0; j < suggestions.length; j++) {
-                const status = suggestions[j].deliveryStatus;
+                const suggestion = suggestions[j];
+                const status = suggestion.deliveryStatus;
                 if (status === DeliveryStatus.SENT) {
                     sent++;
+                    const severity = String(
+                        (suggestion as any).severity ?? '',
+                    ).toLowerCase();
+                    if (severity in bySeverity) {
+                        bySeverity[severity as keyof typeof bySeverity]++;
+                    }
+                    const label = String(
+                        (suggestion as any).label ?? '',
+                    ).toLowerCase();
+                    if (label) categorySet.add(label);
                 } else if (status === DeliveryStatus.NOT_SENT) {
                     filtered++;
                 }
             }
         }
 
-        return { sent, filtered };
+        return {
+            sent,
+            filtered,
+            bySeverity,
+            categories: Array.from(categorySet),
+        };
     }
 }

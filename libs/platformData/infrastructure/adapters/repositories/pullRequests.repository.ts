@@ -23,6 +23,7 @@ import {
     IPullRequestUserMapping,
     IPullRequestWithDeliveredSuggestions,
     ISuggestion,
+    SuggestionCountsBySeverity,
 } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
 import { PullRequestsEntity } from '@libs/platformData/domain/pullRequests/entities/pullRequests.entity';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
@@ -248,14 +249,50 @@ export class PullRequestsRepository implements IPullRequestsRepository {
      *
      * @returns Map keyed by `${repositoryId}_${prNumber}` with counts
      */
+    // Counts SENT suggestions of a given severity, tolerant of legacy docs that
+    // stored severity capitalized. Used inside the $group of the counts pipeline.
+    private sumSentBySeverity(severity: string) {
+        return {
+            $sum: {
+                $cond: [
+                    {
+                        $and: [
+                            {
+                                $eq: [
+                                    '$files.suggestions.deliveryStatus',
+                                    DeliveryStatus.SENT,
+                                ],
+                            },
+                            {
+                                $eq: [
+                                    {
+                                        $toLower: {
+                                            $ifNull: [
+                                                '$files.suggestions.severity',
+                                                '',
+                                            ],
+                                        },
+                                    },
+                                    severity,
+                                ],
+                            },
+                        ],
+                    },
+                    1,
+                    0,
+                ],
+            },
+        };
+    }
+
     async findSuggestionCountsByNumbersAndRepositoryIds(
         criteria: Array<{
             number: number;
             repositoryId: string;
         }>,
         organizationId: string,
-    ): Promise<Map<string, { sent: number; filtered: number }>> {
-        const result = new Map<string, { sent: number; filtered: number }>();
+    ): Promise<Map<string, SuggestionCountsBySeverity>> {
+        const result = new Map<string, SuggestionCountsBySeverity>();
 
         if (!criteria.length) {
             return result;
@@ -324,6 +361,38 @@ export class PullRequestsRepository implements IPullRequestsRepository {
                                 ],
                             },
                         },
+                        // Breakdown of DELIVERED (sent) suggestions by severity —
+                        // this powers the "needs attention" signal + severity
+                        // filter on the PR list. Severity is $toLower-normalized
+                        // because older docs stored it capitalized.
+                        critical: this.sumSentBySeverity('critical'),
+                        high: this.sumSentBySeverity('high'),
+                        medium: this.sumSentBySeverity('medium'),
+                        low: this.sumSentBySeverity('low'),
+                        // Distinct categories (labels) among DELIVERED suggestions
+                        // — powers the category filter. null entries (non-sent
+                        // rows) are stripped when the map is built.
+                        categories: {
+                            $addToSet: {
+                                $cond: [
+                                    {
+                                        $eq: [
+                                            '$files.suggestions.deliveryStatus',
+                                            DeliveryStatus.SENT,
+                                        ],
+                                    },
+                                    {
+                                        $toLower: {
+                                            $ifNull: [
+                                                '$files.suggestions.label',
+                                                '',
+                                            ],
+                                        },
+                                    },
+                                    null,
+                                ],
+                            },
+                        },
                     },
                 },
                 // Project to clean output
@@ -334,6 +403,11 @@ export class PullRequestsRepository implements IPullRequestsRepository {
                         prNumber: '$_id.prNumber',
                         sent: 1,
                         filtered: 1,
+                        critical: 1,
+                        high: 1,
+                        medium: 1,
+                        low: 1,
+                        categories: 1,
                     },
                 },
             ])
@@ -345,10 +419,116 @@ export class PullRequestsRepository implements IPullRequestsRepository {
             result.set(key, {
                 sent: row.sent || 0,
                 filtered: row.filtered || 0,
+                bySeverity: {
+                    critical: row.critical || 0,
+                    high: row.high || 0,
+                    medium: row.medium || 0,
+                    low: row.low || 0,
+                },
+                categories: Array.isArray(row.categories)
+                    ? row.categories.filter(
+                          (c: unknown): c is string =>
+                              typeof c === 'string' && c.length > 0,
+                      )
+                    : [],
             });
         }
 
         return result;
+    }
+
+    // Keys of still-open PRs opened on/after `since` (ISO string). Used by the
+    // daily-digest to compute "awaiting review" = opened today but with no Kody
+    // execution yet. openedAt is stored as an ISO-8601 string, so a lexicographic
+    // $gte against an ISO cutoff is a correct range compare.
+    async findOpenPullRequestKeysOpenedSince(
+        since: string,
+        organizationId: string,
+        repositoryIds?: string[],
+    ): Promise<Array<{ number: number; repositoryId: string }>> {
+        const match: Record<string, any> = {
+            organizationId,
+            openedAt: { $gte: since },
+            merged: { $ne: true },
+            status: { $nin: ['closed'] },
+        };
+
+        if (repositoryIds?.length) {
+            match['repository.id'] = { $in: repositoryIds };
+        }
+
+        const rows = await this.pullRequestsModel
+            .find(match, { 'number': 1, 'repository.id': 1, '_id': 0 })
+            .lean()
+            .exec();
+
+        return rows
+            .filter((r: any) => r?.number != null && r?.repository?.id)
+            .map((r: any) => ({
+                number: r.number,
+                repositoryId: r.repository.id,
+            }));
+    }
+
+    // Counts DISTINCT PRs that delivered ≥1 suggestion, optionally narrowed by
+    // severity (lowercased) and/or author email. Powers the "Needs attention"
+    // (severities critical/high) and "Mine" (authorEmail) segment facets.
+    async countDeliveredPullRequests(
+        organizationId: string,
+        repositoryIds: string[] | undefined,
+        opts: { severities?: string[]; authorEmail?: string },
+    ): Promise<number> {
+        const match: Record<string, any> = { organizationId };
+        if (repositoryIds?.length) {
+            match['repository.id'] = { $in: repositoryIds };
+        }
+        if (opts.authorEmail) {
+            match.$expr = {
+                $eq: [
+                    { $toLower: { $ifNull: ['$user.email', ''] } },
+                    opts.authorEmail.toLowerCase(),
+                ],
+            };
+        }
+
+        const pipeline: any[] = [
+            { $match: match },
+            { $unwind: '$files' },
+            { $unwind: '$files.suggestions' },
+            {
+                $match: {
+                    'files.suggestions.deliveryStatus': DeliveryStatus.SENT,
+                },
+            },
+        ];
+
+        if (opts.severities?.length) {
+            pipeline.push({
+                $match: {
+                    $expr: {
+                        $in: [
+                            {
+                                $toLower: {
+                                    $ifNull: [
+                                        '$files.suggestions.severity',
+                                        '',
+                                    ],
+                                },
+                            },
+                            opts.severities,
+                        ],
+                    },
+                },
+            });
+        }
+
+        pipeline.push(
+            { $group: { _id: { r: '$repository.id', n: '$number' } } },
+            { $count: 'count' },
+        );
+
+        const result = await this.pullRequestsModel.aggregate(pipeline).exec();
+        return result[0]?.count ?? 0;
     }
 
     async findFileWithSuggestions(
@@ -915,11 +1095,11 @@ export class PullRequestsRepository implements IPullRequestsRepository {
                 // ordered: false — one bad op doesn't stop the rest,
                 // and every op is self-contained (adds a file or
                 // pushes suggestions onto an existing file by id).
-                const res = await this.pullRequestsModel.bulkWrite(
-                    chunk,
-                    { ordered: false },
-                );
-                modified += (res?.modifiedCount ?? 0) + (res?.upsertedCount ?? 0);
+                const res = await this.pullRequestsModel.bulkWrite(chunk, {
+                    ordered: false,
+                });
+                modified +=
+                    (res?.modifiedCount ?? 0) + (res?.upsertedCount ?? 0);
             } catch (err: unknown) {
                 // MongoBulkWriteError still carries the partial result
                 // on `err.result` plus `err.writeErrors[]`. With

@@ -11,6 +11,22 @@ import { FeedbackType } from '@libs/kodyFineTuning/domain/enums/feedbackType.enu
 import { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';
 import { LabelType } from '@libs/common/utils/codeManagement/labels';
 
+// Per-PR delivered-suggestion counts, plus a breakdown of the SENT ones by
+// severity. Powers the "needs attention" signal + severity filter on the PR
+// dashboard list. Keys are the lowercased SeverityLevel values.
+export type SuggestionSeverityBreakdown = Record<
+    'critical' | 'high' | 'medium' | 'low',
+    number
+>;
+
+export interface SuggestionCountsBySeverity {
+    sent: number;
+    filtered: number;
+    bySeverity: SuggestionSeverityBreakdown;
+    // Distinct labels (categories) among the delivered suggestions, lowercased.
+    categories: string[];
+}
+
 export interface IPullRequests {
     uuid?: string;
     title: string;

@@ -347,10 +347,9 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
             }
 
             if (status) {
-                queryBuilder.andWhere(
-                    'automation_execution.status = :status',
-                    { status },
-                );
+                queryBuilder.andWhere('automation_execution.status = :status', {
+                    status,
+                });
             }
 
             if (createdAtFrom) {
@@ -461,6 +460,84 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                 metadata: { params },
             });
             return { data: [], total: 0 };
+        }
+    }
+
+    // Distinct reviewed PRs (one row per repo+PR) with whether any of that PR's
+    // executions errored. Powers the segment facet counts (All / Errored) and
+    // the reviewed-key set the Awaiting facet subtracts from. GROUP BY collapses
+    // the per-execution rows so counts are per-PR, not per-execution.
+    async getDistinctReviewedPullRequestKeys(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryIds?: string[];
+    }): Promise<
+        Array<{
+            repositoryId: string;
+            pullRequestNumber: number;
+            hasError: boolean;
+        }>
+    > {
+        const { organizationAndTeamData, repositoryIds } = params;
+        const { organizationId, teamId } = organizationAndTeamData ?? {};
+
+        if (!organizationId || !teamId) {
+            return [];
+        }
+
+        try {
+            const queryBuilder = this.automationExecutionRepository
+                .createQueryBuilder('automation_execution')
+                .select('automation_execution.repositoryId', 'repositoryId')
+                .addSelect(
+                    'automation_execution.pullRequestNumber',
+                    'pullRequestNumber',
+                )
+                .addSelect(
+                    "bool_or(automation_execution.status IN ('error','partial_error'))",
+                    'hasError',
+                )
+                .innerJoin(
+                    'automation_execution.teamAutomation',
+                    'teamAutomation',
+                )
+                .innerJoin('teamAutomation.team', 'team')
+                .innerJoin('team.organization', 'organization')
+                .where('automation_execution.pullRequestNumber IS NOT NULL')
+                .andWhere('automation_execution.repositoryId IS NOT NULL')
+                .andWhere('organization.uuid = :organizationId', {
+                    organizationId,
+                })
+                .andWhere('team.uuid = :teamId', { teamId })
+                .andWhere(
+                    'EXISTS (SELECT 1 FROM "code_review_execution" "cre" WHERE "cre"."automation_execution_id" = "automation_execution"."uuid")',
+                )
+                .groupBy('automation_execution.repositoryId')
+                .addGroupBy('automation_execution.pullRequestNumber');
+
+            if (repositoryIds?.length) {
+                queryBuilder.andWhere(
+                    'automation_execution.repositoryId IN (:...repositoryIds)',
+                    { repositoryIds },
+                );
+            }
+
+            const rows = await queryBuilder.getRawMany();
+            return rows.map((row) => ({
+                repositoryId: String(row.repositoryId),
+                pullRequestNumber: Number(row.pullRequestNumber),
+                hasError:
+                    row.hasError === true ||
+                    row.hasError === 'true' ||
+                    row.hasError === 't',
+            }));
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to get distinct reviewed pull request keys',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { params },
+            });
+            return [];
         }
     }
 

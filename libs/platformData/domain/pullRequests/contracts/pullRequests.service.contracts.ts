@@ -80,6 +80,16 @@ export interface IPullRequestsService extends IPullRequestsRepository {
         organizationId: string,
     ): Promise<IPullRequestUserMapping[]>;
 
+    findOpenPullRequestKeysOpenedSince(
+        since: string,
+        organizationId: string,
+        repositoryIds?: string[],
+    ): Promise<Array<{ number: number; repositoryId: string }>>;
+    countDeliveredPullRequests(
+        organizationId: string,
+        repositoryIds: string[] | undefined,
+        opts: { severities?: string[]; authorEmail?: string },
+    ): Promise<number>;
     getOnboardingReviewModeSignals(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryIds: string[];

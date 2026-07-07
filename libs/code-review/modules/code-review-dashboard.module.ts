@@ -1,5 +1,8 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { GetEnrichedPullRequestsUseCase } from '../application/use-cases/dashboard/get-enriched-pull-requests.use-case';
+import { GetPullRequestsDailyDigestUseCase } from '../application/use-cases/dashboard/get-pull-requests-daily-digest.use-case';
+import { GetPullRequestsFacetsUseCase } from '../application/use-cases/dashboard/get-pull-requests-facets.use-case';
+import { GetAwaitingPullRequestsUseCase } from '../application/use-cases/dashboard/get-awaiting-pull-requests.use-case';
 import { AutomationModule } from '@libs/automation/modules/automation.module';
 import { PlatformDataModule } from '@libs/platformData/platformData.module';
 import { PermissionsModule } from '@libs/identity/modules/permissions.module';
@@ -16,7 +19,17 @@ import { OrganizationParametersModule } from '@libs/organization/modules/organiz
         forwardRef(() => CodeReviewExecutionModule),
         forwardRef(() => OrganizationParametersModule),
     ],
-    providers: [GetEnrichedPullRequestsUseCase],
-    exports: [GetEnrichedPullRequestsUseCase],
+    providers: [
+        GetEnrichedPullRequestsUseCase,
+        GetPullRequestsDailyDigestUseCase,
+        GetPullRequestsFacetsUseCase,
+        GetAwaitingPullRequestsUseCase,
+    ],
+    exports: [
+        GetEnrichedPullRequestsUseCase,
+        GetPullRequestsDailyDigestUseCase,
+        GetPullRequestsFacetsUseCase,
+        GetAwaitingPullRequestsUseCase,
+    ],
 })
 export class CodeReviewDashboardModule {}

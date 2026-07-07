@@ -15,6 +15,7 @@ import {
     IPullRequestWithDeliveredSuggestions,
     ISuggestion,
     ISuggestionByPR,
+    SuggestionCountsBySeverity,
 } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
 import { PlatformType, PullRequestState } from '@libs/core/domain/enums';
 import { Repository } from '@libs/core/infrastructure/config/types/general/codeReview.type';
@@ -203,10 +204,34 @@ export class PullRequestsService implements IPullRequestsService {
             repositoryId: string;
         }>,
         organizationId: string,
-    ): Promise<Map<string, { sent: number; filtered: number }>> {
+    ): Promise<Map<string, SuggestionCountsBySeverity>> {
         return this.pullRequestsRepository.findSuggestionCountsByNumbersAndRepositoryIds(
             criteria,
             organizationId,
+        );
+    }
+
+    findOpenPullRequestKeysOpenedSince(
+        since: string,
+        organizationId: string,
+        repositoryIds?: string[],
+    ): Promise<Array<{ number: number; repositoryId: string }>> {
+        return this.pullRequestsRepository.findOpenPullRequestKeysOpenedSince(
+            since,
+            organizationId,
+            repositoryIds,
+        );
+    }
+
+    countDeliveredPullRequests(
+        organizationId: string,
+        repositoryIds: string[] | undefined,
+        opts: { severities?: string[]; authorEmail?: string },
+    ): Promise<number> {
+        return this.pullRequestsRepository.countDeliveredPullRequests(
+            organizationId,
+            repositoryIds,
+            opts,
         );
     }
 
@@ -1358,7 +1383,7 @@ export class PullRequestsService implements IPullRequestsService {
                         platformType,
                     );
 
-                    return {
+                return {
                     id: String(completeUser.id),
                     username:
                         completeUser?.login ||

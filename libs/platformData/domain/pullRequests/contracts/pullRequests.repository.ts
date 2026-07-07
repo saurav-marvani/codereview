@@ -10,6 +10,7 @@ import {
     ISuggestion,
     IPullRequestWithDeliveredSuggestions,
     IPullRequestUserMapping,
+    SuggestionCountsBySeverity,
 } from '../interfaces/pullRequests.interface';
 
 export const PULL_REQUESTS_REPOSITORY_TOKEN = Symbol.for(
@@ -119,7 +120,17 @@ export interface IPullRequestsRepository {
             repositoryId: string;
         }>,
         organizationId: string,
-    ): Promise<Map<string, { sent: number; filtered: number }>>;
+    ): Promise<Map<string, SuggestionCountsBySeverity>>;
+    findOpenPullRequestKeysOpenedSince(
+        since: string,
+        organizationId: string,
+        repositoryIds?: string[],
+    ): Promise<Array<{ number: number; repositoryId: string }>>;
+    countDeliveredPullRequests(
+        organizationId: string,
+        repositoryIds: string[] | undefined,
+        opts: { severities?: string[]; authorEmail?: string },
+    ): Promise<number>;
     findFileWithSuggestions(
         prnumber: number,
         repositoryName: string,
@@ -194,7 +205,6 @@ export interface IPullRequestsRepository {
         totalDeleted: number;
         totalChanges: number;
     }>;
-
 
     /** Generates a stable id for file/suggestion sub-documents. */
     newSubDocumentId(): string;

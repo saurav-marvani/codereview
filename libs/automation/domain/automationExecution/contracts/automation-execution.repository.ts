@@ -42,6 +42,16 @@ export interface IAutomationExecutionRepository {
         data: AutomationExecutionEntity[];
         total: number;
     }>;
+    getDistinctReviewedPullRequestKeys(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryIds?: string[];
+    }): Promise<
+        Array<{
+            repositoryId: string;
+            pullRequestNumber: number;
+            hasError: boolean;
+        }>
+    >;
     findCliReviewExecutionsByOrganization(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryId?: string;

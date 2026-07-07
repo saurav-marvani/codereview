@@ -169,6 +169,21 @@ export class AutomationExecutionService implements IAutomationExecutionService {
         );
     }
 
+    getDistinctReviewedPullRequestKeys(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryIds?: string[];
+    }): Promise<
+        Array<{
+            repositoryId: string;
+            pullRequestNumber: number;
+            hasError: boolean;
+        }>
+    > {
+        return this.automationExecutionRepository.getDistinctReviewedPullRequestKeys(
+            params,
+        );
+    }
+
     findCliReviewExecutionsByOrganization(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryId?: string;
