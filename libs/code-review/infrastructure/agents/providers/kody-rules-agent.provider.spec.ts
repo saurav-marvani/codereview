@@ -368,6 +368,7 @@ describe('KodyRulesAgentProvider.execute — sharded end-to-end (#1449)', () => 
             'setRunName',
             'setBYOKConfig',
             'setPayload',
+            'addCallbacks',
         ]) {
             builder[m] = jest.fn(() => builder);
         }
@@ -377,7 +378,14 @@ describe('KodyRulesAgentProvider.execute — sharded end-to-end (#1449)', () => 
         const provider = new KodyRulesAgentProvider(
             { builder: () => builder } as any, // promptRunnerService
             { getBYOKConfig: jest.fn(async () => null) } as any, // permission (system model)
-            {} as any, // observability
+            {
+                // runLLMInSpan wraps each shard call; pass the tracking
+                // callbacks through and return the shape the provider reads.
+                runLLMInSpan: async ({ exec }: any) => ({
+                    result: await exec([]),
+                    usage: {},
+                }),
+            } as any, // observability
         );
         return { provider, builder };
     }

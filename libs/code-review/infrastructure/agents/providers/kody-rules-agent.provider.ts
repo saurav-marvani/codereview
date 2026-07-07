@@ -175,15 +175,43 @@ export class KodyRulesAgentProvider extends BaseCodeReviewAgentProvider {
                 LLMModelProvider.GEMINI_2_5_PRO,
                 byokConfig,
             );
-            const runJudge: RunJudge = async ({ system, user }) => {
-                const parsed = await runner
-                    .builder()
-                    .setParser(ParserType.ZOD, shardViolationsSchema)
-                    .setLLMJsonMode(true)
-                    .addPrompt({ role: PromptRole.SYSTEM, prompt: system })
-                    .addPrompt({ role: PromptRole.USER, prompt: user })
-                    .setRunName('kodus-rules-review-agent.shard')
-                    .execute();
+            const runJudge: RunJudge = async ({ system, user, filename }) => {
+                // Wrap each shard call in runLLMInSpan so it emits a `tu`-stamped
+                // LLM-usage span — the same seam the v1 analysis / classifier use.
+                // Without it the sharded path's tokens never reach the user-facing
+                // token analytics (monthly-spend / tokens-developer), undercounting
+                // the customer's BYOK consumption. `addCallbacks` feeds the usage
+                // tracker.
+                const { result: parsed } =
+                    await this.observabilityService.runLLMInSpan({
+                        spanName: 'kodus-rules-review-agent.shard',
+                        runName: 'kodus-rules-review-agent.shard',
+                        attrs: {
+                            prNumber: input.prNumber,
+                            agentName: this.getIdentity().name,
+                            ...(filename ? { file: filename } : {}),
+                        },
+                        byokConfig,
+                        exec: (callbacks) =>
+                            runner
+                                .builder()
+                                .setParser(
+                                    ParserType.ZOD,
+                                    shardViolationsSchema,
+                                )
+                                .setLLMJsonMode(true)
+                                .addPrompt({
+                                    role: PromptRole.SYSTEM,
+                                    prompt: system,
+                                })
+                                .addPrompt({
+                                    role: PromptRole.USER,
+                                    prompt: user,
+                                })
+                                .setRunName('kodus-rules-review-agent.shard')
+                                .addCallbacks(callbacks)
+                                .execute(),
+                    });
                 return ((parsed as any)?.violations ?? []) as ShardViolation[];
             };
 
