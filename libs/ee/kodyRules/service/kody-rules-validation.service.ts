@@ -4,6 +4,7 @@
  */
 
 import { isFileMatchingGlob } from '@libs/common/utils/glob-utils';
+import { splitRulePathGlobs } from '@libs/common/utils/kody-rules/file-patterns';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { environment } from '@libs/ee/configs/environment';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
@@ -418,45 +419,6 @@ export class KodyRulesValidationService {
     }
 
     /**
-     * Splits a rule's `path` into its individual glob patterns.
-     *
-     * Kody Rules support OR-joined globs in a single `path` string — the
-     * IDE-rule importer comma-joins declared globs (e.g. a frontmatter
-     * `path: ["app/**", "lib/**"]` is persisted as "app/**,lib/**") and
-     * `pathMatchesIdeRuleDir` has always split on commas. The review-time
-     * matchers below, however, used to pass the whole string to picomatch
-     * as ONE pattern, where a comma is a literal character — so any
-     * multi-glob rule silently matched zero files.
-     *
-     * Commas inside braces or character classes are NOT separators:
-     * "{app,lib}/**" and "src/[ab,cd]/**" are single valid picomatch
-     * patterns and must stay intact.
-     */
-    private splitRulePathGlobs(rulePath: string): string[] {
-        const globs: string[] = [];
-        let current = '';
-        let braceDepth = 0;
-        let bracketDepth = 0;
-
-        for (const char of rulePath) {
-            if (char === '{') braceDepth++;
-            else if (char === '}' && braceDepth > 0) braceDepth--;
-            else if (char === '[') bracketDepth++;
-            else if (char === ']' && bracketDepth > 0) bracketDepth--;
-
-            if (char === ',' && braceDepth === 0 && bracketDepth === 0) {
-                if (current.trim()) globs.push(current.trim());
-                current = '';
-                continue;
-            }
-            current += char;
-        }
-        if (current.trim()) globs.push(current.trim());
-
-        return globs;
-    }
-
-    /**
      * Private helper to check if a rule's path matches a specific *file*.
      */
     private isFilePathMatch(
@@ -484,7 +446,7 @@ export class KodyRulesValidationService {
         // path patterns (comma-joined globs are OR-ed).
         return isFileMatchingGlob(
             normalizedFilename,
-            this.splitRulePathGlobs(rulePath),
+            splitRulePathGlobs(rulePath),
         );
     }
 
@@ -512,7 +474,7 @@ export class KodyRulesValidationService {
 
         // Comma-joined globs are OR-ed: the folder matches if ANY of the
         // individual patterns matches it.
-        return this.splitRulePathGlobs(rulePath).some((glob) =>
+        return splitRulePathGlobs(rulePath).some((glob) =>
             this.isFolderGlobMatch(glob, normalizedFolder),
         );
     }

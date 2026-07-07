@@ -5,9 +5,32 @@ import {
     extractRepoSubdirFromIdeSource,
     isIdeRuleSource,
     pathMatchesIdeRuleDir,
+    splitRulePathGlobs,
     validateAndScopeIdeRulePath,
 } from '../../../libs/common/utils/kody-rules/file-patterns';
 import { isFileMatchingGlobCaseInsensitive } from '../../../libs/common/utils/glob-utils';
+
+describe('splitRulePathGlobs', () => {
+    it('splits on top-level commas and trims whitespace', () => {
+        expect(splitRulePathGlobs('app/**/*.rb, lib/**/*.rb')).toEqual([
+            'app/**/*.rb',
+            'lib/**/*.rb',
+        ]);
+    });
+
+    it('keeps commas inside braces and character classes', () => {
+        expect(
+            splitRulePathGlobs('{app,lib}/**/*.rb,src/[ab,cd]/**,docs/**'),
+        ).toEqual(['{app,lib}/**/*.rb', 'src/[ab,cd]/**', 'docs/**']);
+    });
+
+    it('drops empty fragments', () => {
+        expect(splitRulePathGlobs('app/**,,lib/**,')).toEqual([
+            'app/**',
+            'lib/**',
+        ]);
+    });
+});
 
 describe('IDE_RULE_DIR_MARKERS', () => {
     it('is derived from RULE_FILE_PATTERNS — every pattern with a directory part contributes a marker', () => {

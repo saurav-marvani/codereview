@@ -160,6 +160,42 @@ export function extractRepoSubdirFromIdeSource(
 }
 
 /**
+ * Splits a rule `path` value into its individual glob patterns.
+ *
+ * Kody Rules support OR-joined globs in a single `path` string (the
+ * importer comma-joins declared multi-glob frontmatter). Commas inside
+ * braces ("{app,lib}/**") or character classes ("src/[ab,cd]/**") are
+ * part of a single valid picomatch pattern and are NOT separators.
+ *
+ * Single source of truth for every consumer that needs to iterate a
+ * rule path's globs (review-time matching, IDE-dir rejection, etc.) so
+ * the split semantics can't drift between call sites.
+ */
+export function splitRulePathGlobs(rulePath: string): string[] {
+    const globs: string[] = [];
+    let current = '';
+    let braceDepth = 0;
+    let bracketDepth = 0;
+
+    for (const char of rulePath) {
+        if (char === '{') braceDepth++;
+        else if (char === '}' && braceDepth > 0) braceDepth--;
+        else if (char === '[') bracketDepth++;
+        else if (char === ']' && bracketDepth > 0) bracketDepth--;
+
+        if (char === ',' && braceDepth === 0 && bracketDepth === 0) {
+            if (current.trim()) globs.push(current.trim());
+            current = '';
+            continue;
+        }
+        current += char;
+    }
+    if (current.trim()) globs.push(current.trim());
+
+    return globs;
+}
+
+/**
  * Whether `candidatePath` would match an IDE rule file path. Used to
  * reject LLM hallucinations that try to scope a rule against the
  * `.cursor/rules/**` (or similar) directory — i.e. lint the rule
@@ -170,10 +206,7 @@ export function pathMatchesIdeRuleDir(
 ): boolean {
     if (!candidatePath) return false;
     // Comma-separated list (KodyRules supports OR-joined globs)
-    const globs = candidatePath
-        .split(',')
-        .map((g) => g.trim())
-        .filter(Boolean);
+    const globs = splitRulePathGlobs(candidatePath);
     if (globs.length === 0) return false;
 
     return globs.some((glob) => {
