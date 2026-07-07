@@ -64,6 +64,26 @@ describe('TestByokModelUseCase', () => {
         expect(res.code).toBe('not_found');
     });
 
+    it('falls through to a real probe on a CURATED-catalog miss (Bedrock/Vertex)', async () => {
+        const { useCase, connectionUseCase } = build({
+            configValue: {
+                main: {
+                    provider: 'amazon_bedrock',
+                    awsBearerToken: 'enc',
+                },
+            },
+            catalog: [{ id: 'us.anthropic.claude-opus-4-8', name: 'Opus' }],
+        });
+        // A model missing from the curated Bedrock list must NOT be rejected —
+        // it may still be a valid cross-region profile.
+        await useCase.execute({
+            provider: 'amazon_bedrock',
+            model: 'us.anthropic.claude-3-5-haiku-20241022-v1:0',
+            organizationAndTeamData: org,
+        });
+        expect(connectionUseCase.execute).toHaveBeenCalled();
+    });
+
     it('falls back to a real provider probe when there is no catalog', async () => {
         const { useCase, connectionUseCase } = build({
             configValue: {

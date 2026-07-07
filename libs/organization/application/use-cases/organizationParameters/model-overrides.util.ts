@@ -111,14 +111,17 @@ export function clearModelOverrides(
         return false;
     };
 
+    // Index repos by id once so repeated targets don't rescan the array.
+    const repoById = new Map<string, any>(
+        (config?.repositories ?? []).map((r: any) => [r?.id, r]),
+    );
+
     for (const target of targets) {
         if (!target.repositoryId) {
             if (clearAt(config?.configs)) clearedCount++;
             continue;
         }
-        const repo = (config?.repositories ?? []).find(
-            (r: any) => r?.id === target.repositoryId,
-        );
+        const repo = repoById.get(target.repositoryId);
         if (!repo) continue;
 
         if (!target.directoryId) {

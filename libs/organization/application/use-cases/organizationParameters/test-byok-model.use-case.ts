@@ -1,3 +1,4 @@
+import { BYOKProvider } from '@kodus/kodus-common/llm';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import {
     IOrganizationParametersService,
@@ -6,7 +7,10 @@ import {
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 
 import { resolveByokSlot } from './byok-credentials.util';
-import { GetModelsByProviderUseCase } from './get-models-by-provider.use-case';
+import {
+    CURATED_CATALOG_PROVIDERS,
+    GetModelsByProviderUseCase,
+} from './get-models-by-provider.use-case';
 import {
     TestByokConnectionUseCase,
     TestByokResult,
@@ -68,18 +72,24 @@ export class TestByokModelUseCase {
 
         if (catalog?.models?.length) {
             const found = catalog.models.some((m) => m.id === model);
-            return found
-                ? { ok: true, code: 'ok', latencyMs: Date.now() - start }
-                : {
-                      ok: false,
-                      code: 'not_found',
-                      latencyMs: Date.now() - start,
-                      message: `"${model}" isn't offered by your ${input.provider} provider.`,
-                      providerMessage: `Model "${model}" is not in the provider's model list.`,
-                  };
+            if (found) {
+                return { ok: true, code: 'ok', latencyMs: Date.now() - start };
+            }
+            // Bedrock/Vertex catalogs are CURATED (not exhaustive), so a miss
+            // isn't proof the model is invalid — fall through to a real probe.
+            // Other providers list authoritatively, so a miss is a real miss.
+            if (!CURATED_CATALOG_PROVIDERS.has(input.provider as BYOKProvider)) {
+                return {
+                    ok: false,
+                    code: 'not_found',
+                    latencyMs: Date.now() - start,
+                    message: `"${model}" isn't offered by your ${input.provider} provider.`,
+                    providerMessage: `Model "${model}" is not in the provider's model list.`,
+                };
+            }
         }
 
-        // 2) No catalog available → probe the provider directly with the model.
+        // 2) No/curated catalog → probe the provider directly with the model.
         return this.testByokConnectionUseCase.execute({
             provider: input.provider,
             model,

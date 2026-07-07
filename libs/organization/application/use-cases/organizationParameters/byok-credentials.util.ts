@@ -29,7 +29,9 @@ function safeDecrypt(value?: string): string | undefined {
     try {
         return decrypt(value);
     } catch {
-        return undefined;
+        // Preserve an already-plaintext value; a corrupted-ciphertext value
+        // will still fail downstream (auth error) rather than being dropped.
+        return value;
     }
 }
 
@@ -39,8 +41,9 @@ function safeDecrypt(value?: string): string | undefined {
  * when there's no org context or no slot uses that provider — callers then fall
  * back to Kodus env keys (the setup wizard, before anything is saved).
  *
- * Only `apiKey` and the three Bedrock auth fields are stored encrypted (see
- * `encryptSlot` in create-or-update.use-case.ts); the rest are plaintext.
+ * Only `apiKey` and the Bedrock auth fields (bearer token, access key id,
+ * secret access key, session token) are stored encrypted (see `encryptSlot` in
+ * create-or-update.use-case.ts); the rest are plaintext.
  */
 export async function resolveByokSlot(
     organizationParametersService: IOrganizationParametersService,
@@ -79,6 +82,6 @@ export async function resolveByokSlot(
         awsAccessKeyId: safeDecrypt(slot.awsAccessKeyId),
         awsSecretAccessKey: safeDecrypt(slot.awsSecretAccessKey),
         awsRegion: slot.awsRegion,
-        awsSessionToken: slot.awsSessionToken,
+        awsSessionToken: safeDecrypt(slot.awsSessionToken),
     };
 }

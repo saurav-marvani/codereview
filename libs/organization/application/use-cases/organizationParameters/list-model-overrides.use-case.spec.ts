@@ -73,6 +73,19 @@ describe('ListModelOverridesUseCase', () => {
         expect(res.mismatchedCount).toBe(0);
     });
 
+    it('does not flag a curated-provider (Bedrock/Vertex) miss as mismatched', async () => {
+        const useCase = build({
+            codeReviewConfig: cfgWith('us.anthropic.claude-3-5-haiku-20241022-v1:0'),
+            provider: 'amazon_bedrock',
+            catalog: [{ id: 'us.anthropic.claude-opus-4-8', name: 'Opus' }],
+        });
+
+        const res = await useCase.execute(org);
+        // Curated list isn't exhaustive → can't judge → null, not false.
+        expect(res.overrides[0].inCurrentProviderCatalog).toBeNull();
+        expect(res.mismatchedCount).toBe(0);
+    });
+
     it('short-circuits with no overrides', async () => {
         const useCase = build({ codeReviewConfig: { configs: {}, repositories: [] } });
         const res = await useCase.execute(org);

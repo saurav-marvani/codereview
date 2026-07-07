@@ -14,6 +14,7 @@ import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import axios from 'axios';
 
 import { resolveByokSlot } from './byok-credentials.util';
+import { assertSafeOpenAICompatibleUrl } from './test-byok-connection.use-case';
 
 // Interfaces for API responses
 interface OpenAIModel {
@@ -52,6 +53,16 @@ interface GeminiModel {
 interface GeminiResponse {
     models: GeminiModel[];
 }
+
+/**
+ * Providers whose model list is a CURATED static catalog (not fetched live), so
+ * it isn't exhaustive — a model missing from it is NOT proof the model is
+ * invalid. Callers must not treat a miss as a hard mismatch/failure for these.
+ */
+export const CURATED_CATALOG_PROVIDERS = new Set<BYOKProvider>([
+    BYOKProvider.AMAZON_BEDROCK,
+    BYOKProvider.GOOGLE_VERTEX,
+]);
 
 export interface ModelResponse {
     provider: BYOKProvider;
@@ -407,6 +418,12 @@ export class GetModelsByProviderUseCase {
                 'baseUrl is required for OpenAI Compatible',
             );
         }
+
+        // SSRF guard: the baseURL can come from the org's stored BYOK config
+        // (user-controlled), so reject private/reserved IPs, the cloud metadata
+        // endpoint, and non-https schemes before making the server-side request
+        // — the same guard the connection probe uses.
+        await assertSafeOpenAICompatibleUrl(baseUrl);
 
         try {
             // Trim trailing slashes without a regex (backtracking-safe), then

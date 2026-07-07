@@ -7,6 +7,11 @@ jest.mock('axios');
 jest.mock('@libs/common/utils/crypto', () => ({
     decrypt: (v: string) => `decrypted:${v}`,
 }));
+// The SSRF guard does a real DNS lookup — stub it so the catalog tests don't
+// depend on network / public DNS resolution.
+jest.mock('./test-byok-connection.use-case', () => ({
+    assertSafeOpenAICompatibleUrl: jest.fn().mockResolvedValue(undefined),
+}));
 
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
