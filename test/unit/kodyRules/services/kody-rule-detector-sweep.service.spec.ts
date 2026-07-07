@@ -14,7 +14,11 @@ function make(opts: {
     const release = jest.fn(async () => {});
     const lock = opts.lock === undefined ? { release } : opts.lock;
     const kodyRulesService: any = {
-        find: jest.fn(async () => opts.docs ?? []),
+        findOrganizationIdsWithRules: jest.fn(async () =>
+            (opts.docs ?? [])
+                .map((d: any) => d?.organizationId)
+                .filter((id: unknown): id is string => typeof id === 'string'),
+        ),
     };
     const backfill: any = {
         execute: jest.fn(async () =>
@@ -63,7 +67,9 @@ describe('KodyRuleDetectorSweepService (#1449 continuous T0 sweep)', () => {
             docs: [{ organizationId: 'o1' }],
         });
         await svc.sweep();
-        expect(kodyRulesService.find).not.toHaveBeenCalled();
+        expect(
+            kodyRulesService.findOrganizationIdsWithRules,
+        ).not.toHaveBeenCalled();
         expect(backfill.execute).not.toHaveBeenCalled();
         restore();
     });

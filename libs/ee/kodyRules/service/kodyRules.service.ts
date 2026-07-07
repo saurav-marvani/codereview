@@ -200,6 +200,10 @@ export class KodyRulesService implements IKodyRulesService {
         return this.kodyRulesRepository.findByOrganizationId(organizationId);
     }
 
+    async findOrganizationIdsWithRules(): Promise<string[]> {
+        return this.kodyRulesRepository.findOrganizationIdsWithRules();
+    }
+
     /**
      * Obtém informações sobre limites de Kody Rules para uma organização
      * Usado pelo frontend para controlar UI (desabilitar botões, mostrar avisos, etc)
@@ -736,7 +740,11 @@ export class KodyRulesService implements IKodyRulesService {
 
         const updatedRule = {
             ...existingRule,
-            detector: detector ?? undefined,
+            // Pass `null` through as-is: updateRule skips only `undefined`, so
+            // `detector: null` writes `$set rules.$.detector = null` and clears
+            // a stale detector. `?? undefined` here would silently no-op the
+            // clear and leave the old regex firing forever.
+            detector: detector,
             updatedAt: new Date(),
         } as IKodyRule;
 

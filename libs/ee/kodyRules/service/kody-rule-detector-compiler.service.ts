@@ -25,6 +25,7 @@ import {
     IKodyRulesService,
     KODY_RULES_SERVICE_TOKEN,
 } from '@libs/kodyRules/domain/contracts/kodyRules.service.contract';
+import { IKodyRuleDetectorCompiler } from '@libs/kodyRules/domain/contracts/kody-rule-detector-compiler.contract';
 import { IKodyRule } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import {
     compileRuleDetector,
@@ -34,7 +35,9 @@ import {
 } from '@libs/code-review/infrastructure/agents/collaborators/kody-rules-detector.compiler';
 
 @Injectable()
-export class KodyRuleDetectorCompilerService {
+export class KodyRuleDetectorCompilerService
+    implements IKodyRuleDetectorCompiler
+{
     private readonly logger = createLogger(
         KodyRuleDetectorCompilerService.name,
     );

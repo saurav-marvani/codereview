@@ -64,8 +64,12 @@ export class KodyRuleDetectorSweepService {
         const totals = { orgs: 0, processed: 0, compiled: 0, errored: 0 };
         let budget = this.maxRulesPerRun;
         try {
-            const docs = await this.kodyRulesService.find();
-            for (const doc of docs) {
+            // Projected org-id list — the per-org rules load happens inside
+            // backfill.execute (one org at a time), so the sweep never holds
+            // every org's rules array in memory at once.
+            const orgIds =
+                await this.kodyRulesService.findOrganizationIdsWithRules();
+            for (const organizationId of orgIds) {
                 if (budget <= 0) {
                     this.logger.log({
                         message: `Detector sweep hit per-run cap (${this.maxRulesPerRun}); remaining orgs deferred to the next run`,
@@ -73,9 +77,6 @@ export class KodyRuleDetectorSweepService {
                     });
                     break;
                 }
-                const organizationId =
-                    (doc as any)?.organizationId ??
-                    (doc as any)?.toObject?.()?.organizationId;
                 if (!organizationId) continue;
                 totals.orgs++;
                 try {

@@ -61,6 +61,19 @@ export class KodyRulesRepository implements IKodyRulesRepository {
         return doc ? mapSimpleModelToEntity(doc, KodyRulesEntity) : null;
     }
 
+    async findOrganizationIdsWithRules(): Promise<string[]> {
+        // Projection + lean: only the organizationId of docs that have ≥1 rule.
+        // The detector sweep needs the org list, not every embedded rules array
+        // (loading all of them would grow memory unbounded on a large fleet).
+        const docs = await this.kodyRulesModel
+            .find({ 'rules.0': { $exists: true } }, { organizationId: 1 })
+            .lean()
+            .exec();
+        return docs
+            .map((d: any) => d?.organizationId)
+            .filter((id: unknown): id is string => typeof id === 'string');
+    }
+
     async find(filter?: Partial<IKodyRules>): Promise<KodyRulesEntity[]> {
         if (!filter) {
             const docs = await this.kodyRulesModel.find().exec();

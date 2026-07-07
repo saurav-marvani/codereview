@@ -135,10 +135,34 @@ export interface CompileResult {
     declineReason?:
         | 'not-mechanical'
         | 'invalid-regex'
+        | 'unsafe-regex'
         | 'missed-incorrect-example'
         | 'flagged-correct-example'
         | 'over-matches-corpus'
         | 'no-usable-examples';
+}
+
+/** Longest detector pattern we persist. A compiled rule is a simple line
+ *  matcher; anything longer is more likely an unbounded/backtracking construct
+ *  than a legitimate detector. */
+const MAX_PATTERN_LEN = 200;
+
+/**
+ * Reject regex shapes prone to catastrophic backtracking (ReDoS). An LLM (or a
+ * malicious rule author) can pass the example/corpus gate with a pattern like
+ * `(a+)+$` that still hangs on a long adversarial line at review time. This is
+ * a conservative heuristic — a quantifier applied to a group/class that itself
+ * contains a quantifier — plus a length cap. Rejected patterns fall back to the
+ * semantic judge; combined with the per-line length cap in runDetector, a
+ * shipped detector can't blow up review time.
+ */
+export function isDetectorRegexSafe(pattern: string): boolean {
+    if (!pattern || pattern.length > MAX_PATTERN_LEN) return false;
+    // nested quantifier: a group or char-class containing +/*/{n,} that is
+    // itself followed by +/*/{n,} — the classic ReDoS shape.
+    const NESTED_QUANTIFIER =
+        /(\([^()]*[+*}][^()]*\)|\[[^\]]*\])\s*[*+]|\)\s*\{\d+,\d*\}\s*[*+]/;
+    return !NESTED_QUANTIFIER.test(pattern);
 }
 
 /** Extract the content of one added diff line from a `NN +code` shard line. */
@@ -167,6 +191,12 @@ export async function compileRuleDetector(
         rx = new RegExp(out.pattern, out.flags || '');
     } catch {
         return { detector: null, declineReason: 'invalid-regex' };
+    }
+
+    // ReDoS guard: never persist a backtracking-prone pattern (it would run on
+    // every added line at review time). Decline → semantic judge.
+    if (!isDetectorRegexSafe(out.pattern)) {
+        return { detector: null, declineReason: 'unsafe-regex' };
     }
 
     // Gate 1+2: the rule's own labeled examples. Examples may be full snippets
@@ -226,6 +256,10 @@ export async function compileRuleDetector(
     };
 }
 
+/** Skip absurdly long added lines when running detectors — a ReDoS input
+ *  bound (real source lines are short; minified blobs aren't rule targets). */
+const MAX_MATCH_LINE_LEN = 2000;
+
 /** One detector match at review time. */
 export interface DetectorHit {
     filename: string;
@@ -256,6 +290,10 @@ export function runDetector(
             if (!m) continue;
             const line = Number(m[1]);
             const code = m[2];
+            // Belt-and-suspenders ReDoS bound: a pathological line can't feed
+            // a huge input to the matcher even if a bad pattern slipped the
+            // compile-time guard. Real code lines are short; skip absurd ones.
+            if (code.length > MAX_MATCH_LINE_LEN) continue;
             rx.lastIndex = 0;
             if (Number.isFinite(line) && rx.test(code)) {
                 hits.push({ filename: f.filename, line, code });

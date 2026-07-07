@@ -1,7 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { createLogger } from '@libs/core/log/logger';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
-import { KodyRuleDetectorCompilerService } from '@libs/ee/kodyRules/service/kody-rule-detector-compiler.service';
+import {
+    IKodyRuleDetectorCompiler,
+    KODY_RULE_DETECTOR_COMPILER_TOKEN,
+} from '../../domain/contracts/kody-rule-detector-compiler.contract';
 import {
     IKodyRulesService,
     KODY_RULES_SERVICE_TOKEN,
@@ -47,7 +50,8 @@ export class BackfillRuleDetectorsUseCase {
     constructor(
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: IKodyRulesService,
-        private readonly detectorCompiler: KodyRuleDetectorCompilerService,
+        @Inject(KODY_RULE_DETECTOR_COMPILER_TOKEN)
+        private readonly detectorCompiler: IKodyRuleDetectorCompiler,
     ) {}
 
     async execute(

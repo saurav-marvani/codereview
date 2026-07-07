@@ -11,6 +11,7 @@ import { KodyRulesRepository } from '@libs/ee/kodyRules/repository/kodyRules.rep
 import { KodyRulesValidationService } from '@libs/ee/kodyRules/service/kody-rules-validation.service';
 import { KodyRulesService } from '@libs/ee/kodyRules/service/kodyRules.service';
 import { KodyRuleDetectorCompilerService } from '@libs/ee/kodyRules/service/kody-rule-detector-compiler.service';
+import { KODY_RULE_DETECTOR_COMPILER_TOKEN } from '../domain/contracts/kody-rule-detector-compiler.contract';
 import { LicenseModule } from '@libs/ee/license/license.module';
 import { PermissionValidationModule } from '@libs/ee/shared/permission-validation.module';
 
@@ -114,6 +115,10 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         ChangeStatusKodyRulesUseCase,
         CreateOrUpdateKodyRulesUseCase,
         KodyRuleDetectorCompilerService,
+        {
+            provide: KODY_RULE_DETECTOR_COMPILER_TOKEN,
+            useExisting: KodyRuleDetectorCompilerService,
+        },
         BackfillRuleDetectorsUseCase,
         KodyRuleDetectorSweepService,
         SendRulesNotificationUseCase,

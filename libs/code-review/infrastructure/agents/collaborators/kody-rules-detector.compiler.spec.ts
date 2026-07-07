@@ -1,5 +1,6 @@
 import {
     compileRuleDetector,
+    isDetectorRegexSafe,
     runDetector,
     RunCompiler,
     DetectorPlan,
@@ -94,6 +95,20 @@ describe('compileRuleDetector — the gate (#1449 T0)', () => {
         expect(res.declineReason).toBe('over-matches-corpus');
     });
 
+    it('declines a ReDoS-prone regex (nested quantifier) — unsafe-regex', async () => {
+        const res = await compileRuleDetector(
+            rule({
+                examples: [
+                    { isCorrect: false, snippet: 'aaaa' },
+                    { isCorrect: true, snippet: 'b' },
+                ],
+            }),
+            compiler({ mechanical: true, pattern: '(a+)+$' }),
+        );
+        expect(res.detector).toBeNull();
+        expect(res.declineReason).toBe('unsafe-regex');
+    });
+
     it('declines when there are no labeled examples and no corpus', async () => {
         const res = await compileRuleDetector(
             rule({ examples: [] }),
@@ -101,6 +116,21 @@ describe('compileRuleDetector — the gate (#1449 T0)', () => {
         );
         expect(res.detector).toBeNull();
         expect(res.declineReason).toBe('no-usable-examples');
+    });
+});
+
+describe('isDetectorRegexSafe — ReDoS guard', () => {
+    it('rejects nested quantifiers', () => {
+        expect(isDetectorRegexSafe('(a+)+$')).toBe(false);
+        expect(isDetectorRegexSafe('(a*)*')).toBe(false);
+        expect(isDetectorRegexSafe('([a-z]+)*')).toBe(false);
+    });
+    it('accepts ordinary detector patterns', () => {
+        expect(isDetectorRegexSafe('console\\.(log|warn|error)\\(')).toBe(true);
+        expect(isDetectorRegexSafe('\\bDateTime\\.now\\s*\\(')).toBe(true);
+    });
+    it('rejects an over-long pattern', () => {
+        expect(isDetectorRegexSafe('a'.repeat(201))).toBe(false);
     });
 });
 
