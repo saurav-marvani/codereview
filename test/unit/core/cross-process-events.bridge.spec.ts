@@ -89,15 +89,19 @@ describe('CrossProcessEventsBridge', () => {
         const { bridge } = makeBridge();
 
         const envelope = (over: Partial<any>) => ({
-            pid: process.pid + 1,
+            // Containerized apps are all PID 1, so the guard is a random
+            // per-process instance id — never process.pid.
+            instanceId: 'another-instance',
             name: 'pull-request.closed',
             payload,
             ...over,
         });
 
         expect(bridge.shouldReemit(envelope({}))).toBe(true);
-        // Own pid → the local bus already delivered it.
-        expect(bridge.shouldReemit(envelope({ pid: process.pid }))).toBe(false);
+        // Own instance → the local bus already delivered it.
+        expect(
+            bridge.shouldReemit(envelope({ instanceId: bridge.instanceId })),
+        ).toBe(false);
         // Unknown event names are ignored.
         expect(bridge.shouldReemit(envelope({ name: 'something-else' }))).toBe(
             false,
