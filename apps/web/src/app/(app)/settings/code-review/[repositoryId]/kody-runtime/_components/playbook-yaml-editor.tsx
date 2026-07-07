@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import yaml from "js-yaml";
+import { dump as dumpYaml, load as loadYaml } from "js-yaml";
 import { useFormContext } from "react-hook-form";
 import { CodeInputSimple } from "@components/ui/code-input-simple";
 
@@ -50,7 +50,7 @@ export function PlaybookYamlEditor({ disabled }: { disabled?: boolean }) {
     };
 
     const dump = (cfg: Record<string, string[]>) =>
-        Object.keys(cfg).length ? yaml.dump(cfg, { lineWidth: 120 }) : "";
+        Object.keys(cfg).length ? dumpYaml(cfg, { lineWidth: 120 }) : "";
 
     const [text, setText] = useState<string>(() => dump(readConfig()));
     const [error, setError] = useState<string | null>(null);
@@ -77,7 +77,7 @@ export function PlaybookYamlEditor({ disabled }: { disabled?: boolean }) {
 
         let parsed: unknown;
         try {
-            parsed = val.trim() ? yaml.load(val) : {};
+            parsed = val.trim() ? loadYaml(val) : {};
         } catch (e: any) {
             setError(e?.reason || e?.message || "Invalid YAML");
             return;
