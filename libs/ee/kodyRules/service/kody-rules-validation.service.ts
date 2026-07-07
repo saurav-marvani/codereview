@@ -428,19 +428,23 @@ export class KodyRulesValidationService {
      * as ONE pattern, where a comma is a literal character — so any
      * multi-glob rule silently matched zero files.
      *
-     * Commas inside braces are NOT separators: "{app,lib}/**" is a single
-     * valid picomatch alternation and must stay intact.
+     * Commas inside braces or character classes are NOT separators:
+     * "{app,lib}/**" and "src/[ab,cd]/**" are single valid picomatch
+     * patterns and must stay intact.
      */
     private splitRulePathGlobs(rulePath: string): string[] {
         const globs: string[] = [];
         let current = '';
         let braceDepth = 0;
+        let bracketDepth = 0;
 
         for (const char of rulePath) {
             if (char === '{') braceDepth++;
             else if (char === '}' && braceDepth > 0) braceDepth--;
+            else if (char === '[') bracketDepth++;
+            else if (char === ']' && bracketDepth > 0) bracketDepth--;
 
-            if (char === ',' && braceDepth === 0) {
+            if (char === ',' && braceDepth === 0 && bracketDepth === 0) {
                 if (current.trim()) globs.push(current.trim());
                 current = '';
                 continue;

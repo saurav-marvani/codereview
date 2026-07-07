@@ -164,6 +164,15 @@ describe('isIdeRuleSource — sanity check', () => {
         expect(isIdeRuleSource('AGENTS.md')).toBe(true);
         expect(isIdeRuleSource('apps/web/AGENTS.md')).toBe(true);
     });
+
+    it('recognises non-canonical casing, consistent with discovery', () => {
+        // Discovery matches case-insensitively; a file the sync imports
+        // (e.g. lowercase claude.md) must be recognised afterwards or the
+        // toggle-off purge and origin resolution skip it.
+        expect(isIdeRuleSource('claude.md')).toBe(true);
+        expect(isIdeRuleSource('agents.md')).toBe(true);
+        expect(isIdeRuleSource('apps/web/.CursorRules')).toBe(true);
+    });
 });
 
 describe('RULE_FILE_DISCOVERY_PATTERNS (#1484/#1485)', () => {

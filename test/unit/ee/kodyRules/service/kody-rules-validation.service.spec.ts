@@ -704,6 +704,27 @@ describe('KodyRulesValidationService', () => {
             }
         });
 
+        it('keeps character classes intact (comma inside [] is not a separator)', () => {
+            const rule = createRule({
+                uuid: 'bracketed',
+                path: 'src/[ab,cd]/**/*.ts,docs/**/*.md',
+            });
+
+            // picomatch treats "[ab,cd]" as a character class: any single
+            // char of a, b, comma, c, d. A naive comma-split would produce
+            // the invalid fragments "src/[ab" and "cd]/**/*.ts".
+            expect(
+                service
+                    .getKodyRulesForFile('src/a/main.ts', [rule], filters)
+                    .map((r) => r.uuid),
+            ).toEqual(['bracketed']);
+            expect(
+                service
+                    .getKodyRulesForFile('docs/readme.md', [rule], filters)
+                    .map((r) => r.uuid),
+            ).toEqual(['bracketed']);
+        });
+
         it('still matches single-glob paths as before', () => {
             const rule = createRule({
                 uuid: 'single',

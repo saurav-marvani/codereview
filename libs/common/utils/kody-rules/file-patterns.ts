@@ -1,6 +1,6 @@
 import * as path from 'path';
 
-import { isFileMatchingGlob } from '@libs/common/utils/glob-utils';
+import { isFileMatchingGlobCaseInsensitive } from '@libs/common/utils/glob-utils';
 
 export const RULE_FILE_PATTERNS = [
     // Cursor
@@ -78,7 +78,12 @@ export function isIdeRuleSource(
     sourcePath: string | null | undefined,
 ): boolean {
     if (!sourcePath) return false;
-    return isFileMatchingGlob(sourcePath, [...RULE_FILE_DISCOVERY_PATTERNS]);
+    // Case-insensitive to stay consistent with discovery: a file the sync
+    // imports (e.g. lowercase `claude.md`) must always be recognised as an
+    // IDE-synced source afterwards (toggle-off purge, origin resolution).
+    return isFileMatchingGlobCaseInsensitive(sourcePath, [
+        ...RULE_FILE_DISCOVERY_PATTERNS,
+    ]);
 }
 
 /**
