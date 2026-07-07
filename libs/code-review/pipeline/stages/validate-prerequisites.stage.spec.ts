@@ -8,6 +8,7 @@ import { ORGANIZATION_PARAMETERS_SERVICE_TOKEN } from '@libs/organization/domain
 import { PULL_REQUESTS_SERVICE_TOKEN } from '@libs/platformData/domain/pullRequests/contracts/pullRequests.service.contracts';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { AutoAssignLicenseUseCase } from '@libs/ee/license/use-cases/auto-assign-license.use-case';
+import { LICENSE_SERVICE_TOKEN } from '@libs/ee/license/interfaces/license.interface';
 import {
     PermissionValidationService,
     ValidationErrorType,
@@ -24,6 +25,10 @@ describe('ValidatePrerequisitesStage', () => {
 
     let mockPermissionValidationService: {
         validateExecutionPermissions: jest.Mock;
+        getBYOKConfig: jest.Mock;
+    };
+    let mockLicenseService: {
+        startTrial: jest.Mock;
     };
     let mockAutoAssignLicenseUseCase: {
         execute: jest.Mock;
@@ -83,6 +88,11 @@ describe('ValidatePrerequisitesStage', () => {
     beforeEach(async () => {
         mockPermissionValidationService = {
             validateExecutionPermissions: jest.fn(),
+            getBYOKConfig: jest.fn().mockResolvedValue(null),
+        };
+
+        mockLicenseService = {
+            startTrial: jest.fn().mockResolvedValue(false),
         };
 
         mockAutoAssignLicenseUseCase = {
@@ -152,6 +162,10 @@ describe('ValidatePrerequisitesStage', () => {
                 {
                     provide: USER_SERVICE_TOKEN,
                     useValue: { find: jest.fn().mockResolvedValue([]) },
+                },
+                {
+                    provide: LICENSE_SERVICE_TOKEN,
+                    useValue: mockLicenseService,
                 },
             ],
         }).compile();
@@ -226,6 +240,69 @@ describe('ValidatePrerequisitesStage', () => {
         expect(
             mockCodeManagementService.addReactionToPR,
         ).not.toHaveBeenCalled();
+    });
+
+    it('auto-provisions a missing trial and re-validates for an onboarded org', async () => {
+        const context = makeContext();
+
+        mockPermissionValidationService.validateExecutionPermissions
+            .mockResolvedValueOnce({
+                allowed: false,
+                errorType: ValidationErrorType.INVALID_LICENSE,
+            })
+            .mockResolvedValueOnce({
+                allowed: true,
+                subscriptionStatus: 'trial',
+            });
+
+        mockParametersService.findByKey.mockImplementation((key: string) => {
+            if (key === ParametersKey.PLATFORM_CONFIGS) {
+                return Promise.resolve({
+                    configValue: { finishOnboard: true },
+                });
+            }
+            return Promise.resolve(undefined);
+        });
+
+        mockLicenseService.startTrial.mockResolvedValue(true);
+
+        const result = await stage.execute(context);
+
+        expect(mockLicenseService.startTrial).toHaveBeenCalledWith(
+            context.organizationAndTeamData,
+            false,
+        );
+        // Validated once (INVALID_LICENSE), then again after provisioning.
+        expect(
+            mockPermissionValidationService.validateExecutionPermissions,
+        ).toHaveBeenCalledTimes(2);
+        // Review proceeds instead of being skipped for a missing license.
+        expect(result.statusInfo?.status).not.toBe('skipped');
+        expect(
+            mockCodeManagementService.createIssueComment,
+        ).not.toHaveBeenCalled();
+    });
+
+    it('does not provision a trial when onboarding is not finished', async () => {
+        const context = makeContext();
+
+        mockPermissionValidationService.validateExecutionPermissions.mockResolvedValue(
+            {
+                allowed: false,
+                errorType: ValidationErrorType.INVALID_LICENSE,
+            },
+        );
+
+        // No PLATFORM_CONFIGS / finishOnboard flag → onboarding not complete.
+        mockParametersService.findByKey.mockResolvedValue(undefined);
+
+        const result = await stage.execute(context);
+
+        expect(mockLicenseService.startTrial).not.toHaveBeenCalled();
+        expect(
+            mockPermissionValidationService.validateExecutionPermissions,
+        ).toHaveBeenCalledTimes(1);
+        expect(result.statusInfo?.status).toBe('skipped');
     });
 
     it('should mark notification as handled for early skips when show status feedback is disabled', async () => {

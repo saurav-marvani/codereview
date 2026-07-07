@@ -26,6 +26,10 @@ import {
 import { AuthorizationService } from '@libs/identity/infrastructure/adapters/services/permissions/authorization.service';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import {
+    IKodyRuleDetectorCompiler,
+    KODY_RULE_DETECTOR_COMPILER_TOKEN,
+} from '../../domain/contracts/kody-rule-detector-compiler.contract';
+import {
     IKodyRulesService,
     KODY_RULES_SERVICE_TOKEN,
 } from '@libs/kodyRules/domain/contracts/kodyRules.service.contract';
@@ -49,6 +53,8 @@ export class CreateOrUpdateKodyRulesUseCase {
         private readonly contextReferenceDetectionService: ContextReferenceDetectionService,
         private readonly centralizedConfigPrService: CentralizedConfigPrService,
         private readonly permissionValidationService: PermissionValidationService,
+        @Inject(KODY_RULE_DETECTOR_COMPILER_TOKEN)
+        private readonly detectorCompiler: IKodyRuleDetectorCompiler,
     ) {}
 
     async execute(
@@ -174,6 +180,28 @@ export class CreateOrUpdateKodyRulesUseCase {
                         },
                     });
                 });
+
+                // T0 (#1449): compile a deterministic detector for mechanical
+                // rules so review checks them in pure code. Fire-and-forget,
+                // gated — a rule only gets a detector if it passes the compile
+                // gate; otherwise it stays semantic. Never blocks the save.
+                this.detectorCompiler
+                    .compileAndSave(organizationAndTeamData, result.uuid, {
+                        ...kodyRule,
+                        uuid: result.uuid,
+                        // Carry the persisted detector (the DTO has none) so
+                        // compileAndSave can clear a stale one when an edited
+                        // rule stops being mechanical.
+                        detector: (result as IKodyRule).detector,
+                    })
+                    .catch((error) => {
+                        this.logger.error({
+                            message: 'Background detector compile failed',
+                            context: CreateOrUpdateKodyRulesUseCase.name,
+                            error: this.normalizeError(error),
+                            metadata: { ruleId: result.uuid },
+                        });
+                    });
             } else {
                 this.logger.warn({
                     message:

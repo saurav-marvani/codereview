@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { IssueSeverityLevelBadge } from "@components/system/issue-severity-level-badge";
-import { KodyRulesLimitPopover } from "@components/system/kody-rules-limit-popover";
 import { Badge } from "@components/ui/badge";
 import { Button } from "@components/ui/button";
 import {
@@ -13,7 +12,6 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@components/ui/dialog";
-import { PopoverTrigger } from "@components/ui/popover";
 import { Section } from "@components/ui/section";
 import { Separator } from "@components/ui/separator";
 import { Spinner } from "@components/ui/spinner";
@@ -21,7 +19,6 @@ import { toast } from "@components/ui/toaster/use-toast";
 import { useAsyncAction } from "@hooks/use-async-action";
 import { KODY_RULES_PATHS } from "@services/kodyRules";
 import { addKodyRuleToRepositories } from "@services/kodyRules/fetch";
-import { useKodyRulesLimits } from "@services/kodyRules/hooks";
 import {
     KodyRulesOrigin,
     KodyRulesStatus,
@@ -74,7 +71,6 @@ export const KodyRuleLibraryItemModal = ({
         rule.userFeedback as FeedbackType | null,
     );
 
-    const kodyRulesLimits = useKodyRulesLimits();
     const permissions = usePermissions();
     const allowedRepositories = repositories.filter((repository) =>
         hasPermission({
@@ -351,110 +347,55 @@ export const KodyRuleLibraryItemModal = ({
                 <DialogFooter className="justify-between gap-8">
                     <div className="flex shrink-0 flex-row items-center justify-end gap-px">
                         {repositoryId ? (
-                            <>
-                                {kodyRulesLimits.canAddMoreRules ? (
-                                    <Button
-                                        size="md"
-                                        variant="primary"
-                                        leftIcon={<Plus />}
-                                        onClick={addToRepositories}
-                                        disabled={!canEdit}
-                                        loading={isAddingToRepositories}>
-                                        Add to my rules
-                                    </Button>
-                                ) : (
-                                    <KodyRulesLimitPopover
-                                        limit={kodyRulesLimits.limit}>
-                                        <PopoverTrigger asChild>
-                                            <Button
-                                                size="md"
-                                                variant="primary"
-                                                leftIcon={<Plus />}
-                                                disabled={!canEdit}>
-                                                Add to my rules
-                                            </Button>
-                                        </PopoverTrigger>
-                                    </KodyRulesLimitPopover>
-                                )}
-                            </>
+                            // Adding is never blocked — a rule beyond the
+                            // free plan's active-rule cap is still created,
+                            // just PAUSED + locked in the destination list
+                            // (mirrors MCP plugins beyond their cap).
+                            <Button
+                                size="md"
+                                variant="primary"
+                                leftIcon={<Plus />}
+                                onClick={addToRepositories}
+                                disabled={!canEdit}
+                                loading={isAddingToRepositories}>
+                                Add to my rules
+                            </Button>
                         ) : (
                             <>
-                                {kodyRulesLimits.canAddMoreRules ? (
-                                    <>
-                                        <Button
-                                            size="md"
-                                            variant="primary"
-                                            leftIcon={<Plus />}
-                                            className="rounded-r-none"
-                                            onClick={addToRepositories}
-                                            loading={isAddingToRepositories}
-                                            disabled={
-                                                !canEdit ||
-                                                (selectedRepositoriesIds.length ===
-                                                    0 &&
-                                                    selectedDirectoriesIds.length ===
-                                                        0)
-                                            }>
-                                            Add to my rules
-                                        </Button>
+                                <Button
+                                    size="md"
+                                    variant="primary"
+                                    leftIcon={<Plus />}
+                                    className="rounded-r-none"
+                                    onClick={addToRepositories}
+                                    loading={isAddingToRepositories}
+                                    disabled={
+                                        !canEdit ||
+                                        (selectedRepositoriesIds.length ===
+                                            0 &&
+                                            selectedDirectoriesIds.length ===
+                                                0)
+                                    }>
+                                    Add to my rules
+                                </Button>
 
-                                        <SelectRepositoriesDropdown
-                                            repositories={allowedRepositories}
-                                            selectedRepositoriesIds={
-                                                selectedRepositoriesIds
-                                            }
-                                            selectedDirectoriesIds={
-                                                selectedDirectoriesIds
-                                            }
-                                            setSelectedRepositoriesIds={
-                                                setSelectedRepositoriesIds
-                                            }
-                                            setSelectedDirectoriesIds={
-                                                setSelectedDirectoriesIds
-                                            }
-                                            canEdit={canEdit}
-                                            global={canGlobal}
-                                        />
-                                    </>
-                                ) : (
-                                    <KodyRulesLimitPopover
-                                        limit={kodyRulesLimits.limit}>
-                                        <PopoverTrigger asChild>
-                                            <Button
-                                                size="md"
-                                                variant="primary"
-                                                leftIcon={<Plus />}
-                                                className="rounded-r-none"
-                                                disabled={
-                                                    !canEdit ||
-                                                    (selectedRepositoriesIds.length ===
-                                                        0 &&
-                                                        selectedDirectoriesIds.length ===
-                                                            0)
-                                                }>
-                                                Add to my rules
-                                            </Button>
-                                        </PopoverTrigger>
-
-                                        <SelectRepositoriesDropdown
-                                            repositories={allowedRepositories}
-                                            selectedRepositoriesIds={
-                                                selectedRepositoriesIds
-                                            }
-                                            selectedDirectoriesIds={
-                                                selectedDirectoriesIds
-                                            }
-                                            setSelectedRepositoriesIds={
-                                                setSelectedRepositoriesIds
-                                            }
-                                            setSelectedDirectoriesIds={
-                                                setSelectedDirectoriesIds
-                                            }
-                                            canEdit={canEdit}
-                                            global={canGlobal}
-                                        />
-                                    </KodyRulesLimitPopover>
-                                )}
+                                <SelectRepositoriesDropdown
+                                    repositories={allowedRepositories}
+                                    selectedRepositoriesIds={
+                                        selectedRepositoriesIds
+                                    }
+                                    selectedDirectoriesIds={
+                                        selectedDirectoriesIds
+                                    }
+                                    setSelectedRepositoriesIds={
+                                        setSelectedRepositoriesIds
+                                    }
+                                    setSelectedDirectoriesIds={
+                                        setSelectedDirectoriesIds
+                                    }
+                                    canEdit={canEdit}
+                                    global={canGlobal}
+                                />
                             </>
                         )}
                     </div>

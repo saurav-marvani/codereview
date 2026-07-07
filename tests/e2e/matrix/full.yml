@@ -30,6 +30,10 @@ scenarios:
     # second real review per cell, too heavy for the PR-check fast tier.
     - command-review-focus
     - kody-rules-create-and-apply
+    # Multi-site coverage guard for the sharded kody-rules rewrite (#1449):
+    # a rule violated at several sites in one PR must be flagged at every
+    # site, not just one (the failure mode of the old agentic agent).
+    - kody-rules-coverage
     # Centralized config (config-as-code) init→sync→disable on a throwaway org.
     # github × {paid, license-paid}; skipped unless CENTRALIZED_CONFIG_TEST_REPO is set.
     - centralized-config-sync

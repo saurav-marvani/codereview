@@ -37,7 +37,37 @@ export interface TokenUsageTu {
     reasoning: number;
     cacheRead: number;
     cacheWrite: number;
+    /** Process area the tokens were spent in — see {@link deriveArea}. */
+    area: TokenUsageArea;
 }
+
+/**
+ * Low-cardinality "where was this token spent" dimension for the Token Usage
+ * screen. A small FIXED set — never store raw `gen_ai.run.name` / `agent.name`
+ * here (hundreds of values, some dynamic per-file/per-skill).
+ */
+export type TokenUsageArea =
+    | 'review' // generalist code-review agents (incl. verify/dedup)
+    | 'kody_rules' // kody-rules analysis, generation and sync
+    | 'cross_file' // cross-file context collection + analysis
+    | 'suggestions' // suggestion refinement (severity/safeguard/validation)
+    | 'summary' // PR summary generation
+    | 'conversation' // @kody conversation
+    | 'system' // internal system analysis (SYSTEM_RUN_NAMES)
+    | 'other';
+
+/**
+ * Exact run-names of the suggestion-refinement stages. Kept as a list (not a
+ * regex) so the Mongo backfill can mirror it with a plain `$in` — the backfill
+ * in libs/core/infrastructure/database/mongo/token-usage/backfill-tu.ts keeps
+ * a copy, asserted equal by token-usage-tu.spec.ts.
+ */
+export const SUGGESTION_RUN_NAMES: ReadonlySet<string> = new Set([
+    'severityAnalysis',
+    'validateWithLLM',
+    'checkSuggestionSimplicity',
+    'repeatedCodeReviewSuggestionClustering',
+]);
 
 /**
  * Internal analysis operations excluded from the byok=false ("would-be
@@ -55,6 +85,40 @@ export const SYSTEM_RUN_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 const n = (v: unknown): number => (typeof v === 'number' ? v : 0);
+
+/**
+ * Maps a span's run/agent identifiers onto the fixed {@link TokenUsageArea}
+ * set. Driven by `gen_ai.run.name` — the one attribute every usage span
+ * carries (the LangChain path sets no `agent.name`/`agent.phase`). Rule order
+ * matters: system first (consistent with the `sys` flag), then the most
+ * specific name families. Mirrored as an aggregation `$switch` in the Mongo
+ * backfill (backfill-tu.ts) — keep the two in sync.
+ */
+export function deriveArea(
+    runName: unknown,
+    phase?: unknown,
+): TokenUsageArea {
+    const rn = typeof runName === 'string' ? runName : '';
+
+    if (SYSTEM_RUN_NAMES.has(rn)) return 'system';
+    // kodyRulesAnalyzeCodeWithAI, generateKodyRules.*, prLevelKodyRules*,
+    // *KodyRulesAnalyzeCodeWithAI, kodyRulesFileToRules*, kodyMemoryResolution…
+    if (/kody.?rules?/i.test(rn) || rn.startsWith('kodyMemory')) {
+        return 'kody_rules';
+    }
+    if (rn.startsWith('crossFile')) return 'cross_file';
+    if (rn.startsWith('code-review') || rn.startsWith('analyzeCodeWithAI')) {
+        return 'review';
+    }
+    if (SUGGESTION_RUN_NAMES.has(rn) || rn.startsWith('safeguard')) {
+        return 'suggestions';
+    }
+    if (rn.startsWith('generateSummaryPR')) return 'summary';
+    if (rn === 'conversationAgent' || phase === 'conversation') {
+        return 'conversation';
+    }
+    return 'other';
+}
 
 /**
  * Derives `tu` from a span's flat dotted-key attribute object. Returns `null`
@@ -92,5 +156,6 @@ export function deriveTu(
         reasoning: n(attrs['gen_ai.usage.reasoning_tokens']),
         cacheRead: n(attrs['gen_ai.usage.cache_read_input_tokens']),
         cacheWrite: n(attrs['gen_ai.usage.cache_creation_input_tokens']),
+        area: deriveArea(runName, attrs['agent.phase']),
     };
 }

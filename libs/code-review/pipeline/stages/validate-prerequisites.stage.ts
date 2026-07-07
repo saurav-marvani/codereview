@@ -20,6 +20,11 @@ import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-
 import { PipelineReason } from '@libs/core/infrastructure/pipeline/interfaces/pipeline-reason.interface';
 import { IStageValidationResult } from '@libs/core/infrastructure/pipeline/interfaces/stage-result.interface';
 import { StageMessageHelper } from '@libs/core/infrastructure/pipeline/utils/stage-message.helper';
+import { environment } from '@libs/ee/configs/environment';
+import {
+    ILicenseService,
+    LICENSE_SERVICE_TOKEN,
+} from '@libs/ee/license/interfaces/license.interface';
 import { AutoAssignLicenseUseCase } from '@libs/ee/license/use-cases/auto-assign-license.use-case';
 import {
     PermissionValidationService,
@@ -102,6 +107,8 @@ export class ValidatePrerequisitesStage extends BasePipelineStage<CodeReviewPipe
         private readonly prAuthorRecipientResolver: PrAuthorRecipientResolver,
         @Inject(USER_SERVICE_TOKEN)
         private readonly usersService: IUsersService,
+        @Inject(LICENSE_SERVICE_TOKEN)
+        private readonly licenseService: ILicenseService,
     ) {
         super();
     }
@@ -205,19 +212,42 @@ export class ValidatePrerequisitesStage extends BasePipelineStage<CodeReviewPipe
         }
 
         // Centralized permission validation
-        const validationResult =
+        const validationOptions = {
+            consumeTrialReviewCredit: true,
+            trialReviewCreditUsageKey:
+                context.repository?.id && pullRequest?.number
+                    ? `${context.repository.id}:${pullRequest.number}`
+                    : undefined,
+        };
+
+        let validationResult =
             await this.permissionValidationService.validateExecutionPermissions(
                 organizationAndTeamData,
                 userGitId,
                 ValidatePrerequisitesStage.name,
-                {
-                    consumeTrialReviewCredit: true,
-                    trialReviewCreditUsageKey:
-                        context.repository?.id && pullRequest?.number
-                            ? `${context.repository.id}:${pullRequest.number}`
-                            : undefined,
-                },
+                validationOptions,
             );
+
+        // Safety net for the "onboarded but never got a trial" gap: the trial
+        // was historically created only by the browser at the end of
+        // onboarding, so a closed tab or a silent billing failure could leave
+        // a fully-onboarded org without any license. If the org has no valid
+        // license yet its onboarding is complete, provision the trial now and
+        // re-validate so this very review can proceed instead of posting a
+        // "your trial has ended" comment.
+        if (
+            !validationResult.allowed &&
+            validationResult.errorType === ValidationErrorType.INVALID_LICENSE &&
+            (await this.tryHealMissingTrial(context))
+        ) {
+            validationResult =
+                await this.permissionValidationService.validateExecutionPermissions(
+                    organizationAndTeamData,
+                    userGitId,
+                    ValidatePrerequisitesStage.name,
+                    validationOptions,
+                );
+        }
 
         if (
             validationResult.allowed ||
@@ -455,6 +485,77 @@ export class ValidatePrerequisitesStage extends BasePipelineStage<CodeReviewPipe
         }
 
         return 'failed';
+    }
+
+    /**
+     * Provision a missing trial for an org that finished onboarding but was
+     * left without a license. Cloud-only, idempotent and best-effort: any
+     * failure leaves the original INVALID_LICENSE result untouched so the
+     * normal "no active subscription" handling still runs.
+     *
+     * Returns true when a trial is in place after the call (so the caller
+     * should re-validate).
+     */
+    private async tryHealMissingTrial(
+        context: CodeReviewPipelineContext,
+    ): Promise<boolean> {
+        try {
+            if (!environment.API_CLOUD_MODE) {
+                return false;
+            }
+
+            const { organizationAndTeamData } = context;
+
+            const onboardingFinished = await this.hasFinishedOnboarding(
+                organizationAndTeamData,
+            );
+
+            if (!onboardingFinished) {
+                return false;
+            }
+
+            const byokConfig =
+                await this.permissionValidationService.getBYOKConfig(
+                    organizationAndTeamData,
+                );
+
+            const provisioned = await this.licenseService.startTrial(
+                organizationAndTeamData,
+                Boolean(byokConfig?.main),
+            );
+
+            if (provisioned) {
+                this.logger.log({
+                    message:
+                        'Auto-provisioned missing trial for onboarded org at review time',
+                    context: this.stageName,
+                    metadata: { organizationAndTeamData },
+                });
+            }
+
+            return provisioned;
+        } catch (error) {
+            this.logger.warn({
+                message: 'Failed to auto-provision missing trial at review time',
+                context: this.stageName,
+                error,
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                },
+            });
+            return false;
+        }
+    }
+
+    private async hasFinishedOnboarding(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<boolean> {
+        const platformConfig = await this.parametersService.findByKey(
+            ParametersKey.PLATFORM_CONFIGS,
+            organizationAndTeamData,
+        );
+
+        return platformConfig?.configValue?.finishOnboard === true;
     }
 
     private async isShowStatusFeedbackEnabled(

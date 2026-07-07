@@ -99,6 +99,38 @@ export class PullRequestsRepository implements IPullRequestsRepository {
         }));
     }
 
+    // Cap on PR numbers returned for a repository scope. Feeds a Mongo `$in`
+    // in the Token Usage read, so an unbounded list would risk a huge query /
+    // BSON-size blowup. The newest PRs (most likely to have usage in the
+    // window) are kept. Backed by the compound index on
+    // {organizationId, 'repository.id', createdAt, number} (pullRequests.model).
+    static readonly REPO_PR_NUMBERS_CAP = 10_000;
+
+    async findNumbersByRepositoryId(
+        organizationId: string,
+        repositoryId: string,
+        until?: Date,
+    ): Promise<number[]> {
+        const filter: any = {
+            organizationId,
+            'repository.id': repositoryId,
+        };
+        // No lower bound on purpose: reviews can run on PRs opened long
+        // before the queried window (re-reviews), so bounding by createdAt
+        // would silently drop their usage. The upper bound is safe — a PR
+        // created after the window can't have spans inside it.
+        if (until) filter.createdAt = { $lte: until };
+
+        const results = await this.pullRequestsModel
+            .find(filter, { number: 1 })
+            .sort({ createdAt: -1 })
+            .limit(PullRequestsRepository.REPO_PR_NUMBERS_CAP)
+            .lean()
+            .exec();
+
+        return results.map((doc) => doc.number);
+    }
+
     async findByNumberAndRepositoryName(
         pullRequestNumber: number,
         repositoryName: string,

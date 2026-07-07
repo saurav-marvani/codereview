@@ -1,10 +1,4 @@
-import {
-    BadRequestException,
-    forwardRef,
-    Inject,
-    Injectable,
-    NotFoundException,
-} from '@nestjs/common';
+import { forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { v4 } from 'uuid';
 import bucketsData from './data/buckets.json';
 import libraryKodyRules from './data/library-kody-rules.json';
@@ -69,6 +63,7 @@ import {
     FindMemoriesFilters,
     FindMemoriesResult,
     IKodyRule,
+    IKodyRuleDetector,
     IKodyRuleMemory,
     IKodyRules,
     KodyRuleCentralizedStatus,
@@ -199,6 +194,10 @@ export class KodyRulesService implements IKodyRulesService {
         return this.kodyRulesRepository.findByOrganizationId(organizationId);
     }
 
+    async findOrganizationIdsWithRules(): Promise<string[]> {
+        return this.kodyRulesRepository.findOrganizationIdsWithRules();
+    }
+
     /**
      * Obtém informações sobre limites de Kody Rules para uma organização
      * Usado pelo frontend para controlar UI (desabilitar botões, mostrar avisos, etc)
@@ -326,10 +325,12 @@ export class KodyRulesService implements IKodyRulesService {
                 throw new NotFoundException('Rule not found');
             }
 
-            await this.ensureFreePlanLimit(
-                organizationAndTeamData,
-                newRuleCountsTowardQuota ? 1 : 0,
-            );
+            const { status: resolvedStatus, lockedByPlan } =
+                await this.resolveStatusWithinPlanLimit(
+                    organizationAndTeamData,
+                    kodyRule?.status ?? KodyRulesStatus.ACTIVE,
+                    newRuleCountsTowardQuota ? 1 : 0,
+                );
 
             const newRule: IKodyRule = {
                 uuid: v4(),
@@ -338,7 +339,8 @@ export class KodyRulesService implements IKodyRulesService {
                 rule: kodyRule?.rule,
                 path: kodyRule?.path,
                 severity: kodyRule?.severity?.toLowerCase(),
-                status: kodyRule?.status ?? KodyRulesStatus.ACTIVE,
+                status: resolvedStatus,
+                lockedByPlan,
                 sourcePath: kodyRule?.sourcePath,
                 centralizedConfig: kodyRule?.centralizedConfig,
                 sourceAnchor: kodyRule?.sourceAnchor,
@@ -405,10 +407,12 @@ export class KodyRulesService implements IKodyRulesService {
             const activeRulesCount = (existing.rules ?? []).filter(
                 (r) => r.status === KodyRulesStatus.ACTIVE,
             ).length;
-            await this.ensureFreePlanLimit(
-                organizationAndTeamData,
-                activeRulesCount + (newRuleCountsTowardQuota ? 1 : 0),
-            );
+            const { status: resolvedStatus, lockedByPlan } =
+                await this.resolveStatusWithinPlanLimit(
+                    organizationAndTeamData,
+                    kodyRule.status ?? KodyRulesStatus.ACTIVE,
+                    activeRulesCount + (newRuleCountsTowardQuota ? 1 : 0),
+                );
 
             const newRule: IKodyRule = {
                 uuid: v4(),
@@ -420,7 +424,8 @@ export class KodyRulesService implements IKodyRulesService {
                 centralizedConfig: kodyRule.centralizedConfig,
                 sourceAnchor: kodyRule.sourceAnchor,
                 severity: kodyRule.severity?.toLowerCase(),
-                status: kodyRule.status ?? KodyRulesStatus.ACTIVE,
+                status: resolvedStatus,
+                lockedByPlan,
                 repositoryId: kodyRule?.repositoryId,
                 directoryId: kodyRule?.directoryId,
                 examples: kodyRule?.examples,
@@ -479,9 +484,14 @@ export class KodyRulesService implements IKodyRulesService {
             throw new NotFoundException('Rule not found');
         }
 
-        // When unpausing (changing from non-ACTIVE to ACTIVE), enforce the
+        // When unpausing (changing from non-ACTIVE to ACTIVE), re-check the
         // free-plan quota so the user can't bypass the 10-rule limit by
-        // pausing and creating new rules.
+        // pausing and creating new rules — if the org is still over quota,
+        // the rule stays PAUSED (lockedByPlan) instead of reactivating.
+        let statusOverride: Partial<
+            Pick<IKodyRule, 'status' | 'lockedByPlan'>
+        > = {};
+
         if (
             kodyRule.status === KodyRulesStatus.ACTIVE &&
             existingRule.status !== KodyRulesStatus.ACTIVE
@@ -489,10 +499,18 @@ export class KodyRulesService implements IKodyRulesService {
             const activeRulesCount = (existing.rules ?? []).filter(
                 (r) => r.status === KodyRulesStatus.ACTIVE,
             ).length;
-            await this.ensureFreePlanLimit(
+            statusOverride = await this.resolveStatusWithinPlanLimit(
                 organizationAndTeamData,
+                KodyRulesStatus.ACTIVE,
                 activeRulesCount + 1,
             );
+        } else if (
+            kodyRule.status !== undefined &&
+            kodyRule.status !== KodyRulesStatus.ACTIVE
+        ) {
+            // Any explicit non-ACTIVE transition (manual pause, reject,
+            // delete) is user-initiated, not a plan lock.
+            statusOverride = { status: kodyRule.status, lockedByPlan: false };
         }
 
         // Normalize severity on the way in (create/addRule already do this);
@@ -505,6 +523,7 @@ export class KodyRulesService implements IKodyRulesService {
         const updatedRule = {
             ...existingRule,
             ...kodyRule,
+            ...statusOverride,
             ...(mergedSeverity ? { severity: mergedSeverity } : {}),
             updatedAt: new Date(),
         };
@@ -716,6 +735,53 @@ export class KodyRulesService implements IKodyRulesService {
         return updatedRuleResult ? (updatedRuleResult as IKodyRule) : null;
     }
 
+    async updateRuleDetector(
+        organizationId: string,
+        ruleId: string,
+        detector: IKodyRuleDetector | null,
+    ): Promise<IKodyRule | null> {
+        const existing = await this.findByOrganizationId(organizationId);
+        if (!existing) {
+            throw new NotFoundException(
+                'Kody rules not found for organization',
+            );
+        }
+
+        const existingRule = existing.rules?.find((r) => r.uuid === ruleId);
+        if (!existingRule) {
+            throw new NotFoundException('Rule not found');
+        }
+
+        const updatedRule = {
+            ...existingRule,
+            // Pass `null` through as-is: updateRule skips only `undefined`, so
+            // `detector: null` writes `$set rules.$.detector = null` and clears
+            // a stale detector. `?? undefined` here would silently no-op the
+            // clear and leave the old regex firing forever.
+            detector: detector,
+            updatedAt: new Date(),
+        } as IKodyRule;
+
+        const updatedKodyRules = await this.updateRule(
+            existing.uuid,
+            ruleId,
+            updatedRule,
+        );
+
+        if (!updatedKodyRules) {
+            this.logger.error({
+                message: 'Could not update rule detector',
+                error: new Error('Could not update rule detector'),
+                context: KodyRulesService.name,
+                metadata: { organizationId, ruleId },
+            });
+            throw new Error('Could not update rule detector');
+        }
+
+        const updated = updatedKodyRules.rules.find((r) => r.uuid === ruleId);
+        return updated ? (updated as IKodyRule) : null;
+    }
+
     async updateRuleWithLogging(
         organizationAndTeamData: OrganizationAndTeamData,
         kodyRule: CreateKodyRuleDto,
@@ -885,34 +951,45 @@ export class KodyRulesService implements IKodyRulesService {
         }
     }
 
-    private async ensureFreePlanLimit(
+    /**
+     * Resolves the status a rule should actually land in, given the free
+     * plan's active-rule quota. Rather than rejecting the request outright,
+     * a rule that would push the org over the quota is created/reactivated
+     * as `PAUSED` with `lockedByPlan: true` — same "value-forward" pattern
+     * as MCP plugins beyond their cap: it's created, just not enforced,
+     * and the web UI shows it as Locked with an upgrade CTA instead of
+     * making it vanish or hard-blocking the action.
+     *
+     * Only meaningful when `requestedStatus` is ACTIVE — anything else
+     * (paused/pending/rejected/deleted) never consumes quota and passes
+     * through unchanged.
+     */
+    private async resolveStatusWithinPlanLimit(
         organizationAndTeamData: OrganizationAndTeamData,
+        requestedStatus: KodyRulesStatus,
         totalRulesAfterOperation: number,
-    ) {
-        if (!organizationAndTeamData?.organizationId) {
-            return;
+    ): Promise<{ status: KodyRulesStatus; lockedByPlan: boolean }> {
+        if (
+            requestedStatus !== KodyRulesStatus.ACTIVE ||
+            !organizationAndTeamData?.organizationId
+        ) {
+            return { status: requestedStatus, lockedByPlan: false };
         }
 
         try {
-            const validation =
+            const withinLimit =
                 await this.kodyRulesValidationService.validateRulesLimit(
                     organizationAndTeamData,
                     totalRulesAfterOperation,
                 );
 
-            if (!validation) {
-                throw new BadRequestException(
-                    `Free plan's limit of Kody Rules reached.`,
-                );
+            if (withinLimit) {
+                return { status: KodyRulesStatus.ACTIVE, lockedByPlan: false };
             }
         } catch (error) {
-            if (error instanceof BadRequestException) {
-                throw error;
-            }
-
             this.logger.error({
                 message:
-                    'Error validating Kody Rules limit - blocking operation for safety',
+                    'Error validating Kody Rules limit - locking rule for safety',
                 error: error,
                 context: KodyRulesService.name,
                 metadata: {
@@ -920,11 +997,11 @@ export class KodyRulesService implements IKodyRulesService {
                     totalRulesAfterOperation,
                 },
             });
-
-            throw new BadRequestException(
-                `Unable to validate rules limit. Please try again later.`,
-            );
+            // Fail closed: same outcome as hitting the cap, but the rule
+            // still gets created/reactivated instead of the request erroring.
         }
+
+        return { status: KodyRulesStatus.PAUSED, lockedByPlan: true };
     }
 
     private addLanguageToRule(

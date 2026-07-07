@@ -57,6 +57,70 @@ export class LicenseService implements ILicenseService {
         }
     }
 
+    /**
+     * Provision a Kodus-managed trial for the organization via billing.
+     *
+     * The trial used to be created only by the browser at the end of
+     * onboarding; if that client-side call never ran (tab closed, network
+     * drop) or failed silently, the org was left without a license. This
+     * server-side path makes provisioning reliable and retries transient
+     * failures. The billing endpoint is idempotent (409 when a license
+     * already exists), so repeating the call is safe.
+     */
+    async startTrial(
+        organizationAndTeamData: OrganizationAndTeamData,
+        byok: boolean,
+    ): Promise<boolean> {
+        const MAX_ATTEMPTS = 3;
+
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            try {
+                await this.licenseRequest.post('trial', {
+                    organizationId: organizationAndTeamData.organizationId,
+                    teamId: organizationAndTeamData.teamId,
+                    byok,
+                });
+                return true;
+            } catch (error) {
+                const status = (error as AxiosError)?.response?.status;
+
+                // A license already exists — the trial is effectively in
+                // place, so this is a success from our perspective.
+                if (status === 409) {
+                    return true;
+                }
+
+                // Client errors other than rate limiting won't be fixed by
+                // retrying (bad payload, org not found, etc.).
+                const isRetriable =
+                    status === undefined || status === 429 || status >= 500;
+
+                if (!isRetriable || attempt === MAX_ATTEMPTS) {
+                    this.logger.error({
+                        message: 'StartTrial failed to provision trial',
+                        context: LicenseService.name,
+                        error,
+                        serviceName: 'LicenseService startTrial',
+                        metadata: {
+                            ...organizationAndTeamData,
+                            byok,
+                            attempt,
+                            status,
+                        },
+                    });
+                    return false;
+                }
+
+                // Exponential backoff before the next attempt.
+                await new Promise((resolve) =>
+                    setTimeout(resolve, 500 * 2 ** (attempt - 1)),
+                );
+            }
+        }
+
+        return false;
+    }
+
     async consumeTrialReviewCredit(
         organizationAndTeamData: OrganizationAndTeamData,
         usageKey?: string,
