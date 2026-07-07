@@ -1,0 +1,45 @@
+# Runs the web UI in Docker on the kprev stack's network, pointing at the
+# kprev API (kodus_api_kprev, reachable via the `kodus_api` network alias).
+# Browser → web:3070 → same-origin proxy → kodus_api:3001 (internal).
+#   docker compose -f docker-compose.web-kprev.yml up -d --build
+name: kodus-kprev
+
+services:
+    web:
+        build:
+            context: ./apps/web
+            dockerfile: ../../docker/Dockerfile.web.dev
+        container_name: kodus_web_kprev
+        ports:
+            - '3070:3000'
+        env_file:
+            - path: ${ENV_FILE:-.env}
+        environment:
+            # localhost → kodus_api alias (→ kodus_api_kprev) on the kprev net.
+            # The kprev api listens on 3061 internally (API_PORT), not 3001.
+            - WEB_HOSTNAME_API=localhost
+            - WEB_PORT_API=3061
+            - GLOBAL_API_CONTAINER_NAME=kodus_api
+            - WEB_NODE_ENV=development
+            - NEXTAUTH_URL=http://localhost:3070
+        volumes:
+            - ./apps/web:/usr/src/app:delegated
+            - ./libs:/usr/libs:delegated
+            - web_node_modules_cache_kprev:/usr/src/app/node_modules
+            - web_next_cache_kprev:/usr/src/app/.next
+        networks:
+            kodus-backend-services:
+            shared-network:
+        restart: unless-stopped
+
+networks:
+    kodus-backend-services:
+        name: kodus-backend-services-kprev
+        external: true
+    shared-network:
+        name: shared-network-kprev
+        external: true
+
+volumes:
+    web_node_modules_cache_kprev:
+    web_next_cache_kprev:
