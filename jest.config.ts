@@ -43,19 +43,36 @@ export default {
         // which Jest cannot parse. Map to a stub to prevent ESM parse errors.
         '^e2b$': '<rootDir>/test/__mocks__/e2b.ts',
 
-        // Force a single React copy for component specs. Root and
-        // apps/web each install their own React (different patch
-        // versions) — without this, `next/link` (built against
-        // apps/web's copy) and @testing-library/react (resolved from
-        // root) end up with two React instances in the same render,
-        // which React detects as an "Invalid hook call".
-        '^react$': '<rootDir>/apps/web/node_modules/react',
-        '^react-dom$': '<rootDir>/apps/web/node_modules/react-dom',
-        '^react-dom/(.*)$': '<rootDir>/apps/web/node_modules/react-dom/$1',
-        '^react/jsx-runtime$':
+        // Force a single React copy for component specs. Locally, root and
+        // apps/web can end up with two separately-installed React copies
+        // (different patch versions) — without this, `next/link` (built
+        // against apps/web's copy) and @testing-library/react (resolved
+        // from root) end up with two React instances in the same render,
+        // which React detects as an "Invalid hook call". A clean/CI
+        // install dedupes to a single root copy instead, so apps/web's
+        // path won't exist there — list it first with root as the
+        // fallback (Jest tries each array entry in order and uses the
+        // first that resolves).
+        '^react$': [
+            '<rootDir>/apps/web/node_modules/react',
+            '<rootDir>/node_modules/react',
+        ],
+        '^react-dom$': [
+            '<rootDir>/apps/web/node_modules/react-dom',
+            '<rootDir>/node_modules/react-dom',
+        ],
+        '^react-dom/(.*)$': [
+            '<rootDir>/apps/web/node_modules/react-dom/$1',
+            '<rootDir>/node_modules/react-dom/$1',
+        ],
+        '^react/jsx-runtime$': [
             '<rootDir>/apps/web/node_modules/react/jsx-runtime',
-        '^react/jsx-dev-runtime$':
+            '<rootDir>/node_modules/react/jsx-runtime',
+        ],
+        '^react/jsx-dev-runtime$': [
             '<rootDir>/apps/web/node_modules/react/jsx-dev-runtime',
+            '<rootDir>/node_modules/react/jsx-dev-runtime',
+        ],
 
         // Web app aliases
         '^@enums$': '<rootDir>/apps/web/src/core/enums',
