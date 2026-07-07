@@ -63,6 +63,7 @@ import {
     FindMemoriesFilters,
     FindMemoriesResult,
     IKodyRule,
+    IKodyRuleDetector,
     IKodyRuleMemory,
     IKodyRules,
     KodyRuleCentralizedStatus,
@@ -191,6 +192,10 @@ export class KodyRulesService implements IKodyRulesService {
         organizationId: string,
     ): Promise<KodyRulesEntity | null> {
         return this.kodyRulesRepository.findByOrganizationId(organizationId);
+    }
+
+    async findOrganizationIdsWithRules(): Promise<string[]> {
+        return this.kodyRulesRepository.findOrganizationIdsWithRules();
     }
 
     /**
@@ -728,6 +733,53 @@ export class KodyRulesService implements IKodyRulesService {
         );
 
         return updatedRuleResult ? (updatedRuleResult as IKodyRule) : null;
+    }
+
+    async updateRuleDetector(
+        organizationId: string,
+        ruleId: string,
+        detector: IKodyRuleDetector | null,
+    ): Promise<IKodyRule | null> {
+        const existing = await this.findByOrganizationId(organizationId);
+        if (!existing) {
+            throw new NotFoundException(
+                'Kody rules not found for organization',
+            );
+        }
+
+        const existingRule = existing.rules?.find((r) => r.uuid === ruleId);
+        if (!existingRule) {
+            throw new NotFoundException('Rule not found');
+        }
+
+        const updatedRule = {
+            ...existingRule,
+            // Pass `null` through as-is: updateRule skips only `undefined`, so
+            // `detector: null` writes `$set rules.$.detector = null` and clears
+            // a stale detector. `?? undefined` here would silently no-op the
+            // clear and leave the old regex firing forever.
+            detector: detector,
+            updatedAt: new Date(),
+        } as IKodyRule;
+
+        const updatedKodyRules = await this.updateRule(
+            existing.uuid,
+            ruleId,
+            updatedRule,
+        );
+
+        if (!updatedKodyRules) {
+            this.logger.error({
+                message: 'Could not update rule detector',
+                error: new Error('Could not update rule detector'),
+                context: KodyRulesService.name,
+                metadata: { organizationId, ruleId },
+            });
+            throw new Error('Could not update rule detector');
+        }
+
+        const updated = updatedKodyRules.rules.find((r) => r.uuid === ruleId);
+        return updated ? (updated as IKodyRule) : null;
     }
 
     async updateRuleWithLogging(
