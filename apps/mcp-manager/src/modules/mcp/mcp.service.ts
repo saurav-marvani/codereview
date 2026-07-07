@@ -100,6 +100,10 @@ export class McpService {
             // it (cross-tenant leak). Defense-in-depth: the field is also gone
             // from QueryDto so it can't be passed at all.
             where: { ...where, organizationId },
+            // Deterministic order: the free-plan cap keeps the first 3
+            // connections (libs/mcp-server getConnections slice), so "first"
+            // must be stable — oldest connections win.
+            order: { createdAt: 'ASC' },
             skip: (page - 1) * pageSize,
             take: pageSize,
         });

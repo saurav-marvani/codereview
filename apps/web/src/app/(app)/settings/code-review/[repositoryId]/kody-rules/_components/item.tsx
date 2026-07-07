@@ -1,11 +1,13 @@
 "use client";
 
+import { KodyRulesLimitPopover } from "@components/system/kody-rules-limit-popover";
 import { IssueSeverityLevelBadge } from "@components/system/issue-severity-level-badge";
 import { Badge } from "@components/ui/badge";
 import { Button } from "@components/ui/button";
 import { Card, CardContent, CardHeader } from "@components/ui/card";
 import { Heading } from "@components/ui/heading";
 import { magicModal } from "@components/ui/magic-modal";
+import { PopoverTrigger } from "@components/ui/popover";
 import { Section } from "@components/ui/section";
 import { Separator } from "@components/ui/separator";
 import {
@@ -22,7 +24,7 @@ import {
 } from "@services/kodyRules/types";
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
-import { EditIcon, EyeIcon, PlayIcon, TrashIcon } from "lucide-react";
+import { EditIcon, EyeIcon, LockIcon, PlayIcon, TrashIcon } from "lucide-react";
 import { SuggestionsModal } from "src/app/(app)/library/kody-rules/_components/suggestions-modal";
 
 import { OriginBadge } from "./origin-badge";
@@ -36,7 +38,7 @@ import { changeStatusKodyRules } from "@services/kodyRules/fetch";
 import { KodyRulesStatus } from "@services/kodyRules/types";
 import { toast } from "@components/ui/toaster/use-toast";
 import { useAsyncAction } from "@hooks/use-async-action";
-import { isAxiosError } from "axios";
+import { resolveKodyRuleBadgeState } from "src/core/utils/kody-rules/resolve-badge-state";
 
 function showLastPaths(path: string, max = 3): string {
     const items = path.split(",").map((g) => g.trim()).filter((g) => g.length > 0);
@@ -95,6 +97,8 @@ export const KodyRuleItem = ({
                 : null;
     const entityLabel = isMemory ? "memory" : "rule";
     const isPaused = rule.status === KodyRulesStatus.PAUSED;
+    const badgeState = resolveKodyRuleBadgeState(rule);
+    const isLockedByPlan = badgeState === "locked";
 
     // Opens the edit/view modal in place — same pattern Delete and "New
     // rule" already use — instead of navigating to the sibling
@@ -120,23 +124,37 @@ export const KodyRuleItem = ({
     const [handleResume, { loading: isResuming }] = useAsyncAction(async () => {
         if (!rule.uuid) return;
         try {
-            await changeStatusKodyRules([rule.uuid], KodyRulesStatus.ACTIVE);
-            toast({
-                description: "Rule resumed and is now enforced again.",
-                variant: "success",
-            });
+            const result = await changeStatusKodyRules(
+                [rule.uuid],
+                KodyRulesStatus.ACTIVE,
+            );
+            // The backend never rejects a resume beyond the free-plan cap
+            // anymore — it just keeps the rule PAUSED (lockedByPlan) instead
+            // of reactivating it, same "created but locked" pattern as
+            // plugins beyond their cap.
+            const updated = Array.isArray(result)
+                ? result.find((r) => r.uuid === rule.uuid)
+                : undefined;
+
+            if (updated?.lockedByPlan) {
+                toast({
+                    title: "Rule stayed locked",
+                    description:
+                        "You've hit the Free plan cap of 10 active Kody Rules. Upgrade to activate this one too.",
+                    variant: "warning",
+                });
+            } else {
+                toast({
+                    description: "Rule resumed and is now enforced again.",
+                    variant: "success",
+                });
+            }
             onAnyChange?.();
         } catch (error) {
             console.error("Failed to resume rule", error);
-            const message =
-                isAxiosError(error) &&
-                error.response?.data?.message ===
-                    "Free plan's limit of Kody Rules reached."
-                    ? "You have reached the limit of 10 active Kody rules. Pause or delete another rule first."
-                    : "Please try again in a moment.";
             toast({
                 title: "Could not resume rule",
-                description: message,
+                description: "Please try again in a moment.",
                 variant: "danger",
             });
         }
@@ -177,28 +195,40 @@ export const KodyRuleItem = ({
                             syncEnabledForRepo={syncEnabledForRepo}
                         />
 
-                        {isPaused && (
-                            <Tooltip delayDuration={500}>
-                                <TooltipTrigger>
+                        {isLockedByPlan ? (
+                            <KodyRulesLimitPopover limit={10}>
+                                <PopoverTrigger asChild>
                                     <Badge
                                         active
                                         size="xs"
-                                        className="bg-warning/10 text-warning ring-warning/64 pointer-events-none h-6 min-h-auto rounded-lg px-2 text-[10px] leading-px uppercase ring-1 [--button-foreground:var(--color-warning)]">
-                                        Paused
+                                        leftIcon={<LockIcon />}
+                                        className="bg-primary-light/10 text-primary-light ring-primary-light/64 h-6 min-h-auto cursor-pointer rounded-lg px-2 text-[10px] leading-px uppercase ring-1">
+                                        Locked
                                     </Badge>
-                                </TooltipTrigger>
+                                </PopoverTrigger>
+                            </KodyRulesLimitPopover>
+                        ) : (
+                            isPaused && (
+                                <Tooltip delayDuration={500}>
+                                    <TooltipTrigger>
+                                        <Badge
+                                            active
+                                            size="xs"
+                                            className="bg-warning/10 text-warning ring-warning/64 pointer-events-none h-6 min-h-auto rounded-lg px-2 text-[10px] leading-px uppercase ring-1 [--button-foreground:var(--color-warning)]">
+                                            Paused
+                                        </Badge>
+                                    </TooltipTrigger>
 
-                                <TooltipContent>
-                                    <p>
-                                        This {entityLabel} is paused. It stays
-                                        in your list but is skipped on every
-                                        new PR.
-                                    </p>
-                                    <p>
-                                        Click the play icon to resume it.
-                                    </p>
-                                </TooltipContent>
-                            </Tooltip>
+                                    <TooltipContent>
+                                        <p>
+                                            This {entityLabel} is paused. It
+                                            stays in your list but is skipped
+                                            on every new PR.
+                                        </p>
+                                        <p>Click the play icon to resume it.</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            )
                         )}
 
                         {centralizedPendingLabel && (

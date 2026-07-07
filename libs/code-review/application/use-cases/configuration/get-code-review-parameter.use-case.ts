@@ -29,7 +29,10 @@ import {
     FormattedGlobalCodeReviewConfig,
     IFormattedConfigProperty,
 } from '@libs/core/infrastructure/config/types/general/codeReviewConfig.type';
-import { getDefaultKodusConfigFile } from '@libs/common/utils/validateCodeReviewConfigFile';
+import {
+    buildDefaultGlobalCodeReviewConfig,
+    getDefaultKodusConfigFile,
+} from '@libs/common/utils/validateCodeReviewConfigFile';
 import { CodeReviewConfigWithoutLLMProvider } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { PromptSourceType } from '@libs/ai-engine/domain/prompt/interfaces/promptExternalReference.interface';
 
@@ -75,10 +78,25 @@ export class GetCodeReviewParameterUseCase {
                 teamId: teamId,
             };
 
-            const parametersEntity = await this.parametersService.findByKey(
+            let parametersEntity = await this.parametersService.findByKey(
                 ParametersKey.CODE_REVIEW_CONFIG,
                 organizationAndTeamData,
             );
+
+            // A team can reach the code review settings screen without its
+            // config row (created too late in onboarding, or a creation write
+            // that failed silently). Get-or-create the default global config so
+            // the page loads instead of erroring. Insert-if-absent returns the
+            // active row (ours, or one a concurrent writer just created), so a
+            // race surfaces the real config rather than a transient error.
+            if (!parametersEntity) {
+                parametersEntity =
+                    await this.parametersService.createActiveVersionIfAbsent(
+                        ParametersKey.CODE_REVIEW_CONFIG,
+                        organizationAndTeamData.teamId,
+                        buildDefaultGlobalCodeReviewConfig(),
+                    );
+            }
 
             if (!parametersEntity) {
                 throw new Error('Code review parameters not found');

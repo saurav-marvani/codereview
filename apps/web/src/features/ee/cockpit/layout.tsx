@@ -1,14 +1,16 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { LockedFeatureOverlay } from "@components/system/locked-feature-overlay";
 import { Page } from "@components/ui/page";
 import { TabsContent, TabsList, TabsTrigger } from "@components/ui/tabs";
 import { getCockpitMetricsVisibility } from "@services/organizationParameters/fetch";
 import type { CookieName } from "src/core/utils/cookie";
+import { captureGateHit } from "src/core/utils/gate-hit";
 import { getGlobalSelectedTeamId } from "src/core/utils/get-global-selected-team-id";
 import { greeting } from "src/core/utils/helpers";
 
 import { validateOrganizationLicense } from "../subscription/_services/billing/fetch";
 import { CockpitTabs } from "./_components/cockpit-tabs";
+import { CockpitLockedPreview } from "./_components/locked-preview";
 import { DateRangePicker } from "./_components/date-range-picker";
 import { ExpandableCardsLayout } from "./_components/expandable-cards-layout";
 import { CockpitNoDataBanner } from "./_components/no-data-banner";
@@ -74,8 +76,33 @@ export default async function Layout({
     // Cockpit is scoped to Teams cloud + Enterprise (cloud and
     // self-hosted). Trials count as Teams-cloud. See
     // `libs/cockpit/domain/tier-policy.ts` for the authoritative rule
-    // — keep both copies aligned.
-    if (!isCockpitTierAllowed(organizationLicense)) redirect("/settings/git");
+    // — keep both copies aligned. Below the tier, we show a blurred
+    // static preview with an upgrade CTA instead of the screen; none of
+    // the analytics fetches below run, and the parallel-route slots are
+    // not rendered (their server fetches are rejected by the backend
+    // tier policy anyway).
+    if (!isCockpitTierAllowed(organizationLicense)) {
+        await captureGateHit({
+            feature: "cockpit",
+            plan: organizationLicense?.subscriptionStatus,
+            metadata: { surface: "locked_preview" },
+        });
+
+        return (
+            <LockedFeatureOverlay
+                title="Unlock the Cockpit"
+                description="Engineering metrics and Kody review analytics for your team are available on Teams and Enterprise plans."
+                cta={{
+                    label: "Upgrade plan",
+                    href: "/settings/subscription",
+                    feature: "cockpit",
+                    plan: organizationLicense?.subscriptionStatus,
+                    metadata: { surface: "locked_preview" },
+                }}>
+                <CockpitLockedPreview />
+            </LockedFeatureOverlay>
+        );
+    }
 
     const [analyticsResult, metricsVisibility] = await analyticsPromise;
 

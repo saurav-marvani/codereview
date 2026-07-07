@@ -30,7 +30,7 @@ const pricingFromMillions = (opts: {
     const withTier = (def: number, tieredPerM?: number) => ({
         default: def,
         ...(tieredPerM !== undefined
-            ? { tier: { threshold: 200_000, rate: perToken(tieredPerM) ?? 0 } }
+            ? { tiers: [{ threshold: 200_000, rate: perToken(tieredPerM) ?? 0 }] }
             : {}),
     });
     return {
@@ -233,8 +233,8 @@ describe('CostEstimateUseCase', () => {
                 },
             ]).map((r) => ({
                 ...r,
-                byTier: {
-                    le: {
+                byTier: [
+                    {
                         input: 0,
                         output: 0,
                         total: 0,
@@ -242,7 +242,7 @@ describe('CostEstimateUseCase', () => {
                         cacheRead: 0,
                         cacheWrite: 0,
                     },
-                    gt: {
+                    {
                         input: r.input,
                         output: r.output,
                         total: r.input + r.output,
@@ -250,7 +250,7 @@ describe('CostEstimateUseCase', () => {
                         cacheRead: r.cacheRead ?? 0,
                         cacheWrite: r.cacheWrite ?? 0,
                     },
-                },
+                ],
             }));
             tokenUsageService.getUsageByPr.mockResolvedValue(rows);
             pullRequestsService.findOne
@@ -341,8 +341,8 @@ describe('CostEstimateUseCase', () => {
                     model: 'gemini-3.1-pro',
                     prNumber: 1,
                     // Tier-aware model with all calls in gt.
-                    byTier: {
-                        le: {
+                    byTier: [
+                    {
                             input: 0,
                             output: 0,
                             total: 0,
@@ -350,7 +350,7 @@ describe('CostEstimateUseCase', () => {
                             cacheRead: 0,
                             cacheWrite: 0,
                         },
-                        gt: {
+                    {
                             input: 500_000,
                             output: 100_000,
                             total: 600_000,
@@ -358,7 +358,7 @@ describe('CostEstimateUseCase', () => {
                             cacheRead: 0,
                             cacheWrite: 0,
                         },
-                    },
+                ],
                 },
                 {
                     input: 500_000,

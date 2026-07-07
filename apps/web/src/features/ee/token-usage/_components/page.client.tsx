@@ -1,24 +1,58 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Card } from "@components/ui/card";
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from "@components/ui/card";
 import { Skeleton } from "@components/ui/skeleton";
 import {
     BaseUsageContract,
     ModelPricingInfo,
+    UsageByAreaResultContract,
+    UsageByReviewResultContract,
     UsageSummaryContract,
 } from "@services/usage/types";
+import { cn } from "src/core/utils/components";
 import { DateRangePicker } from "src/features/ee/cockpit/_components/date-range-picker";
 
 import { useTokenUsageFilters } from "../_hooks/filter.hook";
-import { Chart } from "./chart";
-import { CostCards } from "./cost-cards";
+import { cacheSavings } from "../_utils/cost";
+import { AreaBreakdown } from "./area-breakdown";
+import { Chart, type ChartUnit } from "./chart";
 import { Filters } from "./filters";
 import { ModelBreakdownTable } from "./model-breakdown-table";
 import { NoData } from "./no-data";
 import { TokenUsageContentSkeleton } from "./page-skeleton";
+import { ReviewActivityTable } from "./review-activity-table";
 import { SpendLimitProgress } from "./spend-limit-progress";
 import { SummaryCards } from "./summary-cards";
+
+/** Section header per chart dimension — cockpit card-title/description. */
+const CHART_SECTION: Record<string, { title: string; description: string }> = {
+    "daily": {
+        title: "Usage over time",
+        description:
+            "Daily usage split by uncached input, cache, output and reasoning.",
+    },
+    "by-pr": {
+        title: "Top pull requests",
+        description:
+            "The pull requests that consumed the most tokens in the period.",
+    },
+    "by-review": {
+        title: "Top review runs",
+        description:
+            "Each bar is one review run; a PR reviewed more than once appears once per run.",
+    },
+    "by-developer": {
+        title: "Top developers",
+        description: "Token spend attributed to the pull request author.",
+    },
+};
 
 const ZERO_TOTALS = {
     input: 0,
@@ -36,22 +70,36 @@ const ZERO_TOTALS = {
 
 export const TokenUsagePageClient = ({
     data,
+    byArea,
+    reviewRows,
     summary,
+    previousTotals,
     activeDayCount,
     uniquePrCount,
     cookieValue,
     models,
+    developers,
+    teamId,
     pricing,
 }: {
     data: BaseUsageContract[];
+    byArea: UsageByAreaResultContract[];
+    /** Raw by-review rows (per run × model) — feeds the activity table. */
+    reviewRows: UsageByReviewResultContract[];
     summary: UsageSummaryContract | null;
+    /** Same-length window immediately before the selected one. */
+    previousTotals: { cost: number; tokens: number } | null;
     activeDayCount: number;
     uniquePrCount: number;
     cookieValue: string | undefined;
     models: string[];
+    /** Distinct developer names for the by-developer picker (full roster). */
+    developers: string[];
+    teamId: string;
     pricing: Record<string, ModelPricingInfo>;
 }) => {
     const [isMounted, setIsMounted] = useState(false);
+    const [chartUnit, setChartUnit] = useState<ChartUnit>("tokens");
 
     const filters = useTokenUsageFilters(models);
     const { selectedModels, currentFilter, isPending } = filters;
@@ -101,8 +149,7 @@ export const TokenUsagePageClient = ({
                     input: acc.input + row.input,
                     output: acc.output + row.output,
                     total: acc.total + row.total,
-                    outputReasoning:
-                        acc.outputReasoning + row.outputReasoning,
+                    outputReasoning: acc.outputReasoning + row.outputReasoning,
                     cacheRead: acc.cacheRead + (row.cacheRead ?? 0),
                     cacheWrite: acc.cacheWrite + (row.cacheWrite ?? 0),
                     totalCost: acc.totalCost + row.cost.total,
@@ -135,7 +182,16 @@ export const TokenUsagePageClient = ({
         return result;
     }, [pricing, selectedModels]);
 
-    // Until the client mounts, render the skeleton (not null) so SSR and the
+    // Helicone-style callout: what prompt caching saved vs full input price.
+    const savedByCache = useMemo(() => {
+        if (!summary) return 0;
+        return cacheSavings(
+            summary.byModel.filter((m) => selectedModels.includes(m.model)),
+            pricing,
+        );
+    }, [summary, selectedModels, pricing]);
+
+    // Render the content skeleton (not null) before mount so SSR and the
     // pre-hydration window show the placeholder layout instead of an empty body
     // that then pops in the real content.
     if (!isMounted) {
@@ -150,19 +206,26 @@ export const TokenUsagePageClient = ({
         <div className="flex flex-col gap-5">
             {/* Filters Row */}
             <div className="flex items-center justify-between gap-4">
-                <Filters models={models} filters={filters} />
-                <DateRangePicker cookieValue={cookieValue} />
+                <Filters
+                    models={models}
+                    developers={developers}
+                    teamId={teamId}
+                    filters={filters}
+                />
+                <DateRangePicker
+                    cookieValue={cookieValue}
+                    commitMode="onClose"
+                />
             </div>
 
-            {/* Token Summary — period totals; identical across chart dimensions,
+            {/* KPI row — period totals; identical across chart dimensions,
                 so they stay put during a view switch (only the chart changes). */}
-            <SummaryCards totalUsage={totalUsage} />
-
-            {/* Cost & Pricing Row */}
-            <CostCards
-                totalCost={totalUsage.totalCost}
+            <SummaryCards
+                totalUsage={totalUsage}
                 avgPerDay={avgPerDay}
                 avgPerPR={avgPerPR}
+                savedByCache={savedByCache}
+                previousTotals={previousTotals}
             />
 
             {/* Month-to-date spend vs the configured BYOK limit */}
@@ -172,19 +235,70 @@ export const TokenUsagePageClient = ({
                 skeleton while the new dimension's data loads (consistent with
                 the initial page skeleton) instead of a spinner. */}
             {isPending ? (
-                <Skeleton className="h-[420px] w-full rounded-xl" />
+                <Skeleton className="h-[440px] w-full rounded-xl" />
             ) : (
-                <Card className="h-[420px] p-5">
-                    {filteredData && filteredData.length > 0 ? (
-                        <Chart data={filteredData} filterType={currentFilter} />
-                    ) : (
-                        <NoData />
-                    )}
+                <Card color="lv1" className="h-[440px]">
+                    <CardHeader className="flex-row items-start justify-between gap-4">
+                        <div className="flex flex-col gap-1.5">
+                            <CardTitle className="text-sm">
+                                {CHART_SECTION[currentFilter]?.title ??
+                                    CHART_SECTION.daily.title}
+                            </CardTitle>
+                            <CardDescription className="text-xs">
+                                {CHART_SECTION[currentFilter]?.description ??
+                                    CHART_SECTION.daily.description}
+                            </CardDescription>
+                        </div>
+                        {/* Tokens ⇄ USD, like gateway dashboards lead with cost */}
+                        <div className="bg-card-lv2 flex shrink-0 rounded-lg p-0.5">
+                            {(["tokens", "usd"] as const).map((u) => (
+                                <button
+                                    key={u}
+                                    type="button"
+                                    onClick={() => setChartUnit(u)}
+                                    className={cn(
+                                        "cursor-pointer rounded-md px-3 py-1 text-xs font-semibold transition-colors",
+                                        chartUnit === u
+                                            ? "bg-card-lv3 text-text-primary"
+                                            : "text-text-tertiary hover:text-text-secondary",
+                                    )}>
+                                    {u === "tokens" ? "Tokens" : "USD"}
+                                </button>
+                            ))}
+                        </div>
+                    </CardHeader>
+                    <CardContent className="min-h-0 flex-1">
+                        {filteredData && filteredData.length > 0 ? (
+                            <Chart
+                                data={filteredData}
+                                filterType={currentFilter}
+                                unit={chartUnit}
+                                pricing={pricing}
+                            />
+                        ) : (
+                            <NoData />
+                        )}
+                    </CardContent>
                 </Card>
             )}
 
+            {/* Activity per review run — the drill-down behind the chart */}
+            {currentFilter === "by-review" && !isPending && (
+                <ReviewActivityTable
+                    rows={reviewRows}
+                    selectedModels={selectedModels}
+                    pricing={pricing}
+                />
+            )}
+
+            {/* Where tokens go — spend per area of the review process */}
+            <AreaBreakdown rows={byArea} selectedModels={selectedModels} />
+
             {/* Per-model breakdown (collapsed by default) */}
-            <ModelBreakdownTable rows={breakdownRows} pricing={filteredPricing} />
+            <ModelBreakdownTable
+                rows={breakdownRows}
+                pricing={filteredPricing}
+            />
         </div>
     );
 };

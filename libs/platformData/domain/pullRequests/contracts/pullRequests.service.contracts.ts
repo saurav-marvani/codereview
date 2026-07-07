@@ -90,6 +90,13 @@ export interface IPullRequestsService extends IPullRequestsRepository {
         repositoryIds: string[] | undefined,
         opts: { severities?: string[]; authorEmail?: string },
     ): Promise<number>;
+    /** PR numbers of one repository — see the repository contract. */
+    findNumbersByRepositoryId(
+        organizationId: string,
+        repositoryId: string,
+        until?: Date,
+    ): Promise<number[]>;
+
     getOnboardingReviewModeSignals(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryIds: string[];

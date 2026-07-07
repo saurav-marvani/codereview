@@ -109,6 +109,17 @@ export interface IPullRequestsRepository {
     ): Promise<IPullRequestUserMapping[]>;
 
     /**
+     * PR numbers of one repository (optionally created up to `until`). Used
+     * by the Token Usage repository filter, which scopes usage spans by
+     * `attributes.prNumber` — spans don't carry a repository id.
+     */
+    findNumbersByRepositoryId(
+        organizationId: string,
+        repositoryId: string,
+        until?: Date,
+    ): Promise<number[]>;
+
+    /**
      * PERF: Aggregation query that returns only suggestion counts.
      * Reduces data transfer from ~180k objects to just counts per PR.
      *
