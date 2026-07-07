@@ -238,8 +238,18 @@ export class CockpitReviewAnalyticsService implements ICockpitReviewAnalyticsSer
         const params: unknown[] = [];
         const scope = this.closedPrScope(q, params);
 
-        const rows = (await this.ds.query(
-            `SELECT
+        // The list is capped at IGNORED_CRITICALS_MAX_ITEMS, but the total badge
+        // was computed with COUNT(*) OVER () — which materialises and sorts the
+        // whole matching set just to fill one number (~1s at scale). Run a top-N
+        // page and a separate COUNT(*) in parallel instead; both share `params`.
+        const filtered = `${scope}
+                 AND lower(s."severity") = 'critical'
+                 AND (s."suggestionImplementationStatus" IS NULL
+                      OR s."suggestionImplementationStatus" NOT ${IMPLEMENTED})`;
+
+        const [rows, countRows] = await Promise.all([
+            this.ds.query(
+                `SELECT
                 s."suggestion_id" AS suggestion_id,
                 pr.repo_full_name AS repository,
                 s."filePath" AS file_path,
@@ -247,29 +257,31 @@ export class CockpitReviewAnalyticsService implements ICockpitReviewAnalyticsSer
                 s."raw"->>'oneSentenceSummary' AS summary,
                 s."pullRequestId" AS pull_request_id,
                 pr."pr_number" AS pr_number,
-                to_char(pr.parsed_closed_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS pr_closed_at,
-                COUNT(*) OVER ()::int AS total
-             ${scope}
-                 AND lower(s."severity") = 'critical'
-                 AND (s."suggestionImplementationStatus" IS NULL
-                      OR s."suggestionImplementationStatus" NOT ${IMPLEMENTED})
+                to_char(pr.parsed_closed_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS pr_closed_at
+             ${filtered}
              ORDER BY pr.parsed_closed_at DESC
              LIMIT ${IGNORED_CRITICALS_MAX_ITEMS}`,
-            params,
-        )) as Array<{
-            suggestion_id: string;
-            repository: string | null;
-            file_path: string | null;
-            category: string | null;
-            summary: string | null;
-            pull_request_id: string;
-            pr_number: number | null;
-            pr_closed_at: string | null;
-            total: number;
-        }>;
+                params,
+            ) as Promise<
+                Array<{
+                    suggestion_id: string;
+                    repository: string | null;
+                    file_path: string | null;
+                    category: string | null;
+                    summary: string | null;
+                    pull_request_id: string;
+                    pr_number: number | null;
+                    pr_closed_at: string | null;
+                }>
+            >,
+            this.ds.query(
+                `SELECT COUNT(*)::int AS total ${filtered}`,
+                params,
+            ) as Promise<Array<{ total: number }>>,
+        ]);
 
         return {
-            count: rows.length ? Number(rows[0].total) : 0,
+            count: Number(countRows?.[0]?.total ?? 0),
             items: rows.map((r) => ({
                 suggestionId: r.suggestion_id,
                 repository: r.repository,
