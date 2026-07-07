@@ -694,24 +694,45 @@ export class GitHubProvider extends BaseProvider {
         );
     }
 
-    // Merges a PR (kody-issues generation fires off the closed/merged PR
-    // webhook). Falls back to a plain close if merge is not allowed (e.g.
-    // branch protection) so the issues path still gets a closed-PR event.
+    // Merges a PR (kody-issues generation and rule-file sync fire off the
+    // closed/MERGED PR webhook). GitHub returns 405 for a while right
+    // after PR creation (mergeability is computed asynchronously), so
+    // retry before concluding the PR is genuinely unmergeable. Only after
+    // the retries fall back to a plain close — and log loudly, because
+    // scenarios that REQUIRE a merged event (kody-rules-file-sync,
+    // rule-file-detection) will otherwise fail downstream with a
+    // confusing "sync never happened".
     async mergePR(pr: OpenedPR): Promise<void> {
-        const resp = await http(
-            `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}/merge`,
-            {
-                method: 'PUT',
-                headers: this.headers(),
-                body: { merge_method: 'squash' },
-            },
-        );
-        if (resp.status < 200 || resp.status >= 300) {
-            log.info(
-                `github:mergePR PR#${pr.number} not mergeable (HTTP ${resp.status}) — falling back to close`,
+        let lastStatus = 0;
+        for (let attempt = 0; attempt < 6; attempt++) {
+            if (attempt > 0) {
+                await new Promise((r) => setTimeout(r, 5_000));
+            }
+            const resp = await http(
+                `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}/merge`,
+                {
+                    method: 'PUT',
+                    headers: this.headers(),
+                    body: { merge_method: 'squash' },
+                },
             );
-            await this.closePR(pr);
+            if (resp.status >= 200 && resp.status < 300) {
+                return;
+            }
+            lastStatus = resp.status;
+            // 405 = not mergeable *yet* (async mergeability check) or
+            // blocked; 409 = head changed. Both are worth retrying.
+            if (resp.status !== 405 && resp.status !== 409) {
+                break;
+            }
+            log.info(
+                `github:mergePR PR#${pr.number} HTTP ${resp.status} (attempt ${attempt + 1}/6) — retrying`,
+            );
         }
+        log.warn(
+            `github:mergePR PR#${pr.number} not mergeable after retries (HTTP ${lastStatus}) — falling back to close (NOT a merged event)`,
+        );
+        await this.closePR(pr);
     }
 
     // Return type widened from the literal "token" to the full union so
