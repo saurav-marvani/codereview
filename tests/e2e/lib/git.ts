@@ -70,6 +70,24 @@ export async function prepareBranch(opts: OpenPROptions): Promise<PreparedBranch
             cwd: workDir,
             capture: true,
         });
+    } else {
+        // Branch from the DECLARED base, not from the clone's default
+        // HEAD. Fixture repos deliberately set a non-main default branch
+        // (tiny-url's default is a review-bait bug branch); branching
+        // from HEAD while opening the PR against `main` drags the whole
+        // default-vs-main delta into the PR — and if such a PR is ever
+        // MERGED (rule-sync scenarios), main is polluted and every later
+        // PR conflicts (mergeable_state=dirty).
+        await run("git", ["fetch", "--depth=1", "origin", baseBranch], {
+            cwd: workDir,
+            capture: true,
+        });
+        // -B: works whether or not the clone's default HEAD already is
+        // the base branch.
+        await run("git", ["checkout", "-B", baseBranch, "FETCH_HEAD"], {
+            cwd: workDir,
+            capture: true,
+        });
     }
 
     await run("git", ["checkout", "-b", opts.branch], {
