@@ -132,22 +132,27 @@ export type ClearOverrideTarget = {
     directoryId?: string;
 };
 
-/** List per-repo/dir byokModel overrides + which mismatch the current provider. */
-export const listModelOverrides =
-    async (): Promise<ListModelOverridesResult> => {
-        const envelope = await axiosAuthorized.get<{
-            data: ListModelOverridesResult;
-        }>(ORGANIZATION_PARAMETERS_PATHS.MODEL_OVERRIDES);
-        return envelope.data;
-    };
+/** List per-repo/dir byokModel overrides + which mismatch the current provider.
+ *  Overrides live in the TEAM-scoped code-review config, so a teamId is
+ *  required to find them. */
+export const listModelOverrides = async (
+    teamId: string,
+): Promise<ListModelOverridesResult> => {
+    const result = await authorizedFetch<ListModelOverridesResult>(
+        ORGANIZATION_PARAMETERS_PATHS.MODEL_OVERRIDES,
+        { cache: "no-store", params: { teamId } },
+    );
+    return result ?? { overrides: [], mismatchedCount: 0 };
+};
 
 /** Bulk-clear byokModel overrides at the given targets (set to inherit). */
 export const clearModelOverrides = async (
+    teamId: string,
     targets: ClearOverrideTarget[],
 ): Promise<{ clearedCount: number }> => {
     const envelope = await axiosAuthorized.post<{
         data: { clearedCount: number };
-    }>(ORGANIZATION_PARAMETERS_PATHS.MODEL_OVERRIDES_CLEAR, { targets });
+    }>(ORGANIZATION_PARAMETERS_PATHS.MODEL_OVERRIDES_CLEAR, { teamId, targets });
     return envelope.data;
 };
 

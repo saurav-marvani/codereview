@@ -57,18 +57,21 @@ const confirmClear = (count: number): Promise<boolean> =>
  * main BYOK provider (typically after a provider change) and offers to bulk-clear
  * them. Renders nothing when there are no mismatches.
  */
-export const ModelOverridesBanner = () => {
+export const ModelOverridesBanner = ({ teamId }: { teamId?: string }) => {
     const [data, setData] = useState<ListModelOverridesResult | null>(null);
     const [clearing, setClearing] = useState(false);
 
-    const load = () =>
-        listModelOverrides()
+    const load = () => {
+        if (!teamId) return;
+        return listModelOverrides(teamId)
             .then(setData)
             .catch(() => setData(null));
+    };
 
     useEffect(() => {
         void load();
-    }, []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [teamId]);
 
     const mismatched = (data?.overrides ?? []).filter(
         (o) => o.inCurrentProviderCatalog === false,
@@ -76,10 +79,14 @@ export const ModelOverridesBanner = () => {
     if (mismatched.length === 0) return null;
 
     const onClear = async () => {
+        if (!teamId) return;
         if (!(await confirmClear(mismatched.length))) return;
         setClearing(true);
         try {
-            const res = await clearModelOverrides(mismatched.map(targetOf));
+            const res = await clearModelOverrides(
+                teamId,
+                mismatched.map(targetOf),
+            );
             toast({
                 description: `Cleared ${res.clearedCount} override${
                     res.clearedCount === 1 ? "" : "s"

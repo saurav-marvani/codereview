@@ -355,14 +355,19 @@ export class OrganizationParametersController {
         description:
             "Enumerate every code-review byokModel override and flag which don't match the org's current main BYOK provider — powers the provider-change banner.",
     })
-    public async listModelOverrides(): Promise<ListModelOverridesResult> {
+    public async listModelOverrides(
+        @Query('teamId') teamId?: string,
+    ): Promise<ListModelOverridesResult> {
         const organizationId = this.request?.user?.organization?.uuid;
         if (!organizationId) {
             throw new BadRequestException(
                 'Organization ID is missing from request',
             );
         }
-        return await this.listModelOverridesUseCase.execute({ organizationId });
+        return await this.listModelOverridesUseCase.execute({
+            organizationId,
+            teamId,
+        });
     }
 
     @Post('/model-overrides/clear')
@@ -378,6 +383,7 @@ export class OrganizationParametersController {
             type: 'object',
             required: ['targets'],
             properties: {
+                teamId: { type: 'string' },
                 targets: {
                     type: 'array',
                     items: {
@@ -399,6 +405,7 @@ export class OrganizationParametersController {
     public async clearModelOverrides(
         @Body()
         body: {
+            teamId?: string;
             targets?: Array<{ repositoryId?: string; directoryId?: string }>;
         },
     ): Promise<{ clearedCount: number }> {
@@ -409,7 +416,7 @@ export class OrganizationParametersController {
             );
         }
         return await this.clearModelOverridesUseCase.execute(
-            { organizationId },
+            { organizationId, teamId: body?.teamId },
             body?.targets ?? [],
         );
     }

@@ -354,7 +354,7 @@ export const ByokPageClient = ({
                     <EnvConfigNotice env={llmConfigStatus.env} />
                 )}
 
-                <ModelOverridesBanner />
+                <ModelOverridesBanner teamId={teamId} />
 
                 <section className="flex flex-col gap-3">
                     <SlotHeader
