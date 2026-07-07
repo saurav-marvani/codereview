@@ -1008,6 +1008,11 @@ export class KodyRulesSyncService {
                 });
             }
 
+            const syncOutcome = {
+                imported: [] as string[],
+                skipped: [] as Array<{ file: string; reason: string }>,
+                removed: [] as string[],
+            };
             for (const file of filesToSync) {
                 const contentResp =
                     await this.codeManagementService.getRepositoryContentFile({
@@ -1024,7 +1029,13 @@ export class KodyRulesSyncService {
                     });
 
                 const rawContent = contentResp?.data?.content;
-                if (!rawContent) continue;
+                if (!rawContent) {
+                    syncOutcome.skipped.push({
+                        file: file.path,
+                        reason: 'empty or unfetchable content',
+                    });
+                    continue;
+                }
 
                 const decoded =
                     contentResp?.data?.encoding === 'base64'
@@ -1051,6 +1062,7 @@ export class KodyRulesSyncService {
                         repositoryId: repository.id,
                         sourcePath: file.path,
                     });
+                    syncOutcome.removed.push(file.path);
                     continue;
                 }
 
@@ -1073,6 +1085,10 @@ export class KodyRulesSyncService {
                 );
 
                 if (!oneRule) {
+                    syncOutcome.skipped.push({
+                        file: file.path,
+                        reason: 'no rule extracted (disabled template, empty content, or LLM returned none)',
+                    });
                     continue;
                 }
 
@@ -1150,7 +1166,23 @@ export class KodyRulesSyncService {
                         },
                     });
                 }
+
+                syncOutcome.imported.push(file.path);
             }
+
+            // Grep-able per-run summary ("[kody-rules-sync] summary"):
+            // the single record self-hosted operators need to answer
+            // "did my file sync, and if not why".
+            this.logger.log({
+                message: `[kody-rules-sync] summary: ${syncOutcome.imported.length} imported, ${syncOutcome.skipped.length} skipped, ${syncOutcome.removed.length} removed (of ${filesToSync.length} candidate file(s))`,
+                context: KodyRulesSyncService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    repositoryId: repository.id,
+                    branch,
+                    ...syncOutcome,
+                },
+            });
         } catch (error) {
             this.logger.error({
                 message: 'Failed to sync Kody Rules from main',
