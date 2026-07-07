@@ -36,28 +36,47 @@ export const SecretsVault = ({
     const requiredEnv: string[] =
         (form.watch("environment.requiredEnv.value") as string[]) ?? [];
 
+    const isGlobal = repositoryId === "global";
     const [configured, setConfigured] = useState<string[]>([]);
+    const [inherited, setInherited] = useState<string[]>([]);
     const [rows, setRows] = useState<Row[]>([{ name: "", value: "" }]);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
 
     const refresh = async () => {
         setLoading(true);
-        const res = await getEnvironmentSecretsStatus(teamId, repositoryId);
+        const [own, glob] = await Promise.all([
+            getEnvironmentSecretsStatus(teamId, repositoryId),
+            // For a repo, also load the global names to show what's inherited.
+            isGlobal
+                ? Promise.resolve(null)
+                : getEnvironmentSecretsStatus(teamId, "global"),
+        ]);
         setLoading(false);
-        if (res && "configured" in res && Array.isArray(res.configured)) {
-            setConfigured(res.configured);
-        }
+        const ownNames =
+            own && "configured" in own && Array.isArray(own.configured)
+                ? own.configured
+                : [];
+        setConfigured(ownNames);
+        const globNames =
+            glob && "configured" in glob && Array.isArray(glob.configured)
+                ? glob.configured
+                : [];
+        // Inherited = global names the repo doesn't override.
+        setInherited(globNames.filter((n) => !ownNames.includes(n)));
     };
 
     useEffect(() => {
-        if (repositoryId && repositoryId !== "global") void refresh();
+        if (repositoryId) void refresh();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [teamId, repositoryId]);
 
     const missingRequired = useMemo(
-        () => requiredEnv.filter((n) => n && !configured.includes(n)),
-        [requiredEnv, configured],
+        () =>
+            requiredEnv.filter(
+                (n) => n && !configured.includes(n) && !inherited.includes(n),
+            ),
+        [requiredEnv, configured, inherited],
     );
 
     const removeConfigured = async (name: string) => {
@@ -105,11 +124,15 @@ export const SecretsVault = ({
     return (
         <div className="flex flex-col gap-4 rounded-xl border border-card-lv2 p-5">
             <div className="flex flex-col gap-1">
-                <Heading variant="h3">Secrets vault</Heading>
+                <Heading variant="h3">
+                    {isGlobal ? "Global secrets" : "Secrets vault"}
+                </Heading>
                 <p className="text-text-secondary text-sm">
-                    The app&apos;s <code>.env</code>, encrypted at rest and
-                    injected into the VM at run time. Values are never displayed
-                    again after saving.
+                    {isGlobal
+                        ? "Org-level secrets every repository inherits. A repo can override any of these by setting a secret with the same name. "
+                        : "The app's .env, encrypted at rest and injected into the VM at run time. Secrets set globally are inherited (a repo secret with the same name wins). "}
+                    Values are encrypted at rest and never displayed again after
+                    saving.
                 </p>
             </div>
 
@@ -141,6 +164,26 @@ export const SecretsVault = ({
                                 )}
                             </span>
                         ))}
+                    </div>
+                )}
+                {inherited.length > 0 && (
+                    <div className="mt-1 flex flex-col gap-1">
+                        <span className="text-text-secondary text-xs uppercase">
+                            Inherited from global ({inherited.length})
+                        </span>
+                        <div className="flex flex-row flex-wrap gap-2">
+                            {inherited.map((name) => (
+                                <span
+                                    key={name}
+                                    title="Inherited from global — override by setting a secret with this name here"
+                                    className="text-text-secondary flex flex-row items-center gap-1 rounded-md bg-card-lv1 px-2 py-1 font-mono text-xs">
+                                    {name}
+                                    <span className="text-[10px] uppercase opacity-70">
+                                        global
+                                    </span>
+                                </span>
+                            ))}
+                        </div>
                     </div>
                 )}
                 {missingRequired.length > 0 && (

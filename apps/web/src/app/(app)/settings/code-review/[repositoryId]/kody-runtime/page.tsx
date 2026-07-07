@@ -187,21 +187,11 @@ export default function KodyRuntime() {
                     </div>
                 )}
 
-                {isGlobal ? (
-                    <div className="rounded-xl border border-card-lv2 p-5">
-                        <p className="text-text-secondary text-sm">
-                            Secrets are configured per repository. Open a specific
-                            repository&apos;s Kody Runtime settings to add
-                            its <code>.env</code> values.
-                        </p>
-                    </div>
-                ) : (
-                    <SecretsVault
-                        teamId={teamId}
-                        repositoryId={repositoryId}
-                        canEdit={canEdit}
-                    />
-                )}
+                <SecretsVault
+                    teamId={teamId}
+                    repositoryId={repositoryId}
+                    canEdit={canEdit}
+                />
 
                 {isGlobal && (
                     <InfrastructureAdvanced teamId={teamId} canEdit={canEdit} />
