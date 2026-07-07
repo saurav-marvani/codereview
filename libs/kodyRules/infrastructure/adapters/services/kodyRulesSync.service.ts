@@ -259,10 +259,16 @@ export class KodyRulesSyncService {
             // deleted match is intentional — if the source file still
             // exists in the repo, reviving that record (with refreshed
             // content) beats accumulating duplicates.
+            // Missing/invalid createdAt normalises to 0 so NaN can't make
+            // the comparator implementation-defined.
+            const toTime = (value: unknown): number => {
+                const t = new Date((value as any) ?? 0).getTime();
+                return Number.isFinite(t) ? t : 0;
+            };
             const newestFirst = [...matches].sort(
                 (a, b) =>
-                    new Date((b as any)?.createdAt ?? 0).getTime() -
-                    new Date((a as any)?.createdAt ?? 0).getTime(),
+                    toTime((b as any)?.createdAt) -
+                    toTime((a as any)?.createdAt),
             );
             const found =
                 newestFirst.find(

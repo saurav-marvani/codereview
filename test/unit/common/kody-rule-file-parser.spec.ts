@@ -150,6 +150,26 @@ describe('extractExamplesFromBody', () => {
         ]);
     });
 
+    it('keeps capturing across deeper subheadings inside a section', () => {
+        // An H4 under an H3 "Bad example" must not close the section;
+        // only a heading at the same-or-higher level does.
+        const body = [
+            '### Bad example',
+            '#### Details',
+            '```js',
+            'a()',
+            '```',
+            '### Notes',
+            '```js',
+            'outside()',
+            '```',
+        ].join('\n');
+
+        expect(extractExamplesFromBody(body)).toEqual([
+            { snippet: 'a()', isCorrect: false },
+        ]);
+    });
+
     it('ignores fences outside bad/good sections', () => {
         const body = [
             '## Instructions',
@@ -176,6 +196,9 @@ describe('isKodyRuleTemplateFile', () => {
         ['rules/architecture/layering.md', true],
         ['apps/api/rules/naming.md', true],
         ['rules/naming.txt', false],
+        ['rules/.md', true],
+        ['xrules/foo.md', false],
+        ['foo/.rules/bar.md', false],
         ['.kody/other/file.md', false],
         ['CLAUDE.md', false],
         ['docs/coding-standards/style.md', false],

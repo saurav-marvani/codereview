@@ -73,6 +73,7 @@ export function extractExamplesFromBody(
     const lines = body.split(/\r?\n/);
 
     let currentKind: boolean | null = null; // isCorrect, null = outside
+    let currentLevel: number | null = null; // heading level that opened it
     let inFence = false;
     let fenceMarker = '';
     let snippetLines: string[] = [];
@@ -100,13 +101,20 @@ export function extractExamplesFromBody(
 
         const heading = /^(#{1,6})\s+(.*)$/.exec(line);
         if (heading) {
+            const level = heading[1].length;
             const text = heading[2].toLowerCase();
             if (/\bbad\b|\bincorrect\b|\bwrong\b/.test(text)) {
                 currentKind = false;
+                currentLevel = level;
             } else if (/\bgood\b|\bcorrect\b/.test(text)) {
                 currentKind = true;
-            } else {
+                currentLevel = level;
+            } else if (currentLevel !== null && level <= currentLevel) {
+                // Only a heading at the same-or-higher level closes the
+                // section — a deeper subheading (H4 "Details" under an H3
+                // "Bad example") stays inside it.
                 currentKind = null;
+                currentLevel = null;
             }
             continue;
         }
@@ -179,18 +187,34 @@ export function parseKodyRuleFile(content: string): ParsedKodyRuleFile | null {
 }
 
 /**
+ * Whether `dirPrefix` (e.g. "rules/") appears as a path-segment prefix:
+ * at the start of the path or right after a "/". Plain string scan — no
+ * regex — so path length can't degrade matching (CodeQL: polynomial
+ * regex on uncontrolled data).
+ */
+function hasDirSegment(pathLower: string, dirPrefix: string): number {
+    if (pathLower.startsWith(dirPrefix)) return dirPrefix.length;
+    const idx = pathLower.indexOf('/' + dirPrefix);
+    return idx >= 0 ? idx + 1 + dirPrefix.length : -1;
+}
+
+/**
  * Whether `filePath` is a structured Kody rule template file (the only
- * sources parsed verbatim). Matches `.kody/rules/**` at the repo root or
- * under any subdirectory.
+ * sources parsed verbatim): anything under `.kody/rules/`, or a `.md`
+ * file under `rules/` — at the repo root or any subdirectory, matching
+ * the discovery globs (dot-files like `rules/.md` included, since the
+ * globs run with `dot: true`).
  */
 export function isKodyRuleTemplateFile(
     filePath: string | null | undefined,
 ): boolean {
     if (!filePath) return false;
-    const normalized = filePath.replace(/\\/g, '/');
-    return (
-        /(?:^|\/)\.kody\/rules\/.+/i.test(normalized) ||
-        // `rules/**/*.md` is the second documented template location.
-        /(?:^|\/)rules\/.+\.md$/i.test(normalized)
-    );
+    const lower = filePath.replace(/\\/g, '/').toLowerCase();
+
+    const kodyEnd = hasDirSegment(lower, '.kody/rules/');
+    if (kodyEnd >= 0 && lower.length > kodyEnd) return true;
+
+    // `rules/**/*.md` is the second documented template location.
+    const rulesEnd = hasDirSegment(lower, 'rules/');
+    return rulesEnd >= 0 && lower.length > rulesEnd && lower.endsWith('.md');
 }
