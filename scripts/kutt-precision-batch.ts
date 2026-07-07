@@ -34,11 +34,29 @@ const CASES = [
         name: 'runtime-nanoid-esm',
         sha: 'ecba1327dd98e9c72912bcf7c91c517c83894cc1',
         diff: 'diff-runtime-nanoid.json',
-        // package.json: "nanoid": "3.3.8" → "^5.0.9". nanoid v4+ is ESM-only, so
-        // the codebase's `require("nanoid")` throws ERR_REQUIRE_ESM at boot. The
-        // diff is a 1-line version bump — no static reviewer knows v5 dropped CJS
-        // without running it. Running: the app won't start.
+        // package.json: nanoid 3.3.8 → ^5.0.9. v4+ is ESM-only → require() throws
+        // ERR_REQUIRE_ESM at boot. 1-line version bump, static-invisible.
         expect: 'FIND (app fails to boot — nanoid ^5 is ESM-only, breaks require())',
+        kind: 'recall',
+    },
+    {
+        name: 'runtime-migration',
+        sha: '1993f77e7b34879d1d6650bc132a2e3f16a04ed8',
+        diff: 'diff-runtime-migration.json',
+        // New migration indexes `expiration` — a plausible name, but the real
+        // column is `expire_in`. Looks like a normal migration; `npm run migrate`
+        // fails at runtime with "no such column: expiration" → app won't boot.
+        expect: 'FIND (migration references a non-existent column → migrate fails, app down)',
+        kind: 'recall',
+    },
+    {
+        name: 'runtime-envreq',
+        sha: '1d7b1e11e8c0406aa7fea104f184dd7047962724',
+        diff: 'diff-runtime-envreq.json',
+        // Adds ANALYTICS_TOKEN: str() (required, no default) to the envalid spec.
+        // Looks like wiring a config var; in production cleanEnv exits on boot
+        // because the value is never supplied → app won't start.
+        expect: 'FIND (new required env ANALYTICS_TOKEN has no value → cleanEnv kills boot)',
         kind: 'recall',
     },
 ];
