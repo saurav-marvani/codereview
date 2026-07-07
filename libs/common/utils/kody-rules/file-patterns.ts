@@ -163,9 +163,12 @@ export function extractRepoSubdirFromIdeSource(
  * Splits a rule `path` value into its individual glob patterns.
  *
  * Kody Rules support OR-joined globs in a single `path` string (the
- * importer comma-joins declared multi-glob frontmatter). Commas inside
- * braces ("{app,lib}/**") or character classes ("src/[ab,cd]/**") are
- * part of a single valid picomatch pattern and are NOT separators.
+ * importer comma-joins declared multi-glob frontmatter). Commas that are
+ * part of a single valid picomatch pattern are NOT separators: inside
+ * braces ("{app,lib}/**"), character classes ("src/[ab,cd]/**"),
+ * extglobs ("@(app,lib)/**"), or escaped ("path\\,with\\,comma/**").
+ * Delimiters inside a character class are literals ("[{]" must not
+ * bump the brace depth), hence the mutual-exclusion guards below.
  *
  * Single source of truth for every consumer that needs to iterate a
  * rule path's globs (review-time matching, IDE-dir rejection, etc.) so
@@ -176,14 +179,37 @@ export function splitRulePathGlobs(rulePath: string): string[] {
     let current = '';
     let braceDepth = 0;
     let bracketDepth = 0;
+    let parenDepth = 0;
+    let escaped = false;
 
     for (const char of rulePath) {
-        if (char === '{') braceDepth++;
-        else if (char === '}' && braceDepth > 0) braceDepth--;
-        else if (char === '[') bracketDepth++;
-        else if (char === ']' && bracketDepth > 0) bracketDepth--;
+        if (escaped) {
+            escaped = false;
+            current += char;
+            continue;
+        }
+        if (char === '\\') {
+            escaped = true;
+            current += char;
+            continue;
+        }
 
-        if (char === ',' && braceDepth === 0 && bracketDepth === 0) {
+        if (char === '{' && bracketDepth === 0) braceDepth++;
+        else if (char === '}' && braceDepth > 0 && bracketDepth === 0) {
+            braceDepth--;
+        } else if (char === '[' && bracketDepth === 0) bracketDepth++;
+        else if (char === ']' && bracketDepth > 0) bracketDepth--;
+        else if (char === '(' && bracketDepth === 0) parenDepth++;
+        else if (char === ')' && parenDepth > 0 && bracketDepth === 0) {
+            parenDepth--;
+        }
+
+        if (
+            char === ',' &&
+            braceDepth === 0 &&
+            bracketDepth === 0 &&
+            parenDepth === 0
+        ) {
             if (current.trim()) globs.push(current.trim());
             current = '';
             continue;
@@ -212,7 +238,9 @@ export function pathMatchesIdeRuleDir(
     return globs.some((glob) => {
         // The glob is "IDE-y" if its fixed prefix is one of the markers
         // (e.g. ".cursor/rules/**" → fixed prefix ".cursor/rules/").
-        const fixedPrefix = glob.split(/[*?[]/)[0];
+        // `{` counts as a wildcard here so ".cursor/rules/{a,b}/**"
+        // still yields the ".cursor/rules" prefix.
+        const fixedPrefix = glob.split(/[*?[{]/)[0];
         const dir = fixedPrefix.endsWith('/')
             ? fixedPrefix.slice(0, -1)
             : path.posix.dirname(fixedPrefix);

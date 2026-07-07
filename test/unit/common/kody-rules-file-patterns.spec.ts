@@ -30,6 +30,29 @@ describe('splitRulePathGlobs', () => {
             'lib/**',
         ]);
     });
+
+    it('keeps commas inside extglobs', () => {
+        expect(splitRulePathGlobs('@(app,lib)/**,docs/**')).toEqual([
+            '@(app,lib)/**',
+            'docs/**',
+        ]);
+    });
+
+    it('keeps escaped commas as literals', () => {
+        expect(splitRulePathGlobs('path\\,with\\,comma/**,docs/**')).toEqual([
+            'path\\,with\\,comma/**',
+            'docs/**',
+        ]);
+    });
+
+    it('treats delimiters inside character classes as literals', () => {
+        // "[{]" must not bump the brace depth, or every later top-level
+        // comma would be swallowed.
+        expect(splitRulePathGlobs('src/[{]/**,lib/**')).toEqual([
+            'src/[{]/**',
+            'lib/**',
+        ]);
+    });
 });
 
 describe('IDE_RULE_DIR_MARKERS', () => {
@@ -261,6 +284,9 @@ describe('pathMatchesIdeRuleDir', () => {
         '.github/instructions/**',
         '.sourcegraph/**/*.rule.md',
         'applications/foo/.cursor/rules/**/*',
+        // Brace alternation must not hide the IDE prefix now that
+        // splitRulePathGlobs preserves braces.
+        '.cursor/rules/{a,b}/**',
     ];
 
     for (const p of IDE_PATHS) {
