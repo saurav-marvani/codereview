@@ -57,9 +57,19 @@ export default async function Layout({
         getGlobalSelectedTeamId(),
     ]);
 
-    const organizationLicense = await validateOrganizationLicense({
+    // Kick the license check and the analytics/visibility fetches off together
+    // (the license call can be slow — billing cold-start), then await the
+    // license first for the tier gate. This hides the analytics latency behind
+    // the license round-trip instead of running them in series.
+    const licensePromise = validateOrganizationLicense({
         teamId: selectedTeamId,
     }).catch(() => null);
+    const analyticsPromise = Promise.all([
+        getAnalyticsStatus().catch(() => ({ hasData: false })),
+        getCockpitMetricsVisibility(),
+    ]);
+
+    const organizationLicense = await licensePromise;
 
     // Cockpit is scoped to Teams cloud + Enterprise (cloud and
     // self-hosted). Trials count as Teams-cloud. See
@@ -67,10 +77,7 @@ export default async function Layout({
     // — keep both copies aligned.
     if (!isCockpitTierAllowed(organizationLicense)) redirect("/settings/git");
 
-    const [analyticsResult, metricsVisibility] = await Promise.all([
-        getAnalyticsStatus().catch(() => ({ hasData: false })),
-        getCockpitMetricsVisibility(),
-    ]);
+    const [analyticsResult, metricsVisibility] = await analyticsPromise;
 
     const data = extractApiData(analyticsResult);
     const hasAnalyticsData = data?.hasData;
