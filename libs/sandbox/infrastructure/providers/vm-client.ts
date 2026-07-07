@@ -1,4 +1,5 @@
 import { execFile } from 'child_process';
+import { randomBytes } from 'crypto';
 import { mkdtemp, readFile, rm, writeFile, chmod } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -71,7 +72,10 @@ export class VmClient {
         // run (e.g. one killed before cleanup) never blocks a retry with a
         // 409 "not unique". Keeps the `kodus-selfhosted-preview-` prefix the
         // reaper keys off. Cloud-provider names cap ~64 chars; base36 ts fits.
-        const uniqueName = `${params.name}-${Date.now().toString(36)}`;
+        // Random (not Date.now()): concurrent provisions in the same millisecond
+        // would otherwise collide → Hetzner 409 "SSH key not unique". Surfaced by
+        // running the multi-stack probe in parallel.
+        const uniqueName = `${params.name}-${randomBytes(5).toString('hex')}`;
         const keyDir = await mkdtemp(join(tmpdir(), 'kody-vm-'));
         const keyPath = join(keyDir, 'id_ed25519');
         await execFileAsync('ssh-keygen', ['-t', 'ed25519', '-f', keyPath, '-N', '', '-C', uniqueName]);
