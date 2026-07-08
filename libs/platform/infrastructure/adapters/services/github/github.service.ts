@@ -6475,34 +6475,47 @@ This is an experimental feature that generates committable changes. Review the d
 
             const octokit = await this.instanceOctokit(organizationAndTeamData);
 
-            const pullRequests = await octokit.paginate(octokit.pulls.list, {
-                owner: githubAuthDetail.org,
-                repo: repository.name,
-                state: 'all',
-                sort: 'created',
-                direction: 'desc',
-                per_page: 100,
-            });
+            const startTime = filters?.startDate
+                ? new Date(filters.startDate).getTime()
+                : null;
+            const endTime = filters?.endDate
+                ? new Date(filters.endDate).getTime()
+                : null;
 
-            return pullRequests
-                .filter((pr) => {
-                    const prDate = moment(pr.created_at);
-                    const startDate = filters?.startDate
-                        ? moment(filters.startDate)
-                        : null;
-                    const endDate = filters?.endDate
-                        ? moment(filters.endDate)
-                        : null;
+            // The list comes back sorted by created_at desc, so once we hit a PR
+            // older than startDate every remaining page is older too — stop
+            // paginating instead of pulling the whole repo history into memory
+            // (dozens of useless pages on large repos) just to filter by date.
+            const pullRequests = await octokit.paginate(
+                octokit.pulls.list,
+                {
+                    owner: githubAuthDetail.org,
+                    repo: repository.name,
+                    state: 'all',
+                    sort: 'created',
+                    direction: 'desc',
+                    per_page: 100,
+                },
+                (response, done) => {
+                    const inWindow: typeof response.data = [];
+                    for (const pr of response.data) {
+                        const prTime = new Date(pr.created_at).getTime();
+                        if (startTime !== null && prTime < startTime) {
+                            done();
+                            break;
+                        }
+                        if (endTime !== null && prTime > endTime) {
+                            continue;
+                        }
+                        inWindow.push(pr);
+                    }
+                    return inWindow;
+                },
+            );
 
-                    return (
-                        (!startDate ||
-                            prDate.isSameOrAfter(startDate, 'day')) &&
-                        (!endDate || prDate.isSameOrBefore(endDate, 'day'))
-                    );
-                })
-                .map((pr) =>
-                    this.transformPullRequest(pr, organizationAndTeamData),
-                );
+            return pullRequests.map((pr) =>
+                this.transformPullRequest(pr, organizationAndTeamData),
+            );
         } catch (error) {
             this.logger.error({
                 message: 'Error to get pull requests by repository',

@@ -15,6 +15,7 @@ import {
 
 import { CreatePRCodeReviewUseCase } from './create-prs-code-review.use-case';
 import { SyncSelectedRepositoriesKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/sync-selected-repositories.use-case';
+import { GenerateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/generate-kody-rules.use-case';
 import { CreateOrUpdateParametersUseCase } from '@libs/organization/application/use-cases/parameters/create-or-update-use-case';
 import { TelemetryService } from '@libs/telemetry/application/services/telemetry.service';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
@@ -46,6 +47,7 @@ export class FinishOnboardingUseCase {
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
         private readonly telemetry: TelemetryService,
         private readonly codeManagement: CodeManagementService,
+        private readonly generateKodyRulesUseCase: GenerateKodyRulesUseCase,
         @Inject(LICENSE_SERVICE_TOKEN)
         private readonly licenseService: ILicenseService,
         private readonly permissionValidationService: PermissionValidationService,
@@ -139,6 +141,31 @@ export class FinishOnboardingUseCase {
             __t = Date.now();
             await this.syncSelectedReposKodyRulesUseCase.execute({ teamId });
             __mark('syncSelectedReposKodyRules', __t);
+
+            // Kick off past-reviews rule generation (3-month backfill) in the
+            // background so onboarding doesn't block on the LLM-heavy work. The
+            // use-case applies the model policy (skips outside trial/BYOK),
+            // resolves source repos via the integration fallback, promotes the
+            // repos that get rules to isSelected, and drives the
+            // kodyLearningStatus state machine — the KodyLearning cron's
+            // staleness recovery covers runs that die mid-flight. Detached so a
+            // failure here never fails the onboarding response.
+            setImmediate(() => {
+                this.generateKodyRulesUseCase
+                    .execute({ teamId, months: 3 }, organizationId)
+                    .catch((error) => {
+                        this.logger.error({
+                            message:
+                                'Background Kody Rules generation failed after onboarding',
+                            context: FinishOnboardingUseCase.name,
+                            error:
+                                error instanceof Error
+                                    ? error
+                                    : new Error(String(error)),
+                            metadata: { organizationId, teamId },
+                        });
+                    });
+            });
 
             __mark('TOTAL', __onboardingT0);
 
