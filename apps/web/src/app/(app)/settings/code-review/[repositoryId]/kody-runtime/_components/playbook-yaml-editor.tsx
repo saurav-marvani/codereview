@@ -146,9 +146,12 @@ export function PlaybookYamlEditor({ disabled }: { disabled?: boolean }) {
                     className="text-text-primary w-full resize-y bg-transparent p-4 font-mono text-xs leading-relaxed outline-none"
                 />
             </div>
-            {error && (
-                <span className="text-danger text-xs">⚠ {error}</span>
-            )}
+            {error ? (
+                <span className="text-danger flex items-center gap-1 text-xs">
+                    <TriangleAlertIcon size={12} />
+                    {error}
+                </span>
+            ) : null}
         </div>
     );
 }
