@@ -30,6 +30,25 @@ import { tracedGenerateText as generateText } from '@libs/llm/llm-call';
 // Any BYOK config takes precedence over this in every case.
 const TRIAL_MODEL_OVERRIDE = 'kimi-k2.6';
 
+/**
+ * Kodus control markers are instructions to the sync engine, never file
+ * references. They must be filtered from EVERY detection path — both the
+ * regex marker extraction and the LLM-based detector (which happily
+ * returns "@kody-sync" as a file); the miss on the LLM path kept stamping
+ * spurious 'file not found: @kody-sync' sync errors on every rule synced
+ * via the marker.
+ */
+const KODUS_CONTROL_MARKERS = new Set(['@kody-sync', '@kody-ignore']);
+
+function isControlMarker(value: unknown): boolean {
+    return (
+        typeof value === 'string' &&
+        KODUS_CONTROL_MARKERS.has(
+            value.trim().toLowerCase().replace(/[.]+$/, ''),
+        )
+    );
+}
+
 export interface DetectReferencesParams {
     requirementId: string;
     promptText: string;
@@ -128,10 +147,16 @@ export class ReferenceDetectorService {
             return [];
         }
 
-        const parsed = extractJsonFromResponse(raw);
-        if (!parsed || !Array.isArray(parsed)) {
+        const parsedRaw = extractJsonFromResponse(raw);
+        if (!parsedRaw || !Array.isArray(parsedRaw)) {
             return [];
         }
+        const parsed = parsedRaw.filter(
+            (ref: any) =>
+                !isControlMarker(ref?.filePath) &&
+                !isControlMarker(ref?.fileName) &&
+                !isControlMarker(ref?.originalText),
+        );
 
         this.logger.debug({
             message: 'Detected external references',
@@ -155,25 +180,11 @@ export class ReferenceDetectorService {
             }
         }
 
-        // Kodus control markers are NOT file references. Without this
-        // exclusion, every rule synced from a file carrying `@kody-sync`
-        // got a spurious "file not found: @kody-sync" sync error stamped
-        // on it — the misleading chip customers reported while debugging
-        // silent rules.
-        const KODUS_CONTROL_MARKERS = new Set(['@kody-sync', '@kody-ignore']);
-
         const fileRegex = /@[A-Za-z0-9/_\-.]+/g;
         const fileMatches = promptText.match(fileRegex);
         if (fileMatches) {
             fileMatches
-                .filter(
-                    (match) =>
-                        // The regex's char class includes '.', so trailing
-                        // sentence punctuation rides along ("@kody-ignore.").
-                        !KODUS_CONTROL_MARKERS.has(
-                            match.toLowerCase().replace(/[.]+$/, ''),
-                        ),
-                )
+                .filter((match) => !isControlMarker(match))
                 .forEach((match) => markers.add(match));
         }
 

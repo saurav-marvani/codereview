@@ -34,3 +34,51 @@ describe('ReferenceDetectorService.extractMarkers', () => {
         expect(markers).not.toContain('@kody-sync');
     });
 });
+
+// LLM path: the detector's model output itself can name control markers as
+// files. The regex-path fix alone was NOT enough — reproduced live on the
+// manual validation env ('File not found: @kody-sync' on a clean rule).
+jest.mock('@libs/llm/llm-call', () => ({
+    tracedGenerateText: jest.fn().mockResolvedValue({
+        text: JSON.stringify([
+            { filePath: '@kody-sync', originalText: '@kody-sync' },
+            {
+                filePath: 'docs/real-file.md',
+                originalText: '@docs/real-file.md',
+            },
+        ]),
+    }),
+}));
+jest.mock('@libs/llm/byok-to-vercel', () => ({
+    byokToVercelModel: jest.fn().mockReturnValue({}),
+    getModelName: jest.fn().mockReturnValue('mock-model'),
+}));
+jest.mock('@libs/core/log/langfuse', () => ({
+    buildLangfuseTelemetry: jest.fn().mockReturnValue({}),
+}));
+
+describe('ReferenceDetectorService.detectReferences (LLM path)', () => {
+    it('filters Kodus control markers from the model output', async () => {
+        const { ReferenceDetectorService: Svc } = jest.requireActual(
+            '@libs/ai-engine/infrastructure/adapters/services/reference-detector.service',
+        );
+        const service = Object.create(Svc.prototype);
+        // logger is a field initializer (createLogger), which Object.create
+        // skips — inject the mock directly.
+        service.logger = {
+            log: jest.fn(),
+            debug: jest.fn(),
+            warn: jest.fn(),
+            error: jest.fn(),
+        };
+        const refs = await service.detectReferences({
+            requirementId: 'r1',
+            promptText: 'rule body with @kody-sync and @docs/real-file.md',
+            organizationAndTeamData: { organizationId: 'o', teamId: 't' },
+            detectionMode: 'rule',
+        });
+
+        expect(refs).toHaveLength(1);
+        expect(refs[0].filePath).toBe('docs/real-file.md');
+    });
+});
