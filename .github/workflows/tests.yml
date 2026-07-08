@@ -111,25 +111,17 @@ jobs:
             - name: Install dependencies
               run: pnpm install --frozen-lockfile
 
-            - name: Cache yarn store
-              uses: actions/cache@v5.0.5
-              with:
-                  path: ~/.cache/yarn
-                  key: ${{ runner.os }}-node22-yarn-${{ hashFiles('apps/web/yarn.lock') }}
-                  restore-keys: |
-                      ${{ runner.os }}-node22-yarn-
-
             - name: Install apps/web dependencies
-              # apps/web is NOT a pnpm workspace member (pnpm-workspace.yaml
-              # has no `packages:` entry for it) — it's a separate,
-              # yarn-managed project (see the root `web:install` script).
-              # The root pnpm install above never touches its
-              # node_modules, so any spec that imports a real apps/web
-              # runtime dependency (e.g. @radix-ui/*, class-variance-authority)
-              # fails with "Cannot find module" unless this also runs.
-              # This job only started needing it once component specs
-              # under apps/web/src began rendering real UI components.
-              run: cd apps/web && yarn install --frozen-lockfile
+              # apps/web is an ISOLATED pnpm project — its own
+              # apps/web/pnpm-workspace.yaml makes it a separate root, not a
+              # member of the backend workspace, so the root `pnpm install`
+              # above never touches its node_modules. Any spec that imports a
+              # real apps/web runtime dependency (e.g. @radix-ui/*,
+              # class-variance-authority) fails with "Cannot find module"
+              # unless this dedicated install also runs. The pnpm store cache
+              # above already covers it (hashFiles('**/pnpm-lock.yaml') matches
+              # apps/web/pnpm-lock.yaml and the store is shared).
+              run: cd apps/web && pnpm install --frozen-lockfile
 
             - name: Create environment.ts for tests
               run: |
