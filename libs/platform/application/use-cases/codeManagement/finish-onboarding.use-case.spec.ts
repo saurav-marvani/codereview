@@ -2,6 +2,16 @@ import { ParametersKey } from '@libs/core/domain/enums/parameters-key.enum';
 
 import { FinishOnboardingUseCase } from './finish-onboarding.use-case';
 
+// The trial is provisioned cloud-only (provisionTrial early-returns unless
+// environment.API_CLOUD_MODE). Force cloud mode on so the trial path runs.
+jest.mock('@libs/ee/configs/environment', () => {
+    const actual = jest.requireActual('@libs/ee/configs/environment');
+    return {
+        ...actual,
+        environment: { ...actual.environment, API_CLOUD_MODE: true },
+    };
+});
+
 describe('FinishOnboardingUseCase', () => {
     const buildUseCase = () => {
         const parametersService = {
