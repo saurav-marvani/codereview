@@ -57,6 +57,10 @@ function b64url(input: Buffer | string): string {
 
 // App JWT (RS256, 9min TTL) — the credential that authenticates the mint
 // call itself. iat is backdated 60s per GitHub's clock-drift guidance.
+// `iss` stays a STRING on purpose: GitHub accepts both string and numeric
+// App IDs (validated live 2026-07-08 against api.github.com), and the
+// now-recommended alternative — the App's Client ID ("Iv23...") — is only
+// expressible as a string. Do not parseInt this; it would NaN client IDs.
 function mintAppJwt(appId: string, privateKeyPem: string): string {
     const now = Math.floor(Date.now() / 1000);
     const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
