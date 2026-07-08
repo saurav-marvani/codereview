@@ -42,6 +42,14 @@ jest.mock('@libs/llm/llm-call', () => ({
     tracedGenerateText: jest.fn().mockResolvedValue({
         text: JSON.stringify([
             { filePath: '@kody-sync', originalText: '@kody-sync' },
+            // The EXACT production shape that escaped the first fix: the
+            // model fabricates a repo prefix around the marker.
+            {
+                filePath: 'kody-sync/@kody-sync',
+                fileName: 'kody-sync/@kody-sync',
+                repositoryName: 'kody-sync',
+                originalText: '@kody-sync',
+            },
             {
                 filePath: 'docs/real-file.md',
                 originalText: '@docs/real-file.md',

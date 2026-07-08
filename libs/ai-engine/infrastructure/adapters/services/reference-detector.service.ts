@@ -41,11 +41,15 @@ const TRIAL_MODEL_OVERRIDE = 'kimi-k2.6';
 const KODUS_CONTROL_MARKERS = new Set(['@kody-sync', '@kody-ignore']);
 
 function isControlMarker(value: unknown): boolean {
+    if (typeof value !== 'string') return false;
+    // Compare the BASENAME: the LLM detector emits the marker with a
+    // fabricated repo prefix ("kody-sync/@kody-sync" — observed in
+    // production sync errors), so an exact-string check misses it.
+    const normalized = value.trim().toLowerCase().replace(/[.]+$/, '');
+    const basename = normalized.split('/').pop() ?? normalized;
     return (
-        typeof value === 'string' &&
-        KODUS_CONTROL_MARKERS.has(
-            value.trim().toLowerCase().replace(/[.]+$/, ''),
-        )
+        KODUS_CONTROL_MARKERS.has(normalized) ||
+        KODUS_CONTROL_MARKERS.has(basename)
     );
 }
 
