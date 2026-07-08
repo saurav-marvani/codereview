@@ -131,8 +131,23 @@ async function listenForExecutionUpdate(params: {
                     .find((l) => l.startsWith('data:'));
                 if (!dataLine) continue;
                 try {
-                    const payload = JSON.parse(dataLine.slice(5).trim());
-                    const type = String(payload?.type ?? 'unknown');
+                    let payload: unknown = JSON.parse(dataLine.slice(5).trim());
+                    // Nest's @Sse serialization can double-encode the data
+                    // field (a JSON string inside the JSON frame).
+                    if (typeof payload === 'string') {
+                        try {
+                            payload = JSON.parse(payload);
+                        } catch {
+                            /* keep the string */
+                        }
+                    }
+                    // Nest serializes the MessageEvent object, so the app
+                    // payload nests under a `data` key:
+                    //   data: {"data":{"type":"ping"}}
+                    const obj = payload as Record<string, any>;
+                    const type = String(
+                        obj?.data?.type ?? obj?.type ?? 'unknown',
+                    );
                     params.onFrame(type);
                     if (type === 'execution_updated') return true;
                 } catch {
