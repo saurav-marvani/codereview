@@ -6,8 +6,8 @@ import { useEffect, useRef, useState } from "react";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import { dump as dumpYaml, load as loadYaml } from "js-yaml";
+import { CheckIcon, FileCode2Icon, TriangleAlertIcon } from "lucide-react";
 import { useFormContext } from "react-hook-form";
-import { CodeInputSimple } from "@components/ui/code-input-simple";
 
 import type { CodeReviewFormType } from "../../../_types";
 
@@ -113,15 +113,42 @@ export function PlaybookYamlEditor({ disabled }: { disabled?: boolean }) {
 
     return (
         <div className="flex flex-col gap-2">
-            <CodeInputSimple
-                value={text}
-                onChangeAction={onChange}
-                language="yaml"
-                placeholder={PLACEHOLDER}
-                disabled={disabled}
-                className="min-h-64"
-            />
-            {error && <span className="text-danger text-xs">{error}</span>}
+            <div
+                className={
+                    "bg-card-lv1 overflow-hidden rounded-lg border " +
+                    (error
+                        ? "border-danger/50"
+                        : "border-card-lv2 focus-within:border-primary/40")
+                }>
+
+                <div className="border-card-lv2 flex items-center justify-between border-b px-3 py-2">
+                    <span className="text-text-secondary flex items-center gap-2 font-mono text-xs">
+                        <FileCode2Icon size={13} />
+                        .kody/runtime.yml
+                    </span>
+                    {error ? (
+                        <span className="text-danger flex items-center gap-1 text-xs">
+                            <TriangleAlertIcon size={12} /> invalid
+                        </span>
+                    ) : text.trim() ? (
+                        <span className="text-success flex items-center gap-1 text-xs">
+                            <CheckIcon size={12} /> valid
+                        </span>
+                    ) : null}
+                </div>
+                <textarea
+                    value={text}
+                    onChange={(ev) => onChange(ev.target.value)}
+                    placeholder={PLACEHOLDER}
+                    disabled={disabled}
+                    spellCheck={false}
+                    rows={14}
+                    className="text-text-primary w-full resize-y bg-transparent p-4 font-mono text-xs leading-relaxed outline-none"
+                />
+            </div>
+            {error && (
+                <span className="text-danger text-xs">⚠ {error}</span>
+            )}
         </div>
     );
 }

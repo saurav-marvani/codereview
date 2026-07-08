@@ -19,7 +19,6 @@ import { type CodeReviewFormType } from "../../_types";
 import { useCodeReviewRouteParams } from "../../../_hooks";
 import { EnvironmentEnabled } from "./_components/environment-enabled";
 import { GenerateConfigButton } from "./_components/generate-config-button";
-import { InfrastructureAdvanced } from "./_components/infrastructure-advanced";
 import { PlaybookYamlEditor } from "./_components/playbook-yaml-editor";
 import { RequiredEnv } from "./_components/required-env";
 import { RuntimeTrigger } from "./_components/runtime-trigger";
@@ -154,20 +153,37 @@ export default function KodyRuntime() {
                     )}
                 </div>
 
-                {!isGlobal && (
-                    <div className="flex flex-col gap-4 rounded-xl border border-card-lv2 p-5">
-                        <RequiredEnv />
+                {!isGlobal ? (
+                    <>
+                        <div className="flex flex-col gap-4 rounded-xl border border-card-lv2 p-5">
+                            <RequiredEnv />
+                        </div>
+
+                        <SecretsVault
+                            teamId={teamId}
+                            repositoryId={repositoryId}
+                            canEdit={canEdit}
+                            requiredEnv={
+                                (form.watch(
+                                    "environment.requiredEnv.value",
+                                ) as string[]) ?? []
+                            }
+                        />
+                    </>
+                ) : (
+                    <div className="rounded-xl border border-card-lv2 p-5">
+                        <p className="text-text-secondary text-sm">
+                            Shared secrets and where the VMs run are set once for
+                            the whole organization in{" "}
+                            <a
+                                href="/organization/runtime"
+                                className="text-primary hover:underline">
+                                Organization → Kody Runtime
+                            </a>
+                            . Every repository inherits them; open a repository to
+                            add its own playbook and secret overrides.
+                        </p>
                     </div>
-                )}
-
-                <SecretsVault
-                    teamId={teamId}
-                    repositoryId={repositoryId}
-                    canEdit={canEdit}
-                />
-
-                {isGlobal && (
-                    <InfrastructureAdvanced teamId={teamId} canEdit={canEdit} />
                 )}
             </Page.Content>
         </Page.Root>

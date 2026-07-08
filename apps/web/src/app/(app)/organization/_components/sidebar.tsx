@@ -20,6 +20,7 @@ import {
     GaugeIcon,
     KeyRoundIcon,
     LockKeyholeOpenIcon,
+    ServerIcon,
     ShieldIcon,
 } from "lucide-react";
 import {
@@ -60,6 +61,12 @@ export const ConfigsSidebar = () => {
             icon: LockKeyholeOpenIcon,
             label: "BYOK",
             href: `/organization/byok`,
+            visible: true,
+        },
+        {
+            icon: ServerIcon,
+            label: "Kody Runtime",
+            href: `/organization/runtime`,
             visible: true,
         },
         {
