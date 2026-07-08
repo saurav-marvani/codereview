@@ -322,7 +322,10 @@ export function PullRequestsPageClient() {
     // they still narrow the list — count them so the header doesn't show the
     // full team total next to a narrowed view.
     const hasActiveFilters =
-        activeChips.length > 0 || needsAttention === "true" || isAwaiting;
+        activeChips.length > 0 ||
+        needsAttention === "true" ||
+        isAwaiting ||
+        authorPolicy !== "reviewable";
     const totalCount =
         !hasActiveFilters && typeof facets?.all === "number"
             ? facets.all
