@@ -42,7 +42,10 @@ interface CachedToken {
     expiresAtMs: number;
 }
 
-let cached: CachedToken | undefined;
+// Keyed by (apiBase, app id, installation id) so distinct configurations —
+// different mock servers in tests, or a future GHES target — never receive
+// a token minted for another API/identity.
+const cache = new Map<string, CachedToken>();
 
 function b64url(input: Buffer | string): string {
     return Buffer.from(input)
@@ -79,9 +82,9 @@ export function githubAppConfigured(
     );
 }
 
-/** Test hook: drop the cached token so expiry/re-mint paths are exercisable. */
+/** Test hook: drop cached tokens so expiry/re-mint paths are exercisable. */
 export function resetGithubAppTokenCache(): void {
-    cached = undefined;
+    cache.clear();
 }
 
 /**
@@ -95,6 +98,8 @@ export async function githubAppToken(
     apiBase: string = API,
 ): Promise<string | undefined> {
     if (!githubAppConfigured(env)) return undefined;
+    const cacheKey = `${apiBase}:${env.GH_APP_ID}:${env.GH_APP_INSTALLATION_ID}`;
+    const cached = cache.get(cacheKey);
     if (cached && cached.expiresAtMs - Date.now() > REFRESH_MARGIN_MS) {
         return cached.token;
     }
@@ -115,14 +120,14 @@ export async function githubAppToken(
     );
     ensureOk(resp, "github-app:mintInstallationToken");
     const expiresAtMs = Date.parse(resp.body.expires_at);
-    cached = {
+    cache.set(cacheKey, {
         token: resp.body.token,
         expiresAtMs: Number.isFinite(expiresAtMs)
             ? expiresAtMs
             : Date.now() + 55 * 60 * 1000,
-    };
+    });
     log.info(
         `Minted GitHub App installation token (expires ${resp.body.expires_at})`,
     );
-    return cached.token;
+    return resp.body.token;
 }

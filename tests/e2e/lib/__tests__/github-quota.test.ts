@@ -76,7 +76,7 @@ test("githubAppToken: mints an installation token via App JWT and caches it unti
     const server = await startMockServer([
         {
             method: "POST",
-            pathRegex: /^\/app\/installations\/777\/access_tokens$/,
+            pathRegex: /^\/app\/installations\/(777|888)\/access_tokens$/,
             handler: (req, res) => {
                 mints++;
                 const auth = String(req.headers.authorization ?? "");
@@ -111,9 +111,19 @@ test("githubAppToken: mints an installation token via App JWT and caches it unti
         assert.equal(t2, "ghs_installation_1", "fresh token must be reused");
         assert.equal(mints, 1, "second call must not re-mint");
 
+        // A DIFFERENT identity must not receive the cached token (cache is
+        // keyed by apiBase + app + installation).
+        const otherEnv = { ...env, GH_APP_INSTALLATION_ID: "888" };
+        const tOther = await githubAppToken(otherEnv, server.baseUrl);
+        assert.equal(
+            tOther,
+            "ghs_installation_2",
+            "different installation must mint its own token",
+        );
+
         resetGithubAppTokenCache();
         const t3 = await githubAppToken(env, server.baseUrl);
-        assert.equal(t3, "ghs_installation_2", "post-expiry call re-mints");
+        assert.equal(t3, "ghs_installation_3", "post-expiry call re-mints");
     } finally {
         resetGithubAppTokenCache();
         await server.close();
