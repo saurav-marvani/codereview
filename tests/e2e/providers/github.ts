@@ -379,6 +379,36 @@ export class GitHubProvider extends BaseProvider {
         };
     }
 
+    // Conditional GET with an ETag cache. GitHub serves 304 Not Modified
+    // when the resource didn't change since the cached ETag — and 304s DO
+    // NOT count against the per-account rate limit. The poll loops below
+    // (pollForReview every 10s, waitForPipelineStart every 3s, both for
+    // many minutes) are the harness's dominant quota consumers (~200-270
+    // requests per scenario); with conditional requests only the polls
+    // where something actually changed are billed. Cache is per provider
+    // instance (one per cell), keyed by URL.
+    private etagCache = new Map<string, { etag: string; body: unknown }>();
+
+    private async conditionalGet<T>(
+        url: string,
+    ): Promise<{ status: number; body: T; raw: string }> {
+        const cached = this.etagCache.get(url);
+        const resp = await http<T>(url, {
+            headers: {
+                ...this.headers(),
+                ...(cached ? { 'If-None-Match': cached.etag } : {}),
+            },
+        });
+        if (resp.status === 304 && cached) {
+            return { status: 200, body: cached.body as T, raw: '' };
+        }
+        const etag = resp.headers.get('etag');
+        if (resp.status === 200 && etag) {
+            this.etagCache.set(url, { etag, body: resp.body });
+        }
+        return resp;
+    }
+
     // GitHub list endpoints return a JSON *error envelope* ({message,
     // documentation_url}) instead of an array when the request is rejected
     // — most commonly the per-account primary/secondary rate limit (HTTP
@@ -423,15 +453,13 @@ export class GitHubProvider extends BaseProvider {
             async () => {
                 const [reviewComments, issueComments, reviews] =
                     await Promise.all([
-                        http<{ id: number; body: string }[]>(
+                        this.conditionalGet<{ id: number; body: string }[]>(
                             `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}/comments?since=${since}`,
-                            { headers: this.headers() },
                         ),
-                        http<{ id: number; body: string }[]>(
+                        this.conditionalGet<{ id: number; body: string }[]>(
                             `${this.apiBase}/repos/${this.repoFullName}/issues/${pr.number}/comments?since=${since}`,
-                            { headers: this.headers() },
                         ),
-                        http<
+                        this.conditionalGet<
                             {
                                 submitted_at?: string;
                                 created_at?: string;
@@ -439,7 +467,6 @@ export class GitHubProvider extends BaseProvider {
                             }[]
                         >(
                             `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}/reviews`,
-                            { headers: this.headers() },
                         ),
                     ]);
                 // Kody posts three distinct comment shapes that all carry
@@ -594,15 +621,15 @@ export class GitHubProvider extends BaseProvider {
         const since = encodeURIComponent(opts.sinceIso);
         const result = await pollUntil<{ startedAt: string; sample: string }>(
             async () => {
-                const resp = await http<
+                const resp = await this.conditionalGet<
                     { id: number; body: string; created_at: string }[]
                 >(
                     `${this.apiBase}/repos/${this.repoFullName}/issues/${pr.number}/comments?since=${since}`,
-                    { headers: this.headers() },
                 );
-                const hit = (resp.body ?? []).find((c) =>
-                    (c.body ?? '').includes('<!-- kody-codereview'),
-                );
+                const hit = this.listOrThrow(
+                    resp,
+                    'github:waitForPipelineStart',
+                ).find((c) => (c.body ?? '').includes('<!-- kody-codereview'));
                 if (!hit) return null;
                 return {
                     startedAt: hit.created_at,
