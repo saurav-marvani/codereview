@@ -115,7 +115,6 @@ export const kodyRulesFileSync: Scenario = {
         // ---- Phase 1: merge the rule file, wait for the synced rule ----
         const rulePr = await ctx.provider.openPR({
             branch: `e2e/kody-rules-file-sync-rule-${runTag}`,
-            baseBranch: "main",
             title: `[e2e] sync rule file ${runTag}`,
             body: `Automated by Kodus E2E run ${ctx.runId}: merges a .kody/rules template (@kody-sync) so the repo-file importer creates the rule.`,
             fixtureFiles: { [RULE_FILE_PATH]: ruleFileContent(ruleTitle) },
@@ -182,8 +181,7 @@ export const kodyRulesFileSync: Scenario = {
             const sinceIso = new Date().toISOString();
             violationPr = await ctx.provider.openPR({
                 branch: violationBranch,
-                baseBranch: "main",
-                title: `[e2e] file-sync violation ${runTag}`,
+                    title: `[e2e] file-sync violation ${runTag}`,
                 body: `Automated by Kodus E2E run ${ctx.runId}: plants ${MARKER} in a file matching the rule's SECOND glob.`,
                 fixtureFiles: {
                     [VIOLATION_FILE]: violationFileContent(ctx.runId),

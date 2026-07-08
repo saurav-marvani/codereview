@@ -99,7 +99,6 @@ export const ruleFileDetection: Scenario = {
 
         const pr = await ctx.provider.openPR({
             branch: `e2e/rule-file-detection-${runTag}`,
-            baseBranch: "main",
             title: `[e2e] rule-file detection ${runTag}`,
             body: `Automated by Kodus E2E run ${ctx.runId}: merges AGENTS.md + nested CLAUDE.md + lowercase claude.md so the repo-file importer must detect all three.`,
             fixtureFiles,
