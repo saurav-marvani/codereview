@@ -174,7 +174,13 @@ export const NavMenu = () => {
                 <SvgKodus className="h-8 max-w-max" />
             </NextLink>
 
-            <div className="-mb-1 h-full flex-1">
+            {/* min-w-0 lets this flex child shrink below the nav's intrinsic
+                (whitespace-nowrap) width instead of forcing the whole h-16 bar
+                past the viewport — which, under the shell's w-screen +
+                overflow-hidden, clipped every page's content on the right at
+                widths below ~1230px. overflow-x-auto keeps the links reachable
+                by scrolling within the bar. */}
+            <div className="-mb-1 h-full min-w-0 flex-1 overflow-x-auto">
                 <NavigationMenu className="h-full *:h-full">
                     <NavigationMenuList className="h-full gap-0">
                         {items.map(
