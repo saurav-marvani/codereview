@@ -601,14 +601,24 @@ function strongFilesFromRun(state: RunState): Set<string> {
     return out;
 }
 
-function normalizePath(p: string): string {
+export function normalizePath(p: string): string {
+    // The finding type declares relevantFile as string, but LLM output
+    // (observed with kimi-k2.7) sometimes omits it; an undefined here
+    // crashed the whole finder run ("Completed with Warnings", agent
+    // dropped, minutes of work lost).
+    if (typeof p !== 'string' || !p) return '';
     return p
         .replace(/\\/g, '/')
         .replace(/^\.?\/+/, '')
         .toLowerCase();
 }
 
-function fileWasInvestigated(investigated: Set<string>, file: string): boolean {
+export function fileWasInvestigated(
+    investigated: Set<string>,
+    file: string,
+): boolean {
+    // A finding without a file can't claim investigation evidence.
+    if (!file) return false;
     const f = normalizePath(file);
     for (const s of investigated) {
         if (s === f || s.endsWith('/' + f) || f.endsWith('/' + s)) {
