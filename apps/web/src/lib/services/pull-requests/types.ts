@@ -111,11 +111,12 @@ export type ReviewWarningKind =
     | "HUNK_HEADERS_ONLY"
     | "DIFF_TRUNCATED"
     | "LOW_SIGNAL_FILES_DROPPED"
-    | "HEAVY_PASSES_SKIPPED";
+    | "HEAVY_PASSES_SKIPPED"
+    | "PROVIDER_FALLBACK";
 
 export interface ReviewWarning {
     kind: ReviewWarningKind;
-    reason: "small_context_window";
+    reason: "small_context_window" | "provider_failover";
     contextWindowTokens: number;
     modelName: string;
     detail?: string;

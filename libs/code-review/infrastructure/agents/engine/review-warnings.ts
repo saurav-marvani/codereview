@@ -21,13 +21,20 @@ export type ReviewWarningKind =
     /** Low-signal files (tests/md/css) dropped even in deep mode. */
     | 'LOW_SIGNAL_FILES_DROPPED'
     /** Verifier / second-chance / rescue passes skipped. */
-    | 'HEAVY_PASSES_SKIPPED';
+    | 'HEAVY_PASSES_SKIPPED'
+    /** The BYOK main provider failed and the review ran on the fallback. */
+    | 'PROVIDER_FALLBACK';
 
-export type ReviewWarningReason = 'small_context_window';
+export type ReviewWarningReason =
+    | 'small_context_window'
+    /** The configured main provider errored, so the review used the fallback. */
+    | 'provider_failover';
 
 export interface ReviewWarning {
     kind: ReviewWarningKind;
     reason: ReviewWarningReason;
+    /** Model context window that forced a fidelity drop. Not meaningful for
+     *  provider-failover warnings (set to 0). */
     contextWindowTokens: number;
     modelName: string;
     /** Optional free-form context (e.g. "3 files dropped: foo.test.ts, ..."). */
@@ -35,6 +42,28 @@ export interface ReviewWarning {
     /** Agent that emitted the warning. Cleared on dedup when multiple agents
      *  emit the same warning, since the underlying cause is pipeline-wide. */
     agentName?: string;
+}
+
+/**
+ * Build the notice shown (in the admin dashboard, via
+ * dataExecution.reviewWarnings) when an agent's BYOK main provider failed and
+ * the review completed on the configured fallback. `contextWindowTokens` is 0
+ * because it is a provider-health signal, not a context-window fidelity drop —
+ * so per-agent duplicates fold to a single dashboard entry.
+ */
+export function buildProviderFallbackWarning(params: {
+    failedModel: string;
+    usedModel: string;
+    agentName?: string;
+}): ReviewWarning {
+    return {
+        kind: 'PROVIDER_FALLBACK',
+        reason: 'provider_failover',
+        contextWindowTokens: 0,
+        modelName: params.usedModel,
+        detail: `main provider ${params.failedModel} failed; review ran on fallback ${params.usedModel}`,
+        agentName: params.agentName,
+    };
 }
 
 /**

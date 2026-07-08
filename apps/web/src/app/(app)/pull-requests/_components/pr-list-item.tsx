@@ -96,7 +96,11 @@ const TimeAgoDisplay = ({
 }) => {
     const [displayedTime, setDisplayedTime] = useState(dateString);
 
+    // Deferred on purpose: SSR renders the raw timestamp, then the client swaps
+    // to relative time ("2 hours ago") after mount. formatTimeAgo() reads
+    // `new Date()`, so computing it during render would hydration-mismatch.
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setDisplayedTime(formatTimeAgo(dateString));
     }, [dateString]);
 
@@ -435,9 +439,6 @@ export const PrListItem = ({ group }: PrListItemProps) => {
     const [collapsedReviews, setCollapsedReviews] = useState<Set<number>>(
         () => new Set(executions.slice(1).map((_, i) => i + 1)),
     );
-    const [debugVisibleByExecution, setDebugVisibleByExecution] = useState<
-        Record<string, boolean>
-    >({});
     const prUrl = buildPullRequestUrl(latest);
 
     const toggleReview = (index: number) => {
@@ -450,13 +451,6 @@ export const PrListItem = ({ group }: PrListItemProps) => {
             }
             return next;
         });
-    };
-
-    const toggleDebugVisibility = (key: string) => {
-        setDebugVisibleByExecution((prev) => ({
-            ...prev,
-            [key]: !prev[key],
-        }));
     };
 
     return (
@@ -622,19 +616,6 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                         "pending";
                                     const isReviewCollapsed =
                                         collapsedReviews.has(index);
-                                    const hasSecondarySteps =
-                                        execution.codeReviewTimeline.some(
-                                            (item) =>
-                                                item.metadata &&
-                                                typeof item.metadata ===
-                                                    "object" &&
-                                                (
-                                                    item.metadata as Record<
-                                                        string,
-                                                        any
-                                                    >
-                                                ).visibility === "secondary",
-                                        );
                                     // Always show all timeline items including agent traces (secondary)
                                     const timelineItems =
                                         execution.codeReviewTimeline;
@@ -736,7 +717,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                     {execution.reviewWarnings &&
                                                         execution.reviewWarnings
                                                             .length > 0 && (
-                                                            <ReviewFidelityNotice
+                                                            <ReviewNotices
                                                                 warnings={
                                                                     execution.reviewWarnings
                                                                 }
@@ -1090,6 +1071,9 @@ const WARNING_KIND_LABEL: Record<ReviewWarningKind, string> = {
     DIFF_TRUNCATED: "Long file diffs truncated to fit the window",
     LOW_SIGNAL_FILES_DROPPED: "Low-signal files (tests, docs, styles) dropped",
     HEAVY_PASSES_SKIPPED: "Verifier / second-chance / rescue passes skipped",
+    // Rendered by ProviderFallbackNotice, not the fidelity list — label kept
+    // for exhaustiveness.
+    PROVIDER_FALLBACK: "Main provider failed; ran on fallback",
 };
 
 /**
@@ -1098,6 +1082,69 @@ const WARNING_KIND_LABEL: Record<ReviewWarningKind, string> = {
  * forced a degraded review path). Intentionally NOT shown to PR authors
  * in the GitHub comment — see commentManager.service.ts.
  */
+/**
+ * Splits review notices by category so a provider failover (the review ran on
+ * the BYOK fallback because main failed) isn't mislabeled as a context-window
+ * "fidelity reduced" degradation. Renders each category with its own framing.
+ */
+const ReviewNotices = ({ warnings }: { warnings: ReviewWarning[] }) => {
+    const fallbackWarnings = warnings.filter(
+        (w) => w.kind === "PROVIDER_FALLBACK",
+    );
+    const fidelityWarnings = warnings.filter(
+        (w) => w.kind !== "PROVIDER_FALLBACK",
+    );
+    return (
+        <>
+            {fallbackWarnings.length > 0 && (
+                <ProviderFallbackNotice warnings={fallbackWarnings} />
+            )}
+            {fidelityWarnings.length > 0 && (
+                <ReviewFidelityNotice warnings={fidelityWarnings} />
+            )}
+        </>
+    );
+};
+
+/**
+ * The BYOK main provider failed and the review completed on the configured
+ * fallback. Not a fidelity/context-window issue — the review ran at full
+ * fidelity, just on a different provider.
+ */
+const ProviderFallbackNotice = ({
+    warnings,
+}: {
+    warnings: ReviewWarning[];
+}) => {
+    const seen = new Set<string>();
+    const unique = warnings.filter((w) => {
+        if (seen.has(w.modelName)) return false;
+        seen.add(w.modelName);
+        return true;
+    });
+    return (
+        <div className="border-warning/30 bg-warning/5 mb-4 rounded-lg border p-3">
+            <div className="mb-2 flex items-center gap-2">
+                <AlertTriangleIcon className="text-warning size-4 shrink-0" />
+                <span className="text-text-primary text-sm font-medium">
+                    Ran on fallback provider
+                </span>
+            </div>
+            <ul className="text-text-secondary space-y-1 text-xs">
+                {unique.map((w, idx) => (
+                    <li key={`fallback-${idx}`} className="flex gap-1.5">
+                        <span className="text-text-tertiary">•</span>
+                        <span>
+                            {w.detail ??
+                                `Review ran on fallback model ${w.modelName}.`}
+                        </span>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+};
+
 const ReviewFidelityNotice = ({ warnings }: { warnings: ReviewWarning[] }) => {
     // Group by (kind, modelName, contextWindowTokens) so the same warning
     // emitted by multiple agents collapses into one bullet. The backend

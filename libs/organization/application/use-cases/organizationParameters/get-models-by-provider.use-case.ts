@@ -3,10 +3,18 @@ import {
     getModelCapabilities,
     ReasoningConfig,
 } from '@kodus/kodus-common/llm';
+import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { ProviderService } from '@libs/core/infrastructure/services/providers/provider.service';
 import { createLogger } from '@libs/core/log/logger';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+    IOrganizationParametersService,
+    ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
+} from '@libs/organization/domain/organizationParameters/contracts/organizationParameters.service.contract';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import axios from 'axios';
+
+import { resolveByokSlot } from './byok-credentials.util';
+import { assertSafeOpenAICompatibleUrl } from './test-byok-connection.use-case';
 
 // Interfaces for API responses
 interface OpenAIModel {
@@ -46,6 +54,16 @@ interface GeminiResponse {
     models: GeminiModel[];
 }
 
+/**
+ * Providers whose model list is a CURATED static catalog (not fetched live), so
+ * it isn't exhaustive — a model missing from it is NOT proof the model is
+ * invalid. Callers must not treat a miss as a hard mismatch/failure for these.
+ */
+export const CURATED_CATALOG_PROVIDERS = new Set<BYOKProvider>([
+    BYOKProvider.AMAZON_BEDROCK,
+    BYOKProvider.GOOGLE_VERTEX,
+]);
+
 export interface ModelResponse {
     provider: BYOKProvider;
     models: Array<{
@@ -60,43 +78,69 @@ export interface ModelResponse {
 export class GetModelsByProviderUseCase {
     private readonly logger = createLogger(GetModelsByProviderUseCase.name);
 
-    constructor(private readonly providerService: ProviderService) {}
+    constructor(
+        private readonly providerService: ProviderService,
+        @Inject(ORGANIZATION_PARAMETERS_SERVICE_TOKEN)
+        private readonly organizationParametersService: IOrganizationParametersService,
+    ) {}
 
-    async execute(provider: string): Promise<ModelResponse> {
+    async execute(
+        provider: string,
+        organizationAndTeamData?: OrganizationAndTeamData,
+    ): Promise<ModelResponse> {
         if (!this.providerService.isProviderSupported(provider)) {
             throw new BadRequestException(`Unsupported provider: ${provider}`);
         }
 
         const byokProvider = provider as BYOKProvider;
 
+        // Prefer the org's OWN saved BYOK credentials so the catalog reflects
+        // the user's actual endpoint/key (e.g. an openai_compatible proxy like
+        // Moonshot) rather than Kodus' bundled env keys — otherwise the list is
+        // for the wrong account and the user's real models all look "unknown".
+        // Falls back to env when no saved slot matches (e.g. the setup wizard,
+        // before the config is saved).
+        const creds = await resolveByokSlot(
+            this.organizationParametersService,
+            byokProvider,
+            organizationAndTeamData,
+        );
+
         switch (byokProvider) {
             case BYOKProvider.OPENAI:
-                return this.getOpenAIModels(process.env.API_OPEN_AI_API_KEY);
+                return this.getOpenAIModels(
+                    creds?.apiKey ?? process.env.API_OPEN_AI_API_KEY,
+                );
 
             case BYOKProvider.ANTHROPIC:
                 return this.getAnthropicModels(
-                    process.env.API_ANTHROPIC_API_KEY,
+                    creds?.apiKey ?? process.env.API_ANTHROPIC_API_KEY,
                 );
 
             case BYOKProvider.GOOGLE_GEMINI:
-                return this.getGeminiModels(process.env.API_GOOGLE_AI_API_KEY);
+                return this.getGeminiModels(
+                    creds?.apiKey ?? process.env.API_GOOGLE_AI_API_KEY,
+                );
 
             case BYOKProvider.GOOGLE_VERTEX:
                 return this.getVertexModels();
 
             case BYOKProvider.OPEN_ROUTER:
                 return this.getOpenRouterModels(
-                    process.env.API_OPEN_ROUTER_API_KEY,
+                    creds?.apiKey ?? process.env.API_OPEN_ROUTER_API_KEY,
                 );
 
             case BYOKProvider.NOVITA:
-                return this.getNovitaModels(process.env.API_NOVITA_AI_API_KEY);
+                return this.getNovitaModels(
+                    creds?.apiKey ?? process.env.API_NOVITA_AI_API_KEY,
+                );
 
             case BYOKProvider.OPENAI_COMPATIBLE:
                 return this.getOpenAICompatibleModels(
-                    process.env.API_OPEN_AI_API_KEY,
-                    process.env.API_OPENAI_FORCE_BASE_URL ||
-                        'https://api.openai.com',
+                    creds?.apiKey ?? process.env.API_OPEN_AI_API_KEY,
+                    creds?.baseURL ??
+                        (process.env.API_OPENAI_FORCE_BASE_URL ||
+                            'https://api.openai.com'),
                 );
 
             case BYOKProvider.AMAZON_BEDROCK:
@@ -375,16 +419,39 @@ export class GetModelsByProviderUseCase {
             );
         }
 
+        // SSRF guard: the baseURL can come from the org's stored BYOK config
+        // (user-controlled), so reject private/reserved IPs, the cloud metadata
+        // endpoint, and non-https schemes before making the server-side request
+        // — the same guard the connection probe uses.
+        await assertSafeOpenAICompatibleUrl(baseUrl);
+
         try {
-            const modelsUrl = baseUrl.endsWith('/')
-                ? `${baseUrl}v1/models`
-                : `${baseUrl}/v1/models`;
+            // Trim trailing slashes without a regex (backtracking-safe), then
+            // only add `/v1` when the base URL doesn't already end in a version
+            // segment — a stored openai_compatible baseURL usually includes
+            // `/v1` (e.g. Moonshot's `https://api.moonshot.ai/v1`), so a naive
+            // `${baseUrl}/v1/models` would 404 on `/v1/v1/models`. Mirrors the
+            // connection probe's URL logic.
+            let trimmed = baseUrl;
+            while (trimmed.endsWith('/')) {
+                trimmed = trimmed.slice(0, -1);
+            }
+            const needsV1 = !/\/v\d+$/i.test(trimmed);
+            const modelsUrl = needsV1
+                ? `${trimmed}/v1/models`
+                : `${trimmed}/models`;
 
             const response = await axios.get<OpenAIResponse>(modelsUrl, {
                 headers: {
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json',
                 },
+                // The SSRF guard only validates the base host: without these a
+                // public URL could 302-redirect the request onto a private IP /
+                // the cloud metadata endpoint (169.254.169.254), or hang. Mirror
+                // the connection probe: never follow redirects, bounded timeout.
+                maxRedirects: 0,
+                timeout: 15_000,
             });
 
             return {
