@@ -8,6 +8,7 @@ import { IntegrationCategory } from '@libs/core/domain/enums/integration-categor
 import { ParametersKey } from '@libs/core/domain/enums/parameters-key.enum';
 import { STATUS } from '@libs/core/infrastructure/config/types/database/status.type';
 import { GenerateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/generate-kody-rules.use-case';
+import { GenerateInitialKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/generate-initial-kody-rules.use-case';
 import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
@@ -39,6 +40,7 @@ export class KodyLearningCronProvider {
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
         private readonly generateKodyRulesUseCase: GenerateKodyRulesUseCase,
+        private readonly generateInitialKodyRulesUseCase: GenerateInitialKodyRulesUseCase,
         private readonly distributedLockService: DistributedLockService,
     ) {}
 
@@ -311,14 +313,56 @@ export class KodyLearningCronProvider {
                 return;
             }
 
-            await this.generateKodyRulesUseCase.execute(
-                {
-                    teamId,
-                    weeks: 1,
-                    repositoriesIds: filteredRepos.map((repo) => repo.id),
-                },
-                organizationId,
+            // A repo that has never produced past-review rules (e.g. its owner
+            // skipped onboarding) still needs the one-time 3-month backfill the
+            // onboarding flow used to do; every other repo just needs the last
+            // week's delta. Partition the repos and run each window once
+            // (issue #1506).
+            const backfillChecks = await Promise.allSettled(
+                filteredRepos.map(async (repo) => ({
+                    repo,
+                    needsBackfill:
+                        !(await this.generateInitialKodyRulesUseCase.hasPastReviewRules(
+                            organizationId,
+                            repo.id,
+                        )),
+                })),
             );
+
+            const backfillRepoIds: string[] = [];
+            const weeklyRepoIds: string[] = [];
+            for (let i = 0; i < backfillChecks.length; i++) {
+                const check = backfillChecks[i];
+                // If the check failed, fall back to the cheaper weekly window
+                // rather than risk an unexpected 3-month run.
+                const needsBackfill =
+                    check.status === 'fulfilled' && check.value.needsBackfill;
+                (needsBackfill ? backfillRepoIds : weeklyRepoIds).push(
+                    filteredRepos[i].id,
+                );
+            }
+
+            if (backfillRepoIds.length > 0) {
+                await this.generateKodyRulesUseCase.execute(
+                    {
+                        teamId,
+                        months: 3,
+                        repositoriesIds: backfillRepoIds,
+                    },
+                    organizationId,
+                );
+            }
+
+            if (weeklyRepoIds.length > 0) {
+                await this.generateKodyRulesUseCase.execute(
+                    {
+                        teamId,
+                        weeks: 1,
+                        repositoriesIds: weeklyRepoIds,
+                    },
+                    organizationId,
+                );
+            }
         } catch (error) {
             this.logger.error({
                 message: 'Error generating kody rules',

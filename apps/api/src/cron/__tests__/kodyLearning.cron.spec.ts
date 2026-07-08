@@ -7,6 +7,9 @@ describe('KodyLearningCronProvider — distributed lock', () => {
         };
         const parametersService = { findByKey: jest.fn() };
         const generateKodyRulesUseCase = { execute: jest.fn() };
+        const generateInitialKodyRulesUseCase = {
+            hasPastReviewRules: jest.fn().mockResolvedValue(false),
+        };
         const lock = { release: jest.fn().mockResolvedValue(undefined) };
         const distributedLockService = {
             acquire: jest.fn().mockResolvedValue(lockAcquired ? lock : null),
@@ -16,6 +19,7 @@ describe('KodyLearningCronProvider — distributed lock', () => {
             teamService as any,
             parametersService as any,
             generateKodyRulesUseCase as any,
+            generateInitialKodyRulesUseCase as any,
             distributedLockService as any,
         );
 
