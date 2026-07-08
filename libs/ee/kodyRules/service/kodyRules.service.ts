@@ -562,7 +562,7 @@ export class KodyRulesService implements IKodyRulesService {
         rule: Partial<IKodyRule>,
     ): Promise<void> {
         if (
-            rule.origin === KodyRulesOrigin.USER ||
+            rule.origin === KodyRulesOrigin.MANUAL ||
             !rule.repositoryId ||
             rule.repositoryId === 'global'
         ) {
