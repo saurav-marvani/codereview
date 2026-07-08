@@ -155,10 +155,26 @@ export class ReferenceDetectorService {
             }
         }
 
+        // Kodus control markers are NOT file references. Without this
+        // exclusion, every rule synced from a file carrying `@kody-sync`
+        // got a spurious "file not found: @kody-sync" sync error stamped
+        // on it — the misleading chip customers reported while debugging
+        // silent rules.
+        const KODUS_CONTROL_MARKERS = new Set(['@kody-sync', '@kody-ignore']);
+
         const fileRegex = /@[A-Za-z0-9/_\-.]+/g;
         const fileMatches = promptText.match(fileRegex);
         if (fileMatches) {
-            fileMatches.forEach((match) => markers.add(match));
+            fileMatches
+                .filter(
+                    (match) =>
+                        // The regex's char class includes '.', so trailing
+                        // sentence punctuation rides along ("@kody-ignore.").
+                        !KODUS_CONTROL_MARKERS.has(
+                            match.toLowerCase().replace(/[.]+$/, ''),
+                        ),
+                )
+                .forEach((match) => markers.add(match));
         }
 
         // Detect MCP markers: @mcp<app|tool>
