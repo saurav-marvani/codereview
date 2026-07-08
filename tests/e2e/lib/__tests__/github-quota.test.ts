@@ -28,7 +28,16 @@ test("conditionalGet: polls send If-None-Match and 304s serve the cached body (f
             },
         },
     ]);
-    const originalEnv = { ...process.env };
+    // Restore ONLY the keys this test mutates — reassigning process.env
+    // wholesale would swap Node's env proxy for a plain object and stop
+    // writes from propagating to child processes.
+    const MUTATED = [
+        "GH_TEST_TOKEN",
+        "GH_TEST_REPO",
+        "E2E_POLL_INTERVAL_OVERRIDE_SEC",
+        "E2E_POLL_TIMEOUT_OVERRIDE_SEC",
+    ] as const;
+    const savedEnv = new Map(MUTATED.map((k) => [k, process.env[k]]));
     const originalFetch = global.fetch;
     process.env.GH_TEST_TOKEN = "fake";
     process.env.GH_TEST_REPO = "kodustech/qa-fixture";
@@ -60,7 +69,10 @@ test("conditionalGet: polls send If-None-Match and 304s serve the cached body (f
         );
     } finally {
         global.fetch = originalFetch;
-        process.env = originalEnv;
+        for (const [k, v] of savedEnv) {
+            if (v === undefined) delete process.env[k];
+            else process.env[k] = v;
+        }
         await ghServer.close();
     }
 });

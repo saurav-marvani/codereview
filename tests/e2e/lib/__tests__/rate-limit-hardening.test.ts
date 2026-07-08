@@ -135,7 +135,11 @@ test("pollForReview: GitHub rate-limit envelope surfaces as an explicit rate-lim
                 }),
         },
     ]);
-    const originalEnv = { ...process.env };
+    // Restore only the mutated keys — reassigning process.env wholesale
+    // replaces Node's env proxy with a plain object.
+    const savedEnv = new Map(
+        ["GH_TEST_TOKEN", "GH_TEST_REPO"].map((k) => [k, process.env[k]]),
+    );
     const originalFetch = global.fetch;
     process.env.GH_TEST_TOKEN = "fake";
     process.env.GH_TEST_REPO = "kodustech/qa-fixture";
@@ -165,7 +169,10 @@ test("pollForReview: GitHub rate-limit envelope surfaces as an explicit rate-lim
         );
     } finally {
         global.fetch = originalFetch;
-        process.env = originalEnv;
+        for (const [k, v] of savedEnv) {
+            if (v === undefined) delete process.env[k];
+            else process.env[k] = v;
+        }
         await ghServer.close();
     }
 });
