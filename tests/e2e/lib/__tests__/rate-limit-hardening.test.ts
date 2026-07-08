@@ -12,10 +12,10 @@ import { json, startMockServer } from "./mock-server.js";
 
 // Minimal Provider stand-in for onboarding-layer tests: registerIntegration
 // only touches integrationType/authMode/authToken/authExtraFields.
-function fakeProvider(): Provider {
+function fakeProvider(integrationType = "GITHUB"): Provider {
     return {
-        name: "github",
-        integrationType: "GITHUB",
+        name: integrationType.toLowerCase(),
+        integrationType,
         authMode: () => "token",
         authToken: () => "fake-token",
     } as unknown as Provider;
@@ -62,6 +62,74 @@ test("registerIntegration: caches per (api, org, platform) — one auth-integrat
             (r) => r.method === "POST" && r.path.startsWith("/code-management/auth-integration"),
         );
         assert.equal(postsAfter.length, 2, "a different org must not reuse the cache");
+    } finally {
+        await server.close();
+    }
+});
+
+test("registerIntegration: platform A → B → A on one cloud org re-registers A (clearConflicting invalidates the cache)", async () => {
+    // Cloud persistent-tenant shape: registering platform B DELETES A's
+    // integration (clearConflictingIntegrations). A's cache entry must die
+    // with it, or a later A cell would reuse the cache and leave the org
+    // with no A integration at all.
+    let active: string | null = null;
+    const server = await startMockServer([
+        {
+            method: "GET",
+            pathRegex: /^\/integration\/connections/,
+            handler: (_req, res) =>
+                json(res, 200, {
+                    data: active
+                        ? [{ platformName: active, category: "CODE_MANAGEMENT" }]
+                        : [],
+                }),
+        },
+        {
+            method: "DELETE",
+            pathRegex: /^\/code-management\/delete-integration/,
+            handler: (_req, res) => {
+                active = null;
+                json(res, 200, {});
+            },
+        },
+        {
+            method: "POST",
+            pathRegex: /^\/code-management\/auth-integration$/,
+            handler: (_req, res, _match, body) => {
+                active = (JSON.parse(body) as { integrationType: string })
+                    .integrationType;
+                json(res, 200, { data: { status: "SUCCESS" } });
+            },
+        },
+    ]);
+    const target: TargetContext = {
+        target: "cloud",
+        apiBaseUrl: server.baseUrl,
+        webBaseUrl: server.baseUrl,
+    };
+    const session = sessionFor("org-a-b-a");
+    const registrations = () =>
+        server.requests.filter(
+            (r) =>
+                r.method === "POST" &&
+                r.path === "/code-management/auth-integration",
+        ).length;
+    try {
+        await registerIntegration(target, fakeProvider("GITHUB"), session);
+        await registerIntegration(target, fakeProvider("GITHUB"), session);
+        assert.equal(registrations(), 1, "same platform reuses the cache");
+        assert.equal(active, "GITHUB");
+
+        await registerIntegration(target, fakeProvider("GITLAB"), session);
+        assert.equal(active, "GITLAB", "B replaced A");
+
+        await registerIntegration(target, fakeProvider("GITHUB"), session);
+        assert.equal(
+            active,
+            "GITHUB",
+            "returning to A must re-register, not trust the stale cache",
+        );
+        assert.equal(registrations(), 3, "A, B, then A again — three real registrations");
     } finally {
         await server.close();
     }

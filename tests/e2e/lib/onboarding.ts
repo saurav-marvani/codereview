@@ -163,6 +163,13 @@ async function clearConflictingIntegrations(
         const platform = await activeCodeManagementPlatform(target, session);
         if (!platform || platform === wanted) return; // clean or already ours
         log.info(`Dropping stale ${platform} integration before connecting ${wanted}`);
+        // The integration being deleted may be cached as "registered" by an
+        // earlier cell on this org — the cache must not outlive the
+        // integration (same invariant as deleteRepo → invalidateRegisteredRepo),
+        // or a later platform-A cell after an A → B switch would hit the
+        // stale entry and skip re-registering. Invalidate BEFORE the DELETE:
+        // if the DELETE fails we merely re-register needlessly.
+        invalidateRegisteredIntegrations(target.apiBaseUrl, session.organizationId);
         await http(
             `${target.apiBaseUrl}/code-management/delete-integration?teamId=${encodeURIComponent(session.teamId)}`,
             { method: "DELETE", headers: { Authorization: `Bearer ${session.accessToken}` }, timeoutMs: 20_000 },
@@ -186,6 +193,18 @@ async function clearConflictingIntegrations(
 // centralized-config-sync, which delete-integrations at teardown) have
 // their own organizationId and therefore their own key.
 const registeredIntegrationCache = new Set<string>();
+
+// Drops every integration-cache entry for an org, any platform. Called by
+// clearConflictingIntegrations when it deletes the org's active integration.
+function invalidateRegisteredIntegrations(
+    apiBaseUrl: string,
+    organizationId: string,
+): void {
+    const prefix = `${apiBaseUrl}:${organizationId}:`;
+    for (const key of registeredIntegrationCache) {
+        if (key.startsWith(prefix)) registeredIntegrationCache.delete(key);
+    }
+}
 
 export async function registerIntegration(
     target: TargetContext,
