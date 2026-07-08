@@ -93,75 +93,89 @@ async function listenForExecutionUpdate(params: {
     timeoutMs: number;
     onFrame: (type: string) => void;
 }): Promise<boolean> {
-    const timeout = setTimeout(() => {
-        // Aborting the fetch ends the reader loop below.
-        controller.abort();
-    }, params.timeoutMs);
     const controller = new AbortController();
     const onOuterAbort = () => controller.abort();
     params.signal.addEventListener('abort', onOuterAbort);
+    // The timeout RESOLVES the race directly instead of relying on abort
+    // propagation through the stream reader — a leaked reader kept the
+    // previous version (and its SSE connection) alive for 85+ minutes.
+    let timeoutHandle: NodeJS.Timeout | undefined;
+    const timedOut = new Promise<false>((resolve) => {
+        timeoutHandle = setTimeout(() => resolve(false), params.timeoutMs);
+        timeoutHandle.unref?.();
+    });
 
-    try {
-        const resp = await fetch(params.url, {
-            headers: {
-                Authorization: `Bearer ${params.token}`,
-                Accept: 'text/event-stream',
-            },
-            signal: controller.signal,
-        });
-        if (!resp.ok || !resp.body) {
-            log.warn(`[sse] stream request failed: HTTP ${resp.status}`);
-            return false;
-        }
+    const read = async (): Promise<boolean> => {
+        try {
+            const resp = await fetch(params.url, {
+                headers: {
+                    Authorization: `Bearer ${params.token}`,
+                    Accept: 'text/event-stream',
+                },
+                signal: controller.signal,
+            });
+            if (!resp.ok || !resp.body) {
+                log.warn(`[sse] stream request failed: HTTP ${resp.status}`);
+                return false;
+            }
 
-        const reader = resp.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        for (;;) {
-            const { done, value } = await reader.read();
-            if (done) return false;
-            buffer += decoder.decode(value, { stream: true });
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            for (;;) {
+                const { done, value } = await reader.read();
+                if (done) return false;
+                buffer += decoder.decode(value, { stream: true });
 
-            // SSE frames are separated by a blank line.
-            const frames = buffer.split(/\n\n/);
-            buffer = frames.pop() ?? '';
-            for (const frame of frames) {
-                const dataLine = frame
-                    .split('\n')
-                    .find((l) => l.startsWith('data:'));
-                if (!dataLine) continue;
-                try {
-                    let payload: unknown = JSON.parse(dataLine.slice(5).trim());
-                    // Nest's @Sse serialization can double-encode the data
-                    // field (a JSON string inside the JSON frame).
-                    if (typeof payload === 'string') {
-                        try {
-                            payload = JSON.parse(payload);
-                        } catch {
-                            /* keep the string */
+                // SSE frames are separated by a blank line.
+                const frames = buffer.split(/\n\n/);
+                buffer = frames.pop() ?? '';
+                for (const frame of frames) {
+                    const dataLine = frame
+                        .split('\n')
+                        .find((l) => l.startsWith('data:'));
+                    if (!dataLine) continue;
+                    try {
+                        let payload: unknown = JSON.parse(
+                            dataLine.slice(5).trim(),
+                        );
+                        // Nest's @Sse serialization can double-encode the data
+                        // field (a JSON string inside the JSON frame).
+                        if (typeof payload === 'string') {
+                            try {
+                                payload = JSON.parse(payload);
+                            } catch {
+                                /* keep the string */
+                            }
                         }
+                        // Nest serializes the MessageEvent object, so the app
+                        // payload nests under a `data` key:
+                        //   data: {"data":{"type":"ping"}}
+                        const obj = payload as Record<string, any>;
+                        const type = String(
+                            obj?.data?.type ?? obj?.type ?? 'unknown',
+                        );
+                        params.onFrame(type);
+                        if (type === 'execution_updated') return true;
+                    } catch {
+                        params.onFrame('unparseable');
                     }
-                    // Nest serializes the MessageEvent object, so the app
-                    // payload nests under a `data` key:
-                    //   data: {"data":{"type":"ping"}}
-                    const obj = payload as Record<string, any>;
-                    const type = String(
-                        obj?.data?.type ?? obj?.type ?? 'unknown',
-                    );
-                    params.onFrame(type);
-                    if (type === 'execution_updated') return true;
-                } catch {
-                    params.onFrame('unparseable');
                 }
             }
+        } catch (err) {
+            if (!(err instanceof Error && err.name === 'AbortError')) {
+                log.warn(`[sse] stream errored: ${String(err)}`);
+            }
+            return false;
         }
-    } catch (err) {
-        if (!(err instanceof Error && err.name === 'AbortError')) {
-            log.warn(`[sse] stream errored: ${String(err)}`);
-        }
-        return false;
+    };
+
+    try {
+        return await Promise.race([read(), timedOut]);
     } finally {
-        clearTimeout(timeout);
+        clearTimeout(timeoutHandle);
+        // Always tear the connection down, whatever won the race.
+        controller.abort();
         params.signal.removeEventListener('abort', onOuterAbort);
     }
 }

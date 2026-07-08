@@ -521,35 +521,61 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
                     );
                     mkdirSync(scenarioArtifactDir, { recursive: true });
 
-                    const evidence = await scenario.run({
-                        target,
-                        provider,
-                        license: cell.license,
-                        tenant,
-                        kodus: {
-                            login: (creds) => login(target, creds),
-                            registerIntegration: (session) =>
-                                registerIntegration(target, provider, session),
-                            registerRepo: (session, repoOpts) =>
-                                registerRepo(
-                                    target,
-                                    provider,
-                                    session,
-                                    repoOpts,
+                    // Runner-ENFORCED scenario timeout: scenario.timeoutSec
+                    // was previously advisory only — a hung HTTP call or a
+                    // leaked stream kept an attempt alive indefinitely
+                    // (observed: 86 minutes). The race guarantees the
+                    // attempt dies at the declared budget.
+                    const timeoutMs = (scenario.timeoutSec ?? 1800) * 1000;
+                    let timeoutHandle: NodeJS.Timeout | undefined;
+                    const timeoutGuard = new Promise<never>((_, reject) => {
+                        timeoutHandle = setTimeout(
+                            () =>
+                                reject(
+                                    new Error(
+                                        `Assertion failed: scenario exceeded its ${scenario.timeoutSec ?? 1800}s budget (runner-enforced timeout)`,
+                                    ),
                                 ),
-                            finishOnboarding: (session, repo) =>
-                                finishOnboarding(target, session, repo),
-                        },
-                        assert: (cond, msg) => {
-                            if (!cond)
-                                throw new Error(`Assertion failed: ${msg}`);
-                        },
-                        skip: (reason: string): never => {
-                            throw new ScenarioSkipError(reason);
-                        },
-                        artifactDir: scenarioArtifactDir,
-                        runId: opts.runId,
+                            timeoutMs,
+                        );
+                        timeoutHandle.unref?.();
                     });
+                    const evidence = await Promise.race([
+                        timeoutGuard,
+                        scenario.run({
+                            target,
+                            provider,
+                            license: cell.license,
+                            tenant,
+                            kodus: {
+                                login: (creds) => login(target, creds),
+                                registerIntegration: (session) =>
+                                    registerIntegration(
+                                        target,
+                                        provider,
+                                        session,
+                                    ),
+                                registerRepo: (session, repoOpts) =>
+                                    registerRepo(
+                                        target,
+                                        provider,
+                                        session,
+                                        repoOpts,
+                                    ),
+                                finishOnboarding: (session, repo) =>
+                                    finishOnboarding(target, session, repo),
+                            },
+                            assert: (cond, msg) => {
+                                if (!cond)
+                                    throw new Error(`Assertion failed: ${msg}`);
+                            },
+                            skip: (reason: string): never => {
+                                throw new ScenarioSkipError(reason);
+                            },
+                            artifactDir: scenarioArtifactDir,
+                            runId: opts.runId,
+                        }),
+                    ]).finally(() => clearTimeout(timeoutHandle));
 
                     const duration = Date.now() - t0;
                     log.ok(
