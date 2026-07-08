@@ -19,6 +19,8 @@ apps/*/dist
 # TypeScript compiled files (should NOT be in src/ or packages/)
 # These should only exist in dist/ directories
 *.d.ts
+# ...except hand-written type augmentations, which are source, not build output.
+!apps/web/src/types/*.d.ts
 *.js.map
 
 # Ignore compiled .js files in src/ and packages/ (they should be in dist/)
