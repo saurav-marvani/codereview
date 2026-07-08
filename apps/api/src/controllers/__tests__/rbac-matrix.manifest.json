@@ -1045,6 +1045,17 @@
     }
   },
   {
+    "key": "organizationParameters.controller.ts#clearModelOverrides",
+    "httpMethod": "POST",
+    "urlPath": "/organization-parameters/model-overrides/clear",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "deny",
+      "contributor": "deny"
+    }
+  },
+  {
     "key": "organizationParameters.controller.ts#createOrUpdate",
     "httpMethod": "POST",
     "urlPath": "/organization-parameters/create-or-update",
@@ -1111,9 +1122,31 @@
     }
   },
   {
+    "key": "organizationParameters.controller.ts#listModelOverrides",
+    "httpMethod": "GET",
+    "urlPath": "/organization-parameters/model-overrides",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "deny",
+      "contributor": "deny"
+    }
+  },
+  {
     "key": "organizationParameters.controller.ts#testByokConnection",
     "httpMethod": "POST",
     "urlPath": "/organization-parameters/test-byok",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "deny",
+      "contributor": "deny"
+    }
+  },
+  {
+    "key": "organizationParameters.controller.ts#testByokModel",
+    "httpMethod": "POST",
+    "urlPath": "/organization-parameters/test-byok-model",
     "expected": {
       "owner": "allow",
       "billing_manager": "deny",
