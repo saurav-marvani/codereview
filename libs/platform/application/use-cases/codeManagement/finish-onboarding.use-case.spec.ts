@@ -25,6 +25,9 @@ describe('FinishOnboardingUseCase', () => {
         const syncSelectedReposKodyRulesUseCase = {
             execute: jest.fn().mockResolvedValue(undefined),
         };
+        const generateKodyRulesUseCase = {
+            execute: jest.fn().mockResolvedValue([]),
+        };
         // No `uuid` on the user → the telemetry block is skipped.
         const request = { user: { organization: { uuid: 'org-1' } } };
 
@@ -44,6 +47,7 @@ describe('FinishOnboardingUseCase', () => {
             createOrUpdateParametersUseCase as any,
             {} as any, // telemetry
             {} as any, // codeManagement
+            generateKodyRulesUseCase as any,
             licenseService as any,
             permissionValidationService as any,
         );
@@ -52,16 +56,18 @@ describe('FinishOnboardingUseCase', () => {
             useCase,
             createOrUpdateParametersUseCase,
             syncSelectedReposKodyRulesUseCase,
+            generateKodyRulesUseCase,
             licenseService,
             permissionValidationService,
         };
     };
 
-    it('commits onboarding and imports repo rules (no past-review generation)', async () => {
+    it('commits onboarding, imports repo rules, and kicks off past-review generation in the background', async () => {
         const {
             useCase,
             createOrUpdateParametersUseCase,
             syncSelectedReposKodyRulesUseCase,
+            generateKodyRulesUseCase,
         } = buildUseCase();
 
         await useCase.execute({ teamId: 'team-1', reviewPR: false } as any);
@@ -72,11 +78,18 @@ describe('FinishOnboardingUseCase', () => {
             expect.objectContaining({ finishOnboard: true }),
             expect.anything(),
         );
-        // ...and only imports rules from repo files. Past-review generation is
-        // a separate async action, not part of onboarding.
+        // ...imports rules from repo files...
         expect(
             syncSelectedReposKodyRulesUseCase.execute,
         ).toHaveBeenCalledWith({ teamId: 'team-1' });
+
+        // ...and schedules the 3-month past-review backfill without blocking
+        // the onboarding response (detached via setImmediate).
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(generateKodyRulesUseCase.execute).toHaveBeenCalledWith(
+            { teamId: 'team-1', months: 3 },
+            'org-1',
+        );
     });
 
     it('provisions the trial server-side after committing onboarding', async () => {

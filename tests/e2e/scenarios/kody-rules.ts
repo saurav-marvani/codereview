@@ -100,7 +100,7 @@ export const kodyRulesCreateAndApply: Scenario = {
         // human's rule is never touched.
         const swept = await sweepStaleE2ERules(ctx, session, String(repo.id));
         if (swept > 0) {
-            log.info(`[kody-rules] swept ${swept} stale e2e-rule-* rule(s) before creating a fresh one`);
+            log.info(`[kody-rules] swept ${swept} stale rule(s) (e2e-rule-* + auto-generated past_reviews) before creating a fresh one`);
         }
 
         const ruleName = `e2e-rule-${ctx.runId.slice(0, 8)}-${randomUUID().slice(0, 6)}`;
@@ -375,12 +375,13 @@ export function findRuleStatusById(
     return undefined;
 }
 
-// Collect every {uuid, title} pair anywhere in the find-by-organization-id
-// response (shape ≈ `{ data: [{ repositoryId, rules: [{ uuid, title, … }] }] }`,
-// walked defensively). Used to find stale e2e rules to delete.
+// Collect every {uuid, title, origin} pair anywhere in the
+// find-by-organization-id response (shape ≈
+// `{ data: [{ repositoryId, rules: [{ uuid, title, origin, … }] }] }`, walked
+// defensively). Used to find stale e2e rules to delete.
 function collectRules(
     node: unknown,
-    out: Array<{ uuid: string; title: string }>,
+    out: Array<{ uuid: string; title: string; origin?: string }>,
 ): void {
     if (Array.isArray(node)) {
         for (const item of node) collectRules(item, out);
@@ -389,16 +390,28 @@ function collectRules(
     if (node && typeof node === "object") {
         const obj = node as Record<string, unknown>;
         if (typeof obj.uuid === "string" && typeof obj.title === "string") {
-            out.push({ uuid: obj.uuid, title: obj.title });
+            out.push({
+                uuid: obj.uuid,
+                title: obj.title,
+                origin:
+                    typeof obj.origin === "string" ? obj.origin : undefined,
+            });
         }
         for (const v of Object.values(obj)) collectRules(v, out);
     }
 }
 
-// Delete every `e2e-rule-*` rule left over from prior runs (crashes skip the
-// per-run finally). Best-effort — returns how many it deleted; a failed
-// delete just logs and is retried next run. Title-prefix scoped so a human
-// rule is never removed.
+// Delete stale rules left over from prior runs before creating a fresh one.
+// Two sources accumulate on the reused tenant:
+//   - `e2e-rule-*` rules a crashed run failed to delete in its `finally`.
+//   - `origin: past_reviews` rules the onboarding now auto-generates (the
+//     background 3-month backfill added in the kody-rules-generation hotfix).
+//     The scenario onboards every run, so without sweeping these the tenant
+//     climbs past the plan's rule cap and rule creation starts returning
+//     "Free plan's limit reached".
+// Best-effort — returns how many it deleted; a failed delete just logs and is
+// retried next run. Scoped to the `e2e-rule-` title prefix and auto-generated
+// origin so a human-authored rule is never removed.
 export async function sweepStaleE2ERules(
     ctx: RunContext,
     session: KodusSession,
@@ -411,13 +424,17 @@ export async function sweepStaleE2ERules(
             timeoutMs: 15_000,
         },
     );
-    const found: Array<{ uuid: string; title: string }> = [];
+    const found: Array<{ uuid: string; title: string; origin?: string }> = [];
     collectRules(listResp.body, found);
     // De-dupe (the same rule can appear under multiple repo groupings).
     const stale = [
         ...new Map(
             found
-                .filter((r) => /^e2e-rule-/.test(r.title))
+                .filter(
+                    (r) =>
+                        /^e2e-rule-/.test(r.title) ||
+                        r.origin === "past_reviews",
+                )
                 .map((r) => [r.uuid, r]),
         ).values(),
     ];
