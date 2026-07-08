@@ -800,7 +800,16 @@ export class GitHubProvider extends BaseProvider {
     // long-lived base PAT; the assigned token keeps serving the harness's
     // own API calls (clone, PRs, polling).
     authToken(): string {
-        return process.env.GH_TEST_TOKEN || this.token;
+        const durable = process.env.GH_TEST_TOKEN;
+        if (durable) return durable;
+        // Installation tokens are prefixed ghs_. Storing one would hand the
+        // backend a credential that dies in ~1h — fail loudly instead.
+        if (this.token.startsWith('ghs_')) {
+            throw new Error(
+                'GH_TEST_TOKEN (durable PAT) is required when the harness runs on a GitHub App installation token — the integration credential must not expire',
+            );
+        }
+        return this.token;
     }
 
     async currentUserId(): Promise<string> {

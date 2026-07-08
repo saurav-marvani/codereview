@@ -91,6 +91,14 @@ test("authToken: the integration credential stays the durable PAT even when the 
             tokenOverride: "ghs_expiring_app_token",
         });
         assert.equal(provider.authToken(), "ghp_durable_pat");
+        // Without the durable PAT, an App-token provider must fail loudly
+        // rather than hand the backend a ~1h credential.
+        delete process.env.GH_TEST_TOKEN;
+        assert.throws(
+            () => provider.authToken(),
+            /GH_TEST_TOKEN.*required/,
+            "App token without durable PAT must throw, not be stored",
+        );
     } finally {
         if (saved === undefined) delete process.env.GH_TEST_TOKEN;
         else process.env.GH_TEST_TOKEN = saved;
