@@ -395,12 +395,21 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
             }
 
             if (cursor) {
-                // Rows strictly after the cursor in the (createdAt <order>,
-                // uuid ASC) ordering below. The uuid tiebreaker is always ASC
-                // (see addOrderBy), so it compares with '>' regardless of order.
+                // Rows strictly after the cursor, expressed as a row-value
+                // (tuple) comparison so PostgreSQL can start the index scan AT
+                // the cursor. The earlier OR form
+                //   createdAt <cmp> :c OR (createdAt = :c AND uuid > :u)
+                // is NOT sargable on the (createdAt) index: the planner scanned
+                // from the newest row and filter-discarded every row newer than
+                // the cursor (EXPLAIN showed `Rows Removed by Filter` growing
+                // with cursor depth — the same over-scan the keyset was meant to
+                // kill). A tuple comparison `(createdAt, uuid) <cmp> (:c, :u)` is
+                // a proper range bound (Rows Removed drops to ~page size), but it
+                // requires the uuid tiebreaker to share createdAt's sort
+                // direction — see the matching addOrderBy(order) below.
                 const cmp = order === 'DESC' ? '<' : '>';
                 queryBuilder.andWhere(
-                    `(automation_execution.createdAt ${cmp} :cursorCreatedAt OR (automation_execution.createdAt = :cursorCreatedAt AND automation_execution.uuid > :cursorUuid))`,
+                    `(automation_execution.createdAt, automation_execution.uuid) ${cmp} (:cursorCreatedAt, :cursorUuid)`,
                     {
                         cursorCreatedAt: cursor.createdAt,
                         cursorUuid: cursor.uuid,
@@ -429,9 +438,12 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
 
             const executions = await queryBuilder
                 .orderBy('automation_execution.createdAt', order)
-                // Deterministic tiebreaker: reproduces the exact ordering the
-                // previous DISTINCT-pagination wrapper emitted (createdAt, uuid).
-                .addOrderBy('automation_execution.uuid', 'ASC')
+                // Deterministic tiebreaker in the SAME direction as createdAt so
+                // the keyset tuple predicate above stays a sargable range bound
+                // (a mixed direction would force a filter scan). Only reorders
+                // rows sharing an identical microsecond createdAt — effectively
+                // never — so the emitted page order is unchanged in practice.
+                .addOrderBy('automation_execution.uuid', order)
                 // offset/limit instead of skip/take. skip/take makes TypeORM wrap
                 // the query in SELECT DISTINCT "distinctAlias" (...) to paginate
                 // safely across to-many joins. There are none here (all ManyToOne

@@ -246,3 +246,13 @@ PullRequestsSchema.index(
     { organizationId: 1, 'repository.id': 1, createdAt: -1, number: 1 },
     { name: 'idx_org_repo_createdAt_number_for_token_usage' },
 );
+
+// "Awaiting review" facet + daily digest: findOpenPullRequestKeysOpenedSince
+// scans open PRs for the org (status ≠ closed, not merged, openedAt ≥ cutoff).
+// Without this the match was a collection scan that grew with the org. Leading
+// on organizationId (equality) then the open-state fields keeps it index-bound.
+// Create with `{ background: true }` on large prod collections.
+PullRequestsSchema.index(
+    { organizationId: 1, status: 1, merged: 1, openedAt: 1 },
+    { name: 'idx_org_status_merged_openedAt_for_awaiting' },
+);
