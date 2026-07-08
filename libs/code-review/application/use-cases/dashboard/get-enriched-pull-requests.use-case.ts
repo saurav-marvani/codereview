@@ -539,11 +539,11 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                             }
                         }
 
-                        // "Mine" filter: PR authored by the current user (matched
-                        // by git identity — email / username / name).
+                        // Author filter: "me" (current user) or a free-text name
+                        // search matched against the PR author's git identity.
                         if (
                             author &&
-                            !this.matchesCurrentUser(author, pullRequest)
+                            !this.matchesAuthorFilter(author, pullRequest)
                         ) {
                             continue;
                         }
@@ -697,10 +697,12 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
         };
     }
 
-    // Best-effort "mine" match: the logged-in user only reliably exposes an
-    // email, so we match it against the PR author's git identity fields. author
-    // === 'me' uses the request user; any other value matches that literal.
-    private matchesCurrentUser(
+    // Author filter. `author === 'me'` resolves to the logged-in user (matched
+    // by email against the PR author's git identity). Any other value is a
+    // free-text name search: every whitespace-separated token must appear
+    // somewhere in the author's email/username/name, so "wellington santana"
+    // matches "Wellington Cristi Vilela Santana" (partial, order-independent).
+    private matchesAuthorFilter(
         author: string,
         pullRequest: IPullRequests,
     ): boolean {
@@ -718,7 +720,11 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
             return Boolean(email) && candidates.includes(email);
         }
 
-        return candidates.includes(author.toLowerCase());
+        const tokens = author.toLowerCase().trim().split(/\s+/).filter(Boolean);
+        if (!tokens.length) return true;
+        return tokens.every((token) =>
+            candidates.some((candidate) => candidate.includes(token)),
+        );
     }
 
     private async getCompiledAuthorPolicyConfig(
