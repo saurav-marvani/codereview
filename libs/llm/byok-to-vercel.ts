@@ -158,8 +158,8 @@ function isProxyBaseURL(baseURL: string | undefined): boolean {
  * Default model config when no BYOK is configured.
  */
 const DEFAULT_MODEL = {
-    provider: BYOKProvider.GOOGLE_GEMINI,
-    model: 'gemini-3.1-pro-preview-customtools',
+    provider: BYOKProvider.OPENAI_COMPATIBLE,
+    model: 'kimi-k2.7-code',
 };
 
 /**

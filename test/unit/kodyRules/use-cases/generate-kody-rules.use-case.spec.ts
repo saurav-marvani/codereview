@@ -18,6 +18,7 @@ import {
 import { CreateOrUpdateParametersUseCase } from '@libs/organization/application/use-cases/parameters/create-or-update-use-case';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { CommentAnalysisService } from '@libs/code-review/infrastructure/adapters/services/commentAnalysis.service';
+import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import { SendRulesNotificationUseCase } from '@libs/kodyRules/application/use-cases/send-rules-notification.use-case';
 import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/find-rules-in-organization-by-filter.use-case';
 import { CreateOrUpdateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/create-or-update.use-case';
@@ -164,6 +165,19 @@ describe('GenerateKodyRulesUseCase', () => {
                     provide: CODE_BASE_CONFIG_SERVICE_TOKEN,
                     useValue: codeBaseConfigServiceMock,
                 },
+                {
+                    provide: PermissionValidationService,
+                    useValue: {
+                        // Truthy BYOK → model policy resolves to "generate with
+                        // BYOK", so these tests exercise the persistence flow.
+                        getBYOKConfig: jest
+                            .fn()
+                            .mockResolvedValue({ main: { model: 'test-model' } }),
+                        getSubscriptionStatus: jest
+                            .fn()
+                            .mockResolvedValue('trial'),
+                    },
+                },
             ],
         }).compile();
 
@@ -307,5 +321,52 @@ describe('GenerateKodyRulesUseCase', () => {
         );
 
         expect(createOrUpdateRuleUseCaseMock.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('throws (not "200, 0 rules") when PR fetch fails for every repo', async () => {
+        parametersServiceMock.findByKey.mockImplementation((key: any) => {
+            if (key === ParametersKey.CODE_REVIEW_CONFIG) {
+                return Promise.resolve({
+                    configValue: {
+                        repositories: [
+                            {
+                                id: 'repo-1',
+                                name: 'repo-one',
+                                isSelected: true,
+                                directories: [],
+                            },
+                        ],
+                    },
+                });
+            }
+            if (key === ParametersKey.PLATFORM_CONFIGS) {
+                return Promise.resolve({
+                    configValue: { kodyLearningStatus: 'enabled' },
+                });
+            }
+            return Promise.resolve(null);
+        });
+
+        // null = fetch error (e.g. GitHub App install 404), distinct from [].
+        codeManagementServiceMock.getPullRequestsByRepository.mockResolvedValue(
+            null,
+        );
+
+        await expect(
+            useCase.execute({ teamId: 'team-1', months: 3 } as any, 'org-1'),
+        ).rejects.toThrow(
+            /Could not fetch pull requests from the code management integration/,
+        );
+
+        // No rule persisted...
+        expect(createOrUpdateRuleUseCaseMock.execute).not.toHaveBeenCalled();
+        // ...and kodyLearningStatus is reset to ENABLED so the run isn't stuck.
+        expect(
+            createOrUpdateParametersUseCaseMock.execute,
+        ).toHaveBeenCalledWith(
+            ParametersKey.PLATFORM_CONFIGS,
+            expect.objectContaining({ kodyLearningStatus: 'enabled' }),
+            expect.anything(),
+        );
     });
 });

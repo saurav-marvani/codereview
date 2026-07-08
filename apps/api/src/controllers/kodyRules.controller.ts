@@ -60,6 +60,7 @@ import {
     Query,
     UseGuards,
 } from '@nestjs/common';
+import { KodyRulesTenantGuard } from '../guards/kody-rules-tenant.guard';
 import { REQUEST } from '@nestjs/core';
 import {
     ApiBearerAuth,
@@ -418,7 +419,7 @@ export class KodyRulesController {
 
     @ApiBearerAuth('jwt')
     @Post('/generate-kody-rules')
-    @UseGuards(PolicyGuard)
+    @UseGuards(PolicyGuard, KodyRulesTenantGuard)
     @CheckPolicies(
         checkPermissions({
             action: Action.Create,
@@ -519,7 +520,7 @@ export class KodyRulesController {
 
     @ApiBearerAuth('jwt')
     @Get('/check-sync-status')
-    @UseGuards(PolicyGuard)
+    @UseGuards(PolicyGuard, KodyRulesTenantGuard)
     @CheckPolicies(
         checkPermissions({
             action: Action.Read,
@@ -561,7 +562,7 @@ export class KodyRulesController {
 
     @ApiBearerAuth('jwt')
     @Post('/sync-ide-rules')
-    @UseGuards(PolicyGuard)
+    @UseGuards(PolicyGuard, KodyRulesTenantGuard)
     @CheckPolicies(
         checkPermissions({
             action: Action.Create,
@@ -586,7 +587,7 @@ export class KodyRulesController {
 
     @ApiBearerAuth('jwt')
     @Post('/fast-sync-ide-rules')
-    @UseGuards(PolicyGuard)
+    @UseGuards(PolicyGuard, KodyRulesTenantGuard)
     @CheckPolicies(
         checkPermissions({
             action: Action.Create,
@@ -633,7 +634,7 @@ export class KodyRulesController {
 
     @ApiBearerAuth('jwt')
     @Get('/pending-ide-rules')
-    @UseGuards(PolicyGuard)
+    @UseGuards(PolicyGuard, KodyRulesTenantGuard)
     @CheckPolicies(
         checkPermissions({
             action: Action.Read,
@@ -716,7 +717,7 @@ export class KodyRulesController {
 
     @ApiBearerAuth('jwt')
     @Get('/inherited-rules')
-    @UseGuards(PolicyGuard)
+    @UseGuards(PolicyGuard, KodyRulesTenantGuard)
     @CheckPolicies(
         checkRepoPermissions({
             action: Action.Read,
@@ -763,7 +764,7 @@ export class KodyRulesController {
     // NOT USED IN WEB - INTERNAL USE ONLY
     @ApiBearerAuth('jwt')
     @Post('/resync-ide-rules')
-    @UseGuards(PolicyGuard)
+    @UseGuards(PolicyGuard, KodyRulesTenantGuard)
     @CheckPolicies(
         checkPermissions({
             action: Action.Create,

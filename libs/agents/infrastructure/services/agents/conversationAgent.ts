@@ -34,6 +34,7 @@ import { connectMcpTools } from '../ai-sdk/mcp-tools';
 import { buildNativeTools } from '../ai-sdk/native-tools';
 import {
     CONVERSATION_FALLBACK_MESSAGE,
+    CONVERSATION_PROVIDER_ERROR_MESSAGE,
     normalizeConversationResponse,
 } from './conversation-response.util';
 
@@ -225,6 +226,8 @@ export class ConversationAgentProvider {
             // so the billing schema (agentName/phase/type/gen_ai.usage.*) is
             // identical to the code-review agents. Replaces the bespoke
             // runAiSdkLLMInSpan wrapper.
+            const finishReason = state.stopReason ?? state.status;
+
             await this.observabilityService.recordAgentRunUsage({
                 agentName: 'ConversationalAgent',
                 phase: 'conversation',
@@ -238,7 +241,7 @@ export class ConversationAgentProvider {
                 organizationId: organizationAndTeamData.organizationId,
                 teamId: organizationAndTeamData.teamId,
                 steps: state.steps.length,
-                finishReason: state.stopReason ?? state.status,
+                finishReason,
                 source: 'harness',
                 durationMs: Date.now() - startedAt,
             });
@@ -286,9 +289,15 @@ export class ConversationAgentProvider {
             }
 
             // The text the user actually sees: the agent's answer (possibly from
-            // the minimal retry), or the graceful fallback when both produced
-            // nothing usable.
-            const userFacing = response ?? CONVERSATION_FALLBACK_MESSAGE;
+            // the minimal retry), or a fallback when both produced nothing
+            // usable. A run that ENDED IN ERROR (provider down/blocked — zero
+            // tokens) gets the technical-issue message, not the "add more
+            // context" nudge, which would blame the user for an outage.
+            const userFacing =
+                response ??
+                (finishReason === 'error'
+                    ? CONVERSATION_PROVIDER_ERROR_MESSAGE
+                    : CONVERSATION_FALLBACK_MESSAGE);
 
             // Persist the exchange to `kodus-agent-sessions` (best-effort —
             // never blocks the reply). Records the turn even when it fell back,

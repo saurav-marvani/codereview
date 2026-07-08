@@ -289,9 +289,11 @@ export class KodyLearningCronProvider {
                 codeReviewConfig.configValue.configs ?? {},
             );
 
-            const filteredRepos = repos.filter((repo) => {
-                if (!repo.isSelected) return false;
-
+            // Repos whose resolved config has the generator enabled. Note this
+            // does NOT gate on isSelected: right after onboarding repos sit in
+            // the config with isSelected=false, and requiring it here meant the
+            // cron never generated for a fresh team.
+            const enabledRepos = repos.filter((repo) => {
                 const resolvedRepoConfig = deepMerge(
                     resolvedGlobalConfig,
                     repo.configs ?? {},
@@ -303,7 +305,7 @@ export class KodyLearningCronProvider {
                 );
             });
 
-            if (!filteredRepos || filteredRepos.length === 0) {
+            if (enabledRepos.length === 0) {
                 this.logger.log({
                     message: 'Kody rules generator is disabled',
                     context: KodyLearningCronProvider.name,
@@ -321,7 +323,7 @@ export class KodyLearningCronProvider {
             // onboarding flow used to do; every other repo just needs the last
             // week's delta. Partition the repos with a single lookup and run
             // each window once (issue #1506).
-            const repoIds = filteredRepos.map((repo) => repo.id);
+            const repoIds = enabledRepos.map((repo) => repo.id);
 
             let seededRepoIds: Set<string>;
             try {
