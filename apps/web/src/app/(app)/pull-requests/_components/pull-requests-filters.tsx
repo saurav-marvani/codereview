@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@components/ui/button";
 import {
     Command,
@@ -10,8 +10,6 @@ import {
     CommandItem,
     CommandList,
 } from "@components/ui/command";
-import { Input } from "@components/ui/input";
-import { Label } from "@components/ui/label";
 import {
     Popover,
     PopoverContent,
@@ -26,17 +24,20 @@ import {
 } from "@components/ui/select";
 import { useGetSelectedRepositories } from "@services/codeManagement/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
-import { CheckIcon, ListFilterIcon } from "lucide-react";
+import { CheckIcon, FolderIcon } from "lucide-react";
 import { useAuth } from "src/core/providers/auth.provider";
 import { usePermissions } from "src/core/providers/permissions.provider";
+import { cn } from "src/core/utils/components";
 import { hasPermission } from "src/core/utils/permission-map";
+
+import { PullRequestsDateRange } from "./pull-requests-date-range";
 
 type SuggestionsFilterValue = "all" | "true" | "false";
 type AuthorPolicyFilterValue = "all" | "reviewable" | "excluded";
 
-// Advanced / long-tail filters only. Severity, status, category and the title
-// search live inline in the filter bar, so they are intentionally NOT here —
-// no duplication.
+// The long-tail filters, rendered inline in the toolbar (repo, author policy,
+// Kody suggestions, review-date range). Severity, status and the title/number
+// search live directly in page.client, so they are intentionally NOT here.
 interface PullRequestsFiltersProps {
     teamId: string;
     selectedRepository?: string;
@@ -64,13 +65,11 @@ export const PullRequestsFilters = ({
     onCreatedAtFromChange,
     onCreatedAtToChange,
 }: PullRequestsFiltersProps) => {
-    const [open, setOpen] = useState(false);
-    const [mounted, setMounted] = useState(false);
+    const [repoOpen, setRepoOpen] = useState(false);
     const { organizationId } = useAuth();
     const permissions = usePermissions();
 
-    const { data: allRepositories = [], isLoading } =
-        useGetSelectedRepositories(teamId);
+    const { data: allRepositories = [] } = useGetSelectedRepositories(teamId);
 
     const repositories = useMemo(() => {
         if (!organizationId || !Array.isArray(allRepositories)) {
@@ -87,209 +86,122 @@ export const PullRequestsFilters = ({
         );
     }, [allRepositories, organizationId, permissions]);
 
-    const appliedFiltersCount =
-        (suggestionsFilter !== "all" ? 1 : 0) +
-        (authorPolicy !== "reviewable" ? 1 : 0) +
-        (createdAtFrom || createdAtTo ? 1 : 0) +
-        (selectedRepository ? 1 : 0);
-
-    useEffect(() => {
-        setMounted(true);
-    }, []);
-
-    if (!mounted) {
-        return (
-            <Button
-                size="xs"
-                variant="helper"
-                loading={isLoading}
-                className="h-9 rounded-lg px-3"
-                leftIcon={<ListFilterIcon />}>
-                Filters
-                {appliedFiltersCount > 0 && (
-                    <span className="text-text-secondary">
-                        {` (${appliedFiltersCount})`}
-                    </span>
-                )}
-            </Button>
-        );
-    }
-
     return (
-        <Popover open={open} onOpenChange={setOpen} modal>
-            <PopoverTrigger asChild>
-                <Button
-                    size="xs"
-                    variant="helper"
-                    loading={isLoading}
-                    className="h-9 rounded-lg px-3"
-                    leftIcon={<ListFilterIcon />}>
-                    Filters
-                    {appliedFiltersCount > 0 && (
-                        <span className="text-text-secondary">
-                            {` (${appliedFiltersCount})`}
-                        </span>
-                    )}
-                </Button>
-            </PopoverTrigger>
-
-            <PopoverContent
-                align="end"
-                sideOffset={10}
-                className="flex w-96 flex-col gap-4">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <ListFilterIcon className="size-4" />
-                        <Label>More filters</Label>
-                    </div>
-
+        <>
+            {/* Repository — searchable, since a team can have many repos. */}
+            <Popover open={repoOpen} onOpenChange={setRepoOpen}>
+                <PopoverTrigger asChild>
                     <Button
-                        size="xs"
-                        variant="cancel"
-                        onClick={() => {
-                            onRepositoryChange(undefined);
-                            onSuggestionsFilterChange("all");
-                            onAuthorPolicyChange("reviewable");
-                            onCreatedAtFromChange("");
-                            onCreatedAtToChange("");
-                        }}>
-                        Clear
+                        size="sm"
+                        variant="helper"
+                        leftIcon={<FolderIcon />}
+                        className={cn(
+                            "h-9 max-w-[14rem] justify-start gap-1.5 rounded-lg",
+                            selectedRepository && "border-primary-light/50",
+                        )}>
+                        <span className="truncate">
+                            {selectedRepository ?? "Any repository"}
+                        </span>
                     </Button>
-                </div>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-72 p-0">
+                    <Command>
+                        <CommandInput placeholder="Search repositories..." />
+                        <CommandList className="max-h-64 overflow-y-auto">
+                            <CommandEmpty>No repository found.</CommandEmpty>
+                            <CommandGroup>
+                                <CommandItem
+                                    value="all repositories"
+                                    onSelect={() => {
+                                        onRepositoryChange(undefined);
+                                        setRepoOpen(false);
+                                    }}>
+                                    <span>All repositories</span>
+                                    {!selectedRepository && (
+                                        <CheckIcon className="text-primary-light -mr-2 size-5" />
+                                    )}
+                                </CommandItem>
 
-                <div className="flex flex-col gap-3">
-                    <div className="flex flex-col gap-1.5">
-                        <Label className="text-text-secondary text-xs">
-                            Kody suggestions
-                        </Label>
-                        <Select
-                            value={suggestionsFilter}
-                            onValueChange={(value) =>
-                                onSuggestionsFilterChange(
-                                    value as SuggestionsFilterValue,
-                                )
-                            }>
-                            <SelectTrigger size="md">
-                                <SelectValue placeholder="Suggestions" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">
-                                    Any (default)
-                                </SelectItem>
-                                <SelectItem value="true">
-                                    Has suggestions
-                                </SelectItem>
-                                <SelectItem value="false">
-                                    No suggestions
-                                </SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                        <Label className="text-text-secondary text-xs">
-                            PR authors
-                        </Label>
-                        <Select
-                            value={authorPolicy}
-                            onValueChange={(value) =>
-                                onAuthorPolicyChange(
-                                    value as AuthorPolicyFilterValue,
-                                )
-                            }>
-                            <SelectTrigger size="md">
-                                <SelectValue placeholder="Author policy" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="reviewable">
-                                    Actionable only (default)
-                                </SelectItem>
-                                <SelectItem value="all">
-                                    All PR authors
-                                </SelectItem>
-                                <SelectItem value="excluded">
-                                    Excluded by policy only
-                                </SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                        <Label className="text-text-secondary text-xs">
-                            Review date
-                        </Label>
-                        <div className="flex items-center gap-2">
-                            <Input
-                                type="date"
-                                size="md"
-                                value={createdAtFrom ?? ""}
-                                max={createdAtTo ?? undefined}
-                                onChange={(event) =>
-                                    onCreatedAtFromChange(event.target.value)
-                                }
-                            />
-                            <span className="text-text-tertiary text-xs">
-                                to
-                            </span>
-                            <Input
-                                type="date"
-                                size="md"
-                                value={createdAtTo ?? ""}
-                                min={createdAtFrom ?? undefined}
-                                onChange={(event) =>
-                                    onCreatedAtToChange(event.target.value)
-                                }
-                            />
-                        </div>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                        <Label className="text-text-secondary text-xs uppercase">
-                            Repositories
-                        </Label>
-                        <Command>
-                            <CommandInput placeholder="Search repositories..." />
-                            <CommandList className="max-h-48 overflow-y-auto">
-                                <CommandEmpty>
-                                    No repository found.
-                                </CommandEmpty>
-                                <CommandGroup>
+                                {repositories.map((repo) => (
                                     <CommandItem
-                                        value="all"
+                                        key={repo.id}
+                                        value={repo.name}
                                         onSelect={() => {
-                                            onRepositoryChange(undefined);
+                                            onRepositoryChange(repo.name);
+                                            setRepoOpen(false);
                                         }}>
-                                        <span>All repositories</span>
-                                        {!selectedRepository && (
+                                        <span className="truncate">
+                                            <span className="text-text-secondary">
+                                                {repo.organizationName}/
+                                            </span>
+                                            {repo.name}
+                                        </span>
+                                        {selectedRepository === repo.name && (
                                             <CheckIcon className="text-primary-light -mr-2 size-5" />
                                         )}
                                     </CommandItem>
+                                ))}
+                            </CommandGroup>
+                        </CommandList>
+                    </Command>
+                </PopoverContent>
+            </Popover>
 
-                                    {repositories.map((repo) => (
-                                        <CommandItem
-                                            key={repo.id}
-                                            value={repo.name}
-                                            onSelect={() => {
-                                                onRepositoryChange(repo.name);
-                                            }}>
-                                            <span>
-                                                <span className="text-text-secondary">
-                                                    {repo.organizationName}/
-                                                </span>
-                                                {repo.name}
-                                            </span>
-                                            {selectedRepository ===
-                                                repo.name && (
-                                                <CheckIcon className="text-primary-light -mr-2 size-5" />
-                                            )}
-                                        </CommandItem>
-                                    ))}
-                                </CommandGroup>
-                            </CommandList>
-                        </Command>
-                    </div>
-                </div>
-            </PopoverContent>
-        </Popover>
+            {/* PR authors — a policy (who counts), not a person list. */}
+            <Select
+                value={authorPolicy}
+                onValueChange={(value) =>
+                    onAuthorPolicyChange(value as AuthorPolicyFilterValue)
+                }>
+                <SelectTrigger
+                    size="sm"
+                    className={cn(
+                        "h-9 w-auto gap-1.5 rounded-lg",
+                        authorPolicy !== "reviewable" &&
+                            "border-primary-light/50",
+                    )}>
+                    <SelectValue placeholder="Authors" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="reviewable">
+                        Actionable authors
+                    </SelectItem>
+                    <SelectItem value="all">All authors</SelectItem>
+                    <SelectItem value="excluded">Excluded authors</SelectItem>
+                </SelectContent>
+            </Select>
+
+            {/* Kody suggestions presence. */}
+            <Select
+                value={suggestionsFilter}
+                onValueChange={(value) =>
+                    onSuggestionsFilterChange(value as SuggestionsFilterValue)
+                }>
+                <SelectTrigger
+                    size="sm"
+                    className={cn(
+                        "h-9 w-auto gap-1.5 rounded-lg",
+                        suggestionsFilter !== "all" &&
+                            "border-primary-light/50",
+                    )}>
+                    <SelectValue placeholder="Suggestions" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">Any suggestions</SelectItem>
+                    <SelectItem value="true">Has suggestions</SelectItem>
+                    <SelectItem value="false">No suggestions</SelectItem>
+                </SelectContent>
+            </Select>
+
+            {/* Review-date range — same calendar the cockpit/token-usage use. */}
+            <PullRequestsDateRange
+                from={createdAtFrom}
+                to={createdAtTo}
+                onChange={(from, to) => {
+                    onCreatedAtFromChange(from ?? "");
+                    onCreatedAtToChange(to ?? "");
+                }}
+            />
+        </>
     );
 };
