@@ -316,6 +316,10 @@ export interface AgentLoopInput {
     /** BYOK provider type — needed to map reasoning effort to the correct
      *  provider-specific format in providerOptions. */
     byokProvider?: BYOKProvider | string;
+    /** Which BYOK role this attempt is running as. Selects the concurrency
+     *  limiter bucket in the model wrapper ('main' vs 'fallback'). Defaults to
+     *  'main' when omitted. */
+    byokRole?: 'main' | 'fallback';
     /** Pin OpenRouter requests to specific upstream providers (in order).
      *  Ignored when byokProvider !== 'openrouter'. */
     openrouterProviderOrder?: string[];
@@ -386,6 +390,11 @@ export interface AgentLoopOutput {
         result?: string;
     }>;
     finishReason: string;
+    /** Present only when finishReason === 'error': the underlying provider/model
+     *  error surfaced by the harness. Used to classify the failure and surface a
+     *  friendly reason in the end-review comment. */
+    errorMessage?: string;
+    errorName?: string;
     /** Whether findings came from direct JSON parse or fallback generateObject */
     source: 'json-parse' | 'generate-object' | 'empty';
     usage: {

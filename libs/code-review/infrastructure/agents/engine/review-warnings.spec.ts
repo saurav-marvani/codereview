@@ -1,5 +1,6 @@
 import {
     dedupReviewWarnings,
+    buildProviderFallbackWarning,
     type ReviewWarning,
 } from '@libs/code-review/infrastructure/agents/engine/review-warnings';
 
@@ -74,6 +75,40 @@ describe('dedupReviewWarnings', () => {
             w('PROMPT_COMPACTED', { agentName: 'security' }),
         ]);
         expect(out).toHaveLength(1);
+        expect(out[0].agentName).toBeUndefined();
+    });
+});
+
+describe('buildProviderFallbackWarning', () => {
+    it('builds a PROVIDER_FALLBACK notice naming the failed + used models', () => {
+        const warning = buildProviderFallbackWarning({
+            failedModel: 'openai_compatible:kimi-bad',
+            usedModel: 'openai_compatible:kimi-good',
+            agentName: 'generalist',
+        });
+        expect(warning.kind).toBe('PROVIDER_FALLBACK');
+        expect(warning.reason).toBe('provider_failover');
+        expect(warning.modelName).toBe('openai_compatible:kimi-good');
+        expect(warning.detail).toContain('kimi-bad');
+        expect(warning.detail).toContain('kimi-good');
+        expect(warning.contextWindowTokens).toBe(0);
+    });
+
+    it('folds per-agent fallback notices into one dashboard entry', () => {
+        const out = dedupReviewWarnings([
+            buildProviderFallbackWarning({
+                failedModel: 'main',
+                usedModel: 'fb',
+                agentName: 'generalist',
+            }),
+            buildProviderFallbackWarning({
+                failedModel: 'main',
+                usedModel: 'fb',
+                agentName: 'kody-rules',
+            }),
+        ]);
+        expect(out).toHaveLength(1);
+        expect(out[0].kind).toBe('PROVIDER_FALLBACK');
         expect(out[0].agentName).toBeUndefined();
     });
 });
