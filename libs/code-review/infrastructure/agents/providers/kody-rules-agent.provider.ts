@@ -1,4 +1,5 @@
 import { Injectable, Optional } from '@nestjs/common';
+import { createLogger } from '@libs/core/log/logger';
 import { PromptRunnerService } from '@kodus/kodus-common/llm';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
@@ -30,6 +31,8 @@ import {
  */
 @Injectable()
 export class KodyRulesAgentProvider extends BaseCodeReviewAgentProvider {
+    private readonly rulesLogger = createLogger(KodyRulesAgentProvider.name);
+
     constructor(
         promptRunnerService: PromptRunnerService,
         permissionValidationService: PermissionValidationService,
@@ -307,6 +310,31 @@ If no violations found, respond with \`{"reasoning": "Checked all rules, no viol
             return changedPaths.some((filePath) =>
                 this.matchesPathPattern(filePath, rule.path!),
             );
+        });
+
+        // Grep-able evaluation trace ("[kody-rules-eval]"): the single
+        // authoritative record of WHICH rules entered the agent's prompt
+        // for this review. Self-hosted operators debugging "why didn't my
+        // rule fire" can distinguish a rule dropped by path filtering from
+        // one the model ignored.
+        this.rulesLogger.log({
+            message: `[kody-rules-eval] ${applicableRules.length}/${rules.length} rule(s) selected for the kody-rules agent (${changedPaths.length} changed file(s))`,
+            context: KodyRulesAgentProvider.name,
+            metadata: {
+                totalActiveRules: rules.length,
+                selectedRules: applicableRules.map((r) => ({
+                    uuid: r.uuid,
+                    title: r.title,
+                    path: r.path,
+                })),
+                droppedByPath: rules
+                    .filter((r) => !applicableRules.includes(r))
+                    .map((r) => ({
+                        uuid: r.uuid,
+                        title: r.title,
+                        path: r.path,
+                    })),
+            },
         });
 
         if (applicableRules.length === 0) return '';
