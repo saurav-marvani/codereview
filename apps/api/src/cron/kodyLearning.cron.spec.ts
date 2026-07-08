@@ -2,12 +2,13 @@ import { KodyLearningCronProvider } from './kodyLearning.cron';
 
 /**
  * Covers the per-repo window partition added for issue #1506: a repo that has
- * never produced past-review rules gets the one-time 3-month backfill, every
- * other enabled repo gets the weekly (1-week) delta.
+ * never produced past-review rules gets the one-time 3-month backfill (guarded
+ * by a per-repo lock), every other enabled repo gets the weekly (1-week) delta.
  */
 function build(opts: {
     repoIds: string[];
-    hasPastReviewRules: (repoId: string) => boolean | Promise<boolean>;
+    seeded: (repoId: string) => boolean;
+    lockAcquired?: (repoId: string) => boolean;
 }) {
     const parametersService = {
         findByKey: jest.fn().mockResolvedValue({
@@ -27,9 +28,28 @@ function build(opts: {
     } as any;
 
     const generateInitialKodyRulesUseCase = {
-        hasPastReviewRules: jest.fn((_org: string, repoId: string) =>
-            Promise.resolve(opts.hasPastReviewRules(repoId)),
+        hasPastReviewRulesForRepos: jest.fn(
+            (_org: string, repoIds: string[]) =>
+                Promise.resolve(new Set(repoIds.filter(opts.seeded))),
         ),
+    } as any;
+
+    const releasedLocks: string[] = [];
+    const distributedLockService = {
+        acquire: jest.fn((key: string) => {
+            const repoId = key.split(':').pop() as string;
+            const acquired = opts.lockAcquired ? opts.lockAcquired(repoId) : true;
+            return Promise.resolve(
+                acquired
+                    ? {
+                          release: jest.fn(() => {
+                              releasedLocks.push(repoId);
+                              return Promise.resolve(undefined);
+                          }),
+                      }
+                    : null,
+            );
+        }),
     } as any;
 
     const cron = new KodyLearningCronProvider(
@@ -37,10 +57,16 @@ function build(opts: {
         parametersService,
         generateKodyRulesUseCase,
         generateInitialKodyRulesUseCase,
-        {} as any,
+        distributedLockService,
     );
 
-    return { cron, generateKodyRulesUseCase, generateInitialKodyRulesUseCase };
+    return {
+        cron,
+        generateKodyRulesUseCase,
+        generateInitialKodyRulesUseCase,
+        distributedLockService,
+        releasedLocks,
+    };
 }
 
 const run = (cron: KodyLearningCronProvider) =>
@@ -53,7 +79,7 @@ describe('KodyLearningCronProvider — per-repo backfill window', () => {
     it('uses a 3-month window for repos with no past-review rules yet', async () => {
         const { cron, generateKodyRulesUseCase } = build({
             repoIds: ['r1'],
-            hasPastReviewRules: () => false,
+            seeded: () => false,
         });
 
         await run(cron);
@@ -68,7 +94,7 @@ describe('KodyLearningCronProvider — per-repo backfill window', () => {
     it('uses the 1-week window once a repo already has past-review rules', async () => {
         const { cron, generateKodyRulesUseCase } = build({
             repoIds: ['r1'],
-            hasPastReviewRules: () => true,
+            seeded: () => true,
         });
 
         await run(cron);
@@ -80,10 +106,26 @@ describe('KodyLearningCronProvider — per-repo backfill window', () => {
         );
     });
 
+    it('checks the whole team with a single query, not one per repo', async () => {
+        const { cron, generateInitialKodyRulesUseCase } = build({
+            repoIds: ['a', 'b', 'c'],
+            seeded: () => true,
+        });
+
+        await run(cron);
+
+        expect(
+            generateInitialKodyRulesUseCase.hasPastReviewRulesForRepos,
+        ).toHaveBeenCalledTimes(1);
+        expect(
+            generateInitialKodyRulesUseCase.hasPastReviewRulesForRepos,
+        ).toHaveBeenCalledWith('org-1', ['a', 'b', 'c']);
+    });
+
     it('splits a mixed set into one 3-month batch and one 1-week batch', async () => {
         const { cron, generateKodyRulesUseCase } = build({
             repoIds: ['fresh', 'seeded'],
-            hasPastReviewRules: (id) => id === 'seeded',
+            seeded: (id) => id === 'seeded',
         });
 
         await run(cron);
@@ -98,10 +140,42 @@ describe('KodyLearningCronProvider — per-repo backfill window', () => {
         );
     });
 
+    it('locks each backfilled repo and releases it after generation', async () => {
+        const { cron, distributedLockService, releasedLocks } = build({
+            repoIds: ['fresh'],
+            seeded: () => false,
+        });
+
+        await run(cron);
+
+        expect(distributedLockService.acquire).toHaveBeenCalledWith(
+            'KODY_RULES:INITIAL_GEN:org-1:fresh',
+            expect.objectContaining({ ttl: expect.any(Number) }),
+        );
+        expect(releasedLocks).toEqual(['fresh']);
+    });
+
+    it('skips a backfill repo whose lock is already held elsewhere', async () => {
+        const { cron, generateKodyRulesUseCase } = build({
+            repoIds: ['fresh', 'contended'],
+            seeded: () => false,
+            lockAcquired: (id) => id !== 'contended',
+        });
+
+        await run(cron);
+
+        // Only the repo whose lock we acquired gets a 3-month run.
+        expect(generateKodyRulesUseCase.execute).toHaveBeenCalledTimes(1);
+        expect(generateKodyRulesUseCase.execute).toHaveBeenCalledWith(
+            { teamId: 'team-1', months: 3, repositoriesIds: ['fresh'] },
+            'org-1',
+        );
+    });
+
     it('falls back to the weekly window when the past-review check fails', async () => {
         const { cron, generateKodyRulesUseCase, generateInitialKodyRulesUseCase } =
-            build({ repoIds: ['r1'], hasPastReviewRules: () => true });
-        generateInitialKodyRulesUseCase.hasPastReviewRules.mockRejectedValue(
+            build({ repoIds: ['r1'], seeded: () => true });
+        generateInitialKodyRulesUseCase.hasPastReviewRulesForRepos.mockRejectedValue(
             new Error('mongo down'),
         );
 

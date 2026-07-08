@@ -8,7 +8,10 @@ import { IntegrationCategory } from '@libs/core/domain/enums/integration-categor
 import { ParametersKey } from '@libs/core/domain/enums/parameters-key.enum';
 import { STATUS } from '@libs/core/infrastructure/config/types/database/status.type';
 import { GenerateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/generate-kody-rules.use-case';
-import { GenerateInitialKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/generate-initial-kody-rules.use-case';
+import {
+    GenerateInitialKodyRulesUseCase,
+    INITIAL_GENERATION_LOCK_TTL_MS,
+} from '@libs/kodyRules/application/use-cases/generate-initial-kody-rules.use-case';
 import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
@@ -316,42 +319,35 @@ export class KodyLearningCronProvider {
             // A repo that has never produced past-review rules (e.g. its owner
             // skipped onboarding) still needs the one-time 3-month backfill the
             // onboarding flow used to do; every other repo just needs the last
-            // week's delta. Partition the repos and run each window once
-            // (issue #1506).
-            const backfillChecks = await Promise.allSettled(
-                filteredRepos.map(async (repo) => ({
-                    repo,
-                    needsBackfill:
-                        !(await this.generateInitialKodyRulesUseCase.hasPastReviewRules(
-                            organizationId,
-                            repo.id,
-                        )),
-                })),
+            // week's delta. Partition the repos with a single lookup and run
+            // each window once (issue #1506).
+            const repoIds = filteredRepos.map((repo) => repo.id);
+
+            let seededRepoIds: Set<string>;
+            try {
+                seededRepoIds =
+                    await this.generateInitialKodyRulesUseCase.hasPastReviewRulesForRepos(
+                        organizationId,
+                        repoIds,
+                    );
+            } catch (error) {
+                // On a lookup failure, treat every repo as already seeded so we
+                // fall back to the cheaper weekly window rather than risk an
+                // unexpected 3-month run.
+                this.logger.error({
+                    message:
+                        'Failed to check past-review rules; using weekly window for all repos',
+                    context: KodyLearningCronProvider.name,
+                    error,
+                    metadata: { organizationId, teamId },
+                });
+                seededRepoIds = new Set(repoIds);
+            }
+
+            const backfillRepoIds = repoIds.filter(
+                (id) => !seededRepoIds.has(id),
             );
-
-            const backfillRepoIds: string[] = [];
-            const weeklyRepoIds: string[] = [];
-            for (let i = 0; i < backfillChecks.length; i++) {
-                const check = backfillChecks[i];
-                // If the check failed, fall back to the cheaper weekly window
-                // rather than risk an unexpected 3-month run.
-                const needsBackfill =
-                    check.status === 'fulfilled' && check.value.needsBackfill;
-                (needsBackfill ? backfillRepoIds : weeklyRepoIds).push(
-                    filteredRepos[i].id,
-                );
-            }
-
-            if (backfillRepoIds.length > 0) {
-                await this.generateKodyRulesUseCase.execute(
-                    {
-                        teamId,
-                        months: 3,
-                        repositoriesIds: backfillRepoIds,
-                    },
-                    organizationId,
-                );
-            }
+            const weeklyRepoIds = repoIds.filter((id) => seededRepoIds.has(id));
 
             if (weeklyRepoIds.length > 0) {
                 await this.generateKodyRulesUseCase.execute(
@@ -361,6 +357,43 @@ export class KodyLearningCronProvider {
                         repositoriesIds: weeklyRepoIds,
                     },
                     organizationId,
+                );
+            }
+
+            // Hold a per-repo lock across the backfill so a concurrent
+            // config-save seed of the same repo can't run at the same time and
+            // duplicate its rules. Repos already being seeded elsewhere are
+            // skipped this run and picked up on the next.
+            const heldLocks: DistributedLock[] = [];
+            const lockedBackfillIds: string[] = [];
+            for (const repoId of backfillRepoIds) {
+                const lock = await this.distributedLockService.acquire(
+                    GenerateInitialKodyRulesUseCase.initialGenerationLockKey(
+                        organizationId,
+                        repoId,
+                    ),
+                    { ttl: INITIAL_GENERATION_LOCK_TTL_MS },
+                );
+                if (lock) {
+                    heldLocks.push(lock);
+                    lockedBackfillIds.push(repoId);
+                }
+            }
+
+            try {
+                if (lockedBackfillIds.length > 0) {
+                    await this.generateKodyRulesUseCase.execute(
+                        {
+                            teamId,
+                            months: 3,
+                            repositoriesIds: lockedBackfillIds,
+                        },
+                        organizationId,
+                    );
+                }
+            } finally {
+                await Promise.allSettled(
+                    heldLocks.map((lock) => lock.release()),
                 );
             }
         } catch (error) {

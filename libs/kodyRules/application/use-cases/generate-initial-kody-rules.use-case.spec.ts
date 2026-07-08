@@ -2,18 +2,30 @@ import { KodyRulesOrigin } from '@libs/kodyRules/domain/interfaces/kodyRules.int
 
 import { GenerateInitialKodyRulesUseCase } from './generate-initial-kody-rules.use-case';
 
-function build(opts: { documents?: unknown[] } = {}) {
+function build(opts: { documents?: unknown[]; lockAcquired?: boolean } = {}) {
     const kodyRulesService = {
         find: jest.fn().mockResolvedValue(opts.documents ?? []),
     } as any;
     const generate = {
         execute: jest.fn().mockResolvedValue(undefined),
     } as any;
+    const lock = { release: jest.fn().mockResolvedValue(undefined) };
+    const distributedLockService = {
+        acquire: jest
+            .fn()
+            .mockResolvedValue(opts.lockAcquired === false ? null : lock),
+    } as any;
 
     return {
-        useCase: new GenerateInitialKodyRulesUseCase(kodyRulesService, generate),
+        useCase: new GenerateInitialKodyRulesUseCase(
+            kodyRulesService,
+            generate,
+            distributedLockService,
+        ),
         kodyRulesService,
         generate,
+        distributedLockService,
+        lock,
     };
 }
 
@@ -101,5 +113,87 @@ describe('GenerateInitialKodyRulesUseCase', () => {
                 repositoryId: 'repo-1',
             }),
         ).resolves.toBeUndefined();
+    });
+
+    it('skips when the per-repo lock is already held (concurrent seed)', async () => {
+        const { useCase, kodyRulesService, generate } = build({
+            lockAcquired: false,
+        });
+
+        await useCase.execute({
+            organizationAndTeamData: org,
+            repositoryId: 'repo-1',
+        });
+
+        expect(kodyRulesService.find).not.toHaveBeenCalled();
+        expect(generate.execute).not.toHaveBeenCalled();
+    });
+
+    it('releases the lock after a successful run', async () => {
+        const { useCase, lock } = build({ documents: [] });
+
+        await useCase.execute({
+            organizationAndTeamData: org,
+            repositoryId: 'repo-1',
+        });
+
+        expect(lock.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('releases the lock even when generation throws', async () => {
+        const { useCase, generate, lock } = build({ documents: [] });
+        generate.execute.mockRejectedValue(new Error('boom'));
+
+        await useCase.execute({
+            organizationAndTeamData: org,
+            repositoryId: 'repo-1',
+        });
+
+        expect(lock.release).toHaveBeenCalledTimes(1);
+    });
+
+    describe('hasPastReviewRulesForRepos', () => {
+        it('returns only the repos that carry past-review rules, with a single query', async () => {
+            const { useCase, kodyRulesService } = build({
+                documents: [
+                    {
+                        rules: [
+                            {
+                                repositoryId: 'seeded',
+                                origin: KodyRulesOrigin.PAST_REVIEWS,
+                            },
+                            {
+                                repositoryId: 'ide-only',
+                                origin: KodyRulesOrigin.REPO_FILE_SYNC,
+                            },
+                        ],
+                    },
+                ],
+            });
+
+            const seeded = await useCase.hasPastReviewRulesForRepos('org-1', [
+                'seeded',
+                'ide-only',
+                'fresh',
+            ]);
+
+            expect(seeded).toEqual(new Set(['seeded']));
+            expect(kodyRulesService.find).toHaveBeenCalledTimes(1);
+            expect(kodyRulesService.find).toHaveBeenCalledWith({
+                organizationId: 'org-1',
+            });
+        });
+
+        it('returns an empty set without querying when no repos are given', async () => {
+            const { useCase, kodyRulesService } = build();
+
+            const seeded = await useCase.hasPastReviewRulesForRepos(
+                'org-1',
+                [],
+            );
+
+            expect(seeded.size).toBe(0);
+            expect(kodyRulesService.find).not.toHaveBeenCalled();
+        });
     });
 });
