@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { run } from "./git.js";
 import { http } from "./http.js";
 import { logger } from "./log.js";
+import { invalidateRegisteredRepo } from "./onboarding.js";
 
 const log = logger("gh-repos");
 const API = "https://api.github.com";
@@ -202,6 +203,11 @@ export async function deleteRepo(full: string): Promise<boolean> {
         timeoutMs: 30_000,
     });
     if (resp.status === 204) {
+        // A recreation under the SAME name (deterministic per-run slug on
+        // the scenario retry path) must re-register — the webhook died with
+        // this repo. Without this, registerRepo's cache skips the POST and
+        // the recreated repo never gets a webhook.
+        invalidateRegisteredRepo(full);
         log.ok(`Deleted throwaway repo ${full}`);
         return true;
     }

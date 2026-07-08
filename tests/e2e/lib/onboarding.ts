@@ -302,6 +302,20 @@ async function pollIntegrationLanded(
 // churn completes before it opens its PR, so the new hook is already live.)
 const registeredRepoCache = new Map<string, ProviderRepoRef>();
 
+// Drops every cache entry for `fullName`, regardless of tenant/provider.
+// Needed by the throwaway-repo flows (trial-managed-review etc.): the repo
+// name is deterministic per run, so when a retry deletes and RECREATES the
+// repo under the same name, a stale cache hit would skip the registration
+// POST — and with it the webhook creation on the NEW repo. The retry then
+// polls a webhook-less repo and fails by construction (observed on nightly
+// run 28926099375: attempt 2 logged "already registered — reusing" against
+// a just-recreated repo and no review could ever arrive).
+export function invalidateRegisteredRepo(fullName: string): void {
+    for (const key of registeredRepoCache.keys()) {
+        if (key.endsWith(`:${fullName}`)) registeredRepoCache.delete(key);
+    }
+}
+
 export async function registerRepo(
     target: TargetContext,
     provider: Provider,

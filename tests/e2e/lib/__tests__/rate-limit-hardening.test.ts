@@ -1,6 +1,10 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { registerIntegration } from "../onboarding.js";
+import {
+    invalidateRegisteredRepo,
+    registerIntegration,
+    registerRepo,
+} from "../onboarding.js";
 import { isGithubRateLimit } from "../runner.js";
 import { GitHubProvider } from "../../providers/github.js";
 import type { KodusSession, Provider, TargetContext } from "../types.js";
@@ -58,6 +62,53 @@ test("registerIntegration: caches per (api, org, platform) — one auth-integrat
             (r) => r.method === "POST" && r.path.startsWith("/code-management/auth-integration"),
         );
         assert.equal(postsAfter.length, 2, "a different org must not reuse the cache");
+    } finally {
+        await server.close();
+    }
+});
+
+test("invalidateRegisteredRepo: a deleted-and-recreated throwaway repo re-registers (webhook must be recreated)", async () => {
+    const REPO = "kodus-e2e/tiny-url-trial-e2e-abc123";
+    const server = await startMockServer([
+        {
+            method: "GET",
+            pathRegex: /^\/code-management\/repositories\/org/,
+            handler: (_req, res) =>
+                json(res, 200, {
+                    data: [{ id: 1, full_name: REPO, name: "tiny-url-trial-e2e-abc123" }],
+                }),
+        },
+        {
+            method: "POST",
+            pathRegex: /^\/code-management\/repositories$/,
+            handler: (_req, res) => json(res, 200, { data: { status: true } }),
+        },
+    ]);
+    const target: TargetContext = {
+        target: "self-hosted",
+        apiBaseUrl: server.baseUrl,
+        webBaseUrl: server.baseUrl,
+        tunnelUrl: server.baseUrl,
+    };
+    const provider = {
+        ...fakeProvider(),
+        repoRef: async () => ({ id: 1, name: "tiny-url-trial-e2e-abc123", full_name: REPO }),
+    } as unknown as Provider;
+    const session = sessionFor("org-repo-invalidate");
+    const posts = () =>
+        server.requests.filter(
+            (r) => r.method === "POST" && r.path === "/code-management/repositories",
+        ).length;
+    try {
+        await registerRepo(target, provider, session);
+        await registerRepo(target, provider, session);
+        assert.equal(posts(), 1, "second call must reuse the cache");
+        // Scenario retry path: throwaway repo deleted + recreated under the
+        // same name — the cache entry must die with the repo, otherwise the
+        // recreated repo never gets its webhook (nightly 28926099375).
+        invalidateRegisteredRepo(REPO);
+        await registerRepo(target, provider, session);
+        assert.equal(posts(), 2, "post-invalidation call must re-register");
     } finally {
         await server.close();
     }
