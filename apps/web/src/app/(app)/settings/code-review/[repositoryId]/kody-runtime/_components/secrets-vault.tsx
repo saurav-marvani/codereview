@@ -53,12 +53,15 @@ export const SecretsVault = ({
     repositoryId,
     canEdit,
     requiredEnv = [],
+    onMissingCount,
 }: {
     teamId: string;
     repositoryId: string;
     canEdit: boolean;
     /** Names the playbook needs — flagged as missing until set/inherited. */
     requiredEnv?: string[];
+    /** Reports how many required secrets are still missing (for page status). */
+    onMissingCount?: (count: number) => void;
 }) => {
     const isGlobal = repositoryId === "global";
     const [configured, setConfigured] = useState<string[]>([]);
@@ -102,6 +105,11 @@ export const SecretsVault = ({
             ),
         [requiredEnv, configured, inherited],
     );
+
+    useEffect(() => {
+        onMissingCount?.(missingRequired.length);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [missingRequired.length]);
 
     const persist = async (secrets: Record<string, string>) => {
         setSaving(true);

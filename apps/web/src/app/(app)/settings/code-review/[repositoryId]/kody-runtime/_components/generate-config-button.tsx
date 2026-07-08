@@ -23,10 +23,13 @@ export function GenerateConfigButton({
     teamId,
     repositoryId,
     disabled,
+    prominent,
 }: {
     teamId: string;
     repositoryId: string;
     disabled?: boolean;
+    /** First-run emphasis: render as the primary action when no playbook yet. */
+    prominent?: boolean;
 }) {
     const form = useFormContext<CodeReviewFormType>();
     const [running, setRunning] = useState(false);
@@ -103,7 +106,7 @@ export function GenerateConfigButton({
             <div className="flex items-center gap-3">
                 <Button
                     type="button"
-                    variant="secondary"
+                    variant={prominent ? "primary" : "secondary"}
                     size="sm"
                     leftIcon={<ScanSearchIcon />}
                     loading={running}

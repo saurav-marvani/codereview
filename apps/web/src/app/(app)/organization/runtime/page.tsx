@@ -11,6 +11,7 @@ import { isSelfHosted } from "src/core/utils/self-hosted";
 
 import { InfrastructureAdvanced } from "../../settings/code-review/[repositoryId]/kody-runtime/_components/infrastructure-advanced";
 import { SecretsVault } from "../../settings/code-review/[repositoryId]/kody-runtime/_components/secrets-vault";
+import { ReposRuntimeStatus } from "./_components/repos-status";
 
 /**
  * Organization-level Kody Runtime config: the things set once for the whole org
@@ -36,11 +37,14 @@ export default function OrganizationKodyRuntimePage() {
 
             <Page.Content>
                 <p className="text-text-secondary max-w-2xl text-sm">
-                    Set up Kody Runtime once for the whole organization. Every
-                    repository inherits these; each repo adds its own playbook
-                    and secret overrides on its Kody Runtime tab under Code
-                    Review.
+                    Kody boots your app on a throwaway VM and runs the pull
+                    request against it, catching bugs that only show up when the
+                    code actually runs. Shared secrets and infrastructure are
+                    set once here; each repository has its own playbook and
+                    overrides.
                 </p>
+
+                <ReposRuntimeStatus teamId={teamId} />
 
                 <SecretsVault
                     teamId={teamId}

@@ -1,12 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { Button } from "@components/ui/button";
 import { Heading } from "@components/ui/heading";
 import { Page } from "@components/ui/page";
 import { toast } from "@components/ui/toaster/use-toast";
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
-import { RotateCcwIcon, SaveIcon } from "lucide-react";
+import { CheckIcon, RotateCcwIcon, SaveIcon } from "lucide-react";
 import { useFormContext } from "react-hook-form";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { unformatConfig } from "src/core/utils/helpers";
@@ -18,6 +19,30 @@ import { useCodeReviewSettingsMutation } from "../../_hooks/use-code-review-sett
 import { type CodeReviewFormType } from "../../_types";
 import { useCodeReviewRouteParams } from "../../../_hooks";
 import { EnvironmentEnabled } from "./_components/environment-enabled";
+
+/** Numbered step header for the setup flow; shows a check once the step is done. */
+const StepHeader = ({
+    n,
+    title,
+    done,
+}: {
+    n: number;
+    title: string;
+    done: boolean;
+}) => (
+    <div className="flex flex-row items-center gap-2.5">
+        <span
+            className={
+                "flex size-6 items-center justify-center rounded-full text-xs font-bold " +
+                (done
+                    ? "bg-success/15 text-success"
+                    : "bg-card-lv2 text-text-secondary")
+            }>
+            {done ? <CheckIcon size={13} /> : n}
+        </span>
+        <span className="text-text-primary text-sm font-semibold">{title}</span>
+    </div>
+);
 import { GenerateConfigButton } from "./_components/generate-config-button";
 import { PlaybookYamlEditor } from "./_components/playbook-yaml-editor";
 import { RequiredEnv } from "./_components/required-env";
@@ -72,6 +97,35 @@ export default function KodyRuntime() {
 
     const isGlobal = repositoryId === "global";
 
+    // Setup-flow status, derived from the form + the vault's missing report.
+    const enabled = !!form.watch("environment.enabled.value");
+    const setupCmds =
+        (form.watch("environment.setup.value") as string[]) ?? [];
+    const serviceCmds =
+        (form.watch("environment.services.value") as string[]) ?? [];
+    const hasPlaybook = setupCmds.length > 0 || serviceCmds.length > 0;
+    const [missingSecrets, setMissingSecrets] = useState(0);
+
+    const status = !enabled
+        ? {
+              tone: "off" as const,
+              text: "Off. Follow the steps below to let Kody run this app.",
+          }
+        : !hasPlaybook
+          ? {
+                tone: "warn" as const,
+                text: "Almost there. Kody still needs a playbook (step 2).",
+            }
+          : missingSecrets > 0
+            ? {
+                  tone: "warn" as const,
+                  text: `Almost there. ${missingSecrets} required secret${missingSecrets === 1 ? "" : "s"} missing (step 3).`,
+              }
+            : {
+                  tone: "ok" as const,
+                  text: "Ready. Kody can boot and run this app.",
+              };
+
     return (
         <Page.Root>
             <Page.Header>
@@ -106,6 +160,24 @@ export default function KodyRuntime() {
             <Page.Content>
                 <CentralizedConfigReadOnlyAlert />
 
+                {!isGlobal && (
+                    <div
+                        className={
+                            "flex flex-row items-center gap-2.5 rounded-xl border px-4 py-3 text-sm " +
+                            (status.tone === "ok"
+                                ? "border-success/30 bg-success/5 text-success"
+                                : status.tone === "warn"
+                                  ? "border-warning/30 bg-warning/5 text-warning"
+                                  : "border-card-lv2 text-text-secondary")
+                        }>
+                        <span className="size-2 rounded-full bg-current" />
+                        {status.text}
+                    </div>
+                )}
+
+                {!isGlobal && (
+                    <StepHeader n={1} title="Turn it on" done={enabled} />
+                )}
                 <div data-field-name="environment.enabled">
                     <EnvironmentEnabled />
                 </div>
@@ -114,6 +186,13 @@ export default function KodyRuntime() {
                     <RuntimeTrigger />
                 </div>
 
+                {!isGlobal && (
+                    <StepHeader
+                        n={2}
+                        title="Teach Kody how to run this app"
+                        done={hasPlaybook}
+                    />
+                )}
                 <div className="flex flex-col gap-4 rounded-xl border border-card-lv2 p-5">
                     <div className="flex flex-col gap-1">
                         <Heading variant="h3">Playbook</Heading>
@@ -145,6 +224,7 @@ export default function KodyRuntime() {
                                     teamId={teamId}
                                     repositoryId={repositoryId}
                                     disabled={!canEdit}
+                                    prominent={!hasPlaybook}
                                 />
                             )}
 
@@ -159,6 +239,11 @@ export default function KodyRuntime() {
                             <RequiredEnv />
                         </div>
 
+                        <StepHeader
+                            n={3}
+                            title="Give it the secrets it needs"
+                            done={enabled && missingSecrets === 0}
+                        />
                         <SecretsVault
                             teamId={teamId}
                             repositoryId={repositoryId}
@@ -168,6 +253,7 @@ export default function KodyRuntime() {
                                     "environment.requiredEnv.value",
                                 ) as string[]) ?? []
                             }
+                            onMissingCount={setMissingSecrets}
                         />
                     </>
                 ) : (
