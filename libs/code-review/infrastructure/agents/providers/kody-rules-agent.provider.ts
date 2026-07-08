@@ -5,6 +5,7 @@ import { ObservabilityService } from '@libs/core/log/observability.service';
 import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
 import { ByokErrorCounter } from '@libs/notifications/application/byok-error-counter.service';
 import { isFileMatchingGlob } from '@libs/common/utils/glob-utils';
+import { splitRulePathGlobs } from '@libs/common/utils/kody-rules/file-patterns';
 import { BaseCodeReviewAgentProvider } from '@libs/code-review/infrastructure/agents/providers/base-code-review-agent.provider';
 import {
     ReviewAgentIdentity,
@@ -139,9 +140,11 @@ export class KodyRulesAgentProvider extends BaseCodeReviewAgentProvider {
      */
     protected getCategoryPrompt(input: ReviewAgentInput): string {
         const rules = (
-            (input as ReviewAgentInput & {
-                kodyRules?: Partial<IKodyRule>[];
-            }).kodyRules || []
+            (
+                input as ReviewAgentInput & {
+                    kodyRules?: Partial<IKodyRule>[];
+                }
+            ).kodyRules || []
         ).filter(
             (r) => r.type !== KodyRulesType.MEMORY && r.status === 'active',
         );
@@ -209,9 +212,9 @@ You validate code against the team's custom rules listed below. Your ONLY job is
             ? `\n  <Commits>\n${commits
                   .map(
                       (c, i) =>
-                          `    ${i + 1}. ${(c.sha || '').substring(0, 8)} ${(
-                              c.message || ''
-                          ).split('\n')[0]}`,
+                          `    ${i + 1}. ${(c.sha || '').substring(0, 8)} ${
+                              (c.message || '').split('\n')[0]
+                          }`,
                   )
                   .join(
                       '\n',
@@ -363,10 +366,20 @@ If no violations found, respond with \`{"reasoning": "Checked all rules, no viol
      * The hand-rolled regex we had before compiled `**\/*.ts` to
      * `.*\/[^/]*\.ts`, which required a `/` somewhere and silently missed
      * root-level files like `foo.ts` or `src/foo.ts`.
+     *
+     * Rule paths support comma-joined OR globs (the repo-file importer
+     * persists declared multi-glob frontmatter that way). Passing the
+     * whole string to picomatch treats the comma as a literal and the
+     * rule silently matches NOTHING — the same defect fixed in
+     * kody-rules-validation.service for the legacy pipeline; this is the
+     * agent-path twin, caught live by the kody-rules-file-sync E2E.
      */
     private matchesPathPattern(filePath: string, pattern: string): boolean {
-        if (filePath === pattern) return true;
-        if (pattern.endsWith('/') && filePath.startsWith(pattern)) return true;
-        return isFileMatchingGlob(filePath, [pattern]);
+        const globs = splitRulePathGlobs(pattern);
+        for (const glob of globs) {
+            if (filePath === glob) return true;
+            if (glob.endsWith('/') && filePath.startsWith(glob)) return true;
+        }
+        return isFileMatchingGlob(filePath, globs);
     }
 }
