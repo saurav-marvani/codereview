@@ -8,7 +8,12 @@ import { KodyLearningCronProvider } from './kodyLearning.cron';
 function build(opts: {
     repoIds: string[];
     seeded: (repoId: string) => boolean;
+    // Seeded status seen on the under-lock re-check (2nd call onwards).
+    // Defaults to `seeded` — set it to model a repo seeded by a concurrent
+    // config-save between the pre-lock check and acquiring its lock.
+    seededAfterLock?: (repoId: string) => boolean;
     lockAcquired?: (repoId: string) => boolean;
+    acquireThrows?: (repoId: string) => boolean;
 }) {
     const parametersService = {
         findByKey: jest.fn().mockResolvedValue({
@@ -27,10 +32,16 @@ function build(opts: {
         execute: jest.fn().mockResolvedValue(undefined),
     } as any;
 
+    let seededCallCount = 0;
     const generateInitialKodyRulesUseCase = {
         hasPastReviewRulesForRepos: jest.fn(
-            (_org: string, repoIds: string[]) =>
-                Promise.resolve(new Set(repoIds.filter(opts.seeded))),
+            (_org: string, repoIds: string[]) => {
+                const predicate =
+                    seededCallCount++ === 0
+                        ? opts.seeded
+                        : (opts.seededAfterLock ?? opts.seeded);
+                return Promise.resolve(new Set(repoIds.filter(predicate)));
+            },
         ),
     } as any;
 
@@ -38,6 +49,9 @@ function build(opts: {
     const distributedLockService = {
         acquire: jest.fn((key: string) => {
             const repoId = key.split(':').pop() as string;
+            if (opts.acquireThrows?.(repoId)) {
+                return Promise.reject(new Error(`acquire failed for ${repoId}`));
+            }
             const acquired = opts.lockAcquired ? opts.lockAcquired(repoId) : true;
             return Promise.resolve(
                 acquired
@@ -168,6 +182,55 @@ describe('KodyLearningCronProvider — per-repo backfill window', () => {
         expect(generateKodyRulesUseCase.execute).toHaveBeenCalledTimes(1);
         expect(generateKodyRulesUseCase.execute).toHaveBeenCalledWith(
             { teamId: 'team-1', months: 3, repositoriesIds: ['fresh'] },
+            'org-1',
+        );
+    });
+
+    it('re-checks under the lock and skips a repo seeded since the pre-lock check', async () => {
+        // 'raced' looks unseeded pre-lock but a concurrent config-save seeds it
+        // before the cron acquires its lock — it must NOT be backfilled again.
+        const { cron, generateKodyRulesUseCase, releasedLocks } = build({
+            repoIds: ['fresh', 'raced'],
+            seeded: () => false,
+            seededAfterLock: (id) => id === 'raced',
+        });
+
+        await run(cron);
+
+        expect(generateKodyRulesUseCase.execute).toHaveBeenCalledTimes(1);
+        expect(generateKodyRulesUseCase.execute).toHaveBeenCalledWith(
+            { teamId: 'team-1', months: 3, repositoriesIds: ['fresh'] },
+            'org-1',
+        );
+        // Both locks were still acquired and released even though 'raced' was skipped.
+        expect(releasedLocks.sort()).toEqual(['fresh', 'raced']);
+    });
+
+    it('does not run a 3-month backfill when every repo was seeded since the pre-lock check', async () => {
+        const { cron, generateKodyRulesUseCase } = build({
+            repoIds: ['raced'],
+            seeded: () => false,
+            seededAfterLock: () => true,
+        });
+
+        await run(cron);
+
+        expect(generateKodyRulesUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('releases already-held locks when acquiring one repo throws', async () => {
+        const { cron, generateKodyRulesUseCase, releasedLocks } = build({
+            repoIds: ['a', 'b', 'c'],
+            seeded: () => false,
+            acquireThrows: (id) => id === 'b',
+        });
+
+        await run(cron);
+
+        // 'b' failed to lock and is skipped; 'a' and 'c' proceed and release.
+        expect(releasedLocks.sort()).toEqual(['a', 'c']);
+        expect(generateKodyRulesUseCase.execute).toHaveBeenCalledWith(
+            { teamId: 'team-1', months: 3, repositoriesIds: ['a', 'c'] },
             'org-1',
         );
     });

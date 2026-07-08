@@ -164,7 +164,17 @@ export class GenerateInitialKodyRulesUseCase {
         }
 
         const requested = new Set(repositoryIds);
-        const documents = await this.kodyRulesService.find({ organizationId });
+        // Filter at the query so the DB returns only the past-review rules for
+        // the requested repos, not every rule the org has (the embedded rules
+        // array can be large on active orgs). Each entry is one exact-match
+        // condition; the service ORs them together.
+        const documents = await this.kodyRulesService.find({
+            organizationId,
+            rules: repositoryIds.map((repositoryId) => ({
+                repositoryId,
+                origin: KodyRulesOrigin.PAST_REVIEWS,
+            })),
+        });
 
         for (const document of documents ?? []) {
             for (const rule of document?.rules ?? []) {

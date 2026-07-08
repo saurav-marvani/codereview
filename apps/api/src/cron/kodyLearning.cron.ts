@@ -368,30 +368,76 @@ export class KodyLearningCronProvider {
             // skipped this run and picked up on the next.
             const heldLocks: DistributedLock[] = [];
             const lockedBackfillIds: string[] = [];
-            for (const repoId of backfillRepoIds) {
-                const lock = await this.distributedLockService.acquire(
-                    GenerateInitialKodyRulesUseCase.initialGenerationLockKey(
-                        organizationId,
-                        repoId,
-                    ),
-                    { ttl: INITIAL_GENERATION_LOCK_TTL_MS },
-                );
-                if (lock) {
-                    heldLocks.push(lock);
-                    lockedBackfillIds.push(repoId);
-                }
-            }
 
             try {
+                for (const repoId of backfillRepoIds) {
+                    let lock: DistributedLock | null = null;
+                    try {
+                        lock = await this.distributedLockService.acquire(
+                            GenerateInitialKodyRulesUseCase.initialGenerationLockKey(
+                                organizationId,
+                                repoId,
+                            ),
+                            { ttl: INITIAL_GENERATION_LOCK_TTL_MS },
+                        );
+                    } catch (error) {
+                        // A lock failure for one repo must not abort the batch
+                        // or leak the locks already held — skip it and let the
+                        // finally release the rest.
+                        this.logger.error({
+                            message:
+                                'Failed to acquire backfill lock; skipping repo',
+                            context: KodyLearningCronProvider.name,
+                            error,
+                            metadata: { organizationId, teamId, repoId },
+                        });
+                        continue;
+                    }
+
+                    if (lock) {
+                        heldLocks.push(lock);
+                        lockedBackfillIds.push(repoId);
+                    }
+                }
+
                 if (lockedBackfillIds.length > 0) {
-                    await this.generateKodyRulesUseCase.execute(
-                        {
-                            teamId,
-                            months: 3,
-                            repositoriesIds: lockedBackfillIds,
-                        },
-                        organizationId,
+                    // Re-check under the locks: a config-save seed may have
+                    // finished between the pre-lock check and now. Skip any
+                    // repo that became seeded so we don't generate duplicate
+                    // past-review rules. If the re-check itself fails, skip the
+                    // backfill this run rather than risk duplicates.
+                    let nowSeeded: Set<string>;
+                    try {
+                        nowSeeded =
+                            await this.generateInitialKodyRulesUseCase.hasPastReviewRulesForRepos(
+                                organizationId,
+                                lockedBackfillIds,
+                            );
+                    } catch (error) {
+                        this.logger.error({
+                            message:
+                                'Failed to re-check past-review rules under lock; skipping backfill',
+                            context: KodyLearningCronProvider.name,
+                            error,
+                            metadata: { organizationId, teamId },
+                        });
+                        nowSeeded = new Set(lockedBackfillIds);
+                    }
+
+                    const idsToBackfill = lockedBackfillIds.filter(
+                        (id) => !nowSeeded.has(id),
                     );
+
+                    if (idsToBackfill.length > 0) {
+                        await this.generateKodyRulesUseCase.execute(
+                            {
+                                teamId,
+                                months: 3,
+                                repositoriesIds: idsToBackfill,
+                            },
+                            organizationId,
+                        );
+                    }
                 }
             } finally {
                 await Promise.allSettled(

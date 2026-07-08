@@ -179,8 +179,24 @@ describe('GenerateInitialKodyRulesUseCase', () => {
 
             expect(seeded).toEqual(new Set(['seeded']));
             expect(kodyRulesService.find).toHaveBeenCalledTimes(1);
+            // Filter is pushed to the DB: only past-review rules for the
+            // requested repos, not every rule the org has.
             expect(kodyRulesService.find).toHaveBeenCalledWith({
                 organizationId: 'org-1',
+                rules: [
+                    {
+                        repositoryId: 'seeded',
+                        origin: KodyRulesOrigin.PAST_REVIEWS,
+                    },
+                    {
+                        repositoryId: 'ide-only',
+                        origin: KodyRulesOrigin.PAST_REVIEWS,
+                    },
+                    {
+                        repositoryId: 'fresh',
+                        origin: KodyRulesOrigin.PAST_REVIEWS,
+                    },
+                ],
             });
         });
 
