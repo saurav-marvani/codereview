@@ -128,9 +128,13 @@ export function GenerateConfigButton({
                     <div className="text-text-primary text-sm font-medium">
                         Detected playbook{" "}
                         {result.verified ? (
-                            <span className="text-success">· verified it boots ✓</span>
+                            <span className="text-success">
+                                &middot; verified it boots
+                            </span>
                         ) : (
-                            <span className="text-warning">· not fully verified — review before saving</span>
+                            <span className="text-warning">
+                                &middot; not fully verified, review before saving
+                            </span>
                         )}
                     </div>
                     {result.summary && (

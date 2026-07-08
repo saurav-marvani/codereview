@@ -119,7 +119,7 @@ export default function KodyRuntime() {
                         <Heading variant="h3">Playbook</Heading>
                         <p className="text-text-secondary text-sm">
                             How to boot the app on the VM, as{" "}
-                            <code>.kody/runtime.yml</code> — the same file you can
+                            <code>.kody/runtime.yml</code> - the same file you can
                             commit to the repo. Phases (setup, build, services,
                             healthcheck, test) run in order; services are
                             backgrounded automatically.
@@ -178,7 +178,7 @@ export default function KodyRuntime() {
                             <a
                                 href="/organization/runtime"
                                 className="text-primary hover:underline">
-                                Organization → Kody Runtime
+                                Organization settings, Kody Runtime
                             </a>
                             . Every repository inherits them; open a repository to
                             add its own playbook and secret overrides.
