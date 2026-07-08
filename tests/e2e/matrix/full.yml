@@ -37,6 +37,9 @@ scenarios:
     # Detection semantics (no review step, cheap): root AGENTS.md,
     # nested CLAUDE.md scoped to its subdir, lowercase claude.md.
     - rule-file-detection
+    # Cross-process event delivery: execution updates emitted in the worker
+    # must reach the API's SSE stream (CrossProcessEventsBridge).
+    - pr-execution-sse
     # Centralized config (config-as-code) init→sync→disable on a throwaway org.
     # github × {paid, license-paid}; skipped unless CENTRALIZED_CONFIG_TEST_REPO is set.
     - centralized-config-sync

@@ -13,6 +13,7 @@ import ruleFileDetection from './rule-file-detection.js';
 import licenseAttribution from './license-attribution.js';
 import onboardingWebhookRegistration from './onboarding-webhook-registration.js';
 import perSeatLicenseToggle from './per-seat-license-toggle.js';
+import prExecutionSse from './pr-execution-sse.js';
 import publicPrDemo from './public-pr-demo.js';
 import rbacAuthorization from './rbac-authorization.js';
 import rbacFrontendRoutes from './rbac-frontend-routes.js';
@@ -40,6 +41,7 @@ export const allScenarios: Record<string, Scenario> = {
     [ruleFileDetection.id]: ruleFileDetection,
     [licenseAttribution.id]: licenseAttribution,
     [perSeatLicenseToggle.id]: perSeatLicenseToggle,
+    [prExecutionSse.id]: prExecutionSse,
     [publicPrDemo.id]: publicPrDemo,
     [rbacAuthorization.id]: rbacAuthorization,
     [rbacFrontendRoutes.id]: rbacFrontendRoutes,
@@ -79,6 +81,7 @@ export {
     licenseAttribution,
     onboardingWebhookRegistration,
     perSeatLicenseToggle,
+    prExecutionSse,
     publicPrDemo,
     rbacAuthorization,
     rbacFrontendRoutes,

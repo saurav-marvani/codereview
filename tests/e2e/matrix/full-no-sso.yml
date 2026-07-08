@@ -30,6 +30,9 @@ scenarios:
     # Detection semantics (no review step, cheap): root AGENTS.md,
     # nested CLAUDE.md scoped to its subdir, lowercase claude.md.
     - rule-file-detection
+    # Cross-process event delivery: execution updates emitted in the worker
+    # must reach the API's SSE stream (CrossProcessEventsBridge).
+    - pr-execution-sse
     - license-attribution
     # Per-seat gate: appliesTo restricts to self-hosted × github × license-paid
     # (one cell). Skipped automatically when SH_LICENSE_KEY_PATH (default
