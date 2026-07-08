@@ -77,6 +77,26 @@ test("conditionalGet: polls send If-None-Match and 304s serve the cached body (f
     }
 });
 
+test("authToken: the integration credential stays the durable PAT even when the harness runs on an App token", async () => {
+    // The runner may hand the provider a ~1h GitHub App installation token
+    // for harness-side quota. That token must NEVER become the credential
+    // Kodus stores on the integration — the product would be left with an
+    // expired secret mid-run.
+    const saved = process.env.GH_TEST_TOKEN;
+    process.env.GH_TEST_TOKEN = "ghp_durable_pat";
+    process.env.GH_TEST_REPO = "kodustech/qa-fixture";
+    try {
+        const provider = new GitHubProvider({
+            target: "self-hosted",
+            tokenOverride: "ghs_expiring_app_token",
+        });
+        assert.equal(provider.authToken(), "ghp_durable_pat");
+    } finally {
+        if (saved === undefined) delete process.env.GH_TEST_TOKEN;
+        else process.env.GH_TEST_TOKEN = saved;
+    }
+});
+
 test("githubAppToken: mints an installation token via App JWT and caches it until near expiry", async () => {
     const { privateKey } = generateKeyPairSync("rsa", {
         modulusLength: 2048,

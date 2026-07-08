@@ -791,8 +791,16 @@ export class GitHubProvider extends BaseProvider {
         return 'token';
     }
 
+    // The credential Kodus STORES on the integration (auth-integration
+    // payload) — the product uses it for its own GitHub calls for the
+    // tenant's lifetime, so it must be DURABLE. `this.token` may be a
+    // GitHub App installation token (runner prefers it for cloud cells'
+    // harness-side quota), which expires in ~1h — storing that would kill
+    // the product's credential mid-run. Always hand the backend the
+    // long-lived base PAT; the assigned token keeps serving the harness's
+    // own API calls (clone, PRs, polling).
     authToken(): string {
-        return this.token;
+        return process.env.GH_TEST_TOKEN || this.token;
     }
 
     async currentUserId(): Promise<string> {

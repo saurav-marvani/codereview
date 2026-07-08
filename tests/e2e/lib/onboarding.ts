@@ -276,6 +276,18 @@ export async function registerIntegration(
         }
         throw err;
     }
+    // Proxy read-timeout statuses (504 on qa.web.kodus.io after 60s, etc.):
+    // the backend keeps working and usually commits — same recovery as the
+    // client-timeout path above and as finishOnboarding's proxy handling.
+    if (PROXY_PENDING_STATUSES.has(resp.status)) {
+        if (await pollIntegrationLanded(target, provider, session)) {
+            log.info(
+                `registerIntegration: proxy ${resp.status} but the ${provider.integrationType} integration landed server-side — continuing`,
+            );
+            registeredIntegrationCache.add(cacheKey);
+            return;
+        }
+    }
     ensureOk(resp, "onboarding:registerIntegration");
     if (resp.body.data?.status !== "SUCCESS") {
         throw new Error(

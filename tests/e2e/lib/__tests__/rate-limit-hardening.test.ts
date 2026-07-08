@@ -67,6 +67,50 @@ test("registerIntegration: caches per (api, org, platform) — one auth-integrat
     }
 });
 
+test("registerIntegration: proxy 504 with server-side commit recovers via the connections probe", async () => {
+    // qa.web.kodus.io's proxy read-times-out at 60s while the backend keeps
+    // validating the token and commits the integration anyway. A 504
+    // RESPONSE (not a client-side abort) must take the same recovery path.
+    let landed = false;
+    const server = await startMockServer([
+        {
+            method: "POST",
+            pathRegex: /^\/code-management\/auth-integration$/,
+            handler: (_req, res) => {
+                landed = true; // backend committed despite the 504 we return
+                json(res, 504, { message: "Gateway Timeout" });
+            },
+        },
+        {
+            method: "GET",
+            pathRegex: /^\/integration\/connections/,
+            handler: (_req, res) =>
+                json(res, 200, {
+                    data: landed
+                        ? [{ platformName: "GITHUB", category: "CODE_MANAGEMENT" }]
+                        : [],
+                }),
+        },
+    ]);
+    const target: TargetContext = {
+        target: "self-hosted",
+        apiBaseUrl: server.baseUrl,
+        webBaseUrl: server.baseUrl,
+        tunnelUrl: server.baseUrl,
+    };
+    try {
+        // Must resolve (not throw) and cache the registration.
+        await registerIntegration(target, fakeProvider(), sessionFor("org-proxy-504"));
+        await registerIntegration(target, fakeProvider(), sessionFor("org-proxy-504"));
+        const posts = server.requests.filter(
+            (r) => r.method === "POST" && r.path.startsWith("/code-management/auth-integration"),
+        );
+        assert.equal(posts.length, 1, "recovered registration must be cached");
+    } finally {
+        await server.close();
+    }
+});
+
 test("registerIntegration: platform A → B → A on one cloud org re-registers A (clearConflicting invalidates the cache)", async () => {
     // Cloud persistent-tenant shape: registering platform B DELETES A's
     // integration (clearConflictingIntegrations). A's cache entry must die
