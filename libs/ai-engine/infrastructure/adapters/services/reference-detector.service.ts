@@ -161,12 +161,6 @@ export class ReferenceDetectorService {
                 !isControlMarker(ref?.fileName) &&
                 !isControlMarker(ref?.originalText),
         );
-        // Temporary tracer for the @kody-sync ghost: shows exactly what the
-        // model emitted and what survived the control-marker filter.
-        this.logger.log({
-            message: `[REF-DETECTOR-TRACE] raw=${parsedRaw.length} kept=${parsed.length} rawRefs=${JSON.stringify(parsedRaw.map((r: any) => ({ f: r?.fileName ?? r?.filePath, o: r?.originalText, repo: r?.repositoryName }))).slice(0, 800)}`,
-            context: ReferenceDetectorService.name,
-        });
 
         this.logger.debug({
             message: 'Detected external references',

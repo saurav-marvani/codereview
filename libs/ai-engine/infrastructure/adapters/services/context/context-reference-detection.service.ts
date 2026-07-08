@@ -146,6 +146,39 @@ export class ContextReferenceDetectionService {
         }
 
         if (!requirements.length) {
+            // A CLEAN detection must still overwrite a previously-errored
+            // revision: skipping the save here left stale syncErrors (and
+            // their UI chip) alive forever — once a rule ever had a sync
+            // error, no later fix could clear it because the clean result
+            // was never persisted.
+            const previous =
+                await this.contextReferenceService.getLatestRevision(
+                    entityType,
+                    entityId,
+                );
+            if (previous) {
+                this.logger.log({
+                    message:
+                        'Clean detection over an existing revision — committing empty revision to clear stale state',
+                    context: ContextReferenceDetectionService.name,
+                    metadata: { entityType, entityId },
+                });
+                return this.saveToContextOS({
+                    entityType,
+                    entityId,
+                    requirements: [],
+                    knowledgeRefs: [],
+                    entityHash: this.calculateEntityHash(
+                        preparedFields
+                            .map((field) => field.text.trim())
+                            .join('\n:::\n'),
+                    ),
+                    aggregatedSyncErrors: [],
+                    organizationAndTeamData,
+                    repositoryId,
+                    repositoryName,
+                });
+            }
             this.logger.warn({
                 message: 'No requirements generated after processing fields',
                 context: ContextReferenceDetectionService.name,
