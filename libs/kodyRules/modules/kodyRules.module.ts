@@ -10,6 +10,8 @@ import { GlobalCacheModule } from '@libs/core/cache/cache.module';
 import { KodyRulesRepository } from '@libs/ee/kodyRules/repository/kodyRules.repository';
 import { KodyRulesValidationService } from '@libs/ee/kodyRules/service/kody-rules-validation.service';
 import { KodyRulesService } from '@libs/ee/kodyRules/service/kodyRules.service';
+import { KodyRuleDetectorCompilerService } from '@libs/ee/kodyRules/service/kody-rule-detector-compiler.service';
+import { KODY_RULE_DETECTOR_COMPILER_TOKEN } from '../domain/contracts/kody-rule-detector-compiler.contract';
 import { LicenseModule } from '@libs/ee/license/license.module';
 import { PermissionValidationModule } from '@libs/ee/shared/permission-validation.module';
 
@@ -25,6 +27,8 @@ import { ChangeStatusKodyRulesUseCase } from '../application/use-cases/change-st
 import { CheckSyncStatusUseCase } from '../application/use-cases/check-sync-status.use-case';
 import { ConvertPendingUpdatesToNewUseCase } from '../application/use-cases/convert-pending-updates-to-new.use-case';
 import { CreateOrUpdateKodyRulesUseCase } from '../application/use-cases/create-or-update.use-case';
+import { BackfillRuleDetectorsUseCase } from '../application/use-cases/backfill-rule-detectors.use-case';
+import { KodyRuleDetectorSweepService } from '../infrastructure/adapters/services/kody-rule-detector-sweep.service';
 import { DeleteRuleInOrganizationByIdKodyRulesUseCase } from '../application/use-cases/delete-rule-in-organization-by-id.use-case';
 import { FastSyncIdeRulesUseCase } from '../application/use-cases/fast-sync-ide-rules.use-case';
 import { FindByOrganizationIdKodyRulesUseCase } from '../application/use-cases/find-by-organization-id.use-case';
@@ -110,6 +114,13 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         CountRulesByRepositoryUseCase,
         ChangeStatusKodyRulesUseCase,
         CreateOrUpdateKodyRulesUseCase,
+        KodyRuleDetectorCompilerService,
+        {
+            provide: KODY_RULE_DETECTOR_COMPILER_TOKEN,
+            useExisting: KodyRuleDetectorCompilerService,
+        },
+        BackfillRuleDetectorsUseCase,
+        KodyRuleDetectorSweepService,
         SendRulesNotificationUseCase,
         SyncSelectedRepositoriesKodyRulesUseCase,
         KodyRulesValidationService,
@@ -146,6 +157,7 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         CountRulesByRepositoryUseCase,
         ChangeStatusKodyRulesUseCase,
         CreateOrUpdateKodyRulesUseCase,
+        BackfillRuleDetectorsUseCase,
         SendRulesNotificationUseCase,
         KodyRulesValidationService,
         KodyRulesSyncService,

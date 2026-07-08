@@ -19,6 +19,12 @@ import { GenerateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/
 import { CreateOrUpdateParametersUseCase } from '@libs/organization/application/use-cases/parameters/create-or-update-use-case';
 import { TelemetryService } from '@libs/telemetry/application/services/telemetry.service';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
+import { environment } from '@libs/ee/configs/environment';
+import {
+    ILicenseService,
+    LICENSE_SERVICE_TOKEN,
+} from '@libs/ee/license/interfaces/license.interface';
+import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 
 @Injectable()
 export class FinishOnboardingUseCase {
@@ -42,6 +48,9 @@ export class FinishOnboardingUseCase {
         private readonly telemetry: TelemetryService,
         private readonly codeManagement: CodeManagementService,
         private readonly generateKodyRulesUseCase: GenerateKodyRulesUseCase,
+        @Inject(LICENSE_SERVICE_TOKEN)
+        private readonly licenseService: ILicenseService,
+        private readonly permissionValidationService: PermissionValidationService,
     ) {}
 
     async execute(params: FinishOnboardingDTO) {
@@ -109,6 +118,18 @@ export class FinishOnboardingUseCase {
                 { organizationId, teamId },
             );
             __mark('createOrUpdate:PLATFORM_CONFIGS', __t);
+
+            // Provision the trial server-side, right after onboarding is
+            // committed and before the (slow) PR review runs — so this review
+            // and every one after it has a valid license. This used to be a
+            // best-effort call from the browser at the very end of onboarding;
+            // when it didn't run (tab closed, network drop) or failed silently,
+            // the org was stranded without a license. Best-effort and idempotent
+            // (billing returns 409 if a license already exists); a failure never
+            // blocks onboarding and is caught again by the review-time safety net.
+            __t = Date.now();
+            await this.provisionTrial({ organizationId, teamId });
+            __mark('provisionTrial', __t);
 
             // Onboarding only imports rules from repo files (fast, no LLM).
             // Generating rules from past reviews is a separate async action
@@ -256,4 +277,50 @@ export class FinishOnboardingUseCase {
         }
     }
 
+    /**
+     * Best-effort, idempotent trial provisioning for the org that just
+     * finished onboarding. Cloud-only (self-hosted is licensed via keys).
+     * Never throws — onboarding must not hard-fail on a billing hiccup; the
+     * review-time safety net re-provisions if this doesn't land.
+     */
+    private async provisionTrial({
+        organizationId,
+        teamId,
+    }: {
+        organizationId: string;
+        teamId: string;
+    }): Promise<void> {
+        if (!environment.API_CLOUD_MODE) {
+            return;
+        }
+
+        try {
+            const byokConfig =
+                await this.permissionValidationService.getBYOKConfig({
+                    organizationId,
+                    teamId,
+                });
+
+            const provisioned = await this.licenseService.startTrial(
+                { organizationId, teamId },
+                Boolean(byokConfig?.main),
+            );
+
+            if (!provisioned) {
+                this.logger.warn({
+                    message:
+                        'Trial provisioning during onboarding did not succeed; review-time safety net will retry',
+                    context: FinishOnboardingUseCase.name,
+                    metadata: { organizationId, teamId },
+                });
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to provision trial during onboarding',
+                context: FinishOnboardingUseCase.name,
+                error,
+                metadata: { organizationId, teamId },
+            });
+        }
+    }
 }

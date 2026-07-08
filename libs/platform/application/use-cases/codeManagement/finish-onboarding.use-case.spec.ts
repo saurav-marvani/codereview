@@ -21,6 +21,13 @@ describe('FinishOnboardingUseCase', () => {
         // No `uuid` on the user → the telemetry block is skipped.
         const request = { user: { organization: { uuid: 'org-1' } } };
 
+        const licenseService = {
+            startTrial: jest.fn().mockResolvedValue(true),
+        };
+        const permissionValidationService = {
+            getBYOKConfig: jest.fn().mockResolvedValue(null),
+        };
+
         const useCase = new FinishOnboardingUseCase(
             parametersService as any,
             {} as any, // teamService
@@ -31,6 +38,8 @@ describe('FinishOnboardingUseCase', () => {
             {} as any, // telemetry
             {} as any, // codeManagement
             generateKodyRulesUseCase as any,
+            licenseService as any,
+            permissionValidationService as any,
         );
 
         return {
@@ -38,6 +47,8 @@ describe('FinishOnboardingUseCase', () => {
             createOrUpdateParametersUseCase,
             syncSelectedReposKodyRulesUseCase,
             generateKodyRulesUseCase,
+            licenseService,
+            permissionValidationService,
         };
     };
 
@@ -69,5 +80,33 @@ describe('FinishOnboardingUseCase', () => {
             { teamId: 'team-1', months: 3 },
             'org-1',
         );
+    });
+
+    it('provisions the trial server-side after committing onboarding', async () => {
+        const { useCase, licenseService } = buildUseCase();
+
+        await useCase.execute({ teamId: 'team-1', reviewPR: false } as any);
+
+        expect(licenseService.startTrial).toHaveBeenCalledWith(
+            { organizationId: 'org-1', teamId: 'team-1' },
+            false,
+        );
+    });
+
+    it('does not fail onboarding when trial provisioning throws', async () => {
+        const { useCase, licenseService, syncSelectedReposKodyRulesUseCase } =
+            buildUseCase();
+        licenseService.startTrial.mockRejectedValueOnce(
+            new Error('billing down'),
+        );
+
+        await expect(
+            useCase.execute({ teamId: 'team-1', reviewPR: false } as any),
+        ).resolves.not.toThrow();
+
+        // Onboarding still completes its rule import despite the billing error.
+        expect(
+            syncSelectedReposKodyRulesUseCase.execute,
+        ).toHaveBeenCalledWith({ teamId: 'team-1' });
     });
 });

@@ -1,11 +1,28 @@
 import { Injectable, Optional } from '@nestjs/common';
-import { PromptRunnerService } from '@kodus/kodus-common/llm';
+import {
+    LLMModelProvider,
+    ParserType,
+    PromptRole,
+    PromptRunnerService,
+} from '@kodus/kodus-common/llm';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
+import { createLogger } from '@libs/core/log/logger';
 import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
 import { ByokErrorCounter } from '@libs/notifications/application/byok-error-counter.service';
 import { isFileMatchingGlob } from '@libs/common/utils/glob-utils';
+import { BYOKPromptRunnerService } from '@libs/core/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import { BaseCodeReviewAgentProvider } from '@libs/code-review/infrastructure/agents/providers/base-code-review-agent.provider';
+import { resolveAgentModel } from '@libs/code-review/infrastructure/agents/collaborators/model-factory';
+import { mapAgentFindings } from '@libs/code-review/infrastructure/agents/collaborators/finding-mapper';
+import {
+    judgeKodyRulesSharded,
+    inlineRuleReferences,
+    shardViolationsSchema,
+    type RunJudge,
+    type ShardViolation,
+} from '@libs/code-review/infrastructure/agents/collaborators/kody-rules-sharded.judge';
+import { buildDetectorViolations } from '@libs/code-review/infrastructure/agents/collaborators/kody-rules-detector.compiler';
 import {
     ReviewAgentIdentity,
     ReviewAgentInput,
@@ -29,6 +46,8 @@ import {
  */
 @Injectable()
 export class KodyRulesAgentProvider extends BaseCodeReviewAgentProvider {
+    private readonly shardLogger = createLogger('KodyRulesShardedAgent');
+
     constructor(
         promptRunnerService: PromptRunnerService,
         permissionValidationService: PermissionValidationService,
@@ -107,28 +126,157 @@ export class KodyRulesAgentProvider extends BaseCodeReviewAgentProvider {
             };
         }
 
-        // Kody Rules check explicit user-defined rules. Coverage recovery
-        // and second-chance still help — they push the agent to actually
-        // open the changed files when the main loop didn't reach all of
-        // them, and any new findings they produce keep their `ruleUuid`
-        // because the prompt of those passes carries the rules forward.
+        // DETERMINISTIC SHARDED PATH (issue #1449).
         //
-        // Synthesis-rescue is the one we MUST skip: its prompt is
-        // open-ended ("re-think the review") and emits findings against a
-        // generic schema (`label: bug|security|performance`) without
-        // `ruleUuid`. For a kody-rules run that path produces:
-        //   1. duplicate findings (same violation, re-worded), and
-        //   2. findings that lose `ruleUuid`, so they no longer bypass
-        //      the verifier — and the verifier doesn't have rules in its
-        //      prompt, so it confidently drops them as "hallucinated
-        //      rules". We've seen both happen on PR 25.
-        return super.execute({
-            ...input,
-            // Keep the filtered rules list on the passed-down input so
-            // buildUserPrompt / ruleUuid reconciliation still works.
-            kodyRules: rules,
-            skipSynthesisRescue: true,
+        // The old agentic loop (super.execute) let the LLM decide which files
+        // to open within a turn budget; on large PRs it starved and never read
+        // the violating file (measured: gpt-5.4 40%, kimi 58% occurrence-recall
+        // on the frozen github-cases set). We replace the traversal with a
+        // deterministic file×rule sweep: code iterates every changed file and
+        // issues ONE single-shot judgment per file with its path-applicable
+        // rules batched in, plus one whole-PR call for pull-request-scope rules.
+        // Coverage is now structural (the model only judges, never decides where
+        // to look). Validated at 91-100% occurrence-recall across gpt-5.4 /
+        // gpt-5.4-mini / kimi at ~same-or-lower cost.
+        const startTime = Date.now();
+
+        // Route each rule by its compiled shape (issue #1449):
+        //   T0 mechanical (has a `detector`) → deterministic regex over added
+        //     lines, ZERO LLM (the only part that stays free under any BYOK).
+        //   T1/T2 semantic (no detector) → the sharded single-shot LLM judge.
+        const mechanicalRules = rules.filter((r) => r.detector);
+        const semanticRules = rules.filter((r) => !r.detector);
+
+        // T0 — run compiled detectors in code.
+        const detectorViolations = buildDetectorViolations(
+            mechanicalRules,
+            input.changedFiles,
+        );
+
+        // T1/T2 — semantic rules via the LLM judge (skip the model entirely when
+        // every applicable rule is mechanical — pure-T0 reviews cost nothing).
+        let judgeViolations: ShardViolation[] = [];
+        let shardsRun = 0;
+        let shardsErrored = 0;
+        if (semanticRules.length > 0) {
+            const { byokConfig, modelName } = await resolveAgentModel(
+                input,
+                this.permissionValidationService,
+            );
+            this.shardLogger.log({
+                message: `[AGENT] ${this.getIdentity().name} (sharded) using model: ${modelName} for PR#${input.prNumber} (${semanticRules.length} semantic, ${mechanicalRules.length} mechanical rules)`,
+                context: this.getIdentity().name,
+            });
+
+            // Single-shot runner on the customer's model — no tools, no loop.
+            // The provider/fallback here are only the SYSTEM default (used when
+            // the org has no BYOK); a BYOK org overrides both via byokConfig.
+            // Kimi K2 + GPT-OSS-120B, matching the current kody-rules default —
+            // NOT the stale Gemini the v1 path hardcoded.
+            const runner = new BYOKPromptRunnerService(
+                this.promptRunnerService,
+                LLMModelProvider.GROQ_MOONSHOTAI_KIMI_K2_,
+                LLMModelProvider.GROQ_GPT_OSS_120B,
+                byokConfig,
+            );
+            const runJudge: RunJudge = async ({ system, user, filename }) => {
+                // Wrap each shard call in runLLMInSpan so it emits a `tu`-stamped
+                // LLM-usage span — the same seam the v1 analysis / classifier use.
+                // Without it the sharded path's tokens never reach the user-facing
+                // token analytics (monthly-spend / tokens-developer), undercounting
+                // the customer's BYOK consumption. `addCallbacks` feeds the usage
+                // tracker.
+                const { result: parsed } =
+                    await this.observabilityService.runLLMInSpan({
+                        spanName: 'kodus-rules-review-agent.shard',
+                        runName: 'kodus-rules-review-agent.shard',
+                        attrs: {
+                            prNumber: input.prNumber,
+                            agentName: this.getIdentity().name,
+                            ...(filename ? { file: filename } : {}),
+                        },
+                        byokConfig,
+                        exec: (callbacks) =>
+                            runner
+                                .builder()
+                                .setParser(
+                                    ParserType.ZOD,
+                                    shardViolationsSchema,
+                                )
+                                .setLLMJsonMode(true)
+                                .addPrompt({
+                                    role: PromptRole.SYSTEM,
+                                    prompt: system,
+                                })
+                                .addPrompt({
+                                    role: PromptRole.USER,
+                                    prompt: user,
+                                })
+                                .setRunName('kodus-rules-review-agent.shard')
+                                .addCallbacks(callbacks)
+                                .execute(),
+                    });
+                return ((parsed as any)?.violations ?? []) as ShardViolation[];
+            };
+
+            // T2 — inline any referenced convention file so the judge sees the
+            // full rule (deterministic read; the judgment stays LLM).
+            const rulesForJudge = await inlineRuleReferences(
+                semanticRules,
+                input.remoteCommands?.read?.bind(input.remoteCommands),
+                this.shardLogger,
+            );
+
+            const result = await judgeKodyRulesSharded({
+                changedFiles: input.changedFiles,
+                rules: rulesForJudge,
+                runJudge,
+                prTitle: input.prTitle,
+                prBody: input.prBody,
+            });
+            judgeViolations = result.violations;
+            shardsRun = result.shardsRun;
+            shardsErrored = result.shardsErrored;
+        }
+
+        // Merge both streams; downstream mapping/verify/dedup are identical.
+        const allViolations: ShardViolation[] = [
+            ...detectorViolations,
+            ...judgeViolations,
+        ];
+
+        // Reuse the shared finding→CodeSuggestion mapping (ruleUuid
+        // reconciliation, path canonicalization, kody-rule severity) so verify
+        // / dedup downstream behave exactly as with the agentic path.
+        const mapped = mapAgentFindings(
+            { findings: { suggestions: allViolations } },
+            {
+                changedFiles: input.changedFiles,
+                kodyRules: rules,
+                prNumber: input.prNumber,
+                isKodyRules: true,
+                identityName: this.getIdentity().name,
+                labelPolicy: {
+                    categoryLabel: this.getCategoryLabel(),
+                    allowedLabels: this.getAllowedSuggestionLabels(input),
+                    supportsMixed: this.supportsMixedLabels(),
+                },
+                logger: this.shardLogger,
+            },
+        );
+
+        const durationMs = Date.now() - startTime;
+        this.shardLogger.log({
+            message: `[AGENT] ${this.getIdentity().name} (sharded) done for PR#${input.prNumber}: ${mapped.suggestions.length} suggestions (${detectorViolations.length} from ${mechanicalRules.length} detectors, ${judgeViolations.length} from ${shardsRun} shards${shardsErrored ? `, ${shardsErrored} errored` : ''}) in ${durationMs}ms`,
+            context: this.getIdentity().name,
         });
+
+        return {
+            suggestions: mapped.suggestions,
+            agentName: this.getIdentity().name,
+            turnsUsed: shardsRun,
+            durationMs,
+        };
     }
 
     /**

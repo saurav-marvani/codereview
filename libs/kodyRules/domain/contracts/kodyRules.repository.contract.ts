@@ -17,6 +17,9 @@ export interface IKodyRulesRepository {
     findById(uuid: string): Promise<IKodyRule | null>;
     findOne(filter?: Partial<IKodyRules>): Promise<KodyRulesEntity | null>;
     find(filter?: Partial<IKodyRules>): Promise<KodyRulesEntity[]>;
+    /** Projected list of org ids that have ≥1 rule — avoids loading every
+     *  org's full embedded rules array (used by the detector sweep). */
+    findOrganizationIdsWithRules(): Promise<string[]>;
     findByOrganizationId(
         organizationId: string,
     ): Promise<KodyRulesEntity | null>;

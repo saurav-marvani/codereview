@@ -12,7 +12,12 @@
         "Calibrated 2026-07-02 from one full --set=pr run per model on the",
         "post-#1424 engine (evals/investigation/results/finder-recall-<model>-pr.json).",
         "RATCHET RULE: when a PR intentionally improves/regresses a model, update",
-        "that model's floors in the same PR with a fresh --set=pr run as evidence."
+        "that model's floors in the same PR with a fresh --set=pr run as evidence.",
+        "",
+        "JUDGE (#1447): floors were calibrated under the claude-sonnet-4-6 judge;",
+        "the judge is now claude-haiku-4-5. Validated invariant in the agreement",
+        "study (evals/investigation/agreement/): per-PR recall mean shifts −0.3pp —",
+        "far inside cross-PR noise (SEM ~5-6pp) — so these floors stay valid as-is."
     ],
     "set": "pr",
     "models": {

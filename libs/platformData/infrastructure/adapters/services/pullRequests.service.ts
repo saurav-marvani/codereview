@@ -193,6 +193,18 @@ export class PullRequestsService implements IPullRequestsService {
         );
     }
 
+    findNumbersByRepositoryId(
+        organizationId: string,
+        repositoryId: string,
+        until?: Date,
+    ): Promise<number[]> {
+        return this.pullRequestsRepository.findNumbersByRepositoryId(
+            organizationId,
+            repositoryId,
+            until,
+        );
+    }
+
     /**
      * PERF: Returns only suggestion counts using MongoDB aggregation.
      * Much faster than findManyByNumbersAndRepositoryIds when you only need counts.

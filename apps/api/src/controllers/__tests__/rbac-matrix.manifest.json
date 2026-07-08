@@ -1045,6 +1045,17 @@
     }
   },
   {
+    "key": "organizationParameters.controller.ts#clearModelOverrides",
+    "httpMethod": "POST",
+    "urlPath": "/organization-parameters/model-overrides/clear",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "deny",
+      "contributor": "deny"
+    }
+  },
+  {
     "key": "organizationParameters.controller.ts#createOrUpdate",
     "httpMethod": "POST",
     "urlPath": "/organization-parameters/create-or-update",
@@ -1111,9 +1122,31 @@
     }
   },
   {
+    "key": "organizationParameters.controller.ts#listModelOverrides",
+    "httpMethod": "GET",
+    "urlPath": "/organization-parameters/model-overrides",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "deny",
+      "contributor": "deny"
+    }
+  },
+  {
     "key": "organizationParameters.controller.ts#testByokConnection",
     "httpMethod": "POST",
     "urlPath": "/organization-parameters/test-byok",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "deny",
+      "contributor": "deny"
+    }
+  },
+  {
+    "key": "organizationParameters.controller.ts#testByokModel",
+    "httpMethod": "POST",
+    "urlPath": "/organization-parameters/test-byok-model",
     "expected": {
       "owner": "allow",
       "billing_manager": "deny",
@@ -1705,6 +1738,17 @@
     }
   },
   {
+    "key": "tokenUsage.controller.ts#getUsageByArea",
+    "httpMethod": "GET",
+    "urlPath": "/usage/tokens/by-area",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "allow",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
     "key": "tokenUsage.controller.ts#getUsageByDeveloper",
     "httpMethod": "GET",
     "urlPath": "/usage/tokens/by-developer",
@@ -1719,6 +1763,17 @@
     "key": "tokenUsage.controller.ts#getUsageByPr",
     "httpMethod": "GET",
     "urlPath": "/usage/tokens/by-pr",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "allow",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
+    "key": "tokenUsage.controller.ts#getUsageByReview",
+    "httpMethod": "GET",
+    "urlPath": "/usage/tokens/by-review",
     "expected": {
       "owner": "allow",
       "billing_manager": "allow",

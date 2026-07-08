@@ -154,6 +154,7 @@
 
 | Variable | Required | Type | Scope | Description |
 | --- | --- | --- | --- | --- |
+| `OBSERVABILITY_MONGO_ENABLED` | – | boolean | ⚙️ Both (opt-in) | Enables the MongoDB observability exporter used for logs/telemetry persistence. Set to false to disable Mongo observability writes without disabling the application's MongoDB connection itself. |
 | `LANGFUSE_TRACING` | – | boolean | ⚙️ Both (opt-in) | Langfuse tracing — opt-in for self-hosted (cloud Langfuse needs the user's own keys; default is to leave it off in self-hosted). |
 | `LANGFUSE_PUBLIC_KEY` | – | string | ⚙️ Both (opt-in) |  |
 | `LANGFUSE_SECRET_KEY` | – | secret | ⚙️ Both (opt-in) |  |

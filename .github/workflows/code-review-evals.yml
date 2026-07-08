@@ -206,14 +206,19 @@ jobs:
                   BYOK_GOOGLE_API_KEY: ${{ secrets.BYOK_GOOGLE_API_KEY }}
                   BYOK_MOONSHOT_API_KEY: ${{ secrets.BYOK_MOONSHOT_API_KEY }}
                   BYOK_ZHIPU_API_KEY: ${{ secrets.BYOK_ZHIPU_API_KEY }}
-              # Advisory (no --gate) for now. The kody-targets.json floors were
-              # calibrated from a SINGLE run per model, but occurrence-recall has
-              # large run-to-run variance (gpt-5.4-mini swung 72% → 47% between
-              # two runs — far beyond the binomial-SE margin), so a single-run
-              # floor false-reds. Re-enable --gate once floors are calibrated from
-              # MULTIPLE runs per model, and after the prompt-mismatch fix (#1449)
-              # which will move the numbers anyway. Reports occ-recall meanwhile.
-              run: node evals/kody-rules/real-agent.js --dataset=github-cases --model=${{ matrix.model }} --runs=1
+              # Tests the SHIPPED sharded path: behavioral-shipped.js drives the
+              # real judgeKodyRulesSharded (its actual prompts) against real PR
+              # diffs with a real model. This replaced real-agent.js, which drove
+              # the old AGENTIC provider — obsolete since the #1449 rewrite, and
+              # it now crashes (the sharded execute() needs a real prompt runner,
+              # which that harness mocked).
+              #
+              # Advisory (no --gate) on this first landing: the sharded path is
+              # structural (per-file sweep) so run-to-run variance is far lower
+              # than the old agentic loop (which swung 72%→47%). gpt-5.4-mini
+              # measured 100% (43/43) locally. Set --gate=<floor> once a few CI
+              # runs confirm the number is stable per model.
+              run: node evals/kody-rules/behavioral-shipped.js --dataset=github-cases --model=${{ matrix.model }} --temp=0
 
     pr-anchoring-canary:
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
