@@ -231,28 +231,34 @@ export const SecretsVault = ({
                 )}
                 {missingRequired.length > 0 && (
                     <span className="text-danger text-xs">
-                        The playbook needs, but hasn&apos;t got:{" "}
+                        Required by the playbook, not set yet:{" "}
                         {missingRequired.join(", ")}
                     </span>
                 )}
             </div>
 
-            {/* Input mode toggle */}
-            <div className="border-card-lv2 flex flex-row gap-1 self-start rounded-lg border p-1">
-                <Button
-                    size="sm"
-                    variant={mode === "rows" ? "secondary" : "helper"}
-                    leftIcon={<ListIcon />}
-                    onClick={() => setMode("rows")}>
-                    One at a time
-                </Button>
-                <Button
-                    size="sm"
-                    variant={mode === "paste" ? "secondary" : "helper"}
-                    leftIcon={<FileTextIcon />}
-                    onClick={() => setMode("paste")}>
-                    Paste .env
-                </Button>
+            {/* Input mode — segmented control */}
+            <div className="bg-card-lv2 flex w-fit flex-row gap-1 rounded-lg p-1">
+                {(
+                    [
+                        ["rows", "One at a time", ListIcon],
+                        ["paste", "Paste .env", FileTextIcon],
+                    ] as const
+                ).map(([m, label, Icon]) => (
+                    <button
+                        key={m}
+                        type="button"
+                        onClick={() => setMode(m)}
+                        className={
+                            "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition " +
+                            (mode === m
+                                ? "bg-card-lv1 text-text-primary"
+                                : "text-text-secondary hover:text-text-primary")
+                        }>
+                        <Icon size={14} />
+                        {label}
+                    </button>
+                ))}
             </div>
 
             {mode === "paste" ? (
