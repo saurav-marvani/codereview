@@ -99,6 +99,14 @@ test("authToken: the integration credential stays the durable PAT even when the 
             /GH_TEST_TOKEN.*required/,
             "App token without durable PAT must throw, not be stored",
         );
+        // A misconfigured GH_TEST_TOKEN holding an installation token must
+        // also be rejected — no ghs_ in the durable slot, ever.
+        process.env.GH_TEST_TOKEN = "ghs_misconfigured_secret";
+        assert.throws(
+            () => provider.authToken(),
+            /ghs_.*durable PAT/,
+            "ghs_ GH_TEST_TOKEN must throw, not be stored",
+        );
     } finally {
         if (saved === undefined) delete process.env.GH_TEST_TOKEN;
         else process.env.GH_TEST_TOKEN = saved;
