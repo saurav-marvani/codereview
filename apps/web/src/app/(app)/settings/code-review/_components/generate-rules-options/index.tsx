@@ -111,19 +111,36 @@ export const GenerateRulesOptions = () => {
                 ));
 
                 if (response) {
-                    generateKodyRules(teamId);
+                    try {
+                        await generateKodyRules(teamId);
 
-                    invalidateQueries({
-                        queryKey: generateQueryKey(
-                            PARAMETERS_PATHS.GET_BY_KEY,
-                            {
-                                params: {
-                                    teamId,
-                                    key: ParametersConfigKey.PLATFORM_CONFIGS,
+                        toast({
+                            description:
+                                "Generating Kody Rules from your past reviews…",
+                            variant: "success",
+                        });
+
+                        invalidateQueries({
+                            queryKey: generateQueryKey(
+                                PARAMETERS_PATHS.GET_BY_KEY,
+                                {
+                                    params: {
+                                        teamId,
+                                        key: ParametersConfigKey.PLATFORM_CONFIGS,
+                                    },
                                 },
-                            },
-                        ),
-                    });
+                            ),
+                        });
+                    } catch (error) {
+                        console.error("Error generating Kody Rules:", error);
+
+                        toast({
+                            title: "Error",
+                            description:
+                                "Couldn't start generating rules from past reviews. Please try again.",
+                            variant: "danger",
+                        });
+                    }
                 }
             }
         } catch (error) {

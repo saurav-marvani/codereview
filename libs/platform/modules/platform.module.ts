@@ -32,6 +32,7 @@ import { PlatformCoreModule } from './platform-core.module';
 import { AutomationModule } from '@libs/automation/modules/automation.module';
 import { CodeReviewConfigurationModule } from '@libs/code-review/modules/code-review-configuration.module';
 import { WorkflowModule } from '@libs/core/workflow/modules/workflow.module';
+import { PermissionValidationModule } from '@libs/ee/shared/permission-validation.module';
 import { IssuesModule } from '@libs/issues/issues.module';
 import { KodyRulesModule } from '@libs/kodyRules/modules/kodyRules.module';
 import { McpCoreModule } from '@libs/mcp-server/mcp-core.module';
@@ -63,6 +64,7 @@ import { SandboxModule } from '@libs/sandbox/modules/sandbox.module';
         forwardRef(() => McpCoreModule),
         forwardRef(() => CodeReviewConfigurationModule),
         forwardRef(() => SandboxModule),
+        forwardRef(() => PermissionValidationModule),
     ],
     providers: [
         ...CodeManagementUseCases,

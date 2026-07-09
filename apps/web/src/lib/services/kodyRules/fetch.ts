@@ -266,18 +266,23 @@ export const convertPendingUpdatesToNew = async (
     return response.data as KodyRule[] | CentralizedPrResponse;
 };
 
-export const generateKodyRules = (
+export const generateKodyRules = async (
     teamId: string,
     months: number = 3,
     weeks?: number,
     days?: number,
 ) => {
-    axiosAuthorized.post(KODY_RULES_PATHS.GENERATE_KODY_RULES, {
-        teamId,
-        months,
-        weeks,
-        days,
-    });
+    const response = await axiosAuthorized.post<any>(
+        KODY_RULES_PATHS.GENERATE_KODY_RULES,
+        {
+            teamId,
+            months,
+            weeks,
+            days,
+        },
+    );
+
+    return response.data;
 };
 
 export const syncIDERules = (params: {

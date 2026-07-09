@@ -36,6 +36,7 @@ const MANUAL_OVERRIDES: Record<string, number> = {
     'gemini25pro': 1_048_576,
     'gemini25flash': 1_048_576,
     // Moonshot
+    'kimik27': 262_144,
     'kimik25': 262_144,
     'kimik2': 262_144,
     // Z.ai

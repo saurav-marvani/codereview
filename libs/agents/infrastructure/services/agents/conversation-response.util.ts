@@ -6,6 +6,15 @@ export const CONVERSATION_FALLBACK_MESSAGE =
     "I wasn't able to put together an answer for that. Could you rephrase " +
     'your question or add a bit more context?';
 
+/**
+ * Shown when the run ended in a provider/infra error (finishReason
+ * "error", zero tokens) — asking the user for "more context" in that
+ * case blames them for an outage and hides the incident.
+ */
+export const CONVERSATION_PROVIDER_ERROR_MESSAGE =
+    'I hit a technical issue while processing this and could not generate ' +
+    'a reply. Please try again in a few minutes.';
+
 function isContentEnvelope(value: unknown): value is { content: unknown } {
     return !!value && typeof value === 'object' && 'content' in value;
 }
