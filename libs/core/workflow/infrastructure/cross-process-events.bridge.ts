@@ -78,6 +78,15 @@ interface BridgeEnvelope {
  */
 @Injectable()
 export class CrossProcessEventsBridge implements OnModuleInit, OnModuleDestroy {
+    /**
+     * Nest instantiates this provider once PER IMPORTING MODULE CONTEXT —
+     * observed live: two instances in the API process, meaning every local
+     * event was forwarded twice (2 envelopes/merge) and every envelope was
+     * re-emitted twice (4 listener firings/merge → duplicated Kody Rules).
+     * Only the first constructed instance is active; the rest are inert.
+     */
+    private static primary: CrossProcessEventsBridge | null = null;
+
     private readonly logger = createLogger(CrossProcessEventsBridge.name);
     private client: Client | null = null;
     private stopped = false;
@@ -87,9 +96,31 @@ export class CrossProcessEventsBridge implements OnModuleInit, OnModuleDestroy {
         @InjectDataSource()
         private readonly dataSource: DataSource,
         private readonly eventEmitter: EventEmitter2,
-    ) {}
+    ) {
+        if (!CrossProcessEventsBridge.primary) {
+            CrossProcessEventsBridge.primary = this;
+        }
+    }
+
+    /** Exposed for tests. */
+    get isPrimary(): boolean {
+        return CrossProcessEventsBridge.primary === this;
+    }
+
+    /** Test hook: reset the singleton between spec cases. */
+    static resetPrimaryForTests(): void {
+        CrossProcessEventsBridge.primary = null;
+    }
 
     async onModuleInit(): Promise<void> {
+        if (!this.isPrimary) {
+            this.logger.warn({
+                message:
+                    'Duplicate CrossProcessEventsBridge instance detected — staying inert (no LISTEN, no forwarding)',
+                context: CrossProcessEventsBridge.name,
+            });
+            return;
+        }
         // Fire and forget: LISTEN connectivity must never block boot.
         void this.connect();
     }
@@ -116,6 +147,7 @@ export class CrossProcessEventsBridge implements OnModuleInit, OnModuleDestroy {
      */
     shouldForward(payload: unknown): payload is Record<string, unknown> {
         return Boolean(
+            this.isPrimary &&
             payload &&
             typeof payload === 'object' &&
             !(payload as Record<string, unknown>)[BRIDGED_FLAG],

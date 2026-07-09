@@ -10,6 +10,10 @@ jest.mock('@libs/core/log/logger', () => ({
 }));
 
 describe('CrossProcessEventsBridge', () => {
+    beforeEach(() => {
+        CrossProcessEventsBridge.resetPrimaryForTests();
+    });
+
     const makeBridge = (query = jest.fn().mockResolvedValue(undefined)) => {
         const eventEmitter = { emit: jest.fn() };
         const dataSource = { query, options: {} };
