@@ -63,6 +63,8 @@ export interface CliReviewConfig {
      * before it reaches the prompt.
      */
     focus?: string;
+    /** Heavy mode — extra critic pass in the finder for more recall. */
+    heavy?: boolean;
     files?: CliFileInput[];
 }
 

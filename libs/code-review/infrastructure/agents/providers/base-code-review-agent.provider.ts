@@ -569,6 +569,10 @@ export abstract class BaseCodeReviewAgentProvider {
                     // would have their preference silently dropped here.
                     skipHeavyPasses: input.skipHeavyPasses,
                     skipSynthesisRescue: input.skipSynthesisRescue,
+                    // HEAVY opt-in (`--heavy`) — forwarded explicitly, same reason
+                    // as skipHeavyPasses above: loopParams is built field-by-field,
+                    // so without this line the resample passes never run.
+                    heavy: input.heavy,
                     outlineFirst: input.outlineFirst,
                     // Context window is sized against the main model; the
                     // fallback reuses it (usually a comparable model) rather

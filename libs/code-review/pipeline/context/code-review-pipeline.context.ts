@@ -73,6 +73,13 @@ export interface CodeReviewPipelineContext extends PipelineContext {
      */
     reviewDirective?: string;
 
+    /**
+     * HEAVY mode — opt-in per review (CLI `--heavy` or PR `@kody review
+     * --heavy`). Runs an extra "what did you miss?" critic pass in the finder
+     * for higher recall, at ~+1 finder pass of cost. Off by default.
+     */
+    heavy?: boolean;
+
     codeReviewConfig?: CodeReviewConfig;
     automaticReviewStatus?: AutomaticReviewStatus;
 

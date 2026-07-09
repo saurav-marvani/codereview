@@ -537,10 +537,17 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                     </NextLink>
                 </TableCell>
                 <TableCell className="w-32 text-center">
-                    {getStatusBadge(
-                        latest.automationExecution?.status || "pending",
-                        latest.merged,
-                    )}
+                    <div className="flex items-center justify-center gap-1">
+                        {latest.heavy && (
+                            <Badge variant="helper" title="Reviewed in heavy mode">
+                                Heavy
+                            </Badge>
+                        )}
+                        {getStatusBadge(
+                            latest.automationExecution?.status || "pending",
+                            latest.merged,
+                        )}
+                    </div>
                 </TableCell>
             </TableRow>
 

@@ -17,6 +17,7 @@ import {
     isKodyMentionNonReview,
     isReviewCommand,
     parseReviewDirective,
+    isHeavyReviewCommand
 } from '@libs/common/utils/codeManagement/codeCommentMarkers';
 import { getMappedPlatform } from '@libs/common/utils/webhooks';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
@@ -541,6 +542,7 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
                         origin: isForceCommand ? 'command-force' : 'command',
                         triggerCommentId: comment?.id,
                         reviewDirective: parseReviewDirective(comment.body),
+                        heavy: isHeavyReviewCommand(comment.body),
                     },
                 };
 
