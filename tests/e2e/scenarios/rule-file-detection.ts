@@ -32,17 +32,17 @@ const RULE_SOURCES = [
 
 const FILES: Record<string, { content: (tag: string) => string }> = {
     'AGENTS.md': {
+        // Single-section fixture ON PURPOSE: the @-reference (and its
+        // inlined token) must be the DOMINANT content so extraction can't
+        // legitimately drop it — a weaker model split the earlier
+        // two-section version and kept only the sibling section.
         content: (tag) =>
             [
                 `<!-- e2e rule-file-detection ${tag} -->`,
-                '# Agent guidance',
+                '# API convention enforcement',
                 '',
-                '## Error handling convention',
-                '- Never swallow exceptions silently: every `catch` must either rethrow or report to the error tracker.',
-                '- Do not use exceptions for control flow.',
-                '',
-                '## Conventions',
-                '- Follow the API conventions described in @docs/e2e-conventions.md',
+                '- Enforce the API conventions described in @docs/e2e-conventions.md on every changed endpoint.',
+                '- The convention identifier from that document MUST be quoted verbatim in the rule.',
             ].join('\n'),
     },
     // Target of the @-reference above: the customer reported @AGENTS.md-style
