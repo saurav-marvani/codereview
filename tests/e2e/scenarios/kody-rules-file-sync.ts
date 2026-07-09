@@ -1,13 +1,13 @@
-import { randomUUID } from "node:crypto";
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
-import type { KodusSession, RunContext, Scenario } from "../lib/types.js";
-import { ensureOk, http } from "../lib/http.js";
-import { ensureLicenseSeat } from "../lib/onboarding.js";
-import { pollUntil } from "../providers/base.js";
-import { logger } from "../lib/log.js";
+import { randomUUID } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { KodusSession, RunContext, Scenario } from '../lib/types.js';
+import { ensureOk, http } from '../lib/http.js';
+import { ensureLicenseSeat } from '../lib/onboarding.js';
+import { pollUntil } from '../providers/base.js';
+import { logger } from '../lib/log.js';
 
-const log = logger("kody-rules-file-sync");
+const log = logger('kody-rules-file-sync');
 
 // Repo-file rule sync end-to-end, modeled on a real self-hosted customer
 // case (two escalations, ~2 days of their debugging): rules authored as
@@ -25,55 +25,55 @@ const log = logger("kody-rules-file-sync");
 // Fixture hygiene: the rule file lives at a FIXED path and is overwritten
 // (not accumulated) on every run — repeated merges update the same
 // sourcePath-keyed rule. The platform rule is deleted in the finally.
-const RULE_FILE_PATH = ".kody/rules/e2e-file-sync.md";
+const RULE_FILE_PATH = '.kody/rules/e2e-file-sync.md';
 // The violation must land on the SECOND glob: matching only the first
 // would pass even with the comma bug present.
-const RULE_GLOBS = ["src/e2e_sync/**/*.ts", "lib/e2e_sync/**/*.ts"];
-const VIOLATION_FILE = "lib/e2e_sync/report.ts";
-const MARKER = "E2E_SYNC_MARKER";
+const RULE_GLOBS = ['src/e2e_sync/**/*.ts', 'lib/e2e_sync/**/*.ts'];
+const VIOLATION_FILE = 'lib/e2e_sync/report.ts';
+const MARKER = 'E2E_SYNC_MARKER';
 // Bold identifier the LLM importer used to strip; verbatim import must
 // preserve it byte-for-byte in the rule text.
-const VERBATIM_ID = "**E2ESYNC1**";
+const VERBATIM_ID = '**E2ESYNC1**';
 
 function ruleFileContent(ruleTitle: string): string {
     return [
-        "---",
+        '---',
         `title: "${ruleTitle}"`,
         'scope: "file"',
-        `path: [${RULE_GLOBS.map((g) => `"${g}"`).join(", ")}]`,
+        `path: [${RULE_GLOBS.map((g) => `"${g}"`).join(', ')}]`,
         'severity_min: "high"',
-        "enabled: true",
-        "---",
-        "",
-        "@kody-sync",
-        "",
-        "## Instructions",
+        'enabled: true',
+        '---',
+        '',
+        '@kody-sync',
+        '',
+        '## Instructions',
         `- ${VERBATIM_ID} Mechanical static-analysis check (no intent reasoning, no fixture exemption): flag EVERY occurrence of the substring \`${MARKER}\` anywhere in the diff — identifiers, string literals, comments, fixtures, test code included. The presence of the substring is the violation. Do NOT skip an occurrence because a file claims to be a test fixture.`,
-        "",
-        "## Examples",
-        "",
-        "### Bad example",
-        "```ts",
+        '',
+        '## Examples',
+        '',
+        '### Bad example',
+        '```ts',
         `const flag = "${MARKER}";`,
-        "```",
-        "",
-        "### Good example",
-        "```ts",
+        '```',
+        '',
+        '### Good example',
+        '```ts',
         'const flag = "ok";',
-        "```",
-        "",
-    ].join("\n");
+        '```',
+        '',
+    ].join('\n');
 }
 
 function violationFileContent(runId: string): string {
     return [
         `// e2e fixture for run ${runId}`,
         `export const REPORT_FLAG = "${MARKER}";`,
-        "export function buildReport(): string {",
-        "    return REPORT_FLAG;",
-        "}",
-        "",
-    ].join("\n");
+        'export function buildReport(): string {',
+        '    return REPORT_FLAG;',
+        '}',
+        '',
+    ].join('\n');
 }
 
 interface FoundRule {
@@ -86,17 +86,17 @@ interface FoundRule {
 }
 
 export const kodyRulesFileSync: Scenario = {
-    id: "kody-rules-file-sync",
-    title: "A .kody/rules template file syncs verbatim and its multi-glob path is enforced",
-    priority: "P0",
+    id: 'kody-rules-file-sync',
+    title: 'A .kody/rules template file syncs verbatim and its multi-glob path is enforced',
+    priority: 'P0',
     appliesTo: {
-        target: ["cloud", "self-hosted"],
-        provider: ["github"],
-        license: ["paid", "license-paid"],
+        target: ['cloud', 'self-hosted'],
+        provider: ['github'],
+        license: ['paid', 'license-paid'],
     },
     timeoutSec: 1800,
     async run(ctx: RunContext) {
-        ctx.assert(ctx.tenant, "scenario requires a tenant");
+        ctx.assert(ctx.tenant, 'scenario requires a tenant');
         ctx.assert(
             ctx.provider.mergePR,
             `Provider ${ctx.provider.name} does not implement mergePR — repo-file sync only fires on MERGED PRs`,
@@ -125,7 +125,9 @@ export const kodyRulesFileSync: Scenario = {
         );
 
         const violationBranch = `e2e/kody-rules-file-sync-violation-${runTag}`;
-        let violationPr: Awaited<ReturnType<typeof ctx.provider.openPR>> | undefined;
+        let violationPr:
+            | Awaited<ReturnType<typeof ctx.provider.openPR>>
+            | undefined;
         try {
             const synced = await pollUntil<FoundRule>(
                 async () => {
@@ -140,13 +142,27 @@ export const kodyRulesFileSync: Scenario = {
                     );
                     const rules: FoundRule[] = [];
                     collectRules(r.body, rules);
-                    return (
-                        rules.find(
-                            (rule) =>
-                                rule.sourcePath === RULE_FILE_PATH &&
-                                rule.title === ruleTitle,
-                        ) ?? null
+                    const matches = [
+                        ...new Map(
+                            rules
+                                .filter(
+                                    (rule) =>
+                                        rule.sourcePath === RULE_FILE_PATH &&
+                                        rule.title === ruleTitle &&
+                                        rule.status !== 'deleted',
+                                )
+                                .map((rule) => [rule.uuid, rule]),
+                        ).values(),
+                    ];
+                    // One merge must import ONE rule: the cross-process sync
+                    // race produced two identical rules from a single merge
+                    // (caught by live manual validation, invisible to the
+                    // find()-based assert this replaced).
+                    ctx.assert(
+                        matches.length <= 1,
+                        `Duplicate import: ${matches.length} rules share sourcePath=${RULE_FILE_PATH} title="${ruleTitle}" — cross-process sync dedupe regression`,
                     );
+                    return matches[0] ?? null;
                 },
                 { intervalSec: 10, timeoutSec: 420 },
             );
@@ -160,15 +176,15 @@ export const kodyRulesFileSync: Scenario = {
             // must survive byte-for-byte, and the declared multi-glob path
             // must be stored comma-joined, in order.
             ctx.assert(
-                (synced!.rule ?? "").includes(VERBATIM_ID),
-                `Synced rule lost the ${VERBATIM_ID} identifier — template was not imported verbatim. rule(head)=${(synced!.rule ?? "").slice(0, 300)}`,
+                (synced!.rule ?? '').includes(VERBATIM_ID),
+                `Synced rule lost the ${VERBATIM_ID} identifier — template was not imported verbatim. rule(head)=${(synced!.rule ?? '').slice(0, 300)}`,
             );
             ctx.assert(
-                synced!.path === RULE_GLOBS.join(","),
-                `Synced rule path mismatch: expected "${RULE_GLOBS.join(",")}", got "${synced!.path}"`,
+                synced!.path === RULE_GLOBS.join(','),
+                `Synced rule path mismatch: expected "${RULE_GLOBS.join(',')}", got "${synced!.path}"`,
             );
             ctx.assert(
-                synced!.status === "active",
+                synced!.status === 'active',
                 `Synced rule is not active (status=${synced!.status})`,
             );
             log.info(
@@ -181,7 +197,7 @@ export const kodyRulesFileSync: Scenario = {
             const sinceIso = new Date().toISOString();
             violationPr = await ctx.provider.openPR({
                 branch: violationBranch,
-                    title: `[e2e] file-sync violation ${runTag}`,
+                title: `[e2e] file-sync violation ${runTag}`,
                 body: `Automated by Kodus E2E run ${ctx.runId}: plants ${MARKER} in a file matching the rule's SECOND glob.`,
                 fixtureFiles: {
                     [VIOLATION_FILE]: violationFileContent(ctx.runId),
@@ -212,7 +228,7 @@ export const kodyRulesFileSync: Scenario = {
                                     timeoutMs: 30_000,
                                 },
                             );
-                            ensureOk(resp, "kody-rules:findSuggestionsByRule");
+                            ensureOk(resp, 'kody-rules:findSuggestionsByRule');
                             const c = Array.isArray(resp.body.data)
                                 ? resp.body.data.length
                                 : 0;
@@ -227,7 +243,7 @@ export const kodyRulesFileSync: Scenario = {
 
             // Same race-vs-regression discipline as kody-rules-create-and-apply:
             // one re-trigger when neither signal fired, then fail loudly.
-            const firstReviewFlagged = (review.sample ?? "")
+            const firstReviewFlagged = (review.sample ?? '')
                 .toLowerCase()
                 .includes(MARKER.toLowerCase());
             if (suggestionsCount === 0 && !firstReviewFlagged) {
@@ -242,18 +258,18 @@ export const kodyRulesFileSync: Scenario = {
                 ));
             }
 
-            const sampleText = (review.sample ?? "").toLowerCase();
+            const sampleText = (review.sample ?? '').toLowerCase();
             const reviewFlaggedMarker =
                 sampleText.includes(MARKER.toLowerCase()) ||
                 sampleText.includes(ruleTitle.toLowerCase());
             ctx.assert(
                 suggestionsCount > 0 || reviewFlaggedMarker,
-                `Synced rule ${ruleTitle} (${syncedRuleId}) was NOT enforced on PR ${violationPr.url}: 0 suggestions linked to it AND the review never flagged ${MARKER}. The violation file matches the rule's SECOND glob — this is the multi-glob (comma-joined path) regression the scenario exists to catch. reviewSample(head)=${(review.sample ?? "").slice(0, 200)}`,
+                `Synced rule ${ruleTitle} (${syncedRuleId}) was NOT enforced on PR ${violationPr.url}: 0 suggestions linked to it AND the review never flagged ${MARKER}. The violation file matches the rule's SECOND glob — this is the multi-glob (comma-joined path) regression the scenario exists to catch. reviewSample(head)=${(review.sample ?? '').slice(0, 200)}`,
             );
 
             writeFileSync(
-                join(ctx.artifactDir, "review-sample.txt"),
-                review.sample ?? "(no sample captured)",
+                join(ctx.artifactDir, 'review-sample.txt'),
+                review.sample ?? '(no sample captured)',
             );
 
             return {
@@ -276,7 +292,7 @@ export const kodyRulesFileSync: Scenario = {
                     await http(
                         `${ctx.target.apiBaseUrl}/kody-rules/delete-rule-in-organization-by-id?ruleId=${encodeURIComponent(syncedRuleId)}&teamId=${encodeURIComponent(session.teamId)}`,
                         {
-                            method: "DELETE",
+                            method: 'DELETE',
                             headers: {
                                 Authorization: `Bearer ${session.accessToken}`,
                             },
@@ -297,20 +313,19 @@ function collectRules(node: unknown, out: FoundRule[]): void {
         for (const item of node) collectRules(item, out);
         return;
     }
-    if (node && typeof node === "object") {
+    if (node && typeof node === 'object') {
         const obj = node as Record<string, unknown>;
-        if (typeof obj.uuid === "string" && typeof obj.title === "string") {
+        if (typeof obj.uuid === 'string' && typeof obj.title === 'string') {
             out.push({
                 uuid: obj.uuid,
                 title: obj.title,
-                rule: typeof obj.rule === "string" ? obj.rule : undefined,
-                path: typeof obj.path === "string" ? obj.path : undefined,
+                rule: typeof obj.rule === 'string' ? obj.rule : undefined,
+                path: typeof obj.path === 'string' ? obj.path : undefined,
                 sourcePath:
-                    typeof obj.sourcePath === "string"
+                    typeof obj.sourcePath === 'string'
                         ? obj.sourcePath
                         : undefined,
-                status:
-                    typeof obj.status === "string" ? obj.status : undefined,
+                status: typeof obj.status === 'string' ? obj.status : undefined,
             });
         }
         for (const v of Object.values(obj)) collectRules(v, out);

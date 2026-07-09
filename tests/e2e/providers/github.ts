@@ -159,6 +159,7 @@ export class GitHubProvider extends BaseProvider {
             cloneUrl: this.cloneUrl(),
             branch: args.branch,
             files: args.fixtureFiles,
+            deleteFiles: args.deleteFiles,
             commitMessage: args.title,
             baseBranch: args.baseBranch,
         });

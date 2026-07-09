@@ -1,11 +1,11 @@
-import { randomUUID } from "node:crypto";
-import type { RunContext, Scenario } from "../lib/types.js";
-import { http } from "../lib/http.js";
-import { ensureLicenseSeat } from "../lib/onboarding.js";
-import { pollUntil } from "../providers/base.js";
-import { logger } from "../lib/log.js";
+import { randomUUID } from 'node:crypto';
+import type { RunContext, Scenario } from '../lib/types.js';
+import { http } from '../lib/http.js';
+import { ensureLicenseSeat } from '../lib/onboarding.js';
+import { pollUntil } from '../providers/base.js';
+import { logger } from '../lib/log.js';
 
-const log = logger("rule-file-detection");
+const log = logger('rule-file-detection');
 
 // Rule-FILE detection semantics (#1484/#1485), split from
 // kody-rules-file-sync on purpose: this one has NO review step — one merged
@@ -22,59 +22,83 @@ const log = logger("rule-file-detection");
 // path scoping) — these files go through the LLM importer, so exact-text
 // assertions would be flaky. Files are FIXED paths overwritten per run; the
 // imported rules are deleted in the finally.
+const INLINE_TOKEN = 'E2E_INLINE_TOKEN_7743';
+// docs/e2e-conventions.md is the @-reference TARGET, not a rule source.
+const RULE_SOURCES = [
+    'AGENTS.md',
+    'services/billing/CLAUDE.md',
+    'packages/ui/claude.md',
+];
+
 const FILES: Record<string, { content: (tag: string) => string }> = {
-    "AGENTS.md": {
+    'AGENTS.md': {
         content: (tag) =>
             [
                 `<!-- e2e rule-file-detection ${tag} -->`,
-                "# Agent guidance",
-                "",
-                "## Error handling convention",
-                "- Never swallow exceptions silently: every `catch` must either rethrow or report to the error tracker.",
-                "- Do not use exceptions for control flow.",
-            ].join("\n"),
+                '# Agent guidance',
+                '',
+                '## Error handling convention',
+                '- Never swallow exceptions silently: every `catch` must either rethrow or report to the error tracker.',
+                '- Do not use exceptions for control flow.',
+                '',
+                '## Conventions',
+                '- Follow the API conventions described in @docs/e2e-conventions.md',
+            ].join('\n'),
     },
-    "services/billing/CLAUDE.md": {
+    // Target of the @-reference above: the customer reported @AGENTS.md-style
+    // references being silently dropped; the importer must INLINE this file's
+    // content (the INLINE_TOKEN below) into the AGENTS.md rule text.
+    'docs/e2e-conventions.md': {
         content: (tag) =>
             [
                 `<!-- e2e rule-file-detection ${tag} -->`,
-                "# Billing service guidance",
-                "",
-                "- All monetary amounts must use integer cents, never floats.",
-                "- Every mutation to invoices must be idempotent.",
-            ].join("\n"),
+                '# API conventions',
+                '',
+                `- Every endpoint must set the X-E2E-Convention header (${INLINE_TOKEN}).`,
+            ].join('\n'),
     },
-    "packages/ui/claude.md": {
+    'services/billing/CLAUDE.md': {
         content: (tag) =>
             [
                 `<!-- e2e rule-file-detection ${tag} -->`,
-                "# UI package guidance (lowercase filename on purpose)",
-                "",
-                "- Components must not import from app-level modules.",
-            ].join("\n"),
+                '# Billing service guidance',
+                '',
+                '- All monetary amounts must use integer cents, never floats.',
+                '- Every mutation to invoices must be idempotent.',
+            ].join('\n'),
+    },
+    'packages/ui/claude.md': {
+        content: (tag) =>
+            [
+                `<!-- e2e rule-file-detection ${tag} -->`,
+                '# UI package guidance (lowercase filename on purpose)',
+                '',
+                '- Components must not import from app-level modules.',
+            ].join('\n'),
     },
 };
 
 interface FoundRule {
     uuid: string;
     title: string;
+    rule?: string;
     path?: string;
     sourcePath?: string;
     status?: string;
 }
 
 export const ruleFileDetection: Scenario = {
-    id: "rule-file-detection",
-    title: "AGENTS.md, nested and lowercase guidance files are detected and scoped",
-    priority: "P1",
+    id: 'rule-file-detection',
+    title: 'AGENTS.md, nested and lowercase guidance files are detected and scoped',
+    priority: 'P1',
     appliesTo: {
-        target: ["cloud", "self-hosted"],
-        provider: ["github"],
-        license: ["paid", "license-paid"],
+        target: ['cloud', 'self-hosted'],
+        provider: ['github'],
+        license: ['paid', 'license-paid'],
     },
     timeoutSec: 1200,
     async run(ctx: RunContext) {
-        ctx.assert(ctx.tenant, "scenario requires a tenant");
+        ctx.assert(ctx.tenant, 'scenario requires a tenant');
         ctx.assert(
             ctx.provider.mergePR,
             `Provider ${ctx.provider.name} does not implement mergePR — repo-file sync only fires on MERGED PRs`,
@@ -127,42 +151,51 @@ export const ruleFileDetection: Scenario = {
                     for (const rule of rules) {
                         if (
                             rule.sourcePath &&
-                            Object.keys(FILES).includes(rule.sourcePath)
+                            RULE_SOURCES.includes(rule.sourcePath)
                         ) {
                             map.set(rule.sourcePath, rule);
                         }
                     }
-                    return map.size === Object.keys(FILES).length ? map : null;
+                    return map.size === RULE_SOURCES.length ? map : null;
                 },
                 { intervalSec: 10, timeoutSec: 480 },
             );
             ctx.assert(
                 bySource,
                 `Merged PR #${pr.number} but not all guidance files produced rules within 8min. ` +
-                    `Expected sourcePaths: ${Object.keys(FILES).join(", ")}`,
+                    `Expected sourcePaths: ${RULE_SOURCES.join(', ')}`,
             );
             imported.push(...bySource!.values());
 
             // 1. Root AGENTS.md imported (repo-wide rule).
-            const agents = bySource!.get("AGENTS.md")!;
+            const agents = bySource!.get('AGENTS.md')!;
             ctx.assert(
-                agents.status === "active",
+                agents.status === 'active',
                 `AGENTS.md rule not active (status=${agents.status})`,
+            );
+
+            // 1b. @-reference INLINED: the customer's '@AGENTS.md references
+            // are ignored' complaint. The referenced doc's distinctive token
+            // must appear in the imported rule text — the inliner runs
+            // BEFORE the LLM extraction, so the token survives restructuring.
+            ctx.assert(
+                (agents.rule ?? '').includes(INLINE_TOKEN),
+                `AGENTS.md rule does not contain ${INLINE_TOKEN} — the @docs/e2e-conventions.md reference was not inlined. rule(head)=${(agents.rule ?? '').slice(0, 300)}`,
             );
 
             // 2. Nested CLAUDE.md scoped to its subdirectory: the rule's
             // path glob must confine it under services/billing (declared,
             // content-inferred or location-inferred — but never repo-wide).
-            const nested = bySource!.get("services/billing/CLAUDE.md")!;
+            const nested = bySource!.get('services/billing/CLAUDE.md')!;
             ctx.assert(
-                (nested.path ?? "").includes("services/billing"),
+                (nested.path ?? '').includes('services/billing'),
                 `Nested CLAUDE.md rule is not scoped to its subdirectory: path="${nested.path}" (expected a glob under services/billing/)`,
             );
 
             // 3. Lowercase claude.md detected at all (case-insensitivity).
-            const lowercase = bySource!.get("packages/ui/claude.md")!;
+            const lowercase = bySource!.get('packages/ui/claude.md')!;
             ctx.assert(
-                lowercase.status === "active",
+                lowercase.status === 'active',
                 `lowercase claude.md rule not active (status=${lowercase.status})`,
             );
 
@@ -180,7 +213,7 @@ export const ruleFileDetection: Scenario = {
                     await http(
                         `${ctx.target.apiBaseUrl}/kody-rules/delete-rule-in-organization-by-id?ruleId=${encodeURIComponent(rule.uuid)}&teamId=${encodeURIComponent(session.teamId)}`,
                         {
-                            method: "DELETE",
+                            method: 'DELETE',
                             headers: {
                                 Authorization: `Bearer ${session.accessToken}`,
                             },
@@ -199,19 +232,19 @@ function collectRules(node: unknown, out: FoundRule[]): void {
         for (const item of node) collectRules(item, out);
         return;
     }
-    if (node && typeof node === "object") {
+    if (node && typeof node === 'object') {
         const obj = node as Record<string, unknown>;
-        if (typeof obj.uuid === "string" && typeof obj.title === "string") {
+        if (typeof obj.uuid === 'string' && typeof obj.title === 'string') {
             out.push({
                 uuid: obj.uuid,
                 title: obj.title,
-                path: typeof obj.path === "string" ? obj.path : undefined,
+                rule: typeof obj.rule === 'string' ? obj.rule : undefined,
+                path: typeof obj.path === 'string' ? obj.path : undefined,
                 sourcePath:
-                    typeof obj.sourcePath === "string"
+                    typeof obj.sourcePath === 'string'
                         ? obj.sourcePath
                         : undefined,
-                status:
-                    typeof obj.status === "string" ? obj.status : undefined,
+                status: typeof obj.status === 'string' ? obj.status : undefined,
             });
         }
         for (const v of Object.values(obj)) collectRules(v, out);
