@@ -1210,6 +1210,17 @@
     }
   },
   {
+    "key": "parameters.controller.ts#generateRuntimePlaybook",
+    "httpMethod": "POST",
+    "urlPath": "/parameters/runtime/generate",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
     "key": "parameters.controller.ts#getCodeReviewParameter",
     "httpMethod": "GET",
     "urlPath": "/parameters/code-review-parameter",
@@ -1257,6 +1268,17 @@
     "key": "parameters.controller.ts#getEnvironmentSecretsStatus",
     "httpMethod": "GET",
     "urlPath": "/parameters/environment-secrets/status",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "allow",
+      "repo_admin": "allow",
+      "contributor": "allow"
+    }
+  },
+  {
+    "key": "parameters.controller.ts#getRuntimePlaybookDraft",
+    "httpMethod": "GET",
+    "urlPath": "/parameters/runtime/generate/:draftId",
     "expected": {
       "owner": "allow",
       "billing_manager": "allow",

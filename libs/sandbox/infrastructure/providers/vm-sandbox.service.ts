@@ -38,6 +38,29 @@ runcmd:
 
 const REPO_DIR = '/opt/repo';
 
+/**
+ * Browser toolchain for the bug-finding agent's frontend testing: Node +
+ * Playwright + headless Chromium, installed under /opt/kody so the agent's
+ * scripts (written there) can `require('playwright')`. Idempotent (marker
+ * file), and fired in the BACKGROUND right after provisioning so it installs
+ * in parallel with the clone + playbook boot — by the time the agent wants a
+ * browser it's normally ready. On snapshot warm-boots the marker is pre-baked
+ * and the script exits immediately.
+ */
+const BROWSER_SETUP_SCRIPT = `#!/bin/bash
+set -e
+[ -f /opt/kody/pw-ready ] && exit 0
+command -v node >/dev/null 2>&1 || {
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+}
+cd /opt/kody
+[ -f package.json ] || npm init -y >/dev/null
+npm i playwright@1
+npx playwright install --with-deps chromium
+touch /opt/kody/pw-ready
+`;
+
 function shellQuote(value: string): string {
     return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -93,6 +116,25 @@ export class VmSandboxService implements ISandboxProvider {
                 await client.exec(handle, 'cloud-init status --wait 2>/dev/null || true', 600_000);
             }
             await client.exec(handle, 'mkdir -p /opt/kody', 30_000);
+
+            // Kick off the browser toolchain install in the background (see
+            // BROWSER_SETUP_SCRIPT). Fire-and-forget on purpose: it runs in
+            // parallel with the clone + playbook boot, and the agent is told to
+            // wait on /opt/kody/pw-ready before its first browser script. The
+            // spurious rc of a backgrounded ssh command is ignored (same
+            // pattern as the playbook's services phase).
+            await client.writeFile(
+                handle,
+                '/opt/kody/pw-setup.sh',
+                BROWSER_SETUP_SCRIPT,
+            );
+            await client
+                .exec(
+                    handle,
+                    'setsid bash /opt/kody/pw-setup.sh >/opt/kody/pw-install.log 2>&1 < /dev/null & echo browser-setup-started',
+                    30_000,
+                )
+                .catch(() => undefined);
 
             await this.cloneRepo(client, handle, params, !!snapshotImage);
 
