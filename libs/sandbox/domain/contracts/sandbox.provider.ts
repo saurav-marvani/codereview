@@ -57,6 +57,14 @@ export interface SandboxInstance {
     readFile(path: string, opts?: { timeoutMs?: number }): Promise<string>;
     /** Write a file to the sandbox filesystem */
     writeFile(path: string, content: string, opts?: { timeoutMs?: number }): Promise<void>;
+    /**
+     * Freeze the running sandbox into a reusable golden image (deps installed,
+     * app built, DB migrated) and return its id, so a later run can warm-boot
+     * from it. Only the `vm` provider implements this (real cloud snapshots).
+     */
+    snapshot?: (description: string) => Promise<string>;
+    /** Delete a golden image — GC a snapshot superseded by a newer build. */
+    deleteImage?: (imageId: string) => Promise<void>;
 }
 
 export interface ISandboxProvider {

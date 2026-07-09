@@ -181,6 +181,23 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
 
             const { ok, phases, scopeLabel } = await this.bootPlaybook(vm, effectiveEnv, context);
 
+            // Self-warm: freeze a successful COLD boot (deps installed, images
+            // built, DB migrated) into a golden image so the NEXT PR on this repo
+            // warm-boots in seconds instead of re-running the whole cold
+            // install/build. Captured BEFORE the agent so the base stays clean
+            // (no agent DB mutations). Skipped when we already warm-booted (a
+            // fresh snapshot exists), one-time per playbook fingerprint, opt-in,
+            // and non-fatal.
+            if (!snapshotImage && ok) {
+                await this.maybeCaptureSnapshot(vm, context, env).catch((error) =>
+                    this.logger.warn({
+                        message: 'Golden-snapshot capture failed (non-fatal)',
+                        context: this.stageName,
+                        error,
+                    }),
+                );
+            }
+
             // Run the bug-finding agent (execution-based, focus-aware).
             const exec = async (
                 command: string,
@@ -199,6 +216,11 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
                 exec,
                 diff: buildDiffFromChangedFiles(context.changedFiles),
                 focus: context.reviewDirective,
+                // Heavy apps (register + drive many screens) need more headroom
+                // than the 60-turn default; tunable per deployment.
+                maxTurns:
+                    Number(this.configService.get<string>('PREVIEW_AGENT_MAX_TURNS')) ||
+                    undefined,
             });
 
             const runId = randomUUID();
@@ -398,6 +420,49 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
             }
         }
         return this.configService.get<string>(`PREVIEW_SNAPSHOT_${repoId ?? ''}`) || undefined;
+    }
+
+    /**
+     * Freeze a successful cold boot into a golden image and record it, so the
+     * next PR on this repo warm-boots instead of re-running the cold
+     * install/build. Opt-in (PREVIEW_SNAPSHOT_CAPTURE=true), best-effort, and
+     * one-time per playbook fingerprint — once a fresh snapshot exists the next
+     * run warm-boots and never reaches here. Uses the SAME fingerprint (`env`)
+     * as resolveSnapshotImage so resolve and capture agree, and GCs the
+     * superseded image.
+     */
+    private async maybeCaptureSnapshot(
+        vm: SandboxInstance,
+        context: CodeReviewPipelineContext,
+        env: NonNullable<CodeReviewPipelineContext['codeReviewConfig']>['environment'],
+    ): Promise<void> {
+        const repoId = context.repository?.id;
+        if (
+            this.configService.get<string>('PREVIEW_SNAPSHOT_CAPTURE') !== 'true' ||
+            !vm.snapshot ||
+            !context.organizationAndTeamData ||
+            !repoId
+        ) {
+            return;
+        }
+        const key = this.snapshotService.computeKey(env);
+        this.logger.log({
+            message: `Capturing golden snapshot for ${repoId} (key ${key})…`,
+            context: this.stageName,
+        });
+        const imageId = await vm.snapshot(`kody-runtime ${repoId} ${key}`);
+        const previous = await this.snapshotService.record(
+            context.organizationAndTeamData,
+            repoId,
+            { imageId, key, region: this.configService.get<string>('PREVIEW_VM_REGION') },
+        );
+        this.logger.log({
+            message: `Golden snapshot ${imageId} recorded for ${repoId} (key ${key}); next PR warm-boots`,
+            context: this.stageName,
+        });
+        if (previous?.imageId && previous.imageId !== imageId && vm.deleteImage) {
+            await vm.deleteImage(previous.imageId).catch(() => undefined);
+        }
     }
 
     /**

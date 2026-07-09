@@ -172,6 +172,9 @@ export class VmSandboxService implements ISandboxProvider {
                 run,
                 readFile,
                 writeFile,
+                snapshot: (description: string) =>
+                    client.createSnapshot(handle.serverId, description),
+                deleteImage: (imageId: string) => client.deleteImage(imageId),
             };
         } catch (error) {
             await client.destroy(handle.serverId, handle.keyDir).catch(() => {});
