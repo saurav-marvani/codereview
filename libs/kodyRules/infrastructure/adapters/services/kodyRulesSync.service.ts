@@ -234,7 +234,7 @@ export class KodyRulesSyncService {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryId: string;
         sourcePath: string;
-    }): Promise<Partial<{ uuid: string }> | null> {
+    }): Promise<Partial<{ uuid: string; status: KodyRulesStatus }> | null> {
         try {
             const { organizationAndTeamData, repositoryId, sourcePath } =
                 params;
@@ -275,7 +275,7 @@ export class KodyRulesSyncService {
                     (r) => r?.status !== KodyRulesStatus.DELETED,
                 ) ?? newestFirst[0];
 
-            return found ? { uuid: found.uuid } : null;
+            return found ? { uuid: found.uuid, status: found.status } : null;
         } catch (error) {
             this.logger.error({
                 message: 'Failed to find rule by sourcePath',
@@ -770,6 +770,27 @@ export class KodyRulesSyncService {
                     pinnedSync: this.shouldForceSync(decoded),
                 } as CreateKodyRuleDto;
 
+                // @kody-sync is an EXPLICIT repo-is-source-of-truth marker:
+                // re-syncing changed content over a previously REJECTED rule
+                // must reactivate it. Preserving 'rejected' meant one UI
+                // rejection permanently blocked that file from ever syncing
+                // again — another face of the customer's 'rules never sync'.
+                if (
+                    this.shouldForceSync(decoded) &&
+                    existing?.status === KodyRulesStatus.REJECTED
+                ) {
+                    this.logger.log({
+                        message:
+                            '[kody-rules-sync] force-synced file over a rejected rule — reactivating',
+                        context: KodyRulesSyncService.name,
+                        metadata: {
+                            file: f.filename,
+                            ruleId: existing.uuid,
+                        },
+                    });
+                    (dto as any).status = KodyRulesStatus.ACTIVE;
+                }
+
                 const result =
                     await this.createOrUpdateKodyRulesUseCase.execute(
                         dto,
@@ -1137,6 +1158,27 @@ export class KodyRulesSyncService {
                         : [],
                     pinnedSync: this.shouldForceSync(decoded),
                 } as CreateKodyRuleDto;
+
+                // @kody-sync is an EXPLICIT repo-is-source-of-truth marker:
+                // re-syncing changed content over a previously REJECTED rule
+                // must reactivate it. Preserving 'rejected' meant one UI
+                // rejection permanently blocked that file from ever syncing
+                // again — another face of the customer's 'rules never sync'.
+                if (
+                    this.shouldForceSync(decoded) &&
+                    existing?.status === KodyRulesStatus.REJECTED
+                ) {
+                    this.logger.log({
+                        message:
+                            '[kody-rules-sync] force-synced file over a rejected rule — reactivating',
+                        context: KodyRulesSyncService.name,
+                        metadata: {
+                            file: file.path,
+                            ruleId: existing.uuid,
+                        },
+                    });
+                    (dto as any).status = KodyRulesStatus.ACTIVE;
+                }
 
                 const result = await this.kodyRulesService.createOrUpdate(
                     organizationAndTeamData,

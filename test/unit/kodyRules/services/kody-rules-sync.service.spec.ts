@@ -1591,7 +1591,10 @@ describe('KodyRulesSyncService.findRuleBySourcePath — stale-record precedence'
             },
         ]);
 
-        await expect(lookup(service)).resolves.toEqual({ uuid: 'live-newer' });
+        await expect(lookup(service)).resolves.toEqual({
+            uuid: 'live-newer',
+            status: 'active',
+        });
     });
 
     it('prefers a non-deleted record even when it is older', async () => {
@@ -1612,7 +1615,10 @@ describe('KodyRulesSyncService.findRuleBySourcePath — stale-record precedence'
             },
         ]);
 
-        await expect(lookup(service)).resolves.toEqual({ uuid: 'live-older' });
+        await expect(lookup(service)).resolves.toEqual({
+            uuid: 'live-older',
+            status: 'active',
+        });
     });
 
     it('falls back to the deleted record when it is the only match (intentional revive)', async () => {
@@ -1628,6 +1634,7 @@ describe('KodyRulesSyncService.findRuleBySourcePath — stale-record precedence'
 
         await expect(lookup(service)).resolves.toEqual({
             uuid: 'only-deleted',
+            status: KodyRulesStatus.DELETED,
         });
     });
 
