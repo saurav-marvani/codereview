@@ -33,7 +33,15 @@ if (!TIER0[MODEL]) {
 
 // kind: 'gate'   → exit-code contract honored (0 pass / 1 gate / 2 infra), gates.
 //       'report' → promptfoo/non-gated eval; runs for coverage, never blocks (yet).
+// Secondary-pass evals default to --mock so PR CI needs no LLM keys. Live
+// multi-model matrix: evals/dedup/run-matrix.js + severity/format --model=.
 const SUITE = [
+    { name: 'dedup', kind: 'gate',
+      cmd: ['node', 'evals/dedup/run.js', '--mock=identity', '--gate'] },
+    { name: 'severity', kind: 'gate',
+      cmd: ['node', 'evals/severity/run.js', '--mock=heuristic', '--gate'] },
+    { name: 'format', kind: 'gate',
+      cmd: ['node', 'evals/format/run.js', '--mock=perfect', '--gate'] },
     { name: 'kody-rules', kind: 'gate',
       cmd: ['node', 'evals/kody-rules/real-agent.js', '--dataset=github-cases', '--gate', `--model=${MODEL}`, `--runs=${RUNS}`, `--limit=${PRS}`] },
     { name: 'anchoring', kind: 'gate',
