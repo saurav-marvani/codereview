@@ -178,9 +178,31 @@ export const ruleFileDetection: Scenario = {
             // are ignored' complaint. The referenced doc's distinctive token
             // must appear in the imported rule text — the inliner runs
             // BEFORE the LLM extraction, so the token survives restructuring.
+            // The LLM may split AGENTS.md into SEVERAL rules — the token
+            // must appear in AT LEAST ONE of them.
+            const agentsRules = await (async () => {
+                const r = await http(
+                    `${ctx.target.apiBaseUrl}/kody-rules/find-by-organization-id`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${session.accessToken}`,
+                        },
+                        timeoutMs: 15_000,
+                    },
+                );
+                const all: FoundRule[] = [];
+                collectRules(r.body, all);
+                return all.filter(
+                    (rule) =>
+                        rule.sourcePath === 'AGENTS.md' &&
+                        rule.status !== 'deleted',
+                );
+            })();
             ctx.assert(
-                (agents.rule ?? '').includes(INLINE_TOKEN),
-                `AGENTS.md rule does not contain ${INLINE_TOKEN} — the @docs/e2e-conventions.md reference was not inlined. rule(head)=${(agents.rule ?? '').slice(0, 300)}`,
+                agentsRules.some((rule) =>
+                    (rule.rule ?? '').includes(INLINE_TOKEN),
+                ),
+                `No AGENTS.md rule contains ${INLINE_TOKEN} — the @docs/e2e-conventions.md reference was not inlined. rules(head)=${agentsRules.map((rule) => (rule.rule ?? '').slice(0, 120)).join(' || ')}`,
             );
 
             // 2. Nested CLAUDE.md scoped to its subdirectory: the rule's
