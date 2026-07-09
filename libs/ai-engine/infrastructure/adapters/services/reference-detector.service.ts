@@ -120,16 +120,30 @@ export class ReferenceDetectorService {
             },
         });
 
+        // Strip control markers from the text the model sees: with
+        // "@kody-sync" in the rule body, the detector not only returned the
+        // marker as a file but also CONTAMINATED real references with a
+        // fabricated "kody-sync/" repo prefix (observed live:
+        // "kody-sync/docs/contratos-de-api.md" in the UI error detail).
+        const sanitizedPromptText = [...KODUS_CONTROL_MARKERS].reduce(
+            (text, marker) =>
+                text.replace(
+                    new RegExp(marker.replace(/[-/@]/g, '\\$&'), 'gi'),
+                    '',
+                ),
+            params.promptText,
+        );
+
         const isRuleMode = params.detectionMode === 'rule';
         const systemPrompt = isRuleMode
             ? prompt_kodyrules_detect_references_system()
             : prompt_detect_external_references_system();
         const userPrompt = isRuleMode
             ? prompt_kodyrules_detect_references_user({
-                  rule: params.promptText,
+                  rule: sanitizedPromptText,
               })
             : prompt_detect_external_references_user({
-                  text: params.promptText,
+                  text: sanitizedPromptText,
                   context: params.context,
               });
 
