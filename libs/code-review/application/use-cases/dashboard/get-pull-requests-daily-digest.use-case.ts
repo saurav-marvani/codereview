@@ -170,36 +170,21 @@ export class GetPullRequestsDailyDigestUseCase implements IUseCase {
                 }
             }
 
-            // 3. Awaiting review: PRs opened today, still open, that Kody hasn't
-            //    processed today — reviewed OR skipped-by-config both count as
-            //    "handled", so a PR skipped for no-license/BYOK/manual isn't
-            //    awaiting. (A PR can only be processed on/after it was opened, so
-            //    today's processed set is the right subtrahend.)
-            const [openedKeys, processedKeyRows] = await Promise.all([
-                this.pullRequestsService.findOpenPullRequestKeysOpenedSince(
-                    date,
-                    organizationId,
-                    repositoryIds,
-                ),
-                this.automationExecutionService.getProcessedPullRequestKeys({
-                    organizationAndTeamData,
-                    repositoryIds,
-                    createdAtFrom: date,
-                }),
-            ]);
+            // 3. Awaiting review: PRs Kody was triggered on today but skipped and
+            //    never reviewed — every execution today was status='skipped' (no
+            //    license, BYOK, manual/paused cadence, ignored user). Sourced
+            //    from automation_execution (the table that drives the list), so
+            //    a PR counts as awaiting iff it's on the screen and still unseen.
+            const awaitingKeys =
+                await this.automationExecutionService.getAwaitingReviewPullRequestKeys(
+                    {
+                        organizationAndTeamData,
+                        repositoryIds,
+                        createdAtFrom: date,
+                    },
+                );
 
-            const processedKeys = new Set(
-                processedKeyRows.map(
-                    (k) => `${k.repositoryId}_${k.pullRequestNumber}`,
-                ),
-            );
-
-            let awaitingReview = 0;
-            for (const key of openedKeys) {
-                if (!processedKeys.has(`${key.repositoryId}_${key.number}`)) {
-                    awaitingReview++;
-                }
-            }
+            const awaitingReview = awaitingKeys.length;
 
             return {
                 date,

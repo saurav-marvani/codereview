@@ -372,7 +372,7 @@ export function PullRequestsPageClient() {
                   key: "awaiting",
                   label: "Awaiting review",
                   sub: "backlog",
-                  hint: "Open PRs Kody hasn't processed yet — excludes ones it skipped by config (no license, BYOK, manual/paused). Current backlog, not today.",
+                  hint: "PRs Kody was triggered on but skipped and never reviewed — blocked by config (no license, BYOK, manual/paused cadence, ignored user). Current backlog, not today.",
                   // Backlog is a current total, not a "today" number — read it
                   // from facets (same source as the toggle's 665), so the card
                   // and the toggle never disagree.

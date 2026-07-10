@@ -192,12 +192,12 @@ export class AutomationExecutionService implements IAutomationExecutionService {
         );
     }
 
-    getProcessedPullRequestKeys(params: {
+    getAwaitingReviewPullRequestKeys(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryIds?: string[];
         createdAtFrom?: Date | string;
     }): Promise<Array<{ repositoryId: string; pullRequestNumber: number }>> {
-        return this.automationExecutionRepository.getProcessedPullRequestKeys(
+        return this.automationExecutionRepository.getAwaitingReviewPullRequestKeys(
             params,
         );
     }

@@ -75,29 +75,18 @@ export class GetAwaitingPullRequestsUseCase implements IUseCase {
                 teamId: query.teamId,
             };
 
-            const [openKeys, reviewedKeys] = await Promise.all([
-                this.pullRequestsService.findOpenPullRequestKeysOpenedSince(
-                    '1970-01-01T00:00:00.000Z',
-                    organizationId,
-                    repositoryIds,
-                ),
-                this.automationExecutionService.getDistinctReviewedPullRequestKeys(
+            // Awaiting = PRs Kody was triggered on but skipped and never
+            // reviewed (every execution status='skipped'). Same source as the
+            // Awaiting facet count, so the list and the badge always agree.
+            const awaitingKeys =
+                await this.automationExecutionService.getAwaitingReviewPullRequestKeys(
                     { organizationAndTeamData, repositoryIds },
-                ),
-            ]);
+                );
 
-            const reviewedSet = new Set(
-                reviewedKeys.map(
-                    (k) => `${k.repositoryId}_${k.pullRequestNumber}`,
-                ),
-            );
-            const awaitingCriteria = openKeys
-                .filter(
-                    (k) => !reviewedSet.has(`${k.repositoryId}_${k.number}`),
-                )
+            const awaitingCriteria = awaitingKeys
                 .slice(0, MAX_AWAITING)
                 .map((k) => ({
-                    number: k.number,
+                    number: k.pullRequestNumber,
                     repositoryId: k.repositoryId,
                 }));
 

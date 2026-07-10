@@ -55,9 +55,10 @@ export interface IAutomationExecutionRepository {
             hasError: boolean;
         }>
     >;
-    // PRs Kody has any execution for (reviewed OR skipped-by-config) — used by
-    // the Awaiting facet so skipped PRs aren't counted as awaiting.
-    getProcessedPullRequestKeys(params: {
+    // Distinct PRs still awaiting their first review: every execution for the PR
+    // was 'skipped' (no license, BYOK, manual/paused cadence, ignored user…) and
+    // none ran a review. Drives the Awaiting facet, sourced from execution rows.
+    getAwaitingReviewPullRequestKeys(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryIds?: string[];
         createdAtFrom?: Date | string;

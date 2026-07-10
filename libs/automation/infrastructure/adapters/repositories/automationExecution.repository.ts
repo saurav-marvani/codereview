@@ -501,14 +501,15 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
         }
     }
 
-    // Distinct PRs Kody has an execution for — reviewed OR skipped. Unlike
-    // getDistinctReviewedPullRequestKeys this does NOT require a
-    // code_review_execution, so it also includes PRs the pipeline skipped by
-    // config (no license, BYOK missing, manual/auto-pause cadence, ignored user
-    // …), which still create an automation_execution with status='skipped'.
-    // "Awaiting review" subtracts THIS set from the open PRs: a PR Kody
-    // considered and skipped isn't awaiting — only PRs Kody never touched are.
-    async getProcessedPullRequestKeys(params: {
+    // Distinct PRs that are "Awaiting review": the screen is driven by
+    // automation_execution (a PR only appears if Kody has an execution for it),
+    // and awaiting = the PRs Kody was triggered on but SKIPPED and never
+    // actually reviewed. A PR qualifies when ALL of its executions have
+    // status='skipped' — i.e. it has a skipped execution (no license, BYOK
+    // missing, manual/auto-pause cadence, ignored user, centralized config)
+    // and NO non-skipped execution (never success/error/partial_error). If any
+    // execution eventually reviewed it, it's no longer awaiting.
+    async getAwaitingReviewPullRequestKeys(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryIds?: string[];
         createdAtFrom?: Date | string;
@@ -542,7 +543,13 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                 })
                 .andWhere('team.uuid = :teamId', { teamId })
                 .groupBy('automation_execution.repositoryId')
-                .addGroupBy('automation_execution.pullRequestNumber');
+                .addGroupBy('automation_execution.pullRequestNumber')
+                // Skipped-only: the PR has no execution that ran a review. If
+                // bool_or(status <> 'skipped') is false, every execution for
+                // this PR was skipped → it's still waiting for its first review.
+                .having(
+                    "bool_or(automation_execution.status <> 'skipped') = false",
+                );
 
             if (repositoryIds?.length) {
                 queryBuilder.andWhere(
@@ -565,7 +572,7 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
             }));
         } catch (error) {
             this.logger.error({
-                message: 'Failed to get processed pull request keys',
+                message: 'Failed to get awaiting-review pull request keys',
                 context: AutomationExecutionRepository.name,
                 error,
                 metadata: { params },
