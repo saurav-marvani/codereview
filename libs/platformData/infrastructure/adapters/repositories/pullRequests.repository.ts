@@ -27,6 +27,7 @@ import {
 } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
 import { PullRequestsEntity } from '@libs/platformData/domain/pullRequests/entities/pullRequests.entity';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
+import { ImplementationStatus } from '@libs/platformData/domain/pullRequests/enums/implementationStatus.enum';
 
 @Injectable()
 export class PullRequestsRepository implements IPullRequestsRepository {
@@ -548,7 +549,19 @@ export class PullRequestsRepository implements IPullRequestsRepository {
     async countDeliveredPullRequests(
         organizationId: string,
         repositoryIds: string[] | undefined,
-        opts: { severities?: string[]; authorEmail?: string },
+        opts: {
+            severities?: string[];
+            authorEmail?: string;
+            // Only count a PR when it still has a delivered suggestion the dev
+            // hasn't addressed (implementationStatus ≠ 'implemented'). Powers the
+            // "Needs attention" facet — a PR with everything resolved shouldn't
+            // count. Freshness caveat: implementationStatus is only as current as
+            // the last verification pass.
+            unresolvedOnly?: boolean;
+            // Only count PRs that are still open (not merged, not closed) — a
+            // stale suggestion on a merged PR isn't actionable.
+            openOnly?: boolean;
+        },
     ): Promise<number> {
         const filter: Record<string, any> = { organizationId };
         if (repositoryIds?.length) {
@@ -562,25 +575,37 @@ export class PullRequestsRepository implements IPullRequestsRepository {
                 ],
             };
         }
+        if (opts.openOnly) {
+            filter.merged = { $ne: true };
+            filter.status = { $nin: ['closed'] };
+        }
 
         // Count each qualifying PR once, WITHOUT $unwind of files×suggestions —
         // that explosion turned a distinct-PR count into a multi-second
         // collection scan at scale. A PR qualifies when it carries a delivered
-        // suggestion; when severities are given, the delivered + severity
-        // conditions must hold on the SAME suggestion, so they go inside a
-        // nested $elemMatch. Severity is stored lowercase, matching the
-        // already-lowercased `opts.severities`. Backed by the
+        // suggestion; when severity/unresolved conditions are given they must
+        // ALL hold on the SAME suggestion, so they go inside a nested
+        // $elemMatch. Severity is stored lowercase, matching the already-
+        // lowercased `opts.severities`. Backed by the
         // {organizationId, 'files.suggestions.deliveryStatus'} index.
+        const suggestionMatch: Record<string, any> = {
+            deliveryStatus: DeliveryStatus.SENT,
+        };
         if (opts.severities?.length) {
+            suggestionMatch.severity = { $in: opts.severities };
+        }
+        if (opts.unresolvedOnly) {
+            // not_implemented OR partially_implemented — anything the dev hasn't
+            // fully applied. Missing field (legacy docs) is treated as
+            // unresolved via $ne.
+            suggestionMatch.implementationStatus = {
+                $ne: ImplementationStatus.IMPLEMENTED,
+            };
+        }
+
+        if (opts.severities?.length || opts.unresolvedOnly) {
             filter.files = {
-                $elemMatch: {
-                    suggestions: {
-                        $elemMatch: {
-                            deliveryStatus: DeliveryStatus.SENT,
-                            severity: { $in: opts.severities },
-                        },
-                    },
-                },
+                $elemMatch: { suggestions: { $elemMatch: suggestionMatch } },
             };
         } else {
             filter['files.suggestions.deliveryStatus'] = DeliveryStatus.SENT;

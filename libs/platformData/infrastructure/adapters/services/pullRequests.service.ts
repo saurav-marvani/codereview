@@ -238,7 +238,12 @@ export class PullRequestsService implements IPullRequestsService {
     countDeliveredPullRequests(
         organizationId: string,
         repositoryIds: string[] | undefined,
-        opts: { severities?: string[]; authorEmail?: string },
+        opts: {
+            severities?: string[];
+            authorEmail?: string;
+            unresolvedOnly?: boolean;
+            openOnly?: boolean;
+        },
     ): Promise<number> {
         return this.pullRequestsRepository.countDeliveredPullRequests(
             organizationId,
@@ -2007,10 +2012,7 @@ export class PullRequestsService implements IPullRequestsService {
             metrics: r.metrics || {},
             recommendation: {
                 mode: r.recommendation.mode as
-                    | 'Safety'
-                    | 'Speed'
-                    | 'Coach'
-                    | 'Default',
+                    'Safety' | 'Speed' | 'Coach' | 'Default',
                 reasons: r.recommendation.reasons || [],
             },
         }));

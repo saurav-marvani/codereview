@@ -140,7 +140,12 @@ export interface IPullRequestsRepository {
     countDeliveredPullRequests(
         organizationId: string,
         repositoryIds: string[] | undefined,
-        opts: { severities?: string[]; authorEmail?: string },
+        opts: {
+            severities?: string[];
+            authorEmail?: string;
+            unresolvedOnly?: boolean;
+            openOnly?: boolean;
+        },
     ): Promise<number>;
     findFileWithSuggestions(
         prnumber: number,

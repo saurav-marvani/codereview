@@ -29,7 +29,8 @@ import { AuthorizationService } from '@libs/identity/infrastructure/adapters/ser
 export interface PullRequestsFacets {
     // Distinct reviewed PRs (org/team + repo scope), all-time.
     all: number;
-    // Reviewed PRs with a delivered critical/high suggestion.
+    // Open PRs that still carry an unaddressed delivered suggestion
+    // (implementationStatus ≠ implemented).
     needsAttention: number;
     // Reviewed PRs whose review errored.
     errored: number;
@@ -131,10 +132,15 @@ export class GetPullRequestsFacetsUseCase implements IUseCase {
                     this.automationExecutionService.getDistinctReviewedPullRequestKeys(
                         { organizationAndTeamData, repositoryIds },
                     ),
+                    // Needs attention = open PRs that still carry an unaddressed
+                    // delivered suggestion (any severity, implementationStatus ≠
+                    // implemented). Actionable "someone needs to look at this",
+                    // not "ever delivered a crit/high" (which counted merged/
+                    // resolved PRs too).
                     this.pullRequestsService.countDeliveredPullRequests(
                         organizationId,
                         repositoryIds,
-                        { severities: ['critical', 'high'] },
+                        { unresolvedOnly: true, openOnly: true },
                     ),
                     email
                         ? this.pullRequestsService.countDeliveredPullRequests(

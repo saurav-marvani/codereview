@@ -88,7 +88,12 @@ export interface IPullRequestsService extends IPullRequestsRepository {
     countDeliveredPullRequests(
         organizationId: string,
         repositoryIds: string[] | undefined,
-        opts: { severities?: string[]; authorEmail?: string },
+        opts: {
+            severities?: string[];
+            authorEmail?: string;
+            unresolvedOnly?: boolean;
+            openOnly?: boolean;
+        },
     ): Promise<number>;
     /** PR numbers of one repository — see the repository contract. */
     findNumbersByRepositoryId(

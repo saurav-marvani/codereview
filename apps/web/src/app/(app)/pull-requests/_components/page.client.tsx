@@ -419,9 +419,10 @@ export function PullRequestsPageClient() {
                   key: "attention",
                   label: "Needs attention",
                   sub: "total",
-                  hint: "PRs that delivered at least one critical or high suggestion (all-time, current scope).",
-                  // Current total, from facets rather than today's digest:
-                  // distinct PRs that DELIVERED a critical/high suggestion.
+                  hint: "Open PRs with a delivered suggestion the author hasn't addressed yet (any severity).",
+                  // Open PRs that still carry an unresolved delivered suggestion
+                  // (implementationStatus ≠ implemented) — actionable, not
+                  // "ever delivered a crit/high".
                   value: facets?.needsAttention ?? 0,
                   tone: "text-warning",
                   active: !isAwaiting && needsAttention === "true",
