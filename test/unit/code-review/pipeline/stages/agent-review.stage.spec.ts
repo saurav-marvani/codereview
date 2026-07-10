@@ -12,7 +12,12 @@ import { PlatformType } from '@/core/domain/enums';
 import { CodeReviewVersion } from '@/core/domain/enums/code-review.enum';
 
 const mockTracedGenerateText = jest.fn();
-const mockWithStructuredOutputFallback = jest.fn();
+// Default: run the caller's `exec(model)` so dedup still hits mockTracedGenerateText.
+// Both BYOK and non-BYOK paths now go through withStructuredOutputFallback.
+const mockWithStructuredOutputFallback = jest.fn(
+    async (_params: any, exec: (model: any) => Promise<any>) =>
+        exec({ __mockModel: true }),
+);
 
 // tracedGenerateText was relocated from the legacy agent-loop to @libs/llm/llm-call
 // during the llm migration; mock it there so the stage's dedup LLM call is
@@ -29,6 +34,9 @@ jest.mock(
             mockWithStructuredOutputFallback(...args),
         NoStructuredFallbackModelError: class extends Error {},
         getModelName: jest.fn().mockReturnValue('test-model'),
+        // Used by resolveSecondaryPassModel when platform OpenAI key is absent.
+        getInternalModel: jest.fn().mockReturnValue({ __mockModel: 'internal' }),
+        byokToVercelModel: jest.fn().mockReturnValue({ __mockModel: 'byok' }),
     }),
 );
 
@@ -711,6 +719,12 @@ describe('AgentReviewStage', () => {
         beforeEach(() => {
             mockTracedGenerateText.mockReset();
             mockWithStructuredOutputFallback.mockReset();
+            // mockReset clears the default implementation — restore the
+            // exec-forwarding behavior both secondary paths rely on.
+            mockWithStructuredOutputFallback.mockImplementation(
+                async (_params: any, exec: (model: any) => Promise<any>) =>
+                    exec({ __mockModel: true }),
+            );
         });
 
         it('content guard: keeps a low-similarity "duplicate" the model over-merged', async () => {
