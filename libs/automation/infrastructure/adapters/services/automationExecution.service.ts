@@ -39,6 +39,9 @@ export class AutomationExecutionService implements IAutomationExecutionService {
                 execution?.dataExecution?.organizationAndTeamData
                     ?.organizationId;
             if (orgId) {
+                // Cross-process delivery to the API's SSE endpoint happens
+                // via CrossProcessEventsBridge, which forwards this local
+                // emit over Postgres NOTIFY.
                 this.eventEmitter.emit(PR_EXECUTION_UPDATED_EVENT, {
                     organizationId: orgId,
                     executionUuid: execution.uuid,

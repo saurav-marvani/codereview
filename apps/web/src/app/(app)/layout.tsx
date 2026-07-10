@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { getTeamParametersNoCache } from "@services/parameters/fetch";
 import { ParametersConfigKey } from "@services/parameters/types";
-import { Action, ResourceType } from "@services/permissions/types";
 import { auth } from "src/core/config/auth";
 import { UserRole } from "src/core/enums";
 import { NavMenu } from "src/core/layout/navbar";
@@ -127,10 +126,6 @@ export default async function Layout({ children }: React.PropsWithChildren) {
         role: session.user.role,
     });
 
-    const canManageCodeReview = !!(
-        permissions as Record<string, Record<string, boolean>> | undefined
-    )?.[ResourceType.CodeReviewSettings]?.[Action.Manage];
-
     return (
         <Providers
             session={session}
@@ -175,7 +170,7 @@ export default async function Layout({ children }: React.PropsWithChildren) {
 
                 {children}
 
-                <AppRightSidebar showTestReview={canManageCodeReview} />
+                <AppRightSidebar />
             </SubscriptionProvider>
         </Providers>
     );

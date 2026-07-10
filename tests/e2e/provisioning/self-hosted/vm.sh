@@ -333,6 +333,9 @@ env_set() {
     fi
 }
 env_set IMAGE_TAG "$IMAGE_TAG"
+# Test stacks must be observable: the installer default (error) hides the
+# sync/eval traces the scenarios and the failure-evidence collector rely on.
+env_set API_LOG_LEVEL "info"
 # Point the web's server-side API calls (next-auth authorize → /auth/login,
 # used by rbac-frontend-routes / rbac-ui-render) at the compose SERVICE name
 # `api`, which Docker DNS always resolves on the shared network regardless of
@@ -460,6 +463,9 @@ if [ ! -d node_modules ]; then
 fi
 
 export TARGET_BASE_URL="http://$SERVER_IP:3001"
+# For the runner's server-side evidence collector (lib/server-evidence.ts).
+export TARGET_SSH_HOST="$SERVER_IP"
+export TARGET_SSH_KEY="$LOCAL_SSH_KEY"
 export TARGET_WEB_URL="http://$SERVER_IP:3000"
 export TARGET_TUNNEL_URL="$SERVER_TUNNEL_URL"
 export SH_TENANT_EMAIL="$TEST_USER_EMAIL"

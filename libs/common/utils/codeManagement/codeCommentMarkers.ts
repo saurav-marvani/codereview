@@ -62,6 +62,31 @@ export const KODY_FORCE_REVIEW_COMMAND_PATTERN =
     /^\s*@kody\s+(start-review|review)\s+--?force\b/i;
 
 /**
+ * Heavy-mode flag. Customers append `--heavy` to a review command to run EXTRA
+ * resample passes in the finder — higher recall (finds more), at the cost of
+ * more candidates/noise. Opt-in per review. Can be combined with a focus
+ * directive and/or `--force` in any order (`@kody review --heavy --force`).
+ *
+ * A dash is required (like `--force`): a bare `heavy` is treated as directive
+ * text, not the flag, to avoid mis-firing on focus phrases (e.g.
+ * `@kody review heavy checkout path`).
+ */
+export const KODY_HEAVY_REVIEW_COMMAND_PATTERN =
+    /^\s*@kody\s+(?:start-review|review)\b[ \t]+(?:[^\n]*\s)?--?heavy\b/i;
+
+/**
+ * Check if the review command carries the heavy flag (`@kody review --heavy`).
+ * Subset of isReviewCommand. Callers set `heavy: true` on the review context so
+ * the finder runs the extra critic pass.
+ */
+export const isHeavyReviewCommand = (
+    text: string | undefined | null,
+): boolean => {
+    if (!text) return false;
+    return KODY_HEAVY_REVIEW_COMMAND_PATTERN.test(text);
+};
+
+/**
  * Check if comment is a review command (@kody start-review or @kody review).
  * Accepts an optional trailing flag like `--force`, so this still returns
  * true for force runs — callers that need to distinguish use
@@ -91,7 +116,7 @@ export const isForceReviewCommand = (
  * a free-text steering directive (e.g. `@kody review focus on the auth logic`).
  */
 const KODY_REVIEW_COMMAND_HEAD_PATTERN =
-    /^\s*@kody\s+(?:start-review|review)\b[ \t]*(?:--?force\b[ \t]*)?/i;
+    /^\s*@kody\s+(?:start-review|review)\b[ \t]*(?:(?:--?force|--?heavy)\b[ \t]*)*/i;
 
 /** Hard cap so a pasted wall of text can't blow up the prompt. */
 const MAX_REVIEW_DIRECTIVE_LENGTH = 500;
@@ -157,7 +182,14 @@ export const parseReviewDirective = (
             .slice(head[0].length)
             .split(/\r?\n/)[0]
             .trim()
-            .replace(/^["'`]+|["'`]+$/g, ''),
+            .replace(/^["'`]+|["'`]+$/g, '')
+            // Drop `--heavy`/`--force` flags left ANYWHERE in the directive.
+            // The head pattern only eats LEADING flags, so a flag placed after
+            // (or between) the focus text — `@kody review auth --heavy` — would
+            // otherwise pollute the <ReviewFocus> hint. `\b` keeps focus words
+            // like "forced"/"heavyweight" intact; the global flag handles
+            // multiple flags in any order. Whitespace is collapsed downstream.
+            .replace(/\s*--?(?:heavy|force)\b/gi, ''),
     );
 };
 

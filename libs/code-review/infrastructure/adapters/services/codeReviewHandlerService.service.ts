@@ -184,6 +184,8 @@ export class CodeReviewHandlerService {
         parentSignal?: AbortSignal,
         // Free-text steering directive from `@kody review <directive>`.
         reviewDirective?: string,
+        // `@kody review --heavy` — extra critic pass in the finder.
+        heavy?: boolean,
     ) {
         let initialContext: CodeReviewPipelineContext;
 
@@ -212,6 +214,7 @@ export class CodeReviewHandlerService {
                 triggerCommentId,
                 userGitId,
                 reviewDirective,
+                heavy,
                 pipelineMetadata: {
                     lastExecution: {
                         ...(lastExecutionData || null),

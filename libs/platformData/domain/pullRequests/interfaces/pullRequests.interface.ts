@@ -42,6 +42,8 @@ export interface IPullRequests {
     title: string;
     status: string;
     merged: boolean;
+    /** Whether the last review ran in HEAVY mode (resolved post feature-gate). */
+    heavy?: boolean;
     number: number;
     url: string;
     baseBranchRef: string;
