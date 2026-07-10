@@ -75,7 +75,46 @@ EOF`,
     ],
 };
 
+// Heavy docker-compose stack — the big-win warm-boot case: the snapshot bakes
+// the built images + migrated DBs, so warm skips the whole `compose build`
+// (the ~20-30min cold cost) and the source is bind-mounted fresh per PR.
+// Warm-safe: network-create is idempotent, `up -d` restarts the baked
+// containers, and the baked-migrated DB makes api come healthy fast (which is
+// what timed out on the earlier cold-only frontend run).
+const KODUS_PLAYBOOK = {
+    requiredEnv: [] as string[],
+    setup: [
+        'cp .env.example .env',
+        'docker network create kodus-backend-services 2>/dev/null; docker network create shared-network 2>/dev/null; true',
+        'docker compose -f docker-compose.dev.yml up -d --quiet-pull db_postgres db_mongodb rabbitmq 2>&1 | tail -4',
+        'set -o pipefail; docker compose -f docker-compose.dev.yml build kodus-api web 2>&1 | tail -5',
+        'docker compose -f docker-compose.dev.yml up -d kodus-api 2>&1 | tail -3',
+        'sleep 20; docker compose -f docker-compose.dev.yml up -d --no-deps web 2>&1 | tail -3',
+    ],
+    build: [] as string[],
+    services: [] as string[],
+    test: [] as string[],
+    // Web-only readiness (short): kodus-api doesn't become healthy on a bare VM
+    // (a separate app-boot issue), so waiting on it just burns ~12min equally in
+    // both runs and masks the warm-boot delta. Gate on web=200 to isolate the
+    // provision+build speedup, which is the whole point of this timing run.
+    healthcheck: [
+        'for i in $(seq 1 24); do curl -sf http://localhost:3000/sign-in >/dev/null 2>&1 && break; sleep 5; done; docker compose -f docker-compose.dev.yml ps --format "{{.Service}} {{.Status}}" 2>&1 | tail -6; curl -s -o /dev/null -w "web=%{http_code} " http://localhost:3000/sign-in; curl -s -o /dev/null -w "api=%{http_code}\\n" http://localhost:3001/health',
+    ],
+};
+
 const REPOS: Record<string, RepoSpec> = {
+    'kodus-ai': {
+        name: 'kodus-ai',
+        url: 'https://github.com/kodustech/kodus-ai',
+        baseBranch: 'main',
+        playbook: KODUS_PLAYBOOK,
+        size: 'cpx51',
+        cold: { pr: 1513, sha: '593533af458c8b051429395af1deb95e18eb190f', diffFile: 'scripts/.tmp-pr1513-diff.json' },
+        warm: { pr: 1517, sha: '7e8eac59386dd9fdd39315f31f85569b470a68c2', diffFile: 'scripts/kodus-pr1517-diff.json' },
+        directive:
+            'Boot check only for this warm-boot timing run: confirm the web (:3000) and api (:3001) come up; report any mount-time error on the pages this PR touches. Keep it short.',
+    },
     kutt: {
         name: 'kutt',
         url: 'https://github.com/thedevs-network/kutt',

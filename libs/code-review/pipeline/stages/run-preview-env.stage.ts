@@ -181,14 +181,20 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
 
             const { ok, phases, scopeLabel } = await this.bootPlaybook(vm, effectiveEnv, context);
 
-            // Self-warm: freeze a successful COLD boot (deps installed, images
-            // built, DB migrated) into a golden image so the NEXT PR on this repo
-            // warm-boots in seconds instead of re-running the whole cold
-            // install/build. Captured BEFORE the agent so the base stays clean
-            // (no agent DB mutations). Skipped when we already warm-booted (a
-            // fresh snapshot exists), one-time per playbook fingerprint, opt-in,
-            // and non-fatal.
-            if (!snapshotImage && ok) {
+            // Self-warm: freeze a COLD boot whose EXPENSIVE half succeeded (setup
+            // + build: deps installed, images built, DB migrated) into a golden
+            // image so the NEXT PR on this repo warm-boots in seconds instead of
+            // re-running the whole cold install/build. Gated on the BUILD, NOT
+            // the healthcheck: the snapshot bakes the build, and a strict runtime
+            // healthcheck (e.g. an API still applying migrations → 000) must not
+            // block caching it — the app is started fresh on every boot anyway,
+            // and warm-boot's baked-migrated DB makes that healthcheck pass fast.
+            // Captured BEFORE the agent so the base stays clean; skipped once a
+            // fresh snapshot exists; opt-in; non-fatal.
+            const buildOk = phases
+                .filter((p) => p.phase === 'setup' || p.phase === 'build')
+                .every((p) => p.exitCode === 0);
+            if (!snapshotImage && buildOk) {
                 await this.maybeCaptureSnapshot(vm, context, env).catch((error) =>
                     this.logger.warn({
                         message: 'Golden-snapshot capture failed (non-fatal)',
