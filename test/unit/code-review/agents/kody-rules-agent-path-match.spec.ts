@@ -47,4 +47,13 @@ describe('KodyRulesAgentProvider.matchesPathPattern', () => {
         expect(matches('lib/x.ts', 'src/,lib/')).toBe(true);
         expect(matches('other/x.ts', 'src/,lib/')).toBe(false);
     });
+
+    it('directory globs do NOT leak into similarly named sibling dirs', () => {
+        // The trailing slash is part of the prefix — "src/" can never
+        // prefix-match "src-legacy/…". Pinned because a review suggestion
+        // proposed a boundary check that would have broken correct matches.
+        expect(matches('src-legacy/index.ts', 'src/,lib/')).toBe(false);
+        expect(matches('libx/a.ts', 'src/,lib/')).toBe(false);
+        expect(matches('src/index.ts', 'src/,lib/')).toBe(true);
+    });
 });
