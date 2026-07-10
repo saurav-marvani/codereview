@@ -506,61 +506,6 @@
     }
   },
   {
-    "key": "dryRun.controller.ts#events",
-    "httpMethod": "SSE",
-    "urlPath": "/dry-run/events/:correlationId",
-    "expected": {
-      "owner": "allow",
-      "billing_manager": "deny",
-      "repo_admin": "deny",
-      "contributor": "deny"
-    }
-  },
-  {
-    "key": "dryRun.controller.ts#execute",
-    "httpMethod": "POST",
-    "urlPath": "/dry-run/execute",
-    "expected": {
-      "owner": "allow",
-      "billing_manager": "deny",
-      "repo_admin": "deny",
-      "contributor": "deny"
-    }
-  },
-  {
-    "key": "dryRun.controller.ts#getDryRun",
-    "httpMethod": "GET",
-    "urlPath": "/dry-run/:correlationId",
-    "expected": {
-      "owner": "allow",
-      "billing_manager": "deny",
-      "repo_admin": "deny",
-      "contributor": "deny"
-    }
-  },
-  {
-    "key": "dryRun.controller.ts#listDryRuns",
-    "httpMethod": "GET",
-    "urlPath": "/dry-run",
-    "expected": {
-      "owner": "allow",
-      "billing_manager": "deny",
-      "repo_admin": "deny",
-      "contributor": "deny"
-    }
-  },
-  {
-    "key": "dryRun.controller.ts#status",
-    "httpMethod": "GET",
-    "urlPath": "/dry-run/status/:correlationId",
-    "expected": {
-      "owner": "allow",
-      "billing_manager": "deny",
-      "repo_admin": "deny",
-      "contributor": "deny"
-    }
-  },
-  {
     "key": "github.controller.ts#getOrganizationName",
     "httpMethod": "GET",
     "urlPath": "/github/organization-name",
