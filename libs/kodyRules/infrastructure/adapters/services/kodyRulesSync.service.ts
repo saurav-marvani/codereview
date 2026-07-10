@@ -47,6 +47,7 @@ import {
 } from '@libs/organization/domain/parameters/contracts/parameters.service.contract';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
+import { SubscriptionStatus } from '@libs/ee/license/interfaces/license.interface';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import {
     ContextDetectionField,
@@ -2089,10 +2090,14 @@ export class KodyRulesSyncService {
             return null;
         }
 
-        const byokConfigValue =
-            await this.permissionValidationService.getBYOKConfig(
+        const [byokConfigValue, subscriptionStatus] = await Promise.all([
+            this.permissionValidationService.getBYOKConfig(
                 params.organizationAndTeamData,
-            );
+            ),
+            this.permissionValidationService.getSubscriptionStatus(
+                params.organizationAndTeamData,
+            ),
+        ]);
 
         const effectiveDefaultStatus =
             options?.defaultStatus ??
@@ -2176,10 +2181,44 @@ export class KodyRulesSyncService {
             });
         }
 
+        // Our managed (default) models are trial-only. BYOK always wins — the
+        // BYOKPromptRunnerService below uses the customer's model whenever a
+        // BYOK config is present, regardless of subscription state. But once
+        // the trial ends, an org without its own key must NOT silently fall
+        // back to our managed models: skip the LLM conversion instead. Verbatim
+        // `.kody/rules` templates (returned above) use no LLM and are never
+        // gated here. Self-hosted / unknown statuses are left untouched.
+        const POST_TRIAL_REQUIRES_BYOK = [
+            SubscriptionStatus.ACTIVE,
+            SubscriptionStatus.PAYMENT_FAILED,
+            SubscriptionStatus.CANCELED,
+            SubscriptionStatus.EXPIRED,
+        ];
+        const hasByok = !!byokConfigValue?.main;
+        if (
+            !hasByok &&
+            POST_TRIAL_REQUIRES_BYOK.includes(
+                subscriptionStatus as SubscriptionStatus,
+            )
+        ) {
+            this.logger.log({
+                message:
+                    '[kody-rules-sync] skipping LLM file conversion: trial ended and no BYOK configured',
+                context: KodyRulesSyncService.name,
+                metadata: {
+                    filePath: params.filePath,
+                    repositoryId: params.repositoryId,
+                    subscriptionStatus,
+                },
+            });
+            return [];
+        }
+
         const mainProvider =
-            options?.mainProvider ?? LLMModelProvider.GEMINI_2_5_FLASH;
+            options?.mainProvider ?? LLMModelProvider.CEREBRAS_GLM_47;
         const mainFallback =
-            options?.fallbackProvider ?? LLMModelProvider.GEMINI_2_5_PRO;
+            options?.fallbackProvider ??
+            LLMModelProvider.GROQ_MOONSHOTAI_KIMI_K2_;
         const mainRun = options?.runName ?? 'kodyRulesFileToRules';
 
         const promptRunner = new BYOKPromptRunnerService(
@@ -2342,10 +2381,10 @@ export class KodyRulesSyncService {
 
             try {
                 const fbProvider =
-                    options?.mainProvider ?? LLMModelProvider.GEMINI_2_5_FLASH;
+                    options?.mainProvider ?? LLMModelProvider.CEREBRAS_GLM_47;
                 const fbFallback =
                     options?.fallbackProvider ??
-                    LLMModelProvider.GEMINI_2_5_PRO;
+                    LLMModelProvider.GROQ_MOONSHOTAI_KIMI_K2_;
 
                 const promptRunner = new BYOKPromptRunnerService(
                     this.promptRunnerService,
