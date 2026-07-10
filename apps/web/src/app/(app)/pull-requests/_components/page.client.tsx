@@ -355,43 +355,61 @@ export function PullRequestsPageClient() {
     // "Pulse of the review process" strip. Each card is a shortcut that filters
     // the list below to its segment (toggles off if already active). The number
     // is today's digest value; Awaiting/Needs-attention are current totals.
+    //
+    // The two "today" cards scope the list to today (UTC) so clicking them shows
+    // exactly what they count — otherwise "Review failed today: 0" filtered by
+    // status=error alone and surfaced every all-time error (confusing: a 0 card
+    // opening a week-old list). Date-only YYYY-MM-DD matches the digest's UTC
+    // day; the query widens the upper bound to end-of-day.
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const isTodayScoped =
+        createdAtFrom === todayIso && createdAtTo === todayIso;
+    const reviewedTodayActive =
+        !isAwaiting &&
+        needsAttention !== "true" &&
+        statusFilter === null &&
+        isTodayScoped;
+    const failedTodayActive =
+        !isAwaiting && statusFilter === "error" && isTodayScoped;
+    const scopeToToday = (status: "error" | null) => {
+        setView(null);
+        setNeedsAttention(null);
+        setStatusFilter(status);
+        setCreatedAtFrom(todayIso);
+        setCreatedAtTo(todayIso);
+    };
+    const clearTodayScope = () => {
+        setStatusFilter(null);
+        setCreatedAtFrom(null);
+        setCreatedAtTo(null);
+    };
     const pulseCards = digest
         ? [
               {
                   key: "reviewed",
                   label: "Reviewed today",
                   sub: "today",
-                  hint: "Distinct PRs Kody reviewed today (UTC).",
+                  hint: "Distinct PRs Kody reviewed today (UTC). Opens today's reviews.",
                   value: digest.reviewedToday,
                   tone: "text-success",
-                  active: !isAwaiting && statusFilter === "success",
-                  onClick: () => {
-                      setView(null);
-                      setNeedsAttention(null);
-                      setStatusFilter(
-                          !isAwaiting && statusFilter === "success"
-                              ? null
-                              : "success",
-                      );
-                  },
+                  active: reviewedTodayActive,
+                  onClick: () =>
+                      reviewedTodayActive
+                          ? clearTodayScope()
+                          : scopeToToday(null),
               },
               {
                   key: "failed",
                   label: "Review failed today",
                   sub: "today",
-                  hint: "PRs whose review errored today (error / partial error).",
+                  hint: "PRs whose review errored today. Opens today's failed reviews.",
                   value: digest.erroredToday,
                   tone: "text-destructive",
-                  active: !isAwaiting && statusFilter === "error",
-                  onClick: () => {
-                      setView(null);
-                      setNeedsAttention(null);
-                      setStatusFilter(
-                          !isAwaiting && statusFilter === "error"
-                              ? null
-                              : "error",
-                      );
-                  },
+                  active: failedTodayActive,
+                  onClick: () =>
+                      failedTodayActive
+                          ? clearTodayScope()
+                          : scopeToToday("error"),
               },
               {
                   key: "awaiting",
