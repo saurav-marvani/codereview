@@ -17,6 +17,10 @@ export type OrchestratorInputComputed = Pick<
     | 'gitHubToken'
     | 'callGraph'
     | 'adaptiveProfile'
+    // heavy is resolved by the stage (requested flag AND the feature-gate
+    // release check) rather than read straight off the context, so the alpha
+    // gate is applied in exactly one place.
+    | 'heavy'
 >;
 
 /**
@@ -72,6 +76,11 @@ export function buildOrchestratorInput(
         callGraph: computed.callGraph,
         callGraphJson: context.callGraphJson,
         reviewMode: context.codeReviewConfig?.reviewMode || 'normal',
+        // HEAVY mode — opt-in per review (CLI `--heavy` / PR `@kody review
+        // --heavy`), gated to the alpha release track by the stage. The stage
+        // resolves the requested flag AND the feature gate into `computed.heavy`;
+        // this reads only that so the gate can't be bypassed here.
+        heavy: computed.heavy || undefined,
         // Trial-only forced model (ignored when a BYOK config is present —
         // byokToVercelModel prefers BYOK). Subscription trial → Kimi; anonymous
         // public demo (try.kodus.io) → Gemini 3 Flash. The isTrialMode flag

@@ -153,6 +153,14 @@ if [ -n "$SSH_KEY_ID" ]; then
     esac
 fi
 
+# ---------- named tunnel cleanup (best effort) ----------
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/cf-tunnel.sh"
+if cf_named_tunnel_available; then
+    cf_tunnel_destroy "$NAME" && ok "Removed named Cloudflare tunnel + DNS for '$NAME'" \
+        || warn "Could not remove the named tunnel — clean up in the Cloudflare dashboard"
+fi
+
 # ---------- local cleanup ----------
 if [ -n "$SSH_KEY_PATH" ] && [ -f "$SSH_KEY_PATH" ]; then
     rm -f "$SSH_KEY_PATH" "${SSH_KEY_PATH}.pub"

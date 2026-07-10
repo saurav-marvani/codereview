@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getDataSourceToken } from '@nestjs/typeorm';
 
 import { ParametersKey } from '@libs/core/domain/enums';
 import { PullRequestClosedEvent } from '@libs/core/domain/events/pull-request-closed.event';
@@ -35,6 +36,20 @@ describe('KodyRulesSyncListener', () => {
                 {
                     provide: PARAMETERS_SERVICE_TOKEN,
                     useValue: parametersServiceMock,
+                },
+                {
+                    provide: getDataSourceToken(),
+                    useValue: {
+                        query: jest
+                            .fn()
+                            .mockImplementation((sql: string) =>
+                                Promise.resolve(
+                                    sql.trimStart().startsWith('INSERT')
+                                        ? [{ claim_key: 'k' }]
+                                        : [],
+                                ),
+                            ),
+                    },
                 },
             ],
         }).compile();

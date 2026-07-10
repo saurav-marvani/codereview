@@ -1,5 +1,6 @@
-import { ensureLicenseSeat } from "../lib/onboarding.js";
-import type { RunContext, Scenario } from "../lib/types.js";
+import { ensureLicenseSeat } from '../lib/onboarding.js';
+import { assertHealthyExecution } from '../lib/execution-health.js';
+import type { RunContext, Scenario } from '../lib/types.js';
 
 // Fixture branch pairs per provider. Each entry maps to two branches that
 // already exist in the test repo with a deliberate diff between them. The
@@ -17,7 +18,7 @@ const FIXTURE_BRANCHES: Record<
     string,
     { head: string; base: string } | undefined
 > = {
-    github: {
+    'github': {
         // Fixture branch deliberately introduces a missing null-check +
         // misleading comment + unsafe `as string` cast on a redirect
         // path (kodus-e2e/tiny-url). Any LLM that is paying attention
@@ -32,48 +33,54 @@ const FIXTURE_BRANCHES: Record<
         // on, scenario timed out at 25min in silence. Cloud LLMs
         // (GPT/Claude) happened to nitpick the refactor and pass, but
         // that was luck, not design.
-        head: "bug/missing-null-check",
-        base: "main",
+        head: 'bug/missing-null-check',
+        base: 'main',
     },
     // Placeholders for GitLab / Bitbucket / Azure DevOps — assume the
     // tiny-url fixture repo will be mirrored into those providers under
     // the same path/branches. Good enough for mocked integration tests
     // (they only POST and don't care about the actual remote); won't work
     // against real providers until those mirrors exist.
-    gitlab: {
-        head: "bug/missing-null-check",
-        base: "main",
+    'gitlab': {
+        head: 'bug/missing-null-check',
+        base: 'main',
     },
-    bitbucket: {
-        head: "bug/missing-null-check",
-        base: "main",
+    'bitbucket': {
+        head: 'bug/missing-null-check',
+        base: 'main',
     },
-    "azure-devops": {
-        head: "bug/missing-null-check",
-        base: "main",
+    'azure-devops': {
+        head: 'bug/missing-null-check',
+        base: 'main',
     },
     // App-installed clone of tiny-url (same branches), instance-scoped
     // via GH_APP_TEST_REPO so the App-bound repo is hit instead of the
     // PAT-bound one.
-    "github-app": {
-        head: "bug/missing-null-check",
-        base: "main",
+    'github-app': {
+        head: 'bug/missing-null-check',
+        base: 'main',
     },
 };
 
 export const codeReviewBasic: Scenario = {
-    id: "code-review-basic",
-    title: "Kody reviews a PR opened on the configured fixture repo",
-    priority: "P0",
+    id: 'code-review-basic',
+    title: 'Kody reviews a PR opened on the configured fixture repo',
+    priority: 'P0',
     appliesTo: {
-        target: ["cloud", "self-hosted"],
-        provider: ["github", "github-app", "gitlab", "bitbucket", "azure-devops"],
+        target: ['cloud', 'self-hosted'],
+        provider: [
+            'github',
+            'github-app',
+            'gitlab',
+            'bitbucket',
+            'azure-devops',
+        ],
         // `trial` is intentionally NOT here: a standing trial subscription
         // expires after 14 days (no reset endpoint) and broke this scenario
         // every release. Trial coverage moved to fresh-org-per-run scenarios:
         // `trial-entitlement-gate` (fast API gate check) and
         // `trial-managed-review` (real managed-LLM review on a throwaway repo).
-        license: ["paid", "license-paid"],
+        license: ['paid', 'license-paid'],
     },
     // Scenario budget must comfortably exceed phase A (600s) + the inner
     // pollForReview budget (1500s) + onboarding + open-PR overhead. 2700s
@@ -83,7 +90,7 @@ export const codeReviewBasic: Scenario = {
     async run(ctx: RunContext) {
         ctx.assert(
             ctx.tenant,
-            "scenario requires a tenant (set CLOUD_TENANT_*_EMAIL or SH_TENANT_EMAIL)",
+            'scenario requires a tenant (set CLOUD_TENANT_*_EMAIL or SH_TENANT_EMAIL)',
         );
 
         const session = await ctx.kodus.login(ctx.tenant!);
@@ -162,7 +169,9 @@ export const codeReviewBasic: Scenario = {
                 { number: pr.number },
                 { sinceIso, timeoutSec: 1500 },
             );
-            const reviewLatencySec = Math.round((Date.now() - pollStartMs) / 1000);
+            const reviewLatencySec = Math.round(
+                (Date.now() - pollStartMs) / 1000,
+            );
 
             // Trust per-provider filter (each pollForReview excludes the
             // `<!-- kody-codereview -->` status comments). What survives the
@@ -178,13 +187,24 @@ export const codeReviewBasic: Scenario = {
             // the provider doesn't implement Phase A yet).
             const phaseADetail = pipelineStartedAt
                 ? `pipeline ack at ${pipelineStartedAt}, then `
-                : "";
+                : '';
             ctx.assert(
                 review.reviewComments + review.issueComments + review.reviews >
                     0,
                 pipelineStartedAt
                     ? `Review pipeline ran (${phaseADetail}heartbeat seen) but produced 0 findings on PR/MR #${pr.number} within ${reviewLatencySec}s. The fixture branch '${fixture!.head}' has deliberate bugs (missing null check, misleading comment, unsafe type cast) — any decent LLM should flag at least one. Suspect: LLM quality regression for the configured model.`
                     : `No real review findings on PR/MR #${pr.number} within timeout (${reviewLatencySec}s)`,
+            );
+
+            // Execution HEALTH, not just output: a review can post findings
+            // while an entire agent crashed ("completed with warnings" =
+            // AutomationStatus.PARTIAL_ERROR). The finder crash on
+            // malformed model output shipped unnoticed because nothing
+            // asserted this.
+            const executionStatus = await assertHealthyExecution(
+                ctx,
+                session,
+                pr.number,
             );
 
             return {
@@ -195,6 +215,7 @@ export const codeReviewBasic: Scenario = {
                 pipelineStartedAt,
                 sinceIso,
                 review,
+                executionStatus,
             };
         } finally {
             try {

@@ -168,7 +168,10 @@ export function mapAgentFindings(
     // (missing leading slash, backslashes), but keep the provider's original
     // filename as the value (downstream comment posting needs the exact shape).
     const validFilesByNormalized = new Map<string, string>(
-        ctx.changedFiles.map((f) => [normalizeRepoPath(f.filename), f.filename]),
+        ctx.changedFiles.map((f) => [
+            normalizeRepoPath(f.filename),
+            f.filename,
+        ]),
     );
     const kodyRulesByUuid = new Map(
         (ctx.kodyRules || []).filter((r) => r.uuid).map((r) => [r.uuid!, r]),
@@ -187,13 +190,29 @@ export function mapAgentFindings(
                     typeof s.ruleUuid === 'string' ? s.ruleUuid.trim() : '';
 
                 if (!ruleUuid) {
-                    warn(
-                        `[AGENT] Dropping kody_rules suggestion without ruleUuid: "${(s.oneSentenceSummary || s.suggestionContent).slice(0, 140)}"`,
-                        { prNumber: ctx.prNumber },
-                    );
-                    return false;
+                    // Model omitted the uuid echo. With exactly ONE candidate
+                    // rule in play there is no ambiguity — attribute instead
+                    // of dropping (observed live: both violations of the only
+                    // selected rule were found and then discarded here, so
+                    // the customer saw "rule never fires" even after the
+                    // path-matching fix).
+                    if (kodyRulesByUuid.size === 1) {
+                        const only = [...kodyRulesByUuid.keys()][0];
+                        warn(
+                            `[AGENT] kody_rules suggestion missing ruleUuid — attributing to the single selected rule ${only}`,
+                            { prNumber: ctx.prNumber },
+                        );
+                        s.ruleUuid = only;
+                    } else {
+                        warn(
+                            `[AGENT] Dropping kody_rules suggestion without ruleUuid (${kodyRulesByUuid.size} candidate rules, ambiguous): "${(s.oneSentenceSummary || s.suggestionContent).slice(0, 140)}"`,
+                            { prNumber: ctx.prNumber },
+                        );
+                        return false;
+                    }
                 }
-                const resolvedRuleUuid = ruleUuid;
+                const resolvedRuleUuid =
+                    typeof s.ruleUuid === 'string' ? s.ruleUuid.trim() : '';
 
                 if (!kodyRulesByUuid.has(resolvedRuleUuid)) {
                     const recovered = recoverRuleUuid(
@@ -222,7 +241,9 @@ export function mapAgentFindings(
                 // PR-level kody_rules omit relevantFile by design.
                 const kodyRulePathMatch =
                     !s.relevantFile ||
-                    validFilesByNormalized.has(normalizeRepoPath(s.relevantFile));
+                    validFilesByNormalized.has(
+                        normalizeRepoPath(s.relevantFile),
+                    );
 
                 if (!kodyRulePathMatch) {
                     warn(

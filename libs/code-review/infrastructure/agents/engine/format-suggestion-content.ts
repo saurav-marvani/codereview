@@ -3,6 +3,14 @@ import { BYOKConfig } from '@kodus/kodus-common/llm';
 import { tracedGenerateText as generateText } from '@libs/llm/llm-call';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 import { resolveSecondaryPassModel } from './secondary-pass-model';
+import {
+    buildFormatPrompt,
+    parseFormatResponse,
+    type FormattedSuggestion,
+    type SuggestionToFormat,
+} from './format-prompt';
+
+export type { FormattedSuggestion, SuggestionToFormat };
 
 const logger = createLogger('SuggestionFormatter');
 
@@ -10,26 +18,15 @@ const FORMAT_TIMEOUT_MS = 90_000; // 90s — the secondary model can take >30s u
 
 const displayNames = new Intl.DisplayNames(['en'], { type: 'language' });
 
-export interface SuggestionToFormat {
-    suggestionContent: string;
-    existingCode?: string;
-    improvedCode?: string;
-    relevantFile?: string;
-    language?: string;
-}
-
-export interface FormattedSuggestion {
-    suggestionContent: string;
-    improvedCode: string;
-}
-
 /**
  * Reformat suggestion content from WHAT/WHY/HOW to natural prose,
  * and ensure improvedCode is populated.
  *
- * Runs on the shared secondary-pass model (gpt-5.4-mini) — see
- * resolveSecondaryPassModel. BYOK only as a self-hosted fallback.
+ * Runs on the shared secondary-pass model — see resolveSecondaryPassModel
+ * (BYOK default when configured; platform gpt-5.4-mini for trial / no BYOK).
  * Respects custom writing guidelines if provided.
+ *
+ * Prompt + parse live in format-prompt.ts (shared with the format eval).
  */
 export async function formatSuggestionContent(
     suggestions: SuggestionToFormat[],
@@ -43,10 +40,9 @@ export async function formatSuggestionContent(
         return new Map();
     }
 
-    // Secondary pass: cheap, consistent platform model (gpt-5.4-mini) first,
-    // BYOK only as a self-hosted fallback — see resolveSecondaryPassModel. Null
-    // when nothing is configured → we skip formatting (comments still ship,
-    // minus the prose polish).
+    // Secondary pass: BYOK when configured, else platform — see
+    // resolveSecondaryPassModel. Null when nothing is configured → skip
+    // formatting (comments still ship, minus the prose polish).
     const model = resolveSecondaryPassModel(options?.byokConfig);
 
     if (!model) {
@@ -56,10 +52,6 @@ export async function formatSuggestionContent(
         });
         return new Map();
     }
-
-    const customGuidelines = options?.customWritingGuidelines
-        ? `\n\nAdditional writing guidelines from the team:\n${options.customWritingGuidelines}`
-        : '';
 
     let langLabel: string | null = null;
     if (options?.languageResultPrompt) {
@@ -71,16 +63,6 @@ export async function formatSuggestionContent(
             langLabel = options.languageResultPrompt;
         }
     }
-    const langInstruction = langLabel
-        ? `\nIMPORTANT: Write all output in ${langLabel}. Do not fall back to English.`
-        : '';
-
-    const suggestionsText = suggestions
-        .map(
-            (s, i) =>
-                `[${i}]\nFile: ${s.relevantFile || 'unknown'}\nLanguage: ${s.language || 'unknown'}\nContent: ${s.suggestionContent}\nExisting code:\n\`\`\`\n${s.existingCode || '(none)'}\n\`\`\`\nImproved code:\n\`\`\`\n${s.improvedCode || '(none)'}\n\`\`\``,
-        )
-        .join('\n\n---\n\n');
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FORMAT_TIMEOUT_MS);
@@ -92,55 +74,20 @@ export async function formatSuggestionContent(
             experimental_telemetry: buildLangfuseTelemetry(
                 'suggestion-formatter',
             ),
-            prompt: `You are a code review comment editor. Rewrite each suggestion into clean, natural prose.
-
-Rules:
-- Remove labels like "WHAT:", "WHY:", "HOW:", "1.", "2.", "3." from the beginning of sentences.
-- Merge the labeled sentences into a single natural paragraph (1-3 SHORT sentences). Aim for 2 sentences max: one describing the problem, one describing the fix.
-- Keep every technical detail: function names, file names, variable names, error types, line numbers.
-- Be concise: the code block already shows the fix, so the text should explain WHY, not repeat WHAT the code does.
-- Do NOT touch existingCode or improvedCode — return them exactly as provided.
-${customGuidelines ? `\nThe team has provided custom writing guidelines. Follow them — they take priority over the default rules above.\n${customGuidelines}` : ''}${langInstruction}
-
-Example:
-Input: "WHAT: The join method breaks out of the loop when the timeout expires. WHY: This leaves subsequent flusher processes running indefinitely as orphans. HOW: Remove the remaining_time check."
-Output: "The join method breaks out of the loop when the timeout expires, leaving subsequent flusher processes running indefinitely as orphans. Remove the remaining_time check."
-
-Respond with ONLY a JSON array:
-\`\`\`json
-[
-  {"index": 0, "suggestionContent": "cleaned text"}
-]
-\`\`\`
-
-Suggestions to clean:
-
-${suggestionsText}`,
+            prompt: buildFormatPrompt(suggestions, {
+                customWritingGuidelines: options?.customWritingGuidelines,
+                languageLabel: langLabel,
+            }),
         });
 
         const text = result.text || '';
-        const jsonMatch = text.match(/\[[\s\S]*\]/);
-        if (!jsonMatch) {
+        const { formatted, parseOk } = parseFormatResponse(text);
+        if (!parseOk) {
             logger.warn({
                 message: `[FORMATTER] No JSON array in response (${text.length} chars)`,
                 context: 'SuggestionFormatter',
             });
             return new Map();
-        }
-
-        const parsed = JSON.parse(jsonMatch[0]);
-        const formatted = new Map<number, FormattedSuggestion>();
-
-        for (const item of parsed) {
-            if (
-                typeof item.index === 'number' &&
-                typeof item.suggestionContent === 'string'
-            ) {
-                formatted.set(item.index, {
-                    suggestionContent: item.suggestionContent,
-                    improvedCode: item.improvedCode || '',
-                });
-            }
         }
 
         logger.log({

@@ -86,6 +86,11 @@ class CliConfigDto {
     fast?: boolean;
 
     @IsOptional()
+    @IsBoolean()
+    @ApiPropertyOptional({ type: Boolean, example: false })
+    heavy?: boolean;
+
+    @IsOptional()
     @IsArray()
     @ArrayMaxSize(500, {
         message: 'Too many files (max 500 files per request)',

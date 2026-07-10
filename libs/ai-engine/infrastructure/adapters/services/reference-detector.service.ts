@@ -30,6 +30,29 @@ import { tracedGenerateText as generateText } from '@libs/llm/llm-call';
 // Any BYOK config takes precedence over this in every case.
 const TRIAL_MODEL_OVERRIDE = 'kimi-k2.6';
 
+/**
+ * Kodus control markers are instructions to the sync engine, never file
+ * references. They must be filtered from EVERY detection path — both the
+ * regex marker extraction and the LLM-based detector (which happily
+ * returns "@kody-sync" as a file); the miss on the LLM path kept stamping
+ * spurious 'file not found: @kody-sync' sync errors on every rule synced
+ * via the marker.
+ */
+const KODUS_CONTROL_MARKERS = new Set(['@kody-sync', '@kody-ignore']);
+
+function isControlMarker(value: unknown): boolean {
+    if (typeof value !== 'string') return false;
+    // Compare the BASENAME: the LLM detector emits the marker with a
+    // fabricated repo prefix ("kody-sync/@kody-sync" — observed in
+    // production sync errors), so an exact-string check misses it.
+    const normalized = value.trim().toLowerCase().replace(/[.]+$/, '');
+    const basename = normalized.split('/').pop() ?? normalized;
+    return (
+        KODUS_CONTROL_MARKERS.has(normalized) ||
+        KODUS_CONTROL_MARKERS.has(basename)
+    );
+}
+
 export interface DetectReferencesParams {
     requirementId: string;
     promptText: string;
@@ -97,16 +120,30 @@ export class ReferenceDetectorService {
             },
         });
 
+        // Strip control markers from the text the model sees: with
+        // "@kody-sync" in the rule body, the detector not only returned the
+        // marker as a file but also CONTAMINATED real references with a
+        // fabricated "kody-sync/" repo prefix (observed live:
+        // "kody-sync/docs/contratos-de-api.md" in the UI error detail).
+        const sanitizedPromptText = [...KODUS_CONTROL_MARKERS].reduce(
+            (text, marker) =>
+                text.replace(
+                    new RegExp(marker.replace(/[-/@]/g, '\\$&'), 'gi'),
+                    '',
+                ),
+            params.promptText,
+        );
+
         const isRuleMode = params.detectionMode === 'rule';
         const systemPrompt = isRuleMode
             ? prompt_kodyrules_detect_references_system()
             : prompt_detect_external_references_system();
         const userPrompt = isRuleMode
             ? prompt_kodyrules_detect_references_user({
-                  rule: params.promptText,
+                  rule: sanitizedPromptText,
               })
             : prompt_detect_external_references_user({
-                  text: params.promptText,
+                  text: sanitizedPromptText,
                   context: params.context,
               });
 
@@ -128,10 +165,16 @@ export class ReferenceDetectorService {
             return [];
         }
 
-        const parsed = extractJsonFromResponse(raw);
-        if (!parsed || !Array.isArray(parsed)) {
+        const parsedRaw = extractJsonFromResponse(raw);
+        if (!parsedRaw || !Array.isArray(parsedRaw)) {
             return [];
         }
+        const parsed = parsedRaw.filter(
+            (ref: any) =>
+                !isControlMarker(ref?.filePath) &&
+                !isControlMarker(ref?.fileName) &&
+                !isControlMarker(ref?.originalText),
+        );
 
         this.logger.debug({
             message: 'Detected external references',
@@ -158,7 +201,9 @@ export class ReferenceDetectorService {
         const fileRegex = /@[A-Za-z0-9/_\-.]+/g;
         const fileMatches = promptText.match(fileRegex);
         if (fileMatches) {
-            fileMatches.forEach((match) => markers.add(match));
+            fileMatches
+                .filter((match) => !isControlMarker(match))
+                .forEach((match) => markers.add(match));
         }
 
         // Detect MCP markers: @mcp<app|tool>

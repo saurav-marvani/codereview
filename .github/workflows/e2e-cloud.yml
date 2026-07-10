@@ -253,6 +253,13 @@ jobs:
                   # collapses to GH_TEST_TOKEN alone when these are unset.
                   GH_TEST_TOKEN_2: ${{ secrets.GH_TEST_TOKEN_2 }}
                   GH_TEST_TOKEN_3: ${{ secrets.GH_TEST_TOKEN_3 }}
+                  # GitHub App installation token (opt-in, preferred over the
+                  # PAT pool for cloud cells): 5000/h of its own budget,
+                  # immune to the bot-account abuse flags. All three unset →
+                  # PAT pool behavior unchanged. See lib/github-app-token.ts.
+                  GH_APP_ID: ${{ secrets.GH_APP_ID }}
+                  GH_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
+                  GH_APP_INSTALLATION_ID: ${{ secrets.GH_APP_INSTALLATION_ID }}
                   GH_TEST_REPO: ${{ secrets.GH_TEST_REPO }}
                   GH_TEST_REPO_CLOUD: ${{ secrets.GH_TEST_REPO_CLOUD }}
                   GH_TEST_PR_NUMBER: ${{ secrets.GH_TEST_PR_NUMBER }}

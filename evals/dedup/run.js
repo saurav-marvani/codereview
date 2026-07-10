@@ -22,7 +22,16 @@ const path = require('path');
 const { loadJudgeKey } = require('../investigation/recall-judge');
 const { matchFindingsToGoldens, computeMetrics } = require('./dedup-eval');
 
-const DATA = path.join(__dirname, 'datasets');
+// Prefer local dedup/datasets; fall back to shared secondary smoke set so
+// `--mock=identity --gate` works on a clean checkout.
+const DATA = (() => {
+    const local = path.join(__dirname, 'datasets');
+    const shared = path.join(__dirname, '../secondary/datasets');
+    if (fs.existsSync(local) && fs.readdirSync(local).some((f) => f.endsWith('.json'))) {
+        return local;
+    }
+    return shared;
+})();
 const CACHE = path.join(__dirname, '.cache-goldenlabels');
 
 const args = Object.fromEntries(
@@ -42,6 +51,20 @@ function mockDedup(mode, findings) {
     return { kept: Array.from({ length: n }, (_, i) => i), dropped: [] };
 }
 
+/** Offline/heuristic golden labels for mock modes (no LLM judge key). */
+function heuristicLabels(findings, goldens) {
+    return findings.map((f) => {
+        const text = `${f.oneSentenceSummary || ''} ${f.suggestionContent || ''}`.toLowerCase();
+        for (let gi = 0; gi < goldens.length; gi++) {
+            const g = String(goldens[gi] || '').toLowerCase();
+            // crude token overlap: share a distinctive 6+ char token
+            const gTokens = g.match(/[a-z_][a-z0-9_.]{5,}/g) || [];
+            if (gTokens.some((t) => text.includes(t))) return gi;
+        }
+        return -1;
+    });
+}
+
 async function main() {
     if (!fs.existsSync(DATA)) {
         console.error(`dedup datasets missing: ${DATA}`);
@@ -49,13 +72,14 @@ async function main() {
         process.exit(2);
     }
 
-    const judgeKey = loadJudgeKey();
     const mock = args.mock;
     const dedupModel = args.model || 'gpt-5.4-mini'; // production default
     const gate = !!args.gate;
     const goldensLostMax = args['goldens-lost-max'] != null ? Number(args['goldens-lost-max']) : 0;
     let runDedup = null;
     if (!mock) ({ runDedup } = require('./dedup-runner'));
+    // Mock modes use heuristic labels so CI needs no judge key.
+    const judgeKey = mock ? null : loadJudgeKey();
     fs.mkdirSync(CACHE, { recursive: true });
 
     let files = fs.readdirSync(DATA).filter((f) => f.endsWith('.json'));
@@ -69,10 +93,12 @@ async function main() {
         if (args.limit && done >= +args.limit) break;
 
         // golden labels (cached — judging is the expensive part and is dedup-independent)
-        const cacheFile = path.join(CACHE, file);
+        const cacheFile = path.join(CACHE, (mock ? 'mock-' : '') + file);
         let labels;
-        if (fs.existsSync(cacheFile)) {
+        if (fs.existsSync(cacheFile) && !mock) {
             labels = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+        } else if (mock) {
+            labels = heuristicLabels(ds.findings, ds.goldenComments || []);
         } else {
             labels = await matchFindingsToGoldens(ds.findings, ds.goldenComments, judgeKey);
             fs.writeFileSync(cacheFile, JSON.stringify(labels));

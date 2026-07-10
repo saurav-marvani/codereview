@@ -1,4 +1,7 @@
-import { ContextDependency, ContextRequirement } from '@libs/ai-engine/infrastructure/adapters/services/context/context-pack';
+import {
+    ContextDependency,
+    ContextRequirement,
+} from '@libs/ai-engine/infrastructure/adapters/services/context/context-pack';
 import { createLogger } from '@libs/core/log/logger';
 import { BYOKConfig } from '@kodus/kodus-common/llm';
 import { Inject, Injectable } from '@nestjs/common';
@@ -379,6 +382,17 @@ export class PromptContextEngineService implements IPromptContextEngineService {
             capitalizedFileName !== upperFileName
         ) {
             patterns.push(`**/${capitalizedFileName}`);
+        }
+
+        // Extensionless candidates ("the README", "see CHANGELOG") are how
+        // prose mentions files — try the markdown variant too, otherwise a
+        // rule whose text merely says "README" gets a spurious 'file not
+        // found: README' sync error while README.md sits in the repo root.
+        if (!fileName.includes('.')) {
+            patterns.push(`**/${fileName}.md`);
+            patterns.push(`**/${upperFileName}.md`);
+            patterns.push(`**/${lowerFileName}.md`);
+            patterns.push(`**/${capitalizedFileName}.md`);
         }
 
         return [...new Set(patterns)];

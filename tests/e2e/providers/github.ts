@@ -159,6 +159,7 @@ export class GitHubProvider extends BaseProvider {
             cloneUrl: this.cloneUrl(),
             branch: args.branch,
             files: args.fixtureFiles,
+            deleteFiles: args.deleteFiles,
             commitMessage: args.title,
             baseBranch: args.baseBranch,
         });
@@ -379,6 +380,71 @@ export class GitHubProvider extends BaseProvider {
         };
     }
 
+    // Conditional GET with an ETag cache. GitHub serves 304 Not Modified
+    // when the resource didn't change since the cached ETag — and 304s DO
+    // NOT count against the per-account rate limit. The poll loops below
+    // (pollForReview every 10s, waitForPipelineStart every 3s, both for
+    // many minutes) are the harness's dominant quota consumers (~200-270
+    // requests per scenario); with conditional requests only the polls
+    // where something actually changed are billed. Cache is per provider
+    // instance (one per cell), keyed by URL.
+    private etagCache = new Map<string, { etag: string; body: unknown }>();
+
+    private async conditionalGet<T>(
+        url: string,
+    ): Promise<{ status: number; body: T; raw: string }> {
+        const cached = this.etagCache.get(url);
+        const resp = await http<T>(url, {
+            headers: {
+                ...this.headers(),
+                ...(cached ? { 'If-None-Match': cached.etag } : {}),
+            },
+        });
+        if (resp.status === 304 && cached) {
+            return { status: 200, body: cached.body as T, raw: '' };
+        }
+        const etag = resp.headers.get('etag');
+        if (resp.status === 200 && etag) {
+            this.etagCache.set(url, { etag, body: resp.body });
+        }
+        return resp;
+    }
+
+    // GitHub list endpoints return a JSON *error envelope* ({message,
+    // documentation_url}) instead of an array when the request is rejected
+    // — most commonly the per-account primary/secondary rate limit (HTTP
+    // 403/429). Downstream code iterates these responses, so the raw
+    // symptom is an opaque `items is not iterable` FAIL that the runner
+    // can't classify (observed gating release run 28888685303 on
+    // license-attribution). Name the failure at the source instead: a
+    // rate-limit envelope becomes an explicit "rate limit exceeded" error
+    // (which isGithubRateLimit maps to a loud non-gating SKIP), anything
+    // else keeps the status + body for diagnosis.
+    private listOrThrow<T>(
+        resp: { status: number; body: T[]; raw: string },
+        label: string,
+    ): T[] {
+        if (Array.isArray(resp.body)) return resp.body;
+        // 2xx with an empty body (no JSON to parse) — treat as an empty
+        // list rather than an envelope.
+        if (
+            resp.status >= 200 &&
+            resp.status < 300 &&
+            (resp.raw ?? '').trim() === ''
+        ) {
+            return [];
+        }
+        const raw = (resp.raw ?? '').slice(0, 300);
+        if (/rate limit|abuse/i.test(raw)) {
+            throw new Error(
+                `${label}: GitHub API rate limit exceeded (HTTP ${resp.status}): ${raw}`,
+            );
+        }
+        throw new Error(
+            `${label}: expected an array from GitHub, got HTTP ${resp.status}: ${raw}`,
+        );
+    }
+
     async pollForReview(
         pr: { number: number },
         opts: { sinceIso: string; triggerId?: string; timeoutSec?: number },
@@ -388,15 +454,13 @@ export class GitHubProvider extends BaseProvider {
             async () => {
                 const [reviewComments, issueComments, reviews] =
                     await Promise.all([
-                        http<{ id: number; body: string }[]>(
+                        this.conditionalGet<{ id: number; body: string }[]>(
                             `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}/comments?since=${since}`,
-                            { headers: this.headers() },
                         ),
-                        http<{ id: number; body: string }[]>(
+                        this.conditionalGet<{ id: number; body: string }[]>(
                             `${this.apiBase}/repos/${this.repoFullName}/issues/${pr.number}/comments?since=${since}`,
-                            { headers: this.headers() },
                         ),
-                        http<
+                        this.conditionalGet<
                             {
                                 submitted_at?: string;
                                 created_at?: string;
@@ -404,7 +468,6 @@ export class GitHubProvider extends BaseProvider {
                             }[]
                         >(
                             `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}/reviews`,
-                            { headers: this.headers() },
                         ),
                     ]);
                 // Kody posts three distinct comment shapes that all carry
@@ -463,9 +526,16 @@ export class GitHubProvider extends BaseProvider {
                     }
                     return { reviews, licenseNotice };
                 };
-                const rcRes = filterNonTrigger(reviewComments.body ?? []);
-                const icRes = filterNonTrigger(issueComments.body ?? []);
-                const reviewsList = (reviews.body ?? []).filter((r) => {
+                const rcRes = filterNonTrigger(
+                    this.listOrThrow(reviewComments, 'github:pollForReview:reviewComments'),
+                );
+                const icRes = filterNonTrigger(
+                    this.listOrThrow(issueComments, 'github:pollForReview:issueComments'),
+                );
+                const reviewsList = this.listOrThrow(
+                    reviews,
+                    'github:pollForReview:reviews',
+                ).filter((r) => {
                     const ts = r.submitted_at ?? r.created_at ?? '';
                     if (ts <= opts.sinceIso) return false;
                     const body = r.body ?? '';
@@ -552,15 +622,15 @@ export class GitHubProvider extends BaseProvider {
         const since = encodeURIComponent(opts.sinceIso);
         const result = await pollUntil<{ startedAt: string; sample: string }>(
             async () => {
-                const resp = await http<
+                const resp = await this.conditionalGet<
                     { id: number; body: string; created_at: string }[]
                 >(
                     `${this.apiBase}/repos/${this.repoFullName}/issues/${pr.number}/comments?since=${since}`,
-                    { headers: this.headers() },
                 );
-                const hit = (resp.body ?? []).find((c) =>
-                    (c.body ?? '').includes('<!-- kody-codereview'),
-                );
+                const hit = this.listOrThrow(
+                    resp,
+                    'github:waitForPipelineStart',
+                ).find((c) => (c.body ?? '').includes('<!-- kody-codereview'));
                 if (!hit) return null;
                 return {
                     startedAt: hit.created_at,
@@ -694,24 +764,45 @@ export class GitHubProvider extends BaseProvider {
         );
     }
 
-    // Merges a PR (kody-issues generation fires off the closed/merged PR
-    // webhook). Falls back to a plain close if merge is not allowed (e.g.
-    // branch protection) so the issues path still gets a closed-PR event.
+    // Merges a PR (kody-issues generation and rule-file sync fire off the
+    // closed/MERGED PR webhook). GitHub returns 405 for a while right
+    // after PR creation (mergeability is computed asynchronously), so
+    // retry before concluding the PR is genuinely unmergeable. Only after
+    // the retries fall back to a plain close — and log loudly, because
+    // scenarios that REQUIRE a merged event (kody-rules-file-sync,
+    // rule-file-detection) will otherwise fail downstream with a
+    // confusing "sync never happened".
     async mergePR(pr: OpenedPR): Promise<void> {
-        const resp = await http(
-            `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}/merge`,
-            {
-                method: 'PUT',
-                headers: this.headers(),
-                body: { merge_method: 'squash' },
-            },
-        );
-        if (resp.status < 200 || resp.status >= 300) {
-            log.info(
-                `github:mergePR PR#${pr.number} not mergeable (HTTP ${resp.status}) — falling back to close`,
+        let lastStatus = 0;
+        for (let attempt = 0; attempt < 6; attempt++) {
+            if (attempt > 0) {
+                await new Promise((r) => setTimeout(r, 5_000));
+            }
+            const resp = await http(
+                `${this.apiBase}/repos/${this.repoFullName}/pulls/${pr.number}/merge`,
+                {
+                    method: 'PUT',
+                    headers: this.headers(),
+                    body: { merge_method: 'squash' },
+                },
             );
-            await this.closePR(pr);
+            if (resp.status >= 200 && resp.status < 300) {
+                return;
+            }
+            lastStatus = resp.status;
+            // 405 = not mergeable *yet* (async mergeability check) or
+            // blocked; 409 = head changed. Both are worth retrying.
+            if (resp.status !== 405 && resp.status !== 409) {
+                break;
+            }
+            log.info(
+                `github:mergePR PR#${pr.number} HTTP ${resp.status} (attempt ${attempt + 1}/6) — retrying`,
+            );
         }
+        log.warn(
+            `github:mergePR PR#${pr.number} not mergeable after retries (HTTP ${lastStatus}) — falling back to close (NOT a merged event)`,
+        );
+        await this.closePR(pr);
     }
 
     // Return type widened from the literal "token" to the full union so
@@ -722,7 +813,33 @@ export class GitHubProvider extends BaseProvider {
         return 'token';
     }
 
+    // The credential Kodus STORES on the integration (auth-integration
+    // payload) — the product uses it for its own GitHub calls for the
+    // tenant's lifetime, so it must be DURABLE. `this.token` may be a
+    // GitHub App installation token (runner prefers it for cloud cells'
+    // harness-side quota), which expires in ~1h — storing that would kill
+    // the product's credential mid-run. Always hand the backend the
+    // long-lived base PAT; the assigned token keeps serving the harness's
+    // own API calls (clone, PRs, polling).
     authToken(): string {
+        // Installation tokens are prefixed ghs_ and die in ~1h. NOTHING with
+        // that prefix may become the stored integration credential — not the
+        // runner-assigned token, and not a misconfigured GH_TEST_TOKEN secret
+        // either (a silent 1h credential in CI config would fail mid-run).
+        const durable = process.env.GH_TEST_TOKEN;
+        if (durable) {
+            if (durable.startsWith('ghs_')) {
+                throw new Error(
+                    'GH_TEST_TOKEN is a GitHub App installation token (ghs_) — the integration credential must be a durable PAT',
+                );
+            }
+            return durable;
+        }
+        if (this.token.startsWith('ghs_')) {
+            throw new Error(
+                'GH_TEST_TOKEN (durable PAT) is required when the harness runs on a GitHub App installation token — the integration credential must not expire',
+            );
+        }
         return this.token;
     }
 

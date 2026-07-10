@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import type {
     LicenseMode,
     MatrixCell,
@@ -15,18 +15,20 @@ import type {
 import { ScenarioSkipError } from "./types.js";
 import { makeProvider } from "../providers/index.js";
 import { makeGithubTokenPicker } from "./github-token-pool.js";
+import { githubAppToken } from "./github-app-token.js";
 import {
     finishOnboarding,
     login,
     registerIntegration,
     registerRepo,
     signUp,
-} from "./onboarding.js";
-import { randomBytes } from "node:crypto";
-import { registryRepoFor } from "./cloud-tenant-registry.js";
-import { logger } from "./log.js";
+} from './onboarding.js';
+import { randomBytes } from 'node:crypto';
+import { registryRepoFor } from './cloud-tenant-registry.js';
+import { logger } from './log.js';
+import { collectServerEvidence, isTargetReachable } from './server-evidence.js';
 
-const log = logger("runner");
+const log = logger('runner');
 
 export interface RunOptions {
     artifactRoot: string;
@@ -60,14 +62,11 @@ function appliesToCell(scenario: Scenario, cell: MatrixCell): boolean {
 // enabling the per-provider parallel matrix. Falls back to the shared
 // SELFHOSTED_* vars for the single-droplet (serial) path.
 export function selfhostedEnvSuffix(provider: ProviderName): string {
-    return provider.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+    return provider.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
 }
 
-function envForTarget(
-    target: Target,
-    provider?: ProviderName,
-): TargetContext {
-    if (target === "cloud") {
+function envForTarget(target: Target, provider?: ProviderName): TargetContext {
+    if (target === 'cloud') {
         // QA cloud routes API traffic through the web app's reverse proxy
         // at `/api/proxy/api/*` — the standalone `api-qa.kodus.io` host is
         // an internal name not reachable from external machines. Default
@@ -82,10 +81,10 @@ function envForTarget(
         // API doesn't know the cloud tenant). Cloud uses
         // CLOUD_API_BASE_URL for overrides and the default otherwise.
         const webBaseUrl =
-            process.env.CLOUD_WEB_BASE_URL ?? "https://qa.web.kodus.io";
+            process.env.CLOUD_WEB_BASE_URL ?? 'https://qa.web.kodus.io';
         const apiBaseUrl =
             process.env.CLOUD_API_BASE_URL ??
-            `${webBaseUrl.replace(/\/$/, "")}/api/proxy/api`;
+            `${webBaseUrl.replace(/\/$/, '')}/api/proxy/api`;
         return { target, apiBaseUrl, webBaseUrl };
     }
     // Self-hosted resolution order, most specific first:
@@ -98,26 +97,26 @@ function envForTarget(
         sfx ? process.env[`${base}_${sfx}`] : undefined;
 
     const apiBaseUrl =
-        perProvider("SELFHOSTED_API_BASE_URL") ??
+        perProvider('SELFHOSTED_API_BASE_URL') ??
         process.env.SELFHOSTED_API_BASE_URL ??
         process.env.TARGET_BASE_URL ??
         (() => {
             throw new Error(
-                `SELFHOSTED_API_BASE_URL_${sfx ?? "<PROVIDER>"} or SELFHOSTED_API_BASE_URL or TARGET_BASE_URL is required for self-hosted target (e.g. http://1.2.3.4:3001)`,
+                `SELFHOSTED_API_BASE_URL_${sfx ?? '<PROVIDER>'} or SELFHOSTED_API_BASE_URL or TARGET_BASE_URL is required for self-hosted target (e.g. http://1.2.3.4:3001)`,
             );
         })();
     const webBaseUrl =
-        perProvider("SELFHOSTED_WEB_URL") ??
+        perProvider('SELFHOSTED_WEB_URL') ??
         process.env.SELFHOSTED_WEB_URL ??
         process.env.TARGET_WEB_URL ??
-        apiBaseUrl.replace(/:3001$/, ":3000");
+        apiBaseUrl.replace(/:3001$/, ':3000');
     const tunnelUrl =
-        perProvider("SELFHOSTED_TUNNEL_URL") ??
+        perProvider('SELFHOSTED_TUNNEL_URL') ??
         process.env.SELFHOSTED_TUNNEL_URL ??
         process.env.TARGET_TUNNEL_URL;
     if (!tunnelUrl) {
         throw new Error(
-            `SELFHOSTED_TUNNEL_URL_${sfx ?? "<PROVIDER>"} or SELFHOSTED_TUNNEL_URL or TARGET_TUNNEL_URL is required for self-hosted target (e.g. https://xxx.trycloudflare.com)`,
+            `SELFHOSTED_TUNNEL_URL_${sfx ?? '<PROVIDER>'} or SELFHOSTED_TUNNEL_URL or TARGET_TUNNEL_URL is required for self-hosted target (e.g. https://xxx.trycloudflare.com)`,
         );
     }
     return { target, apiBaseUrl, webBaseUrl, tunnelUrl };
@@ -164,10 +163,10 @@ interface CloudTenantEntry {
 }
 
 function readCloudTenantsFile(): CloudTenantEntry[] {
-    const path = join(homedir(), ".kodus-dev", "cloud-tenants.json");
+    const path = join(homedir(), '.kodus-dev', 'cloud-tenants.json');
     if (!existsSync(path)) return [];
     try {
-        const raw = readFileSync(path, "utf8");
+        const raw = readFileSync(path, 'utf8');
         const parsed = JSON.parse(raw);
         return Array.isArray(parsed) ? (parsed as CloudTenantEntry[]) : [];
     } catch {
@@ -193,7 +192,7 @@ function resolveCloudRepo(
 ): string | undefined {
     if (fromTenantsFile) return fromTenantsFile;
     const fromRegistry = registryRepoFor(provider, license);
-    if (provider !== "github") return fromRegistry;
+    if (provider !== 'github') return fromRegistry;
     if (!fromRegistry) {
         throw new Error(
             `cloud github tenant (license=${license}) has no dedicated fixture repo: ` +
@@ -217,7 +216,7 @@ async function resolveTenantForCell(
     provider: ProviderName,
     runId: string,
 ): Promise<TenantCredentials | undefined> {
-    if (target.target === "cloud") {
+    if (target.target === 'cloud') {
         // Preferred path (post-cloud:setup-tenants): match by
         // (provider, license) in ~/.kodus-dev/cloud-tenants.json. Each
         // entry has email + password + the resolved org/team uuids the
@@ -241,9 +240,9 @@ async function resolveTenantForCell(
         // etc.). Kept so a one-off run can drive a hand-seeded tenant
         // without touching the JSON file.
         const map: Record<string, [string, string] | undefined> = {
-            free: ["CLOUD_TENANT_FREE_EMAIL", "CLOUD_TENANT_FREE_PASSWORD"],
-            trial: ["CLOUD_TENANT_TRIAL_EMAIL", "CLOUD_TENANT_TRIAL_PASSWORD"],
-            paid: ["CLOUD_TENANT_PAID_EMAIL", "CLOUD_TENANT_PAID_PASSWORD"],
+            free: ['CLOUD_TENANT_FREE_EMAIL', 'CLOUD_TENANT_FREE_PASSWORD'],
+            trial: ['CLOUD_TENANT_TRIAL_EMAIL', 'CLOUD_TENANT_TRIAL_PASSWORD'],
+            paid: ['CLOUD_TENANT_PAID_EMAIL', 'CLOUD_TENANT_PAID_PASSWORD'],
         };
         const key = map[license];
         if (!key) return undefined;
@@ -288,11 +287,11 @@ async function resolveTenantForCell(
     // 60s); cross-minute runs always get fresh tenants.
     const email =
         explicitEmail ??
-        `e2e-${provider}-${runId.slice(0, 16).replace(/[^a-z0-9-]/gi, "")}@kodus.local`;
+        `e2e-${provider}-${runId.slice(0, 16).replace(/[^a-z0-9-]/gi, '')}@kodus.local`;
     const password =
         process.env.SH_TENANT_PASSWORD ??
         process.env.TEST_USER_PASSWORD ??
-        `E2eSmoke!${randomBytes(4).toString("hex")}`;
+        `E2eSmoke!${randomBytes(4).toString('hex')}`;
     await signUp(target, { email, password });
     return { email, password };
 }
@@ -315,7 +314,7 @@ const TRANSIENT_FAILURE_PATTERNS: RegExp[] = [
 ];
 
 export function isTransientFailure(message: string): boolean {
-    return TRANSIENT_FAILURE_PATTERNS.some((re) => re.test(message ?? ""));
+    return TRANSIENT_FAILURE_PATTERNS.some((re) => re.test(message ?? ''));
 }
 
 // GitHub's primary rate limit is per ACCOUNT and resets hourly, so an
@@ -329,7 +328,7 @@ export function isTransientFailure(message: string): boolean {
 const GITHUB_RATE_LIMIT_PATTERN =
     /rate limit exceeded|api rate limit|secondary rate limit|exceeded a secondary rate limit/i;
 export function isGithubRateLimit(message: string): boolean {
-    return GITHUB_RATE_LIMIT_PATTERN.test(message ?? "");
+    return GITHUB_RATE_LIMIT_PATTERN.test(message ?? '');
 }
 
 // ABSENCE failures (an expected event never materialized — review never
@@ -349,7 +348,7 @@ const ABSENCE_FAILURE_PATTERNS: RegExp[] = [
 ];
 
 export function absenceRetryDelayMs(message: string): number {
-    return ABSENCE_FAILURE_PATTERNS.some((re) => re.test(message ?? ""))
+    return ABSENCE_FAILURE_PATTERNS.some((re) => re.test(message ?? ''))
         ? 120_000
         : 0;
 }
@@ -379,7 +378,7 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
         // per-cell repo lookup below is an O(1) Map.get instead of a
         // .find() scan inside the loop.
         const repoByProviderLicense = new Map<string, string | undefined>();
-        if (opts.target === "cloud") {
+        if (opts.target === 'cloud') {
             for (const e of readCloudTenantsFile()) {
                 repoByProviderLicense.set(
                     `${e.provider}::${e.license}`,
@@ -398,12 +397,12 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
             // not) — otherwise the sweep visits the shared default repo
             // while the actual per-tenant repos keep their orphaned PRs.
             const repo =
-                opts.target === "cloud"
+                opts.target === 'cloud'
                     ? (repoByProviderLicense.get(
                           `${c.provider}::${c.license}`,
                       ) ?? registryRepoFor(c.provider, c.license))
                     : undefined;
-            fixtures.set(`${c.provider}::${repo ?? "default"}`, {
+            fixtures.set(`${c.provider}::${repo ?? 'default'}`, {
                 provider: c.provider,
                 repo,
             });
@@ -413,13 +412,13 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
         // exhaust its per-account GitHub rate limit before the cells even run.
         const pickCleanupToken = makeGithubTokenPicker();
         for (const { provider: providerName, repo } of fixtures.values()) {
-            const label = `${providerName}${repo ? ` (${repo})` : ""}`;
+            const label = `${providerName}${repo ? ` (${repo})` : ''}`;
             try {
                 const provider = makeProvider(
                     providerName,
                     opts.target,
                     repo,
-                    providerName === "github"
+                    providerName === 'github'
                         ? pickCleanupToken().token
                         : undefined,
                 );
@@ -452,13 +451,13 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
         const target = opts.dryRun
             ? {
                   target: cell.target,
-                  apiBaseUrl: "https://dry-run.invalid",
-                  webBaseUrl: "https://dry-run.invalid",
-                  tunnelUrl: "https://dry-run.invalid",
+                  apiBaseUrl: 'https://dry-run.invalid',
+                  webBaseUrl: 'https://dry-run.invalid',
+                  tunnelUrl: 'https://dry-run.invalid',
               }
             : envForTarget(cell.target, cell.provider);
         const tenant = opts.dryRun
-            ? { email: "dry-run@kodus.test", password: "dry-run" }
+            ? { email: 'dry-run@kodus.test', password: 'dry-run' }
             : await resolveTenantForCell(
                   target,
                   cell.license,
@@ -471,14 +470,14 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
 
             if (!appliesToCell(scenario, cell)) {
                 log.info(`SKIP  ${cellLabel}`);
-                results.push(makeResult(scenario, cell, "skipped", 0, {}));
+                results.push(makeResult(scenario, cell, 'skipped', 0, {}));
                 continue;
             }
 
             if (opts.dryRun) {
                 log.info(`DRY   ${cellLabel}`);
                 results.push(
-                    makeResult(scenario, cell, "passed", 0, {
+                    makeResult(scenario, cell, 'passed', 0, {
                         dryRun: true,
                         wouldRun: true,
                         scenarioTitle: scenario.title,
@@ -494,11 +493,32 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
             // on the same account; other cells keep draining the other tokens.
             const ghAssignment =
                 cell.provider === "github" ? pickGithubToken() : undefined;
-            const githubToken = ghAssignment?.token;
+            let githubToken = ghAssignment?.token;
             if (ghAssignment && ghAssignment.size > 1) {
                 log.info(
                     `  github → token slot ${ghAssignment.slot}/${ghAssignment.size}`,
                 );
+            }
+            // GitHub App installation token (opt-in via GH_APP_* envs):
+            // 5000/h of its own, immune to the bot-account abuse flags that
+            // cap the PATs at ~60/h. CLOUD cells only — installation tokens
+            // can't call GET /user, which self-hosted needs for seat
+            // assignment (provider.currentUserId). Resolved per scenario so
+            // the ~1h token auto-refreshes across long runs. A configured-
+            // but-broken App fails the mint loudly; we surface it and fall
+            // back to the PAT so one bad secret doesn't zero the coverage.
+            if (cell.provider === "github" && cell.target === "cloud") {
+                try {
+                    const appToken = await githubAppToken();
+                    if (appToken) {
+                        githubToken = appToken;
+                        log.info("  github → App installation token");
+                    }
+                } catch (err) {
+                    log.err(
+                        `  github → App token mint FAILED (${(err as Error).message.slice(0, 160)}) — falling back to PAT pool`,
+                    );
+                }
             }
 
             // One automatic retry for TRANSIENT failure shapes (lost
@@ -508,6 +528,10 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
             // change a wrong value, only waste an LLM review.
             let failFastHit = false;
             let retriedAfter: string | undefined;
+            const scenarioArtifactDir = join(
+                artifactDir,
+                `${scenario.id}-${cell.target}-${cell.provider}-${cell.license}`,
+            );
             for (let attempt = 1; attempt <= 2; attempt++) {
                 const t0 = Date.now();
                 try {
@@ -517,45 +541,73 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
                         tenant?.repoFullName,
                         githubToken,
                     );
-                    const scenarioArtifactDir = join(
-                        artifactDir,
-                        `${scenario.id}-${cell.target}-${cell.provider}-${cell.license}`,
-                    );
                     mkdirSync(scenarioArtifactDir, { recursive: true });
 
-                    const evidence = await scenario.run({
-                        target,
-                        provider,
-                        license: cell.license,
-                        tenant,
-                        kodus: {
-                            login: (creds) => login(target, creds),
-                            registerIntegration: (session) =>
-                                registerIntegration(target, provider, session),
-                            registerRepo: (session, repoOpts) =>
-                                registerRepo(target, provider, session, repoOpts),
-                            finishOnboarding: (session, repo) =>
-                                finishOnboarding(target, session, repo),
-                        },
-                        assert: (cond, msg) => {
-                            if (!cond) throw new Error(`Assertion failed: ${msg}`);
-                        },
-                        skip: (reason: string): never => {
-                            throw new ScenarioSkipError(reason);
-                        },
-                        artifactDir: scenarioArtifactDir,
-                        runId: opts.runId,
+                    // Runner-ENFORCED scenario timeout: scenario.timeoutSec
+                    // was previously advisory only — a hung HTTP call or a
+                    // leaked stream kept an attempt alive indefinitely
+                    // (observed: 86 minutes). The race guarantees the
+                    // attempt dies at the declared budget.
+                    const timeoutMs = (scenario.timeoutSec ?? 1800) * 1000;
+                    let timeoutHandle: NodeJS.Timeout | undefined;
+                    const timeoutGuard = new Promise<never>((_, reject) => {
+                        timeoutHandle = setTimeout(
+                            () =>
+                                reject(
+                                    new Error(
+                                        `Assertion failed: scenario exceeded its ${scenario.timeoutSec ?? 1800}s budget (runner-enforced timeout)`,
+                                    ),
+                                ),
+                            timeoutMs,
+                        );
+                        timeoutHandle.unref?.();
                     });
+                    const evidence = await Promise.race([
+                        timeoutGuard,
+                        scenario.run({
+                            target,
+                            provider,
+                            license: cell.license,
+                            tenant,
+                            kodus: {
+                                login: (creds) => login(target, creds),
+                                registerIntegration: (session) =>
+                                    registerIntegration(
+                                        target,
+                                        provider,
+                                        session,
+                                    ),
+                                registerRepo: (session, repoOpts) =>
+                                    registerRepo(
+                                        target,
+                                        provider,
+                                        session,
+                                        repoOpts,
+                                    ),
+                                finishOnboarding: (session, repo) =>
+                                    finishOnboarding(target, session, repo),
+                            },
+                            assert: (cond, msg) => {
+                                if (!cond)
+                                    throw new Error(`Assertion failed: ${msg}`);
+                            },
+                            skip: (reason: string): never => {
+                                throw new ScenarioSkipError(reason);
+                            },
+                            artifactDir: scenarioArtifactDir,
+                            runId: opts.runId,
+                        }),
+                    ]).finally(() => clearTimeout(timeoutHandle));
 
                     const duration = Date.now() - t0;
                     log.ok(
-                        `PASS  ${cellLabel}  (${(duration / 1000).toFixed(1)}s)${retriedAfter ? " [on retry]" : ""}`,
+                        `PASS  ${cellLabel}  (${(duration / 1000).toFixed(1)}s)${retriedAfter ? ' [on retry]' : ''}`,
                     );
                     results.push(
                         makeResult(
                             scenario,
                             cell,
-                            "passed",
+                            'passed',
                             duration,
                             retriedAfter
                                 ? { ...evidence, retriedAfter }
@@ -575,11 +627,11 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
                     // drop the prototype chain.
                     if (
                         e instanceof ScenarioSkipError ||
-                        e?.name === "ScenarioSkipError"
+                        e?.name === 'ScenarioSkipError'
                     ) {
                         log.info(`SKIP  ${cellLabel}  (${e.message})`);
                         results.push(
-                            makeResult(scenario, cell, "skipped", duration, {
+                            makeResult(scenario, cell, 'skipped', duration, {
                                 skipReason: e.message,
                             }),
                         );
@@ -594,7 +646,7 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
                             `SKIP  ${cellLabel}: GitHub rate limit — quota exhausted, NOT a product pass (${e.message.slice(0, 160)})`,
                         );
                         results.push(
-                            makeResult(scenario, cell, "skipped", duration, {
+                            makeResult(scenario, cell, 'skipped', duration, {
                                 skipReason: `github-rate-limit: ${e.message.slice(0, 200)}`,
                             }),
                         );
@@ -608,19 +660,42 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
                         retriedAfter = e.message;
                         const settleMs = absenceRetryDelayMs(e.message);
                         log.info(
-                            `RETRY ${cellLabel}: transient failure shape, re-running once${settleMs ? ` after a ${settleMs / 1000}s settle (absence shape — likely a deploy/worker rollout window)` : ""} (${e.message.slice(0, 160)})`,
+                            `RETRY ${cellLabel}: transient failure shape, re-running once${settleMs ? ` after a ${settleMs / 1000}s settle (absence shape — likely a deploy/worker rollout window)` : ''} (${e.message.slice(0, 160)})`,
                         );
                         if (settleMs) {
                             await new Promise((r) => setTimeout(r, settleMs));
                         }
                         continue;
                     }
+                    // Infra vs product: if the target itself is down, the
+                    // result is INCONCLUSIVE (skipped), not a red product
+                    // signal — a local network blip used to read exactly
+                    // like a regression.
+                    if (!(await isTargetReachable(target.apiBaseUrl))) {
+                        log.err(
+                            `SKIP  ${cellLabel}: target unreachable after failure — INCONCLUSIVE, not a product fail (${e.message.slice(0, 140)})`,
+                        );
+                        results.push(
+                            makeResult(scenario, cell, 'skipped', duration, {
+                                skipReason: `target-unreachable: ${e.message.slice(0, 200)}`,
+                            }),
+                        );
+                        break;
+                    }
+                    // Server-side evidence (best-effort, self-hosted only):
+                    // filtered container logs land next to the scenario's
+                    // artifacts so a red result is diagnosable without
+                    // manual SSH archaeology.
+                    await collectServerEvidence(
+                        scenarioArtifactDir,
+                        `${scenario.id}-fail`,
+                    );
                     log.err(`FAIL  ${cellLabel}: ${e.message}`);
                     results.push(
                         makeResult(
                             scenario,
                             cell,
-                            "failed",
+                            'failed',
                             duration,
                             retriedAfter ? { retriedAfter } : {},
                             e.message,

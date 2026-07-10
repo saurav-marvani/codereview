@@ -4,6 +4,7 @@
  */
 
 import { isFileMatchingGlob } from '@libs/common/utils/glob-utils';
+import { splitRulePathGlobs } from '@libs/common/utils/kody-rules/file-patterns';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { environment } from '@libs/ee/configs/environment';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
@@ -441,8 +442,12 @@ export class KodyRulesValidationService {
             return true;
         }
 
-        // Use glob matching to check if the file matches the rule's path pattern.
-        return isFileMatchingGlob(normalizedFilename, [rulePath]);
+        // Use glob matching to check if the file matches any of the rule's
+        // path patterns (comma-joined globs are OR-ed).
+        return isFileMatchingGlob(
+            normalizedFilename,
+            splitRulePathGlobs(rulePath),
+        );
     }
 
     /**
@@ -467,11 +472,19 @@ export class KodyRulesValidationService {
             return true;
         }
 
-        if (isFileMatchingGlob(normalizedFolder, [rulePath])) {
+        // Comma-joined globs are OR-ed: the folder matches if ANY of the
+        // individual patterns matches it.
+        return splitRulePathGlobs(rulePath).some((glob) =>
+            this.isFolderGlobMatch(glob, normalizedFolder),
+        );
+    }
+
+    private isFolderGlobMatch(glob: string, normalizedFolder: string): boolean {
+        if (isFileMatchingGlob(normalizedFolder, [glob])) {
             return true;
         }
 
-        const ruleBasePath = this.getGlobBasePath(rulePath);
+        const ruleBasePath = this.getGlobBasePath(glob);
 
         if (ruleBasePath === '') {
             return true;
@@ -486,7 +499,7 @@ export class KodyRulesValidationService {
         }
 
         if (
-            rulePath.startsWith('**') &&
+            glob.startsWith('**') &&
             normalizedFolder.endsWith('/' + ruleBasePath)
         ) {
             return true;

@@ -63,6 +63,7 @@ export async function runAgentLoopViaCore(
             typeof input.byokProvider === 'string'
                 ? input.byokProvider
                 : undefined,
+        role: input.byokRole ?? 'main',
         queueTimeoutMs: secrets.byokQueueTimeoutMs,
         reporter: secrets.byokErrorReporter,
     });
@@ -105,11 +106,16 @@ export async function runAgentLoopViaCore(
 
     // Recall-pass gating — ported from the legacy loop: skip the heavy passes in
     // fast mode, self-contained (no tools) trial flow, or when the caller asks.
+    // EXCEPTION: an explicit `heavy` opt-in (CLI `--heavy` / PR `@kody review
+    // --heavy`) forces the recall passes to run regardless — the whole point of
+    // heavy is more recall via resampling, so it must not be silently nullified
+    // by the default fast/self-contained gating.
     const isSelfContained = tools.list().length === 0;
     const skipHeavyPasses =
-        input.reviewMode === 'fast' ||
-        isSelfContained ||
-        !!input.skipHeavyPasses;
+        !input.heavy &&
+        (input.reviewMode === 'fast' ||
+            isSelfContained ||
+            !!input.skipHeavyPasses);
     const skipSynthesisRescue = !!input.skipSynthesisRescue;
 
     const contextWindowTokens = input.contextWindowTokens;
@@ -119,18 +125,32 @@ export async function runAgentLoopViaCore(
     // REAL model id — a placeholder like 'resolved' would disable strict for
     // every model (it matches neither the Gemini nor the Claude pattern).
     const specModelId = (input.model as any)?.modelId ?? 'resolved';
-    const finderSpec = buildFinderAgentSpec({
-        systemPrompt: input.systemPrompt,
-        modelId: specModelId,
-        tools,
-        coverageLedger,
-        compressor: contextWindowTokens
-            ? new ContextWindowCompressor(contextWindowTokens)
-            : undefined,
-        maxSteps: input.maxSteps ?? 20,
-        providerOptions,
-        systemProviderOptions,
-    });
+    const buildSpecWithLedger = (ledger: DiffCoverageLedger) =>
+        buildFinderAgentSpec({
+            systemPrompt: input.systemPrompt,
+            modelId: specModelId,
+            tools,
+            coverageLedger: ledger,
+            compressor: contextWindowTokens
+                ? new ContextWindowCompressor(contextWindowTokens)
+                : undefined,
+            maxSteps: input.maxSteps ?? 20,
+            providerOptions,
+            systemProviderOptions,
+        });
+
+    // Base pass uses the reported `coverageLedger` (read back below for the
+    // coverage summary). Heavy resample passes run CONCURRENTLY, so each gets a
+    // FRESH ledger via makeResampleSpec — the CompletionGatePolicy mutates the
+    // ledger per tool call, and a shared one would race across parallel passes.
+    const finderSpec = buildSpecWithLedger(coverageLedger);
+    const makeResampleSpec = () =>
+        buildSpecWithLedger(
+            new DiffCoverageLedger({
+                changedFiles: input.changedFiles,
+                fileTiers: input.fileTiers,
+            }),
+        );
 
     // Standard agent run context: runId + a signal that aborts on the parent job
     // signal OR after the hard per-agent timeout. Shared with conversation +
@@ -144,12 +164,16 @@ export async function runAgentLoopViaCore(
         {
             runner,
             finderSpec,
+            makeResampleSpec,
             modelId: specModelId,
             tools,
             providerOptions,
             systemProviderOptions,
             skipHeavyPasses,
             skipSynthesisRescue,
+            // HEAVY mode — extra critic pass. Only meaningful when heavy passes
+            // run at all (not fast/self-contained); harmless otherwise.
+            heavy: !!input.heavy && !skipHeavyPasses,
             telemetryMetadata: input.telemetryMetadata,
             agentName: input.agentName,
             // Wire the prose-findings recovery to the internal-model fallback.
@@ -254,12 +278,25 @@ export async function runAgentLoopViaCore(
                   ],
               };
 
+    // When the finder run errored (a provider/model throw the harness caught
+    // and turned into an error-status result), surface the underlying message
+    // so the caller can classify it and fall back / fail loudly instead of
+    // returning a silent empty review.
+    const errorEvent =
+        r.finderState.status === 'error'
+            ? r.finderState.trace.find((e) => e.kind === 'error')
+            : undefined;
+
     return {
         findings: { reasoning: r.reasoning, suggestions: r.kept as any },
         text: r.reasoning,
         steps: r.finderState.steps.length,
         toolCalls,
         finishReason: r.finderState.status,
+        ...(errorEvent && {
+            errorMessage: (errorEvent.detail?.message as string) || undefined,
+            errorName: (errorEvent.detail?.name as string) || undefined,
+        }),
         source: r.kept.length || r.reasoning ? 'json-parse' : 'empty',
         usage: {
             inputTokens,

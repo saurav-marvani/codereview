@@ -34,6 +34,11 @@ import { PriorityStatus } from '@libs/platformData/domain/pullRequests/enums/pri
 import { ReviewOrchestratorService } from '@libs/code-review/infrastructure/agents/review-orchestrator.service';
 import { buildOrchestratorInput } from './build-orchestrator-input';
 import { ObservabilityService } from '@libs/core/log/observability.service';
+import { FeatureGateService, FEATURE_KEYS } from '@libs/feature-gate';
+import {
+    ORGANIZATION_SERVICE_TOKEN,
+    IOrganizationService,
+} from '@libs/organization/domain/organization/contracts/organization.service.contract';
 import {
     AUTOMATION_EXECUTION_SERVICE_TOKEN,
     IAutomationExecutionService,
@@ -63,7 +68,11 @@ import {
     classifyLLMError,
     getClassification,
 } from '@libs/llm/error-classifier';
-import { SECONDARY_PASS_MODEL_ID } from '@libs/code-review/infrastructure/agents/engine/secondary-pass-model';
+import {
+    isSecondaryByok,
+    resolveSecondaryPassModel,
+    SECONDARY_PASS_MODEL_ID,
+} from '@libs/code-review/infrastructure/agents/engine/secondary-pass-model';
 
 /**
  * Extract valid line ranges from a unified diff patch.
@@ -243,8 +252,59 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
         private readonly reviewOrchestrator: ReviewOrchestratorService,
         private readonly observabilityService: ObservabilityService,
         private readonly graphContext: GraphContextService,
+        private readonly featureGate: FeatureGateService,
+        @Inject(ORGANIZATION_SERVICE_TOKEN)
+        private readonly organizationService: IOrganizationService,
     ) {
         super();
+    }
+
+    /**
+     * Resolve whether HEAVY mode actually runs: the per-review opt-in (CLI
+     * `--heavy` / `@kody review --heavy`) AND the `heavy-review` feature gate,
+     * which is an ALPHA feature — cloud gates it by the org's release track +
+     * PostHog allowlist, self-hosted keeps it off until it's promoted to beta.
+     * A denied request degrades silently to a normal review.
+     */
+    private async resolveHeavy(
+        context: CodeReviewPipelineContext,
+    ): Promise<boolean> {
+        const requested =
+            context.heavy || context.codeReviewConfig?.heavy || false;
+        if (!requested) {
+            return false;
+        }
+        const org = context.organizationAndTeamData;
+        try {
+            const releaseTrack = await this.organizationService.getReleaseTrack(
+                org.organizationId,
+            );
+            const enabled = await this.featureGate.isEnabled(
+                FEATURE_KEYS.heavyReview,
+                {
+                    identifier: org.organizationId,
+                    organizationAndTeamData: org,
+                    releaseTrack,
+                },
+            );
+            if (!enabled) {
+                this.logger.log({
+                    message: `[AGENT] Heavy review requested but not enabled for org (alpha feature) — running normal review`,
+                    context: this.stageName,
+                    metadata: { organizationId: org.organizationId },
+                });
+            }
+            return enabled;
+        } catch (err) {
+            // Fail safe: if the gate can't be evaluated, do NOT silently run the
+            // alpha path — degrade to normal.
+            this.logger.warn({
+                message: `[AGENT] Heavy feature-gate check failed; running normal review`,
+                context: this.stageName,
+                error: err,
+            });
+            return false;
+        }
     }
 
     protected async executeStage(
@@ -458,6 +518,12 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             // dropped — is unit-testable and can't drift from a second inline
             // copy. A committed merge conflict once kept an inline builder that
             // silently dropped reviewDirective; this is the single source now.
+            // Resolve HEAVY once (opt-in AND the alpha feature gate) and write it
+            // back onto the context so the SAME gated value flows to both the
+            // finder and the persisted PR record (create-file-comments stage).
+            const resolvedHeavy = await this.resolveHeavy(context);
+            context.heavy = resolvedHeavy;
+
             const result = await this.reviewOrchestrator.execute(
                 buildOrchestratorInput(context, {
                     changedFiles,
@@ -468,6 +534,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     gitHubToken: await this.resolveGitHubToken(context),
                     callGraph,
                     adaptiveProfile,
+                    heavy: resolvedHeavy,
                 }),
             );
 
@@ -1325,12 +1392,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             };
         }
 
-        // Model resolution: platform OpenAI key (SECONDARY_PASS_MODEL_ID =
-        // gpt-5.4-mini) → BYOK via withStructuredOutputFallback → skip dedup.
-        // Same model choice as the other secondary passes (severity, formatter);
-        // dedup keeps its own structured-output fallback because it emits a
-        // schema-constrained object, not manually-parsed JSON.
-        const openaiKey = process.env.API_OPEN_AI_API_KEY;
+        // Model resolution (same policy as severity/format):
+        //   BYOK main → withStructuredOutputFallback (client key + schema retry)
+        //   else platform gpt-5.4-mini / getInternalModel (trial / no BYOK)
+        const secondaryByok = isSecondaryByok(byokConfig);
 
         try {
             const runDedup = (model: any) =>
@@ -1349,16 +1414,50 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 });
 
             let dedupResult: any;
-            if (openaiKey) {
-                const { createOpenAI } = await import('@ai-sdk/openai');
-                const model = createOpenAI({
-                    apiKey: openaiKey,
-                    ...(process.env.API_OPENAI_FORCE_BASE_URL
-                        ? { baseURL: process.env.API_OPENAI_FORCE_BASE_URL }
-                        : {}),
-                })(SECONDARY_PASS_MODEL_ID);
-                dedupResult = await runDedup(model);
+            if (secondaryByok) {
+                // Prefer main for secondary (getInternalModel would pick
+                // fallback first when both are set — not what we want here).
+                const structuredByok = byokConfig?.main
+                    ? { main: byokConfig.main }
+                    : byokConfig;
+                dedupResult = await withStructuredOutputFallback(
+                    {
+                        byokConfig: structuredByok,
+                        organizationId: telemetryMeta?.organizationId,
+                        label: 'dedup-suggestions',
+                    },
+                    runDedup,
+                );
             } else {
+                // Trial / no-BYOK / self-hosted env path. Still wrap with
+                // withStructuredOutputFallback so models that reject
+                // response_format=json_schema (Gemini, some proxies) retry
+                // with json_object instead of failing open into keep-all
+                // after a thrown error further up — or worse, partial
+                // structured output that leaves true dups on the PR.
+                if (!resolveSecondaryPassModel(byokConfig)) {
+                    this.logger.warn({
+                        message: `[DEDUP] PR#${prNumber}: no secondary model available, keeping all suggestions`,
+                        context: this.stageName,
+                    });
+                    return {
+                        suggestions,
+                        trace: {
+                            status: 'skipped',
+                            totalClassifiedCount: suggestions.length,
+                            kodyRulesSkippedCount: 0,
+                            nonKodyInputCount: suggestions.length,
+                            nonKodyOutputCount: suggestions.length,
+                            finalOutputCount: suggestions.length,
+                            uniqueCount: suggestions.length,
+                            groupsCount: 0,
+                            removedCount: 0,
+                            unique: suggestions.map((suggestion) =>
+                                this.summarizeDedupSuggestion(suggestion),
+                            ),
+                        },
+                    };
+                }
                 dedupResult = await withStructuredOutputFallback(
                     {
                         byokConfig,
@@ -1379,10 +1478,12 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     phase: 'dedup',
                     spanName: 'dedup-suggestions',
                     runName: 'code-review-dedup',
-                    model: 'internal-dedup',
-                    // Real billing source: the platform OpenAI-key path is a
-                    // 'system' key; the else branch runs on the org's BYOK config.
-                    isByok: !openaiKey,
+                    model: secondaryByok
+                        ? (byokConfig?.main?.model ??
+                          byokConfig?.fallback?.model ??
+                          'byok-dedup')
+                        : SECONDARY_PASS_MODEL_ID,
+                    isByok: secondaryByok,
                     usage: {
                         inputTokens: dedupUsage.inputTokens,
                         outputTokens: dedupUsage.outputTokens,

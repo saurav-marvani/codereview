@@ -147,6 +147,7 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
                     context.fileMetadata,
                     context.dryRun,
                     allCommits,
+                    context.heavy,
                 );
 
                 this.logger.log({
@@ -317,6 +318,7 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
                 context.fileMetadata,
                 dryRun,
                 context.prAllCommits,
+                context.heavy,
             );
         } catch (error) {
             this.logger.error({
@@ -486,6 +488,7 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
         fileMetadata?: Map<string, any>,
         dryRun?: CodeReviewPipelineContext['dryRun'],
         prCommits?: Commit[],
+        heavy?: boolean,
     ) {
         const enrichedFiles = changedFiles.map((file) => {
             const metadata = fileMetadata?.get(file.filename);
@@ -536,6 +539,10 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
 
         // Reutilizar commits do context (buscados no ValidateNewCommitsStage)
         const pullRequestCommits = prCommits || [];
+
+        // Carry the resolved HEAVY flag on the PR object so the persisted record
+        // reflects how the LAST review actually ran (post feature-gate).
+        (pullRequest as { heavy?: boolean }).heavy = heavy;
 
         await this.pullRequestService.aggregateAndSaveDataStructure(
             pullRequest,

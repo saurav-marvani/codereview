@@ -1,5 +1,11 @@
 import { createLogger } from '@libs/core/log/logger';
-import { Inject, Injectable, forwardRef } from '@nestjs/common';
+import {
+    Inject,
+    Injectable,
+    ServiceUnavailableException,
+    UnprocessableEntityException,
+    forwardRef,
+} from '@nestjs/common';
 import pLimit from 'p-limit';
 
 import {
@@ -10,7 +16,12 @@ import { requiresKnowledgeApproval } from '@libs/common/utils/kody-rules/knowled
 import { with429Retry } from '@libs/core/infrastructure/http/rate-limit-retry';
 import { GenerateKodyRulesDTO } from '@libs/core/domain/dtos/generate-kody-rules.dto';
 
-import { CommentAnalysisService } from '@libs/code-review/infrastructure/adapters/services/commentAnalysis.service';
+import {
+    CommentAnalysisService,
+    KodyRulesModelSelection,
+} from '@libs/code-review/infrastructure/adapters/services/commentAnalysis.service';
+import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
+import { resolveKodyRulesModelPolicy } from '@libs/kodyRules/application/services/kody-rules-model-policy';
 import { generateDateFilter } from '@libs/common/utils/transforms/date';
 import { IntegrationConfigKey, ParametersKey } from '@libs/core/domain/enums';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
@@ -84,6 +95,7 @@ export class GenerateKodyRulesUseCase {
         private readonly sendRulesNotificationUseCase: SendRulesNotificationUseCase,
         @Inject(forwardRef(() => CODE_BASE_CONFIG_SERVICE_TOKEN))
         private readonly codeBaseConfigService: ICodeBaseConfigService,
+        private readonly permissionValidationService: PermissionValidationService,
     ) {}
 
     /**
@@ -128,6 +140,29 @@ export class GenerateKodyRulesUseCase {
             organizationAndTeamData = {
                 organizationId,
                 teamId,
+            };
+
+            // Resolve the model policy up front. Outside the trial, an org
+            // without BYOK generates nothing — skip before any expensive PR
+            // fetching or status transition, and leave kodyLearningStatus as-is
+            // (ENABLED) so the UI shows the feature idle rather than stuck.
+            const modelPolicy = await resolveKodyRulesModelPolicy(
+                this.permissionValidationService,
+                organizationAndTeamData,
+            );
+
+            if (!modelPolicy.generate) {
+                this.logger.warn({
+                    message: `Skipping Kody Rules generation — ${modelPolicy.skipReason}`,
+                    context: GenerateKodyRulesUseCase.name,
+                    metadata: { body, organizationAndTeamData },
+                });
+                return [];
+            }
+
+            const modelConfig: KodyRulesModelSelection = {
+                byokConfig: modelPolicy.byokConfig,
+                modelOverride: modelPolicy.modelOverride,
             };
 
             const dateFilter = generateDateFilter({ months, weeks, days });
@@ -198,6 +233,15 @@ export class GenerateKodyRulesUseCase {
 
             const allRules = [];
             const createdRules = []; // To track created rules for notification
+            // Repos that received ≥1 persisted rule — promoted to isSelected:true
+            // after the loop so the generated rules are visible in the UI.
+            const reposWithRules = new Map<string, Repositories>();
+            // Repos whose PR fetch errored (auth/integration/rate-limit) rather
+            // than genuinely having no PRs. `getPullRequestsByRepository`
+            // returns null on failure and [] when the repo has no PRs in the
+            // window — collapsing them turned a broken GitHub integration into
+            // a misleading "200, 0 rules".
+            const failedRepositories: string[] = [];
 
             for (const repository of filteredRepositories) {
                 const pullRequests =
@@ -211,7 +255,24 @@ export class GenerateKodyRulesUseCase {
                         },
                     );
 
-                if (!pullRequests || pullRequests.length === 0) {
+                // null/undefined = fetch failed (e.g. GitHub App install
+                // returning 404 on the access token); an empty array is a
+                // legitimate "no PRs in this window".
+                if (pullRequests == null) {
+                    this.logger.error({
+                        message:
+                            'Failed to fetch pull requests (code management integration/auth error)',
+                        context: GenerateKodyRulesUseCase.name,
+                        metadata: {
+                            dateFilter,
+                            repositoryId: repository?.id ?? 'repository not found',
+                        },
+                    });
+                    failedRepositories.push(repository?.id ?? 'unknown');
+                    continue;
+                }
+
+                if (pullRequests.length === 0) {
                     this.logger.log({
                         message: 'No pull requests found',
                         context: GenerateKodyRulesUseCase.name,
@@ -256,6 +317,7 @@ export class GenerateKodyRulesUseCase {
                         comments: processedComments,
                         existingRules,
                         organizationAndTeamData,
+                        modelConfig,
                     });
 
                 if (!rules || rules.length === 0) {
@@ -282,6 +344,7 @@ export class GenerateKodyRulesUseCase {
                     ? KodyRulesStatus.PENDING
                     : KodyRulesStatus.ACTIVE;
 
+                let persistedForRepo = 0;
                 for (const rule of rules) {
                     const dto: CreateKodyRuleDto = {
                         type: KodyRulesType.STANDARD,
@@ -300,39 +363,91 @@ export class GenerateKodyRulesUseCase {
                         userEmail: 'kody@kodus.io',
                     };
 
-                    const createOrUpdateUseCase = await this.moduleRef.resolve(
-                        CreateOrUpdateKodyRulesUseCase,
-                        undefined,
-                        { strict: false },
-                    );
+                    // A single rule failing to persist (e.g. a plan cap or a
+                    // transient write error) must not discard the rules already
+                    // saved for this repo or the remaining repos. Log and move on.
+                    try {
+                        const createOrUpdateUseCase =
+                            await this.moduleRef.resolve(
+                                CreateOrUpdateKodyRulesUseCase,
+                                undefined,
+                                { strict: false },
+                            );
 
-                    const createdRule = await createOrUpdateUseCase.execute(
-                        dto,
-                        organizationId,
-                        userInfo,
-                    );
-
-                    if (!createdRule) {
-                        throw new Error(
-                            'Failed to persist generated Kody rule',
+                        const createdRule = await createOrUpdateUseCase.execute(
+                            dto,
+                            organizationId,
+                            userInfo,
                         );
+
+                        if (!createdRule) {
+                            throw new Error(
+                                'Failed to persist generated Kody rule',
+                            );
+                        }
+
+                        persistedForRepo++;
+
+                        // Add rule to notification data
+                        createdRules.push({
+                            title: rule.title,
+                            rule: rule.rule,
+                            severity: rule.severity,
+                        });
+
+                        this.logger.log({
+                            message: 'Rule generated and saved successfully',
+                            context: GenerateKodyRulesUseCase.name,
+                            metadata: { rule },
+                        });
+                    } catch (persistError) {
+                        this.logger.error({
+                            message:
+                                'Failed to persist a generated Kody rule; keeping the others',
+                            context: GenerateKodyRulesUseCase.name,
+                            error:
+                                persistError instanceof Error
+                                    ? persistError
+                                    : new Error(String(persistError)),
+                            metadata: {
+                                repositoryId: repository.id,
+                                title: rule.title,
+                            },
+                        });
                     }
+                }
 
-                    // Add rule to notification data
-                    createdRules.push({
-                        title: rule.title,
-                        rule: rule.rule,
-                        severity: rule.severity,
-                    });
-
-                    this.logger.log({
-                        message: 'Rule generated and saved successfully',
-                        context: GenerateKodyRulesUseCase.name,
-                        metadata: { rule },
-                    });
+                if (persistedForRepo > 0) {
+                    reposWithRules.set(repository.id, {
+                        id: repository.id,
+                        name: repository.name,
+                    } as Repositories);
                 }
 
                 allRules.push(rules);
+            }
+
+            // If every worked repo failed to even fetch PRs and nothing was
+            // generated, this is an integration/auth failure — not "no rules to
+            // learn". Throw so the run surfaces a non-2xx (the outer catch
+            // resets kodyLearningStatus to ENABLED) instead of a misleading
+            // "200, 0 rules". Partial success (some repos produced rules) still
+            // completes; the failures are already logged above.
+            if (failedRepositories.length > 0 && allRules.length === 0) {
+                throw new ServiceUnavailableException(
+                    'Could not fetch pull requests from the code management integration; no rules were generated',
+                );
+            }
+
+            // Make the generated rules visible: every repo that received a rule
+            // must have its own code_review_config entry with isSelected:true
+            // (the front only lists rules for repos with an individual config).
+            // One-way — never demotes a repo the user already selected.
+            if (reposWithRules.size > 0) {
+                await this.promoteRepositoriesToSelected(
+                    organizationAndTeamData,
+                    [...reposWithRules.values()],
+                );
             }
 
             await this.createOrUpdateParametersUseCase.execute(
@@ -570,9 +685,103 @@ export class GenerateKodyRulesUseCase {
         if (!codeReviewConfig || !codeReviewConfig.configValue)
             return this.getRepositoriesIntegration(organizationAndTeamData);
 
-        return codeReviewConfig.configValue.repositories.filter(
-            (repo) => repo.isSelected === true,
-        );
+        const selected = (
+            codeReviewConfig.configValue.repositories ?? []
+        ).filter((repo) => repo.isSelected === true);
+
+        if (selected.length > 0) {
+            return selected;
+        }
+
+        // Config exists but nothing is selected — the normal state right after
+        // onboarding (per-repo configs are only created on demand). Fall back to
+        // the integration's repositories, same as when no config exists at all.
+        this.logger.log({
+            message:
+                'No repositories selected in code_review_config; falling back to integration repositories',
+            context: GenerateKodyRulesUseCase.name,
+            metadata: { organizationAndTeamData },
+        });
+        return this.getRepositoriesIntegration(organizationAndTeamData);
+    }
+
+    /**
+     * Promote each given repository to `isSelected: true` in code_review_config,
+     * creating the entry when it doesn't exist yet. One-way by design: a repo
+     * that is already selected (or absent from `repositories`) is never demoted
+     * or otherwise touched — rule generation must never unselect a repo.
+     */
+    private async promoteRepositoriesToSelected(
+        organizationAndTeamData: OrganizationAndTeamData,
+        repositories: Array<Pick<Repositories, 'id' | 'name'>>,
+    ): Promise<void> {
+        try {
+            const codeReviewConfig = await this.parametersService.findByKey(
+                ParametersKey.CODE_REVIEW_CONFIG,
+                organizationAndTeamData,
+            );
+
+            if (!codeReviewConfig || !codeReviewConfig.configValue) {
+                // Provisioning the global config is owned by the sibling fix
+                // (code_review_config creation); there's nothing to promote onto.
+                this.logger.warn({
+                    message:
+                        'code_review_config missing; cannot promote repositories to isSelected',
+                    context: GenerateKodyRulesUseCase.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        repositoryIds: repositories.map((r) => r.id),
+                    },
+                });
+                return;
+            }
+
+            const configValue = codeReviewConfig.configValue;
+            const entries: RepositoryCodeReviewConfig[] = Array.isArray(
+                configValue.repositories,
+            )
+                ? [...configValue.repositories]
+                : [];
+            const byId = new Map(entries.map((r) => [r.id, r]));
+
+            let changed = false;
+            for (const repo of repositories) {
+                const current = byId.get(repo.id);
+                if (!current) {
+                    entries.push({
+                        id: repo.id,
+                        name: repo.name,
+                        isSelected: true,
+                        configs: {},
+                        directories: [],
+                    });
+                    changed = true;
+                } else if (current.isSelected !== true) {
+                    current.isSelected = true;
+                    changed = true;
+                }
+                // Already selected → left untouched (never demoted).
+            }
+
+            if (!changed) {
+                return;
+            }
+
+            await this.createOrUpdateParametersUseCase.execute(
+                ParametersKey.CODE_REVIEW_CONFIG,
+                { ...configValue, repositories: entries },
+                organizationAndTeamData,
+            );
+        } catch (error) {
+            this.logger.error({
+                message:
+                    'Failed to promote repositories to isSelected after rule generation',
+                context: GenerateKodyRulesUseCase.name,
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
+                metadata: { organizationAndTeamData },
+            });
+        }
     }
 
     private async getRepositoriesIntegration(
@@ -584,7 +793,12 @@ export class GenerateKodyRulesUseCase {
         });
 
         if (!integration) {
-            throw new Error('Integration not found');
+            // Semantic 422 instead of the generic 500 that surfaced downstream
+            // as "Repository service for type 'null' not found" when the team
+            // has no code-management integration wired up.
+            throw new UnprocessableEntityException(
+                'Code management integration not configured for this team',
+            );
         }
 
         const integrationConfig = await this.integrationConfigService.findOne({
@@ -594,7 +808,9 @@ export class GenerateKodyRulesUseCase {
         });
 
         if (!integrationConfig) {
-            throw new Error('Integration config not found');
+            throw new UnprocessableEntityException(
+                'Code management integration has no repositories configured for this team',
+            );
         }
 
         return integrationConfig.configValue as Repositories[];
