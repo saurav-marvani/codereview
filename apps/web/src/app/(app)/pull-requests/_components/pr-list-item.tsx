@@ -583,7 +583,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                 <NextLink
                     href={`/pull-requests/${latest.repositoryId}/${latest.prNumber}`}
                     onClick={(e) => e.stopPropagation()}
-                    className="hover:bg-card-lv3/40 flex items-center gap-1.5 rounded-md px-1 py-1 transition-colors">
+                    className="hover:bg-card-lv3/40 flex w-fit items-center gap-1.5 rounded-md px-1 py-1 transition-colors">
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <span className="bg-success/10 text-success inline-flex min-w-7 items-center justify-center rounded-md px-2 py-0.5 text-xs font-medium tabular-nums">
