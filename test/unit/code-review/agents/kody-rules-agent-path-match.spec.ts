@@ -39,4 +39,12 @@ describe('KodyRulesAgentProvider.matchesPathPattern', () => {
         expect(matches('src/sub/foo.ts', 'src/')).toBe(true);
         expect(matches('other/foo.ts', 'src/**/*.ts')).toBe(false);
     });
+
+    it('multi-glob DIRECTORY paths match files inside each directory (src/,lib/)', () => {
+        // Trailing-slash globs are directories to picomatch — the prefix
+        // fallback must run per split glob, not on the joined string.
+        expect(matches('src/deep/file.ts', 'src/,lib/')).toBe(true);
+        expect(matches('lib/x.ts', 'src/,lib/')).toBe(true);
+        expect(matches('other/x.ts', 'src/,lib/')).toBe(false);
+    });
 });

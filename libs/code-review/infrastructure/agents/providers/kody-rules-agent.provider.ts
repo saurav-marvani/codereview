@@ -288,9 +288,11 @@ export class KodyRulesAgentProvider extends BaseCodeReviewAgentProvider {
      */
     protected getCategoryPrompt(input: ReviewAgentInput): string {
         const rules = (
-            (input as ReviewAgentInput & {
-                kodyRules?: Partial<IKodyRule>[];
-            }).kodyRules || []
+            (
+                input as ReviewAgentInput & {
+                    kodyRules?: Partial<IKodyRule>[];
+                }
+            ).kodyRules || []
         ).filter(
             (r) => r.type !== KodyRulesType.MEMORY && r.status === 'active',
         );
@@ -358,9 +360,9 @@ You validate code against the team's custom rules listed below. Your ONLY job is
             ? `\n  <Commits>\n${commits
                   .map(
                       (c, i) =>
-                          `    ${i + 1}. ${(c.sha || '').substring(0, 8)} ${(
-                              c.message || ''
-                          ).split('\n')[0]}`,
+                          `    ${i + 1}. ${(c.sha || '').substring(0, 8)} ${
+                              (c.message || '').split('\n')[0]
+                          }`,
                   )
                   .join(
                       '\n',
@@ -528,11 +530,17 @@ If no violations found, respond with \`{"reasoning": "Checked all rules, no viol
      */
     private matchesPathPattern(filePath: string, pattern: string): boolean {
         if (filePath === pattern) return true;
-        if (pattern.endsWith('/') && filePath.startsWith(pattern)) return true;
         // The repo-file importer persists MULTIPLE globs comma-joined
         // ("src/**,lib/**"). Matching the joined string as ONE glob makes
         // the comma literal and the rule silently never fires — the
         // customer's "multi-glob rules are never enforced" case.
-        return isFileMatchingGlob(filePath, splitRulePathGlobs(pattern));
+        return splitRulePathGlobs(pattern).some((glob) => {
+            if (filePath === glob) return true;
+            // Picomatch trailing-slash globs match directories, not the
+            // files inside them — keep the directory-prefix fallback PER
+            // GLOB (on the joined string it never fired for "src/,lib/").
+            if (glob.endsWith('/') && filePath.startsWith(glob)) return true;
+            return isFileMatchingGlob(filePath, [glob]);
+        });
     }
 }
