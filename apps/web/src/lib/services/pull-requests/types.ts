@@ -145,8 +145,14 @@ export interface PullRequestExecution {
     codeReviewTimeline: CodeReviewTimelineItem[];
     enrichedData: Record<string, any>;
     suggestionsCount: {
+        // Posted on the PR (deliveryStatus 'sent').
         sent: number;
+        // Held back by the review config/priority rules ('not_sent').
         filtered: number;
+        // Kody tried to post but couldn't ('failed'/'failed_lines_mismatch').
+        failed?: number;
+        // Superseded by a newer suggestion ('replaced').
+        replaced?: number;
         bySeverity?: Record<"critical" | "high" | "medium" | "low", number>;
         categories?: string[];
     };

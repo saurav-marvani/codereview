@@ -340,6 +340,8 @@ export function PullRequestsPageClient() {
               {
                   key: "reviewed",
                   label: "Reviewed today",
+                  sub: "today",
+                  hint: "Distinct PRs Kody reviewed today (UTC).",
                   value: digest.reviewedToday,
                   tone: "text-success",
                   active: !isAwaiting && statusFilter === "success",
@@ -356,6 +358,8 @@ export function PullRequestsPageClient() {
               {
                   key: "failed",
                   label: "Review failed today",
+                  sub: "today",
+                  hint: "PRs whose review errored today (error / partial error).",
                   value: digest.erroredToday,
                   tone: "text-destructive",
                   active: !isAwaiting && statusFilter === "error",
@@ -372,6 +376,8 @@ export function PullRequestsPageClient() {
               {
                   key: "awaiting",
                   label: "Awaiting review",
+                  sub: "backlog",
+                  hint: "Open PRs with no Kody review yet (not merged, not closed) — current backlog, not today.",
                   // Backlog is a current total, not a "today" number — read it
                   // from facets (same source as the toggle's 665), so the card
                   // and the toggle never disagree.
@@ -387,8 +393,10 @@ export function PullRequestsPageClient() {
               {
                   key: "attention",
                   label: "Needs attention",
-                  // Also a current total (open PRs with unresolved crit/high),
-                  // from facets rather than today's digest.
+                  sub: "total",
+                  hint: "PRs that delivered at least one critical or high suggestion (all-time, current scope).",
+                  // Current total, from facets rather than today's digest:
+                  // distinct PRs that DELIVERED a critical/high suggestion.
                   value: facets?.needsAttention ?? 0,
                   tone: "text-warning",
                   active: !isAwaiting && needsAttention === "true",
@@ -446,14 +454,23 @@ export function PullRequestsPageClient() {
                                 type="button"
                                 onClick={card.onClick}
                                 aria-pressed={card.active}
+                                title={card.hint}
                                 className={cn(
                                     "flex flex-col items-start gap-1 rounded-xl border px-4 py-3 text-left transition",
                                     card.active
                                         ? "border-primary-light/60 bg-primary/5 ring-primary-light/15 ring-3"
                                         : "border-card-lv3 bg-card-lv2 hover:border-card-lv3 hover:bg-card-lv1/70",
                                 )}>
-                                <span className="text-text-tertiary text-xs font-medium">
-                                    {card.label}
+                                <span className="flex w-full items-center justify-between gap-2">
+                                    <span className="text-text-tertiary text-xs font-medium">
+                                        {card.label}
+                                    </span>
+                                    {/* Scope tag — the cards mix "today" numbers
+                                        (digest) with current totals (facets), so
+                                        each one says which it is. */}
+                                    <span className="text-text-tertiary/70 bg-card-lv3/40 rounded px-1.5 py-0.5 text-[0.625rem] font-medium tracking-wide uppercase">
+                                        {card.sub}
+                                    </span>
                                 </span>
                                 <span
                                     className={cn(
@@ -548,9 +565,7 @@ export function PullRequestsPageClient() {
                     <div className="flex flex-wrap items-center gap-2">
                         <PullRequestsFilters
                             teamId={teamId}
-                            selectedRepository={
-                                selectedRepository ?? undefined
-                            }
+                            selectedRepository={selectedRepository ?? undefined}
                             onRepositoryChange={(value) =>
                                 setSelectedRepository(value ?? null)
                             }

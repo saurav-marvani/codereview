@@ -185,8 +185,7 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
             // request (the #1432 slowdown). After the first batch we continue via
             // the last row's (createdAt, uuid) instead — an indexed range scan.
             let loopCursor:
-                | { createdAt: Date | string; uuid: string }
-                | undefined;
+                { createdAt: Date | string; uuid: string } | undefined;
             const authorPolicyConfig = await this.getCompiledAuthorPolicyConfig(
                 authorPolicy,
                 organizationAndTeamData,
@@ -194,8 +193,7 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
 
             // If filtering by title, fetch PR numbers from MongoDB first
             let prFilters:
-                | Array<{ number: number; repositoryId: string }>
-                | undefined;
+                Array<{ number: number; repositoryId: string }> | undefined;
             if (pullRequestTitle) {
                 const prNumbers =
                     await this.pullRequestsService.findPRNumbersByTitleAndOrganization(
@@ -925,6 +923,8 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
         const categorySet = new Set<string>();
         let sent = 0;
         let filtered = 0;
+        let failed = 0;
+        let replaced = 0;
 
         // Optimized: check if we have pre-computed counts
         if ((pullRequest as any).suggestionsCount) {
@@ -932,6 +932,8 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
             return {
                 sent: precomputed.sent ?? 0,
                 filtered: precomputed.filtered ?? 0,
+                failed: precomputed.failed ?? 0,
+                replaced: precomputed.replaced ?? 0,
                 bySeverity: {
                     critical: precomputed.bySeverity?.critical ?? 0,
                     high: precomputed.bySeverity?.high ?? 0,
@@ -947,7 +949,14 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
         // Fallback: compute from files (slower)
         const files = pullRequest.files;
         if (!files || files.length === 0) {
-            return { sent: 0, filtered: 0, bySeverity, categories: [] };
+            return {
+                sent: 0,
+                filtered: 0,
+                failed: 0,
+                replaced: 0,
+                bySeverity,
+                categories: [],
+            };
         }
 
         for (let i = 0; i < files.length; i++) {
@@ -971,6 +980,13 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                     if (label) categorySet.add(label);
                 } else if (status === DeliveryStatus.NOT_SENT) {
                     filtered++;
+                } else if (
+                    status === DeliveryStatus.FAILED ||
+                    status === DeliveryStatus.FAILED_LINES_MISMATCH
+                ) {
+                    failed++;
+                } else if (status === DeliveryStatus.REPLACED) {
+                    replaced++;
                 }
             }
         }
@@ -978,6 +994,8 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
         return {
             sent,
             filtered,
+            failed,
+            replaced,
             bySeverity,
             categories: Array.from(categorySet),
         };

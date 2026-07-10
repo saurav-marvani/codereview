@@ -393,6 +393,42 @@ export class PullRequestsRepository implements IPullRequestsRepository {
                                 ],
                             },
                         },
+                        // Delivery failures (Kody tried to post but couldn't) —
+                        // kept distinct from `filtered` (a config decision) so
+                        // they aren't silently dropped from the totals.
+                        failed: {
+                            $sum: {
+                                $cond: [
+                                    {
+                                        $in: [
+                                            '$files.suggestions.deliveryStatus',
+                                            [
+                                                DeliveryStatus.FAILED,
+                                                DeliveryStatus.FAILED_LINES_MISMATCH,
+                                            ],
+                                        ],
+                                    },
+                                    1,
+                                    0,
+                                ],
+                            },
+                        },
+                        // Superseded by a newer suggestion — counted for
+                        // reconciliation, not surfaced as a live signal.
+                        replaced: {
+                            $sum: {
+                                $cond: [
+                                    {
+                                        $eq: [
+                                            '$files.suggestions.deliveryStatus',
+                                            DeliveryStatus.REPLACED,
+                                        ],
+                                    },
+                                    1,
+                                    0,
+                                ],
+                            },
+                        },
                         // Breakdown of DELIVERED (sent) suggestions by severity —
                         // this powers the "needs attention" signal + severity
                         // filter on the PR list. Severity is $toLower-normalized
@@ -435,6 +471,8 @@ export class PullRequestsRepository implements IPullRequestsRepository {
                         prNumber: '$_id.prNumber',
                         sent: 1,
                         filtered: 1,
+                        failed: 1,
+                        replaced: 1,
                         critical: 1,
                         high: 1,
                         medium: 1,
@@ -451,6 +489,8 @@ export class PullRequestsRepository implements IPullRequestsRepository {
             result.set(key, {
                 sent: row.sent || 0,
                 filtered: row.filtered || 0,
+                failed: row.failed || 0,
+                replaced: row.replaced || 0,
                 bySeverity: {
                     critical: row.critical || 0,
                     high: row.high || 0,

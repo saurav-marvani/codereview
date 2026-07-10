@@ -20,8 +20,18 @@ export type SuggestionSeverityBreakdown = Record<
 >;
 
 export interface SuggestionCountsBySeverity {
+    // deliveryStatus === 'sent' — comment posted on the PR.
     sent: number;
+    // deliveryStatus === 'not_sent' — held back by the review config/priority
+    // rules (severity threshold, quantity limit, safeguard, clustering…).
     filtered: number;
+    // deliveryStatus ∈ {'failed', 'failed_lines_mismatch'} — Kody tried to post
+    // but couldn't (API error / lines no longer match the diff). A delivery
+    // failure, NOT a config decision — kept separate so it isn't hidden.
+    failed: number;
+    // deliveryStatus === 'replaced' — superseded by a newer suggestion (e.g. a
+    // re-review). Counted for reconciliation; not surfaced as a live signal.
+    replaced: number;
     bySeverity: SuggestionSeverityBreakdown;
     // Distinct labels (categories) among the delivered suggestions, lowercased.
     categories: string[];

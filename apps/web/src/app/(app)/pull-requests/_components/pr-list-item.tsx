@@ -165,15 +165,10 @@ const formatDuration = (start: string, end?: string | null) => {
     return `${seconds}s`;
 };
 
-const getStatusBadge = (status: string, merged: boolean) => {
-    if (merged) {
-        return (
-            <Badge variant="primary" className="whitespace-nowrap">
-                Merged
-            </Badge>
-        );
-    }
-
+// The review-run status (automation_execution / code_review_execution share the
+// same AutomationStatus enum). PR merge-state is rendered separately — it must
+// not mask whether the review itself succeeded or errored.
+const getStatusBadge = (status: string) => {
     // Mirrors the automation_execution status values verbatim.
     switch (status) {
         case "success":
@@ -601,16 +596,38 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                             </span>
                         </TooltipTrigger>
                         <TooltipContent className="text-xs">
-                            Suggestions filtered out by your configuration
+                            Held back by your review configuration
                         </TooltipContent>
                     </Tooltip>
+                    {/* Delivery failures — only shown when there are any, so a
+                        clean review stays "sent / filtered". Distinct from
+                        "filtered" (a config decision): Kody tried to post these
+                        and couldn't. */}
+                    {latest.suggestionsCount.failed ? (
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <span className="bg-warning/10 text-warning inline-flex min-w-7 items-center justify-center rounded-md px-2 py-0.5 text-xs font-medium tabular-nums">
+                                    {latest.suggestionsCount.failed}
+                                </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="text-xs">
+                                Kody couldn&apos;t post these (delivery failed)
+                            </TooltipContent>
+                        </Tooltip>
+                    ) : null}
                 </NextLink>
 
-                {/* Status column. */}
-                <div className="flex min-w-0 justify-start">
+                {/* Status column — the review-run status, plus a separate
+                    "Merged" chip when the PR is merged (merge-state no longer
+                    masks whether the review succeeded/errored). */}
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                     {getStatusBadge(
                         latest.automationExecution?.status || "pending",
-                        latest.merged,
+                    )}
+                    {latest.merged && (
+                        <Badge variant="primary" className="whitespace-nowrap">
+                            Merged
+                        </Badge>
                     )}
                 </div>
             </div>
@@ -704,7 +721,6 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                     </span>
                                                     {getStatusBadge(
                                                         executionStatus,
-                                                        false,
                                                     )}
                                                     {executionDuration && (
                                                         <span className="text-text-tertiary text-xs tabular-nums">
@@ -830,7 +846,6 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                                                     {!isAutomationStart &&
                                                                                         getStatusBadge(
                                                                                             item.status,
-                                                                                            false,
                                                                                         )}
                                                                                     {executionOrigin &&
                                                                                         isAutomationStart && (
