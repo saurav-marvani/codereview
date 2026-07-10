@@ -4,6 +4,11 @@ import { useEffect, useRef } from "react";
 import { Button } from "@components/ui/button";
 import { Skeleton } from "@components/ui/skeleton";
 import { Spinner } from "@components/ui/spinner";
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from "@components/ui/tooltip";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { GitPullRequestIcon } from "lucide-react";
 import { cn } from "src/core/utils/components";
@@ -128,11 +133,52 @@ export const PrDataTable = ({
                     PR_ROW_GRID,
                     "border-card-lv3/40 bg-card-lv1/95 text-text-tertiary sticky top-0 z-10 border-b px-5 py-2.5 text-[0.6875rem] font-medium tracking-wide uppercase backdrop-blur",
                 )}>
+                {/* Column explanations. side="bottom" opens into the list (the
+                    header sits at the top of the scroll container); the shared
+                    TooltipContent portals to <body> so it never clips. */}
                 <span aria-hidden />
-                <span>Pull request</span>
-                <span>Reviews</span>
-                <span>Suggestions</span>
-                <span>Status</span>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <span className="w-fit cursor-help">Pull request</span>
+                    </TooltipTrigger>
+                    <TooltipContent
+                        side="bottom"
+                        className="text-xs normal-case">
+                        The PR — number, title, repository, branch, author and
+                        when it was opened.
+                    </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <span className="w-fit cursor-help">Reviews</span>
+                    </TooltipTrigger>
+                    <TooltipContent
+                        side="bottom"
+                        className="text-xs normal-case">
+                        How many times Kody reviewed this PR and how recently.
+                    </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <span className="w-fit cursor-help">Suggestions</span>
+                    </TooltipTrigger>
+                    <TooltipContent
+                        side="bottom"
+                        className="text-xs normal-case">
+                        Suggestions delivered (green) vs filtered out by your
+                        configuration (red).
+                    </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <span className="w-fit cursor-help">Status</span>
+                    </TooltipTrigger>
+                    <TooltipContent
+                        side="bottom"
+                        className="text-xs normal-case">
+                        Status of the latest review execution.
+                    </TooltipContent>
+                </Tooltip>
             </div>
             {/* Virtualized body — rows align to the header via PR_ROW_GRID. */}
             <div

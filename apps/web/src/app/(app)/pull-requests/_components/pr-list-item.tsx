@@ -452,10 +452,17 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                     the card richness inside a single aligned table column. */}
                 <div className="min-w-0">
                     <div className="flex min-w-0 items-center gap-2">
-                        <span className="text-text-secondary flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums">
-                            <GitPullRequestIcon className="size-3.5 shrink-0" />
-                            #{latest.prNumber}
-                        </span>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <span className="text-text-secondary flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums">
+                                    <GitPullRequestIcon className="size-3.5 shrink-0" />
+                                    #{latest.prNumber}
+                                </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="text-xs">
+                                Pull request number
+                            </TooltipContent>
+                        </Tooltip>
                         {/* Native title attribute instead of a Radix tooltip:
                             the tooltip rendered the full title in a box directly
                             over the title itself (redundant + overlapping). The
@@ -480,18 +487,38 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                     </div>
 
                     <div className="text-text-secondary mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                        <span className="flex max-w-[16rem] min-w-0 items-center gap-1">
-                            <FolderIcon className="size-3 shrink-0" />
-                            <span className="truncate">
-                                {latest.repositoryName}
-                            </span>
-                        </span>
-                        <span className="flex max-w-[14rem] min-w-0 items-center gap-1">
-                            <GitBranchIcon className="size-3 shrink-0" />
-                            <span className="truncate font-mono">
-                                {latest.headBranchRef}
-                            </span>
-                        </span>
+                        {/* Field-name tooltips on the icon-only metadata. The
+                            shared TooltipContent now portals to <body>, so these
+                            no longer clip against the scroll container / sticky
+                            header. */}
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <span className="flex max-w-[16rem] min-w-0 items-center gap-1">
+                                    <FolderIcon className="size-3 shrink-0" />
+                                    <span className="truncate">
+                                        {latest.repositoryName}
+                                    </span>
+                                </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="text-xs">
+                                Repository
+                            </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <span className="flex max-w-[14rem] min-w-0 items-center gap-1">
+                                    <GitBranchIcon className="size-3 shrink-0" />
+                                    <span className="truncate font-mono">
+                                        {latest.headBranchRef}
+                                    </span>
+                                </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="text-xs">
+                                Source branch
+                            </TooltipContent>
+                        </Tooltip>
+                        {/* "opened" already carries its own label + the
+                            TimeAgoDisplay tooltip shows the exact date. */}
                         <span className="flex items-center gap-1 tabular-nums">
                             <ClockIcon className="size-3 shrink-0" />
                             <span>
@@ -503,12 +530,19 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                             </span>
                         </span>
                         {latest.author?.name && (
-                            <span className="flex min-w-0 items-center gap-1">
-                                <UserIcon className="size-3 shrink-0" />
-                                <span className="max-w-[12rem] truncate">
-                                    {latest.author.name}
-                                </span>
-                            </span>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <span className="flex min-w-0 items-center gap-1">
+                                        <UserIcon className="size-3 shrink-0" />
+                                        <span className="max-w-[12rem] truncate">
+                                            {latest.author.name}
+                                        </span>
+                                    </span>
+                                </TooltipTrigger>
+                                <TooltipContent className="text-xs">
+                                    Author
+                                </TooltipContent>
+                            </Tooltip>
                         )}
                     </div>
                 </div>
@@ -517,10 +551,19 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                     recently — the core "is the review keeping up?" signal.
                     Labeled by the table header. */}
                 <div className="text-text-secondary flex min-w-0 flex-col gap-0.5 text-xs tabular-nums">
-                    <span className="text-text-primary flex items-center gap-1 font-medium">
-                        <MessageSquareIcon className="text-text-tertiary size-3.5 shrink-0" />
-                        {reviewCount}
-                    </span>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <span className="text-text-primary flex w-fit items-center gap-1 font-medium">
+                                <MessageSquareIcon className="text-text-tertiary size-3.5 shrink-0" />
+                                {reviewCount}
+                            </span>
+                        </TooltipTrigger>
+                        <TooltipContent className="text-xs">
+                            {reviewCount === 1
+                                ? "1 Kody review on this PR"
+                                : `${reviewCount} Kody reviews on this PR`}
+                        </TooltipContent>
+                    </Tooltip>
                     {latest.automationExecution?.createdAt && (
                         <span className="text-text-tertiary truncate">
                             <TimeAgoDisplay
