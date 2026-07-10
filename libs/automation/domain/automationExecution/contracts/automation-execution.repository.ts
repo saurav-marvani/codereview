@@ -55,6 +55,13 @@ export interface IAutomationExecutionRepository {
             hasError: boolean;
         }>
     >;
+    // PRs Kody has any execution for (reviewed OR skipped-by-config) — used by
+    // the Awaiting facet so skipped PRs aren't counted as awaiting.
+    getProcessedPullRequestKeys(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryIds?: string[];
+        createdAtFrom?: Date | string;
+    }): Promise<Array<{ repositoryId: string; pullRequestNumber: number }>>;
     findCliReviewExecutionsByOrganization(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryId?: string;

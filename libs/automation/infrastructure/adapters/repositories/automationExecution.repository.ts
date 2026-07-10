@@ -501,6 +501,79 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
         }
     }
 
+    // Distinct PRs Kody has an execution for — reviewed OR skipped. Unlike
+    // getDistinctReviewedPullRequestKeys this does NOT require a
+    // code_review_execution, so it also includes PRs the pipeline skipped by
+    // config (no license, BYOK missing, manual/auto-pause cadence, ignored user
+    // …), which still create an automation_execution with status='skipped'.
+    // "Awaiting review" subtracts THIS set from the open PRs: a PR Kody
+    // considered and skipped isn't awaiting — only PRs Kody never touched are.
+    async getProcessedPullRequestKeys(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryIds?: string[];
+        createdAtFrom?: Date | string;
+    }): Promise<Array<{ repositoryId: string; pullRequestNumber: number }>> {
+        const { organizationAndTeamData, repositoryIds, createdAtFrom } =
+            params;
+        const { organizationId, teamId } = organizationAndTeamData ?? {};
+
+        if (!organizationId || !teamId) {
+            return [];
+        }
+
+        try {
+            const queryBuilder = this.automationExecutionRepository
+                .createQueryBuilder('automation_execution')
+                .select('automation_execution.repositoryId', 'repositoryId')
+                .addSelect(
+                    'automation_execution.pullRequestNumber',
+                    'pullRequestNumber',
+                )
+                .innerJoin(
+                    'automation_execution.teamAutomation',
+                    'teamAutomation',
+                )
+                .innerJoin('teamAutomation.team', 'team')
+                .innerJoin('team.organization', 'organization')
+                .where('automation_execution.pullRequestNumber IS NOT NULL')
+                .andWhere('automation_execution.repositoryId IS NOT NULL')
+                .andWhere('organization.uuid = :organizationId', {
+                    organizationId,
+                })
+                .andWhere('team.uuid = :teamId', { teamId })
+                .groupBy('automation_execution.repositoryId')
+                .addGroupBy('automation_execution.pullRequestNumber');
+
+            if (repositoryIds?.length) {
+                queryBuilder.andWhere(
+                    'automation_execution.repositoryId IN (:...repositoryIds)',
+                    { repositoryIds },
+                );
+            }
+
+            if (createdAtFrom) {
+                queryBuilder.andWhere(
+                    'automation_execution.createdAt >= :createdAtFrom',
+                    { createdAtFrom },
+                );
+            }
+
+            const rows = await queryBuilder.getRawMany();
+            return rows.map((row) => ({
+                repositoryId: String(row.repositoryId),
+                pullRequestNumber: Number(row.pullRequestNumber),
+            }));
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to get processed pull request keys',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { params },
+            });
+            return [];
+        }
+    }
+
     // Distinct reviewed PRs (one row per repo+PR) with whether any of that PR's
     // executions errored. Powers the segment facet counts (All / Errored) and
     // the reviewed-key set the Awaiting facet subtracts from. GROUP BY collapses

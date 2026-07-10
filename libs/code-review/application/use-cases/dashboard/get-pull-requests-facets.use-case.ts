@@ -34,7 +34,8 @@ export interface PullRequestsFacets {
     needsAttention: number;
     // Reviewed PRs whose review errored.
     errored: number;
-    // Open PRs with no Kody review yet.
+    // Open PRs Kody never processed — excludes PRs it skipped by config
+    // (no license, BYOK missing, manual/auto-pause cadence, ignored user).
     awaiting: number;
     // Reviewed PRs authored by the current user (0 if identity can't be matched).
     mine: number;
@@ -127,44 +128,58 @@ export class GetPullRequestsFacetsUseCase implements IUseCase {
 
             const email = this.request.user?.email;
 
-            const [reviewedKeys, needsAttention, mine, openKeys] =
-                await Promise.all([
-                    this.automationExecutionService.getDistinctReviewedPullRequestKeys(
-                        { organizationAndTeamData, repositoryIds },
-                    ),
-                    // Needs attention = open PRs that still carry an unaddressed
-                    // delivered suggestion (any severity, implementationStatus ≠
-                    // implemented). Actionable "someone needs to look at this",
-                    // not "ever delivered a crit/high" (which counted merged/
-                    // resolved PRs too).
-                    this.pullRequestsService.countDeliveredPullRequests(
-                        organizationId,
-                        repositoryIds,
-                        { unresolvedOnly: true, openOnly: true },
-                    ),
-                    email
-                        ? this.pullRequestsService.countDeliveredPullRequests(
-                              organizationId,
-                              repositoryIds,
-                              { authorEmail: email },
-                          )
-                        : Promise.resolve(0),
-                    // Epoch cutoff → all open PRs (not just today).
-                    this.pullRequestsService.findOpenPullRequestKeysOpenedSince(
-                        '1970-01-01T00:00:00.000Z',
-                        organizationId,
-                        repositoryIds,
-                    ),
-                ]);
+            const [
+                reviewedKeys,
+                needsAttention,
+                mine,
+                openKeys,
+                processedKeys,
+            ] = await Promise.all([
+                this.automationExecutionService.getDistinctReviewedPullRequestKeys(
+                    { organizationAndTeamData, repositoryIds },
+                ),
+                // Needs attention = open PRs that still carry an unaddressed
+                // delivered suggestion (any severity, implementationStatus ≠
+                // implemented). Actionable "someone needs to look at this",
+                // not "ever delivered a crit/high" (which counted merged/
+                // resolved PRs too).
+                this.pullRequestsService.countDeliveredPullRequests(
+                    organizationId,
+                    repositoryIds,
+                    { unresolvedOnly: true, openOnly: true },
+                ),
+                email
+                    ? this.pullRequestsService.countDeliveredPullRequests(
+                          organizationId,
+                          repositoryIds,
+                          { authorEmail: email },
+                      )
+                    : Promise.resolve(0),
+                // Epoch cutoff → all open PRs (not just today).
+                this.pullRequestsService.findOpenPullRequestKeysOpenedSince(
+                    '1970-01-01T00:00:00.000Z',
+                    organizationId,
+                    repositoryIds,
+                ),
+                // PRs Kody has any execution for (reviewed OR skipped-by-
+                // config) — awaiting subtracts THIS, not just reviewed, so a
+                // PR skipped for no-license/BYOK/manual isn't "awaiting".
+                this.automationExecutionService.getProcessedPullRequestKeys({
+                    organizationAndTeamData,
+                    repositoryIds,
+                }),
+            ]);
 
-            const reviewedSet = new Set(
-                reviewedKeys.map(
+            const processedSet = new Set(
+                processedKeys.map(
                     (k) => `${k.repositoryId}_${k.pullRequestNumber}`,
                 ),
             );
             const errored = reviewedKeys.filter((k) => k.hasError).length;
+            // Awaiting = open PRs Kody never processed (not in processedSet).
+            // A PR it reviewed OR skipped-by-config is excluded.
             const awaiting = openKeys.filter(
-                (k) => !reviewedSet.has(`${k.repositoryId}_${k.number}`),
+                (k) => !processedSet.has(`${k.repositoryId}_${k.number}`),
             ).length;
 
             return {

@@ -189,6 +189,16 @@ export class AutomationExecutionService implements IAutomationExecutionService {
         );
     }
 
+    getProcessedPullRequestKeys(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryIds?: string[];
+        createdAtFrom?: Date | string;
+    }): Promise<Array<{ repositoryId: string; pullRequestNumber: number }>> {
+        return this.automationExecutionRepository.getProcessedPullRequestKeys(
+            params,
+        );
+    }
+
     findCliReviewExecutionsByOrganization(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryId?: string;

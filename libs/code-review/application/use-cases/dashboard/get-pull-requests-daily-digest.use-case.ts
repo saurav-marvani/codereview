@@ -132,17 +132,14 @@ export class GetPullRequestsDailyDigestUseCase implements IUseCase {
                     },
                 );
 
-            const reviewedKeys = new Set<string>();
             const reviewedCriteria: Array<{
                 number: number;
                 repositoryId: string;
             }> = [];
             let erroredToday = 0;
+            const reviewedToday = reviewedKeyRows.length;
 
             for (const row of reviewedKeyRows) {
-                reviewedKeys.add(
-                    `${row.repositoryId}_${row.pullRequestNumber}`,
-                );
                 reviewedCriteria.push({
                     number: row.pullRequestNumber,
                     repositoryId: row.repositoryId,
@@ -173,24 +170,40 @@ export class GetPullRequestsDailyDigestUseCase implements IUseCase {
                 }
             }
 
-            // 3. Awaiting review: PRs opened today, still open, not yet reviewed.
-            const openedKeys =
-                await this.pullRequestsService.findOpenPullRequestKeysOpenedSince(
+            // 3. Awaiting review: PRs opened today, still open, that Kody hasn't
+            //    processed today — reviewed OR skipped-by-config both count as
+            //    "handled", so a PR skipped for no-license/BYOK/manual isn't
+            //    awaiting. (A PR can only be processed on/after it was opened, so
+            //    today's processed set is the right subtrahend.)
+            const [openedKeys, processedKeyRows] = await Promise.all([
+                this.pullRequestsService.findOpenPullRequestKeysOpenedSince(
                     date,
                     organizationId,
                     repositoryIds,
-                );
+                ),
+                this.automationExecutionService.getProcessedPullRequestKeys({
+                    organizationAndTeamData,
+                    repositoryIds,
+                    createdAtFrom: date,
+                }),
+            ]);
+
+            const processedKeys = new Set(
+                processedKeyRows.map(
+                    (k) => `${k.repositoryId}_${k.pullRequestNumber}`,
+                ),
+            );
 
             let awaitingReview = 0;
             for (const key of openedKeys) {
-                if (!reviewedKeys.has(`${key.repositoryId}_${key.number}`)) {
+                if (!processedKeys.has(`${key.repositoryId}_${key.number}`)) {
                     awaitingReview++;
                 }
             }
 
             return {
                 date,
-                reviewedToday: reviewedKeys.size,
+                reviewedToday,
                 needsAttention,
                 erroredToday,
                 awaitingReview,
