@@ -241,9 +241,9 @@ export function pathMatchesIdeRuleDir(
     return globs.some((glob) => {
         // The glob is "IDE-y" if its fixed prefix is one of the markers
         // (e.g. ".cursor/rules/**" → fixed prefix ".cursor/rules/").
-        // `{` counts as a wildcard here so ".cursor/rules/{a,b}/**"
-        // still yields the ".cursor/rules" prefix.
-        const fixedPrefix = glob.split(/[*?[{]/)[0];
+        // `{` and `(` count as wildcards here so ".cursor/rules/{a,b}/**"
+        // and ".cursor/rules/@(a,b)/**" still yield ".cursor/rules".
+        const fixedPrefix = glob.split(/[*?[{(]/)[0].replace(/[@!+]$/, '');
         const dir = fixedPrefix.endsWith('/')
             ? fixedPrefix.slice(0, -1)
             : path.posix.dirname(fixedPrefix);

@@ -40,12 +40,16 @@ export class KodyRulesSyncListener {
      */
     private async claimSyncRun(claimKey: string): Promise<boolean> {
         try {
-            await this.dataSource.query(
-                `CREATE TABLE IF NOT EXISTS kodus_event_claims (
+            // Concurrent CREATE IF NOT EXISTS can still race (duplicate
+            // relation) — tolerated: the table exists either way.
+            await this.dataSource
+                .query(
+                    `CREATE TABLE IF NOT EXISTS kodus_event_claims (
                     claim_key text PRIMARY KEY,
                     created_at timestamptz NOT NULL DEFAULT now()
                 )`,
-            );
+                )
+                .catch(() => undefined);
             // Opportunistic TTL sweep so the table never grows unbounded.
             await this.dataSource.query(
                 `DELETE FROM kodus_event_claims WHERE created_at < now() - interval '7 days'`,
@@ -136,12 +140,24 @@ export class KodyRulesSyncListener {
             return;
         }
 
-        await this.kodyRulesSyncService.syncFromChangedFiles({
-            organizationAndTeamData: event.organizationAndTeamData,
-            repository: event.repository,
-            pullRequestNumber: event.pullRequestNumber,
-            files: event.files,
-        });
+        try {
+            await this.kodyRulesSyncService.syncFromChangedFiles({
+                organizationAndTeamData: event.organizationAndTeamData,
+                repository: event.repository,
+                pullRequestNumber: event.pullRequestNumber,
+                files: event.files,
+            });
+        } catch (error) {
+            // Release the claim so a redelivery/retry can sync this merge —
+            // a stale claim would turn one transient failure into a
+            // permanently lost sync.
+            await this.dataSource
+                .query(`DELETE FROM kodus_event_claims WHERE claim_key = $1`, [
+                    claimKey,
+                ])
+                .catch(() => undefined);
+            throw error;
+        }
     }
 
     @OnEvent(IDE_RULES_SYNC_DISABLED_EVENT)

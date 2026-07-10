@@ -259,14 +259,21 @@ export class CrossProcessEventsBridge implements OnModuleInit, OnModuleDestroy {
         if (this.stopped) return;
 
         const options = this.dataSource.options as Record<string, any>;
-        const client = new Client({
-            host: options.host,
-            port: options.port,
-            user: options.username,
-            password: options.password,
-            database: options.database,
-            ssl: options.ssl,
-        });
+        // Deployments may configure Postgres via a single URL instead of
+        // discrete fields — building the client only from host/port left
+        // those installs without a LISTEN connection.
+        const client = new Client(
+            options.url
+                ? { connectionString: options.url, ssl: options.ssl }
+                : {
+                      host: options.host,
+                      port: options.port,
+                      user: options.username,
+                      password: options.password,
+                      database: options.database,
+                      ssl: options.ssl,
+                  },
+        );
 
         client.on('error', (error) => {
             this.logger.warn({
@@ -285,6 +292,12 @@ export class CrossProcessEventsBridge implements OnModuleInit, OnModuleDestroy {
 
         try {
             await client.connect();
+            // Shutdown may have started while the connect was in flight —
+            // don't leave a dangling LISTEN connection behind.
+            if (this.stopped) {
+                await client.end().catch(() => undefined);
+                return;
+            }
             await this.ensureInfra();
             await client.query(`LISTEN ${PG_CHANNEL}`);
             this.client = client;
@@ -304,14 +317,23 @@ export class CrossProcessEventsBridge implements OnModuleInit, OnModuleDestroy {
         }
     }
 
+    private reconnectPending = false;
+
     private async scheduleReconnect(oldClient: Client): Promise<void> {
         if (this.stopped) return;
         await oldClient.end().catch(() => undefined);
         if (this.client === oldClient) this.client = null;
+        // A failing client can fire 'error' AND reject connect() for the
+        // same failure — only one reconnect timer may be live at a time.
+        if (this.reconnectPending) return;
+        this.reconnectPending = true;
         const delay = this.reconnectDelayMs;
         // Capped exponential backoff: transient DB restarts recover fast,
         // a down DB doesn't get hammered.
         this.reconnectDelayMs = Math.min(this.reconnectDelayMs * 2, 30_000);
-        setTimeout(() => void this.connect(), delay).unref?.();
+        setTimeout(() => {
+            this.reconnectPending = false;
+            void this.connect();
+        }, delay).unref?.();
     }
 }

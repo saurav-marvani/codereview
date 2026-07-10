@@ -392,6 +392,7 @@ export class PromptContextEngineService implements IPromptContextEngineService {
             patterns.push(`**/${fileName}.md`);
             patterns.push(`**/${upperFileName}.md`);
             patterns.push(`**/${lowerFileName}.md`);
+            patterns.push(`**/${capitalizedFileName}.md`);
         }
 
         return [...new Set(patterns)];
