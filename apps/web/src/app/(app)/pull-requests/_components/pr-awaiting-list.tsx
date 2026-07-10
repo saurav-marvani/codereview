@@ -1,6 +1,7 @@
 "use client";
 
 import NextLink from "next/link";
+import { Badge } from "@components/ui/badge";
 import { Link } from "@components/ui/link";
 import { Skeleton } from "@components/ui/skeleton";
 import {
@@ -90,9 +91,15 @@ export const AwaitingList = ({ teamId }: { teamId: string }) => {
                             </span>
                         </div>
                     </div>
-                    <span className="text-text-tertiary shrink-0 rounded-md border border-current/20 px-2 py-0.5 text-[11px] font-medium">
-                        Not reviewed
-                    </span>
+                    {/* These PRs were triggered but skipped by config (no
+                        license / BYOK / manual cadence) and never reviewed —
+                        same "Skipped" badge the main list uses for status. */}
+                    <Badge
+                        variant="helper"
+                        className="shrink-0 whitespace-nowrap"
+                        title="Kody was triggered but skipped this PR by configuration (no license, BYOK, or manual/paused cadence)">
+                        Skipped
+                    </Badge>
                 </div>
             ))}
         </div>
