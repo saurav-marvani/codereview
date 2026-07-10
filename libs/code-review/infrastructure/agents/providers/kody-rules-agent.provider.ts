@@ -11,7 +11,7 @@ import { createLogger } from '@libs/core/log/logger';
 import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
 import { ByokErrorCounter } from '@libs/notifications/application/byok-error-counter.service';
 import { isFileMatchingGlob } from '@libs/common/utils/glob-utils';
-import { splitRulePathGlobs } from '@libs/common/utils/kody-rules/file-patterns';
+import { fileMatchesRulePath } from '@libs/common/utils/kody-rules/file-patterns';
 import { BYOKPromptRunnerService } from '@libs/core/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import { BaseCodeReviewAgentProvider } from '@libs/code-review/infrastructure/agents/providers/base-code-review-agent.provider';
 import { resolveAgentModel } from '@libs/code-review/infrastructure/agents/collaborators/model-factory';
@@ -529,18 +529,6 @@ If no violations found, respond with \`{"reasoning": "Checked all rules, no viol
      * root-level files like `foo.ts` or `src/foo.ts`.
      */
     private matchesPathPattern(filePath: string, pattern: string): boolean {
-        if (filePath === pattern) return true;
-        // The repo-file importer persists MULTIPLE globs comma-joined
-        // ("src/**,lib/**"). Matching the joined string as ONE glob makes
-        // the comma literal and the rule silently never fires — the
-        // customer's "multi-glob rules are never enforced" case.
-        return splitRulePathGlobs(pattern).some((glob) => {
-            if (filePath === glob) return true;
-            // Picomatch trailing-slash globs match directories, not the
-            // files inside them — keep the directory-prefix fallback PER
-            // GLOB (on the joined string it never fired for "src/,lib/").
-            if (glob.endsWith('/') && filePath.startsWith(glob)) return true;
-            return isFileMatchingGlob(filePath, [glob]);
-        });
+        return fileMatchesRulePath(filePath, pattern);
     }
 }

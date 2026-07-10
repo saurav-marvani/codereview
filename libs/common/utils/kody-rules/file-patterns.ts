@@ -1,6 +1,9 @@
 import * as path from 'path';
 
-import { isFileMatchingGlobCaseInsensitive } from '@libs/common/utils/glob-utils';
+import {
+    isFileMatchingGlob,
+    isFileMatchingGlobCaseInsensitive,
+} from '@libs/common/utils/glob-utils';
 
 export const RULE_FILE_PATTERNS = [
     // Cursor
@@ -357,4 +360,30 @@ export function validateAndScopeIdeRulePath(params: {
         reason: 'accepted-as-is',
         originalLlmPath: llmPath,
     };
+}
+
+/**
+ * Whether a changed file falls under a rule's `path` as PERSISTED — i.e.
+ * possibly several globs comma-joined by the repo-file importer
+ * ("src/**,lib/**"). Matching the joined string as ONE glob makes the
+ * comma literal and the rule silently never fires (the customer's
+ * "multi-glob rules are never enforced" case). Trailing-slash globs are
+ * directories to picomatch, so the directory-prefix fallback runs PER
+ * split glob.
+ *
+ * Single source of truth for every enforcement path (agent provider
+ * selection, sharded judge, mechanical detector) — the bug regressed
+ * once precisely because a mirrored copy of this logic was fixed in one
+ * site and not the other.
+ */
+export function fileMatchesRulePath(
+    filePath: string,
+    pattern: string,
+): boolean {
+    if (filePath === pattern) return true;
+    return splitRulePathGlobs(pattern).some((glob) => {
+        if (filePath === glob) return true;
+        if (glob.endsWith('/') && filePath.startsWith(glob)) return true;
+        return isFileMatchingGlob(filePath, [glob]);
+    });
 }
