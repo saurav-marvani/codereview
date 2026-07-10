@@ -389,7 +389,7 @@ export function PullRequestsPageClient() {
                   key: "attention",
                   label: "Needs attention",
                   sub: "total",
-                  hint: "Open PRs with a delivered suggestion the author hasn't addressed yet (any severity).",
+                  hint: "Open PRs where Kody delivered a suggestion the author still hasn't applied — your actionable backlog (Kody verifies whether each suggestion was implemented). Click to see exactly these PRs; may lag until the next verification pass.",
                   // Open PRs that still carry an unresolved delivered suggestion
                   // (implementationStatus ≠ implemented) — actionable, not
                   // "ever delivered a crit/high".

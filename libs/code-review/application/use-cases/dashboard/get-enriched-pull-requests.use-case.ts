@@ -15,6 +15,7 @@ import {
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@libs/platformData/domain/pullRequests/contracts/pullRequests.service.contracts';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
+import { ImplementationStatus } from '@libs/platformData/domain/pullRequests/enums/implementationStatus.enum';
 import {
     IPullRequests,
     SuggestionCountsBySeverity,
@@ -537,10 +538,22 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                             continue;
                         }
 
-                        // Needs-attention filter: delivered critical OR high.
+                        // Needs-attention filter: an OPEN PR that still carries a
+                        // delivered suggestion the author hasn't applied
+                        // (implementationStatus ≠ implemented). Mirrors the card
+                        // count (countDeliveredPullRequests unresolvedOnly +
+                        // openOnly) so the list you see on click can't disagree
+                        // with the badge — the old "delivered crit/high" filter
+                        // counted a different (and merged/resolved-inclusive) set.
                         if (needsAttention) {
-                            const bs = suggestionsCount?.bySeverity;
-                            if (!bs || bs.critical + bs.high <= 0) {
+                            const isOpen =
+                                pullRequest.merged !== true &&
+                                String(pullRequest.status).toLowerCase() !==
+                                    'closed';
+                            if (
+                                !isOpen ||
+                                !((suggestionsCount?.unresolved ?? 0) > 0)
+                            ) {
                                 continue;
                             }
                         }
@@ -930,11 +943,13 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
         pullRequest: IPullRequests,
     ): SuggestionCountsBySeverity {
         const bySeverity = { critical: 0, high: 0, medium: 0, low: 0 };
+        const unresolvedBySeverity = { critical: 0, high: 0, medium: 0, low: 0 };
         const categorySet = new Set<string>();
         let sent = 0;
         let filtered = 0;
         let failed = 0;
         let replaced = 0;
+        let unresolved = 0;
 
         // Optimized: check if we have pre-computed counts
         if ((pullRequest as any).suggestionsCount) {
@@ -944,6 +959,13 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                 filtered: precomputed.filtered ?? 0,
                 failed: precomputed.failed ?? 0,
                 replaced: precomputed.replaced ?? 0,
+                unresolved: precomputed.unresolved ?? 0,
+                unresolvedBySeverity: {
+                    critical: precomputed.unresolvedBySeverity?.critical ?? 0,
+                    high: precomputed.unresolvedBySeverity?.high ?? 0,
+                    medium: precomputed.unresolvedBySeverity?.medium ?? 0,
+                    low: precomputed.unresolvedBySeverity?.low ?? 0,
+                },
                 bySeverity: {
                     critical: precomputed.bySeverity?.critical ?? 0,
                     high: precomputed.bySeverity?.high ?? 0,
@@ -964,6 +986,8 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                 filtered: 0,
                 failed: 0,
                 replaced: 0,
+                unresolved: 0,
+                unresolvedBySeverity,
                 bySeverity,
                 categories: [],
             };
@@ -983,6 +1007,19 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                     ).toLowerCase();
                     if (severity in bySeverity) {
                         bySeverity[severity as keyof typeof bySeverity]++;
+                    }
+                    // Unresolved = sent but not implemented (missing status =
+                    // unresolved), mirroring the aggregation + the card count.
+                    if (
+                        suggestion.implementationStatus !==
+                        ImplementationStatus.IMPLEMENTED
+                    ) {
+                        unresolved++;
+                        if (severity in unresolvedBySeverity) {
+                            unresolvedBySeverity[
+                                severity as keyof typeof unresolvedBySeverity
+                            ]++;
+                        }
                     }
                     const label = String(
                         (suggestion as any).label ?? '',
@@ -1006,6 +1043,8 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
             filtered,
             failed,
             replaced,
+            unresolved,
+            unresolvedBySeverity,
             bySeverity,
             categories: Array.from(categorySet),
         };

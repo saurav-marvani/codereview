@@ -32,6 +32,15 @@ export interface SuggestionCountsBySeverity {
     // deliveryStatus === 'replaced' — superseded by a newer suggestion (e.g. a
     // re-review). Counted for reconciliation; not surfaced as a live signal.
     replaced: number;
+    // Delivered (sent) suggestions the author still hasn't applied —
+    // implementationStatus ≠ 'implemented' (not_implemented, partially, or a
+    // legacy doc with no status). This is the "Needs attention" signal: it must
+    // match the card count (countDeliveredPullRequests unresolvedOnly) so the
+    // list you see on click can't disagree with the badge.
+    unresolved: number;
+    // Same unresolved set, broken down by severity — lets the UI lead with
+    // critical/high (the urgent slice) without hiding the lower-severity tail.
+    unresolvedBySeverity: SuggestionSeverityBreakdown;
     bySeverity: SuggestionSeverityBreakdown;
     // Distinct labels (categories) among the delivered suggestions, lowercased.
     categories: string[];

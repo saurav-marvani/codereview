@@ -318,6 +318,40 @@ export class PullRequestsRepository implements IPullRequestsRepository {
         };
     }
 
+    // A delivered (sent) suggestion is "unresolved" when the author hasn't
+    // implemented it: implementationStatus ≠ 'implemented'. A missing field
+    // (legacy docs) compares ≠ 'implemented' → counted as unresolved, matching
+    // countDeliveredPullRequests' `$ne` semantics so the list and the card agree.
+    private unresolvedSentCond(severity?: string) {
+        const conds: Record<string, any>[] = [
+            {
+                $eq: [
+                    '$files.suggestions.deliveryStatus',
+                    DeliveryStatus.SENT,
+                ],
+            },
+            {
+                $ne: [
+                    '$files.suggestions.implementationStatus',
+                    ImplementationStatus.IMPLEMENTED,
+                ],
+            },
+        ];
+        if (severity) {
+            conds.push({
+                $eq: [
+                    {
+                        $toLower: {
+                            $ifNull: ['$files.suggestions.severity', ''],
+                        },
+                    },
+                    severity,
+                ],
+            });
+        }
+        return { $sum: { $cond: [{ $and: conds }, 1, 0] } };
+    }
+
     async findSuggestionCountsByNumbersAndRepositoryIds(
         criteria: Array<{
             number: number;
@@ -438,6 +472,13 @@ export class PullRequestsRepository implements IPullRequestsRepository {
                         high: this.sumSentBySeverity('high'),
                         medium: this.sumSentBySeverity('medium'),
                         low: this.sumSentBySeverity('low'),
+                        // Unresolved (sent + implementationStatus ≠ implemented)
+                        // total and by severity — the "Needs attention" signal.
+                        unresolved: this.unresolvedSentCond(),
+                        ucritical: this.unresolvedSentCond('critical'),
+                        uhigh: this.unresolvedSentCond('high'),
+                        umedium: this.unresolvedSentCond('medium'),
+                        ulow: this.unresolvedSentCond('low'),
                         // Distinct categories (labels) among DELIVERED suggestions
                         // — powers the category filter. null entries (non-sent
                         // rows) are stripped when the map is built.
@@ -478,6 +519,11 @@ export class PullRequestsRepository implements IPullRequestsRepository {
                         high: 1,
                         medium: 1,
                         low: 1,
+                        unresolved: 1,
+                        ucritical: 1,
+                        uhigh: 1,
+                        umedium: 1,
+                        ulow: 1,
                         categories: 1,
                     },
                 },
@@ -492,6 +538,13 @@ export class PullRequestsRepository implements IPullRequestsRepository {
                 filtered: row.filtered || 0,
                 failed: row.failed || 0,
                 replaced: row.replaced || 0,
+                unresolved: row.unresolved || 0,
+                unresolvedBySeverity: {
+                    critical: row.ucritical || 0,
+                    high: row.uhigh || 0,
+                    medium: row.umedium || 0,
+                    low: row.ulow || 0,
+                },
                 bySeverity: {
                     critical: row.critical || 0,
                     high: row.high || 0,
