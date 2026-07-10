@@ -85,6 +85,10 @@ const KODUS_PLAYBOOK = {
     requiredEnv: [] as string[],
     setup: [
         'cp .env.example .env',
+        // .env.example ships these empty; two import-time crypto validators
+        // (crypto.ts / webhookTokenCrypto.ts) THROW at boot unless they're a
+        // valid 32-byte hex → the api crashes "unhealthy". Set valid dummies.
+        'for kv in "API_CRYPTO_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" "CODE_MANAGEMENT_SECRET=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" "CODE_MANAGEMENT_WEBHOOK_TOKEN=devwebhooktoken0123456789" "API_JWT_SECRET=devjwtsecret0123456789abcdef" "API_JWT_REFRESH_SECRET=devjwtrefreshsecret0123456789"; do k="${kv%%=*}"; if grep -q "^$k=" .env; then sed -i "s|^$k=.*|$kv|" .env; else echo "$kv" >> .env; fi; done; echo boot-env-set',
         'docker network create kodus-backend-services 2>/dev/null; docker network create shared-network 2>/dev/null; true',
         'docker compose -f docker-compose.dev.yml up -d --quiet-pull db_postgres db_mongodb rabbitmq 2>&1 | tail -4',
         'set -o pipefail; docker compose -f docker-compose.dev.yml build kodus-api web 2>&1 | tail -5',
@@ -99,7 +103,7 @@ const KODUS_PLAYBOOK = {
     // both runs and masks the warm-boot delta. Gate on web=200 to isolate the
     // provision+build speedup, which is the whole point of this timing run.
     healthcheck: [
-        'for i in $(seq 1 24); do curl -sf http://localhost:3000/sign-in >/dev/null 2>&1 && break; sleep 5; done; docker compose -f docker-compose.dev.yml ps --format "{{.Service}} {{.Status}}" 2>&1 | tail -6; curl -s -o /dev/null -w "web=%{http_code} " http://localhost:3000/sign-in; curl -s -o /dev/null -w "api=%{http_code}\\n" http://localhost:3001/health',
+        'for i in $(seq 1 45); do curl -sf http://localhost:3001/health >/dev/null 2>&1 && break; sleep 8; done; docker compose -f docker-compose.dev.yml ps --format "{{.Service}} {{.Status}}" 2>&1 | tail -6; curl -s -o /dev/null -w "web=%{http_code} " http://localhost:3000/sign-in; curl -s -o /dev/null -w "api=%{http_code}\\n" http://localhost:3001/health; curl -sf http://localhost:3001/health >/dev/null 2>&1 || (echo "=== kodus_api logs (still unhealthy) ==="; docker logs kodus_api --tail 30 2>&1 | tail -30)',
     ],
 };
 
