@@ -1429,8 +1429,13 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     runDedup,
                 );
             } else {
-                const model = resolveSecondaryPassModel(byokConfig);
-                if (!model) {
+                // Trial / no-BYOK / self-hosted env path. Still wrap with
+                // withStructuredOutputFallback so models that reject
+                // response_format=json_schema (Gemini, some proxies) retry
+                // with json_object instead of failing open into keep-all
+                // after a thrown error further up — or worse, partial
+                // structured output that leaves true dups on the PR.
+                if (!resolveSecondaryPassModel(byokConfig)) {
                     this.logger.warn({
                         message: `[DEDUP] PR#${prNumber}: no secondary model available, keeping all suggestions`,
                         context: this.stageName,
@@ -1453,7 +1458,14 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                         },
                     };
                 }
-                dedupResult = await runDedup(model);
+                dedupResult = await withStructuredOutputFallback(
+                    {
+                        byokConfig,
+                        organizationId: telemetryMeta?.organizationId,
+                        label: 'dedup-suggestions',
+                    },
+                    runDedup,
+                );
             }
 
             // Track token usage — via the canonical emitter so the dedup pass'

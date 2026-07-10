@@ -25,6 +25,10 @@ export { DEFAULT_SEVERITY_FLAGS, type SuggestionForClassification };
 
 const logger = createLogger('SeverityClassifier');
 
+// Match format-suggestion-content: BYOK models can hang under load; don't
+// pin the whole review pipeline on an unbounded secondary call.
+const SEVERITY_TIMEOUT_MS = 90_000;
+
 /**
  * Classify severity for a batch of suggestions.
  *
@@ -53,9 +57,13 @@ export async function classifySeverity(
 
     const flags = severityFlags?.severity?.flags || DEFAULT_SEVERITY_FLAGS;
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), SEVERITY_TIMEOUT_MS);
+
     try {
         const result: any = await generateText({
             model: model as any,
+            abortSignal: controller.signal,
             experimental_telemetry: buildLangfuseTelemetry(
                 'severity-classifier',
             ),
@@ -89,5 +97,7 @@ export async function classifySeverity(
             error,
         });
         return new Map(suggestions.map((_, i) => [i, 'medium']));
+    } finally {
+        clearTimeout(timeout);
     }
 }
