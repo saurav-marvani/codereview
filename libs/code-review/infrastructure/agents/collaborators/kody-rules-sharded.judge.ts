@@ -301,10 +301,19 @@ export async function inlineRuleReferences(
  * shard rule); ambiguous or far ids are dropped.
  */
 function resolveRuleId(
-    ruleId: number | string,
+    ruleId: unknown,
     orderedUuids: string[],
     known: Set<string>,
 ): string | null {
+    // `ruleId` is untrusted LLM output — the eval harness parses raw model JSON
+    // without the zod schema, so a missing field or an echoed old `ruleUuid`
+    // key arrives here as undefined/null/non-scalar. Drop just that entry
+    // rather than throwing (which the per-shard try/catch would escalate into
+    // discarding every real violation for the file).
+    if (typeof ruleId !== 'number' && typeof ruleId !== 'string') {
+        return null;
+    }
+
     const asIndex =
         typeof ruleId === 'number'
             ? ruleId

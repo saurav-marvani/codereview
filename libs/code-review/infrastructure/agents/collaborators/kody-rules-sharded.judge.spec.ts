@@ -204,6 +204,25 @@ describe('judgeKodyRulesSharded — deterministic file×rule sweep (#1449)', () 
         expect(res.violations).toHaveLength(0);
     });
 
+    // A malformed entry (model omitted ruleId, or echoed the old `ruleUuid`
+    // key) must be skipped on its own — not throw and take the whole shard's
+    // real violations down with it via the per-shard try/catch.
+    it('drops a malformed violation (missing ruleId) without discarding the rest of the shard', async () => {
+        const run: RunJudge = async () => [
+            { suggestionContent: 'no ruleId here' } as any,
+            { ruleUuid: 'r1', suggestionContent: 'old key echoed' } as any,
+            { ruleId: 1, relevantLinesStart: 3, suggestionContent: 'valid' },
+        ];
+        const res = await judgeKodyRulesSharded({
+            changedFiles: [file('src/a.ts', '3 +bad')],
+            rules: [{ uuid: 'r1', title: 't', rule: 'r', path: '**/*.ts' }],
+            runJudge: run,
+        });
+        expect(res.shardsErrored).toBe(0);
+        expect(res.violations).toHaveLength(1);
+        expect(res.violations[0].ruleUuid).toBe('r1');
+    });
+
     it('runs PR-scope rules in a single whole-PR shard (no relevantFile)', async () => {
         const { run, calls } = fakeJudge({ __PR__: [{ ruleId: 1 }] });
         const res = await judgeKodyRulesSharded({
