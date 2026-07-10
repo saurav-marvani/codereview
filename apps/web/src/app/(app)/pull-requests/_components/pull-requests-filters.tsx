@@ -36,8 +36,8 @@ type SuggestionsFilterValue = "all" | "true" | "false";
 type AuthorPolicyFilterValue = "all" | "reviewable" | "excluded";
 
 // The long-tail filters, rendered inline in the toolbar (repo, author policy,
-// Kody suggestions, review-date range). Severity, status and the title/number
-// search live directly in page.client, so they are intentionally NOT here.
+// Kody suggestions, review-date range). Status and the title/number search live
+// directly in page.client, so they are intentionally NOT here.
 interface PullRequestsFiltersProps {
     teamId: string;
     selectedRepository?: string;

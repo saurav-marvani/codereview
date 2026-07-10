@@ -51,22 +51,6 @@ const STATUS_LABEL: Record<(typeof STATUSES)[number], string> = {
     in_progress: "In progress",
     pending: "Pending",
 };
-const SEVERITIES = ["critical", "high", "medium", "low"] as const;
-const SEVERITY_LABEL: Record<(typeof SEVERITIES)[number], string> = {
-    critical: "Critical",
-    high: "High",
-    medium: "Medium",
-    low: "Low",
-};
-// Severity color dot shown in the severity dropdown — keeps the color cue
-// without loud always-on chips in the bar.
-const SEVERITY_DOT: Record<(typeof SEVERITIES)[number], string> = {
-    critical: "bg-danger",
-    high: "bg-warning",
-    medium: "bg-warning/60",
-    low: "bg-text-tertiary",
-};
-
 export function PullRequestsPageClient() {
     const { teamId } = useSelectedTeamId();
     usePullRequestExecutionSSE();
@@ -100,10 +84,6 @@ export function PullRequestsPageClient() {
     const [statusFilter, setStatusFilter] = useQueryState(
         "status",
         parseAsStringLiteral(STATUSES).withOptions(urlOpts),
-    );
-    const [severityFilter, setSeverityFilter] = useQueryState(
-        "severity",
-        parseAsStringLiteral(SEVERITIES).withOptions(urlOpts),
     );
     const [createdAtFrom, setCreatedAtFrom] = useQueryState(
         "from",
@@ -164,7 +144,6 @@ export function PullRequestsPageClient() {
             hasSentSuggestions: hasSentSuggestionsParam,
             authorPolicy,
             status: statusFilter ?? undefined,
-            severity: severityFilter ?? undefined,
             needsAttention: needsAttention === "true" ? true : undefined,
             author: debouncedAuthor.trim() || undefined,
             createdAtFrom: createdAtFrom ?? undefined,
@@ -222,7 +201,6 @@ export function PullRequestsPageClient() {
         setSuggestionsFilter("all");
         setAuthorPolicy("reviewable");
         setStatusFilter(null);
-        setSeverityFilter(null);
         setNeedsAttention(null);
         setAuthorFilter(null);
         setView(null);
@@ -292,13 +270,6 @@ export function PullRequestsPageClient() {
                 setStatusFilter(null);
             },
         },
-        severityFilter && {
-            key: "severity",
-            label: `Severity: ${SEVERITY_LABEL[severityFilter]}`,
-            clear: () => {
-                setSeverityFilter(null);
-            },
-        },
         (createdAtFrom || createdAtTo) && {
             key: "date",
             label: `Date: ${createdAtFrom || "…"} → ${createdAtTo || "…"}`,
@@ -316,9 +287,9 @@ export function PullRequestsPageClient() {
     //   1. No filters → the unfiltered team facet (`facets.all`).
     //   2. Only DB-level filters (status/date/repo/number/title) → the backend's
     //      `filteredPrTotal` (distinct PRs matching those filters — exact).
-    //   3. A Mongo-side filter is active (severity/suggestions/needs-attention/
-    //      author/author-policy) → the backend can't count those server-side yet,
-    //      so fall back to the loaded window and mark it partial ("+").
+    //   3. A Mongo-side filter is active (suggestions/needs-attention/author/
+    //      author-policy) → the backend can't count those server-side yet, so
+    //      fall back to the loaded window and mark it partial ("+").
     // `groupedPullRequests.length` alone only reflects the loaded page, so it
     // understated the real total (read "150 pull requests" next to "665
     // awaiting"); it's the last resort.
@@ -330,7 +301,6 @@ export function PullRequestsPageClient() {
     // Filters applied post-query (Mongo side) — while any is active,
     // `filteredPrTotal` (DB-level only) is an upper bound, not exact.
     const hasMongoFilters =
-        !!severityFilter ||
         suggestionsFilter !== "all" ||
         needsAttention === "true" ||
         !!debouncedAuthor.trim() ||
@@ -612,43 +582,6 @@ export function PullRequestsPageClient() {
                                 setCreatedAtTo(value || null)
                             }
                         />
-
-                        <Select
-                            value={severityFilter ?? "all"}
-                            onValueChange={(value) =>
-                                setSeverityFilter(
-                                    value === "all"
-                                        ? null
-                                        : (value as (typeof SEVERITIES)[number]),
-                                )
-                            }>
-                            <SelectTrigger
-                                size="sm"
-                                className={cn(
-                                    "h-9 w-auto gap-1.5 rounded-lg",
-                                    severityFilter && "border-primary-light/50",
-                                )}>
-                                <SelectValue placeholder="Severity" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">
-                                    Any severity
-                                </SelectItem>
-                                {SEVERITIES.map((sev) => (
-                                    <SelectItem key={sev} value={sev}>
-                                        <span className="flex items-center gap-2">
-                                            <span
-                                                className={cn(
-                                                    "size-2 rounded-full",
-                                                    SEVERITY_DOT[sev],
-                                                )}
-                                            />
-                                            {SEVERITY_LABEL[sev]}
-                                        </span>
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
 
                         <Select
                             value={statusFilter ?? "all"}
