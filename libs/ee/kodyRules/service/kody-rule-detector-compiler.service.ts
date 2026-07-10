@@ -11,14 +11,9 @@
  * fewer T0 rules, never a wrong detector.
  */
 import { Inject, Injectable } from '@nestjs/common';
-import {
-    LLMModelProvider,
-    ParserType,
-    PromptRole,
-    PromptRunnerService,
-} from '@kodus/kodus-common/llm';
-import { BYOKPromptRunnerService } from '@libs/core/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
+import { ObservabilityService } from '@libs/core/log/observability.service';
+import { runStructuredReviewCall } from '@libs/llm/structured-review-call';
 import { createLogger } from '@libs/core/log/logger';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import {
@@ -43,8 +38,8 @@ export class KodyRuleDetectorCompilerService
     );
 
     constructor(
-        private readonly promptRunnerService: PromptRunnerService,
         private readonly permissionValidationService: PermissionValidationService,
+        private readonly observabilityService: ObservabilityService,
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: IKodyRulesService,
     ) {}
@@ -65,31 +60,27 @@ export class KodyRuleDetectorCompilerService
                     organizationAndTeamData,
                 );
 
-            // System default (Kimi K2 + GPT-OSS-120B, no Gemini) — only used
-            // when the org has no BYOK; a BYOK org overrides via byokConfig.
-            const runner = new BYOKPromptRunnerService(
-                this.promptRunnerService,
-                LLMModelProvider.GROQ_MOONSHOTAI_KIMI_K2_,
-                LLMModelProvider.GROQ_GPT_OSS_120B,
-                byokConfig,
-            );
-
+            // Local (Vercel) stack via runStructuredReviewCall — main = the
+            // org's BYOK model or our managed default (kimi-k2.7-code via
+            // Moonshot); fallback = the org's own fallback (BYOK) or, for trial
+            // only, our managed Groq gpt-oss-120b. No kodus-common.
             const runCompiler = makeLLMRunCompiler(async ({ system, user }) => {
-                const parsed = await runner
-                    .builder()
-                    .setParser(ParserType.ZOD, compilerOutputSchema)
-                    .setLLMJsonMode(true)
-                    .addPrompt({ role: PromptRole.SYSTEM, prompt: system })
-                    .addPrompt({ role: PromptRole.USER, prompt: user })
-                    .setRunName('kody-rules.detector-compiler')
-                    .execute();
+                const parsed = await runStructuredReviewCall({
+                    byokConfig: byokConfig ?? undefined,
+                    schema: compilerOutputSchema,
+                    system,
+                    user,
+                    runName: 'kody-rules.detector-compiler',
+                    organizationId: organizationAndTeamData.organizationId,
+                    observabilityService: this.observabilityService,
+                });
                 return (parsed as CompilerOutput) ?? null;
             });
 
             const { detector, declineReason } = await compileRuleDetector(
                 rule,
                 runCompiler,
-                { modelName: runner.executeMode },
+                { modelName: byokConfig?.main ? 'byok' : 'system' },
             );
 
             const orgId = organizationAndTeamData.organizationId;
