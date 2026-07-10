@@ -450,6 +450,10 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
             message: `Capturing golden snapshot for ${repoId} (key ${key})…`,
             context: this.stageName,
         });
+        // Flush pending writes to disk before the (crash-consistent) image is
+        // taken — otherwise a running app's half-written files (e.g. a truncated
+        // package.json in node_modules) get baked in and break the warm boot.
+        await vm.run('sync', { timeoutMs: 60_000 }).catch(() => undefined);
         const imageId = await vm.snapshot(`kody-runtime ${repoId} ${key}`);
         const previous = await this.snapshotService.record(
             context.organizationAndTeamData,
