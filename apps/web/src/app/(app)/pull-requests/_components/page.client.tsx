@@ -369,12 +369,14 @@ export function PullRequestsPageClient() {
         needsAttention !== "true" &&
         statusFilter === null &&
         isTodayScoped;
-    const failedTodayActive =
-        !isAwaiting && statusFilter === "error" && isTodayScoped;
-    const scopeToToday = (status: "error" | null) => {
+    // No separate "Review failed today" card: it's just "Reviewed today" + the
+    // Status: Error filter, so it was redundant. Clicking "Reviewed today"
+    // scopes the list to today; the user adds a Status filter to narrow to
+    // failures (or any other status).
+    const scopeToToday = () => {
         setView(null);
         setNeedsAttention(null);
-        setStatusFilter(status);
+        setStatusFilter(null);
         setCreatedAtFrom(todayIso);
         setCreatedAtTo(todayIso);
     };
@@ -389,27 +391,12 @@ export function PullRequestsPageClient() {
                   key: "reviewed",
                   label: "Reviewed today",
                   sub: "today",
-                  hint: "Distinct PRs Kody reviewed today (UTC). Opens today's reviews.",
+                  hint: "Distinct PRs Kody reviewed today (UTC). Opens today's reviews — add a Status filter to narrow (e.g. failed).",
                   value: digest.reviewedToday,
                   tone: "text-success",
                   active: reviewedTodayActive,
                   onClick: () =>
-                      reviewedTodayActive
-                          ? clearTodayScope()
-                          : scopeToToday(null),
-              },
-              {
-                  key: "failed",
-                  label: "Review failed today",
-                  sub: "today",
-                  hint: "PRs whose review errored today. Opens today's failed reviews.",
-                  value: digest.erroredToday,
-                  tone: "text-destructive",
-                  active: failedTodayActive,
-                  onClick: () =>
-                      failedTodayActive
-                          ? clearTodayScope()
-                          : scopeToToday("error"),
+                      reviewedTodayActive ? clearTodayScope() : scopeToToday(),
               },
               {
                   key: "awaiting",
@@ -485,7 +472,7 @@ export function PullRequestsPageClient() {
                     that a lead wants before scanning individual PRs. Each card
                     filters the list to its segment. */}
                 {pulseCards.length > 0 && (
-                    <div className="grid grid-cols-2 gap-3 pt-4 sm:grid-cols-4">
+                    <div className="grid grid-cols-1 gap-3 pt-4 sm:grid-cols-3">
                         {pulseCards.map((card) => (
                             <button
                                 key={card.key}
