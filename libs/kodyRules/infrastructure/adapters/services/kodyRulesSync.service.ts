@@ -48,6 +48,10 @@ import {
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import { SubscriptionStatus } from '@libs/ee/license/interfaces/license.interface';
+import { runStructuredReviewCall } from '@libs/llm/structured-review-call';
+import { byokToVercelModel, getModelName } from '@libs/llm/byok-to-vercel';
+import { wrapByokModel } from '@libs/llm/byok-model-wrapper';
+import { tracedGenerateText } from '@libs/llm/llm-call';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import {
     ContextDetectionField,
@@ -2181,8 +2185,8 @@ export class KodyRulesSyncService {
             });
         }
 
-        // Our managed (default) models are trial-only. BYOK always wins — the
-        // BYOKPromptRunnerService below uses the customer's model whenever a
+        // Our managed (default) models are trial-only. BYOK always wins —
+        // runStructuredReviewCall below uses the customer's model whenever a
         // BYOK config is present, regardless of subscription state. But once
         // the trial ends, an org without its own key must NOT silently fall
         // back to our managed models: skip the LLM conversion instead. Verbatim
@@ -2214,52 +2218,22 @@ export class KodyRulesSyncService {
             return [];
         }
 
-        const mainProvider =
-            options?.mainProvider ?? LLMModelProvider.CEREBRAS_GLM_47;
-        const mainFallback =
-            options?.fallbackProvider ??
-            LLMModelProvider.GROQ_MOONSHOTAI_KIMI_K2_;
         const mainRun = options?.runName ?? 'kodyRulesFileToRules';
 
-        const promptRunner = new BYOKPromptRunnerService(
-            this.promptRunnerService,
-            mainProvider,
-            mainFallback,
-            byokConfigValue,
-        );
-
         try {
-            const { result } = await this.observabilityService.runLLMInSpan({
-                spanName: `${KodyRulesSyncService.name}::${mainRun}`,
-                runName: mainRun,
+            const result = await runStructuredReviewCall({
+                byokConfig: byokConfigValue ?? undefined,
+                schema: kodyRulesIDEGeneratorSchema,
+                organizationId:
+                    params.organizationAndTeamData?.organizationId,
+                runName: `${KodyRulesSyncService.name}::${mainRun}`,
                 attrs: {
                     repositoryId: params.repositoryId,
                     filePath: params.filePath,
-                    type: promptRunner.executeMode,
                     fallback: false,
                 },
-                byokConfig: byokConfigValue,
-                exec: async (callbacks) => {
-                    return await promptRunner
-                        .builder()
-                        .setParser(
-                            ParserType.ZOD,
-                            kodyRulesIDEGeneratorSchema,
-                            {
-                                provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
-                                fallbackProvider:
-                                    LLMModelProvider.OPENAI_GPT_4O,
-                            },
-                        )
-                        .setLLMJsonMode(true)
-                        .setPayload({
-                            filePath: params.filePath,
-                            repositoryId: params.repositoryId,
-                            content: effectiveContent,
-                        })
-                        .addPrompt({
-                            role: PromptRole.SYSTEM,
-                            prompt: [
+                observabilityService: this.observabilityService,
+                system: [
                                 'Convert repository rule files (Cursor, Claude, GitHub rules, coding standards, etc.) into a JSON array of Kody Rules. IMPORTANT: Enforce exactly one rule per file. If multiple candidate rules exist, merge them COMPREHENSIVELY into one unified rule that preserves all essential details.',
                                 'Output ONLY a valid JSON object with a "rules" array. Format: {"rules": [...]}. If no rules, output {"rules": []}. No comments or explanations.',
                                 'Each item in the "rules" array MUST match exactly:',
@@ -2309,17 +2283,8 @@ export class KodyRulesSyncService {
                                 'Language: always return the rule text in English, even if the source content is in another language.',
                                 'Do NOT include keys like repositoryId, origin, createdAt, updatedAt, uuid, or any extra keys.',
                                 'Keep strings strictly typed, but COMPREHENSIVE in content - do not sacrifice completeness for brevity.',
-                            ].join(' '),
-                        })
-                        .addPrompt({
-                            role: PromptRole.USER,
-                            prompt: `File: ${params.filePath}\n\nContent:\n${effectiveContent}`,
-                        })
-                        .addCallbacks(callbacks) // <- injeta tracker
-                        .addMetadata({ runName: mainRun })
-                        .setRunName(mainRun)
-                        .execute();
-                },
+                ].join(' '),
+                user: `File: ${params.filePath}\n\nContent:\n${effectiveContent}`,
             });
 
             if (!result?.rules || result.rules.length === 0) return [];
@@ -2380,52 +2345,36 @@ export class KodyRulesSyncService {
             const fbRun = `${mainRun}Raw`;
 
             try {
-                const fbProvider =
-                    options?.mainProvider ?? LLMModelProvider.CEREBRAS_GLM_47;
-                const fbFallback =
-                    options?.fallbackProvider ??
-                    LLMModelProvider.GROQ_MOONSHOTAI_KIMI_K2_;
-
-                const promptRunner = new BYOKPromptRunnerService(
-                    this.promptRunnerService,
-                    fbProvider,
-                    fbFallback,
-                    byokConfigValue,
+                // Raw-JSON retry on the LOCAL (Vercel) stack — same default/BYOK
+                // main model as the structured call above, plain-text output so a
+                // schema mismatch that broke Output.object still yields something
+                // extractJsonArray can salvage.
+                const rawModel = wrapByokModel(
+                    byokToVercelModel(byokConfigValue ?? undefined, 'main', {}),
+                    {
+                        byokConfig: byokConfigValue ?? undefined,
+                        organizationId:
+                            params.organizationAndTeamData?.organizationId,
+                        role: 'main',
+                    },
                 );
 
-                const { result: raw } =
-                    await this.observabilityService.runLLMInSpan({
+                const { text: raw } =
+                    await this.observabilityService.runAiSdkLLMInSpan<any>({
                         spanName: `${KodyRulesSyncService.name}::${fbRun}`,
                         runName: fbRun,
+                        model: getModelName(byokConfigValue ?? undefined),
                         attrs: {
                             repositoryId: params.repositoryId,
                             filePath: params.filePath,
-                            type: promptRunner.executeMode,
                             fallback: true,
                         },
-                        byokConfig: byokConfigValue,
-                        exec: async (callbacks) => {
-                            return await promptRunner
-                                .builder()
-                                .setParser(ParserType.STRING)
-                                .setPayload({
-                                    filePath: params.filePath,
-                                    repositoryId: params.repositoryId,
-                                    content: effectiveContent,
-                                })
-                                .addPrompt({
-                                    role: PromptRole.SYSTEM,
-                                    prompt: 'Return ONLY the JSON array for the rules, without code fences. Include a "sourceSnippet" field when you can copy an exact excerpt from the file for each rule. No explanations.',
-                                })
-                                .addPrompt({
-                                    role: PromptRole.USER,
-                                    prompt: `File: ${params.filePath}\n\nContent:\n${effectiveContent}`,
-                                })
-                                .addCallbacks(callbacks)
-                                .addMetadata({ runName: fbRun })
-                                .setRunName(fbRun)
-                                .execute();
-                        },
+                        exec: () =>
+                            tracedGenerateText({
+                                model: rawModel as any,
+                                system: 'Return ONLY the JSON array for the rules, without code fences. Include a "sourceSnippet" field when you can copy an exact excerpt from the file for each rule. No explanations.',
+                                prompt: `File: ${params.filePath}\n\nContent:\n${effectiveContent}`,
+                            } as any),
                     });
 
                 const parsed = this.extractJsonArray(raw);
