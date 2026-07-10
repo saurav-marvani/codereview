@@ -38,6 +38,14 @@ interface PrListItemProps {
     group: PullRequestExecutionGroup;
 }
 
+// Shared column template for the collapsed row AND the table header in
+// pr-data-table.tsx, so the two stay aligned. Fixed trailing columns are
+// deterministic across every virtualized row (same container width → same
+// widths), and the identity column flexes + truncates. Columns:
+// chevron | pull request (identity) | reviews | suggestions | status.
+export const PR_ROW_GRID =
+    "grid grid-cols-[1.25rem_minmax(0,1fr)_8rem_6.5rem_8.5rem] items-center gap-x-4";
+
 const formatDateTime = (dateString: string, timezone: string | null) => {
     const tz = timezone || "UTC";
     try {
@@ -425,7 +433,8 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                 role="button"
                 tabIndex={0}
                 className={cn(
-                    "flex cursor-pointer items-start gap-3 px-5 py-4",
+                    "cursor-pointer px-5 py-4",
+                    PR_ROW_GRID,
                     isOpen
                         ? "bg-card-lv2/40 hover:bg-card-lv2/50"
                         : "hover:bg-card-lv1/70",
@@ -433,14 +442,16 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                 onClick={() => setIsOpen(!isOpen)}>
                 <ChevronDownIcon
                     className={cn(
-                        "text-text-tertiary mt-1 size-4 shrink-0 transition-transform duration-200",
+                        "text-text-tertiary size-4 shrink-0 transition-transform duration-200",
                         isOpen && "text-text-secondary rotate-180",
                     )}
                 />
 
-                {/* Left: title-dominant identity + metadata subline. */}
-                <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
+                {/* Identity column: PR# + title (links out to the provider) with
+                    a metadata subline (repo · branch · opened · author). Keeps
+                    the card richness inside a single aligned table column. */}
+                <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
                         <span className="text-text-secondary flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums">
                             <GitPullRequestIcon className="size-3.5 shrink-0" />
                             #{latest.prNumber}
@@ -466,17 +477,6 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                             <span className="truncate">{latest.title}</span>
                             <ExternalLinkIcon className="text-text-tertiary group-hover/title:text-primary-light size-3.5 shrink-0 transition-colors" />
                         </Link>
-                        {/* Author sits on the identity line (with PR# and title)
-                            — a primary "whose PR is this?" field, not buried in
-                            the metadata subline. */}
-                        {latest.author?.name && (
-                            <span className="text-text-secondary flex shrink-0 items-center gap-1 text-xs">
-                                <UserIcon className="size-3.5 shrink-0" />
-                                <span className="max-w-[12rem] truncate">
-                                    {latest.author.name}
-                                </span>
-                            </span>
-                        )}
                     </div>
 
                     <div className="text-text-secondary mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
@@ -502,68 +502,73 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                 />
                             </span>
                         </span>
-                        {/* Review activity: how many times Kody reviewed this PR
-                            and how recently — the core "is the review keeping up?"
-                            signal for this dashboard. Count is always shown (it
-                            was hidden for the common single-review case). */}
-                        <span className="flex items-center gap-1 tabular-nums">
-                            <MessageSquareIcon className="size-3 shrink-0" />
-                            <span>
-                                {reviewCount}{" "}
-                                {reviewCount === 1 ? "review" : "reviews"}
-                                {latest.automationExecution?.createdAt && (
-                                    <>
-                                        {" · "}
-                                        <TimeAgoDisplay
-                                            dateString={
-                                                latest.automationExecution
-                                                    .createdAt
-                                            }
-                                            timezone={timezone}
-                                        />
-                                    </>
-                                )}
+                        {latest.author?.name && (
+                            <span className="flex min-w-0 items-center gap-1">
+                                <UserIcon className="size-3 shrink-0" />
+                                <span className="max-w-[12rem] truncate">
+                                    {latest.author.name}
+                                </span>
                             </span>
-                        </span>
+                        )}
                     </div>
                 </div>
 
-                {/* Right: the signal — status + delivered findings. */}
-                <div className="flex shrink-0 flex-col items-end gap-2">
+                {/* Reviews column: how many times Kody reviewed this PR and how
+                    recently — the core "is the review keeping up?" signal.
+                    Labeled by the table header. */}
+                <div className="text-text-secondary flex min-w-0 flex-col gap-0.5 text-xs tabular-nums">
+                    <span className="text-text-primary flex items-center gap-1 font-medium">
+                        <MessageSquareIcon className="text-text-tertiary size-3.5 shrink-0" />
+                        {reviewCount}
+                    </span>
+                    {latest.automationExecution?.createdAt && (
+                        <span className="text-text-tertiary truncate">
+                            <TimeAgoDisplay
+                                dateString={
+                                    latest.automationExecution.createdAt
+                                }
+                                timezone={timezone}
+                            />
+                        </span>
+                    )}
+                </div>
+
+                {/* Suggestions column: delivered (green) / filtered (red),
+                    straight from the code_review_execution counts. Both always
+                    shown so "0 / 0" reads as "reviewed, nothing to send" — not
+                    as missing data. */}
+                <NextLink
+                    href={`/pull-requests/${latest.repositoryId}/${latest.prNumber}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="hover:bg-card-lv3/40 flex items-center gap-1.5 rounded-md px-1 py-1 transition-colors">
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <span className="bg-success/10 text-success inline-flex min-w-7 items-center justify-center rounded-md px-2 py-0.5 text-xs font-medium tabular-nums">
+                                {latest.suggestionsCount.sent}
+                            </span>
+                        </TooltipTrigger>
+                        <TooltipContent className="text-xs">
+                            Suggestions delivered on this PR
+                        </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <span className="bg-danger/10 text-danger inline-flex min-w-7 items-center justify-center rounded-md px-2 py-0.5 text-xs font-medium tabular-nums">
+                                {latest.suggestionsCount.filtered}
+                            </span>
+                        </TooltipTrigger>
+                        <TooltipContent className="text-xs">
+                            Suggestions filtered out by your configuration
+                        </TooltipContent>
+                    </Tooltip>
+                </NextLink>
+
+                {/* Status column. */}
+                <div className="flex min-w-0 justify-start">
                     {getStatusBadge(
                         latest.automationExecution?.status || "pending",
                         latest.merged,
                     )}
-                    <NextLink
-                        href={`/pull-requests/${latest.repositoryId}/${latest.prNumber}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="hover:bg-card-lv3/40 -mr-1.5 flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors">
-                        {/* Suggestions on this PR, straight from the
-                            code_review_execution counts: delivered (green) and
-                            filtered out by the team's configuration (red). Both
-                            always shown so "0 / 0" reads as "reviewed, nothing to
-                            send" — not as missing data. */}
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <span className="bg-success/10 text-success inline-flex min-w-7 items-center justify-center rounded-md px-2 py-0.5 text-xs font-medium tabular-nums">
-                                    {latest.suggestionsCount.sent}
-                                </span>
-                            </TooltipTrigger>
-                            <TooltipContent className="text-xs">
-                                Suggestions delivered on this PR
-                            </TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <span className="bg-danger/10 text-danger inline-flex min-w-7 items-center justify-center rounded-md px-2 py-0.5 text-xs font-medium tabular-nums">
-                                    {latest.suggestionsCount.filtered}
-                                </span>
-                            </TooltipTrigger>
-                            <TooltipContent className="text-xs">
-                                Suggestions filtered out by your configuration
-                            </TooltipContent>
-                        </Tooltip>
-                    </NextLink>
                 </div>
             </div>
 

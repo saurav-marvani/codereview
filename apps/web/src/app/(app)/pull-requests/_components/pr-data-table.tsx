@@ -6,8 +6,9 @@ import { Skeleton } from "@components/ui/skeleton";
 import { Spinner } from "@components/ui/spinner";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { GitPullRequestIcon } from "lucide-react";
+import { cn } from "src/core/utils/components";
 
-import { PrListItem } from "./pr-list-item";
+import { PR_ROW_GRID, PrListItem } from "./pr-list-item";
 import type { PullRequestExecutionGroup } from "./types";
 
 interface PrDataTableProps {
@@ -118,8 +119,22 @@ export const PrDataTable = ({
         <div
             ref={scrollRef}
             className="border-card-lv3/40 bg-card-lv1/50 max-h-[calc(100vh-13rem)] overflow-auto rounded-xl border">
-            {/* Virtualized body — no column header; each row is a self-describing
-                PR card (title + metadata subline + right-aligned signals). */}
+            {/* Sticky table header — labels the aligned columns each row lays
+                out via PR_ROW_GRID, so the signals (reviews / suggestions /
+                status) read as a table while each row keeps its card richness
+                and expandable timeline. */}
+            <div
+                className={cn(
+                    PR_ROW_GRID,
+                    "border-card-lv3/40 bg-card-lv1/95 text-text-tertiary sticky top-0 z-10 border-b px-5 py-2.5 text-[0.6875rem] font-medium tracking-wide uppercase backdrop-blur",
+                )}>
+                <span aria-hidden />
+                <span>Pull request</span>
+                <span>Reviews</span>
+                <span>Suggestions</span>
+                <span>Status</span>
+            </div>
+            {/* Virtualized body — rows align to the header via PR_ROW_GRID. */}
             <div
                 style={{
                     height: `${virtualizer.getTotalSize()}px`,
