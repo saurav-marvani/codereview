@@ -20,6 +20,7 @@
  * inlining, hybrid regex+judge, compound-rule decomposition.
  */
 import { z } from 'zod';
+import { fileMatchesRulePath } from '@libs/common/utils/kody-rules/file-patterns';
 import { FileChange } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import {
     IKodyRule,
@@ -171,14 +172,11 @@ function prShardUser(
 // ── path filtering (mirrors KodyRulesAgentProvider.matchesPathPattern) ───────
 import { isFileMatchingGlob } from '@libs/common/utils/glob-utils';
 
-export function ruleAppliesToFile(
-    filePath: string,
-    pattern?: string,
-): boolean {
+export function ruleAppliesToFile(filePath: string, pattern?: string): boolean {
     if (!pattern) return true;
-    if (filePath === pattern) return true;
-    if (pattern.endsWith('/') && filePath.startsWith(pattern)) return true;
-    return isFileMatchingGlob(filePath, [pattern]);
+    // Shared helper: rule paths may be several comma-joined globs — see
+    // fileMatchesRulePath for why matching the joined string is a bug.
+    return fileMatchesRulePath(filePath, pattern);
 }
 
 function matchesPathPattern(filePath: string, pattern: string): boolean {
@@ -189,7 +187,9 @@ function rulesForFile(
     file: FileChange,
     rules: Array<Partial<IKodyRule>>,
 ): Array<Partial<IKodyRule>> {
-    return rules.filter((r) => !r.path || matchesPathPattern(file.filename, r.path));
+    return rules.filter(
+        (r) => !r.path || matchesPathPattern(file.filename, r.path),
+    );
 }
 
 const isPrLevel = (r: Partial<IKodyRule>) =>
@@ -203,12 +203,15 @@ async function mapLimit<T, R>(
     const out = new Array<R>(items.length);
     let i = 0;
     await Promise.all(
-        Array.from({ length: Math.min(Math.max(1, limit), items.length || 1) }, async () => {
-            while (i < items.length) {
-                const idx = i++;
-                out[idx] = await fn(items[idx]);
-            }
-        }),
+        Array.from(
+            { length: Math.min(Math.max(1, limit), items.length || 1) },
+            async () => {
+                while (i < items.length) {
+                    const idx = i++;
+                    out[idx] = await fn(items[idx]);
+                }
+            },
+        ),
     );
     return out;
 }
@@ -224,7 +227,9 @@ async function mapLimit<T, R>(
  */
 export async function inlineRuleReferences(
     rules: Array<Partial<IKodyRule>>,
-    read: ((path: string, start: number, end: number) => Promise<string>) | undefined,
+    read:
+        | ((path: string, start: number, end: number) => Promise<string>)
+        | undefined,
     logger?: { warn: (entry: any) => void },
     maxRefChars = 6000,
 ): Promise<Array<Partial<IKodyRule>>> {
@@ -278,26 +283,30 @@ export async function judgeKodyRulesSharded(
         .map((file) => ({ file, applicable: rulesForFile(file, fileRules) }))
         .filter((s) => s.applicable.length > 0);
 
-    const perFile = await mapLimit(fileShards, concurrency, async ({ file, applicable }) => {
-        shardsRun++;
-        const ruleUuids = applicable.map((r) => r.uuid!).filter(Boolean);
-        try {
-            const vs = await runJudge({
-                system: SHARD_SYSTEM_PROMPT,
-                user: fileShardUser(file, applicable),
-                filename: file.filename,
-                ruleUuids,
-            });
-            // anchor + scope every violation to this file, drop invented uuids
-            const known = new Set(ruleUuids);
-            return vs
-                .filter((v) => known.has(v.ruleUuid))
-                .map((v) => ({ ...v, relevantFile: file.filename }));
-        } catch {
-            shardsErrored++;
-            return [] as ShardViolation[];
-        }
-    });
+    const perFile = await mapLimit(
+        fileShards,
+        concurrency,
+        async ({ file, applicable }) => {
+            shardsRun++;
+            const ruleUuids = applicable.map((r) => r.uuid!).filter(Boolean);
+            try {
+                const vs = await runJudge({
+                    system: SHARD_SYSTEM_PROMPT,
+                    user: fileShardUser(file, applicable),
+                    filename: file.filename,
+                    ruleUuids,
+                });
+                // anchor + scope every violation to this file, drop invented uuids
+                const known = new Set(ruleUuids);
+                return vs
+                    .filter((v) => known.has(v.ruleUuid))
+                    .map((v) => ({ ...v, relevantFile: file.filename }));
+            } catch {
+                shardsErrored++;
+                return [] as ShardViolation[];
+            }
+        },
+    );
     for (const vs of perFile) violations.push(...vs);
 
     // ── PR-scope shard: one call over the whole PR ──────────────────────────

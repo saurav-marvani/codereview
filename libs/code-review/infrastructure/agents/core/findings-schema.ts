@@ -55,12 +55,29 @@ export function sanitizeFindingsResult(
             hasSuggestions: Array.isArray((raw as any).suggestions),
         },
     });
-    // Attempt partial recovery: if suggestions is an array, keep it;
-    // otherwise fall back to text parsing (return null).
+    // Attempt partial recovery: keep only the suggestions that
+    // individually satisfy the item schema. The old recovery kept the
+    // raw array UNVALIDATED, which is how a suggestion without
+    // `relevantFile` (kimi-k2.7, observed on a customer instance)
+    // reached the finder and crashed the evidence-coverage filter.
     if (Array.isArray((raw as any).suggestions)) {
+        const kept: FindingsOutput['suggestions'] = [];
+        let dropped = 0;
+        for (const item of (raw as any).suggestions) {
+            const s = suggestionSchema.safeParse(item);
+            if (s.success) kept.push(s.data);
+            else dropped++;
+        }
+        if (dropped > 0) {
+            logger.warn({
+                message: `[DONE-TOOL] dropped ${dropped} suggestion(s) that failed item validation during partial recovery`,
+                context: 'FindingsSchema',
+                metadata: { kept: kept.length, dropped },
+            });
+        }
         return {
             reasoning: (raw as any).reasoning ?? '',
-            suggestions: (raw as any).suggestions,
+            suggestions: kept,
         };
     }
     return null;

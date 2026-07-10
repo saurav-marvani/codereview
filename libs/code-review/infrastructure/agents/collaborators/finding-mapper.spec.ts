@@ -24,18 +24,26 @@ const mixedPolicy: LabelPolicy = {
 
 describe('resolveSuggestionLabel', () => {
     it('single-category agent always returns its category', () => {
-        expect(resolveSuggestionLabel({ label: 'security' }, bugPolicy)).toBe('bug');
+        expect(resolveSuggestionLabel({ label: 'security' }, bugPolicy)).toBe(
+            'bug',
+        );
     });
     it('mixed agent honors an allowed LLM label', () => {
-        expect(resolveSuggestionLabel({ label: 'Security' }, mixedPolicy)).toBe('security');
+        expect(resolveSuggestionLabel({ label: 'Security' }, mixedPolicy)).toBe(
+            'security',
+        );
     });
     it('mixed agent falls back to first allowed for an invalid label', () => {
-        expect(resolveSuggestionLabel({ label: 'style' }, mixedPolicy)).toBe('bug');
+        expect(resolveSuggestionLabel({ label: 'style' }, mixedPolicy)).toBe(
+            'bug',
+        );
     });
 });
 
 describe('mapAgentFindings', () => {
-    const ctx = (over: Partial<Parameters<typeof mapAgentFindings>[1]> = {}) => ({
+    const ctx = (
+        over: Partial<Parameters<typeof mapAgentFindings>[1]> = {},
+    ) => ({
         changedFiles: [file('src/a.ts')],
         prNumber: 1,
         isKodyRules: false,
@@ -47,7 +55,11 @@ describe('mapAgentFindings', () => {
 
     it('drops suggestions with no content', () => {
         const r = mapAgentFindings(
-            { findings: { suggestions: [{ relevantFile: 'src/a.ts' } as any] } },
+            {
+                findings: {
+                    suggestions: [{ relevantFile: 'src/a.ts' } as any],
+                },
+            },
             ctx(),
         );
         expect(r.suggestions).toHaveLength(0);
@@ -55,7 +67,13 @@ describe('mapAgentFindings', () => {
 
     it('drops suggestions whose file is not in the PR', () => {
         const r = mapAgentFindings(
-            { findings: { suggestions: [{ suggestionContent: 'x', relevantFile: 'other.ts' }] } },
+            {
+                findings: {
+                    suggestions: [
+                        { suggestionContent: 'x', relevantFile: 'other.ts' },
+                    ],
+                },
+            },
             ctx(),
         );
         expect(r.suggestions).toHaveLength(0);
@@ -63,7 +81,13 @@ describe('mapAgentFindings', () => {
 
     it('keeps + canonicalizes a matching finding (normalized path)', () => {
         const r = mapAgentFindings(
-            { findings: { suggestions: [{ suggestionContent: 'bug', relevantFile: '/src/a.ts' }] } },
+            {
+                findings: {
+                    suggestions: [
+                        { suggestionContent: 'bug', relevantFile: '/src/a.ts' },
+                    ],
+                },
+            },
             ctx(),
         );
         expect(r.suggestions).toHaveLength(1);
@@ -72,10 +96,40 @@ describe('mapAgentFindings', () => {
         expect(r.suggestions[0].severity).toBe('medium');
     });
 
-    it('kody-rules: drops a suggestion without a ruleUuid', () => {
+    it('kody-rules: attributes a uuid-less suggestion to the SINGLE selected rule', () => {
+        // Observed live (PR #598 on the validation env): the model found the
+        // violations but omitted the uuid echo, and the hard drop meant the
+        // customer saw "rule never fires" even with path matching fixed.
         const r = mapAgentFindings(
-            { findings: { suggestions: [{ suggestionContent: 'x', relevantFile: 'src/a.ts' }] } },
+            {
+                findings: {
+                    suggestions: [
+                        { suggestionContent: 'x', relevantFile: 'src/a.ts' },
+                    ],
+                },
+            },
             ctx({ isKodyRules: true, kodyRules: [{ uuid: 'rule-1' } as any] }),
+        );
+        expect(r.suggestions).toHaveLength(1);
+        expect(r.suggestions[0].brokenKodyRulesIds).toEqual(['rule-1']);
+    });
+
+    it('kody-rules: still drops a uuid-less suggestion when multiple rules are candidates (ambiguous)', () => {
+        const r = mapAgentFindings(
+            {
+                findings: {
+                    suggestions: [
+                        { suggestionContent: 'x', relevantFile: 'src/a.ts' },
+                    ],
+                },
+            },
+            ctx({
+                isKodyRules: true,
+                kodyRules: [
+                    { uuid: 'rule-1' } as any,
+                    { uuid: 'rule-2' } as any,
+                ],
+            }),
         );
         expect(r.suggestions).toHaveLength(0);
     });
@@ -87,7 +141,11 @@ describe('mapAgentFindings', () => {
             {
                 findings: {
                     suggestions: [
-                        { suggestionContent: 'x', relevantFile: 'src/a.ts', ruleUuid: corrupted },
+                        {
+                            suggestionContent: 'x',
+                            relevantFile: 'src/a.ts',
+                            ruleUuid: corrupted,
+                        },
                     ],
                 },
             },
@@ -101,8 +159,12 @@ describe('mapAgentFindings', () => {
         const r = mapAgentFindings(
             {
                 findings: { suggestions: [] },
-                discardedBySeverity: [{ suggestionContent: 'a', relevantFile: 'src/a.ts' }],
-                droppedByVerify: [{ suggestionContent: 'b', relevantFile: 'src/a.ts' }],
+                discardedBySeverity: [
+                    { suggestionContent: 'a', relevantFile: 'src/a.ts' },
+                ],
+                droppedByVerify: [
+                    { suggestionContent: 'b', relevantFile: 'src/a.ts' },
+                ],
             },
             ctx(),
         );

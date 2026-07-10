@@ -477,8 +477,42 @@ if [ -f "$OVERRIDE_CACHE" ]; then
 fi
 
 # ---------- cloudflared tunnel ----------
-log "Starting cloudflared quick tunnel for :3332..."
-ssh_vm "cat >/etc/systemd/system/kodus-tunnel.service <<'UNIT'
+# Named tunnel when CLOUDFLARE_API_TOKEN is available: STABLE https
+# hostname, auto-reconnect, survives restarts. The anonymous quick tunnel
+# (fallback) dies unannounced and mints a new URL on restart, silently
+# breaking every registered webhook — observed live 2026-07-08.
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/cf-tunnel.sh"
+if cf_named_tunnel_available; then
+    log "Provisioning named Cloudflare tunnel ($NAME.e2e)..."
+    CF_OUT=$(cf_tunnel_provision "$NAME") || { err "named tunnel provision failed"; exit 1; }
+    SERVER_TUNNEL_URL=$(echo "$CF_OUT" | grep '^CF_TUNNEL_URL=' | cut -d= -f2-)
+    CF_TUNNEL_TOKEN=$(echo "$CF_OUT" | grep '^CF_TUNNEL_TOKEN=' | cut -d= -f2-)
+    ssh_vm "cat >/etc/systemd/system/kodus-tunnel.service <<UNIT
+[Unit]
+Description=cloudflared named tunnel for Kodus webhooks
+After=network-online.target
+[Service]
+ExecStart=/usr/local/bin/cloudflared tunnel run --token ${CF_TUNNEL_TOKEN}
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now kodus-tunnel.service"
+    # Wait until the edge routes to the VM (404 from our ingress catchall
+    # or 200 both mean the tunnel is up; 502/530 means not yet).
+    for i in $(seq 1 30); do
+        code=$(curl -s -o /dev/null -m 8 -w '%{http_code}' "$SERVER_TUNNEL_URL/health" || true)
+        case "$code" in 200|404) break ;; esac
+        sleep 3
+    done
+    ok "Tunnel (named): $SERVER_TUNNEL_URL"
+else
+    warn "CLOUDFLARE_API_TOKEN not set — falling back to the EPHEMERAL quick tunnel (dies unannounced; webhooks break on restart)"
+    log "Starting cloudflared quick tunnel for :3332..."
+    ssh_vm "cat >/etc/systemd/system/kodus-tunnel.service <<'UNIT'
 [Unit]
 Description=cloudflared quick tunnel for Kodus webhooks
 After=network-online.target
@@ -491,13 +525,14 @@ UNIT
 systemctl daemon-reload
 systemctl enable --now kodus-tunnel.service"
 
-for i in $(seq 1 30); do
-    URL=$(ssh_vm "grep -oE 'https://[a-zA-Z0-9-]+\\.trycloudflare\\.com' /var/log/cloudflared.log 2>/dev/null | head -n1" || true)
-    [ -n "$URL" ] && { SERVER_TUNNEL_URL="$URL"; break; }
-    sleep 3
-done
-[ -n "$SERVER_TUNNEL_URL" ] || { err "tunnel URL never appeared"; exit 1; }
-ok "Tunnel: $SERVER_TUNNEL_URL"
+    for i in $(seq 1 30); do
+        URL=$(ssh_vm "grep -oE 'https://[a-zA-Z0-9-]+\\.trycloudflare\\.com' /var/log/cloudflared.log 2>/dev/null | head -n1" || true)
+        [ -n "$URL" ] && { SERVER_TUNNEL_URL="$URL"; break; }
+        sleep 3
+    done
+    [ -n "$SERVER_TUNNEL_URL" ] || { err "tunnel URL never appeared"; exit 1; }
+    ok "Tunnel (quick): $SERVER_TUNNEL_URL"
+fi
 
 # ---------- .env on VM ----------
 log "Writing .env..."

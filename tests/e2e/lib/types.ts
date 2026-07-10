@@ -35,6 +35,8 @@ export interface OpenPRArgs {
     title: string;
     body: string;
     fixtureFiles: Record<string, string>;
+    /** Repo-relative paths to git-rm in the same commit (lifecycle tests: file removal must remove the synced rule). */
+    deleteFiles?: string[];
     baseBranch?: string;
 }
 

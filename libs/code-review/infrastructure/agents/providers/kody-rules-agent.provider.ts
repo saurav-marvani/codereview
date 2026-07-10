@@ -11,6 +11,7 @@ import { createLogger } from '@libs/core/log/logger';
 import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
 import { ByokErrorCounter } from '@libs/notifications/application/byok-error-counter.service';
 import { isFileMatchingGlob } from '@libs/common/utils/glob-utils';
+import { fileMatchesRulePath } from '@libs/common/utils/kody-rules/file-patterns';
 import { BYOKPromptRunnerService } from '@libs/core/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import { BaseCodeReviewAgentProvider } from '@libs/code-review/infrastructure/agents/providers/base-code-review-agent.provider';
 import { resolveAgentModel } from '@libs/code-review/infrastructure/agents/collaborators/model-factory';
@@ -287,9 +288,11 @@ export class KodyRulesAgentProvider extends BaseCodeReviewAgentProvider {
      */
     protected getCategoryPrompt(input: ReviewAgentInput): string {
         const rules = (
-            (input as ReviewAgentInput & {
-                kodyRules?: Partial<IKodyRule>[];
-            }).kodyRules || []
+            (
+                input as ReviewAgentInput & {
+                    kodyRules?: Partial<IKodyRule>[];
+                }
+            ).kodyRules || []
         ).filter(
             (r) => r.type !== KodyRulesType.MEMORY && r.status === 'active',
         );
@@ -357,9 +360,9 @@ You validate code against the team's custom rules listed below. Your ONLY job is
             ? `\n  <Commits>\n${commits
                   .map(
                       (c, i) =>
-                          `    ${i + 1}. ${(c.sha || '').substring(0, 8)} ${(
-                              c.message || ''
-                          ).split('\n')[0]}`,
+                          `    ${i + 1}. ${(c.sha || '').substring(0, 8)} ${
+                              (c.message || '').split('\n')[0]
+                          }`,
                   )
                   .join(
                       '\n',
@@ -454,6 +457,19 @@ If no violations found, respond with \`{"reasoning": "Checked all rules, no viol
             );
         });
 
+        this.shardLogger.log({
+            message: `[kody-rules-eval] ${applicableRules.length}/${rules.length} rule(s) selected for the kody-rules agent (${changedFiles.length} changed file(s))`,
+            context: KodyRulesAgentProvider.name,
+            metadata: {
+                selectedRules: applicableRules.map((r) => ({
+                    uuid: r.uuid,
+                    title: r.title,
+                    path: r.path,
+                })),
+                droppedByPath: rules.length - applicableRules.length,
+            },
+        });
+
         if (applicableRules.length === 0) return '';
 
         const formatted = applicableRules.map((rule, i) => {
@@ -513,8 +529,6 @@ If no violations found, respond with \`{"reasoning": "Checked all rules, no viol
      * root-level files like `foo.ts` or `src/foo.ts`.
      */
     private matchesPathPattern(filePath: string, pattern: string): boolean {
-        if (filePath === pattern) return true;
-        if (pattern.endsWith('/') && filePath.startsWith(pattern)) return true;
-        return isFileMatchingGlob(filePath, [pattern]);
+        return fileMatchesRulePath(filePath, pattern);
     }
 }

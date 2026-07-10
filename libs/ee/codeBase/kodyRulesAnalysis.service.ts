@@ -927,6 +927,27 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 contextReferenceId: rule?.contextReferenceId,
             }));
 
+        // Grep-able evaluation trace ("[kody-rules-eval]"): the single
+        // authoritative record of WHICH rules entered the prompt for this
+        // file. Self-hosted operators debugging "why didn't my rule fire"
+        // previously had no way to tell a rule dropped by path/scope
+        // filtering from a rule the model simply ignored.
+        this.logger.log({
+            message: `[kody-rules-eval] ${kodyRulesFiltered?.length ?? 0} rule(s) selected for file ${fileContext?.file?.filename}`,
+            context: KodyRulesAnalysisService.name,
+            metadata: {
+                organizationAndTeamData: context?.organizationAndTeamData,
+                prNumber: context?.pullRequest?.number,
+                filename: fileContext?.file?.filename,
+                totalActiveRules:
+                    context?.codeReviewConfig?.kodyRules?.length ?? 0,
+                selectedRules: (kodyRulesFiltered ?? []).map((r) => ({
+                    uuid: r.uuid,
+                    title: r.title,
+                })),
+            },
+        });
+
         const baseContext = {
             pullRequest: context?.pullRequest,
             patchWithLinesStr: fileContext?.patchWithLinesStr,
