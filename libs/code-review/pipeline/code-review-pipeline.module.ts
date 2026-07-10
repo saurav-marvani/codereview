@@ -41,6 +41,7 @@ import { LicenseModule } from '@libs/ee/license/license.module';
 import { PermissionValidationModule } from '@libs/ee/shared/permission-validation.module';
 import { KodyFineTuningContextModule } from '@libs/kodyFineTuning/kodyFineTuningContext.module';
 import { OrganizationModule } from '@libs/organization/modules/organization.module';
+import { FeatureGateModule } from '@libs/feature-gate';
 import { OrganizationParametersModule } from '@libs/organization/modules/organizationParameters.module';
 import { ParametersModule } from '@libs/organization/modules/parameters.module';
 import { GithubChecksService } from '@libs/platform/infrastructure/adapters/services/github/github-checks.service';
@@ -82,6 +83,12 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
 
 @Module({
     imports: [
+        // Explicit even though FeatureGateModule is @Global(): the pipeline
+        // (AgentReviewStage) injects FeatureGateService, so declaring it here
+        // guarantees availability for any consumer instead of relying on a
+        // bootstrapping app to import the global module — matching how
+        // FeatureGateModule itself explicitly imports its @Global deps.
+        FeatureGateModule,
         forwardRef(() => CodebaseModule),
         forwardRef(() => DocumentationContextModule),
         forwardRef(() => FileReviewModule),

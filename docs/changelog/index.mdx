@@ -59,6 +59,141 @@ rss: true
 
     <div className="kodus-changelog-release">
         <div className="kodus-changelog-meta">
+            <span className="kodus-changelog-date">July 6, 2026</span>
+        </div>
+
+        <div className="kodus-changelog-content">
+            <div className="kodus-changelog-section">
+                <div role="heading" aria-level="2" className="kodus-changelog-section-label">What's new</div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-ai-engine">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Steer a review with focus</div>
+                    <p className="kodus-changelog-copy">You can now ask Kody to pay special attention to something specific during a review, without changing any configuration.</p>
+                    <p className="kodus-changelog-copy">In a PR, use <code className="kodus-changelog-code">@kody review &lt;directive&gt;</code>. In the CLI, use <code className="kodus-changelog-code">kodus review --focus</code>.</p>
+                    <p className="kodus-changelog-copy">Examples:</p>
+                    <ul className="kodus-changelog-list">
+                        <li><code className="kodus-changelog-code">@kody review focus on security</code></li>
+                        <li><code className="kodus-changelog-code">@kody review focus on performance</code></li>
+                        <li><code className="kodus-changelog-code">kodus review --focus "edge cases"</code></li>
+                    </ul>
+                    <p className="kodus-changelog-copy">This is especially useful for larger PRs or sensitive changes, where you want the review to go deeper on a specific area, such as security, performance, edge cases, a business rule, or a team standard.</p>
+                    <p className="kodus-changelog-copy">Focus works as a priority, not a filter. Kody pays closer attention to the context you provide, but still reports other concrete issues it finds in the diff.</p>
+                    <p className="kodus-changelog-copy">Learn more in the <a className="kodus-changelog-link" href="https://docs.kodus.io/how_to_use/en/code_review/review_directive">Steer a Review (Focus)</a> documentation.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-ai-engine filter-git-provider">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Consolidate LLM prompts into a single comment</div>
+                    <p className="kodus-changelog-copy">We added an option to generate a single PR comment containing all prompts and suggestions, so an external agent or AI tool can apply the fixes in one pass.</p>
+                    <video autoPlay loop muted playsInline preload="auto" className="kodus-changelog-video">
+                        <source src="https://kodus.io/wp-content/uploads/2026/07/agent-prompt.mp4" type="video/mp4" />
+                    </video>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-ux-interface">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Select all repositories at once</div>
+                    <p className="kodus-changelog-copy">In the add repositories modal, we added <strong>select all</strong> and <strong>clear selection</strong> buttons. For teams connecting dozens of repositories, this removes the need to select each one manually and significantly reduces setup time.</p>
+                    <video autoPlay loop muted playsInline preload="auto" className="kodus-changelog-video">
+                        <source src="https://kodus.io/wp-content/uploads/2026/07/add-repo-qa.mp4" type="video/mp4" />
+                    </video>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-byok">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Cost breakdown by model (BYOK)</div>
+                    <p className="kodus-changelog-copy">Teams using Bring Your Own Key now have a detailed view of LLM usage by model on the costs screen. Instead of seeing only the total amount, you can identify exactly which providers and models are driving most of the usage and make clearer decisions about what to keep, replace, or limit.</p>
+                    <video autoPlay loop muted playsInline preload="auto" className="kodus-changelog-video">
+                        <source src="https://kodus.io/wp-content/uploads/2026/07/resumo-de-custos-por-modelo.mp4" type="video/mp4" />
+                    </video>
+                </div>
+            </div>
+
+            <div className="kodus-changelog-section">
+                <div role="heading" aria-level="2" className="kodus-changelog-section-label">Improvements</div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-ai-engine filter-performance">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Review agent consolidation</div>
+                    <p className="kodus-changelog-copy">We reorganized the code review agents to run on a unified infrastructure. Previously, parts of the flow were spread across different places, which could lead to duplicated suggestions and inconsistent behavior. With this consolidation, the pipeline is more predictable, easier to maintain, and less likely to repeat suggestions in the same PR.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-ai-engine">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Content guard for deduplication</div>
+                    <p className="kodus-changelog-copy">We improved the deduplication algorithm so distinct bugs are not grouped as if they were the same issue. The content guard now better considers the actual content of each suggestion, reducing false-positive deduplication and making sure separate issues continue to be reported individually.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-ai-engine">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Prose findings recovery + Gemini support</div>
+                    <p className="kodus-changelog-copy">We fixed unstable behavior in prose finding generation and restored strict mode for Gemini. We also updated the Anthropic SDK, keeping compatibility with newer models and improving response stability.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-cockpit">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">RBAC documentation</div>
+                    <p className="kodus-changelog-copy">We updated the permissions documentation, including the <code className="kodus-changelog-code">OrganizationSettings</code> scope and the restriction that only the organization Owner can configure BYOK. This makes it clearer who can do what inside the workspace.</p>
+                </div>
+            </div>
+
+            <div className="kodus-changelog-section">
+                <div role="heading" aria-level="2" className="kodus-changelog-section-label">Bug fixes</div>
+
+                <div className="kodus-changelog-fix-list">
+                    <div className="kodus-changelog-fix kodus-changelog-filterable filter-ux-interface filter-git-provider">
+                        <p className="kodus-changelog-copy"><strong className="kodus-changelog-fix-label">Review comments with broken formatting:</strong> fixed cases where Kody comments appeared with unexpected formatting in pull requests.</p>
+                    </div>
+
+                    <div className="kodus-changelog-fix kodus-changelog-filterable filter-byok">
+                        <p className="kodus-changelog-copy"><strong className="kodus-changelog-fix-label">Retry errors with BYOK providers:</strong> added preventive adjustments to avoid retry failures when a BYOK provider returns an empty response body.</p>
+                    </div>
+
+                    <div className="kodus-changelog-fix kodus-changelog-filterable filter-ai-engine">
+                        <p className="kodus-changelog-copy"><strong className="kodus-changelog-fix-label">Sandbox tool errors:</strong> the agent now handles errors better when running tools in the sandbox environment, without breaking the review.</p>
+                    </div>
+
+                    <div className="kodus-changelog-fix kodus-changelog-filterable filter-git-provider">
+                        <p className="kodus-changelog-copy"><strong className="kodus-changelog-fix-label">Normalized user IDs:</strong> standardized how author, reviewer, and assignee IDs are handled, preventing PRs from breaking because of type differences, such as string vs. number.</p>
+                    </div>
+
+                    <div className="kodus-changelog-fix kodus-changelog-filterable filter-ai-engine filter-git-provider">
+                        <p className="kodus-changelog-copy"><strong className="kodus-changelog-fix-label">@kody conversation crashing on JSON wrapped in prose:</strong> fixed a crash that happened when Kody responded to mentions and the output came back as text containing embedded JSON.</p>
+                    </div>
+
+                    <div className="kodus-changelog-fix kodus-changelog-filterable filter-kody-rules">
+                        <p className="kodus-changelog-copy"><strong className="kodus-changelog-fix-label">IDE sync config now respects approval settings:</strong> IDE rule synchronization now respects the approval configuration.</p>
+                    </div>
+
+                    <div className="kodus-changelog-fix kodus-changelog-filterable filter-kody-rules">
+                        <p className="kodus-changelog-copy"><strong className="kodus-changelog-fix-label">Rules with multiple directories:</strong> adjusted Kody Rules validation to correctly handle rules that apply to multiple path groups.</p>
+                    </div>
+
+                    <div className="kodus-changelog-fix kodus-changelog-filterable filter-kody-rules">
+                        <p className="kodus-changelog-copy"><strong className="kodus-changelog-fix-label">Automatic code review config creation:</strong> when a repository did not have a code review configuration, creating a Kody Rule could fail silently. The configuration is now created automatically.</p>
+                    </div>
+
+                    <div className="kodus-changelog-fix kodus-changelog-filterable filter-ai-engine">
+                        <p className="kodus-changelog-copy"><strong className="kodus-changelog-fix-label">Diff re-review in the agent:</strong> improved how the agent detects diffs from new commits during re-reviews.</p>
+                    </div>
+
+                    <div className="kodus-changelog-fix kodus-changelog-filterable filter-mcp">
+                        <p className="kodus-changelog-copy"><strong className="kodus-changelog-fix-label">MCP Manager OAuth disconnect:</strong> fixed an issue with disconnecting OAuth credentials in MCP Manager that could cause inconsistent behavior.</p>
+                    </div>
+
+                    <div className="kodus-changelog-fix kodus-changelog-filterable filter-mcp">
+                        <p className="kodus-changelog-copy"><strong className="kodus-changelog-fix-label">MCP Manager production build:</strong> the MCP Manager production build now correctly passes the GitHub token.</p>
+                    </div>
+
+                    <div className="kodus-changelog-fix kodus-changelog-filterable filter-cockpit">
+                        <p className="kodus-changelog-copy"><strong className="kodus-changelog-fix-label">Orphaned users in the license list:</strong> users removed from the GitHub organization now appear correctly in the license list.</p>
+                    </div>
+
+                    <div className="kodus-changelog-fix kodus-changelog-filterable filter-notifications">
+                        <p className="kodus-changelog-copy"><strong className="kodus-changelog-fix-label">Skipped review email:</strong> the notification email sent when a review is skipped now includes the author's name/email and no longer breaks when the user does not have a license.</p>
+                    </div>
+                </div>
+            </div>
+
+            <p className="kodus-changelog-empty">No changelog entries for this filter yet.</p>
+        </div>
+    </div>
+
+    <div className="kodus-changelog-release">
+        <div className="kodus-changelog-meta">
             <span className="kodus-changelog-date">June 29, 2026</span>
         </div>
 
@@ -381,6 +516,106 @@ rss: true
 </div>
 
 <div className="kodus-changelog-rss-source" aria-hidden="true">
+    <Update label="July 6, 2026 - Steer a review with focus" tags={["AI Engine"]}>
+        You can now ask Kody to pay special attention to something specific during a review, without changing any configuration.
+
+        In a PR, use @kody review &lt;directive&gt;. In the CLI, use kodus review --focus.
+
+        Examples: @kody review focus on security. @kody review focus on performance. Or in the CLI: kodus review --focus "edge cases".
+
+        This is especially useful for larger PRs or sensitive changes, where you want the review to go deeper on a specific area, such as security, performance, edge cases, a business rule, or a team standard.
+
+        Focus works as a priority, not a filter. Kody pays closer attention to the context you provide, but still reports other concrete issues it finds in the diff.
+
+        Learn more in the Steer a Review Focus documentation: https://docs.kodus.io/how_to_use/en/code_review/review_directive
+    </Update>
+
+    <Update label="July 6, 2026 - Consolidate LLM prompts into a single comment" tags={["AI Engine", "GIT Provider"]}>
+        We added an option to generate a single PR comment containing all prompts and suggestions, so an external agent or AI tool can apply the fixes in one pass.
+
+        Video: https://kodus.io/wp-content/uploads/2026/07/agent-prompt.mp4
+    </Update>
+
+    <Update label="July 6, 2026 - Select all repositories at once" tags={["UX & Interface"]}>
+        In the add repositories modal, we added select all and clear selection buttons. For teams connecting dozens of repositories, this removes the need to select each one manually and significantly reduces setup time.
+
+        Video: https://kodus.io/wp-content/uploads/2026/07/add-repo-qa.mp4
+    </Update>
+
+    <Update label="July 6, 2026 - Cost breakdown by model (BYOK)" tags={["BYOK"]}>
+        Teams using Bring Your Own Key now have a detailed view of LLM usage by model on the costs screen. Instead of seeing only the total amount, you can identify exactly which providers and models are driving most of the usage and make clearer decisions about what to keep, replace, or limit.
+
+        Video: https://kodus.io/wp-content/uploads/2026/07/resumo-de-custos-por-modelo.mp4
+    </Update>
+
+    <Update label="July 6, 2026 - Review agent consolidation" tags={["AI Engine", "Performance"]}>
+        We reorganized the code review agents to run on a unified infrastructure. Previously, parts of the flow were spread across different places, which could lead to duplicated suggestions and inconsistent behavior. With this consolidation, the pipeline is more predictable, easier to maintain, and less likely to repeat suggestions in the same PR.
+    </Update>
+
+    <Update label="July 6, 2026 - Content guard for deduplication" tags={["AI Engine"]}>
+        We improved the deduplication algorithm so distinct bugs are not grouped as if they were the same issue. The content guard now better considers the actual content of each suggestion, reducing false-positive deduplication and making sure separate issues continue to be reported individually.
+    </Update>
+
+    <Update label="July 6, 2026 - Prose findings recovery + Gemini support" tags={["AI Engine"]}>
+        We fixed unstable behavior in prose finding generation and restored strict mode for Gemini. We also updated the Anthropic SDK, keeping compatibility with newer models and improving response stability.
+    </Update>
+
+    <Update label="July 6, 2026 - RBAC documentation" tags={["Cockpit"]}>
+        We updated the permissions documentation, including the OrganizationSettings scope and the restriction that only the organization Owner can configure BYOK. This makes it clearer who can do what inside the workspace.
+    </Update>
+
+    <Update label="July 6, 2026 - Review comments with broken formatting" tags={["UX & Interface", "GIT Provider"]}>
+        Fixed cases where Kody comments appeared with unexpected formatting in pull requests.
+    </Update>
+
+    <Update label="July 6, 2026 - Retry errors with BYOK providers" tags={["BYOK"]}>
+        Added preventive adjustments to avoid retry failures when a BYOK provider returns an empty response body.
+    </Update>
+
+    <Update label="July 6, 2026 - Sandbox tool errors" tags={["AI Engine"]}>
+        The agent now handles errors better when running tools in the sandbox environment, without breaking the review.
+    </Update>
+
+    <Update label="July 6, 2026 - Normalized user IDs" tags={["GIT Provider"]}>
+        Standardized how author, reviewer, and assignee IDs are handled, preventing PRs from breaking because of type differences, such as string vs. number.
+    </Update>
+
+    <Update label="July 6, 2026 - @kody conversation crashing on JSON wrapped in prose" tags={["AI Engine", "GIT Provider"]}>
+        Fixed a crash that happened when Kody responded to mentions and the output came back as text containing embedded JSON.
+    </Update>
+
+    <Update label="July 6, 2026 - IDE sync config now respects approval settings" tags={["Kody Rules"]}>
+        IDE rule synchronization now respects the approval configuration.
+    </Update>
+
+    <Update label="July 6, 2026 - Rules with multiple directories" tags={["Kody Rules"]}>
+        Adjusted Kody Rules validation to correctly handle rules that apply to multiple path groups.
+    </Update>
+
+    <Update label="July 6, 2026 - Automatic code review config creation" tags={["Kody Rules"]}>
+        When a repository did not have a code review configuration, creating a Kody Rule could fail silently. The configuration is now created automatically.
+    </Update>
+
+    <Update label="July 6, 2026 - Diff re-review in the agent" tags={["AI Engine"]}>
+        Improved how the agent detects diffs from new commits during re-reviews.
+    </Update>
+
+    <Update label="July 6, 2026 - MCP Manager OAuth disconnect" tags={["MCP"]}>
+        Fixed an issue with disconnecting OAuth credentials in MCP Manager that could cause inconsistent behavior.
+    </Update>
+
+    <Update label="July 6, 2026 - MCP Manager production build" tags={["MCP"]}>
+        The MCP Manager production build now correctly passes the GitHub token.
+    </Update>
+
+    <Update label="July 6, 2026 - Orphaned users in the license list" tags={["Cockpit"]}>
+        Users removed from the GitHub organization now appear correctly in the license list.
+    </Update>
+
+    <Update label="July 6, 2026 - Skipped review email" tags={["Notifications"]}>
+        The notification email sent when a review is skipped now includes the author's name/email and no longer breaks when the user does not have a license.
+    </Update>
+
     <Update label="June 29, 2026 - Validated review engine" tags={["AI Engine"]}>
         We updated Kody's review pipeline to improve analysis accuracy and reduce cases where important issues could slip through unnoticed.
 

@@ -7,6 +7,7 @@ import { PARAMETERS_SERVICE_TOKEN } from '@libs/organization/domain/parameters/c
 import { PULL_REQUESTS_SERVICE_TOKEN } from '@libs/platformData/domain/pullRequests/contracts/pullRequests.service.contracts';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { AutoAssignLicenseUseCase } from '@libs/ee/license/use-cases/auto-assign-license.use-case';
+import { LICENSE_SERVICE_TOKEN } from '@libs/ee/license/interfaces/license.interface';
 import {
     PermissionValidationService,
     ValidationErrorType,
@@ -146,6 +147,12 @@ describe('ValidatePrerequisitesStage — review.skipped_no_license emit', () => 
                     useValue: prAuthorResolver,
                 },
                 { provide: USER_SERVICE_TOKEN, useValue: usersService },
+                {
+                    provide: LICENSE_SERVICE_TOKEN,
+                    useValue: {
+                        startTrial: jest.fn().mockResolvedValue(false),
+                    },
+                },
             ],
         }).compile();
 

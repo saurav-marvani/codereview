@@ -25,6 +25,11 @@ export class PullRequestsModel extends CoreDocument {
     @Prop({ type: Boolean, required: false })
     public merged: boolean;
 
+    // Whether the LAST review of this PR ran in HEAVY mode (resolved after the
+    // feature gate, not just the request). Surfaced as a badge in the PRs list.
+    @Prop({ type: Boolean, required: false })
+    public heavy?: boolean;
+
     @Prop({ type: String, required: false })
     public url: string;
 
@@ -210,4 +215,14 @@ PullRequestsSchema.index(
 PullRequestsSchema.index(
     { createdAt: 1 },
     { name: 'idx_createdAt_for_analytics_backfill' },
+);
+
+// Token Usage repository filter: findNumbersByRepositoryId resolves a repo to
+// its PR numbers (org + repository.id, bounded by createdAt, newest first,
+// projecting only `number`). This compound covers the filter, the sort, and
+// the projection so the scope resolution stays index-only. Create with
+// `{ background: true }` on large prod collections before enabling the filter.
+PullRequestsSchema.index(
+    { organizationId: 1, 'repository.id': 1, createdAt: -1, number: 1 },
+    { name: 'idx_org_repo_createdAt_number_for_token_usage' },
 );

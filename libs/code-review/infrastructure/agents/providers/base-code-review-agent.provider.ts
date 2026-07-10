@@ -21,7 +21,10 @@ import {
     type PromptAgentMeta,
 } from '@libs/code-review/infrastructure/agents/prompts/prompt-builder';
 import { resolveContextWindow } from '@libs/llm/model-context-window';
-import type { ReviewWarning } from '@libs/code-review/infrastructure/agents/engine/review-warnings';
+import {
+    buildProviderFallbackWarning,
+    type ReviewWarning,
+} from '@libs/code-review/infrastructure/agents/engine/review-warnings';
 import { resolveAdaptiveProfile } from '@libs/code-review/infrastructure/agents/engine/adaptive-fit';
 import { runAgentLoopViaCore } from '@libs/code-review/infrastructure/agents/core/core-agent-loop.adapter';
 import {
@@ -33,7 +36,14 @@ import {
 } from '@libs/code-review/infrastructure/agents/review-agent.contract';
 import { CoverageTier } from '@libs/code-review/infrastructure/agents/engine/coverage-ledger';
 import { mapAgentFindings } from '@libs/code-review/infrastructure/agents/collaborators/finding-mapper';
-import { resolveAgentModel } from '@libs/code-review/infrastructure/agents/collaborators/model-factory';
+import {
+    resolveAgentModel,
+    type AgentModelParams,
+} from '@libs/code-review/infrastructure/agents/collaborators/model-factory';
+import {
+    runWithProviderFallback,
+    providerErrorFromResult,
+} from '@libs/code-review/infrastructure/agents/collaborators/model-fallback';
 import {
     recordAgentUsageSpans,
     runAgentWithTrace,
@@ -185,10 +195,13 @@ export abstract class BaseCodeReviewAgentProvider {
 
         // Resolve BYOK config + model (org config → per-repo override → trial
         // default). Scoped locally to prevent cross-review races. → ModelFactory.
-        const { byokConfig, model, modelName } = await resolveAgentModel(
-            input,
-            this.permissionValidationService,
-        );
+        const { byokConfig, main: mainModel, fallback: fallbackModel } =
+            await resolveAgentModel(input, this.permissionValidationService);
+        // Preflight (context window + warnings) runs against the MAIN model.
+        // `effectiveModelName` tracks the model that actually ran, so post-run
+        // telemetry/logs reflect the fallback when the main provider fails over.
+        const modelName = mainModel.modelName;
+        let effectiveModelName = mainModel.modelName;
 
         this.agentLogger.log({
             message: `[AGENT] ${identity.name} using model: ${modelName}`,
@@ -200,7 +213,7 @@ export abstract class BaseCodeReviewAgentProvider {
         // + PR context + coverage list + static overhead (system prompt +
         // tool schemas) — not just the diff.
         const contextWindow = resolveContextWindow({
-            byokMaxInputTokens: byokConfig?.main?.maxInputTokens,
+            byokMaxInputTokens: mainModel.maxInputTokens,
             modelName,
         });
         // Resolve adaptive-fit profile from the same context window the
@@ -493,11 +506,6 @@ export abstract class BaseCodeReviewAgentProvider {
         progress.send({ status: 'started' });
 
         try {
-            // Accumulate tool calls for batch progress updates
-            const recentToolCalls: AgentProgressEvent['toolCalls'] = [];
-            let stepCount = 0;
-            const PROGRESS_BATCH_SIZE = 5;
-
             // Secrets are passed via closure (not as tracing arg) so that
             // Langfuse span I/O never serialises API keys, tokens, or
             // NestJS service instances (which carry ConfigService with all env vars).
@@ -522,111 +530,191 @@ export abstract class BaseCodeReviewAgentProvider {
                     : undefined,
             };
 
-            const loopParams = {
-                model,
-                systemPrompt,
-                userPrompt,
-                agentName: identity.name,
-                telemetryMetadata: {
-                    organizationId:
-                        input.organizationAndTeamData?.organizationId,
-                    teamId: input.organizationAndTeamData?.teamId,
-                    pullRequestId: input.prNumber,
-                    repositoryId: input.repositoryId,
-                    provider: modelName,
-                },
-                changedFiles: input.changedFiles,
-                prNumber: input.prNumber,
-                repositoryFullName: input.repositoryFullName,
-                baseBranch: input.baseBranch,
-                callGraph: input.callGraph,
-                fileTiers,
-                reviewMode: input.reviewMode,
-                maxSteps: input.maxSteps,
-                // Heavy-pass gating: forwarded explicitly because loopParams
-                // is built field-by-field. Without this line, callers like
-                // KodyRulesAgentProvider that opt out of synthesis-rescue
-                // would have their preference silently dropped here.
-                skipHeavyPasses: input.skipHeavyPasses,
-                skipSynthesisRescue: input.skipSynthesisRescue,
-                outlineFirst: input.outlineFirst,
-                contextWindowTokens: contextWindow,
-                reasoningEffort: byokConfig?.main?.reasoningEffort,
-                reasoningConfigOverride:
-                    byokConfig?.main?.reasoningConfigOverride,
-                byokProvider: byokConfig?.main?.provider,
-                openrouterProviderOrder: (byokConfig?.main as any)
-                    ?.openrouterProviderOrder,
-                openrouterAllowFallbacks: (byokConfig?.main as any)
-                    ?.openrouterAllowFallbacks,
-                parentSignal: input.parentSignal,
+            // One agent-loop attempt against a single resolved model. Called
+            // for `main` first; on a thrown provider/API error the fallback
+            // runner re-invokes it with the org's configured `fallback` model.
+            // Progress counters live inside so each attempt starts fresh.
+            const runAttempt = async (modelParams: AgentModelParams) => {
+                effectiveModelName = modelParams.modelName;
 
-                onStepFinish: (step: any) => {
-                    stepCount++;
-                    if (step.toolCalls) {
-                        for (const tc of step.toolCalls) {
-                            this.agentLogger.log({
-                                message: `[AGENT-TOOL] PR#${input.prNumber} ${identity.name} tool=${tc.toolName}`,
-                                context: identity.name,
-                            });
-                            recentToolCalls.push({
-                                tool: tc.toolName,
-                                args: JSON.stringify(
-                                    tc.args || tc.input || {},
-                                ).substring(0, 100),
-                            });
-                        }
-                    }
-                    // Batch progress update every N steps
-                    if (
-                        stepCount % PROGRESS_BATCH_SIZE === 0 &&
-                        recentToolCalls.length > 0
-                    ) {
-                        progress.send({
-                            status: 'investigating',
-                            step: stepCount,
-                            toolCalls: [...recentToolCalls],
-                        });
-                        recentToolCalls.length = 0; // Clear after sending
-                    }
-                },
-            };
+                // Accumulate tool calls for batch progress updates
+                const recentToolCalls: AgentProgressEvent['toolCalls'] = [];
+                let stepCount = 0;
+                const PROGRESS_BATCH_SIZE = 5;
 
-            // The agent harness is the only engine now (legacy loop retired).
-            const loopFn = runAgentLoopViaCore;
-
-            // Span input: strip the changedFiles patches (large) from loopParams
-            // so the trace records shape without dumping every diff.
-            const { changedFiles: _cf, ...restParams } = loopParams as any;
-            const safeInput = {
-                ...restParams,
-                ...(_cf && {
-                    changedFiles: _cf.map(
-                        ({ patch: _patch, ...rest }: Record<string, any>) =>
-                            rest,
-                    ),
-                }),
-            };
-
-            const agentResult = await runAgentWithTrace(
-                {
-                    traceName: identity.name,
-                    organizationId:
-                        input.organizationAndTeamData?.organizationId,
-                    teamId: input.organizationAndTeamData?.teamId,
+                const loopParams = {
+                    model: modelParams.model,
+                    systemPrompt,
+                    userPrompt,
+                    agentName: identity.name,
+                    telemetryMetadata: {
+                        organizationId:
+                            input.organizationAndTeamData?.organizationId,
+                        teamId: input.organizationAndTeamData?.teamId,
+                        pullRequestId: input.prNumber,
+                        repositoryId: input.repositoryId,
+                        provider: modelParams.modelName,
+                    },
+                    changedFiles: input.changedFiles,
                     prNumber: input.prNumber,
-                    repositoryId: input.repositoryId,
+                    repositoryFullName: input.repositoryFullName,
+                    baseBranch: input.baseBranch,
+                    callGraph: input.callGraph,
+                    fileTiers,
+                    reviewMode: input.reviewMode,
+                    maxSteps: input.maxSteps,
+                    // Heavy-pass gating: forwarded explicitly because loopParams
+                    // is built field-by-field. Without this line, callers like
+                    // KodyRulesAgentProvider that opt out of synthesis-rescue
+                    // would have their preference silently dropped here.
+                    skipHeavyPasses: input.skipHeavyPasses,
+                    skipSynthesisRescue: input.skipSynthesisRescue,
+                    // HEAVY opt-in (`--heavy`) — forwarded explicitly, same reason
+                    // as skipHeavyPasses above: loopParams is built field-by-field,
+                    // so without this line the resample passes never run.
+                    heavy: input.heavy,
+                    outlineFirst: input.outlineFirst,
+                    // Context window is sized against the main model; the
+                    // fallback reuses it (usually a comparable model) rather
+                    // than re-running the whole preflight/prompt build.
+                    contextWindowTokens: contextWindow,
+                    reasoningEffort: modelParams.reasoningEffort,
+                    reasoningConfigOverride: modelParams.reasoningConfigOverride,
+                    byokProvider: modelParams.byokProvider,
+                    // Drives the BYOK concurrency limiter bucket + wrapper role.
+                    byokRole: modelParams.role,
+                    openrouterProviderOrder: modelParams.openrouterProviderOrder,
+                    openrouterAllowFallbacks:
+                        modelParams.openrouterAllowFallbacks,
+                    parentSignal: input.parentSignal,
+
+                    onStepFinish: (step: any) => {
+                        stepCount++;
+                        if (step.toolCalls) {
+                            for (const tc of step.toolCalls) {
+                                this.agentLogger.log({
+                                    message: `[AGENT-TOOL] PR#${input.prNumber} ${identity.name} tool=${tc.toolName}`,
+                                    context: identity.name,
+                                });
+                                recentToolCalls.push({
+                                    tool: tc.toolName,
+                                    args: JSON.stringify(
+                                        tc.args || tc.input || {},
+                                    ).substring(0, 100),
+                                });
+                            }
+                        }
+                        // Batch progress update every N steps
+                        if (
+                            stepCount % PROGRESS_BATCH_SIZE === 0 &&
+                            recentToolCalls.length > 0
+                        ) {
+                            progress.send({
+                                status: 'investigating',
+                                step: stepCount,
+                                toolCalls: [...recentToolCalls],
+                            });
+                            recentToolCalls.length = 0; // Clear after sending
+                        }
+                    },
+                };
+
+                // The agent harness is the only engine now (legacy loop retired).
+                const loopFn = runAgentLoopViaCore;
+
+                // Span input: strip the changedFiles patches (large) from
+                // loopParams so the trace records shape without every diff.
+                const { changedFiles: _cf, ...restParams } = loopParams as any;
+                const safeInput = {
+                    ...restParams,
+                    ...(_cf && {
+                        changedFiles: _cf.map(
+                            ({ patch: _patch, ...rest }: Record<string, any>) =>
+                                rest,
+                        ),
+                    }),
+                };
+
+                return runAgentWithTrace(
+                    {
+                        traceName: identity.name,
+                        organizationId:
+                            input.organizationAndTeamData?.organizationId,
+                        teamId: input.organizationAndTeamData?.teamId,
+                        prNumber: input.prNumber,
+                        repositoryId: input.repositoryId,
+                    },
+                    safeInput,
+                    () => loopFn(loopParams, loopSecrets),
+                );
+            };
+
+            let usedFallback = false;
+            const agentResult = await runWithProviderFallback({
+                main: mainModel,
+                fallback: fallbackModel,
+                attempt: runAttempt,
+                // The harness catches a provider throw and returns an
+                // error-status result (finishReason 'error') rather than
+                // throwing — so the fallback must trigger on that result, not
+                // just on an exception. 'timeout' (budget exhaustion) is NOT a
+                // provider failure and must not fall back.
+                isFailure: (result) => result?.finishReason === 'error',
+                // Don't burn a fallback attempt on a cancelled job — only on a
+                // genuine main-provider failure.
+                shouldFallback: () => !input.parentSignal?.aborted,
+                onFallback: (reason) => {
+                    usedFallback = true;
+                    const failMsg =
+                        reason instanceof Error
+                            ? reason.message
+                            : 'agent run returned error status (provider call failed)';
+                    this.agentLogger.warn({
+                        message: `[AGENT] ${identity.name} main provider (${mainModel.modelName}) failed for PR#${input.prNumber}; retrying with fallback provider (${fallbackModel?.modelName}): ${failMsg}`,
+                        context: identity.name,
+                        metadata: {
+                            prNumber: input.prNumber,
+                            mainModel: mainModel.modelName,
+                            fallbackModel: fallbackModel?.modelName,
+                            errorName:
+                                reason instanceof Error
+                                    ? reason.name
+                                    : undefined,
+                        },
+                    });
                 },
-                safeInput,
-                () => loopFn(loopParams, loopSecrets),
-            );
+            });
+
+            // Every provider attempt failed (main errored, and either no
+            // fallback or the fallback errored too). Throw so the orchestrator
+            // records a real failure — otherwise the harness's swallowed error
+            // would surface as a silent "0 suggestions, 0 failures" SUCCESS,
+            // masking a total provider outage. The thrown message is classified
+            // (classifyLLMError) into the end-review comment's failure reason.
+            const providerError = providerErrorFromResult(agentResult);
+            if (providerError) {
+                throw providerError;
+            }
+
+            // The fallback rescued the run: surface a dashboard notice so the
+            // user can see the main provider failed and the review ran on the
+            // fallback (dataExecution.reviewWarnings → web Pull Requests view).
+            if (usedFallback) {
+                agentWarnings.push(
+                    buildProviderFallbackWarning({
+                        failedModel: mainModel.modelName,
+                        usedModel: effectiveModelName,
+                        agentName: identity.name,
+                    }),
+                );
+            }
 
             const durationMs = Date.now() - startTime;
 
             // Per-agent usage spans (main + verify). Best-effort. → ReviewObservability.
             await recordAgentUsageSpans({
                 agentResult,
-                modelName,
+                modelName: effectiveModelName,
                 isByok: !!byokConfig,
                 categoryLabel: this.getCategoryLabel(),
                 identityName: identity.name,
@@ -723,7 +811,7 @@ export abstract class BaseCodeReviewAgentProvider {
                     outputTokens: agentResult.usage.outputTokens,
                     totalTokens: agentResult.usage.totalTokens,
                     finishReason: agentResult.finishReason,
-                    model: modelName,
+                    model: effectiveModelName,
                     coverage: agentResult.coverage,
                     verification: agentResult.verification,
                     anomalies: agentResult.anomalies,
@@ -763,7 +851,7 @@ export abstract class BaseCodeReviewAgentProvider {
                 metadata: {
                     prNumber: input.prNumber,
                     durationMs,
-                    model: modelName,
+                    model: effectiveModelName,
                     errorName: errName,
                     errorStack:
                         error instanceof Error

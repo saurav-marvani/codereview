@@ -80,6 +80,13 @@ export interface IPullRequestsService extends IPullRequestsRepository {
         organizationId: string,
     ): Promise<IPullRequestUserMapping[]>;
 
+    /** PR numbers of one repository — see the repository contract. */
+    findNumbersByRepositoryId(
+        organizationId: string,
+        repositoryId: string,
+        until?: Date,
+    ): Promise<number[]>;
+
     getOnboardingReviewModeSignals(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryIds: string[];

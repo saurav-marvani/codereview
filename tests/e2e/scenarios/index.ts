@@ -11,6 +11,7 @@ import kodyRulesCreateAndApply from './kody-rules.js';
 import kodyRulesFileSync from './kody-rules-file-sync.js';
 import kodyRulesLifecycle from './kody-rules-lifecycle.js';
 import ruleFileDetection from './rule-file-detection.js';
+import kodyRulesCoverage from './kody-rules-coverage.js';
 import licenseAttribution from './license-attribution.js';
 import onboardingWebhookRegistration from './onboarding-webhook-registration.js';
 import perSeatLicenseToggle from './per-seat-license-toggle.js';
@@ -41,6 +42,7 @@ export const allScenarios: Record<string, Scenario> = {
     [kodyRulesFileSync.id]: kodyRulesFileSync,
     [kodyRulesLifecycle.id]: kodyRulesLifecycle,
     [ruleFileDetection.id]: ruleFileDetection,
+    [kodyRulesCoverage.id]: kodyRulesCoverage,
     [licenseAttribution.id]: licenseAttribution,
     [perSeatLicenseToggle.id]: perSeatLicenseToggle,
     [prExecutionSse.id]: prExecutionSse,
@@ -81,6 +83,7 @@ export {
     kodyRulesFileSync,
     kodyRulesLifecycle,
     ruleFileDetection,
+    kodyRulesCoverage,
     licenseAttribution,
     onboardingWebhookRegistration,
     perSeatLicenseToggle,

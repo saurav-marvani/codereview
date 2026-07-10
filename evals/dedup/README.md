@@ -39,7 +39,8 @@ Golden labels are cached in `.cache-goldenlabels/` (judging is dedup-independent
 - Metric logic unit-verified (over-merge, under-merge, good-merge scenarios).
 - Golden-match + driver validated live on real PRs with the identity mock.
 - Seed dataset: 50 PRs / 159 findings (39 with ≥2 findings = dedup-relevant), from the gemini-3-flash NEW-engine recall run.
-- **CI gap**: `datasets/` is currently gitignored and missing from a clean checkout, so this eval is not reproducible in GitHub Actions until we commit a seed dataset or generate it as a workflow step.
+- **CI**: `--mock=identity --gate` falls back to `evals/secondary/datasets/` smoke set (committed) when `evals/dedup/datasets/` is empty. Full live matrix: `node evals/dedup/run-matrix.js`.
+- BYOK migration readiness: see `evals/secondary/BYOK-READINESS.md`.
 
 ## Caveats
 

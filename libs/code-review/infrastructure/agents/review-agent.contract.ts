@@ -182,6 +182,9 @@ export interface FitConfig {
      *  passes. Used by very-narrow agents (rule checks in fast mode,
      *  self-contained CLI flow). */
     skipHeavyPasses?: boolean;
+    /** HEAVY mode — run an EXTRA critic pass in the finder for more recall
+     *  (opt-in per review via CLI `--heavy` or PR `@kody review --heavy`). */
+    heavy?: boolean;
     /** When true, run recovery + second-chance but skip ONLY the
      *  synthesis-rescue pass. The rescue pass re-words the same finding
      *  with different language, which is fine for open-ended bug review
@@ -297,6 +300,9 @@ export interface AgentLoopInput {
     contextWindowTokens?: number;
     /** When true, skip recovery/rescue/second-chance passes. Used by rule-checking agents that don't benefit from open-ended exploration. */
     skipHeavyPasses?: boolean;
+    /** HEAVY mode — run an EXTRA critic pass in the finder for more recall
+     *  (opt-in per review via CLI `--heavy` or PR `@kody review --heavy`). */
+    heavy?: boolean;
     /** Gated A/B knob (default off): wrap readFile so a range-less read of a
      *  large file returns a symbol outline + expand hint instead of dumping the
      *  head — fewer model tokens. Off = current behavior. */
@@ -316,6 +322,10 @@ export interface AgentLoopInput {
     /** BYOK provider type — needed to map reasoning effort to the correct
      *  provider-specific format in providerOptions. */
     byokProvider?: BYOKProvider | string;
+    /** Which BYOK role this attempt is running as. Selects the concurrency
+     *  limiter bucket in the model wrapper ('main' vs 'fallback'). Defaults to
+     *  'main' when omitted. */
+    byokRole?: 'main' | 'fallback';
     /** Pin OpenRouter requests to specific upstream providers (in order).
      *  Ignored when byokProvider !== 'openrouter'. */
     openrouterProviderOrder?: string[];
@@ -386,6 +396,11 @@ export interface AgentLoopOutput {
         result?: string;
     }>;
     finishReason: string;
+    /** Present only when finishReason === 'error': the underlying provider/model
+     *  error surfaced by the harness. Used to classify the failure and surface a
+     *  friendly reason in the end-review comment. */
+    errorMessage?: string;
+    errorName?: string;
     /** Whether findings came from direct JSON parse or fallback generateObject */
     source: 'json-parse' | 'generate-object' | 'empty';
     usage: {

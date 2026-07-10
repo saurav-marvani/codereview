@@ -19,6 +19,7 @@ import {
     GitPullRequestIcon,
     InfoIcon,
     LibraryBig,
+    LockIcon,
     SlidersHorizontalIcon,
     TerminalIcon,
 } from "lucide-react";
@@ -75,11 +76,14 @@ export const NavMenu = () => {
             {
                 label: "Cockpit",
                 href: "/cockpit",
-                // Mirrors the /cockpit route guard (apps/web/.../cockpit/layout.tsx)
-                // and the backend tier-policy. Self-hosted on Enterprise gets the
-                // icon; unlicensed self-hosted / free_byok stays hidden.
-                visible: isCockpitTierAllowed(subscription.license),
+                // Always visible: below the allowed tier the route renders a
+                // blurred preview with an upgrade CTA (apps/web/.../cockpit/
+                // layout.tsx), so the nav item shows a lock instead of hiding.
+                visible: true,
                 icon: <GaugeIcon className="size-6" />,
+                badge: isCockpitTierAllowed(subscription.license) ? undefined : (
+                    <LockIcon className="size-3.5" />
+                ),
             },
 
             {

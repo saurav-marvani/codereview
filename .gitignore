@@ -239,3 +239,4 @@ scripts/benchmark/langfuse-enrich.py
 scripts/benchmark/execucao-detalhada.py
 scripts/benchmark/golden-context.py
 scripts/benchmark/golden-context.py.bak
+evals/kody-rules/prod-rules.json

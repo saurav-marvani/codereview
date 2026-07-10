@@ -17,7 +17,7 @@ const log = logger("kody-rules");
 //   - the old flow took ~70s per run on sentry (large repo)
 //   - the fixture content is stable, so there's nothing per-run that needs
 //     to be authored from the test runner
-const FIXTURE_BRANCHES: Record<
+export const FIXTURE_BRANCHES: Record<
     string,
     { head: string; base: string } | undefined
 > = {
@@ -351,7 +351,7 @@ export const kodyRulesCreateAndApply: Scenario = {
 // /kody-rules/find-by-organization-id response. Shape is roughly
 // `{ data: [{ repositoryId, rules: [{ uuid, status }] }] }`, but we walk it
 // defensively so a response-shape tweak doesn't silently break the wait.
-function findRuleStatusById(
+export function findRuleStatusById(
     node: unknown,
     ruleId: string,
 ): string | undefined {
@@ -412,7 +412,7 @@ function collectRules(
 // Best-effort — returns how many it deleted; a failed delete just logs and is
 // retried next run. Scoped to the `e2e-rule-` title prefix and auto-generated
 // origin so a human-authored rule is never removed.
-async function sweepStaleE2ERules(
+export async function sweepStaleE2ERules(
     ctx: RunContext,
     session: KodusSession,
     _repoId: string,

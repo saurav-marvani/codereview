@@ -131,8 +131,16 @@ function buildProvider() {
         runLLMInSpan: async ({ exec }) => exec([]),
         startSpan: () => ({ end() {}, update() {} }),
         // The refactored provider emits a post-hoc usage span; evals don't ship
-        // telemetry, so a no-op keeps the run from throwing on the real method.
-        recordAgentRunUsage: async () => {},
+        // telemetry. Instead of a no-op, accumulate token usage so the run can
+        // report total cost (for the agentic-vs-sharded cost comparison, #1449).
+        recordAgentRunUsage: async (p) => {
+            const u = (p && p.usage) || {};
+            global.__EVAL_TOK = global.__EVAL_TOK || { in: 0, out: 0, cacheRead: 0, cacheWrite: 0 };
+            global.__EVAL_TOK.in += u.inputTokens ?? 0;
+            global.__EVAL_TOK.out += u.outputTokens ?? 0;
+            global.__EVAL_TOK.cacheRead += u.cacheReadTokens ?? 0;
+            global.__EVAL_TOK.cacheWrite += u.cacheWriteTokens ?? 0;
+        },
     };
     return new KodyRulesAgentProvider({}, permissionValidationService, observabilityService);
 }
@@ -151,8 +159,32 @@ function normalizeCase(c) {
     };
 }
 
+// --all-rules: inject ALL unique dataset rules into every session (matches
+// PRODUCTION, where formatKodyRules puts every applicable rule in ONE agentic
+// session). Scoring then filters suggestions to the case's target ruleUuid,
+// mirroring the sharded-v2 batched scoring, so the comparison is fair.
+const ALL_RULES = !!args['all-rules'];
+const UNIQUE_RULES = Object.values(Object.fromEntries(allCases.filter((c) => c.rule).map((c) => [c.rule.uuid, c.rule])));
+
+// v2 dataset (github-cases-v2): one case per PR, `rules` array + groundTruthAll
+// (full GT per rule, built by build-cases-v2.js). Normalize into scoring
+// targets [{uuid, sites, violFiles, okFiles}] — one per rule.
+function caseTargets(c) {
+    if (!c.groundTruthAll) return null;
+    const changed = c.realChangedFiles.map((f) => normalizePath(f.filename));
+    return (c.rules || []).map((r) => {
+        const gt = c.groundTruthAll[r.uuid] || {};
+        const violFiles = Object.keys(gt).map(normalizePath);
+        const sites = Object.entries(gt).flatMap(([fn, hits]) => hits.map((h) => ({ file: normalizePath(fn), line: h.line })));
+        return { uuid: r.uuid, sites, violFiles, okFiles: changed.filter((f) => !violFiles.includes(f)) };
+    });
+}
+
 async function runCase(provider, c, changedFiles, replay) {
     const remoteCommands = new ReplayRemoteCommands(replay);
+    // v2 cases carry their full rule set; v1 keeps the single-rule (or
+    // --all-rules) behavior.
+    const rulesForRun = c.rules ? c.rules : (ALL_RULES ? UNIQUE_RULES : [c.rule]);
     const out = await provider.execute({
         organizationAndTeamData: { organizationId: 'eval-org', teamId: 'eval-team' },
         changedFiles,
@@ -165,7 +197,7 @@ async function runCase(provider, c, changedFiles, replay) {
         maxSteps: c.maxSteps || 20,
         prTitle: c.title || 'eval PR',
         prBody: c.body || '',
-        kodyRules: [{ ...c.rule, type: 'standard', status: 'active', scope: c.rule.scope || 'file' }],
+        kodyRules: rulesForRun.map((r) => ({ ...r, type: 'standard', status: 'active', scope: r.scope || 'file' })),
     });
     // turnsUsed = agent steps executed. 0 means the agent never ran a step —
     // it failed before starting (e.g. a swallowed quota/rate-limit error that
@@ -201,25 +233,58 @@ async function main() {
     // runs — NOT real misses. Track them so a broken environment warns (infra)
     // instead of deflating recall into a false quality-gate failure.
     let erroredRuns = 0, totalRuns = 0;
-    const haveGT = cases.some((c) => c.groundTruth);
+    const haveGT = cases.some((c) => c.groundTruth || c.groundTruthAll);
     // flatten groundTruth → [{file, line}]
     const gtSites = (c) => Object.entries(c.groundTruth || {})
         .flatMap(([fn, hits]) => hits.map((h) => ({ file: normalizePath(fn), line: h.line })));
     for (const c of cases) {
         const { changedFiles, replay, violFiles, okFiles, fileCount } = normalizeCase(c);
+        const targets = caseTargets(c); // non-null on the v2 dataset
         const sites = gtSites(c);
+        const caseLabel = c.caseId || c.rule.uuid;
         const perRun = [];
         for (let r = 0; r < RUNS; r++) {
             let sugg = [], turnsUsed = 0, errored = false;
             totalRuns++;
             try { const res = await runCase(provider, c, changedFiles, replay); sugg = res.suggestions; turnsUsed = res.turnsUsed; }
-            catch (e) { errored = true; console.error(`  [case ${c.rule.uuid} run ${r}] ${String(e.message).slice(0, 140)}`); }
+            catch (e) { errored = true; console.error(`  [case ${caseLabel} run ${r}] ${String(e.message).slice(0, 140)}`); }
             // Infra run = it threw, OR the agent returned without executing a
             // single step and produced nothing (failed before running, e.g.
             // swallowed quota). A real "found nothing" run has turnsUsed > 0 and
             // still counts as a genuine miss against the quality gate.
             if (!errored && sugg.length === 0 && turnsUsed === 0) errored = true;
             if (errored) erroredRuns++;
+
+            if (targets) {
+                // v2: score every rule against its own GT. Suggestions map to
+                // rules via brokenKodyRulesIds (mapAgentFindings re-homes the
+                // LLM's ruleUuid there — finding-mapper.ts).
+                let hit = 0, falseOnClean = 0, coveredSites = 0, flagsN = 0, lineNoise = 0;
+                for (const t of targets) {
+                    const tSugg = sugg.filter((s) =>
+                        (s.brokenKodyRulesIds || []).includes(t.uuid) || s.ruleUuid === t.uuid);
+                    const flags = tSugg.map((s) => ({ file: normalizePath(s.relevantFile), line: s.relevantLinesStart })).filter((x) => x.file && Number.isFinite(x.line));
+                    const flaggedFiles = new Set(flags.map((x) => x.file));
+                    hit += t.violFiles.filter((f) => flaggedFiles.has(f)).length;
+                    falseOnClean += t.okFiles.filter((f) => flaggedFiles.has(f)).length;
+                    coveredSites += t.sites.filter((g) => flags.some((x) => x.file === g.file && Math.abs(x.line - g.line) <= LINE_TOL)).length;
+                    const onTarget = flags.filter((x) => t.sites.some((g) => x.file === g.file && Math.abs(x.line - g.line) <= LINE_TOL)).length;
+                    flagsN += flags.length; lineNoise += flags.length - onTarget;
+                }
+                perRun.push({ hit, falseOnClean, coveredSites, flags: flagsN, lineNoise, errored, otherRuleFlags: 0 });
+                continue;
+            }
+
+            // --all-rules on the v1 dataset: score only the target rule's
+            // suggestions (other rules have no GT on this case).
+            let otherRuleFlags = 0;
+            if (ALL_RULES) {
+                const total = sugg.length;
+                sugg = sugg.filter((s) =>
+                    (s.brokenKodyRulesIds || []).includes(c.rule.uuid) ||
+                    s.ruleUuid === c.rule.uuid);
+                otherRuleFlags = total - sugg.length;
+            }
             const flaggedFiles = new Set(sugg.map((s) => normalizePath(s.relevantFile)).filter(Boolean));
             const hit = violFiles.filter((f) => flaggedFiles.has(f)).length;
             const falseOnClean = okFiles.filter((f) => flaggedFiles.has(f)).length;
@@ -227,22 +292,26 @@ async function main() {
             const flags = sugg.map((s) => ({ file: normalizePath(s.relevantFile), line: s.relevantLinesStart })).filter((x) => x.file && Number.isFinite(x.line));
             const coveredSites = sites.filter((g) => flags.some((x) => x.file === g.file && Math.abs(x.line - g.line) <= LINE_TOL)).length;
             const onTargetFlags = flags.filter((x) => sites.some((g) => x.file === g.file && Math.abs(x.line - g.line) <= LINE_TOL)).length;
-            perRun.push({ hit, falseOnClean, coveredSites, flags: flags.length, lineNoise: flags.length - onTargetFlags, errored });
+            perRun.push({ hit, falseOnClean, coveredSites, flags: flags.length, lineNoise: flags.length - onTargetFlags, errored, otherRuleFlags });
         }
-        const N = violFiles.length;
+        // v2 denominators span all (file,rule) pairs; v1 keeps the single rule.
+        const N = targets ? targets.reduce((a, t) => a + t.violFiles.length, 0) : violFiles.length;
+        const siteCount = targets ? targets.reduce((a, t) => a + t.sites.length, 0) : sites.length;
+        const cleanCount = targets ? targets.reduce((a, t) => a + t.okFiles.length, 0) : okFiles.length;
         // Count only runs that actually executed — an errored (infra) run must
         // not add its sites to any denominator as if they were real misses.
         const okRuns = perRun.filter((p) => !p.errored).length;
         const allRuns = perRun.filter((p) => !p.errored && p.hit >= N).length;
         multiTotalSites += N * okRuns; multiCaughtSites += perRun.reduce((a, b) => a + (b.errored ? 0 : b.hit), 0);
         caughtAllRuns += allRuns; totalMultiRuns += okRuns;
-        cleanFiles += okFiles.length * okRuns; falseAlarmFiles += perRun.reduce((a, b) => a + (b.errored ? 0 : b.falseOnClean), 0);
-        if (c.groundTruth) {
-            occTotal += sites.length * okRuns; occCaught += perRun.reduce((a, b) => a + (b.errored ? 0 : b.coveredSites), 0);
+        cleanFiles += cleanCount * okRuns; falseAlarmFiles += perRun.reduce((a, b) => a + (b.errored ? 0 : b.falseOnClean), 0);
+        if (c.groundTruth || targets) {
+            occTotal += siteCount * okRuns; occCaught += perRun.reduce((a, b) => a + (b.errored ? 0 : b.coveredSites), 0);
             lineNoiseTotal += perRun.reduce((a, b) => a + (b.errored ? 0 : b.lineNoise), 0); flaggedTotal += perRun.reduce((a, b) => a + (b.errored ? 0 : b.flags), 0);
-            console.log(`${c.rule.uuid.padEnd(22)} files=${fileCount} sites=${sites.length}  file-hits/run=[${perRun.map((p) => p.hit).join(',')}]  occ-caught/run=[${perRun.map((p) => p.coveredSites).join(',')}]  flags/run=[${perRun.map((p) => p.flags).join(',')}]`);
+            const otherInfo = ALL_RULES && !targets ? `  other-rule-flags/run=[${perRun.map((p) => p.otherRuleFlags).join(',')}]` : '';
+            console.log(`${caseLabel.padEnd(34)} files=${fileCount} sites=${siteCount}  file-hits/run=[${perRun.map((p) => p.hit).join(',')}]  occ-caught/run=[${perRun.map((p) => p.coveredSites).join(',')}]  flags/run=[${perRun.map((p) => p.flags).join(',')}]${otherInfo}`);
         } else {
-            console.log(`${c.rule.uuid.padEnd(22)} files=${fileCount} viol=${N}  hits/run=[${perRun.map((p) => p.hit).join(',')}]  caught-all ${allRuns}/${okRuns}  false-on-clean ${perRun.reduce((a, b) => a + (b.errored ? 0 : b.falseOnClean), 0)}`);
+            console.log(`${caseLabel.padEnd(34)} files=${fileCount} viol=${N}  hits/run=[${perRun.map((p) => p.hit).join(',')}]  caught-all ${allRuns}/${okRuns}  false-on-clean ${perRun.reduce((a, b) => a + (b.errored ? 0 : b.falseOnClean), 0)}`);
         }
     }
     const pct = (a, b) => (b ? (100 * a / b).toFixed(0) : '—');
@@ -253,6 +322,8 @@ async function main() {
         console.log(`line precision:       ${pct(flaggedTotal - lineNoiseTotal, flaggedTotal)}%  (${lineNoiseTotal}/${flaggedTotal} flags landed off any real site)`);
     }
     console.log(`specificity (files):  ${pct(cleanFiles - falseAlarmFiles, cleanFiles)}%  (${falseAlarmFiles}/${cleanFiles} clean files false-alarmed)`);
+    const tok = global.__EVAL_TOK || { in: 0, out: 0, cacheRead: 0, cacheWrite: 0 };
+    console.log(`TOKENS: input=${tok.in}  output=${tok.out}  cacheRead=${tok.cacheRead}  cacheWrite=${tok.cacheWrite}  over ${totalRuns} agentic sessions`);
 
     if (GATE) {
         // Infra guard: if the environment (quota/rate-limit/key) broke enough

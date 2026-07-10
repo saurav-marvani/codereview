@@ -11,10 +11,11 @@ import type {
     Target,
     TargetContext,
     TenantCredentials,
-} from './types.js';
-import { ScenarioSkipError } from './types.js';
-import { makeProvider } from '../providers/index.js';
-import { makeGithubTokenPicker } from './github-token-pool.js';
+} from "./types.js";
+import { ScenarioSkipError } from "./types.js";
+import { makeProvider } from "../providers/index.js";
+import { makeGithubTokenPicker } from "./github-token-pool.js";
+import { githubAppToken } from "./github-app-token.js";
 import {
     finishOnboarding,
     login,
@@ -491,12 +492,33 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
             // (round-robin). Same token across both attempts so a retry stays
             // on the same account; other cells keep draining the other tokens.
             const ghAssignment =
-                cell.provider === 'github' ? pickGithubToken() : undefined;
-            const githubToken = ghAssignment?.token;
+                cell.provider === "github" ? pickGithubToken() : undefined;
+            let githubToken = ghAssignment?.token;
             if (ghAssignment && ghAssignment.size > 1) {
                 log.info(
                     `  github → token slot ${ghAssignment.slot}/${ghAssignment.size}`,
                 );
+            }
+            // GitHub App installation token (opt-in via GH_APP_* envs):
+            // 5000/h of its own, immune to the bot-account abuse flags that
+            // cap the PATs at ~60/h. CLOUD cells only — installation tokens
+            // can't call GET /user, which self-hosted needs for seat
+            // assignment (provider.currentUserId). Resolved per scenario so
+            // the ~1h token auto-refreshes across long runs. A configured-
+            // but-broken App fails the mint loudly; we surface it and fall
+            // back to the PAT so one bad secret doesn't zero the coverage.
+            if (cell.provider === "github" && cell.target === "cloud") {
+                try {
+                    const appToken = await githubAppToken();
+                    if (appToken) {
+                        githubToken = appToken;
+                        log.info("  github → App installation token");
+                    }
+                } catch (err) {
+                    log.err(
+                        `  github → App token mint FAILED (${(err as Error).message.slice(0, 160)}) — falling back to PAT pool`,
+                    );
+                }
             }
 
             // One automatic retry for TRANSIENT failure shapes (lost

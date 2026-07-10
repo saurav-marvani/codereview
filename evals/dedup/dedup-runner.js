@@ -9,63 +9,39 @@ const { generateObject, jsonSchema } = require('ai');
 const {
     buildDedupPrompt,
     DEDUP_SCHEMA,
-    DEDUP_MODEL_ID,
     contentSimilarity,
     DEDUP_CONTENT_THRESHOLD,
 } = require('@libs/code-review/infrastructure/agents/engine/dedup-prompt');
+const {
+    SECONDARY_MODELS,
+    SECONDARY_BASELINE,
+    buildSecondaryModel,
+} = require('../shared/secondary-models');
 
 const normSeverity = (s) => (s == null ? 'medium' : String(s).toLowerCase());
 
-// Model registry for the dedup A/B. provider drives which SDK + key env.
-// `default` is production's model. Add small candidates here.
-const DEDUP_MODELS = {
-    'gemini-3-flash': { provider: 'google', model: 'gemini-3-flash-preview', keyEnv: ['API_GOOGLE_AI_API_KEY', 'BYOK_GOOGLE_API_KEY'] },
-    'gemini-2.5-flash': { provider: 'google', model: 'gemini-2.5-flash', keyEnv: ['API_GOOGLE_AI_API_KEY', 'BYOK_GOOGLE_API_KEY'] },
-    'haiku-4.5': { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', keyEnv: ['ANTHROPIC_API_KEY', 'BYOK_ANTHROPIC_API_KEY'] },
-    'kimi-k2.7': { provider: 'openai-compatible', model: 'kimi-k2.7-code', baseURL: 'https://api.moonshot.ai/v1', keyEnv: ['BYOK_MOONSHOT_API_KEY'] },
-    'glm-5.2': { provider: 'openai-compatible', model: 'glm-5.2', baseURL: 'https://api.z.ai/api/paas/v4', keyEnv: ['BYOK_ZHIPU_API_KEY'] },
-    'gpt-5.4-mini': { provider: 'openai', model: 'gpt-5.4-mini', keyEnv: ['BYOK_OPENAI_API_KEY', 'API_OPEN_AI_API_KEY'] },
-    'deepseek-v4': { provider: 'openai-compatible', model: 'deepseek-chat', baseURL: 'https://api.deepseek.com', keyEnv: ['DEEPSEEK_API_KEY'] },
+// Aliases kept so older CLI/scripts (--model=kimi-k2.7, gemini-3-flash) still work.
+const DEDUP_ALIASES = {
+    'gemini-3-flash': 'gemini-3-flash-preview',
+    'kimi-k2.7': 'kimi-k2.7-code',
 };
-
-function resolveKey(keyEnvs) {
-    for (const e of keyEnvs) if (process.env[e]) return process.env[e];
-    return null;
-}
-
-async function buildModel(spec) {
-    const apiKey = resolveKey(spec.keyEnv);
-    if (!apiKey) throw new Error(`no key (${spec.keyEnv.join('/')})`);
-    if (spec.provider === 'google') {
-        const { createGoogleGenerativeAI } = await import('@ai-sdk/google');
-        return createGoogleGenerativeAI({ apiKey })(spec.model);
-    }
-    if (spec.provider === 'anthropic') {
-        const { createAnthropic } = await import('@ai-sdk/anthropic');
-        return createAnthropic({ apiKey })(spec.model);
-    }
-    if (spec.provider === 'openai') {
-        const { createOpenAI } = await import('@ai-sdk/openai');
-        return createOpenAI({ apiKey })(spec.model);
-    }
-    if (spec.provider === 'openai-compatible') {
-        const { createOpenAICompatible } = await import('@ai-sdk/openai-compatible');
-        return createOpenAICompatible({ name: spec.provider, apiKey, baseURL: spec.baseURL })(spec.model);
-    }
-    throw new Error(`unsupported provider ${spec.provider}`);
-}
+const DEDUP_MODELS = { ...SECONDARY_MODELS, ...Object.fromEntries(
+    Object.entries(DEDUP_ALIASES).map(([alias, target]) => [alias, SECONDARY_MODELS[target]]),
+) };
 
 /**
  * @param {Array} suggestions
- * @param {string} modelKey   key into DEDUP_MODELS (default 'gpt-5.4-mini' = prod)
+ * @param {string} modelKey   key into SECONDARY_MODELS (default gpt-5.4-mini = prod)
  */
-async function runDedup(suggestions, modelKey = 'gpt-5.4-mini', opts = {}) {
+async function runDedup(suggestions, modelKey = SECONDARY_BASELINE, opts = {}) {
     if (suggestions.length <= 1) {
         return { groups: [], unique: suggestions.map((_, i) => i), kept: suggestions.map((_, i) => i), dropped: [], unmentioned: [], raw: { skipped: true } };
     }
-    const spec = DEDUP_MODELS[modelKey];
-    if (!spec) throw new Error(`unknown dedup model '${modelKey}' (have: ${Object.keys(DEDUP_MODELS).join(', ')})`);
-    const model = await buildModel(spec);
+    const resolved = DEDUP_ALIASES[modelKey] || modelKey;
+    if (!DEDUP_MODELS[resolved] && !SECONDARY_MODELS[resolved]) {
+        throw new Error(`unknown dedup model '${modelKey}' (have: ${Object.keys(DEDUP_MODELS).join(', ')})`);
+    }
+    const model = await buildSecondaryModel(resolved);
 
     const { object } = await generateObject({
         model,

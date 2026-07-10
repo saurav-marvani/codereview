@@ -24,11 +24,20 @@ const COLLECTION = 'observability_telemetry';
 // Kept in sync with SYSTEM_RUN_NAMES in libs/core/log/token-usage-tu.ts — the
 // internal analysis run-names excluded from the byok=false ("would-be billable")
 // view.
-const SYSTEM_RUN_NAMES = [
+export const BACKFILL_SYSTEM_RUN_NAMES = [
     'selectReviewMode',
     'validateImplementedSuggestions',
     'generateCodeSuggestions',
     'analyzeASTWithAI',
+];
+
+// Kept in sync with SUGGESTION_RUN_NAMES in libs/core/log/token-usage-tu.ts
+// (asserted equal by token-usage-tu.spec.ts).
+export const BACKFILL_SUGGESTION_RUN_NAMES = [
+    'severityAnalysis',
+    'validateWithLLM',
+    'checkSuggestionSimplicity',
+    'repeatedCodeReviewSuggestionClustering',
 ];
 
 const gf = (f: string) => ({ $getField: { field: f, input: '$attributes' } });
@@ -41,6 +50,83 @@ const modelExpr = {
     ],
 };
 
+// Aggregation mirror of deriveArea() in libs/core/log/token-usage-tu.ts —
+// keep the rule order identical (system → kody_rules → cross_file → review →
+// suggestions → summary → conversation → other).
+const rn = { $ifNull: [gf('gen_ai.run.name'), ''] };
+const areaExpr = {
+    $switch: {
+        branches: [
+            { case: { $in: [rn, BACKFILL_SYSTEM_RUN_NAMES] }, then: 'system' },
+            {
+                case: {
+                    $or: [
+                        {
+                            $regexMatch: {
+                                input: rn,
+                                regex: 'kody.?rules?',
+                                options: 'i',
+                            },
+                        },
+                        {
+                            $regexMatch: {
+                                input: rn,
+                                regex: '^kodyMemory',
+                            },
+                        },
+                    ],
+                },
+                then: 'kody_rules',
+            },
+            {
+                case: {
+                    $regexMatch: { input: rn, regex: '^crossFile' },
+                },
+                then: 'cross_file',
+            },
+            {
+                case: {
+                    $regexMatch: {
+                        input: rn,
+                        regex: '^(code-review|analyzeCodeWithAI)',
+                    },
+                },
+                then: 'review',
+            },
+            {
+                case: {
+                    $or: [
+                        { $in: [rn, BACKFILL_SUGGESTION_RUN_NAMES] },
+                        {
+                            $regexMatch: {
+                                input: rn,
+                                regex: '^safeguard',
+                            },
+                        },
+                    ],
+                },
+                then: 'suggestions',
+            },
+            {
+                case: {
+                    $regexMatch: { input: rn, regex: '^generateSummaryPR' },
+                },
+                then: 'summary',
+            },
+            {
+                case: {
+                    $or: [
+                        { $eq: [rn, 'conversationAgent'] },
+                        { $eq: [gf('agent.phase'), 'conversation'] },
+                    ],
+                },
+                then: 'conversation',
+            },
+        ],
+        default: 'other',
+    },
+};
+
 // Aggregation-pipeline $set that derives `tu` from the flat dotted-key attrs —
 // the exact same fields deriveTu reads on the write path. No `tier` (derived at
 // read from the catalog).
@@ -48,7 +134,7 @@ const SET_TU = {
     $set: {
         'attributes.tu': {
             isByok: { $eq: [gf('type'), 'byok'] },
-            sys: { $in: [gf('gen_ai.run.name'), SYSTEM_RUN_NAMES] },
+            sys: { $in: [gf('gen_ai.run.name'), BACKFILL_SYSTEM_RUN_NAMES] },
             model: modelExpr,
             input: { $ifNull: [gf('gen_ai.usage.input_tokens'), 0] },
             output: { $ifNull: [gf('gen_ai.usage.output_tokens'), 0] },
@@ -60,6 +146,7 @@ const SET_TU = {
             cacheWrite: {
                 $ifNull: [gf('gen_ai.usage.cache_creation_input_tokens'), 0],
             },
+            area: areaExpr,
         },
     },
 };
@@ -87,10 +174,18 @@ export type BackfillTuResult = {
 const sleep = (ms: number) =>
     new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** Only stamp docs that (a) have token usage, (b) lack `tu`, (c) are in window. */
+/**
+ * Only stamp docs that (a) have token usage, (b) lack `tu` OR lack `tu.area`
+ * (rows stamped before the area dimension existed), (c) are in window.
+ * Re-stamping recomputes the whole `tu` — it's a pure function of the raw
+ * attributes, so this stays idempotent.
+ */
 function stampPredicate(since: Date | null): Record<string, unknown> {
     const p: Record<string, unknown> = {
-        'attributes.tu': { $exists: false },
+        $or: [
+            { 'attributes.tu': { $exists: false } },
+            { 'attributes.tu.area': { $exists: false } },
+        ],
         $expr: { $gt: [{ $ifNull: [gf('gen_ai.usage.total_tokens'), 0] }, 0] },
     };
     if (since) p.timestamp = { $gte: since };

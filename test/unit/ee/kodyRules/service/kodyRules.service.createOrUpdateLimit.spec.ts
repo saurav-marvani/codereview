@@ -1,5 +1,3 @@
-import { BadRequestException } from '@nestjs/common';
-
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { KodyRulesService } from '@libs/ee/kodyRules/service/kodyRules.service';
 import {
@@ -116,8 +114,10 @@ describe('KodyRulesService create gate (free-plan limit counts ACTIVE only)', ()
         );
     });
 
-    it('does not count the new rule toward quota when it is created PAUSED (P4)', async () => {
-        // 3 ACTIVE existing + a new PAUSED rule → gate sees 3 + 0 = 3.
+    it('skips the quota check entirely when the new rule is created PAUSED (P4)', async () => {
+        // A rule that doesn't land ACTIVE never consumes quota, so
+        // resolveStatusWithinPlanLimit short-circuits without calling the
+        // validator at all — nothing to gate.
         const { service, validateRulesLimit } = buildService([
             { status: KodyRulesStatus.ACTIVE },
             { status: KodyRulesStatus.ACTIVE },
@@ -130,10 +130,7 @@ describe('KodyRulesService create gate (free-plan limit counts ACTIVE only)', ()
             { userId: 'u1', userEmail: 'u1@kodus.io' } as any,
         );
 
-        expect(validateRulesLimit).toHaveBeenCalledWith(
-            organizationAndTeamData,
-            3,
-        );
+        expect(validateRulesLimit).not.toHaveBeenCalled();
     });
 });
 
@@ -210,19 +207,19 @@ describe('KodyRulesService create gate enforces the 10-rule ceiling', () => {
         expect(repositoryMock.addRule).toHaveBeenCalled();
     });
 
-    it('blocks creating the 11th rule (10 active + 1 = 11) with a clear error', async () => {
+    it('creates the 11th rule PAUSED+lockedByPlan instead of rejecting it', async () => {
         const { service, repositoryMock } = buildEnforcingService(
             activeRules(10),
         );
 
-        await expect(
-            service.createOrUpdate(organizationAndTeamData, newRule, userInfo),
-        ).rejects.toThrow(BadRequestException);
-        await expect(
-            service.createOrUpdate(organizationAndTeamData, newRule, userInfo),
-        ).rejects.toThrow(/Free plan's limit/);
-        // Nothing was persisted — the gate rejected before addRule.
-        expect(repositoryMock.addRule).not.toHaveBeenCalled();
+        // No longer throws — the rule is still persisted, just locked
+        // (same "value-forward" pattern as MCP plugins beyond their cap).
+        await service.createOrUpdate(organizationAndTeamData, newRule, userInfo);
+
+        expect(repositoryMock.addRule).toHaveBeenCalled();
+        const [, persistedRule] = repositoryMock.addRule.mock.calls[0];
+        expect(persistedRule.status).toBe(KodyRulesStatus.PAUSED);
+        expect(persistedRule.lockedByPlan).toBe(true);
     });
 
     it('does NOT count PAUSED rules toward the ceiling (9 active + 20 paused + 1 = 10, allowed)', async () => {
@@ -251,6 +248,91 @@ describe('KodyRulesService create gate enforces the 10-rule ceiling', () => {
             userInfo,
         );
         expect(repositoryMock.addRule).toHaveBeenCalled();
+    });
+
+    it('locks the rule (fail closed) instead of throwing when the validator itself errors', async () => {
+        const repositoryMock = {
+            findByOrganizationId: jest
+                .fn()
+                .mockResolvedValue({ uuid: 'kr-1', rules: activeRules(3) }),
+            addRule: jest.fn().mockResolvedValue({ rules: [] }),
+        };
+        const validateRulesLimit = jest
+            .fn()
+            .mockRejectedValue(new Error('billing service unreachable'));
+        const service = new KodyRulesService(
+            repositoryMock as any,
+            { emit: jest.fn() } as any,
+            {} as any,
+            {} as any,
+            { validateRulesLimit } as any,
+            {} as any,
+            {} as any,
+            {} as any,
+            {} as any,
+            {} as any,
+            {} as any,
+        );
+
+        // Must not reject the request — same fail-closed outcome as hitting
+        // the cap (locked), not a 500 surfaced to the caller.
+        await expect(
+            service.createOrUpdate(organizationAndTeamData, newRule, userInfo),
+        ).resolves.not.toThrow();
+
+        const [, persistedRule] = repositoryMock.addRule.mock.calls[0];
+        expect(persistedRule.status).toBe(KodyRulesStatus.PAUSED);
+        expect(persistedRule.lockedByPlan).toBe(true);
+    });
+
+    it('never throws across a batch of creates past the cap — proves IDE-sync/import loops no longer abort mid-batch', async () => {
+        // Regression guard for the behavior change: before this redesign,
+        // every one of these 5 calls beyond the 10-rule cap would have
+        // thrown BadRequestException, which is exactly what aborted
+        // sync-ide-rules/resync-ide-rules mid-repository and silently
+        // dropped rules in import-fast-ide-rules. Simulates the org
+        // starting at the cap (10 active) and repeatedly creating more
+        // "new rule" calls, as a sync loop would.
+        const repositoryMock = {
+            findByOrganizationId: jest
+                .fn()
+                .mockResolvedValue({ uuid: 'kr-1', rules: activeRules(10) }),
+            addRule: jest.fn().mockResolvedValue({ rules: [] }),
+        };
+        const validateRulesLimit = jest
+            .fn()
+            .mockImplementation((_org, total: number) =>
+                Promise.resolve(total <= MAX),
+            );
+        const service = new KodyRulesService(
+            repositoryMock as any,
+            { emit: jest.fn() } as any,
+            {} as any,
+            {} as any,
+            { validateRulesLimit } as any,
+            {} as any,
+            {} as any,
+            {} as any,
+            {} as any,
+            {} as any,
+            {} as any,
+        );
+
+        for (let i = 0; i < 5; i++) {
+            await expect(
+                service.createOrUpdate(
+                    organizationAndTeamData,
+                    { ...newRule, title: `Synced rule ${i}` },
+                    userInfo,
+                ),
+            ).resolves.not.toThrow();
+        }
+
+        expect(repositoryMock.addRule).toHaveBeenCalledTimes(5);
+        for (const call of repositoryMock.addRule.mock.calls) {
+            expect(call[1].status).toBe(KodyRulesStatus.PAUSED);
+            expect(call[1].lockedByPlan).toBe(true);
+        }
     });
 });
 

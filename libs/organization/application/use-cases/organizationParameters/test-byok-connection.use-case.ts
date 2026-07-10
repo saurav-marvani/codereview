@@ -37,7 +37,9 @@ function assertSafeRegion(region: string): void {
  * axios.get — acceptable for a one-shot test probe that doesn't leak
  * response bodies back to the user.
  */
-async function assertSafeOpenAICompatibleUrl(rawUrl: string): Promise<void> {
+export async function assertSafeOpenAICompatibleUrl(
+    rawUrl: string,
+): Promise<void> {
     let parsed: URL;
     try {
         parsed = new URL(rawUrl);

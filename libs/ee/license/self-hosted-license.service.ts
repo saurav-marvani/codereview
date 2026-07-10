@@ -280,6 +280,15 @@ export class SelfHostedLicenseService implements ILicenseService {
         };
     }
 
+    // Trials are a cloud-billing concept; self-hosted installs are licensed
+    // via signed keys, so there is nothing to provision here.
+    async startTrial(
+        _organizationAndTeamData: OrganizationAndTeamData,
+        _byok: boolean,
+    ): Promise<boolean> {
+        return false;
+    }
+
     private async getAssignedUsers(
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<AssignedUserEntry[]> {
