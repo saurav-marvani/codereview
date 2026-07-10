@@ -5,6 +5,10 @@ import {
     ResourceType,
 } from '@libs/identity/domain/permissions/enums/permissions.enum';
 import {
+    IIntegrationConfigService,
+    INTEGRATION_CONFIG_SERVICE_TOKEN,
+} from '@libs/integrations/domain/integrationConfigs/contracts/integration-config.service.contracts';
+import {
     IPullRequestsService,
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@libs/platformData/domain/pullRequests/contracts/pullRequests.service.contracts';
@@ -16,8 +20,11 @@ import {
     AUTOMATION_EXECUTION_SERVICE_TOKEN,
     IAutomationExecutionService,
 } from '@libs/automation/domain/automationExecution/contracts/automation-execution.service';
-import { AutomationStatus } from '@libs/automation/domain/automation/enum/automation-status';
 import { AuthorizationService } from '@libs/identity/infrastructure/adapters/services/permissions/authorization.service';
+import {
+    intersectAssignedAndTeamScope,
+    resolveTeamRepositoryIds,
+} from './utils/team-repository-scope.util';
 
 export interface PullRequestsDailyDigest {
     // ISO start-of-day (UTC) the digest is scoped to.
@@ -32,10 +39,6 @@ export interface PullRequestsDailyDigest {
     awaitingReview: number;
 }
 
-// Upper bound on today's executions scanned for the digest. A single org is very
-// unlikely to exceed this in a day; if it does, the counts undercount (logged).
-const MAX_TODAY_EXECUTIONS = 2000;
-
 @Injectable()
 export class GetPullRequestsDailyDigestUseCase implements IUseCase {
     private readonly logger = createLogger(
@@ -48,6 +51,9 @@ export class GetPullRequestsDailyDigestUseCase implements IUseCase {
 
         @Inject(PULL_REQUESTS_SERVICE_TOKEN)
         private readonly pullRequestsService: IPullRequestsService,
+
+        @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
+        private readonly integrationConfigService: IIntegrationConfigService,
 
         @Inject(REQUEST)
         private readonly request: UserRequest,
@@ -80,63 +86,69 @@ export class GetPullRequestsDailyDigestUseCase implements IUseCase {
                 return empty;
             }
 
-            const repositoryIds = assignedRepositoryIds ?? undefined;
             const organizationAndTeamData: OrganizationAndTeamData = {
                 organizationId,
                 teamId: query.teamId,
             };
 
-            // 1. Today's executions → distinct reviewed PRs + errored PRs.
-            const { data: executions } =
-                await this.automationExecutionService.findPullRequestExecutionsByOrganizationAndTeam(
+            // Team-scope every count the same way (see the facets use-case):
+            // resolve the team's repositories and intersect with the caller's
+            // assigned scope so reviewed/errored (Postgres) and awaiting (Mongo)
+            // all count the same set of PRs.
+            const teamRepositoryIds = await resolveTeamRepositoryIds(
+                this.integrationConfigService,
+                organizationAndTeamData,
+                (error) =>
+                    this.logger.warn({
+                        message:
+                            'Failed to resolve team repository scope for daily digest',
+                        context: GetPullRequestsDailyDigestUseCase.name,
+                        error: error as Error,
+                        metadata: { organizationId, teamId: query.teamId },
+                    }),
+            );
+            const repositoryIds = intersectAssignedAndTeamScope(
+                assignedRepositoryIds,
+                teamRepositoryIds,
+            );
+
+            // Empty (not undefined) → team repos and assigned scope don't
+            // overlap → the caller sees none of this team's PRs. Guard here
+            // because the Mongo helpers treat an empty array as "no filter".
+            if (Array.isArray(repositoryIds) && repositoryIds.length === 0) {
+                return empty;
+            }
+
+            // 1. Today's distinct reviewed PRs + which of them errored, counted
+            //    DB-side (DISTINCT PR + bool_or on error status) scoped to
+            //    today. Replaces the old "scan up to N executions and dedup in
+            //    memory" approach — no cap, no unbounded in-memory load.
+            const reviewedKeyRows =
+                await this.automationExecutionService.getDistinctReviewedPullRequestKeys(
                     {
                         organizationAndTeamData,
                         repositoryIds,
                         createdAtFrom: date,
-                        take: MAX_TODAY_EXECUTIONS,
-                        order: 'DESC',
-                        includeTotal: false,
                     },
                 );
 
-            if (executions.length >= MAX_TODAY_EXECUTIONS) {
-                this.logger.warn({
-                    message:
-                        'Daily digest hit the today-executions scan cap; counts may undercount',
-                    context: GetPullRequestsDailyDigestUseCase.name,
-                    metadata: { organizationId, cap: MAX_TODAY_EXECUTIONS },
-                });
-            }
-
             const reviewedKeys = new Set<string>();
-            const erroredKeys = new Set<string>();
             const reviewedCriteria: Array<{
                 number: number;
                 repositoryId: string;
             }> = [];
+            let erroredToday = 0;
 
-            for (const execution of executions) {
-                if (
-                    execution.pullRequestNumber == null ||
-                    execution.repositoryId == null
-                ) {
-                    continue;
-                }
-
-                const key = `${execution.repositoryId}_${execution.pullRequestNumber}`;
-                if (!reviewedKeys.has(key)) {
-                    reviewedKeys.add(key);
-                    reviewedCriteria.push({
-                        number: execution.pullRequestNumber,
-                        repositoryId: execution.repositoryId,
-                    });
-                }
-
-                if (
-                    execution.status === AutomationStatus.ERROR ||
-                    execution.status === AutomationStatus.PARTIAL_ERROR
-                ) {
-                    erroredKeys.add(key);
+            for (const row of reviewedKeyRows) {
+                reviewedKeys.add(
+                    `${row.repositoryId}_${row.pullRequestNumber}`,
+                );
+                reviewedCriteria.push({
+                    number: row.pullRequestNumber,
+                    repositoryId: row.repositoryId,
+                });
+                if (row.hasError) {
+                    erroredToday++;
                 }
             }
 
@@ -180,7 +192,7 @@ export class GetPullRequestsDailyDigestUseCase implements IUseCase {
                 date,
                 reviewedToday: reviewedKeys.size,
                 needsAttention,
-                erroredToday: erroredKeys.size,
+                erroredToday,
                 awaitingReview,
             };
         } catch (error) {

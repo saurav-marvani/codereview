@@ -45,6 +45,7 @@ export interface IAutomationExecutionRepository {
     getDistinctReviewedPullRequestKeys(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryIds?: string[];
+        createdAtFrom?: Date | string;
     }): Promise<
         Array<{
             repositoryId: string;

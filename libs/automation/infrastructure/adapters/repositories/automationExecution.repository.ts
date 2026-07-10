@@ -482,6 +482,7 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
     async getDistinctReviewedPullRequestKeys(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryIds?: string[];
+        createdAtFrom?: Date | string;
     }): Promise<
         Array<{
             repositoryId: string;
@@ -489,7 +490,8 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
             hasError: boolean;
         }>
     > {
-        const { organizationAndTeamData, repositoryIds } = params;
+        const { organizationAndTeamData, repositoryIds, createdAtFrom } =
+            params;
         const { organizationId, teamId } = organizationAndTeamData ?? {};
 
         if (!organizationId || !teamId) {
@@ -530,6 +532,15 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                 queryBuilder.andWhere(
                     'automation_execution.repositoryId IN (:...repositoryIds)',
                     { repositoryIds },
+                );
+            }
+
+            // Optional lower bound on execution time — powers the daily digest
+            // (today's reviewed PRs) without loading raw executions into memory.
+            if (createdAtFrom) {
+                queryBuilder.andWhere(
+                    'automation_execution.createdAt >= :createdAtFrom',
+                    { createdAtFrom },
                 );
             }
 
