@@ -20,6 +20,7 @@
  * inlining, hybrid regex+judge, compound-rule decomposition.
  */
 import { z } from 'zod';
+import { recoverRuleUuid } from './finding-mapper';
 import { fileMatchesRulePath } from '@libs/common/utils/kody-rules/file-patterns';
 import { FileChange } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import {
@@ -260,6 +261,32 @@ export async function inlineRuleReferences(
 }
 
 /**
+ * Keep only violations whose ruleUuid belongs to this shard, dropping the
+ * model's hallucinated ids. A ruleUuid that isn't an exact match but is within
+ * edit distance ≤ 2 of exactly one shard rule is a corrupted echo (#1170) —
+ * recover it to the real uuid instead of dropping the (correct) violation.
+ * Ambiguous or far ids are still dropped.
+ */
+function keepKnownRules(
+    vs: ShardViolation[],
+    ruleUuids: string[],
+): ShardViolation[] {
+    const known = new Set(ruleUuids);
+    const kept: ShardViolation[] = [];
+    for (const v of vs) {
+        if (known.has(v.ruleUuid)) {
+            kept.push(v);
+            continue;
+        }
+        const recovered = recoverRuleUuid(v.ruleUuid, known);
+        if (recovered) {
+            kept.push({ ...v, ruleUuid: recovered });
+        }
+    }
+    return kept;
+}
+
+/**
  * Run the deterministic file×rule sweep. File-scope rules → one call per file
  * with its applicable rules; PR-scope rules → one whole-PR call. Returns all
  * violations with their ruleUuid preserved (downstream mapping fills
@@ -296,11 +323,12 @@ export async function judgeKodyRulesSharded(
                     filename: file.filename,
                     ruleUuids,
                 });
-                // anchor + scope every violation to this file, drop invented uuids
-                const known = new Set(ruleUuids);
-                return vs
-                    .filter((v) => known.has(v.ruleUuid))
-                    .map((v) => ({ ...v, relevantFile: file.filename }));
+                // anchor + scope every violation to this file, drop invented
+                // uuids (recovering ones the LLM corrupted while echoing)
+                return keepKnownRules(vs, ruleUuids).map((v) => ({
+                    ...v,
+                    relevantFile: file.filename,
+                }));
             } catch {
                 shardsErrored++;
                 return [] as ShardViolation[];
@@ -320,9 +348,8 @@ export async function judgeKodyRulesSharded(
                 filename: null,
                 ruleUuids,
             });
-            const known = new Set(ruleUuids);
             // PR-level violations carry no relevantFile by design
-            for (const v of vs) if (known.has(v.ruleUuid)) violations.push(v);
+            for (const v of keepKnownRules(vs, ruleUuids)) violations.push(v);
         } catch {
             shardsErrored++;
         }

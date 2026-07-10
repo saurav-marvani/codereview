@@ -131,6 +131,59 @@ describe('judgeKodyRulesSharded — deterministic file×rule sweep (#1449)', () 
         expect(res.violations.map((v) => v.ruleUuid)).toEqual(['r1']);
     });
 
+    // #1170: the LLM occasionally drops/transposes a character while echoing a
+    // 36-char UUID. Recover the intended rule instead of silently dropping the
+    // (otherwise correct) violation — same edit-distance recovery the mapper uses.
+    it('recovers a file-scope violation whose ruleUuid the LLM corrupted by one char', async () => {
+        // exactly the corruption observed in #1170: the '9' in "cc9eb" dropped
+        const realUuid = '43063446-b519-4acc-9c4d-cc9eb8773a92';
+        const corrupted = '43063446-b519-4acc-9c4d-cceb8773a92';
+        const { run } = fakeJudge({ 'src/a.ts': [{ ruleUuid: corrupted, line: 7 }] });
+        const res = await judgeKodyRulesSharded({
+            changedFiles: [file('src/a.ts', '7 +bad')],
+            rules: [{ uuid: realUuid, title: 't', rule: 'r', path: '**/*.ts' }],
+            runJudge: run,
+        });
+        expect(res.violations).toHaveLength(1);
+        expect(res.violations[0].ruleUuid).toBe(realUuid);
+        expect(res.violations[0].relevantFile).toBe('src/a.ts');
+    });
+
+    it('recovers a corrupted ruleUuid on the PR-scope shard too', async () => {
+        const realUuid = '9f8e7d6c-5432-10ba-fedc-0987654321ba';
+        const corrupted = '9f8e7d6c-5432-10ba-fedc-098765431ba'; // one digit dropped
+        const { run } = fakeJudge({ __PR__: [{ ruleUuid: corrupted }] });
+        const res = await judgeKodyRulesSharded({
+            changedFiles: [file('src/a.ts', '1 +x')],
+            rules: [
+                {
+                    uuid: realUuid,
+                    title: 'must have tests',
+                    rule: 'every PR needs a test',
+                    scope: KodyRulesScope.PULL_REQUEST,
+                },
+            ],
+            runJudge: run,
+        });
+        expect(res.violations).toHaveLength(1);
+        expect(res.violations[0].ruleUuid).toBe(realUuid);
+    });
+
+    it('still drops a corrupted ruleUuid that is ambiguous between two rules', async () => {
+        // "id-a"/"id-b" differ only in the last char, so a "id-x" that is
+        // distance 1 from BOTH is ambiguous → dropped, not guessed.
+        const { run } = fakeJudge({ 'src/a.ts': [{ ruleUuid: 'id-x' }] });
+        const res = await judgeKodyRulesSharded({
+            changedFiles: [file('src/a.ts', '1 +x')],
+            rules: [
+                { uuid: 'id-a', title: 't', rule: 'r', path: '**/*.ts' },
+                { uuid: 'id-b', title: 't', rule: 'r', path: '**/*.ts' },
+            ],
+            runJudge: run,
+        });
+        expect(res.violations).toHaveLength(0);
+    });
+
     it('runs PR-scope rules in a single whole-PR shard (no relevantFile)', async () => {
         const { run, calls } = fakeJudge({ __PR__: [{ ruleUuid: 'pr1' }] });
         const res = await judgeKodyRulesSharded({
