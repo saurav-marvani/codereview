@@ -164,11 +164,21 @@ export interface PullRequestExecution {
     reviewWarnings?: ReviewWarning[];
 }
 
+export interface PullRequestExecutionsPagination {
+    totalItems?: number;
+    // Distinct PRs matching the DB-level filters — the accurate header count.
+    // Absent when the backend can't compute it (error/empty) or reflects only
+    // DB-level filters (see the use-case), so the client trusts it as exact only
+    // when no Mongo-side suggestion/author filter is active.
+    distinctPrTotal?: number;
+}
+
 export type PullRequestExecutionsPayload =
     | PullRequestExecution[]
     | {
           data?: PullRequestExecution[] | null;
           _page_data?: PullRequestExecution[] | null;
+          pagination?: PullRequestExecutionsPagination | null;
       }
     | null
     | undefined;

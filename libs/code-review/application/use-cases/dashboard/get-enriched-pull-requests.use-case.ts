@@ -176,6 +176,10 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
             const initialSkip = (page - 1) * limit;
             let accumulatedExecutions = 0;
             let totalExecutions = 0;
+            // Distinct PRs matching the DB-level filters — captured from the same
+            // first batch that computes totalExecutions. Surfaced so the header
+            // shows an accurate PR count instead of the loaded-window estimate.
+            let distinctPrTotal = 0;
             let hasMoreExecutions = true;
             // Keyset cursor for the intra-request loop. The page offset
             // (initialSkip) still positions the first batch, but once the
@@ -221,32 +225,36 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
             }
 
             while (enrichedPullRequests.length < limit && hasMoreExecutions) {
-                const { data: executionsBatch, total } =
-                    await this.automationExecutionService.findPullRequestExecutionsByOrganizationAndTeam(
-                        {
-                            organizationAndTeamData: {
-                                organizationId,
-                                teamId,
-                            },
-                            repositoryIds: allowedRepositoryIds,
-                            repositoryName: repositoryNameFilter,
-                            pullRequestNumber,
-                            prFilters,
-                            status,
-                            createdAtFrom,
-                            createdAtTo,
-                            // First batch: page offset. Subsequent batches:
-                            // keyset cursor (no OFFSET over-scan).
-                            skip: loopCursor ? undefined : initialSkip,
-                            cursor: loopCursor,
-                            take: limit,
-                            order: 'DESC',
-                            includeTotal: totalExecutions === 0,
+                const {
+                    data: executionsBatch,
+                    total,
+                    distinctPrTotal: batchDistinctPrTotal,
+                } = await this.automationExecutionService.findPullRequestExecutionsByOrganizationAndTeam(
+                    {
+                        organizationAndTeamData: {
+                            organizationId,
+                            teamId,
                         },
-                    );
+                        repositoryIds: allowedRepositoryIds,
+                        repositoryName: repositoryNameFilter,
+                        pullRequestNumber,
+                        prFilters,
+                        status,
+                        createdAtFrom,
+                        createdAtTo,
+                        // First batch: page offset. Subsequent batches:
+                        // keyset cursor (no OFFSET over-scan).
+                        skip: loopCursor ? undefined : initialSkip,
+                        cursor: loopCursor,
+                        take: limit,
+                        order: 'DESC',
+                        includeTotal: totalExecutions === 0,
+                    },
+                );
 
                 if (totalExecutions === 0) {
                     totalExecutions = total;
+                    distinctPrTotal = batchDistinctPrTotal ?? 0;
                 }
 
                 if (!executionsBatch.length) {
@@ -645,6 +653,7 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                 currentPage: page,
                 totalPages,
                 totalItems: totalExecutions,
+                distinctPrTotal,
                 itemsPerPage: limit,
                 hasNextPage: page < totalPages,
                 hasPreviousPage: page > 1,

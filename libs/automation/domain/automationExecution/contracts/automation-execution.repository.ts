@@ -41,6 +41,8 @@ export interface IAutomationExecutionRepository {
     }): Promise<{
         data: AutomationExecutionEntity[];
         total: number;
+        // Distinct PRs matching the DB-level filters (only with includeTotal).
+        distinctPrTotal: number;
     }>;
     getDistinctReviewedPullRequestKeys(params: {
         organizationAndTeamData: OrganizationAndTeamData;

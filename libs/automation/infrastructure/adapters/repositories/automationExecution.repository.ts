@@ -252,7 +252,18 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
         take?: number;
         order?: 'ASC' | 'DESC';
         includeTotal?: boolean;
-    }): Promise<{ data: AutomationExecutionEntity[]; total: number }> {
+    }): Promise<{
+        data: AutomationExecutionEntity[];
+        total: number;
+        // Distinct PRs (repo + number) matching the same filters — the count the
+        // dashboard header wants ("N pull requests"), vs `total` which counts
+        // executions (a PR reviewed 5× is 5 there, 1 here). Only computed with
+        // `includeTotal`. Reflects the DB-level filters (status/date/repo/
+        // number/title); the Mongo-side suggestion/author filters are applied
+        // later in the use-case, so callers must not present this as exact when
+        // those are active.
+        distinctPrTotal: number;
+    }> {
         const {
             organizationAndTeamData,
             repositoryIds,
@@ -418,6 +429,7 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
             }
 
             let total = 0;
+            let distinctPrTotal = 0;
             if (includeTotal) {
                 // COUNT(*) instead of TypeORM's getCount() (COUNT(DISTINCT uuid)).
                 // The join chain automation_execution -> teamAutomation -> team
@@ -425,14 +437,28 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                 // filter is an EXISTS semi-join, so there is no row fan-out:
                 // COUNT(*) === COUNT(DISTINCT uuid). The DISTINCT variant sorted
                 // the whole filtered set to disk (~28GB of temp files in prod).
+                // The distinct-PR count keys on (repositoryId, pullRequestNumber)
+                // — both cast to text and concatenated so DISTINCT hashes a
+                // single scalar (cheap HashAggregate, not a full-row sort). One
+                // extra aggregate over the same WHERE; runs only on the first
+                // batch (includeTotal), where no keyset cursor is set yet.
                 const countRow = await queryBuilder
                     .clone()
                     .select('COUNT(*)', 'cnt')
-                    .getRawOne<{ cnt: string }>();
+                    .addSelect(
+                        // Raw SQL: TypeORM does NOT rewrite `alias.property` inside
+                        // addSelect (unlike where/orderBy), so the camelCase
+                        // columns must be quoted explicitly — otherwise Postgres
+                        // folds them to lowercase (repositoryid) and errors.
+                        `COUNT(DISTINCT (automation_execution."repositoryId"::text || '_' || automation_execution."pullRequestNumber"::text))`,
+                        'prCnt',
+                    )
+                    .getRawOne<{ cnt: string; prCnt: string }>();
                 total = Number(countRow?.cnt ?? 0);
+                distinctPrTotal = Number(countRow?.prCnt ?? 0);
 
                 if (total === 0) {
-                    return { data: [], total: 0 };
+                    return { data: [], total: 0, distinctPrTotal: 0 };
                 }
             }
 
@@ -462,7 +488,7 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                     AutomationExecutionEntity,
                 ) as AutomationExecutionEntity[]) ?? [];
 
-            return { data: mapped, total };
+            return { data: mapped, total, distinctPrTotal };
         } catch (error) {
             this.logger.error({
                 message:
@@ -471,7 +497,7 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                 error,
                 metadata: { params },
             });
-            return { data: [], total: 0 };
+            return { data: [], total: 0, distinctPrTotal: 0 };
         }
     }
 

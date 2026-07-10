@@ -38,6 +38,15 @@ const normalizeExecutions = (
     return [];
 };
 
+// Distinct-PR total the backend computed for the current filters (see the use
+// case). Only present on the object-shaped payload; undefined otherwise.
+const pickDistinctPrTotal = (
+    payload: PullRequestExecutionsPayload,
+): number | undefined => {
+    if (!payload || Array.isArray(payload)) return undefined;
+    return payload.pagination?.distinctPrTotal ?? undefined;
+};
+
 const DEFAULT_PAGE_SIZE = 30;
 
 export const useInfinitePullRequestExecutions = (
@@ -174,7 +183,15 @@ export const useInfinitePullRequestExecutions = (
         return Array.from(map.values());
     }, [infiniteData]);
 
-    return { ...query, data: infiniteData, items };
+    // Accurate distinct-PR total for the active filters, read from the first
+    // page (same for every page). Undefined until the first page loads or when
+    // the backend couldn't compute it — callers fall back to the loaded count.
+    const filteredPrTotal = useMemo(
+        () => pickDistinctPrTotal(infiniteData?.pages?.[0]?.data),
+        [infiniteData],
+    );
+
+    return { ...query, data: infiniteData, items, filteredPrTotal };
 };
 
 export const usePullRequestsDailyDigest = (teamId?: string) => {

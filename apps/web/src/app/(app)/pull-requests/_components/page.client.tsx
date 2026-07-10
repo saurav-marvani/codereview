@@ -154,6 +154,7 @@ export function PullRequestsPageClient() {
         hasNextPage,
         fetchNextPage,
         isFetchingNextPage,
+        filteredPrTotal,
     } = useInfinitePullRequestExecutions(
         {
             teamId,
@@ -311,26 +312,45 @@ export function PullRequestsPageClient() {
             Boolean(chip),
     );
 
-    // Header count. `groupedPullRequests.length` is only the window loaded so far
-    // by the infinite scroll, so on its own it understates the real total (it
-    // read "150 pull requests" next to "665 awaiting"). The authoritative total
-    // is the unfiltered team facet (`facets.all`); use it whenever no filter
-    // narrows the set. With filters active there is no server-side filtered
-    // total, so fall back to the loaded count and mark it partial ("+") while
-    // more pages remain — never present the loaded window as the whole set.
-    // needsAttention and awaiting are segment toggles (not removable chips), but
-    // they still narrow the list — count them so the header doesn't show the
-    // full team total next to a narrowed view.
+    // Header count. Three sources, most-accurate first:
+    //   1. No filters → the unfiltered team facet (`facets.all`).
+    //   2. Only DB-level filters (status/date/repo/number/title) → the backend's
+    //      `filteredPrTotal` (distinct PRs matching those filters — exact).
+    //   3. A Mongo-side filter is active (severity/suggestions/needs-attention/
+    //      author/author-policy) → the backend can't count those server-side yet,
+    //      so fall back to the loaded window and mark it partial ("+").
+    // `groupedPullRequests.length` alone only reflects the loaded page, so it
+    // understated the real total (read "150 pull requests" next to "665
+    // awaiting"); it's the last resort.
     const hasActiveFilters =
         activeChips.length > 0 ||
         needsAttention === "true" ||
         isAwaiting ||
         authorPolicy !== "reviewable";
-    const totalCount =
-        !hasActiveFilters && typeof facets?.all === "number"
+    // Filters applied post-query (Mongo side) — while any is active,
+    // `filteredPrTotal` (DB-level only) is an upper bound, not exact.
+    const hasMongoFilters =
+        !!severityFilter ||
+        suggestionsFilter !== "all" ||
+        needsAttention === "true" ||
+        !!debouncedAuthor.trim() ||
+        authorPolicy !== "reviewable";
+    const canUseExactFilteredTotal =
+        hasActiveFilters &&
+        !isAwaiting &&
+        !hasMongoFilters &&
+        typeof filteredPrTotal === "number";
+    const totalCount = !hasActiveFilters
+        ? typeof facets?.all === "number"
             ? facets.all
-            : groupedPullRequests.length;
-    const isPartialCount = hasActiveFilters && hasNextPage;
+            : groupedPullRequests.length
+        : canUseExactFilteredTotal
+          ? filteredPrTotal
+          : groupedPullRequests.length;
+    // Exact counts (facets.all, filteredPrTotal) are never partial; only the
+    // loaded-window fallback gets the "+".
+    const isPartialCount =
+        hasActiveFilters && !canUseExactFilteredTotal && hasNextPage;
 
     // "Pulse of the review process" strip. Each card is a shortcut that filters
     // the list below to its segment (toggles off if already active). The number
