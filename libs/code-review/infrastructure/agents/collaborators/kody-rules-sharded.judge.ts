@@ -37,7 +37,17 @@ export const shardViolationsSchema = z.object({
     violations: z
         .array(
             z.object({
-                ruleUuid: z.string(),
+                // The rule the model is flagging, identified by its 1-based
+                // index ([n]) in this shard's rule list. We accept a bare
+                // number, a stringified number, or — as a graceful fallback if
+                // the model reverts to old behavior — a UUID string. The union
+                // tries the numeric coercion first; a UUID (non-numeric) falls
+                // through to the string arm. See #1170 for why we stopped
+                // asking the model to echo UUIDs.
+                ruleId: z.union([
+                    z.coerce.number().int().positive(),
+                    z.string(),
+                ]),
                 relevantLinesStart: z.number().optional(),
                 relevantLinesEnd: z.number().optional(),
                 language: z.string().optional(),
@@ -50,7 +60,23 @@ export const shardViolationsSchema = z.object({
         .default([]),
 });
 
-/** One violation the model reports for a (file, rule) pair. */
+/**
+ * A violation exactly as the model emits it (pre-resolution): the rule is a
+ * `ruleId` index, not a UUID. `judgeKodyRulesSharded` resolves it to a real
+ * `ruleUuid` before returning `ShardViolation`s.
+ */
+export interface RawShardViolation {
+    ruleId: number | string;
+    relevantLinesStart?: number;
+    relevantLinesEnd?: number;
+    language?: string;
+    suggestionContent: string;
+    existingCode?: string;
+    improvedCode?: string;
+    oneSentenceSummary?: string;
+}
+
+/** A resolved violation for a (file, rule) pair — `ruleId` mapped to a UUID. */
 export interface ShardViolation {
     ruleUuid: string;
     relevantFile?: string;
@@ -74,9 +100,13 @@ export type RunJudge = (args: {
     user: string;
     /** file the shard covers, or null for the PR-level shard. */
     filename: string | null;
-    /** rule uuids in scope for this shard — used to filter hallucinated ids. */
+    /**
+     * Rule uuids in scope for this shard, in the SAME order they are presented
+     * to the model — so a `ruleId` index N maps to `ruleUuids[N-1]`. Also the
+     * known set for the UUID-echo fallback.
+     */
     ruleUuids: string[];
-}) => Promise<ShardViolation[]>;
+}) => Promise<RawShardViolation[]>;
 
 export interface ShardedJudgeInput {
     changedFiles: FileChange[];
@@ -102,17 +132,16 @@ export const SHARD_SYSTEM_PROMPT = `You check a set of team rules against the di
 Rules of engagement:
 - Only flag lines ADDED in this diff (each line is prefixed with its file line number then '+'). Unchanged context lines are NEVER flagged.
 - One entry PER violating line PER rule; do not collapse repeats. Downstream dedup folds repeats into one comment.
-- Use the EXACT rule uuid from the list. Never invent a uuid; if a real issue matches no listed rule, DROP it.
+- Identify the violated rule by its number — the [n] shown before each rule. Put that number in "ruleId". Never invent a number; if a real issue matches no listed rule, DROP it.
 - If nothing violates, return an empty list.`;
 
-export const SHARD_PR_SYSTEM_PROMPT = `You evaluate PULL-REQUEST-level team rules against a PR's metadata (title, description, and the list of changed files). Judge the PR as a whole. Use the EXACT rule uuid from the list; never invent one. Return only real violations.`;
+export const SHARD_PR_SYSTEM_PROMPT = `You evaluate PULL-REQUEST-level team rules against a PR's metadata (title, description, and the list of changed files). Judge the PR as a whole. Identify each violated rule by its number — the [n] shown before each rule — and put that number in "ruleId"; never invent one. Return only real violations.`;
 
 function ruleBlock(rules: Array<Partial<IKodyRule>>): string {
     return rules
-        .map((r) => {
+        .map((r, i) => {
             const parts = [
-                `- uuid: ${r.uuid}`,
-                `  title: ${r.title}`,
+                `[${i + 1}] ${r.title}`,
                 `  description: ${r.rule}`,
             ];
             if (r.examples?.length) {
@@ -144,8 +173,8 @@ function fileShardUser(
         '```',
         `</File>`,
         ``,
-        `Return ONLY JSON:`,
-        `{"violations":[{"ruleUuid":"<uuid>","relevantLinesStart":<line>,"relevantLinesEnd":<line>,"existingCode":"<offending code>","suggestionContent":"WHAT/WHY/HOW","oneSentenceSummary":"<short>"}]}`,
+        `Return ONLY JSON (ruleId is the rule's [n] number):`,
+        `{"violations":[{"ruleId":<n>,"relevantLinesStart":<line>,"relevantLinesEnd":<line>,"existingCode":"<offending code>","suggestionContent":"WHAT/WHY/HOW","oneSentenceSummary":"<short>"}]}`,
     ].join('\n');
 }
 
@@ -166,7 +195,7 @@ function prShardUser(
         ...files.map((f) => `- ${f.filename}`),
         `</PR>`,
         ``,
-        `Return ONLY JSON: {"violations":[{"ruleUuid":"<uuid>","suggestionContent":"WHAT/WHY","oneSentenceSummary":"<short>"}]}`,
+        `Return ONLY JSON (ruleId is the rule's [n] number): {"violations":[{"ruleId":<n>,"suggestionContent":"WHAT/WHY","oneSentenceSummary":"<short>"}]}`,
     ].join('\n');
 }
 
@@ -261,27 +290,60 @@ export async function inlineRuleReferences(
 }
 
 /**
- * Keep only violations whose ruleUuid belongs to this shard, dropping the
- * model's hallucinated ids. A ruleUuid that isn't an exact match but is within
- * edit distance ≤ 2 of exactly one shard rule is a corrupted echo (#1170) —
- * recover it to the real uuid instead of dropping the (correct) violation.
- * Ambiguous or far ids are still dropped.
+ * Resolve a model-emitted `ruleId` to a real rule UUID, or null to drop it.
+ *
+ * Primary path (#1170): `ruleId` is the rule's 1-based index in this shard's
+ * ordered list, so a corruptible 36-char UUID never enters the round-trip. An
+ * out-of-range index is a hallucination → drop.
+ *
+ * Fallback: if the model reverts to echoing a UUID string, accept an exact
+ * match or recover a lightly-corrupted one (edit distance ≤ 2 to exactly one
+ * shard rule); ambiguous or far ids are dropped.
  */
-function keepKnownRules(
-    vs: ShardViolation[],
-    ruleUuids: string[],
+function resolveRuleId(
+    ruleId: number | string,
+    orderedUuids: string[],
+    known: Set<string>,
+): string | null {
+    const asIndex =
+        typeof ruleId === 'number'
+            ? ruleId
+            : /^\d+$/.test(ruleId.trim())
+              ? Number(ruleId.trim())
+              : NaN;
+
+    if (Number.isInteger(asIndex)) {
+        if (asIndex >= 1 && asIndex <= orderedUuids.length) {
+            return orderedUuids[asIndex - 1] || null;
+        }
+        return null;
+    }
+
+    const echoed = String(ruleId).trim();
+    if (known.has(echoed)) {
+        return echoed;
+    }
+    return recoverRuleUuid(echoed, known);
+}
+
+/**
+ * Resolve each raw violation's `ruleId` to a real UUID, dropping the ones that
+ * don't map to a rule in this shard. `orderedUuids` is index-aligned with the
+ * rules as presented to the model.
+ */
+function resolveShardViolations(
+    vs: RawShardViolation[],
+    orderedUuids: string[],
 ): ShardViolation[] {
-    const known = new Set(ruleUuids);
+    const known = new Set(orderedUuids.filter(Boolean));
     const kept: ShardViolation[] = [];
     for (const v of vs) {
-        if (known.has(v.ruleUuid)) {
-            kept.push(v);
+        const ruleUuid = resolveRuleId(v.ruleId, orderedUuids, known);
+        if (!ruleUuid) {
             continue;
         }
-        const recovered = recoverRuleUuid(v.ruleUuid, known);
-        if (recovered) {
-            kept.push({ ...v, ruleUuid: recovered });
-        }
+        const { ruleId: _ruleId, ...rest } = v;
+        kept.push({ ...rest, ruleUuid });
     }
     return kept;
 }
@@ -315,7 +377,10 @@ export async function judgeKodyRulesSharded(
         concurrency,
         async ({ file, applicable }) => {
             shardsRun++;
-            const ruleUuids = applicable.map((r) => r.uuid!).filter(Boolean);
+            // Index-aligned with the rules `ruleBlock` presents (a ruleId of N
+            // maps to applicable[N-1]); keep '' holes rather than filtering so
+            // the indices don't shift.
+            const ruleUuids = applicable.map((r) => r.uuid ?? '');
             try {
                 const vs = await runJudge({
                     system: SHARD_SYSTEM_PROMPT,
@@ -323,9 +388,9 @@ export async function judgeKodyRulesSharded(
                     filename: file.filename,
                     ruleUuids,
                 });
-                // anchor + scope every violation to this file, drop invented
-                // uuids (recovering ones the LLM corrupted while echoing)
-                return keepKnownRules(vs, ruleUuids).map((v) => ({
+                // resolve ruleId→uuid (dropping hallucinated indices), then
+                // anchor every violation to this file
+                return resolveShardViolations(vs, ruleUuids).map((v) => ({
                     ...v,
                     relevantFile: file.filename,
                 }));
@@ -340,7 +405,7 @@ export async function judgeKodyRulesSharded(
     // ── PR-scope shard: one call over the whole PR ──────────────────────────
     if (prRules.length > 0) {
         shardsRun++;
-        const ruleUuids = prRules.map((r) => r.uuid!).filter(Boolean);
+        const ruleUuids = prRules.map((r) => r.uuid ?? '');
         try {
             const vs = await runJudge({
                 system: SHARD_PR_SYSTEM_PROMPT,
@@ -349,7 +414,8 @@ export async function judgeKodyRulesSharded(
                 ruleUuids,
             });
             // PR-level violations carry no relevantFile by design
-            for (const v of keepKnownRules(vs, ruleUuids)) violations.push(v);
+            for (const v of resolveShardViolations(vs, ruleUuids))
+                violations.push(v);
         } catch {
             shardsErrored++;
         }
