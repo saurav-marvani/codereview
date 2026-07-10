@@ -5,9 +5,17 @@ import {
     ResourceType,
 } from '@libs/identity/domain/permissions/enums/permissions.enum';
 import {
+    IIntegrationConfigService,
+    INTEGRATION_CONFIG_SERVICE_TOKEN,
+} from '@libs/integrations/domain/integrationConfigs/contracts/integration-config.service.contracts';
+import {
     IPullRequestsService,
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@libs/platformData/domain/pullRequests/contracts/pullRequests.service.contracts';
+import {
+    intersectAssignedAndTeamScope,
+    resolveTeamRepositoryIds,
+} from './utils/team-repository-scope.util';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
 import { createLogger } from '@libs/core/log/logger';
 import { Inject, Injectable } from '@nestjs/common';
@@ -41,6 +49,9 @@ export class GetPullRequestsFacetsUseCase implements IUseCase {
 
         @Inject(PULL_REQUESTS_SERVICE_TOKEN)
         private readonly pullRequestsService: IPullRequestsService,
+
+        @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
+        private readonly integrationConfigService: IIntegrationConfigService,
 
         @Inject(REQUEST)
         private readonly request: UserRequest,
@@ -76,11 +87,43 @@ export class GetPullRequestsFacetsUseCase implements IUseCase {
                 return empty;
             }
 
-            const repositoryIds = assignedRepositoryIds ?? undefined;
             const organizationAndTeamData: OrganizationAndTeamData = {
                 organizationId,
                 teamId: query.teamId,
             };
+
+            // `all`/`errored` (getDistinctReviewedPullRequestKeys) are already
+            // team-scoped by the `team.uuid = :teamId` join. The Mongo-backed
+            // facets (needsAttention/mine/awaiting) only knew about org +
+            // assigned repos, so on a multi-team org they counted PRs from
+            // other teams — inconsistent with `all`. Resolve the selected
+            // team's repositories and intersect with the caller's assigned
+            // scope so every facet counts the same set of PRs.
+            const teamRepositoryIds = await resolveTeamRepositoryIds(
+                this.integrationConfigService,
+                organizationAndTeamData,
+                (error) =>
+                    this.logger.warn({
+                        message:
+                            'Failed to resolve team repository scope for facets',
+                        context: GetPullRequestsFacetsUseCase.name,
+                        error: error as Error,
+                        metadata: { organizationId, teamId: query.teamId },
+                    }),
+            );
+            const repositoryIds = intersectAssignedAndTeamScope(
+                assignedRepositoryIds,
+                teamRepositoryIds,
+            );
+
+            // Empty (not undefined) → the team's repos and the assigned scope
+            // don't overlap, so the caller can see none of this team's PRs.
+            // Guard here because the Mongo helpers treat an empty array as
+            // "no repository filter" (which would leak org-wide counts).
+            if (Array.isArray(repositoryIds) && repositoryIds.length === 0) {
+                return empty;
+            }
+
             const email = this.request.user?.email;
 
             const [reviewedKeys, needsAttention, mine, openKeys] =
