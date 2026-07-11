@@ -1,4 +1,9 @@
-import { forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+    forwardRef,
+    Inject,
+    Injectable,
+    NotFoundException,
+} from '@nestjs/common';
 import { v4 } from 'uuid';
 import bucketsData from './data/buckets.json';
 import libraryKodyRules from './data/library-kody-rules.json';
@@ -10,12 +15,7 @@ import {
     buildKodyRuleCentralizedFilePath,
     buildKodyRuleCentralizedMutationRequest,
 } from '@libs/centralized-config/utils/kody-rules-centralized-pr.builder';
-import {
-    LLMModelProvider,
-    ParserType,
-    PromptRole,
-    PromptRunnerService,
-} from '@kodus/kodus-common/llm';
+import { PromptRunnerService } from '@kodus/kodus-common/llm';
 import {
     CODE_BASE_CONFIG_SERVICE_TOKEN,
     ICodeBaseConfigService,
@@ -37,8 +37,8 @@ import {
     LibraryKodyRule,
 } from '@libs/core/infrastructure/config/types/general/kodyRules.type';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
-import { BYOKPromptRunnerService } from '@libs/core/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
+import { runStructuredReviewCall } from '@libs/llm/structured-review-call';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AuditLogEvents } from '@libs/ee/codeReviewSettingsLog/events/audit-log.events';
 import {
@@ -563,6 +563,7 @@ export class KodyRulesService implements IKodyRulesService {
     ): Promise<void> {
         if (
             rule.origin === KodyRulesOrigin.MANUAL ||
+            rule.origin === KodyRulesOrigin.ONBOARDING_REPO_ANALYSIS ||
             !rule.repositoryId ||
             rule.repositoryId === 'global'
         ) {
@@ -1311,16 +1312,7 @@ export class KodyRulesService implements IKodyRulesService {
                     organizationAndTeamData,
                 );
 
-            const mainProvider = LLMModelProvider.GROQ_MOONSHOTAI_KIMI_K2_;
-            const mainFallback = LLMModelProvider.GROQ_GPT_OSS_120B;
             const mainRun = 'kodyRulesRecommendationFromSuggestions';
-
-            const promptRunner = new BYOKPromptRunnerService(
-                this.promptRunnerService,
-                mainProvider,
-                mainFallback,
-                byokConfigValue,
-            );
 
             const systemPrompt = `You are a code quality expert analyzing past code review suggestions to recommend relevant Kody Rules.
 
@@ -1363,48 +1355,19 @@ ${JSON.stringify(filteredLibrary)}
 
 Analyze the suggestions and recommend the most relevant rules.`;
 
-            const { result } = await this.observabilityService.runLLMInSpan({
-                spanName: `${KodyRulesService.name}::${mainRun}`,
-                runName: mainRun,
+            const result = await runStructuredReviewCall({
+                byokConfig: byokConfigValue ?? undefined,
+                schema: kodyRulesRecommendationSchema,
+                system: systemPrompt,
+                user: userPrompt,
+                runName: `${KodyRulesService.name}::${mainRun}`,
+                organizationId: organizationAndTeamData.organizationId,
                 attrs: {
                     repositoryId,
-                    organizationId: organizationAndTeamData.organizationId,
                     suggestionsCount: allSuggestions.length,
                     libraryRulesCount: filteredLibrary.length,
-                    type: promptRunner.executeMode,
                 },
-                byokConfig: byokConfigValue,
-                exec: async (callbacks) => {
-                    return await promptRunner
-                        .builder()
-                        .setParser(
-                            ParserType.ZOD,
-                            kodyRulesRecommendationSchema,
-                            {
-                                provider: LLMModelProvider.GEMINI_2_5_FLASH,
-                                fallbackProvider:
-                                    LLMModelProvider.OPENAI_GPT_4O,
-                            },
-                        )
-                        .setLLMJsonMode(true)
-                        .setPayload({
-                            repositoryId,
-                            organizationId:
-                                organizationAndTeamData.organizationId,
-                        })
-                        .addPrompt({
-                            role: PromptRole.SYSTEM,
-                            prompt: systemPrompt,
-                        })
-                        .addPrompt({
-                            role: PromptRole.USER,
-                            prompt: userPrompt,
-                        })
-                        .addCallbacks(callbacks)
-                        .addMetadata({ runName: mainRun })
-                        .setRunName(mainRun)
-                        .execute();
-                },
+                observabilityService: this.observabilityService,
             });
 
             if (
@@ -1867,13 +1830,6 @@ Analyze the suggestions and recommend the most relevant rules.`;
             );
         const runName = 'kodyMemoryResolution';
 
-        const promptRunner = new BYOKPromptRunnerService(
-            this.promptRunnerService,
-            LLMModelProvider.GROQ_MOONSHOTAI_KIMI_K2_,
-            LLMModelProvider.GROQ_GPT_OSS_120B,
-            byokConfigValue,
-        );
-
         const incomingMemory = {
             title: memory.title,
             rule: memory.rule,
@@ -1891,41 +1847,20 @@ Analyze the suggestions and recommend the most relevant rules.`;
             path: existingMemory.path,
         }));
 
-        const { result } = await this.observabilityService.runLLMInSpan({
-            spanName: `${KodyRulesService.name}::${runName}`,
+        const result = await runStructuredReviewCall({
+            byokConfig: byokConfigValue ?? undefined,
+            schema: kodyMemoryResolutionSchema,
+            system: prompt_kodyMemoryResolution_system(),
+            user: prompt_kodyMemoryResolution_user({
+                incomingMemory,
+                existingMemories: existingForPrompt,
+            }),
             runName,
+            organizationId: organizationAndTeamData.organizationId,
             attrs: {
-                organizationId: organizationAndTeamData.organizationId,
                 existingMemoriesCount: existingMemories.length,
-                type: promptRunner.executeMode,
             },
-            byokConfig: byokConfigValue,
-            exec: async (callbacks) => {
-                return await promptRunner
-                    .builder()
-                    .setParser(ParserType.ZOD, kodyMemoryResolutionSchema, {
-                        provider: LLMModelProvider.GEMINI_2_5_FLASH,
-                        fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,
-                    })
-                    .setLLMJsonMode(true)
-                    .setPayload({
-                        organizationId: organizationAndTeamData.organizationId,
-                        incomingMemory,
-                        existingMemories: existingForPrompt,
-                    })
-                    .addPrompt({
-                        role: PromptRole.SYSTEM,
-                        prompt: prompt_kodyMemoryResolution_system,
-                    })
-                    .addPrompt({
-                        role: PromptRole.USER,
-                        prompt: prompt_kodyMemoryResolution_user,
-                    })
-                    .addCallbacks(callbacks)
-                    .addMetadata({ runName })
-                    .setRunName(runName)
-                    .execute();
-            },
+            observabilityService: this.observabilityService,
         });
 
         return result;

@@ -28,7 +28,7 @@ describe('sharded kody-rules — judge → mapAgentFindings wiring (#1449)', () 
     it('maps a shard violation to a CodeSuggestion tagged with brokenKodyRulesIds', async () => {
         const runJudge: RunJudge = async () => [
             {
-                ruleUuid: 'no-console',
+                ruleId: 1, // → the shard's first (only) rule: no-console
                 relevantLinesStart: 5,
                 relevantLinesEnd: 5,
                 suggestionContent: 'Violates no console.log',
@@ -70,8 +70,7 @@ describe('sharded kody-rules — judge → mapAgentFindings wiring (#1449)', () 
     it('drops a violation whose file is not in the PR (defensive, via the mapper)', async () => {
         const runJudge: RunJudge = async () => [
             {
-                ruleUuid: 'no-console',
-                relevantFile: 'src/GHOST.ts', // will be overwritten to src/a.ts by the judge
+                ruleId: 1,
                 relevantLinesStart: 1,
                 suggestionContent: 'x',
             },

@@ -522,7 +522,15 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             // back onto the context so the SAME gated value flows to both the
             // finder and the persisted PR record (create-file-comments stage).
             const resolvedHeavy = await this.resolveHeavy(context);
-            context.heavy = resolvedHeavy;
+            // The pipeline context is Immer-frozen (auto-freeze) once it has
+            // passed through an earlier stage's produce(), so a direct
+            // `context.heavy = …` throws "Cannot assign to read only property".
+            // Write it back through updateContext so the gated value both flows
+            // into buildOrchestratorInput below AND persists to the downstream
+            // create-file-comments stage.
+            context = this.updateContext(context, (draft) => {
+                draft.heavy = resolvedHeavy;
+            });
 
             const result = await this.reviewOrchestrator.execute(
                 buildOrchestratorInput(context, {
