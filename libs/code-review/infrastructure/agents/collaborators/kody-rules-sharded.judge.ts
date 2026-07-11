@@ -19,6 +19,7 @@
  * Out of scope here (later phases): the T0 regex compiler, T2 reference-file
  * inlining, hybrid regex+judge, compound-rule decomposition.
  */
+import { jsonSchema, type Schema } from 'ai';
 import { z } from 'zod';
 import { recoverRuleUuid } from './finding-mapper';
 import { fileMatchesRulePath } from '@libs/common/utils/kody-rules/file-patterns';
@@ -94,6 +95,34 @@ export const shardViolationsSchema = z.object({
         )
         .default([]),
 });
+
+/**
+ * WIRE schema for the shard call — what the provider actually sends as
+ * `response_format`. This CANNOT be the zod object above passed directly:
+ * the AI SDK's `zodSchema()` derives the JSON schema from the zod INPUT
+ * side, and the preprocess fields accept `undefined` there, so the SDK
+ * drops them from `required` — recreating the exact OpenAI-strict 400
+ * ("Missing 'relevantLinesStart'") this schema exists to prevent (observed
+ * live on the first fix attempt). Hand the SDK the OUTPUT-side JSON schema
+ * (every key required, nullable via anyOf) and keep the lenient zod parse
+ * as the validate step.
+ */
+export const shardViolationsWireSchema: Schema<
+    z.infer<typeof shardViolationsSchema>
+> = jsonSchema(
+    z.toJSONSchema(shardViolationsSchema, {
+        target: 'draft-7',
+        io: 'output',
+    }) as any,
+    {
+        validate: (value) => {
+            const r = shardViolationsSchema.safeParse(value);
+            return r.success
+                ? { success: true, value: r.data }
+                : { success: false, error: r.error };
+        },
+    },
+);
 
 /**
  * A violation exactly as the model emits it (pre-resolution): the rule is a
