@@ -1,18 +1,12 @@
 import { Injectable, Optional } from '@nestjs/common';
-import {
-    LLMModelProvider,
-    ParserType,
-    PromptRole,
-    PromptRunnerService,
-} from '@kodus/kodus-common/llm';
+import { PromptRunnerService } from '@kodus/kodus-common/llm';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import { createLogger } from '@libs/core/log/logger';
 import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
 import { ByokErrorCounter } from '@libs/notifications/application/byok-error-counter.service';
-import { isFileMatchingGlob } from '@libs/common/utils/glob-utils';
 import { fileMatchesRulePath } from '@libs/common/utils/kody-rules/file-patterns';
-import { BYOKPromptRunnerService } from '@libs/core/infrastructure/services/tokenTracking/byokPromptRunner.service';
+import { runStructuredReviewCall } from '@libs/llm/structured-review-call';
 import { BaseCodeReviewAgentProvider } from '@libs/code-review/infrastructure/agents/providers/base-code-review-agent.provider';
 import { resolveAgentModel } from '@libs/code-review/infrastructure/agents/collaborators/model-factory';
 import { mapAgentFindings } from '@libs/code-review/infrastructure/agents/collaborators/finding-mapper';
@@ -161,63 +155,38 @@ export class KodyRulesAgentProvider extends BaseCodeReviewAgentProvider {
         let shardsRun = 0;
         let shardsErrored = 0;
         if (semanticRules.length > 0) {
-            const { byokConfig, modelName } = await resolveAgentModel(
+            const { byokConfig, main } = await resolveAgentModel(
                 input,
                 this.permissionValidationService,
             );
             this.shardLogger.log({
-                message: `[AGENT] ${this.getIdentity().name} (sharded) using model: ${modelName} for PR#${input.prNumber} (${semanticRules.length} semantic, ${mechanicalRules.length} mechanical rules)`,
+                message: `[AGENT] ${this.getIdentity().name} (sharded) using model: ${main.modelName} for PR#${input.prNumber} (${semanticRules.length} semantic, ${mechanicalRules.length} mechanical rules)`,
                 context: this.getIdentity().name,
             });
 
-            // Single-shot runner on the customer's model — no tools, no loop.
-            // The provider/fallback here are only the SYSTEM default (used when
-            // the org has no BYOK); a BYOK org overrides both via byokConfig.
-            // Kimi K2 + GPT-OSS-120B, matching the current kody-rules default —
-            // NOT the stale Gemini the v1 path hardcoded.
-            const runner = new BYOKPromptRunnerService(
-                this.promptRunnerService,
-                LLMModelProvider.GROQ_MOONSHOTAI_KIMI_K2_,
-                LLMModelProvider.GROQ_GPT_OSS_120B,
-                byokConfig,
-            );
+            // Single-shot structured call on the LOCAL (Vercel) stack — no tools,
+            // no loop, no kodus-common. Main = the org's BYOK model or our managed
+            // default (kimi-k2.7-code via Moonshot); fallback = the org's own
+            // fallback (BYOK) or, for trial only, our managed Groq gpt-oss-120b.
+            // See runStructuredReviewCall for the model policy. runAiSdkLLMInSpan
+            // (inside the helper) emits the `tu`-stamped LLM-usage span so the
+            // sharded path's tokens still reach the user-facing token analytics.
             const runJudge: RunJudge = async ({ system, user, filename }) => {
-                // Wrap each shard call in runLLMInSpan so it emits a `tu`-stamped
-                // LLM-usage span — the same seam the v1 analysis / classifier use.
-                // Without it the sharded path's tokens never reach the user-facing
-                // token analytics (monthly-spend / tokens-developer), undercounting
-                // the customer's BYOK consumption. `addCallbacks` feeds the usage
-                // tracker.
-                const { result: parsed } =
-                    await this.observabilityService.runLLMInSpan({
-                        spanName: 'kodus-rules-review-agent.shard',
-                        runName: 'kodus-rules-review-agent.shard',
-                        attrs: {
-                            prNumber: input.prNumber,
-                            agentName: this.getIdentity().name,
-                            ...(filename ? { file: filename } : {}),
-                        },
-                        byokConfig,
-                        exec: (callbacks) =>
-                            runner
-                                .builder()
-                                .setParser(
-                                    ParserType.ZOD,
-                                    shardViolationsSchema,
-                                )
-                                .setLLMJsonMode(true)
-                                .addPrompt({
-                                    role: PromptRole.SYSTEM,
-                                    prompt: system,
-                                })
-                                .addPrompt({
-                                    role: PromptRole.USER,
-                                    prompt: user,
-                                })
-                                .setRunName('kodus-rules-review-agent.shard')
-                                .addCallbacks(callbacks)
-                                .execute(),
-                    });
+                const parsed = await runStructuredReviewCall({
+                    byokConfig: byokConfig ?? undefined,
+                    schema: shardViolationsSchema,
+                    system,
+                    user,
+                    runName: 'kodus-rules-review-agent.shard',
+                    organizationId:
+                        input.organizationAndTeamData?.organizationId,
+                    attrs: {
+                        prNumber: input.prNumber,
+                        agentName: this.getIdentity().name,
+                        ...(filename ? { file: filename } : {}),
+                    },
+                    observabilityService: this.observabilityService,
+                });
                 return ((parsed as any)?.violations ??
                     []) as RawShardViolation[];
             };
