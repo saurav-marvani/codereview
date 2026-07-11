@@ -22,7 +22,12 @@ export async function assertHealthyExecution(
     const status = await pollUntil<string>(
         async () => {
             const resp = await http<any>(
-                `${ctx.target.apiBaseUrl}/pull-requests/executions?prNumber=${prNumber}&limit=5`,
+                // Param name must match EnrichedPullRequestsQueryDto — the
+                // API's global ValidationPipe has forbidNonWhitelisted, so an
+                // unknown param (`prNumber`) is a deterministic HTTP 400.
+                // That exact typo failed all four license-paid cells of the
+                // 2026-07-11 release matrix.
+                `${ctx.target.apiBaseUrl}/pull-requests/executions?pullRequestNumber=${prNumber}&limit=5`,
                 {
                     headers: { Authorization: `Bearer ${session.accessToken}` },
                     timeoutMs: 30_000,
