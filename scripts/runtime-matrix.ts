@@ -108,6 +108,33 @@ const KODUS_PLAYBOOK = {
 };
 
 const REPOS: Record<string, RepoSpec> = {
+    // Real HEAVY PR — does the agent get to WHAT THE PR CHANGED? The PR drops the
+    // ".ics" suffix requirement from the ICS-feed URL validator. Setup just
+    // installs deps (the monorepo yarn install); the agent should ISOLATE the
+    // changed validator unit and call it (the prompt's preferred strategy) to
+    // confirm the new behavior — no full service boot needed.
+    'cal.com': {
+        name: 'cal.com',
+        url: 'https://github.com/calcom/cal.com',
+        baseBranch: 'main',
+        size: 'cpx51',
+        playbook: {
+            requiredEnv: [],
+            setup: [
+                'corepack enable',
+                'corepack prepare yarn@4.12.0 --activate',
+                'cd /opt/repo && yarn install --immutable 2>&1 | tail -5',
+            ],
+            build: [],
+            services: [],
+            test: [],
+            healthcheck: ['echo deps-ready'],
+        },
+        cold: { pr: 29751, sha: '4a402ed4727480ef638cf280eb194ff713325441', diffFile: 'scripts/calcom-pr29751-diff.json' },
+        warm: { pr: 29751, sha: '4a402ed4727480ef638cf280eb194ff713325441', diffFile: 'scripts/calcom-pr29751-diff.json' },
+        directive:
+            'This PR changes the ICS-feed URL validator in apps/api/v2/src/platform/calendars/input/create-ics.input.ts: it REMOVES the requirement that the URL end with ".ics", so it now accepts any http/https URL. Get to exactly this change: ISOLATE the changed validator unit and exercise it against the REAL code — import/instantiate the validator class (ts-node/tsx/node with the repo tsconfig) and call its validate() with a non-.ics URL (e.g. "http://example.com/calendar") AND a .ics URL AND a non-http scheme, printing the raw boolean each time; confirm the new behavior (non-.ics now passes, previously it was rejected). Then judge whether dropping the suffix check widens risk — does any code fetch this URL server-side (SSRF surface)? Report only what you reproduce with the command + real output.',
+    },
     'kodus-ai': {
         name: 'kodus-ai',
         url: 'https://github.com/kodustech/kodus-ai',
@@ -171,6 +198,19 @@ async function runOnce(
         console.log(`  [${p.phase}] exit=${p.exitCode} :: ${String(p.outputTail ?? '').replace(/\n/g, ' ⏎ ').slice(0, 400)}`);
     }
     if (!sig) console.log(`  NO SIGNAL — stage threw (see error above)`);
+    // Agent transcript — did it target WHAT THE PR CHANGED? Print per-turn
+    // reasoning + the commands it ran, so we can see it exercise the diff.
+    const rr = out.runtimeRun;
+    if (process.env.PRINT_TRANSCRIPT === 'true' && rr?.transcript) {
+        console.log(`  --- ${which} agent transcript (${rr.turns} turns, ${rr.findingsCount} findings) ---`);
+        for (const t of rr.transcript) {
+            if (t.reasoning?.trim())
+                console.log(`  [turn ${t.turn}] ${t.reasoning.replace(/\n/g, ' ').slice(0, 500)}`);
+            for (const c of t.commands ?? [])
+                console.log(`     $ ${String(c.command).replace(/\n/g, ' ').slice(0, 180)}`);
+        }
+        console.log(`  --- summary: ${String(rr.summary ?? '').replace(/\n/g, ' ').slice(0, 600)}`);
+    }
     const boot =
         sig?.phases?.find((p: any) => p.phase === 'healthcheck')?.outputTail?.trim() ??
         (sig ? `ran ok=${sig.ok}` : 'NO SIGNAL (stage threw)');
@@ -242,6 +282,14 @@ async function main() {
     const imageId = recorded?.imageId;
     console.log(`[${spec.name}] snapshot recorded: ${JSON.stringify(recorded ?? 'NONE')}`);
     if (imageId) console.log(`[${spec.name}] image ${imageId} right after COLD: ${await imageStatus(imageId)}`);
+
+    // Cold-only mode: for the "did the agent get to the PR change?" demo we run
+    // one cold boot with the full agent + transcript, no warm-boot timing.
+    if (process.env.MATRIX_COLD_ONLY === 'true') {
+        console.log(`\n[${spec.name}] COLD-ONLY done: ${(cold.ms / 60000).toFixed(1)}min | boot: ${cold.boot} | findings: ${cold.findings}`);
+        console.log('[matrix] done.');
+        return;
+    }
 
     console.log(`\n[${spec.name}] WARM run (PR #${spec.warm.pr}) — should warm-boot from the snapshot…`);
     if (imageId) console.log(`[${spec.name}] image ${imageId} right BEFORE warm: ${await imageStatus(imageId)}`);

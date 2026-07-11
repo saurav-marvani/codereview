@@ -78,7 +78,12 @@ export function loadLessons(repoUrl?: string): string {
  * global file (generic technique/tooling lessons).
  */
 export function appendLessons(lessons: string[] | undefined, repoUrl?: string): void {
-    if (!lessons?.length) return;
+    // The model sometimes returns `lessons` as a bare string instead of a
+    // string[]; a string's truthy `.length` slipped past the old guard and then
+    // `.map` threw ("lessons.map is not a function"), killing an otherwise
+    // successful detect before its playbook was written. Coerce to an array.
+    if (typeof lessons === 'string') lessons = [lessons];
+    if (!Array.isArray(lessons) || !lessons.length) return;
     const path = repoUrl ? projectLessonsPath(repoUrl) : LESSONS_PATH;
     const existing = readFileIfExists(path);
     const fresh = lessons
