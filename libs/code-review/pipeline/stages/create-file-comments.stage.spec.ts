@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { produce } from 'immer';
 import { CreateFileCommentsStage } from './create-file-comments.stage';
 import { COMMENT_MANAGER_SERVICE_TOKEN } from '@libs/code-review/domain/contracts/CommentManagerService.contract';
 import { SUGGESTION_SERVICE_TOKEN } from '@libs/code-review/domain/contracts/SuggestionService.contract';
@@ -118,6 +119,32 @@ describe('CreateFileCommentsStage — empty-suggestions persistence', () => {
         expect(orgAndTeam.organizationId).toBe('org-A');
     });
 
+    it('persists when the context (incl. pullRequest) is Immer-frozen (regression)', async () => {
+        // In production the pipeline context is Immer-frozen (auto-freeze)
+        // after any earlier stage's produce(). The stage stamped the resolved
+        // heavy flag via direct mutation — `pullRequest.heavy = …` — which
+        // threw "Cannot assign to read only property 'heavy'" BEFORE
+        // aggregateAndSaveDataStructure on every review: comments were
+        // posted, but no suggestion was ever persisted (found live in QA,
+        // broken env-wide since the heavy-mode rollout). Same failure class
+        // as the context.heavy write fixed in agent-review.stage (#1522).
+        const frozenCtx = produce(
+            baseContext({ heavy: true } as any),
+            () => {},
+        );
+
+        await stage.execute(frozenCtx);
+
+        expect(
+            mockPullRequestService.aggregateAndSaveDataStructure,
+        ).toHaveBeenCalledTimes(1);
+        const savedPullRequest =
+            mockPullRequestService.aggregateAndSaveDataStructure.mock
+                .calls[0][0];
+        expect(savedPullRequest.number).toBe(99);
+        expect(savedPullRequest.heavy).toBe(true);
+    });
+
     it('still persists when validSuggestions=0 but discardedSuggestions has items (regression for the prior happy path)', async () => {
         const ctx = baseContext({
             validSuggestions: [],
@@ -155,29 +182,5 @@ describe('CreateFileCommentsStage — empty-suggestions persistence', () => {
         expect(
             mockPullRequestService.aggregateAndSaveDataStructure,
         ).not.toHaveBeenCalled();
-    });
-
-    it('still persists when context.pullRequest is frozen (Immer regression)', async () => {
-        // In production the pipeline context — including pullRequest — is
-        // Immer-frozen by earlier stages. The heavy-flag write
-        // `pullRequest.heavy = heavy` used to MUTATE that frozen object →
-        // "Cannot assign to read only property 'heavy'" → the save was aborted
-        // (comments already posted), so NO suggestion ever reached Mongo. Same
-        // frozen-context family as the #1522 heavy fix. Freeze it here so a
-        // regression to direct mutation is caught.
-        const ctx = baseContext();
-        Object.freeze(ctx.pullRequest);
-
-        await stage.execute(ctx);
-
-        // The save must still run (the stage must not throw on the frozen PR).
-        expect(
-            mockPullRequestService.aggregateAndSaveDataStructure,
-        ).toHaveBeenCalledTimes(1);
-        // Heavy is carried on a FRESH object, not by mutating the frozen PR.
-        const savedPr =
-            mockPullRequestService.aggregateAndSaveDataStructure.mock
-                .calls[0][0];
-        expect(savedPr).toMatchObject({ number: 99 });
     });
 });
