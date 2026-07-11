@@ -52,7 +52,7 @@ describe('FinishOnboardingUseCase', () => {
         };
     };
 
-    it('commits onboarding, imports repo rules, and kicks off past-review generation in the background', async () => {
+    it('commits onboarding synchronously and runs repo-rule import + past-review generation detached', async () => {
         const {
             useCase,
             createOrUpdateParametersUseCase,
@@ -62,20 +62,21 @@ describe('FinishOnboardingUseCase', () => {
 
         await useCase.execute({ teamId: 'team-1', reviewPR: false } as any);
 
-        // Onboarding is committed...
+        // Onboarding is committed synchronously...
         expect(createOrUpdateParametersUseCase.execute).toHaveBeenCalledWith(
             ParametersKey.PLATFORM_CONFIGS,
             expect.objectContaining({ finishOnboard: true }),
             expect.anything(),
         );
-        // ...imports rules from repo files...
+
+        // ...while the LLM-heavy repo-rule import AND the 3-month past-review
+        // backfill both run detached (via setImmediate), so neither blocks the
+        // onboarding response. Sync runs first; generation is chained off its
+        // completion so it sees the imported rules.
+        await new Promise((resolve) => setImmediate(resolve));
         expect(
             syncSelectedReposKodyRulesUseCase.execute,
         ).toHaveBeenCalledWith({ teamId: 'team-1' });
-
-        // ...and schedules the 3-month past-review backfill without blocking
-        // the onboarding response (detached via setImmediate).
-        await new Promise((resolve) => setImmediate(resolve));
         expect(generateKodyRulesUseCase.execute).toHaveBeenCalledWith(
             { teamId: 'team-1', months: 3 },
             'org-1',
@@ -104,7 +105,9 @@ describe('FinishOnboardingUseCase', () => {
             useCase.execute({ teamId: 'team-1', reviewPR: false } as any),
         ).resolves.not.toThrow();
 
-        // Onboarding still completes its rule import despite the billing error.
+        // Onboarding still schedules its (detached) rule import despite the
+        // billing error.
+        await new Promise((resolve) => setImmediate(resolve));
         expect(
             syncSelectedReposKodyRulesUseCase.execute,
         ).toHaveBeenCalledWith({ teamId: 'team-1' });
