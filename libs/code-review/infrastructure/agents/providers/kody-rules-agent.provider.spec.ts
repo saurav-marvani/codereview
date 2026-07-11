@@ -405,7 +405,7 @@ describe('KodyRulesAgentProvider.execute — sharded end-to-end (#1449)', () => 
             {
                 violations: [
                     {
-                        ruleUuid: 'no-any',
+                        ruleId: 1, // → the shard's only rule: no-any
                         relevantLinesStart: 11,
                         relevantLinesEnd: 11,
                         existingCode: 'const x: any = 2',
@@ -469,7 +469,7 @@ describe('KodyRulesAgentProvider.execute — sharded end-to-end (#1449)', () => 
             {
                 violations: [
                     {
-                        ruleUuid: 'no-any',
+                        ruleId: 1, // semantic shard's only rule: no-any (detector rule is not sharded)
                         relevantLinesStart: 11,
                         suggestionContent: 'avoid any',
                         oneSentenceSummary: 'no any',

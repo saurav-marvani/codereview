@@ -15,6 +15,7 @@ import {
     inlineRuleReferences,
     shardViolationsSchema,
     type RunJudge,
+    type RawShardViolation,
     type ShardViolation,
 } from '@libs/code-review/infrastructure/agents/collaborators/kody-rules-sharded.judge';
 import { buildDetectorViolations } from '@libs/code-review/infrastructure/agents/collaborators/kody-rules-detector.compiler';
@@ -186,7 +187,8 @@ export class KodyRulesAgentProvider extends BaseCodeReviewAgentProvider {
                     },
                     observabilityService: this.observabilityService,
                 });
-                return ((parsed as any)?.violations ?? []) as ShardViolation[];
+                return ((parsed as any)?.violations ??
+                    []) as RawShardViolation[];
             };
 
             // T2 — inline any referenced convention file so the judge sees the
