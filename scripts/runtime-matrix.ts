@@ -153,7 +153,42 @@ const MEDUSA_DEEP_PLAYBOOK = {
     healthcheck: ['docker exec medusa-postgres pg_isready -U postgres && echo db-ready'],
 };
 
+// BLIND directive for the "do we catch a real shipped runtime bug?" test — it
+// must NOT name the bug (that would be cheating); just the normal review ask.
+const BLIND_DIRECTIVE =
+    'Review this PR by EXERCISING it, assuming nothing. From the diff, identify every behavior the code now exhibits and every guarantee it might break; then run the affected path against the REAL app/DB — seed representative data if the change is data-shaped (create the rows/records the code operates on), invoke the changed code, and QUERY the DB / print the raw result, comparing actual output to what you expect by hand. A change that silently produces a wrong value (null/empty/NaN/duplicated/lost rows), a wrong query result, or a broken behavior is a defect even if it looks fine in the diff. Report ONLY defects you reproduce, with the exact command + real output; return an empty findings array if the PR is correct.';
+
 const REPOS: Record<string, RepoSpec> = {
+    'medusa-rtbug': {
+        name: 'medusa-rtbug',
+        url: 'https://github.com/medusajs/medusa',
+        baseBranch: 'develop',
+        size: 'cpx51',
+        playbook: MEDUSA_DEEP_PLAYBOOK,
+        cold: { pr: 14570, sha: 'a6aa4565c2', diffFile: 'scripts/rtbug/medusa-meta.json' },
+        warm: { pr: 14570, sha: 'a6aa4565c2', diffFile: 'scripts/rtbug/medusa-meta.json' },
+        directive: BLIND_DIRECTIVE,
+    },
+    'immich-rtbug': {
+        name: 'immich-rtbug',
+        url: 'https://github.com/immich-app/immich',
+        baseBranch: 'main',
+        size: 'cpx51',
+        playbook: {
+            requiredEnv: [],
+            setup: [
+                'corepack enable 2>/dev/null || true',
+                'cd /opt/repo && ( if [ -f pnpm-lock.yaml ]; then (command -v pnpm >/dev/null || npm i -g pnpm) >/dev/null 2>&1; pnpm install --ignore-scripts 2>&1 | tail -6; else echo no-lock; fi )',
+            ],
+            build: [],
+            services: [],
+            test: [],
+            healthcheck: ['echo deps-ready'],
+        },
+        cold: { pr: 28817, sha: 'd7d4d3bf7e', diffFile: 'scripts/rtbug/immich-null.json' },
+        warm: { pr: 28817, sha: 'd7d4d3bf7e', diffFile: 'scripts/rtbug/immich-null.json' },
+        directive: BLIND_DIRECTIVE,
+    },
     'medusa-deep': {
         name: 'medusa-deep',
         url: 'https://github.com/medusajs/medusa',
