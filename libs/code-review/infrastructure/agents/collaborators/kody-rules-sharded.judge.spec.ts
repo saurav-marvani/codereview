@@ -106,6 +106,23 @@ describe('shardViolationsSchema — model JSON parsing', () => {
         expect(r.violations).toHaveLength(1);
         expect(r.violations[0].relevantLinesStart).toBeNull();
     });
+
+    it('rejects a WRONG-typed nullable field instead of silently nulling it', () => {
+        // missing → null is a wire-format concession; a type mismatch is
+        // model garbage and must fail parse (visible via the shard-error
+        // log), not degrade to a violation with its line silently dropped.
+        expect(() =>
+            shardViolationsSchema.parse({
+                violations: [
+                    {
+                        ruleId: 1,
+                        relevantLinesStart: '42',
+                        suggestionContent: 'x',
+                    },
+                ],
+            }),
+        ).toThrow();
+    });
 });
 
 const file = (filename: string, patch: string): any => ({
@@ -326,6 +343,9 @@ describe('judgeKodyRulesSharded — deterministic file×rule sweep (#1449)', () 
             'Invalid schema for response_format',
         );
         expect(warn.mock.calls[0][0].message).toContain('src/a.ts');
+        // SimpleLogger.shouldSkipLog silently drops entries whose context is
+        // undefined — without this the warning never reaches production logs.
+        expect(warn.mock.calls[0][0].context).toBe('kody-rules-sharded');
     });
 
     it('normalizes null violation fields to absent keys (strict-provider output)', async () => {

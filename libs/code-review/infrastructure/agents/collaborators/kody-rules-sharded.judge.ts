@@ -33,6 +33,22 @@ import {
  * `.setParser(ParserType.ZOD, shardViolationsSchema)` so a malformed model
  * response is retried/repaired by the runner before it reaches us.
  */
+/**
+ * Required-but-nullable wire field. OpenAI structured outputs (strict
+ * json_schema) reject any schema whose `required` array doesn't list every
+ * key in properties — `.optional()` fields made the API 400 instantly
+ * ("Missing 'relevantLinesStart'"), silently killing every shard for
+ * BYOK-OpenAI orgs. This keeps the key in `required` (anyOf [T, null])
+ * while mapping a lenient provider's omitted key to null; a WRONG-typed
+ * value still fails parse (surfaced by the shard-error log) instead of
+ * being silently nulled.
+ */
+const nullableWire = <T extends z.ZodType>(inner: T) =>
+    z.preprocess(
+        (v) => (v === undefined ? null : v),
+        z.union([inner, z.null()]),
+    );
+
 export const shardViolationsSchema = z.object({
     violations: z
         .array(
@@ -44,25 +60,17 @@ export const shardViolationsSchema = z.object({
                 // tries the numeric coercion first; a UUID (non-numeric) falls
                 // through to the string arm. See #1170 for why we stopped
                 // asking the model to echo UUIDs.
-                ruleId: z.union([z.coerce.number(), z.string()]),
-                // Every property must be REQUIRED in the emitted JSON schema:
-                // OpenAI structured outputs (strict json_schema) reject any
-                // schema whose `required` array doesn't list every key —
-                // `.optional()` fields made the API 400 instantly ("Missing
-                // 'relevantLinesStart'"), silently killing every shard for
-                // BYOK-OpenAI orgs. `.nullable().catch(null)` keeps the key in
-                // `required` (as anyOf [T, null]) while still parsing lenient
-                // providers that omit the key entirely (missing → null).
                 // Range/int validation of ruleId lives in resolveRuleId, which
                 // drops out-of-range indices — keep the wire schema minimal so
                 // strict mode has fewer keywords to reject.
-                relevantLinesStart: z.number().nullable().catch(null),
-                relevantLinesEnd: z.number().nullable().catch(null),
-                language: z.string().nullable().catch(null),
-                existingCode: z.string().nullable().catch(null),
-                improvedCode: z.string().nullable().catch(null),
+                ruleId: z.union([z.coerce.number(), z.string()]),
+                relevantLinesStart: nullableWire(z.number()),
+                relevantLinesEnd: nullableWire(z.number()),
+                language: nullableWire(z.string()),
+                existingCode: nullableWire(z.string()),
+                improvedCode: nullableWire(z.string()),
                 suggestionContent: z.string(),
-                oneSentenceSummary: z.string().nullable().catch(null),
+                oneSentenceSummary: nullableWire(z.string()),
             }),
         )
         .default([]),
@@ -295,6 +303,8 @@ export async function inlineRuleReferences(
             } catch (err) {
                 logger?.warn({
                     message: `kody-rules reference load failed for ${sourcePath} (rule ${rule.uuid}); judging without it`,
+                    // context required or SimpleLogger.shouldSkipLog drops it
+                    context: 'kody-rules-sharded',
                     metadata: { ruleUuid: rule.uuid, sourcePath, err },
                 });
                 return rule;
@@ -426,6 +436,10 @@ export async function judgeKodyRulesSharded(
                 shardsErrored++;
                 logger?.warn({
                     message: `[kody-rules-shard] file shard failed for ${file.filename} (${applicable.length} rule(s)) — degrading to zero findings: ${err instanceof Error ? err.message : String(err)}`,
+                    // SimpleLogger silently drops entries without a context
+                    // string (shouldSkipLog) — omitting it would re-swallow
+                    // exactly the failure this log exists to surface.
+                    context: 'kody-rules-sharded',
                     metadata: { filename: file.filename, err },
                 });
                 return [] as ShardViolation[];
@@ -452,6 +466,7 @@ export async function judgeKodyRulesSharded(
             shardsErrored++;
             logger?.warn({
                 message: `[kody-rules-shard] PR-scope shard failed (${prRules.length} rule(s)) — degrading to zero findings: ${err instanceof Error ? err.message : String(err)}`,
+                context: 'kody-rules-sharded',
                 metadata: { err },
             });
         }
