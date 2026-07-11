@@ -541,11 +541,16 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
         const pullRequestCommits = prCommits || [];
 
         // Carry the resolved HEAVY flag on the PR object so the persisted record
-        // reflects how the LAST review actually ran (post feature-gate).
-        (pullRequest as { heavy?: boolean }).heavy = heavy;
+        // reflects how the LAST review actually ran (post feature-gate). Spread
+        // into a FRESH object instead of mutating: `pullRequest` is the
+        // Immer-frozen context.pullRequest, so a direct `pullRequest.heavy = …`
+        // throws "Cannot assign to read only property 'heavy'" — which aborted
+        // the save entirely (comments already posted), so NO suggestion was ever
+        // persisted to Mongo. Same frozen-context family as the #1522 heavy fix.
+        const pullRequestToSave = { ...pullRequest, heavy };
 
         await this.pullRequestService.aggregateAndSaveDataStructure(
-            pullRequest,
+            pullRequestToSave,
             repository,
             enrichedFiles,
             allPrioritizedSuggestions,

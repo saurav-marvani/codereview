@@ -156,4 +156,28 @@ describe('CreateFileCommentsStage — empty-suggestions persistence', () => {
             mockPullRequestService.aggregateAndSaveDataStructure,
         ).not.toHaveBeenCalled();
     });
+
+    it('still persists when context.pullRequest is frozen (Immer regression)', async () => {
+        // In production the pipeline context — including pullRequest — is
+        // Immer-frozen by earlier stages. The heavy-flag write
+        // `pullRequest.heavy = heavy` used to MUTATE that frozen object →
+        // "Cannot assign to read only property 'heavy'" → the save was aborted
+        // (comments already posted), so NO suggestion ever reached Mongo. Same
+        // frozen-context family as the #1522 heavy fix. Freeze it here so a
+        // regression to direct mutation is caught.
+        const ctx = baseContext();
+        Object.freeze(ctx.pullRequest);
+
+        await stage.execute(ctx);
+
+        // The save must still run (the stage must not throw on the frozen PR).
+        expect(
+            mockPullRequestService.aggregateAndSaveDataStructure,
+        ).toHaveBeenCalledTimes(1);
+        // Heavy is carried on a FRESH object, not by mutating the frozen PR.
+        const savedPr =
+            mockPullRequestService.aggregateAndSaveDataStructure.mock
+                .calls[0][0];
+        expect(savedPr).toMatchObject({ number: 99 });
+    });
 });
