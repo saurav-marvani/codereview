@@ -1,0 +1,82 @@
+[
+  {
+    "name": "calcom_cal_com",
+    "url": "https://github.com/calcom/cal.com",
+    "pr": 29648,
+    "sha": "94c46069f158a35dbf08585e45462d96a71570de",
+    "baseBranch": "main",
+    "diffFile": "scripts/batch/calcom_cal_com-diff.json"
+  },
+  {
+    "name": "immich-app_immich",
+    "url": "https://github.com/immich-app/immich",
+    "pr": 29723,
+    "sha": "5d5b23aa4e019c22f1dc4f1c584b232ef6789d93",
+    "baseBranch": "main",
+    "diffFile": "scripts/batch/immich-app_immich-diff.json"
+  },
+  {
+    "name": "novuhq_novu",
+    "url": "https://github.com/novuhq/novu",
+    "pr": 11879,
+    "sha": "e533329f97d9811ebcc71d45c098ac4c3208faa9",
+    "baseBranch": "next",
+    "diffFile": "scripts/batch/novuhq_novu-diff.json"
+  },
+  {
+    "name": "n8n-io_n8n",
+    "url": "https://github.com/n8n-io/n8n",
+    "pr": 33963,
+    "sha": "ed796a3ac3c39fadb37be81745215a1d31b7eb97",
+    "baseBranch": "master",
+    "diffFile": "scripts/batch/n8n-io_n8n-diff.json"
+  },
+  {
+    "name": "twentyhq_twenty",
+    "url": "https://github.com/twentyhq/twenty",
+    "pr": 22805,
+    "sha": "b0a55ae5092b8f3aaad6d3db000979d6b3364ac6",
+    "baseBranch": "main",
+    "diffFile": "scripts/batch/twentyhq_twenty-diff.json"
+  },
+  {
+    "name": "payloadcms_payload",
+    "url": "https://github.com/payloadcms/payload",
+    "pr": 17274,
+    "sha": "495645a86caf646e29b43667f27bd2654eb4a0fd",
+    "baseBranch": "main",
+    "diffFile": "scripts/batch/payloadcms_payload-diff.json"
+  },
+  {
+    "name": "nocodb_nocodb",
+    "url": "https://github.com/nocodb/nocodb",
+    "pr": 14252,
+    "sha": "06b64bf83d2892fed267fe7f2df6bf299bb3a05c",
+    "baseBranch": "develop",
+    "diffFile": "scripts/batch/nocodb_nocodb-diff.json"
+  },
+  {
+    "name": "vercel_next_js",
+    "url": "https://github.com/vercel/next.js",
+    "pr": 95609,
+    "sha": "8d809a2ced7bbb5cc33f11ac29c494a23bb7839e",
+    "baseBranch": "canary",
+    "diffFile": "scripts/batch/vercel_next_js-diff.json"
+  },
+  {
+    "name": "remix-run_remix",
+    "url": "https://github.com/remix-run/remix",
+    "pr": 11584,
+    "sha": "b3f30f36beb99c5df5828663146338159aaa5c33",
+    "baseBranch": "main",
+    "diffFile": "scripts/batch/remix-run_remix-diff.json"
+  },
+  {
+    "name": "directus_directus",
+    "url": "https://github.com/directus/directus",
+    "pr": 27845,
+    "sha": "5e578e1637956f0a70cac53ed6e43305df677806",
+    "baseBranch": "main",
+    "diffFile": "scripts/batch/directus_directus-diff.json"
+  }
+]

@@ -158,6 +158,30 @@ const REPOS: Record<string, RepoSpec> = {
     },
 };
 
+// Generic auto-install: detect the lockfile/manifest and install deps so the
+// agent can import + exercise the changed unit. --ignore-scripts skips native
+// postinstall builds (faster; the module tree is enough for a unit exercise).
+const GENERIC_SETUP = [
+    'corepack enable 2>/dev/null || true',
+    'cd /opt/repo && ( if [ -f pnpm-lock.yaml ]; then (command -v pnpm >/dev/null || npm i -g pnpm) >/dev/null 2>&1; pnpm install --ignore-scripts 2>&1 | tail -6; elif [ -f yarn.lock ]; then corepack prepare yarn --activate 2>/dev/null || true; yarn install --ignore-scripts 2>&1 | tail -6; elif [ -f package-lock.json ]; then npm ci --ignore-scripts 2>&1 | tail -6; elif [ -f go.mod ]; then go build ./... 2>&1 | tail -6; elif [ -f requirements.txt ]; then pip3 install -r requirements.txt 2>&1 | tail -6; else echo no-lockfile-recognized; fi )',
+];
+
+const GENERIC_DIRECTIVE =
+    'Review this PR by getting to EXACTLY what it changed. From the diff, identify the changed unit(s), then exercise them against the REAL code: isolate the changed function/class/module (import it via node/tsx/ts-node with the repo toolchain, or run the smallest script that calls it) and feed inputs that reveal whether the new behavior is correct AND whether it breaks any guarantee (security, data correctness, edge cases, injection, SSRF, auth). No long-running server is needed for a logic change — do not hunt for one. If the change is a safe/correct refactor or a fix with no reproducible defect, return an EMPTY findings array and say so in summary. Report ONLY defects you reproduce, with the exact command + real output.';
+
+function batchSpec(e: any): RepoSpec {
+    return {
+        name: e.name,
+        url: e.url,
+        baseBranch: e.baseBranch || 'main',
+        size: 'cpx41',
+        playbook: { requiredEnv: [], setup: GENERIC_SETUP, build: [], services: [], test: [], healthcheck: ['echo deps-ready'] },
+        cold: { pr: e.pr, sha: e.sha, diffFile: e.diffFile },
+        warm: { pr: e.pr, sha: e.sha, diffFile: e.diffFile },
+        directive: GENERIC_DIRECTIVE,
+    };
+}
+
 function makeOrgParamsStore() {
     const stored: Record<string, any> = {};
     return {
@@ -232,9 +256,17 @@ async function imageStatus(imageId: string): Promise<string> {
 }
 
 async function main() {
-    const which = process.argv[2] ?? 'kutt';
-    const spec = REPOS[which];
-    if (!spec) throw new Error(`unknown repo '${which}' (have: ${Object.keys(REPOS).join(', ')})`);
+    let spec: RepoSpec;
+    if (process.argv[2] === '--batch') {
+        const batch = JSON.parse(fs.readFileSync('scripts/batch.json', 'utf8'));
+        const entry = batch.find((b: any) => b.name === process.argv[3]);
+        if (!entry) throw new Error(`batch entry not found: ${process.argv[3]}`);
+        spec = batchSpec(entry);
+    } else {
+        const which = process.argv[2] ?? 'kutt';
+        spec = REPOS[which];
+        if (!spec) throw new Error(`unknown repo '${which}' (have: ${Object.keys(REPOS).join(', ')})`);
+    }
     const hetzner = process.env.HETZNER_DEV;
     const anthropic = process.env.ANTHROPIC_API_KEY;
     if (!hetzner || !anthropic) throw new Error('missing HETZNER_DEV / ANTHROPIC_API_KEY');
@@ -245,7 +277,9 @@ async function main() {
         PREVIEW_AGENT_MODEL: 'claude-sonnet-4-5-20250929',
         PREVIEW_VM_REGION: 'hil',
         PREVIEW_VM_SIZE: spec.size ?? 'cpx41',
-        PREVIEW_SNAPSHOT_CAPTURE: 'true', // the whole point of this matrix
+        // On for warm-boot timing runs; OFF for cold-only batch (a snapshot we
+        // never consume just wastes a 5-15min create_image per repo).
+        PREVIEW_SNAPSHOT_CAPTURE: process.env.PREVIEW_SNAPSHOT_CAPTURE ?? 'true',
         // Debuggable default; a boot-debug run passes PREVIEW_AGENT_MAX_TURNS=3
         // so the warm run doesn't burn turns flailing on a not-yet-fixed boot.
         PREVIEW_AGENT_MAX_TURNS: process.env.PREVIEW_AGENT_MAX_TURNS ?? '40',
