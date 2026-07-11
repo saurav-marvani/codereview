@@ -49,6 +49,25 @@ const nullableWire = <T extends z.ZodType>(inner: T) =>
         z.union([inner, z.null()]),
     );
 
+/**
+ * Line-number variant of nullableWire: models occasionally emit line numbers
+ * as numeric STRINGS ("42"), and one such value would fail the whole shard
+ * parse and degrade it to zero findings. Coerce numeric strings in the
+ * preprocess (NOT via z.coerce, which would also turn the null this helper
+ * produces — and '' — into 0); non-numeric garbage still fails parse and is
+ * surfaced by the shard-error log. Wire schema stays anyOf [number, null].
+ */
+const nullableWireLine = z.preprocess(
+    (v) => {
+        if (v === undefined || v === null) return null;
+        if (typeof v === 'string' && /^[0-9]+$/.test(v.trim())) {
+            return Number(v.trim());
+        }
+        return v;
+    },
+    z.union([z.number(), z.null()]),
+);
+
 export const shardViolationsSchema = z.object({
     violations: z
         .array(
@@ -64,8 +83,8 @@ export const shardViolationsSchema = z.object({
                 // drops out-of-range indices — keep the wire schema minimal so
                 // strict mode has fewer keywords to reject.
                 ruleId: z.union([z.coerce.number(), z.string()]),
-                relevantLinesStart: nullableWire(z.number()),
-                relevantLinesEnd: nullableWire(z.number()),
+                relevantLinesStart: nullableWireLine,
+                relevantLinesEnd: nullableWireLine,
                 language: nullableWire(z.string()),
                 existingCode: nullableWire(z.string()),
                 improvedCode: nullableWire(z.string()),

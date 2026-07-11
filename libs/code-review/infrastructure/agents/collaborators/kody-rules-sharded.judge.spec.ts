@@ -107,6 +107,43 @@ describe('shardViolationsSchema — model JSON parsing', () => {
         expect(r.violations[0].relevantLinesStart).toBeNull();
     });
 
+    it('coerces a numeric-string line number instead of failing the shard', () => {
+        const r = shardViolationsSchema.parse({
+            violations: [
+                {
+                    ruleId: 1,
+                    relevantLinesStart: '42',
+                    relevantLinesEnd: ' 43 ',
+                    suggestionContent: 'x',
+                },
+            ],
+        });
+        expect(r.violations[0].relevantLinesStart).toBe(42);
+        expect(r.violations[0].relevantLinesEnd).toBe(43);
+    });
+
+    it('line coercion does NOT turn null/empty-string into 0', () => {
+        // z.coerce.number() would coerce both to 0 — the null this wire
+        // format deliberately produces must survive as null.
+        const r = shardViolationsSchema.parse({
+            violations: [
+                { ruleId: 1, relevantLinesStart: null, suggestionContent: 'x' },
+            ],
+        });
+        expect(r.violations[0].relevantLinesStart).toBeNull();
+        expect(() =>
+            shardViolationsSchema.parse({
+                violations: [
+                    {
+                        ruleId: 1,
+                        relevantLinesStart: '',
+                        suggestionContent: 'x',
+                    },
+                ],
+            }),
+        ).toThrow();
+    });
+
     it('rejects a WRONG-typed nullable field instead of silently nulling it', () => {
         // missing → null is a wire-format concession; a type mismatch is
         // model garbage and must fail parse (visible via the shard-error
@@ -116,7 +153,7 @@ describe('shardViolationsSchema — model JSON parsing', () => {
                 violations: [
                     {
                         ruleId: 1,
-                        relevantLinesStart: '42',
+                        relevantLinesStart: 'abc',
                         suggestionContent: 'x',
                     },
                 ],
