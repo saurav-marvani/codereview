@@ -85,6 +85,15 @@ describe('zodToStrictWireSchema', () => {
         expect(result.value.rules).toHaveLength(1);
     });
 
+    it('validate(): a literal __proto__ key in LLM output cannot touch prototypes', () => {
+        const schema = z.object({ a: z.string().optional() });
+        const payload = JSON.parse('{"a":"x","__proto__":{"polluted":true}}');
+        const result = (zodToStrictWireSchema(schema) as any).validate(payload);
+        expect(result.success).toBe(true);
+        expect(({} as any).polluted).toBeUndefined();
+        expect((result.value as any).polluted).toBeUndefined();
+    });
+
     it('validate(): real type errors still fail parse', () => {
         const result = (zodToStrictWireSchema(compilerOutputSchema) as any)
             .validate({ mechanical: 'yes' });

@@ -27,8 +27,11 @@ import {
     LLM_CALL_TIMEOUT_MS,
 } from '@libs/llm/llm-call';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
+import { createLogger } from '@libs/core/log/logger';
 import { zodToStrictWireSchema } from '@libs/llm/strict-wire-schema';
 import { ObservabilityService } from '@libs/core/log/observability.service';
+
+const logger = createLogger('StructuredReviewCall');
 
 /** Managed trial-only fallback: Groq `openai/gpt-oss-120b`. Null if unconfigured. */
 function buildTrialGroqFallback(): LanguageModel | null {
@@ -90,9 +93,17 @@ export async function runStructuredReviewCall<S extends z.ZodType | Schema>(
     if (schema instanceof z.ZodType) {
         try {
             wireSchema = zodToStrictWireSchema(schema);
-        } catch {
+        } catch (err) {
             // Unconvertible zod shape — fall back to the SDK's own
-            // conversion rather than failing the call outright.
+            // conversion rather than failing the call outright. That
+            // fallback still 400s on OpenAI strict when the schema has
+            // optional fields, so make the degradation loud: this is the
+            // exact silence that hid the shard/extraction failures.
+            logger.warn({
+                message: `[strict-wire-schema] conversion failed for ${runName}; falling back to raw zod schema (OpenAI-strict callers may reject it): ${err instanceof Error ? err.message : String(err)}`,
+                context: 'runStructuredReviewCall',
+                metadata: { runName, organizationId, err },
+            });
             wireSchema = schema;
         }
     }

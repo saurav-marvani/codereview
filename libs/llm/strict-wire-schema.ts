@@ -87,7 +87,10 @@ function makeStrictRequired(node: any): void {
 function stripNullProps(value: unknown): unknown {
     if (Array.isArray(value)) return value.map(stripNullProps);
     if (value && typeof value === 'object') {
-        const out: Record<string, unknown> = {};
+        // Null-prototype target: the keys come from raw LLM output, so a
+        // literal "__proto__" key on a plain {} would hit the prototype
+        // setter instead of creating an own property.
+        const out: Record<string, unknown> = Object.create(null);
         for (const [k, v] of Object.entries(value)) {
             if (v === null) continue;
             out[k] = stripNullProps(v);
