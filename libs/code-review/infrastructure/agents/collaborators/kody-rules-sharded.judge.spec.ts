@@ -1,7 +1,7 @@
-import { z } from 'zod';
 import {
     judgeKodyRulesSharded,
     shardViolationsSchema,
+    shardViolationsWireSchema,
     RunJudge,
     RawShardViolation,
 } from './kody-rules-sharded.judge';
@@ -66,18 +66,28 @@ describe('shardViolationsSchema — model JSON parsing', () => {
     });
 
     // OpenAI structured outputs (strict json_schema) reject any schema whose
-    // `required` array doesn't list EVERY key in `properties`. The AI SDK
-    // derives the wire schema from this zod object, so `.optional()` fields
-    // made the API 400 instantly ("Missing 'relevantLinesStart'") and every
-    // shard silently errored for BYOK-OpenAI orgs (found live in QA).
-    it('emits an OpenAI-strict-compatible JSON schema: every property is required', () => {
-        const jsonSchema = z.toJSONSchema(shardViolationsSchema, {
-            target: 'draft-7',
-        }) as any;
-        const items = jsonSchema.properties.violations.items;
+    // `required` array doesn't list EVERY key in `properties` — every shard
+    // silently errored for BYOK-OpenAI orgs (found live in QA). This pins the
+    // ACTUAL wire schema the provider sends (shardViolationsWireSchema), not
+    // a local re-derivation: the first fix attempt passed the zod object and
+    // the AI SDK's input-side conversion silently re-dropped the preprocess
+    // fields from `required`, recreating the 400 in production.
+    it('wire schema is OpenAI-strict compatible: every property is required', () => {
+        const wire = (shardViolationsWireSchema as any).jsonSchema;
+        const items = wire.properties.violations.items;
         expect([...(items.required ?? [])].sort()).toEqual(
             Object.keys(items.properties).sort(),
         );
+        // and the array itself is required at the top level
+        expect(wire.required).toContain('violations');
+    });
+
+    it('wire schema validate() applies the lenient zod parse (missing keys → null)', () => {
+        const result = (shardViolationsWireSchema as any).validate({
+            violations: [{ ruleId: 1, suggestionContent: 'x' }],
+        });
+        expect(result.success).toBe(true);
+        expect(result.value.violations[0].relevantLinesStart).toBeNull();
     });
 
     it('accepts strict-provider output where inapplicable keys are null', () => {
