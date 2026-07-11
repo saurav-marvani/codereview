@@ -76,7 +76,7 @@ describe('FinishOnboardingUseCase', () => {
         await new Promise((resolve) => setImmediate(resolve));
         expect(
             syncSelectedReposKodyRulesUseCase.execute,
-        ).toHaveBeenCalledWith({ teamId: 'team-1' });
+        ).toHaveBeenCalledWith({ teamId: 'team-1', organizationId: 'org-1' });
         expect(generateKodyRulesUseCase.execute).toHaveBeenCalledWith(
             { teamId: 'team-1', months: 3 },
             'org-1',
@@ -110,6 +110,6 @@ describe('FinishOnboardingUseCase', () => {
         await new Promise((resolve) => setImmediate(resolve));
         expect(
             syncSelectedReposKodyRulesUseCase.execute,
-        ).toHaveBeenCalledWith({ teamId: 'team-1' });
+        ).toHaveBeenCalledWith({ teamId: 'team-1', organizationId: 'org-1' });
     });
 });

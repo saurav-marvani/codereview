@@ -144,7 +144,10 @@ export class FinishOnboardingUseCase {
             // the previous sequential ordering, just off the request path.
             setImmediate(() => {
                 this.syncSelectedReposKodyRulesUseCase
-                    .execute({ teamId })
+                    // Pass organizationId explicitly: this runs after the HTTP
+                    // response, so the sync use-case can no longer resolve it
+                    // from the (possibly disposed) request scope.
+                    .execute({ teamId, organizationId })
                     .catch((error) => {
                         this.logger.error({
                             message:
