@@ -3,6 +3,15 @@ import {
     KodyRulesScope,
     KodyRulesType,
 } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
+import { runStructuredReviewCall } from '@libs/llm/structured-review-call';
+
+// The sharded judge now runs on the LOCAL (Vercel) stack via
+// runStructuredReviewCall; mock it at that boundary (one canned response per
+// shard call) instead of the old kodus-common builder.
+jest.mock('@libs/llm/structured-review-call', () => ({
+    runStructuredReviewCall: jest.fn(),
+}));
+const mockRunStructuredReviewCall = runStructuredReviewCall as jest.Mock;
 
 describe('KodyRulesAgentProvider — rule formatting and applicability', () => {
     let provider: KodyRulesAgentProvider;
@@ -359,35 +368,16 @@ describe('KodyRulesAgentProvider.execute — sharded end-to-end (#1449)', () => 
     // the next canned response (one per shard call).
     function makeProvider(responses: any[]) {
         let i = 0;
-        const builder: any = {};
-        for (const m of [
-            'setProviders',
-            'setParser',
-            'setLLMJsonMode',
-            'addPrompt',
-            'setRunName',
-            'setBYOKConfig',
-            'setPayload',
-            'addCallbacks',
-        ]) {
-            builder[m] = jest.fn(() => builder);
-        }
-        builder.execute = jest.fn(
+        mockRunStructuredReviewCall.mockReset();
+        mockRunStructuredReviewCall.mockImplementation(
             async () => responses[i++] ?? { violations: [] },
         );
         const provider = new KodyRulesAgentProvider(
-            { builder: () => builder } as any, // promptRunnerService
+            {} as any, // promptRunnerService (unused — local stack)
             { getBYOKConfig: jest.fn(async () => null) } as any, // permission (system model)
-            {
-                // runLLMInSpan wraps each shard call; pass the tracking
-                // callbacks through and return the shape the provider reads.
-                runLLMInSpan: async ({ exec }: any) => ({
-                    result: await exec([]),
-                    usage: {},
-                }),
-            } as any, // observability
+            {} as any, // observability (unused — runStructuredReviewCall mocked)
         );
-        return { provider, builder };
+        return { provider, judge: mockRunStructuredReviewCall };
     }
 
     const input = (over: any = {}) => ({
@@ -447,7 +437,7 @@ describe('KodyRulesAgentProvider.execute — sharded end-to-end (#1449)', () => 
     });
 
     it('mechanical path: detector regex fires with ZERO LLM calls', async () => {
-        const { provider, builder } = makeProvider([]);
+        const { provider, judge } = makeProvider([]);
         const out = await provider.execute(
             input({
                 kodyRules: [
@@ -466,7 +456,7 @@ describe('KodyRulesAgentProvider.execute — sharded end-to-end (#1449)', () => 
                 ],
             }) as any,
         );
-        expect(builder.execute).not.toHaveBeenCalled();
+        expect(judge).not.toHaveBeenCalled();
         expect(out.suggestions).toHaveLength(1);
         expect((out.suggestions[0] as any).brokenKodyRulesIds).toEqual([
             'no-console',
@@ -475,7 +465,7 @@ describe('KodyRulesAgentProvider.execute — sharded end-to-end (#1449)', () => 
     });
 
     it('mixed: detector + judge merge into one output (one LLM call)', async () => {
-        const { provider, builder } = makeProvider([
+        const { provider, judge } = makeProvider([
             {
                 violations: [
                     {
@@ -513,7 +503,7 @@ describe('KodyRulesAgentProvider.execute — sharded end-to-end (#1449)', () => 
                 ],
             }) as any,
         );
-        expect(builder.execute).toHaveBeenCalledTimes(1); // only the semantic rule
+        expect(judge).toHaveBeenCalledTimes(1); // only the semantic rule
         const ids = out.suggestions
             .map((s: any) => s.brokenKodyRulesIds?.[0])
             .sort();

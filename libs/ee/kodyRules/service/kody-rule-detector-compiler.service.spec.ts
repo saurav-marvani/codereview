@@ -1,29 +1,18 @@
 import { KodyRuleDetectorCompilerService } from './kody-rule-detector-compiler.service';
+import { runStructuredReviewCall } from '@libs/llm/structured-review-call';
 
-// Chainable builder mock: every config method returns `this`; execute() returns
-// the canned compiler JSON. Mirrors the PromptRunnerService.builder() contract.
-function makeBuilder(output: any) {
-    const b: any = {};
-    for (const m of [
-        'setProviders',
-        'setParser',
-        'setLLMJsonMode',
-        'addPrompt',
-        'setRunName',
-        'setBYOKConfig',
-        'setPayload',
-    ]) {
-        b[m] = jest.fn(() => b);
-    }
-    b.execute = jest.fn(async () => output);
-    return b;
-}
+// The compiler now runs on the LOCAL (Vercel) stack via runStructuredReviewCall;
+// mock it at that boundary (returns the canned compiler JSON).
+jest.mock('@libs/llm/structured-review-call', () => ({
+    runStructuredReviewCall: jest.fn(),
+}));
+const mockRun = runStructuredReviewCall as jest.Mock;
 
 const org = { organizationId: '11111111-1111-1111-1111-111111111111' } as any;
 
 const make = (compilerOutput: any) => {
-    const builder = makeBuilder(compilerOutput);
-    const promptRunnerService: any = { builder: () => builder };
+    mockRun.mockReset();
+    mockRun.mockResolvedValue(compilerOutput);
     const permissionValidationService: any = {
         getBYOKConfig: jest.fn(async () => null), // system mode
     };
@@ -31,11 +20,11 @@ const make = (compilerOutput: any) => {
         updateRuleDetector: jest.fn(async () => ({})),
     };
     const svc = new KodyRuleDetectorCompilerService(
-        promptRunnerService,
         permissionValidationService,
+        {} as any, // observabilityService (unused — runStructuredReviewCall mocked)
         kodyRulesService,
     );
-    return { svc, kodyRulesService, builder };
+    return { svc, kodyRulesService };
 };
 
 const mechanicalRule = {
@@ -94,10 +83,9 @@ describe('KodyRuleDetectorCompilerService.compileAndSave (#1449 T0)', () => {
     });
 
     it('never throws / never persists when the LLM call errors', async () => {
-        const { svc, kodyRulesService, builder } = make(null);
-        builder.execute = jest.fn(async () => {
-            throw new Error('llm down');
-        });
+        const { svc, kodyRulesService } = make(null);
+        mockRun.mockReset();
+        mockRun.mockRejectedValue(new Error('llm down'));
         await expect(
             svc.compileAndSave(org, 'r1', mechanicalRule),
         ).resolves.toEqual({ compiled: false, declineReason: 'error' });

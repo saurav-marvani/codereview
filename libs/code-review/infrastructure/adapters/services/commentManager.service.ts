@@ -83,8 +83,8 @@ export class CommentManagerService implements ICommentManagerService {
      * SDK) path so the user's BYOK model — including Claude-on-Vertex — is
      * honored. The legacy v2 langchain path (PromptRunnerService) only spoke
      * Gemini on Vertex, so a Claude-on-Vertex BYOK crashed the summary step
-     * before suggestions could be posted. Falls back to gemini-2.5-flash when
-     * no BYOK is configured (cloud default), matching the previous behavior.
+     * before suggestions could be posted. Defaults to kimi-k2.7-code (Moonshot)
+     * when no BYOK is configured (cloud/trial default).
      */
     private async runSummaryPromptV5(params: {
         byokConfig: BYOKConfig | null;
@@ -116,14 +116,14 @@ export class CommentManagerService implements ICommentManagerService {
         const result = await this.observabilityService.runAiSdkLLMInSpan<any>({
             spanName,
             runName,
-            model: byokConfig?.main?.model ?? 'gemini-2.5-flash',
+            model: byokConfig?.main?.model ?? 'kimi-k2.7-code',
             attrs,
             exec: async () => {
                 const model = byokToVercelModel(
                     byokConfig ?? undefined,
                     'main',
                     {},
-                    'gemini-2.5-flash',
+                    'kimi-k2.7-code',
                 );
                 return await tracedGenerateText({
                     model: model as any,
