@@ -14,6 +14,11 @@ jest.mock('@libs/llm/byok-model-wrapper', () => ({
 }));
 jest.mock('@libs/llm/llm-call', () => ({
     tracedGenerateText: jest.fn(),
+    timeoutSignal: jest.fn(() => undefined),
+    LLM_CALL_TIMEOUT_MS: 600000,
+}));
+jest.mock('@libs/core/log/langfuse', () => ({
+    buildLangfuseTelemetry: jest.fn(() => ({ isEnabled: false })),
 }));
 jest.mock('@ai-sdk/openai-compatible', () => ({
     createOpenAICompatible: jest.fn(

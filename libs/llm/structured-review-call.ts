@@ -21,7 +21,12 @@ import type { BYOKConfig } from '@kodus/kodus-common/llm';
 import { z } from 'zod';
 import { byokToVercelModel, getModelName } from '@libs/llm/byok-to-vercel';
 import { wrapByokModel } from '@libs/llm/byok-model-wrapper';
-import { tracedGenerateText } from '@libs/llm/llm-call';
+import {
+    tracedGenerateText,
+    timeoutSignal,
+    LLM_CALL_TIMEOUT_MS,
+} from '@libs/llm/llm-call';
+import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 
 /** Managed trial-only fallback: Groq `openai/gpt-oss-120b`. Null if unconfigured. */
@@ -104,6 +109,15 @@ export async function runStructuredReviewCall<S extends z.ZodType>(
                         system,
                         prompt: user,
                         output: Output.object({ schema: schema as any }),
+                        // Cap hung provider calls at LLM_CALL_TIMEOUT_MS (10min)
+                        // instead of the 30min agent-level fallback — these run
+                        // in parallel shards, so a stuck call must not hold a
+                        // pipeline slot for the full agent budget. Also feeds the
+                        // BYOK limiter cancellation. Matches peer AI-SDK callers.
+                        abortSignal: timeoutSignal(LLM_CALL_TIMEOUT_MS),
+                        experimental_telemetry: buildLangfuseTelemetry(runName, {
+                            organizationId,
+                        }),
                     } as any),
             })
             .then(
