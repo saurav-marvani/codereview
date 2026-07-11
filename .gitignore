@@ -10,6 +10,7 @@ apps/*/dist
 # the dev container bind-mount).
 /.pnpm-store/
 **/.pnpm-store/
+apps/web/.pnpm-store/
 
 # selfhosted dev VM state (scripts/selfhosted/*.sh)
 .kodus-dev/
