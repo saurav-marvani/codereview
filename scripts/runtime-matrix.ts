@@ -107,7 +107,107 @@ const KODUS_PLAYBOOK = {
     ],
 };
 
+// DEEP test: cal.com FULLY booted (Postgres + Redis + Prisma migrate + db-seed +
+// yarn dev) so the agent exercises a data-dependent PR against a REAL running app
+// + seeded DB — not a unit in isolation. Phases reordered for the stage's fixed
+// setup→build→services→healthcheck order (DBs+env in setup, prisma+seed in build).
+const CALCOM_DEEP_PLAYBOOK = {
+    requiredEnv: [] as string[],
+    setup: [
+        'corepack enable',
+        'corepack prepare yarn@4.12.0 --activate',
+        'cd /opt/repo && yarn install --immutable 2>&1 | tail -4',
+        'docker rm -f calcom-postgres calcom-redis >/dev/null 2>&1 || true',
+        'docker run -d --name calcom-postgres -e POSTGRES_USER=unicorn_user -e POSTGRES_PASSWORD=magical_password -e POSTGRES_DB=calendso -p 5450:5432 postgres:15',
+        'docker run -d --name calcom-redis -p 6379:6379 redis:latest',
+        'sleep 6',
+        `cd /opt/repo && cp .env.example .env && sed -i 's#DATABASE_URL="postgresql://postgres:@localhost:5450/calendso"#DATABASE_URL="postgresql://unicorn_user:magical_password@localhost:5450/calendso"#' .env && sed -i 's#DATABASE_DIRECT_URL="postgresql://postgres:@localhost:5450/calendso"#DATABASE_DIRECT_URL="postgresql://unicorn_user:magical_password@localhost:5450/calendso"#' .env && sed -i 's#^NEXTAUTH_SECRET=.*#NEXTAUTH_SECRET=supersecretnextauthkeysupersecretnextauthkey#' .env && sed -i 's#^CALENDSO_ENCRYPTION_KEY=.*#CALENDSO_ENCRYPTION_KEY=supersecretencryptionkey123456#' .env && echo env-ready`,
+    ],
+    build: [
+        'cd /opt/repo && yarn prisma generate 2>&1 | tail -3',
+        'set -o pipefail; cd /opt/repo && yarn db-deploy 2>&1 | tail -4',
+        'set -o pipefail; cd /opt/repo && yarn db-seed 2>&1 | tail -4',
+    ],
+    services: [
+        "cd /opt/repo && setsid bash -c 'yarn dev > /tmp/kody-svc.log 2>&1 < /dev/null &'; echo web-starting",
+    ],
+    test: [] as string[],
+    healthcheck: [
+        'for i in $(seq 1 90); do curl -sf -o /dev/null http://localhost:3000/auth/login 2>/dev/null && break; sleep 4; done; curl -s -o /dev/null -w "web=%{http_code}\\n" http://localhost:3000/auth/login',
+    ],
+};
+
+const MEDUSA_DEEP_PLAYBOOK = {
+    requiredEnv: [] as string[],
+    setup: [
+        'corepack enable',
+        'cd /opt/repo && yarn install --immutable --inline-builds 2>&1 | tail -4',
+        'docker rm -f medusa-postgres medusa-redis >/dev/null 2>&1 || true',
+        'docker run -d --name medusa-postgres -e POSTGRES_PASSWORD=magical -e POSTGRES_USER=postgres -p 5432:5432 postgres:15-alpine',
+        'docker run -d --name medusa-redis -p 6379:6379 redis',
+        'for i in $(seq 1 30); do docker exec medusa-postgres pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done; docker exec medusa-postgres pg_isready -U postgres',
+    ],
+    build: ['set -o pipefail; cd /opt/repo && yarn build 2>&1 | tail -6'],
+    services: [] as string[],
+    test: [] as string[],
+    healthcheck: ['docker exec medusa-postgres pg_isready -U postgres && echo db-ready'],
+};
+
 const REPOS: Record<string, RepoSpec> = {
+    'medusa-deep': {
+        name: 'medusa-deep',
+        url: 'https://github.com/medusajs/medusa',
+        baseBranch: 'develop',
+        size: 'cpx51',
+        playbook: MEDUSA_DEEP_PLAYBOOK,
+        cold: { pr: 15969, sha: '13a27f397d1bdc092d591efc560e4c0395ded6fd', diffFile: 'scripts/batch/medusa-deep.json' },
+        warm: { pr: 15969, sha: '13a27f397d1bdc092d591efc560e4c0395ded6fd', diffFile: 'scripts/batch/medusa-deep.json' },
+        directive:
+            'DEEP data review. Medusa is built from source; Postgres is up on localhost:5432 (user postgres / pass magical) and Redis on 6379. This PR touches prepareTaxLines in core-flows (packages/core/core-flows) — the tax-line computation for a cart. Get to exactly this change and exercise it against the REAL DB: run the medusa migrations to create the schema, seed a cart with line items + tax context, invoke the changed prepareTaxLines flow (via the built @medusajs/core-flows or an integration test that hits the real DB), and verify the `data` field is preserved on the returned tax lines (the exact guarantee the PR is about). Query the DB / print the raw returned tax lines. Report a defect only if you reproduce a discrepancy.',
+    },
+    'immich-deep': {
+        name: 'immich-deep',
+        url: 'https://github.com/immich-app/immich',
+        baseBranch: 'main',
+        size: 'cpx51',
+        playbook: {
+            requiredEnv: [],
+            setup: [
+                'corepack enable 2>/dev/null || true',
+                'cd /opt/repo && ( if [ -f pnpm-lock.yaml ]; then (command -v pnpm >/dev/null || npm i -g pnpm) >/dev/null 2>&1; pnpm install --ignore-scripts 2>&1 | tail -6; elif [ -f yarn.lock ]; then corepack prepare yarn --activate 2>/dev/null || true; yarn install --ignore-scripts 2>&1 | tail -6; else echo no-lockfile; fi )',
+            ],
+            build: [],
+            services: [],
+            test: [],
+            healthcheck: ['echo deps-ready'],
+        },
+        cold: { pr: 29664, sha: 'e701ba778876d69b2c0efb62a5ece2ca8846a9cc', diffFile: 'scripts/batch/immich-deep.json' },
+        warm: { pr: 29664, sha: 'e701ba778876d69b2c0efb62a5ece2ca8846a9cc', diffFile: 'scripts/batch/immich-deep.json' },
+        directive:
+            'DEEP data-safety review. This PR wraps the DB migration runner in a TRANSACTION so a migration that fails midway rolls back cleanly (no half-applied schema). Get to exactly this change: read the changed migration-runner code, then TEST the transactionality against a REAL Postgres — `docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=x postgres:16`, then drive the runner (or a minimal reproduction of it) with a migration batch where a LATER statement fails, and QUERY the DB to prove the EARLIER statements were rolled back with the fix (and would have been left half-applied without it). Show the before/after DB state. Report a defect only if the fix does NOT actually make it atomic.',
+    },
+    'kodus-ai-deep': {
+        name: 'kodus-ai-deep',
+        url: 'https://github.com/kodustech/kodus-ai',
+        baseBranch: 'main',
+        size: 'cpx51',
+        playbook: KODUS_PLAYBOOK,
+        cold: { pr: 1461, sha: 'c720a97b8fcb28ce957d95a8cfa0419d34272357', diffFile: 'scripts/batch/kodus-deep.json' },
+        warm: { pr: 1461, sha: 'c720a97b8fcb28ce957d95a8cfa0419d34272357', diffFile: 'scripts/batch/kodus-deep.json' },
+        directive:
+            'DEEP data review. The kodus-ai stack is booted (web :3000, api :3001, Postgres/Mongo up). This PR revamps the token-usage / cost computation (apps/api/.../tokenUsage, token cost/pricing math). Get to exactly this change and exercise the cost/pricing functions against real inputs: isolate the changed cost calculators and feed representative token counts + models, then verify the per-token cost vs the pricing table, the aggregation, and especially rounding — a sub-cent value like 0.004 that rounds to 0 would show $0.00 / 0% usage even when non-zero. Print the raw computed numbers. Report a defect only if you reproduce a wrong number with the command + output.',
+    },
+    'cal.com-deep': {
+        name: 'cal.com-deep',
+        url: 'https://github.com/calcom/cal.com',
+        baseBranch: 'main',
+        size: 'cpx51',
+        playbook: CALCOM_DEEP_PLAYBOOK,
+        cold: { pr: 29685, sha: '3803944a588642af416789dc183879552660a0e3', diffFile: 'scripts/batch/calcom-deep-29685.json' },
+        warm: { pr: 29685, sha: '3803944a588642af416789dc183879552660a0e3', diffFile: 'scripts/batch/calcom-deep-29685.json' },
+        directive:
+            'DEEP data-dependent review. The app is FULLY BOOTED: cal.com web on http://localhost:3000, Postgres on localhost:5450 (user unicorn_user / pass magical_password / db calendso), seeded (a user pro@example.com exists). This PR changes packages/features/bookings/lib/payment/processPaymentRefund.ts — the logic that refunds seat payments when a booking is cancelled. Get to exactly this change and exercise it against the REAL DB: use Prisma (cd /opt/repo; yarn prisma or a node/tsx script requiring @calcom/prisma) to SEED a booking that has multiple seats each with a Payment row, then invoke the changed processPaymentRefund path (import it, or drive the cancel flow) and QUERY the DB to verify EVERY seat payment is refunded (not just the first) — the exact guarantee the PR is about. Compare actual refunded rows/amounts to what you compute by hand. Report a defect only if you reproduce a discrepancy, with the command + real DB output.',
+    },
     // Real HEAVY PR — does the agent get to WHAT THE PR CHANGED? The PR drops the
     // ".ics" suffix requirement from the ICS-feed URL validator. Setup just
     // installs deps (the monorepo yarn install); the agent should ISOLATE the
