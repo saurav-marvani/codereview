@@ -101,7 +101,17 @@ export class GetAwaitingPullRequestsUseCase implements IUseCase {
                 )) ?? [];
 
             return prs
-                .filter((pr) => pr?.number != null && pr?.repository?.id)
+                .filter(
+                    (pr) =>
+                        pr?.number != null &&
+                        pr?.repository?.id &&
+                        // Drop skipped PRs that were later merged/closed — a
+                        // config-skip on a done PR isn't "awaiting review"
+                        // anymore. Same open predicate the facet count uses, so
+                        // the list and the badge stay in agreement.
+                        pr.merged !== true &&
+                        String(pr.status).toLowerCase() !== 'closed',
+                )
                 .map((pr) => ({
                     prId: pr.uuid!,
                     prNumber: pr.number,

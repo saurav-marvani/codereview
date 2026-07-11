@@ -130,7 +130,7 @@ export class GetPullRequestsFacetsUseCase implements IUseCase {
 
             const email = this.request.user?.email;
 
-            const [reviewedKeys, needsAttention, mine, awaitingKeys] =
+            const [reviewedKeys, needsAttention, mine, awaitingKeys, openKeys] =
                 await Promise.all([
                     this.automationExecutionService.getDistinctReviewedPullRequestKeys(
                         { organizationAndTeamData, repositoryIds },
@@ -160,10 +160,26 @@ export class GetPullRequestsFacetsUseCase implements IUseCase {
                     this.automationExecutionService.getAwaitingReviewPullRequestKeys(
                         { organizationAndTeamData, repositoryIds },
                     ),
+                    // Open PR keys (merged ≠ true, status ≠ closed), all-time.
+                    // Used to drop skipped-then-merged/closed PRs from the
+                    // awaiting count so the badge matches the (open-filtered)
+                    // Awaiting list.
+                    this.pullRequestsService.findOpenPullRequestKeysOpenedSince(
+                        '1970-01-01T00:00:00.000Z',
+                        organizationId,
+                        repositoryIds,
+                    ),
                 ]);
 
             const errored = reviewedKeys.filter((k) => k.hasError).length;
-            const awaiting = awaitingKeys.length;
+            // Only count awaiting PRs that are still open — a config-skip on a
+            // PR that later merged/closed isn't actionable anymore.
+            const openKeySet = new Set(
+                openKeys.map((k) => `${k.repositoryId}_${k.number}`),
+            );
+            const awaiting = awaitingKeys.filter((k) =>
+                openKeySet.has(`${k.repositoryId}_${k.pullRequestNumber}`),
+            ).length;
 
             return {
                 all: reviewedKeys.length,
