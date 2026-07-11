@@ -205,6 +205,7 @@ export class KodyRulesAgentProvider extends BaseCodeReviewAgentProvider {
                 runJudge,
                 prTitle: input.prTitle,
                 prBody: input.prBody,
+                logger: this.shardLogger,
             });
             judgeViolations = result.violations;
             shardsRun = result.shardsRun;
