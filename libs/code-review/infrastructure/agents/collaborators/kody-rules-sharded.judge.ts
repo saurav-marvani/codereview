@@ -44,17 +44,25 @@ export const shardViolationsSchema = z.object({
                 // tries the numeric coercion first; a UUID (non-numeric) falls
                 // through to the string arm. See #1170 for why we stopped
                 // asking the model to echo UUIDs.
-                ruleId: z.union([
-                    z.coerce.number().int().positive(),
-                    z.string(),
-                ]),
-                relevantLinesStart: z.number().optional(),
-                relevantLinesEnd: z.number().optional(),
-                language: z.string().optional(),
-                existingCode: z.string().optional(),
-                improvedCode: z.string().optional(),
+                ruleId: z.union([z.coerce.number(), z.string()]),
+                // Every property must be REQUIRED in the emitted JSON schema:
+                // OpenAI structured outputs (strict json_schema) reject any
+                // schema whose `required` array doesn't list every key —
+                // `.optional()` fields made the API 400 instantly ("Missing
+                // 'relevantLinesStart'"), silently killing every shard for
+                // BYOK-OpenAI orgs. `.nullable().catch(null)` keeps the key in
+                // `required` (as anyOf [T, null]) while still parsing lenient
+                // providers that omit the key entirely (missing → null).
+                // Range/int validation of ruleId lives in resolveRuleId, which
+                // drops out-of-range indices — keep the wire schema minimal so
+                // strict mode has fewer keywords to reject.
+                relevantLinesStart: z.number().nullable().catch(null),
+                relevantLinesEnd: z.number().nullable().catch(null),
+                language: z.string().nullable().catch(null),
+                existingCode: z.string().nullable().catch(null),
+                improvedCode: z.string().nullable().catch(null),
                 suggestionContent: z.string(),
-                oneSentenceSummary: z.string().optional(),
+                oneSentenceSummary: z.string().nullable().catch(null),
             }),
         )
         .default([]),
@@ -67,13 +75,15 @@ export const shardViolationsSchema = z.object({
  */
 export interface RawShardViolation {
     ruleId: number | string;
-    relevantLinesStart?: number;
-    relevantLinesEnd?: number;
-    language?: string;
+    // `null` when a strict-schema provider (OpenAI structured outputs) fills
+    // a required-but-inapplicable key; normalized to undefined on resolution.
+    relevantLinesStart?: number | null;
+    relevantLinesEnd?: number | null;
+    language?: string | null;
     suggestionContent: string;
-    existingCode?: string;
-    improvedCode?: string;
-    oneSentenceSummary?: string;
+    existingCode?: string | null;
+    improvedCode?: string | null;
+    oneSentenceSummary?: string | null;
 }
 
 /** A resolved violation for a (file, rule) pair — `ruleId` mapped to a UUID. */
@@ -117,6 +127,10 @@ export interface ShardedJudgeInput {
     prBody?: string;
     /** max concurrent shard calls (BYOK models rate-limit — keep modest). */
     concurrency?: number;
+    /** Errored shards degrade to zero findings; log WHY so a systemic
+     *  failure (e.g. a provider rejecting the response schema) is visible
+     *  in the worker logs instead of only as an `N errored` counter. */
+    logger?: { warn: (entry: any) => void };
 }
 
 export interface ShardedJudgeResult {
@@ -352,7 +366,12 @@ function resolveShardViolations(
             continue;
         }
         const { ruleId: _ruleId, ...rest } = v;
-        kept.push({ ...rest, ruleUuid });
+        // Strict-schema providers emit `null` for required-but-inapplicable
+        // keys; downstream (line snapping, mapping) expects them absent.
+        const normalized = Object.fromEntries(
+            Object.entries(rest).filter(([, value]) => value !== null),
+        ) as Omit<RawShardViolation, 'ruleId'>;
+        kept.push({ ...normalized, ruleUuid });
     }
     return kept;
 }
@@ -366,7 +385,7 @@ function resolveShardViolations(
 export async function judgeKodyRulesSharded(
     input: ShardedJudgeInput,
 ): Promise<ShardedJudgeResult> {
-    const { changedFiles, rules, runJudge, prTitle, prBody } = input;
+    const { changedFiles, rules, runJudge, prTitle, prBody, logger } = input;
     const concurrency = input.concurrency ?? 4;
 
     const fileRules = rules.filter((r) => !isPrLevel(r));
@@ -403,8 +422,12 @@ export async function judgeKodyRulesSharded(
                     ...v,
                     relevantFile: file.filename,
                 }));
-            } catch {
+            } catch (err) {
                 shardsErrored++;
+                logger?.warn({
+                    message: `[kody-rules-shard] file shard failed for ${file.filename} (${applicable.length} rule(s)) — degrading to zero findings: ${err instanceof Error ? err.message : String(err)}`,
+                    metadata: { filename: file.filename, err },
+                });
                 return [] as ShardViolation[];
             }
         },
@@ -425,8 +448,12 @@ export async function judgeKodyRulesSharded(
             // PR-level violations carry no relevantFile by design
             for (const v of resolveShardViolations(vs, ruleUuids))
                 violations.push(v);
-        } catch {
+        } catch (err) {
             shardsErrored++;
+            logger?.warn({
+                message: `[kody-rules-shard] PR-scope shard failed (${prRules.length} rule(s)) — degrading to zero findings: ${err instanceof Error ? err.message : String(err)}`,
+                metadata: { err },
+            });
         }
     }
 

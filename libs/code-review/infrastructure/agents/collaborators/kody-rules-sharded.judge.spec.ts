@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import {
     judgeKodyRulesSharded,
     shardViolationsSchema,
@@ -62,6 +63,48 @@ describe('shardViolationsSchema — model JSON parsing', () => {
                 violations: [{ relevantLinesStart: 1 }],
             }),
         ).toThrow();
+    });
+
+    // OpenAI structured outputs (strict json_schema) reject any schema whose
+    // `required` array doesn't list EVERY key in `properties`. The AI SDK
+    // derives the wire schema from this zod object, so `.optional()` fields
+    // made the API 400 instantly ("Missing 'relevantLinesStart'") and every
+    // shard silently errored for BYOK-OpenAI orgs (found live in QA).
+    it('emits an OpenAI-strict-compatible JSON schema: every property is required', () => {
+        const jsonSchema = z.toJSONSchema(shardViolationsSchema, {
+            target: 'draft-7',
+        }) as any;
+        const items = jsonSchema.properties.violations.items;
+        expect([...(items.required ?? [])].sort()).toEqual(
+            Object.keys(items.properties).sort(),
+        );
+    });
+
+    it('accepts strict-provider output where inapplicable keys are null', () => {
+        const r = shardViolationsSchema.parse({
+            violations: [
+                {
+                    ruleId: 1,
+                    relevantLinesStart: null,
+                    relevantLinesEnd: null,
+                    language: null,
+                    existingCode: null,
+                    improvedCode: null,
+                    suggestionContent: 'x',
+                    oneSentenceSummary: null,
+                },
+            ],
+        });
+        expect(r.violations).toHaveLength(1);
+        expect(r.violations[0].relevantLinesStart).toBeNull();
+    });
+
+    it('still tolerates lenient providers that omit the nullable keys entirely', () => {
+        const r = shardViolationsSchema.parse({
+            violations: [{ ruleId: 2, suggestionContent: 'x' }],
+        });
+        expect(r.violations).toHaveLength(1);
+        expect(r.violations[0].relevantLinesStart).toBeNull();
     });
 });
 
@@ -263,5 +306,51 @@ describe('judgeKodyRulesSharded — deterministic file×rule sweep (#1449)', () 
         expect(res.shardsRun).toBe(2);
         expect(res.shardsErrored).toBe(1);
         expect(res.violations).toHaveLength(1); // only src/b.ts survived
+    });
+
+    it('logs WHY a shard failed instead of swallowing the error', async () => {
+        const warn = jest.fn();
+        const run: RunJudge = async () => {
+            throw new Error(
+                "Invalid schema for response_format 'response': Missing 'relevantLinesStart'.",
+            );
+        };
+        await judgeKodyRulesSharded({
+            changedFiles: [file('src/a.ts', '1 +x')],
+            rules: [{ uuid: 'r1', title: 't', rule: 'r', path: '**/*.ts' }],
+            runJudge: run,
+            logger: { warn },
+        });
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0][0].message).toContain(
+            'Invalid schema for response_format',
+        );
+        expect(warn.mock.calls[0][0].message).toContain('src/a.ts');
+    });
+
+    it('normalizes null violation fields to absent keys (strict-provider output)', async () => {
+        const run: RunJudge = async () => [
+            {
+                ruleId: 1,
+                relevantLinesStart: null,
+                relevantLinesEnd: null,
+                language: null,
+                existingCode: null,
+                improvedCode: null,
+                suggestionContent: 'x',
+                oneSentenceSummary: null,
+            } as RawShardViolation,
+        ];
+        const res = await judgeKodyRulesSharded({
+            changedFiles: [file('src/a.ts', '1 +x')],
+            rules: [{ uuid: 'r1', title: 't', rule: 'r', path: '**/*.ts' }],
+            runJudge: run,
+        });
+        expect(res.violations).toHaveLength(1);
+        const v = res.violations[0] as any;
+        expect(v.ruleUuid).toBe('r1');
+        expect('relevantLinesStart' in v).toBe(false);
+        expect('oneSentenceSummary' in v).toBe(false);
+        expect(v.suggestionContent).toBe('x');
     });
 });
