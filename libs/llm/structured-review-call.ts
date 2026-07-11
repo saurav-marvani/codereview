@@ -27,6 +27,7 @@ import {
     LLM_CALL_TIMEOUT_MS,
 } from '@libs/llm/llm-call';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
+import { zodToStrictWireSchema } from '@libs/llm/strict-wire-schema';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 
 /** Managed trial-only fallback: Groq `openai/gpt-oss-120b`. Null if unconfigured. */
@@ -78,6 +79,24 @@ export async function runStructuredReviewCall<S extends z.ZodType | Schema>(
 
     const hasByok = !!byokConfig?.main;
 
+    // A raw zod schema would go through the AI SDK's zodSchema(), whose
+    // INPUT-side conversion drops `.optional()` fields from `required` —
+    // OpenAI strict structured outputs 400 on that, which silently killed
+    // kody-rules shards and guidance-file extraction for BYOK-OpenAI orgs.
+    // Convert centrally so every caller (present and future) sends a
+    // strict-compatible wire schema; AI-SDK Schema objects pass through
+    // untouched (the caller already controls its wire format).
+    let wireSchema: unknown = schema;
+    if (schema instanceof z.ZodType) {
+        try {
+            wireSchema = zodToStrictWireSchema(schema);
+        } catch {
+            // Unconvertible zod shape — fall back to the SDK's own
+            // conversion rather than failing the call outright.
+            wireSchema = schema;
+        }
+    }
+
     const mainModel = wrapByokModel(
         byokToVercelModel(byokConfig, 'main', { structuredOutputs: true }),
         { byokConfig, organizationId, role: 'main' },
@@ -111,7 +130,7 @@ export async function runStructuredReviewCall<S extends z.ZodType | Schema>(
                         model: model as any,
                         system,
                         prompt: user,
-                        output: Output.object({ schema: schema as any }),
+                        output: Output.object({ schema: wireSchema as any }),
                         // Cap hung provider calls at LLM_CALL_TIMEOUT_MS (10min)
                         // instead of the 30min agent-level fallback — these run
                         // in parallel shards, so a stuck call must not hold a
