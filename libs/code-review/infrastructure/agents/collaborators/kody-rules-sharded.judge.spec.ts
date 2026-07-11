@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import {
     judgeKodyRulesSharded,
     shardViolationsSchema,
@@ -60,6 +61,102 @@ describe('shardViolationsSchema — model JSON parsing', () => {
         expect(() =>
             shardViolationsSchema.parse({
                 violations: [{ relevantLinesStart: 1 }],
+            }),
+        ).toThrow();
+    });
+
+    // OpenAI structured outputs (strict json_schema) reject any schema whose
+    // `required` array doesn't list EVERY key in `properties`. The AI SDK
+    // derives the wire schema from this zod object, so `.optional()` fields
+    // made the API 400 instantly ("Missing 'relevantLinesStart'") and every
+    // shard silently errored for BYOK-OpenAI orgs (found live in QA).
+    it('emits an OpenAI-strict-compatible JSON schema: every property is required', () => {
+        const jsonSchema = z.toJSONSchema(shardViolationsSchema, {
+            target: 'draft-7',
+        }) as any;
+        const items = jsonSchema.properties.violations.items;
+        expect([...(items.required ?? [])].sort()).toEqual(
+            Object.keys(items.properties).sort(),
+        );
+    });
+
+    it('accepts strict-provider output where inapplicable keys are null', () => {
+        const r = shardViolationsSchema.parse({
+            violations: [
+                {
+                    ruleId: 1,
+                    relevantLinesStart: null,
+                    relevantLinesEnd: null,
+                    language: null,
+                    existingCode: null,
+                    improvedCode: null,
+                    suggestionContent: 'x',
+                    oneSentenceSummary: null,
+                },
+            ],
+        });
+        expect(r.violations).toHaveLength(1);
+        expect(r.violations[0].relevantLinesStart).toBeNull();
+    });
+
+    it('still tolerates lenient providers that omit the nullable keys entirely', () => {
+        const r = shardViolationsSchema.parse({
+            violations: [{ ruleId: 2, suggestionContent: 'x' }],
+        });
+        expect(r.violations).toHaveLength(1);
+        expect(r.violations[0].relevantLinesStart).toBeNull();
+    });
+
+    it('coerces a numeric-string line number instead of failing the shard', () => {
+        const r = shardViolationsSchema.parse({
+            violations: [
+                {
+                    ruleId: 1,
+                    relevantLinesStart: '42',
+                    relevantLinesEnd: ' 43 ',
+                    suggestionContent: 'x',
+                },
+            ],
+        });
+        expect(r.violations[0].relevantLinesStart).toBe(42);
+        expect(r.violations[0].relevantLinesEnd).toBe(43);
+    });
+
+    it('line coercion does NOT turn null/empty-string into 0', () => {
+        // z.coerce.number() would coerce both to 0 — the null this wire
+        // format deliberately produces must survive as null.
+        const r = shardViolationsSchema.parse({
+            violations: [
+                { ruleId: 1, relevantLinesStart: null, suggestionContent: 'x' },
+            ],
+        });
+        expect(r.violations[0].relevantLinesStart).toBeNull();
+        expect(() =>
+            shardViolationsSchema.parse({
+                violations: [
+                    {
+                        ruleId: 1,
+                        relevantLinesStart: '',
+                        suggestionContent: 'x',
+                    },
+                ],
+            }),
+        ).toThrow();
+    });
+
+    it('rejects a WRONG-typed nullable field instead of silently nulling it', () => {
+        // missing → null is a wire-format concession; a type mismatch is
+        // model garbage and must fail parse (visible via the shard-error
+        // log), not degrade to a violation with its line silently dropped.
+        expect(() =>
+            shardViolationsSchema.parse({
+                violations: [
+                    {
+                        ruleId: 1,
+                        relevantLinesStart: 'abc',
+                        suggestionContent: 'x',
+                    },
+                ],
             }),
         ).toThrow();
     });
@@ -263,5 +360,54 @@ describe('judgeKodyRulesSharded — deterministic file×rule sweep (#1449)', () 
         expect(res.shardsRun).toBe(2);
         expect(res.shardsErrored).toBe(1);
         expect(res.violations).toHaveLength(1); // only src/b.ts survived
+    });
+
+    it('logs WHY a shard failed instead of swallowing the error', async () => {
+        const warn = jest.fn();
+        const run: RunJudge = async () => {
+            throw new Error(
+                "Invalid schema for response_format 'response': Missing 'relevantLinesStart'.",
+            );
+        };
+        await judgeKodyRulesSharded({
+            changedFiles: [file('src/a.ts', '1 +x')],
+            rules: [{ uuid: 'r1', title: 't', rule: 'r', path: '**/*.ts' }],
+            runJudge: run,
+            logger: { warn },
+        });
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0][0].message).toContain(
+            'Invalid schema for response_format',
+        );
+        expect(warn.mock.calls[0][0].message).toContain('src/a.ts');
+        // SimpleLogger.shouldSkipLog silently drops entries whose context is
+        // undefined — without this the warning never reaches production logs.
+        expect(warn.mock.calls[0][0].context).toBe('kody-rules-sharded');
+    });
+
+    it('normalizes null violation fields to absent keys (strict-provider output)', async () => {
+        const run: RunJudge = async () => [
+            {
+                ruleId: 1,
+                relevantLinesStart: null,
+                relevantLinesEnd: null,
+                language: null,
+                existingCode: null,
+                improvedCode: null,
+                suggestionContent: 'x',
+                oneSentenceSummary: null,
+            } as RawShardViolation,
+        ];
+        const res = await judgeKodyRulesSharded({
+            changedFiles: [file('src/a.ts', '1 +x')],
+            rules: [{ uuid: 'r1', title: 't', rule: 'r', path: '**/*.ts' }],
+            runJudge: run,
+        });
+        expect(res.violations).toHaveLength(1);
+        const v = res.violations[0] as any;
+        expect(v.ruleUuid).toBe('r1');
+        expect('relevantLinesStart' in v).toBe(false);
+        expect('oneSentenceSummary' in v).toBe(false);
+        expect(v.suggestionContent).toBe('x');
     });
 });

@@ -131,32 +131,27 @@ export class FinishOnboardingUseCase {
             await this.provisionTrial({ organizationId, teamId });
             __mark('provisionTrial', __t);
 
-            // Onboarding only imports rules from repo files (fast, no LLM).
-            // Generating rules from past reviews is a separate async action
-            // (POST /kody-rules/generate-kody-rules + the KodyLearning cron),
-            // so onboarding no longer blocks on or force-activates generated
-            // rules — they go through the unified approval policy instead.
-
-            // Trigger immediate Kody Rules sync from repo files for all selected repositories
-            __t = Date.now();
-            await this.syncSelectedReposKodyRulesUseCase.execute({ teamId });
-            __mark('syncSelectedReposKodyRules', __t);
-
-            // Kick off past-reviews rule generation (3-month backfill) in the
-            // background so onboarding doesn't block on the LLM-heavy work. The
-            // use-case applies the model policy (skips outside trial/BYOK),
-            // resolves source repos via the integration fallback, promotes the
-            // repos that get rules to isSelected, and drives the
-            // kodyLearningStatus state machine — the KodyLearning cron's
-            // staleness recovery covers runs that die mid-flight. Detached so a
-            // failure here never fails the onboarding response.
+            // Repo-file rule import + past-reviews rule generation both run
+            // DETACHED after the onboarding response is sent. The repo-file sync
+            // used to be awaited here on the assumption it was "fast, no LLM",
+            // but it now converts rule files via the LLM (fast-batch + per-file
+            // fallback) and takes minutes — long enough to blow past the gateway
+            // timeout and 504 the finish-onboarding request. Detaching keeps
+            // onboarding snappy; the KodyLearning cron's staleness recovery
+            // covers runs that die mid-flight, and generated rules go through the
+            // unified approval policy. Sync runs first (generation is chained off
+            // its .finally) so generation sees the imported rules — preserving
+            // the previous sequential ordering, just off the request path.
             setImmediate(() => {
-                this.generateKodyRulesUseCase
-                    .execute({ teamId, months: 3 }, organizationId)
+                this.syncSelectedReposKodyRulesUseCase
+                    // Pass organizationId explicitly: this runs after the HTTP
+                    // response, so the sync use-case can no longer resolve it
+                    // from the (possibly disposed) request scope.
+                    .execute({ teamId, organizationId })
                     .catch((error) => {
                         this.logger.error({
                             message:
-                                'Background Kody Rules generation failed after onboarding',
+                                'Background Kody Rules sync from repo files failed after onboarding',
                             context: FinishOnboardingUseCase.name,
                             error:
                                 error instanceof Error
@@ -164,6 +159,22 @@ export class FinishOnboardingUseCase {
                                     : new Error(String(error)),
                             metadata: { organizationId, teamId },
                         });
+                    })
+                    .finally(() => {
+                        this.generateKodyRulesUseCase
+                            .execute({ teamId, months: 3 }, organizationId)
+                            .catch((error) => {
+                                this.logger.error({
+                                    message:
+                                        'Background Kody Rules generation failed after onboarding',
+                                    context: FinishOnboardingUseCase.name,
+                                    error:
+                                        error instanceof Error
+                                            ? error
+                                            : new Error(String(error)),
+                                    metadata: { organizationId, teamId },
+                                });
+                            });
                     });
             });
 
