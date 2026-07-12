@@ -212,6 +212,14 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
                 const r = await vm!.run(command, { timeoutMs });
                 return { stdout: r.stdout, stderr: r.stderr ?? '', exitCode: r.exitCode };
             };
+            // Drop the PR diff on the VM so the agent can `git apply -R` it for
+            // base-vs-head differential testing (see prompt point 4b).
+            await vm
+                .writeFile(
+                    '/opt/kody/pr.diff',
+                    buildDiffFromChangedFiles(context.changedFiles),
+                )
+                .catch(() => undefined);
             const model = this.configService.get<string>('PREVIEW_AGENT_MODEL') || DEFAULT_MODEL;
             const agentRes = await this.agent.run({
                 apiKey,
