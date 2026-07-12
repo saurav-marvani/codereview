@@ -34,7 +34,7 @@ export async function assertHealthyExecution(
                 // `team.uuid = NULL` and the listing returns [] for every
                 // org (verified live against QA: empty data even with no
                 // filters). Without it this assert can never pass.
-                `${ctx.target.apiBaseUrl}/pull-requests/executions?pullRequestNumber=${prNumber}&teamId=${session.teamId}&limit=5`,
+                `${ctx.target.apiBaseUrl}/pull-requests/executions?pullRequestNumber=${prNumber}&teamId=${encodeURIComponent(session.teamId)}&limit=5`,
                 {
                     headers: { Authorization: `Bearer ${session.accessToken}` },
                     timeoutMs: 30_000,
