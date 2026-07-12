@@ -203,15 +203,22 @@ export function executionsRoute(
             const prNumber = Number(
                 url.searchParams.get("pullRequestNumber") ?? 0,
             );
+            // Mirror the REAL enriched-listing shape (verified against QA):
+            // the item's top-level `status` is the PULL REQUEST state
+            // ("open"), and the execution status lives nested under
+            // `automationExecution.status`. An idealized mock here is how
+            // the walker's PR-state-vs-execution-status bug slipped through.
             json(res, 200, {
-                data: [
-                    {
-                        prNumber,
-                        pullRequestNumber: prNumber,
-                        status,
-                        automationExecution: { status },
-                    },
-                ],
+                data: {
+                    data: [
+                        {
+                            prNumber,
+                            status: "open",
+                            executionId: "exec-1",
+                            automationExecution: { status },
+                        },
+                    ],
+                },
             });
         },
     };

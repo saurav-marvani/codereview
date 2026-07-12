@@ -27,7 +27,14 @@ export async function assertHealthyExecution(
                 // unknown param (`prNumber`) is a deterministic HTTP 400.
                 // That exact typo failed all four license-paid cells of the
                 // 2026-07-11 release matrix.
-                `${ctx.target.apiBaseUrl}/pull-requests/executions?pullRequestNumber=${prNumber}&limit=5`,
+                //
+                // `teamId` is required in practice even though the DTO marks
+                // it optional: the repository query binds `team.uuid =
+                // :teamId` unconditionally, so an absent teamId becomes
+                // `team.uuid = NULL` and the listing returns [] for every
+                // org (verified live against QA: empty data even with no
+                // filters). Without it this assert can never pass.
+                `${ctx.target.apiBaseUrl}/pull-requests/executions?pullRequestNumber=${prNumber}&teamId=${encodeURIComponent(session.teamId)}&limit=5`,
                 {
                     headers: { Authorization: `Bearer ${session.accessToken}` },
                     timeoutMs: 30_000,
@@ -58,6 +65,23 @@ export async function assertHealthyExecution(
     return status!;
 }
 
+/**
+ * AutomationStatus values an execution row can carry. The enriched listing's
+ * top-level item ALSO has a `status` field — but that one is the PULL
+ * REQUEST state ("open"/"merged"/"closed"), with the execution status nested
+ * under `automationExecution.status`. Matching any `status` string on the
+ * number-matched object returned "open" and flagged every healthy review as
+ * UNHEALTHY (found live once the teamId fix made the listing return data).
+ */
+const EXECUTION_STATUSES = new Set([
+    'success',
+    'error',
+    'partial_error',
+    'skipped',
+    'pending',
+    'in_progress',
+]);
+
 /** Defensive walk: find the newest execution status for the PR number. */
 function findExecutionStatus(node: unknown, prNumber: number): string | null {
     const hits: string[] = [];
@@ -69,16 +93,37 @@ function findExecutionStatus(node: unknown, prNumber: number): string | null {
         if (n && typeof n === 'object') {
             const obj = n as Record<string, unknown>;
             const num = obj.prNumber ?? obj.pullRequestNumber ?? obj.number;
-            if (
-                Number(num) === prNumber &&
-                typeof obj.status === 'string' &&
-                obj.status
-            ) {
-                hits.push(obj.status);
+            if (Number(num) === prNumber) {
+                const exec = obj.automationExecution as
+                    | Record<string, unknown>
+                    | undefined;
+                if (exec && typeof exec.status === 'string' && exec.status) {
+                    hits.push(exec.status);
+                } else if (
+                    typeof obj.status === 'string' &&
+                    EXECUTION_STATUSES.has(obj.status)
+                ) {
+                    // Fallback for shapes where the execution status is
+                    // flat on the matched object — but never PR states
+                    // like "open"/"merged".
+                    hits.push(obj.status);
+                }
             }
             for (const v of Object.values(obj)) walk(v);
         }
     };
     walk(node);
-    return hits[0] ?? null;
+    if (!hits.length) return null;
+    // A single PR can carry MULTIPLE execution rows (verified live on the
+    // QA gitlab tenant: a duplicate/synchronize event adds a newer `skipped`
+    // row next to the real review's `success`). Health is about the review
+    // execution, so prefer a success anywhere over incidental skips, then
+    // real failures, then skips; still-running rows keep the poll alive
+    // only when nothing terminal exists.
+    for (const preferred of ['success', 'partial_error', 'error', 'skipped']) {
+        if (hits.includes(preferred)) return preferred;
+    }
+    return hits.every((h) => h === 'pending' || h === 'in_progress')
+        ? null
+        : hits[0];
 }
