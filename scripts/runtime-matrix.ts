@@ -141,6 +141,7 @@ const MEDUSA_DEEP_PLAYBOOK = {
     requiredEnv: [] as string[],
     setup: [
         'corepack enable',
+        'cd /opt/repo && corepack prepare yarn@3.2.1 --activate 2>/dev/null; yarn --version',
         'cd /opt/repo && yarn install --immutable --inline-builds 2>&1 | tail -4',
         'docker rm -f medusa-postgres medusa-redis >/dev/null 2>&1 || true',
         'docker run -d --name medusa-postgres -e POSTGRES_PASSWORD=magical -e POSTGRES_USER=postgres -p 5432:5432 postgres:15-alpine',
@@ -165,9 +166,33 @@ const REPOS: Record<string, RepoSpec> = {
         baseBranch: 'develop',
         size: 'cpx51',
         playbook: MEDUSA_DEEP_PLAYBOOK,
-        cold: { pr: 14570, sha: 'a6aa4565c2', diffFile: 'scripts/rtbug/medusa-meta.json' },
-        warm: { pr: 14570, sha: 'a6aa4565c2', diffFile: 'scripts/rtbug/medusa-meta.json' },
+        cold: { pr: 14570, sha: 'a6aa4565c23649ddacbc7ead3eaf7099edc62f10', diffFile: 'scripts/rtbug/medusa-meta.json' },
+        warm: { pr: 14570, sha: 'a6aa4565c23649ddacbc7ead3eaf7099edc62f10', diffFile: 'scripts/rtbug/medusa-meta.json' },
         directive: BLIND_DIRECTIVE,
+    },
+    'strapi-rtbug': {
+        name: 'strapi-rtbug',
+        url: 'https://github.com/strapi/strapi',
+        baseBranch: 'develop',
+        size: 'cpx51',
+        playbook: {
+            requiredEnv: [],
+            setup: [
+                'corepack enable 2>/dev/null || true',
+                'cd /opt/repo && (yarn install 2>&1 | tail -5)',
+                'docker rm -f strapi-pg >/dev/null 2>&1 || true; docker run -d --name strapi-pg -e POSTGRES_PASSWORD=strapi -e POSTGRES_USER=strapi -e POSTGRES_DB=strapi -p 5432:5432 postgres:16-alpine',
+                'for i in $(seq 1 30); do docker exec strapi-pg pg_isready -U strapi >/dev/null 2>&1 && break; sleep 1; done; docker exec strapi-pg pg_isready -U strapi',
+            ],
+            build: [],
+            services: [],
+            test: [],
+            healthcheck: ['docker exec strapi-pg pg_isready -U strapi && echo pg-ready'],
+        },
+        cold: { pr: 24798, sha: 'a1edcc9d9fab426bad8fd1a111e6d06cb07849be', diffFile: 'scripts/rtbug/strapi-migloss.json' },
+        warm: { pr: 24798, sha: 'a1edcc9d9fab426bad8fd1a111e6d06cb07849be', diffFile: 'scripts/rtbug/strapi-migloss.json' },
+        directive:
+            BLIND_DIRECTIVE +
+            ' This diff is a database migration in packages/core/core/src/migrations. A Postgres is up on localhost:5432 (strapi/strapi/strapi). Reproduce the migration BEHAVIOR: build the schema state the migration operates on, seed rows that its WHERE/JOIN/DELETE touches (especially rows with related/component data), run the migration logic against the real DB, and QUERY before/after to prove it does not silently DROP or ORPHAN rows it should keep. A migration that deletes/loses data it should preserve is a critical defect.',
     },
     'immich-rtbug': {
         name: 'immich-rtbug',
