@@ -164,7 +164,57 @@ export function kodusRoutes(opts: {
             pathRegex: /^\/code-management\/finish-onboarding$/,
             handler: (_req, res) => json(res, 200, {}),
         },
+        executionsRoute(),
+        healthRoute(),
     ];
+}
+
+/**
+ * The runner's post-failure reachability probe (isTargetReachable, added in
+ * #1494) GETs /health and reclassifies a genuine scenario failure as
+ * SKIP/inconclusive when it doesn't answer 200 — without this route, mock
+ * targets always look "unreachable" and the license-gate tests that assert
+ * a real `failed` outcome get `skipped` instead.
+ */
+export function healthRoute(): RouteHandler {
+    return {
+        method: "GET",
+        pathRegex: /^\/health(\?|$)/,
+        handler: (_req, res) => json(res, 200, { status: "ok" }),
+    };
+}
+
+/**
+ * Execution-health assert (assertHealthyExecution) polls this after every
+ * review. #1494 added the assert without teaching the mocks the route, which
+ * silently broke the whole hermetic integration layer on main (7 tests red
+ * from 2026-07-10). Exported separately because integration.test.ts and
+ * integration-license.test.ts carry their own inline route tables.
+ * Returns one settled execution (default "success") for any PR queried.
+ */
+export function executionsRoute(
+    status: string = "success",
+): RouteHandler {
+    return {
+        method: "GET",
+        pathRegex: /^\/pull-requests\/executions(\?|$)/,
+        handler: (req, res) => {
+            const url = new URL(req.url ?? "", "http://mock");
+            const prNumber = Number(
+                url.searchParams.get("pullRequestNumber") ?? 0,
+            );
+            json(res, 200, {
+                data: [
+                    {
+                        prNumber,
+                        pullRequestNumber: prNumber,
+                        status,
+                        automationExecution: { status },
+                    },
+                ],
+            });
+        },
+    };
 }
 
 /** Helper type used by every provider's review-window state. */
