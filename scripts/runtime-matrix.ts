@@ -257,6 +257,17 @@ const REPOS: Record<string, RepoSpec> = {
         directive:
             'DEEP data review. The kodus-ai stack is booted (web :3000, api :3001, Postgres/Mongo up). This PR revamps the token-usage / cost computation (apps/api/.../tokenUsage, token cost/pricing math). Get to exactly this change and exercise the cost/pricing functions against real inputs: isolate the changed cost calculators and feed representative token counts + models, then verify the per-token cost vs the pricing table, the aggregation, and especially rounding — a sub-cent value like 0.004 that rounds to 0 would show $0.00 / 0% usage even when non-zero. Print the raw computed numbers. Report a defect only if you reproduce a wrong number with the command + output.',
     },
+    'cal.com-frontend': {
+        name: 'cal.com-frontend',
+        url: 'https://github.com/calcom/cal.com',
+        baseBranch: 'main',
+        size: 'cpx51',
+        playbook: CALCOM_DEEP_PLAYBOOK,
+        cold: { pr: 29544, sha: 'ae7790edbce0c47713b4af5c4c2f6eb23a679d98', diffFile: 'scripts/batch/calcom-frontend.json' },
+        warm: { pr: 29544, sha: 'ae7790edbce0c47713b4af5c4c2f6eb23a679d98', diffFile: 'scripts/batch/calcom-frontend.json' },
+        directive:
+            'FRONTEND review in a REAL browser. cal.com web is booted at http://localhost:3000 (seeded login pro@example.com / password "pro"). This PR changes the password-update form (apps/web/modules/settings/security/password-view.tsx) — it switches to react-hook-form onChange validation and removes manual setError calls. Drive the AFFECTED screen with Playwright (installed under /opt/kody; wait for /opt/kody/pw-ready): log in, navigate to Settings → Security → Password, and exercise the changed form — submit it empty, submit with only one field, submit with a valid old+new password — capturing PAGE-ERROR / CONSOLE-ERROR / failed requests and asserting the validation actually fires, the submit button works, and nothing throws. A regression = a JS exception, validation that no longer blocks an invalid submit, a dead submit, or a blank/broken render. Report only defects you reproduce in the browser (screenshot/console evidence); empty findings if it behaves correctly.',
+    },
     'cal.com-deep': {
         name: 'cal.com-deep',
         url: 'https://github.com/calcom/cal.com',
