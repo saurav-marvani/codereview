@@ -112,11 +112,33 @@ export class ListPastReviewersUseCase {
                 ),
             );
 
-            for (const result of results) {
+            for (let i = 0; i < results.length; i++) {
+                const result = results[i];
                 // A rejection, or the adapter's null-on-failure sentinel, is a
-                // provider error — flag it so an empty result isn't cached.
-                if (result.status !== 'fulfilled' || !Array.isArray(result.value)) {
+                // provider error — flag it so an empty result isn't cached, and
+                // log which repo failed so the drop isn't silent.
+                if (
+                    result.status !== 'fulfilled' ||
+                    !Array.isArray(result.value)
+                ) {
                     hadError = true;
+                    this.logger.warn({
+                        message:
+                            'Failed to fetch PRs for a repository while building the reviewer list',
+                        context: ListPastReviewersUseCase.name,
+                        error:
+                            result.status === 'rejected'
+                                ? result.reason instanceof Error
+                                    ? result.reason
+                                    : new Error(String(result.reason))
+                                : undefined,
+                        metadata: {
+                            organizationId:
+                                organizationAndTeamData.organizationId,
+                            teamId,
+                            repositoryId: repositories[i]?.id,
+                        },
+                    });
                     continue;
                 }
                 for (const pr of result.value) {
