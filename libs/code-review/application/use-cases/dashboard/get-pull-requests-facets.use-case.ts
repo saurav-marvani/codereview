@@ -1,10 +1,6 @@
 import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import {
-    Action,
-    ResourceType,
-} from '@libs/identity/domain/permissions/enums/permissions.enum';
-import {
     IIntegrationConfigService,
     INTEGRATION_CONFIG_SERVICE_TOKEN,
 } from '@libs/integrations/domain/integrationConfigs/contracts/integration-config.service.contracts';
@@ -12,10 +8,8 @@ import {
     IPullRequestsService,
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@libs/platformData/domain/pullRequests/contracts/pullRequests.service.contracts';
-import {
-    intersectAssignedAndTeamScope,
-    resolveTeamRepositoryIds,
-} from './utils/team-repository-scope.util';
+import { resolveDashboardRepositoryScope } from './utils/team-repository-scope.util';
+import { isOpenPullRequest } from './utils/pull-request-metrics';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
 import { createLogger } from '@libs/core/log/logger';
 import { Inject, Injectable } from '@nestjs/common';
@@ -77,60 +71,36 @@ export class GetPullRequestsFacetsUseCase implements IUseCase {
         }
 
         try {
-            const assignedRepositoryIds =
-                await this.authorizationService.getRepositoryScope({
-                    user: this.request.user,
-                    action: Action.Read,
-                    resource: ResourceType.PullRequests,
-                });
-
-            if (
-                assignedRepositoryIds !== null &&
-                assignedRepositoryIds.length === 0
-            ) {
-                return empty;
-            }
-
             const organizationAndTeamData: OrganizationAndTeamData = {
                 organizationId,
                 teamId: query.teamId,
             };
 
-            // `all`/`errored` (getDistinctReviewedPullRequestKeys) are already
-            // team-scoped by the `team.uuid = :teamId` join. The Mongo-backed
-            // facets (needsAttention/mine/awaiting) only knew about org +
-            // assigned repos, so on a multi-team org they counted PRs from
-            // other teams — inconsistent with `all`. Resolve the selected
-            // team's repositories and intersect with the caller's assigned
-            // scope so every facet counts the same set of PRs.
-            const teamRepositoryIds = await resolveTeamRepositoryIds(
-                this.integrationConfigService,
+            // Team-scoped repository set every facet counts against — resolved
+            // once, here, so `all`/`errored` (Postgres join) and the Mongo-backed
+            // facets (needsAttention/mine/awaiting) all count the same PRs.
+            const scope = await resolveDashboardRepositoryScope({
+                authorizationService: this.authorizationService,
+                integrationConfigService: this.integrationConfigService,
+                user: this.request.user,
                 organizationAndTeamData,
-                (error) =>
+                onError: (error) =>
                     this.logger.warn({
                         message:
-                            'Failed to resolve team repository scope for facets',
+                            'Failed to resolve repository scope for facets',
                         context: GetPullRequestsFacetsUseCase.name,
                         error: error as Error,
                         metadata: { organizationId, teamId: query.teamId },
                     }),
-            );
-            const repositoryIds = intersectAssignedAndTeamScope(
-                assignedRepositoryIds,
-                teamRepositoryIds,
-            );
-
-            // Empty (not undefined) → the team's repos and the assigned scope
-            // don't overlap, so the caller can see none of this team's PRs.
-            // Guard here because the Mongo helpers treat an empty array as
-            // "no repository filter" (which would leak org-wide counts).
-            if (Array.isArray(repositoryIds) && repositoryIds.length === 0) {
+            });
+            if (!scope) {
                 return empty;
             }
+            const { repositoryIds } = scope;
 
             const email = this.request.user?.email;
 
-            const [reviewedKeys, needsAttention, mine, awaitingKeys, openKeys] =
+            const [reviewedKeys, needsAttention, mine, awaitingKeys] =
                 await Promise.all([
                     this.automationExecutionService.getDistinctReviewedPullRequestKeys(
                         { organizationAndTeamData, repositoryIds },
@@ -160,26 +130,27 @@ export class GetPullRequestsFacetsUseCase implements IUseCase {
                     this.automationExecutionService.getAwaitingReviewPullRequestKeys(
                         { organizationAndTeamData, repositoryIds },
                     ),
-                    // Open PR keys (merged ≠ true, status ≠ closed), all-time.
-                    // Used to drop skipped-then-merged/closed PRs from the
-                    // awaiting count so the badge matches the (open-filtered)
-                    // Awaiting list.
-                    this.pullRequestsService.findOpenPullRequestKeysOpenedSince(
-                        '1970-01-01T00:00:00.000Z',
-                        organizationId,
-                        repositoryIds,
-                    ),
                 ]);
 
             const errored = reviewedKeys.filter((k) => k.hasError).length;
-            // Only count awaiting PRs that are still open — a config-skip on a
-            // PR that later merged/closed isn't actionable anymore.
-            const openKeySet = new Set(
-                openKeys.map((k) => `${k.repositoryId}_${k.number}`),
-            );
-            const awaiting = awaitingKeys.filter((k) =>
-                openKeySet.has(`${k.repositoryId}_${k.pullRequestNumber}`),
-            ).length;
+            // Awaiting count = skipped-only PRs that are still OPEN. Hydrate just
+            // the awaiting keys (bounded — usually a handful) instead of scanning
+            // every open PR for the org, and apply the SAME case-insensitive open
+            // predicate the Awaiting list uses so the badge and the list agree.
+            let awaiting = 0;
+            if (awaitingKeys.length) {
+                const awaitingPrs =
+                    (await this.pullRequestsService.findManyByNumbersAndRepositoryIds(
+                        awaitingKeys.map((k) => ({
+                            number: k.pullRequestNumber,
+                            repositoryId: k.repositoryId,
+                        })),
+                        organizationId,
+                    )) ?? [];
+                awaiting = awaitingPrs.filter((pr) =>
+                    isOpenPullRequest(pr),
+                ).length;
+            }
 
             return {
                 all: reviewedKeys.length,

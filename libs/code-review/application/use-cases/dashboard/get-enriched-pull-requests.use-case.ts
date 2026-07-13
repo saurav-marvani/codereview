@@ -15,7 +15,11 @@ import {
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@libs/platformData/domain/pullRequests/contracts/pullRequests.service.contracts';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
-import { ImplementationStatus } from '@libs/platformData/domain/pullRequests/enums/implementationStatus.enum';
+import {
+    authorMatchesExact,
+    isOpenPullRequest,
+    isUnresolvedDeliveredSuggestion,
+} from './utils/pull-request-metrics';
 import {
     IPullRequests,
     SuggestionCountsBySeverity,
@@ -546,12 +550,8 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                         // with the badge — the old "delivered crit/high" filter
                         // counted a different (and merged/resolved-inclusive) set.
                         if (needsAttention) {
-                            const isOpen =
-                                pullRequest.merged !== true &&
-                                String(pullRequest.status).toLowerCase() !==
-                                    'closed';
                             if (
-                                !isOpen ||
+                                !isOpenPullRequest(pullRequest) ||
                                 !((suggestionsCount?.unresolved ?? 0) > 0)
                             ) {
                                 continue;
@@ -719,10 +719,9 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
     }
 
     // Author filter. `author === 'me'` resolves to the logged-in user (matched
-    // by email against the PR author's git identity). Any other value is a
-    // free-text name search: every whitespace-separated token must appear
-    // somewhere in the author's email/username/name, so "wellington santana"
-    // matches "Wellington Cristi Vilela Santana" (partial, order-independent).
+    // by email against the PR author's git identity). Any other value is an
+    // EXACT author identity picked from the autocomplete — it must equal the PR
+    // author's display name, username, or email (case-insensitive).
     private matchesAuthorFilter(
         author: string,
         pullRequest: IPullRequests,
@@ -732,20 +731,19 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
             username?: string;
             name?: string;
         };
-        const candidates = [prUser.email, prUser.username, prUser.name]
-            .filter(Boolean)
-            .map((value) => String(value).toLowerCase());
 
+        // `me` → match the logged-in user by email (handled here since only the
+        // use-case has the request user). Any other value is the exact author
+        // identity selected from the autocomplete (see authorMatchesExact).
         if (author.toLowerCase() === 'me') {
             const email = this.request.user?.email?.toLowerCase();
-            return Boolean(email) && candidates.includes(email);
+            const candidates = [prUser.email, prUser.username, prUser.name]
+                .filter((v): v is string => Boolean(v))
+                .map((v) => v.toLowerCase());
+            return Boolean(email) && candidates.includes(email as string);
         }
 
-        const tokens = author.toLowerCase().trim().split(/\s+/).filter(Boolean);
-        if (!tokens.length) return true;
-        return tokens.every((token) =>
-            candidates.some((candidate) => candidate.includes(token)),
-        );
+        return authorMatchesExact(prUser, author);
     }
 
     private async getCompiledAuthorPolicyConfig(
@@ -1009,11 +1007,9 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                         bySeverity[severity as keyof typeof bySeverity]++;
                     }
                     // Unresolved = sent but not implemented (missing status =
-                    // unresolved), mirroring the aggregation + the card count.
-                    if (
-                        suggestion.implementationStatus !==
-                        ImplementationStatus.IMPLEMENTED
-                    ) {
+                    // unresolved) — shared predicate, mirroring the aggregation +
+                    // the card count.
+                    if (isUnresolvedDeliveredSuggestion(suggestion)) {
                         unresolved++;
                         if (severity in unresolvedBySeverity) {
                             unresolvedBySeverity[

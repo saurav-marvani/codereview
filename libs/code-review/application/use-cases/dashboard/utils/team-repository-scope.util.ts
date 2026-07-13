@@ -2,6 +2,12 @@ import { IntegrationConfigKey } from '@libs/core/domain/enums/Integration-config
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { IIntegrationConfigService } from '@libs/integrations/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { Repositories } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositories.type';
+import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';
+import {
+    Action,
+    ResourceType,
+} from '@libs/identity/domain/permissions/enums/permissions.enum';
+import { AuthorizationService } from '@libs/identity/infrastructure/adapters/services/permissions/authorization.service';
 
 // Repository ids configured for the selected team (via the REPOSITORIES
 // integration config, which is team-scoped). Returns `undefined` — never an
@@ -66,4 +72,61 @@ export function intersectAssignedAndTeamScope(
     }
 
     return teamRepositoryIds ?? assignedRepositoryIds ?? undefined;
+}
+
+// Single source of truth for "which repositories should this dashboard segment
+// count/list against". Every dashboard use-case (facets, digest, awaiting,
+// authors, …) MUST resolve scope through here so the count and the list can't
+// drift apart — the awaiting list once scoped by RBAC only while its facet
+// count scoped by team, so they disagreed on multi-team orgs. Steps:
+//   1. RBAC repository scope for the caller (null = unrestricted).
+//   2. Team's configured repositories.
+//   3. Intersection (see intersectAssignedAndTeamScope).
+// Returns `null` when the caller should short-circuit to an empty result:
+//   - the caller has access to zero repositories, or
+//   - the team's repos and the caller's scope don't overlap.
+export async function resolveDashboardRepositoryScope(params: {
+    authorizationService: AuthorizationService;
+    integrationConfigService: IIntegrationConfigService;
+    user: UserRequest['user'];
+    organizationAndTeamData: OrganizationAndTeamData;
+    onError?: (error: unknown) => void;
+}): Promise<{ repositoryIds: string[] | undefined } | null> {
+    const {
+        authorizationService,
+        integrationConfigService,
+        user,
+        organizationAndTeamData,
+        onError,
+    } = params;
+
+    const assignedRepositoryIds =
+        await authorizationService.getRepositoryScope({
+            user,
+            action: Action.Read,
+            resource: ResourceType.PullRequests,
+        });
+
+    // Explicit empty (not null) → the caller can read no repositories at all.
+    if (assignedRepositoryIds !== null && assignedRepositoryIds.length === 0) {
+        return null;
+    }
+
+    const teamRepositoryIds = await resolveTeamRepositoryIds(
+        integrationConfigService,
+        organizationAndTeamData,
+        onError,
+    );
+
+    const repositoryIds = intersectAssignedAndTeamScope(
+        assignedRepositoryIds,
+        teamRepositoryIds,
+    );
+
+    // Empty array (not undefined) → team repos and assigned scope don't overlap.
+    if (Array.isArray(repositoryIds) && repositoryIds.length === 0) {
+        return null;
+    }
+
+    return { repositoryIds };
 }

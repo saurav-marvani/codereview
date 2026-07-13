@@ -1,10 +1,6 @@
 import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import {
-    Action,
-    ResourceType,
-} from '@libs/identity/domain/permissions/enums/permissions.enum';
-import {
     IIntegrationConfigService,
     INTEGRATION_CONFIG_SERVICE_TOKEN,
 } from '@libs/integrations/domain/integrationConfigs/contracts/integration-config.service.contracts';
@@ -21,10 +17,7 @@ import {
     IAutomationExecutionService,
 } from '@libs/automation/domain/automationExecution/contracts/automation-execution.service';
 import { AuthorizationService } from '@libs/identity/infrastructure/adapters/services/permissions/authorization.service';
-import {
-    intersectAssignedAndTeamScope,
-    resolveTeamRepositoryIds,
-} from './utils/team-repository-scope.util';
+import { resolveDashboardRepositoryScope } from './utils/team-repository-scope.util';
 
 export interface PullRequestsDailyDigest {
     // ISO start-of-day (UTC) the digest is scoped to.
@@ -71,53 +64,31 @@ export class GetPullRequestsDailyDigestUseCase implements IUseCase {
         const { date, empty } = this.buildScope();
 
         try {
-            const assignedRepositoryIds =
-                await this.authorizationService.getRepositoryScope({
-                    user: this.request.user,
-                    action: Action.Read,
-                    resource: ResourceType.PullRequests,
-                });
-
-            // No repositories in scope → nothing to report.
-            if (
-                assignedRepositoryIds !== null &&
-                assignedRepositoryIds.length === 0
-            ) {
-                return empty;
-            }
-
             const organizationAndTeamData: OrganizationAndTeamData = {
                 organizationId,
                 teamId: query.teamId,
             };
 
-            // Team-scope every count the same way (see the facets use-case):
-            // resolve the team's repositories and intersect with the caller's
-            // assigned scope so reviewed/errored (Postgres) and awaiting (Mongo)
-            // all count the same set of PRs.
-            const teamRepositoryIds = await resolveTeamRepositoryIds(
-                this.integrationConfigService,
+            // Same team/repo scope resolution as the facets, so reviewed/errored
+            // (Postgres) and awaiting (Mongo) all count the same set of PRs.
+            const scope = await resolveDashboardRepositoryScope({
+                authorizationService: this.authorizationService,
+                integrationConfigService: this.integrationConfigService,
+                user: this.request.user,
                 organizationAndTeamData,
-                (error) =>
+                onError: (error) =>
                     this.logger.warn({
                         message:
-                            'Failed to resolve team repository scope for daily digest',
+                            'Failed to resolve repository scope for daily digest',
                         context: GetPullRequestsDailyDigestUseCase.name,
                         error: error as Error,
                         metadata: { organizationId, teamId: query.teamId },
                     }),
-            );
-            const repositoryIds = intersectAssignedAndTeamScope(
-                assignedRepositoryIds,
-                teamRepositoryIds,
-            );
-
-            // Empty (not undefined) → team repos and assigned scope don't
-            // overlap → the caller sees none of this team's PRs. Guard here
-            // because the Mongo helpers treat an empty array as "no filter".
-            if (Array.isArray(repositoryIds) && repositoryIds.length === 0) {
+            });
+            if (!scope) {
                 return empty;
             }
+            const { repositoryIds } = scope;
 
             // 1. Today's distinct reviewed PRs + which of them errored, counted
             //    DB-side (DISTINCT PR + bool_or on error status) scoped to

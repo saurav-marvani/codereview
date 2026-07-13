@@ -1,13 +1,15 @@
 import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import {
-    Action,
-    ResourceType,
-} from '@libs/identity/domain/permissions/enums/permissions.enum';
+    IIntegrationConfigService,
+    INTEGRATION_CONFIG_SERVICE_TOKEN,
+} from '@libs/integrations/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import {
     IPullRequestsService,
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@libs/platformData/domain/pullRequests/contracts/pullRequests.service.contracts';
+import { resolveDashboardRepositoryScope } from './utils/team-repository-scope.util';
+import { isOpenPullRequest } from './utils/pull-request-metrics';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
 import { createLogger } from '@libs/core/log/logger';
 import { Inject, Injectable } from '@nestjs/common';
@@ -43,6 +45,9 @@ export class GetAwaitingPullRequestsUseCase implements IUseCase {
         @Inject(PULL_REQUESTS_SERVICE_TOKEN)
         private readonly pullRequestsService: IPullRequestsService,
 
+        @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
+        private readonly integrationConfigService: IIntegrationConfigService,
+
         @Inject(REQUEST)
         private readonly request: UserRequest,
         private readonly authorizationService: AuthorizationService,
@@ -55,25 +60,33 @@ export class GetAwaitingPullRequestsUseCase implements IUseCase {
         }
 
         try {
-            const assignedRepositoryIds =
-                await this.authorizationService.getRepositoryScope({
-                    user: this.request.user,
-                    action: Action.Read,
-                    resource: ResourceType.PullRequests,
-                });
-
-            if (
-                assignedRepositoryIds !== null &&
-                assignedRepositoryIds.length === 0
-            ) {
-                return [];
-            }
-
-            const repositoryIds = assignedRepositoryIds ?? undefined;
             const organizationAndTeamData: OrganizationAndTeamData = {
                 organizationId,
                 teamId: query.teamId,
             };
+
+            // Team-scoped repository set — the SAME resolution the Awaiting facet
+            // count uses, so the list and the badge can't disagree (this list
+            // previously scoped by RBAC only, drifting from the team-scoped
+            // count on multi-team orgs).
+            const scope = await resolveDashboardRepositoryScope({
+                authorizationService: this.authorizationService,
+                integrationConfigService: this.integrationConfigService,
+                user: this.request.user,
+                organizationAndTeamData,
+                onError: (error) =>
+                    this.logger.warn({
+                        message:
+                            'Failed to resolve repository scope for awaiting list',
+                        context: GetAwaitingPullRequestsUseCase.name,
+                        error: error as Error,
+                        metadata: { organizationId, teamId: query.teamId },
+                    }),
+            });
+            if (!scope) {
+                return [];
+            }
+            const { repositoryIds } = scope;
 
             // Awaiting = PRs Kody was triggered on but skipped and never
             // reviewed (every execution status='skipped'). Same source as the
@@ -107,10 +120,9 @@ export class GetAwaitingPullRequestsUseCase implements IUseCase {
                         pr?.repository?.id &&
                         // Drop skipped PRs that were later merged/closed — a
                         // config-skip on a done PR isn't "awaiting review"
-                        // anymore. Same open predicate the facet count uses, so
-                        // the list and the badge stay in agreement.
-                        pr.merged !== true &&
-                        String(pr.status).toLowerCase() !== 'closed',
+                        // anymore. Shared predicate → same rule as the facet
+                        // count, so the list and the badge stay in agreement.
+                        isOpenPullRequest(pr),
                 )
                 .map((pr) => ({
                     prId: pr.uuid!,
