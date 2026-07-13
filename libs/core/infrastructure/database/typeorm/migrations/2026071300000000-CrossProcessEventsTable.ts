@@ -28,9 +28,23 @@ export class CrossProcessEventsTable2026071300000000
                 "created_at" timestamptz NOT NULL DEFAULT now()
             )
         `);
+        // Backs the bridge's opportunistic TTL sweep
+        //   DELETE FROM kodus_cross_process_events
+        //     WHERE created_at < now() - interval '60 minutes'
+        // Without it that DELETE is a seq scan, which is fine on a healthy
+        // 60-min steady state but catastrophic during any window where the
+        // LISTEN half is down and rows accumulate (millions of rows scanned
+        // on every reconnect).
+        await queryRunner.query(`
+            CREATE INDEX IF NOT EXISTS "IDX_kodus_cross_process_events_created_at"
+                ON "kodus_cross_process_events" ("created_at")
+        `);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(
+            `DROP INDEX IF EXISTS "IDX_kodus_cross_process_events_created_at"`,
+        );
         await queryRunner.query(
             `DROP TABLE IF EXISTS "kodus_cross_process_events"`,
         );
