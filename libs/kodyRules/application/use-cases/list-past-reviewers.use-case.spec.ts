@@ -145,4 +145,41 @@ describe('ListPastReviewersUseCase', () => {
         expect(result).toEqual([{ id: '1', name: 'Alice' }]);
         expect(codeManagementService.getListMembers).not.toHaveBeenCalled();
     });
+
+    it('serves an empty cached list as a hit (no recompute)', async () => {
+        const { useCase, codeManagementService } = build({ cached: [] });
+
+        const result = await useCase.execute({ teamId: 'team-1' });
+
+        expect(result).toEqual([]);
+        expect(codeManagementService.getListMembers).not.toHaveBeenCalled();
+    });
+
+    it('caches an empty result so an empty team is not recomputed', async () => {
+        const { useCase, cacheService } = build({ members: [], repos: [] });
+
+        const result = await useCase.execute({ teamId: 'team-1' });
+
+        expect(result).toEqual([]);
+        expect(cacheService.addToCache).toHaveBeenCalledWith(
+            expect.any(String),
+            [],
+            expect.any(Number),
+        );
+    });
+
+    it('does not cache when a provider call errors (avoids caching a failure)', async () => {
+        const { useCase, cacheService, codeManagementService } = build({
+            repos: [{ id: 'r1', name: 'repo-1' }],
+            prsByRepo: { r1: [author(3, 'Carol')] },
+        });
+        codeManagementService.getListMembers.mockRejectedValue(
+            new Error('members down'),
+        );
+
+        const result = await useCase.execute({ teamId: 'team-1' });
+
+        expect(result).toEqual([{ id: '3', name: 'Carol' }]);
+        expect(cacheService.addToCache).not.toHaveBeenCalled();
+    });
 });

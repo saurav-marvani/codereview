@@ -54,7 +54,9 @@ export class ListPastReviewersUseCase {
         try {
             const cached =
                 await this.cacheService.getFromCache<PastReviewer[]>(cacheKey);
-            if (cached?.length > 0) {
+            // An empty array is a valid, cacheable result (a team with no
+            // eligible reviewers) — serve it rather than recomputing.
+            if (cached != null) {
                 return cached;
             }
         } catch {
@@ -62,6 +64,10 @@ export class ListPastReviewersUseCase {
         }
 
         const byId = new Map<string, PastReviewer>();
+        // Tracks whether any provider call failed, so we don't cache an empty
+        // list that's the result of a transient error (which would then be
+        // served for the whole TTL) — only genuine results are cached.
+        let hadError = false;
 
         // Current git members (cheap, cached upstream). Misses departed devs —
         // the PR-author pass below backfills those.
@@ -73,6 +79,7 @@ export class ListPastReviewersUseCase {
                 this.addReviewer(byId, member?.id, member?.name);
             }
         } catch (error) {
+            hadError = true;
             this.logger.warn({
                 message: 'Failed to list current git members for reviewer list',
                 context: ListPastReviewersUseCase.name,
@@ -117,6 +124,7 @@ export class ListPastReviewersUseCase {
                 }
             }
         } catch (error) {
+            hadError = true;
             this.logger.warn({
                 message: 'Failed to collect PR authors for reviewer list',
                 context: ListPastReviewersUseCase.name,
@@ -130,7 +138,10 @@ export class ListPastReviewersUseCase {
             a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
         );
 
-        if (reviewers.length > 0) {
+        // Cache genuine results (including an empty list) so empty teams don't
+        // re-fan-out every request; skip caching if a provider call errored, to
+        // avoid serving a failure-induced empty list for the whole TTL.
+        if (!hadError) {
             this.cacheService
                 .addToCache(
                     cacheKey,

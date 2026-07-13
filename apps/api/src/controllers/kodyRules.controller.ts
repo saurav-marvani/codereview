@@ -584,10 +584,18 @@ export class KodyRulesController {
         @Query('repositoryId') repositoryId?: string,
         @Query('months') months?: string,
     ) {
+        // Bound the window: reject NaN/negative/huge values (which would build
+        // an invalid or unbounded date filter) and clamp to 1–12 months.
+        // Undefined falls back to the use-case default (3).
+        const parsedMonths = months !== undefined ? Number(months) : NaN;
+        const boundedMonths = Number.isFinite(parsedMonths)
+            ? Math.min(Math.max(Math.trunc(parsedMonths), 1), 12)
+            : undefined;
+
         return this.listPastReviewersUseCase.execute({
             teamId,
             repositoryId,
-            months: months ? Number(months) : undefined,
+            months: boundedMonths,
         });
     }
 

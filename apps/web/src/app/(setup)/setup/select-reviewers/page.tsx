@@ -182,7 +182,7 @@ export default function SelectReviewersPage() {
                                         {reviewers.map((reviewer) => (
                                             <CommandItem
                                                 key={reviewer.id}
-                                                value={reviewer.name}
+                                                value={`${reviewer.id}:${reviewer.name}`}
                                                 onSelect={() =>
                                                     toggle(reviewer.id)
                                                 }>

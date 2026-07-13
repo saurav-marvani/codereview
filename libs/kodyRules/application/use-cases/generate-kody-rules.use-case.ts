@@ -323,6 +323,7 @@ export class GenerateKodyRulesUseCase {
                         message: `Excluding ${excludedForRepo.size} reviewer(s) from Kody Rules learning`,
                         context: GenerateKodyRulesUseCase.name,
                         metadata: {
+                            organizationAndTeamData,
                             repositoryId: repository.id,
                             excludedCount: excludedForRepo.size,
                         },

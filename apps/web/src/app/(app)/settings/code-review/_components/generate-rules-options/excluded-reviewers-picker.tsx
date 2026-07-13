@@ -156,7 +156,7 @@ export const ExcludedReviewersPicker = ({
                                 {options.map((reviewer) => (
                                     <CommandItem
                                         key={reviewer.id}
-                                        value={reviewer.name}
+                                        value={`${reviewer.id}:${reviewer.name}`}
                                         disabled={!canEdit || isSaving}
                                         onSelect={() => toggle(reviewer.id)}>
                                         {reviewer.name}
