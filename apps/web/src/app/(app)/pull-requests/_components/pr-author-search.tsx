@@ -93,7 +93,14 @@ export function PrAuthorSearch({
                     blurTimer.current = setTimeout(() => setOpen(false), 120);
                 }}
                 onKeyDown={(event) => {
-                    if (!open || filtered.length === 0) return;
+                    if (!open) return;
+                    // Escape must close the dropdown even when it shows no
+                    // matches — so handle it before the empty-list guard.
+                    if (event.key === "Escape") {
+                        setOpen(false);
+                        return;
+                    }
+                    if (filtered.length === 0) return;
                     if (event.key === "ArrowDown") {
                         event.preventDefault();
                         setHighlight((h) =>
@@ -106,8 +113,6 @@ export function PrAuthorSearch({
                         event.preventDefault();
                         const author = filtered[highlight];
                         if (author) pick(author);
-                    } else if (event.key === "Escape") {
-                        setOpen(false);
                     }
                 }}
             />
