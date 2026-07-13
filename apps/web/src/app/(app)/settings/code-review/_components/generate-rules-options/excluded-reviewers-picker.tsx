@@ -16,9 +16,9 @@ import {
     CommandEmpty,
     CommandGroup,
     CommandInput,
+    CommandItem,
     CommandList,
 } from "src/core/components/ui/command";
-import { CommandItem } from "src/core/components/ui/command";
 import {
     Popover,
     PopoverContent,
@@ -93,7 +93,8 @@ export const ExcludedReviewersPicker = ({
         } catch {
             toast({
                 title: "Error",
-                description: "Couldn't update the reviewer list. Please try again.",
+                description:
+                    "Couldn't update the reviewer list. Please try again.",
                 variant: "danger",
             });
         }
@@ -117,8 +118,8 @@ export const ExcludedReviewersPicker = ({
     return (
         <div className="mt-1 mb-2 ml-2 flex flex-col gap-1">
             <span className="text-text-secondary text-xs">
-                Exclude specific developers so Kody doesn&apos;t learn rules from
-                their review comments.
+                Exclude specific developers so Kody doesn&apos;t learn rules
+                from their review comments.
             </span>
 
             <Popover
@@ -140,11 +141,12 @@ export const ExcludedReviewersPicker = ({
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent
-                    className="w-[var(--radix-popover-trigger-width)] p-0"
+                    className="flex w-[var(--radix-popover-trigger-width)] flex-col overflow-hidden p-0"
                     align="start">
-                    <Command>
+                    <Command className="flex max-h-[400px] flex-col">
                         <CommandInput placeholder="Search reviewers..." />
-                        <CommandList>
+
+                        <CommandList className="max-h-[250px] overflow-y-auto">
                             <CommandEmpty>
                                 {isLoading
                                     ? "Loading reviewers…"
@@ -170,26 +172,27 @@ export const ExcludedReviewersPicker = ({
                                 ))}
                             </CommandGroup>
                         </CommandList>
-                        <div className="flex items-center gap-2 border-t p-2">
-                            <Button
-                                className="flex-1"
-                                size="sm"
-                                variant="cancel"
-                                onClick={() => setOpen(false)}
-                                disabled={isSaving}>
-                                Cancel
-                            </Button>
-                            <Button
-                                className="flex-1"
-                                size="sm"
-                                variant="primary"
-                                onClick={handleSave}
-                                loading={isSaving}
-                                disabled={!canEdit}>
-                                Apply
-                            </Button>
-                        </div>
                     </Command>
+
+                    <div className="flex shrink-0 items-center gap-2 border-t p-2">
+                        <Button
+                            className="flex-1"
+                            size="sm"
+                            variant="cancel"
+                            onClick={() => setOpen(false)}
+                            disabled={isSaving}>
+                            Cancel
+                        </Button>
+                        <Button
+                            className="flex-1"
+                            size="sm"
+                            variant="primary"
+                            onClick={handleSave}
+                            loading={isSaving}
+                            disabled={!canEdit}>
+                            Apply
+                        </Button>
+                    </div>
                 </PopoverContent>
             </Popover>
         </div>

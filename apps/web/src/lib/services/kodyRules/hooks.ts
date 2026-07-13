@@ -71,10 +71,12 @@ export const useGetPastReviewers = (
     params: { teamId: string; repositoryId?: string; months?: number },
     options?: { enabled?: boolean },
 ) => {
-    return useFetch<PastReviewer[]>(KODY_RULES_PATHS.PAST_REVIEWERS, {
-        params,
-        ...options,
-    });
+    return useFetch<PastReviewer[]>(
+        KODY_RULES_PATHS.PAST_REVIEWERS,
+        { params },
+        // 3rd arg is the enabled condition — undefined = enabled (eager).
+        options?.enabled,
+    );
 };
 
 export const useSuspenseGetInheritedKodyRules = (params: {

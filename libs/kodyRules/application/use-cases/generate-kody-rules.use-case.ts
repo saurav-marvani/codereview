@@ -318,6 +318,17 @@ export class GenerateKodyRulesUseCase {
                     repository.id,
                 );
 
+                if (excludedForRepo && excludedForRepo.size > 0) {
+                    this.logger.log({
+                        message: `Excluding ${excludedForRepo.size} reviewer(s) from Kody Rules learning`,
+                        context: GenerateKodyRulesUseCase.name,
+                        metadata: {
+                            repositoryId: repository.id,
+                            excludedCount: excludedForRepo.size,
+                        },
+                    });
+                }
+
                 const processedComments =
                     this.commentAnalysisService.processComments(
                         comments,
