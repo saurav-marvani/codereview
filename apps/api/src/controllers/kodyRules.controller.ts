@@ -4,6 +4,7 @@ import { ApplyPendingKodyRulesUseCase } from '@libs/kodyRules/application/use-ca
 import { GetPendingKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/get-pending-kody-rules.use-case';
 import { ChangeStatusKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/change-status-kody-rules.use-case';
 import { CheckSyncStatusUseCase } from '@libs/kodyRules/application/use-cases/check-sync-status.use-case';
+import { ListPastReviewersUseCase } from '@libs/kodyRules/application/use-cases/list-past-reviewers.use-case';
 import { ConvertPendingUpdatesToNewUseCase } from '@libs/kodyRules/application/use-cases/convert-pending-updates-to-new.use-case';
 import { CreateOrUpdateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/create-or-update.use-case';
 import { DeleteRuleInOrganizationByIdKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/delete-rule-in-organization-by-id.use-case';
@@ -113,6 +114,7 @@ export class KodyRulesController {
         private readonly getPendingKodyRulesUseCase: GetPendingKodyRulesUseCase,
         private readonly changeStatusKodyRulesUseCase: ChangeStatusKodyRulesUseCase,
         private readonly checkSyncStatusUseCase: CheckSyncStatusUseCase,
+        private readonly listPastReviewersUseCase: ListPastReviewersUseCase,
         private readonly cacheService: CacheService,
         private readonly syncSelectedReposKodyRulesUseCase: SyncSelectedRepositoriesKodyRulesUseCase,
         private readonly getInheritedRulesKodyRulesUseCase: GetInheritedRulesKodyRulesUseCase,
@@ -558,6 +560,35 @@ export class KodyRulesController {
         await this.cacheService.addToCache(cacheKey, result, 900000); // 15 minutos em milissegundos
 
         return result;
+    }
+
+    @ApiBearerAuth('jwt')
+    @Get('/past-reviewers')
+    @UseGuards(PolicyGuard, KodyRulesTenantGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.KodyRules,
+        }),
+    )
+    @ApiOperation({
+        summary: 'List past reviewers',
+        description:
+            'Candidate git reviewers (current members ∪ PR authors in the window) a client can exclude from Kody Rules learning.',
+    })
+    @ApiQuery({ name: 'teamId', type: String, required: true })
+    @ApiQuery({ name: 'repositoryId', type: String, required: false })
+    @ApiQuery({ name: 'months', type: Number, required: false })
+    public async listPastReviewers(
+        @Query('teamId') teamId: string,
+        @Query('repositoryId') repositoryId?: string,
+        @Query('months') months?: string,
+    ) {
+        return this.listPastReviewersUseCase.execute({
+            teamId,
+            repositoryId,
+            months: months ? Number(months) : undefined,
+        });
     }
 
     @ApiBearerAuth('jwt')

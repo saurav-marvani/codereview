@@ -1,0 +1,193 @@
+import { createLogger } from '@libs/core/log/logger';
+import { Inject, Injectable } from '@nestjs/common';
+import { REQUEST } from '@nestjs/core';
+import { Request } from 'express';
+
+import { CacheService } from '@libs/core/cache/cache.service';
+import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
+import { generateDateFilter } from '@libs/common/utils/transforms/date';
+import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
+
+export type PastReviewer = { id: string; name: string };
+
+/**
+ * Candidate reviewers a client can pick from when choosing whose past review
+ * comments Kody should exclude from learning (issue #1497).
+ *
+ * Source = current git members ∪ authors of PRs opened in the window. The PR
+ * authors are what makes departed-but-recently-active devs selectable (a dev
+ * let go last week still authored PRs in the last 3 months), and it comes from
+ * listing PRs — a paginated call bounded by the window — rather than the far
+ * more expensive per-PR review-comment walk. Runs at onboarding (cold, no
+ * cached PR data yet — the git integration is already connected) and in
+ * settings; results are cached.
+ */
+@Injectable()
+export class ListPastReviewersUseCase {
+    private readonly logger = createLogger(ListPastReviewersUseCase.name);
+    private static readonly CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+    // Bound the git fan-out when no single repo is targeted (onboarding).
+    private static readonly MAX_REPOS = 20;
+
+    constructor(
+        private readonly codeManagementService: CodeManagementService,
+        private readonly cacheService: CacheService,
+        @Inject(REQUEST)
+        private readonly request: Request & {
+            user: { organization: { uuid: string } };
+        },
+    ) {}
+
+    async execute(params: {
+        teamId: string;
+        repositoryId?: string;
+        months?: number;
+    }): Promise<PastReviewer[]> {
+        const { teamId, repositoryId, months = 3 } = params;
+        const organizationAndTeamData: OrganizationAndTeamData = {
+            organizationId: this.request.user.organization.uuid,
+            teamId,
+        };
+
+        const cacheKey = `past_reviewers_${organizationAndTeamData.organizationId}_${teamId}_${repositoryId ?? 'all'}_${months}`;
+
+        try {
+            const cached =
+                await this.cacheService.getFromCache<PastReviewer[]>(cacheKey);
+            if (cached?.length > 0) {
+                return cached;
+            }
+        } catch {
+            // cache miss/error — recompute
+        }
+
+        const byId = new Map<string, PastReviewer>();
+
+        // Current git members (cheap, cached upstream). Misses departed devs —
+        // the PR-author pass below backfills those.
+        try {
+            const members = await this.codeManagementService.getListMembers({
+                organizationAndTeamData,
+            });
+            for (const member of members ?? []) {
+                this.addReviewer(byId, member?.id, member?.name);
+            }
+        } catch (error) {
+            this.logger.warn({
+                message: 'Failed to list current git members for reviewer list',
+                context: ListPastReviewersUseCase.name,
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
+                metadata: { organizationAndTeamData, repositoryId },
+            });
+        }
+
+        // Authors of PRs opened within the window — includes recently-departed
+        // devs. Fan out across the target repos, tolerating per-repo failures.
+        try {
+            const repositories = await this.resolveRepositories(
+                organizationAndTeamData,
+                repositoryId,
+            );
+            const dateFilter = generateDateFilter({ months });
+
+            const results = await Promise.allSettled(
+                repositories.map((repository) =>
+                    this.codeManagementService.getPullRequestsByRepository({
+                        organizationAndTeamData,
+                        repository,
+                        filters: {
+                            startDate: dateFilter.startDate,
+                            endDate: dateFilter.endDate,
+                        },
+                    }),
+                ),
+            );
+
+            for (const result of results) {
+                if (result.status !== 'fulfilled' || !Array.isArray(result.value)) {
+                    continue;
+                }
+                for (const pr of result.value) {
+                    this.addReviewer(
+                        byId,
+                        pr?.user?.id,
+                        pr?.user?.name || pr?.user?.login,
+                    );
+                }
+            }
+        } catch (error) {
+            this.logger.warn({
+                message: 'Failed to collect PR authors for reviewer list',
+                context: ListPastReviewersUseCase.name,
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
+                metadata: { organizationAndTeamData, repositoryId },
+            });
+        }
+
+        const reviewers = Array.from(byId.values()).sort((a, b) =>
+            a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+        );
+
+        if (reviewers.length > 0) {
+            this.cacheService
+                .addToCache(
+                    cacheKey,
+                    reviewers,
+                    ListPastReviewersUseCase.CACHE_TTL,
+                )
+                .catch(() => {});
+        }
+
+        return reviewers;
+    }
+
+    private addReviewer(
+        map: Map<string, PastReviewer>,
+        rawId: string | number | undefined | null,
+        name?: string,
+    ): void {
+        if (rawId === undefined || rawId === null || rawId === '') {
+            return;
+        }
+        const id = String(rawId);
+        if (!map.has(id)) {
+            map.set(id, { id, name: name?.trim() || id });
+        }
+    }
+
+    private async resolveRepositories(
+        organizationAndTeamData: OrganizationAndTeamData,
+        repositoryId?: string,
+    ): Promise<{ id: string; name: string }[]> {
+        const all = await this.codeManagementService.getRepositories({
+            organizationAndTeamData,
+        });
+
+        const normalized = (all ?? [])
+            .map((repo: { id: string | number; name?: string }) => ({
+                id: String(repo.id),
+                name: repo.name ?? '',
+            }))
+            .filter((repo) => !!repo.name);
+
+        if (repositoryId) {
+            const target = normalized.find(
+                (repo) => repo.id === String(repositoryId),
+            );
+            return target ? [target] : [];
+        }
+
+        if (normalized.length > ListPastReviewersUseCase.MAX_REPOS) {
+            this.logger.warn({
+                message: `Repository count (${normalized.length}) exceeds ${ListPastReviewersUseCase.MAX_REPOS}; sampling for the reviewer list`,
+                context: ListPastReviewersUseCase.name,
+                metadata: { organizationAndTeamData },
+            });
+            return normalized.slice(0, ListPastReviewersUseCase.MAX_REPOS);
+        }
+
+        return normalized;
+    }
+}

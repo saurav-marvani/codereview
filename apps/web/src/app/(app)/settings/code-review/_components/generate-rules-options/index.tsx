@@ -35,6 +35,7 @@ import {
     type DisableIdeSyncAction,
 } from "./disable-ide-sync-modal";
 import { SyncFromIDEFilesFirstTimeModal } from "./sync-from-ide-files-modal";
+import { ExcludedReviewersPicker } from "./excluded-reviewers-picker";
 
 export const GenerateRulesOptions = () => {
     const cfg = useConfig();
@@ -340,6 +341,17 @@ export const GenerateRulesOptions = () => {
                     </CardHeader>
                 </Card>
             </Button>
+
+            {config?.kodyRulesGeneratorEnabled?.value && (
+                <ExcludedReviewersPicker
+                    teamId={teamId}
+                    repositoryId={repositoryId}
+                    initialExcluded={
+                        config?.kodyLearningExcludedReviewers?.value ?? []
+                    }
+                    canEdit={canEdit}
+                />
+            )}
         </div>
     );
 };

@@ -46,6 +46,7 @@ summary:
 # kody rules
 ideRulesSyncEnabled: false
 kodyRulesGeneratorEnabled: true
+kodyLearningExcludedReviewers: []
 kodyKnowledgeApproval:
     enabled: false
 

@@ -38,6 +38,9 @@ const REQUIRED_WHITELIST_KEYS = [
     // the toggle-off action never reaches the backend.
     "ideSyncDisableAction",
     "kodyRulesGeneratorEnabled",
+    // Denylist of git reviewers to exclude from past-review learning. Must be
+    // whitelisted or the picker's selection never reaches the backend.
+    "kodyLearningExcludedReviewers",
     "kodyKnowledgeApproval",
 ] as const;
 

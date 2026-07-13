@@ -360,3 +360,19 @@ export const manageImportedKodyRules = async (params: {
     }>(KODY_RULES_PATHS.MANAGE_IMPORTED_KODY_RULES, params);
     return response;
 };
+
+export type PastReviewer = { id: string; name: string };
+
+// Candidate git reviewers a client can exclude from Kody Rules learning
+// (issue #1497): current members ∪ authors of PRs in the window.
+export const getPastReviewers = async (params: {
+    teamId: string;
+    repositoryId?: string;
+    months?: number;
+}): Promise<PastReviewer[]> => {
+    const result = await authorizedFetch<PastReviewer[]>(
+        KODY_RULES_PATHS.PAST_REVIEWERS,
+        { params },
+    );
+    return result ?? [];
+};

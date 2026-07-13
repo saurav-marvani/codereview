@@ -23,6 +23,8 @@ import {
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import { resolveKodyRulesModelPolicy } from '@libs/kodyRules/application/services/kody-rules-model-policy';
 import { generateDateFilter } from '@libs/common/utils/transforms/date';
+import { deepMerge } from '@libs/common/utils/deep';
+import { getDefaultKodusConfigFile } from '@libs/common/utils/validateCodeReviewConfigFile';
 import { IntegrationConfigKey, ParametersKey } from '@libs/core/domain/enums';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import {
@@ -243,6 +245,13 @@ export class GenerateKodyRulesUseCase {
             // a misleading "200, 0 rules".
             const failedRepositories: string[] = [];
 
+            // Per-repo denylist of git reviewers to exclude from learning
+            // (issue #1497), resolved once from the code-review config.
+            const excludedReviewers =
+                await this.resolveExcludedReviewersByRepo(
+                    organizationAndTeamData,
+                );
+
             for (const repository of filteredRepositories) {
                 const pullRequests =
                     await this.codeManagementService.getPullRequestsByRepository(
@@ -305,8 +314,15 @@ export class GenerateKodyRulesUseCase {
                     continue;
                 }
 
+                const excludedForRepo = excludedReviewers.forRepo(
+                    repository.id,
+                );
+
                 const processedComments =
-                    this.commentAnalysisService.processComments(comments);
+                    this.commentAnalysisService.processComments(
+                        comments,
+                        excludedForRepo,
+                    );
 
                 if (!processedComments || processedComments.length === 0) {
                     continue;
@@ -672,6 +688,75 @@ export class GenerateKodyRulesUseCase {
         });
 
         return [];
+    }
+
+    /**
+     * Resolve, once per run, each repo's denylist of git reviewers to exclude
+     * from past-review learning (issue #1497). Reads the code-review config and
+     * merges global ⊕ repo levels (repo overrides global, matching every other
+     * config field). Returns a `forRepo(id)` lookup that yields a `Set` of
+     * excluded ids, or `undefined` when the repo excludes no one (so
+     * `processComments` skips the filter entirely).
+     */
+    private async resolveExcludedReviewersByRepo(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<{ forRepo: (repositoryId: string) => Set<string> | undefined }> {
+        const toSet = (ids?: string[]): Set<string> | undefined => {
+            if (!ids || ids.length === 0) {
+                return undefined;
+            }
+            return new Set(ids.map((id) => String(id)));
+        };
+
+        try {
+            const codeReviewConfig = await this.parametersService.findByKey(
+                ParametersKey.CODE_REVIEW_CONFIG,
+                organizationAndTeamData,
+            );
+
+            const resolvedGlobal = deepMerge(
+                getDefaultKodusConfigFile(),
+                codeReviewConfig?.configValue?.configs ?? {},
+            );
+            const globalExcluded = (resolvedGlobal as any)
+                ?.kodyLearningExcludedReviewers as string[] | undefined;
+
+            const byRepo = new Map<string, string[] | undefined>();
+            for (const repo of codeReviewConfig?.configValue?.repositories ??
+                []) {
+                const resolvedRepo = deepMerge(
+                    resolvedGlobal,
+                    repo.configs ?? {},
+                );
+                byRepo.set(
+                    repo.id,
+                    (resolvedRepo as any)?.kodyLearningExcludedReviewers as
+                        | string[]
+                        | undefined,
+                );
+            }
+
+            return {
+                forRepo: (repositoryId: string) =>
+                    toSet(
+                        byRepo.has(repositoryId)
+                            ? byRepo.get(repositoryId)
+                            : globalExcluded,
+                    ),
+            };
+        } catch (error) {
+            // Never let reviewer resolution break generation — fall back to
+            // learning from everyone.
+            this.logger.warn({
+                message:
+                    'Failed to resolve excluded reviewers; learning from all reviewers',
+                context: GenerateKodyRulesUseCase.name,
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
+                metadata: { organizationAndTeamData },
+            });
+            return { forRepo: () => undefined };
+        }
     }
 
     private async getRepositories(

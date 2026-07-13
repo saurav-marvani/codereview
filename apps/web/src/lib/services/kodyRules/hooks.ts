@@ -65,6 +65,18 @@ export const useSuspenseKodyRulesCheckSyncStatus = (params: {
     }>(KODY_RULES_PATHS.CHECK_SYNC_STATUS, { params });
 };
 
+export type PastReviewer = { id: string; name: string };
+
+export const useGetPastReviewers = (
+    params: { teamId: string; repositoryId?: string; months?: number },
+    options?: { enabled?: boolean },
+) => {
+    return useFetch<PastReviewer[]>(KODY_RULES_PATHS.PAST_REVIEWERS, {
+        params,
+        ...options,
+    });
+};
+
 export const useSuspenseGetInheritedKodyRules = (params: {
     teamId: string;
     repositoryId: string;
