@@ -56,7 +56,14 @@ export class GetPullRequestsFacetsUseCase implements IUseCase {
         private readonly authorizationService: AuthorizationService,
     ) {}
 
-    async execute(query: { teamId?: string }): Promise<PullRequestsFacets> {
+    async execute(query: {
+        teamId?: string;
+        // 'mine' narrows the actionable facet (needsAttention) to the caller's
+        // own PRs — powers the dev "Minha fila" view, whose cards must count only
+        // my work. 'team' (default) counts the whole team scope. `all`/`errored`/
+        // `awaiting` stay team-wide (they aren't shown in the mine view).
+        scope?: 'mine' | 'team';
+    }): Promise<PullRequestsFacets> {
         const empty: PullRequestsFacets = {
             all: 0,
             needsAttention: 0,
@@ -99,6 +106,12 @@ export class GetPullRequestsFacetsUseCase implements IUseCase {
             const { repositoryIds } = scope;
 
             const email = this.request.user?.email;
+            // In the "mine" scope the actionable card counts only my open PRs
+            // with an unaddressed suggestion — same predicate, plus the author.
+            // countDeliveredPullRequests ANDs authorEmail with the other flags,
+            // so this reuses the existing query (no new scan).
+            const needsAttentionAuthor =
+                query.scope === 'mine' ? email : undefined;
 
             const [reviewedKeys, needsAttention, mine, awaitingKeys] =
                 await Promise.all([
@@ -109,11 +122,15 @@ export class GetPullRequestsFacetsUseCase implements IUseCase {
                     // delivered suggestion (any severity, implementationStatus ≠
                     // implemented). Actionable "someone needs to look at this",
                     // not "ever delivered a crit/high" (which counted merged/
-                    // resolved PRs too).
+                    // resolved PRs too). Scoped to the caller in the "mine" view.
                     this.pullRequestsService.countDeliveredPullRequests(
                         organizationId,
                         repositoryIds,
-                        { unresolvedOnly: true, openOnly: true },
+                        {
+                            unresolvedOnly: true,
+                            openOnly: true,
+                            authorEmail: needsAttentionAuthor,
+                        },
                     ),
                     email
                         ? this.pullRequestsService.countDeliveredPullRequests(

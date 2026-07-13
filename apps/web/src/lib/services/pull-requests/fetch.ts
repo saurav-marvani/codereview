@@ -89,9 +89,12 @@ export const PULL_REQUEST_API = {
             `/pull-requests/executions/summary${queryString ? `?${queryString}` : ""}`,
         );
     },
-    GET_FACETS: (teamId?: string) => {
+    GET_FACETS: (teamId?: string, scope?: "mine" | "team") => {
         const params = new URLSearchParams();
         if (teamId) params.append("teamId", teamId);
+        // Only send the non-default scope so the "team" facet keeps a stable
+        // cache key / URL.
+        if (scope === "mine") params.append("scope", "mine");
         const queryString = params.toString();
         return pathToApiUrl(
             `/pull-requests/executions/facets${queryString ? `?${queryString}` : ""}`,

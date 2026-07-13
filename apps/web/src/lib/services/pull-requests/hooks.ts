@@ -209,12 +209,15 @@ export const usePullRequestsDailyDigest = (teamId?: string) => {
     });
 };
 
-export const usePullRequestsFacets = (teamId?: string) => {
+export const usePullRequestsFacets = (
+    teamId?: string,
+    scope?: "mine" | "team",
+) => {
     return useQuery({
-        queryKey: ["pull-requests-facets", teamId],
+        queryKey: ["pull-requests-facets", teamId, scope ?? "team"],
         queryFn: () =>
             axiosAuthorized.fetcher<PullRequestsFacetsResponse>(
-                PULL_REQUEST_API.GET_FACETS(teamId),
+                PULL_REQUEST_API.GET_FACETS(teamId, scope),
             ),
         enabled: !!teamId,
         retry: false,

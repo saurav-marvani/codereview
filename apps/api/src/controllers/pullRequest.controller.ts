@@ -195,8 +195,14 @@ export class PullRequestController implements OnApplicationShutdown {
     })
     public async getPullRequestsFacets(
         @Query('teamId') teamId?: string,
+        // 'mine' narrows the actionable facet to the caller's own PRs (the dev
+        // "Minha fila" view); default 'team' counts the whole team scope.
+        @Query('scope') scope?: 'mine' | 'team',
     ): Promise<PullRequestsFacets> {
-        return await this.getPullRequestsFacetsUseCase.execute({ teamId });
+        return await this.getPullRequestsFacetsUseCase.execute({
+            teamId,
+            scope: scope === 'mine' ? 'mine' : 'team',
+        });
     }
 
     @Get('/awaiting')

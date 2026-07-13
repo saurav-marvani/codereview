@@ -601,22 +601,24 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                     </Tooltip>
                 </NextLink>
 
-                {/* Status column — the review-run status, plus "Heavy" (the
-                    review ran in heavy mode) and a separate "Merged" chip when
-                    the PR is merged, so merge-state no longer masks whether the
-                    review itself succeeded/errored. */}
+                {/* Status column — "Merged" is a terminal state: a merged PR
+                    reads as "Merged", full stop (no review-status chip stacked
+                    next to it). Only when the PR is NOT merged do we surface the
+                    review-run status (success/error/skipped/…). "Heavy" (review
+                    ran in heavy mode) shows in either case. */}
                 <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    {getStatusBadge(
-                        latest.automationExecution?.status || "pending",
+                    {latest.merged ? (
+                        <Badge variant="primary" className="whitespace-nowrap">
+                            Merged
+                        </Badge>
+                    ) : (
+                        getStatusBadge(
+                            latest.automationExecution?.status || "pending",
+                        )
                     )}
                     {latest.heavy && (
                         <Badge variant="helper" title="Reviewed in heavy mode">
                             Heavy
-                        </Badge>
-                    )}
-                    {latest.merged && (
-                        <Badge variant="primary" className="whitespace-nowrap">
-                            Merged
                         </Badge>
                     )}
                 </div>

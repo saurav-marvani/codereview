@@ -20,12 +20,15 @@ import {
 } from "@services/pull-requests";
 import { SearchIcon, UserIcon, XIcon } from "lucide-react";
 import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
+import { UserRole } from "@enums";
+import { useAuth } from "src/core/providers/auth.provider";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { cn } from "src/core/utils/components";
 
 import { AwaitingList } from "./pr-awaiting-list";
 import { PrAuthorSearch } from "./pr-author-search";
 import { PrDataTable } from "./pr-data-table";
+import { PrViewSwitcher, type PullRequestsScope } from "./pr-view-switcher";
 import { PullRequestsFilters } from "./pull-requests-filters";
 
 // Filters live in the URL (nuqs) so a filtered view is shareable / deep-linkable
@@ -109,12 +112,55 @@ export function PullRequestsPageClient() {
         parseAsStringLiteral(["awaiting"] as const).withOptions(urlOpts),
     );
 
+    // View scope. The org session only knows owner-vs-contributor (not
+    // leader-vs-member), so the role just seeds a sensible default: a plain
+    // contributor lands on their own worklist ("Minha fila"), everyone who
+    // manages (owner/admin/billing) lands on the team dashboard ("Meu time").
+    // The switcher (URL param) then wins — an explicit choice beats the guess.
+    const { role } = useAuth();
+    const defaultScope: PullRequestsScope =
+        role === UserRole.CONTRIBUTOR ? "mine" : "team";
+    const [scopeParam, setScopeParam] = useQueryState(
+        "scope",
+        parseAsStringLiteral(["mine", "team"] as const).withOptions(urlOpts),
+    );
+    const scope: PullRequestsScope = scopeParam ?? defaultScope;
+    const isMineView = scope === "mine";
+    const changeScope = (next: PullRequestsScope) => {
+        // Awaiting is a team/config backlog with no author scoping, so it has no
+        // place in "Minha fila" — leaving it on would show team data under a
+        // "mine" heading. Drop it (and the needs-attention toggle) on switch.
+        setView(null);
+        setNeedsAttention(null);
+        // Author scope is meaningless in "mine" (author is pinned to me); drop
+        // a leftover author search so its input doesn't linger dead.
+        if (next === "mine" && searchMode === "author") {
+            setSearchMode("title");
+            setSearchQuery("");
+            setAuthorFilter(null);
+        }
+        setScopeParam(next === defaultScope ? null : next);
+    };
+
     const searchRef = useRef<HTMLInputElement>(null);
 
     const debouncedQuery = useDebounce(searchQuery, 400);
     // Author name search is debounced too — the URL updates per keystroke but
     // the (loop-filtered) request only fires once typing settles.
     const debouncedAuthor = useDebounce(authorFilter ?? "", 400);
+    // "Minha fila" pins the list to my own PRs. `me` is a backend sentinel the
+    // enriched use-case resolves to the logged-in user's git identity, so it
+    // overrides any free-text author search while this view is active.
+    const effectiveAuthor = isMineView
+        ? "me"
+        : debouncedAuthor.trim() || undefined;
+    // "Minha fila" pins the author to me, so the author search scope makes no
+    // sense there — offer only Title/Number, and if the URL still says
+    // by=author, fall back to the plain search input.
+    const searchModes = isMineView
+        ? (["title", "number"] as const)
+        : (["title", "number", "author"] as const);
+    const showAuthorSearch = searchMode === "author" && !isMineView;
 
     // The scope toggle decides where the query is applied.
     const trimmedQuery = debouncedQuery.trim();
@@ -146,7 +192,7 @@ export function PullRequestsPageClient() {
             authorPolicy,
             status: statusFilter ?? undefined,
             needsAttention: needsAttention === "true" ? true : undefined,
-            author: debouncedAuthor.trim() || undefined,
+            author: effectiveAuthor,
             createdAtFrom: createdAtFrom ?? undefined,
             // Make the "to" bound inclusive of the whole selected day.
             createdAtTo: createdAtTo
@@ -213,7 +259,9 @@ export function PullRequestsPageClient() {
     // a toggle in the filter bar rather than a filter value. Its count comes
     // from the facets endpoint.
     const isAwaiting = view === "awaiting";
-    const { data: facets } = usePullRequestsFacets(teamId);
+    // Facets follow the view: in "mine" the actionable count is scoped to my PRs
+    // so the card can't overcount team work under a "mine" heading.
+    const { data: facets } = usePullRequestsFacets(teamId, scope);
     // Daily "pulse of the review process" — how it's going today, not the state
     // of any single PR. Drives the summary strip below the header.
     const { data: digest } = usePullRequestsDailyDigest(teamId);
@@ -243,13 +291,16 @@ export function PullRequestsPageClient() {
                 setSearchQuery("");
             },
         },
-        authorFilter?.trim() && {
-            key: "author",
-            label: `Author: ${authorFilter.trim()}`,
-            clear: () => {
-                setAuthorFilter(null);
+        // In "Minha fila" the list is pinned to author=me, so a leftover
+        // free-text author filter is inert — don't surface it as a chip.
+        !isMineView &&
+            authorFilter?.trim() && {
+                key: "author",
+                label: `Author: ${authorFilter.trim()}`,
+                clear: () => {
+                    setAuthorFilter(null);
+                },
             },
-        },
         suggestionsFilter !== "all" && {
             key: "suggestions",
             label: suggestionsChipLabel[suggestionsFilter],
@@ -303,13 +354,15 @@ export function PullRequestsPageClient() {
         activeChips.length > 0 ||
         needsAttention === "true" ||
         isAwaiting ||
+        isMineView ||
         authorPolicy !== "all";
     // Filters applied post-query (Mongo side) — while any is active,
-    // `filteredPrTotal` (DB-level only) is an upper bound, not exact.
+    // `filteredPrTotal` (DB-level only) is an upper bound, not exact. The
+    // "mine" view pins author=me, which is post-query too.
     const hasMongoFilters =
         suggestionsFilter !== "all" ||
         needsAttention === "true" ||
-        !!debouncedAuthor.trim() ||
+        !!effectiveAuthor ||
         authorPolicy !== "all";
     const canUseExactFilteredTotal =
         hasActiveFilters &&
@@ -361,7 +414,16 @@ export function PullRequestsPageClient() {
         setCreatedAtFrom(null);
         setCreatedAtTo(null);
     };
-    const pulseCards = digest
+    const toggleNeedsAttention = () => {
+        setView(null);
+        setStatusFilter(null);
+        setNeedsAttention(
+            !isAwaiting && needsAttention === "true" ? null : "true",
+        );
+    };
+    // Team dashboard cards — the lead's "how are we doing?" across the whole
+    // team scope. Depend on the daily digest (today's pulse).
+    const teamPulseCards = digest
         ? [
               {
                   key: "reviewed",
@@ -402,18 +464,42 @@ export function PullRequestsPageClient() {
                   value: facets?.needsAttention ?? 0,
                   tone: "text-warning",
                   active: !isAwaiting && needsAttention === "true",
+                  onClick: toggleNeedsAttention,
+              },
+          ]
+        : [];
+    // "Minha fila" cards — my worklist. Both numbers are author-scoped by the
+    // facets endpoint (scope=mine), so they never show team totals under a
+    // "mine" heading. The two cards are the two halves of the mine list: what
+    // still needs me vs. everything I've had reviewed.
+    const minePulseCards = facets
+        ? [
+              {
+                  key: "mine-attention",
+                  label: "Needs my attention",
+                  sub: "open",
+                  hint: "Your open PRs where Kody left a suggestion you haven't applied yet. Click to filter to just these.",
+                  value: facets.needsAttention ?? 0,
+                  tone: "text-warning",
+                  active: needsAttention === "true",
+                  onClick: toggleNeedsAttention,
+              },
+              {
+                  key: "mine-reviewed",
+                  label: "My reviewed PRs",
+                  sub: "total",
+                  hint: "All of your PRs Kody has already reviewed. Click to see the full queue.",
+                  value: facets.mine ?? 0,
+                  tone: "text-success",
+                  active: needsAttention !== "true",
                   onClick: () => {
-                      setView(null);
                       setStatusFilter(null);
-                      setNeedsAttention(
-                          !isAwaiting && needsAttention === "true"
-                              ? null
-                              : "true",
-                      );
+                      setNeedsAttention(null);
                   },
               },
           ]
         : [];
+    const pulseCards = isMineView ? minePulseCards : teamPulseCards;
 
     return (
         <Page.Root className="pb-0">
@@ -441,6 +527,9 @@ export function PullRequestsPageClient() {
                             </span>
                         )}
                     </div>
+
+                    {/* View switcher — my worklist vs. the team dashboard. */}
+                    <PrViewSwitcher value={scope} onChange={changeScope} />
                 </div>
             </Page.Header>
 
@@ -449,7 +538,13 @@ export function PullRequestsPageClient() {
                     that a lead wants before scanning individual PRs. Each card
                     filters the list to its segment. */}
                 {pulseCards.length > 0 && (
-                    <div className="grid grid-cols-1 gap-3 pt-4 sm:grid-cols-3">
+                    <div
+                        className={cn(
+                            "grid grid-cols-1 gap-3 pt-4",
+                            pulseCards.length === 2
+                                ? "sm:grid-cols-2"
+                                : "sm:grid-cols-3",
+                        )}>
                         {pulseCards.map((card) => (
                             <button
                                 key={card.key}
@@ -495,12 +590,12 @@ export function PullRequestsPageClient() {
                         instead of juggling two inputs. */}
                     <div className="flex flex-wrap items-center gap-2">
                         <div className="border-card-lv3 bg-card-lv2 focus-within:border-primary-light/50 focus-within:ring-primary-light/15 flex h-9 min-w-[18rem] flex-1 items-center gap-2 rounded-xl border pr-1.5 pl-3 transition focus-within:ring-3">
-                            {searchMode === "author" ? (
+                            {showAuthorSearch ? (
                                 <UserIcon className="text-text-tertiary size-4 shrink-0" />
                             ) : (
                                 <SearchIcon className="text-text-tertiary size-4 shrink-0" />
                             )}
-                            {searchMode === "author" ? (
+                            {showAuthorSearch ? (
                                 <PrAuthorSearch
                                     teamId={teamId}
                                     onSelect={(name) =>
@@ -535,7 +630,7 @@ export function PullRequestsPageClient() {
                                 />
                             )}
                             <div className="bg-card-lv1/80 flex shrink-0 items-center gap-0.5 rounded-lg p-0.5">
-                                {(["title", "number", "author"] as const).map(
+                                {searchModes.map(
                                     (mode) => (
                                         <button
                                             key={mode}
