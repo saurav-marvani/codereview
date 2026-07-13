@@ -8,6 +8,7 @@ import {
 
 import { produce } from 'immer';
 import { v4 as uuidv4 } from 'uuid';
+import { DeepPartial } from 'typeorm';
 
 import { createLogger } from '@libs/core/log/logger';
 import {
@@ -33,7 +34,10 @@ import { deepDifference, deepMerge } from '@libs/common/utils/deep';
 import { convertTiptapJSONToText } from '@libs/common/utils/tiptap-json';
 import { getDefaultKodusConfigFile } from '@libs/common/utils/validateCodeReviewConfigFile';
 import { IntegrationConfigKey, ParametersKey } from '@libs/core/domain/enums';
-import { CodeReviewVersion } from '@libs/core/infrastructure/config/types/general/codeReview.type';
+import {
+    CodeReviewConfigWithoutLLMProvider,
+    CodeReviewVersion,
+} from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import {
     CodeReviewParameter,
     DirectoryCodeReviewConfig,
@@ -45,6 +49,14 @@ import {
     ConfigLevel,
 } from '@libs/core/infrastructure/config/types/general/codeReviewSettingsLog.type';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
+
+/**
+ * A partial code-review config, i.e. the delta shape that `deepDifference` and
+ * `deepMerge` produce and that the mutation pipeline threads around. Distinct
+ * from the request DTO (`CreateOrUpdateCodeReviewParameterDto['configValue']`),
+ * which is the full, validated payload.
+ */
+type ConfigDelta = DeepPartial<CodeReviewConfigWithoutLLMProvider>;
 import { AuditLogEvents } from '@libs/ee/codeReviewSettingsLog/events/audit-log.events';
 import { RequestUserContext } from '@libs/identity/domain/user/types/request-user-context.type';
 import {
@@ -76,6 +88,7 @@ import {
     KODY_RULES_SERVICE_TOKEN,
 } from '@libs/kodyRules/domain/contracts/kodyRules.service.contract';
 import { KodyRulesType } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
+import { GenerateInitialKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/generate-initial-kody-rules.use-case';
 import {
     InvalidGroupPathError,
     validateGroupPaths,
@@ -102,6 +115,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: IKodyRulesService,
         private readonly permissionValidationService: PermissionValidationService,
+        private readonly generateInitialKodyRulesUseCase: GenerateInitialKodyRulesUseCase,
     ) {}
 
     async execute(
@@ -124,9 +138,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             const { organizationAndTeamData, configValue, repositoryId } = body;
             let directoryPath = body.directoryPath;
             let directoryId = body.directoryId;
-            let previousFolders:
-                | Array<{ path: string }>
-                | undefined;
+            let previousFolders: Array<{ path: string }> | undefined;
             let previousRulesFileNames:
                 | {
                       review?: Array<{ fileName: string; content: string }>;
@@ -251,9 +263,11 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 
                     // Snapshot the pre-edit folder set so the PR builder can
                     // delete the old encoded folder when the path list changes.
-                    previousFolders = (existingGroup.folders || []).map((f) => ({
-                        path: f.path,
-                    }));
+                    previousFolders = (existingGroup.folders || []).map(
+                        (f) => ({
+                            path: f.path,
+                        }),
+                    );
 
                     // Keep existing folder IDs for paths that haven't changed
                     const existingFoldersByPath = new Map(
@@ -309,15 +323,14 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                     } else {
                         // Find groups that partially overlap with the
                         // requested path set (any shared path).
-                        const overlappingGroups =
-                            targetRepo.directories.filter((group) =>
+                        const overlappingGroups = targetRepo.directories.filter(
+                            (group) =>
                                 (group.folders || []).some((f) =>
                                     resolvedPaths.includes(f.path),
                                 ),
-                            );
+                        );
 
-                        const isSyncActor =
-                            body.actor?.source === 'sync';
+                        const isSyncActor = body.actor?.source === 'sync';
 
                         if (overlappingGroups.length > 0) {
                             // Repo-first sync: when the centralized repo
@@ -327,10 +340,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                             // Anything beyond one overlap is ambiguous (merging
                             // configs/rules across many groups isn't safe), so
                             // fall back to the original conflict error.
-                            if (
-                                isSyncActor &&
-                                overlappingGroups.length === 1
-                            ) {
+                            if (isSyncActor && overlappingGroups.length === 1) {
                                 const absorbed = overlappingGroups[0];
                                 const existingFoldersByPath = new Map(
                                     (absorbed.folders || []).map((f) => [
@@ -349,8 +359,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                                         }
                                     );
                                 });
-                                absorbed.name =
-                                    absorbed.folders[0]?.name ?? '';
+                                absorbed.name = absorbed.folders[0]?.name ?? '';
                                 directoryId = absorbed.id;
                             } else {
                                 throw new Error(
@@ -472,6 +481,33 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                 this.eventEmitter.emit(IDE_RULES_SYNC_DISABLED_EVENT, event);
             }
 
+            // Enabling the Kody Rules generator for a repo seeds its rules from
+            // the last 3 months of PR reviews right away, instead of waiting for
+            // the weekly cron (which also backfills, but only on its next run).
+            // The seed is idempotent — it skips when past-review rules already
+            // exist — so re-saving an already-enabled repo is a no-op. Fired
+            // detached so it never blocks the settings save (issue #1506).
+            if (
+                !!repositoryId &&
+                configValue?.kodyRulesGeneratorEnabled === true
+            ) {
+                void this.generateInitialKodyRulesUseCase
+                    .execute({ organizationAndTeamData, repositoryId })
+                    .catch((error) => {
+                        this.logger.error({
+                            message:
+                                'Failed to start initial Kody Rules generation',
+                            context:
+                                UpdateOrCreateCodeReviewParameterUseCase.name,
+                            error:
+                                error instanceof Error
+                                    ? error
+                                    : new Error(String(error)),
+                            metadata: { organizationAndTeamData, repositoryId },
+                        });
+                    });
+            }
+
             return result;
         } catch (error) {
             if (error instanceof ForbiddenException) {
@@ -525,7 +561,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             userEmail?: string;
         },
     ) {
-        const defaultConfig = getDefaultKodusConfigFile();
+        const defaultConfig: ConfigDelta = getDefaultKodusConfigFile();
 
         const sanitizedConfigValue =
             this.stripCustomMessagesFromConfig(configValue);
@@ -558,12 +594,11 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             repositories: filteredRepositoryInfo,
         } as CodeReviewParameter;
 
-        const persisted =
-            await this.createOrUpdateParametersUseCase.execute(
-                ParametersKey.CODE_REVIEW_CONFIG,
-                updatedConfig,
-                organizationAndTeamData,
-            );
+        const persisted = await this.createOrUpdateParametersUseCase.execute(
+            ParametersKey.CODE_REVIEW_CONFIG,
+            updatedConfig,
+            organizationAndTeamData,
+        );
 
         // Surface the PR metadata when one was opened so the UI can link to it.
         return centralizedPr ?? persisted;
@@ -615,7 +650,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         const sanitizedIncomingConfig =
             this.stripCustomMessagesFromConfig(newConfigValue);
 
-        let oldConfig: CreateOrUpdateCodeReviewParameterDto['configValue'];
+        let oldConfig: ConfigDelta;
         let level: ConfigLevel;
         let repository: RepositoryCodeReviewConfig | undefined;
         let directory: DirectoryCodeReviewConfig | undefined;
@@ -657,8 +692,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             deepDifference(parentConfig, newResolvedConfig),
         );
 
-        const pathsChanged =
-            !!previousFolders && previousFolders.length > 0;
+        const pathsChanged = !!previousFolders && previousFolders.length > 0;
         const isSelectionOnlyPayload =
             this.isSelectionOnlyConfigPayload(sanitizedIncomingConfig) &&
             level !== ConfigLevel.GLOBAL &&
@@ -736,8 +770,8 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             userEmail?: string;
         };
         level: ConfigLevel;
-        oldDelta?: CreateOrUpdateCodeReviewParameterDto['configValue'];
-        newDelta: CreateOrUpdateCodeReviewParameterDto['configValue'];
+        oldDelta?: ConfigDelta;
+        newDelta: ConfigDelta;
         repository?: RepositoryCodeReviewConfig;
         directory?: DirectoryCodeReviewConfig;
         previousFolders?: Array<{ path: string }>;
@@ -834,8 +868,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         }
 
         const repositoryLabel = params.repository?.name || 'global';
-        const directoryLabel =
-            params.directory?.folders?.[0]?.path || 'root';
+        const directoryLabel = params.directory?.folders?.[0]?.path || 'root';
 
         const isDirectoryGroup =
             params.level === ConfigLevel.DIRECTORY &&
@@ -951,7 +984,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
     }
 
     private async processExternalReferencesInline(
-        configValue: CreateOrUpdateCodeReviewParameterDto['configValue'],
+        configValue: ConfigDelta,
         organizationAndTeamData: OrganizationAndTeamData,
         repositoryId?: string,
         directoryId?: string,
@@ -1162,9 +1195,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         }
     }
 
-    private resolveOverridesForContext(
-        config: CreateOrUpdateCodeReviewParameterDto['configValue'],
-    ): {
+    private resolveOverridesForContext(config: ConfigDelta): {
         summaryText?: string;
         overrides: PromptOverrides | undefined;
         contextTarget: Record<string, any>;
@@ -1221,9 +1252,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         };
     }
 
-    private resolveBaseConsumerId(
-        config: CreateOrUpdateCodeReviewParameterDto['configValue'],
-    ): string {
+    private resolveBaseConsumerId(config: ConfigDelta): string {
         if (config?.codeReviewVersion === CodeReviewVersion.v2) {
             return 'code-review-v2';
         }
@@ -1243,8 +1272,8 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             userEmail?: string;
         };
         organizationAndTeamData: OrganizationAndTeamData;
-        oldConfig: CreateOrUpdateCodeReviewParameterDto['configValue'];
-        newConfig: CreateOrUpdateCodeReviewParameterDto['configValue'];
+        oldConfig: ConfigDelta;
+        newConfig: ConfigDelta;
         level: ConfigLevel;
         repository?: RepositoryCodeReviewConfig;
         directory?: DirectoryCodeReviewConfig;
@@ -1335,9 +1364,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         );
     }
 
-    private stripCustomMessagesFromConfig(
-        config: CreateOrUpdateCodeReviewParameterDto['configValue'],
-    ): CreateOrUpdateCodeReviewParameterDto['configValue'] {
+    private stripCustomMessagesFromConfig<T>(config: T): T {
         if (!config || typeof config !== 'object' || Array.isArray(config)) {
             return config;
         }
@@ -1347,7 +1374,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             unknown
         >;
 
-        return rest as CreateOrUpdateCodeReviewParameterDto['configValue'];
+        return rest as T;
     }
 
     private isSelectionOnlyConfigPayload(
@@ -1513,7 +1540,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 }
 
 class ConfigResolver {
-    private readonly defaultConfig = getDefaultKodusConfigFile();
+    private readonly defaultConfig: ConfigDelta = getDefaultKodusConfigFile();
 
     constructor(private readonly codeReviewConfigs: CodeReviewParameter) {}
 
@@ -1541,7 +1568,7 @@ class ConfigResolver {
     public async getResolvedParentConfig(
         repositoryId?: string,
         directoryId?: string,
-    ): Promise<CreateOrUpdateCodeReviewParameterDto['configValue']> {
+    ): Promise<ConfigDelta> {
         if (directoryId && repositoryId) {
             return this.getResolvedRepositoryConfig(repositoryId);
         }
@@ -1549,12 +1576,11 @@ class ConfigResolver {
             return this.getResolvedGlobalConfig();
         }
 
-        return this
-            .defaultConfig as CreateOrUpdateCodeReviewParameterDto['configValue'];
+        return this.defaultConfig;
     }
 
     public createUpdater(
-        newDelta: CreateOrUpdateCodeReviewParameterDto['configValue'],
+        newDelta: ConfigDelta,
         repositoryId?: string,
         directoryId?: string,
     ): (draft: CodeReviewParameter) => void {
@@ -1589,21 +1615,20 @@ class ConfigResolver {
         };
     }
 
-    private getResolvedGlobalConfig(): CreateOrUpdateCodeReviewParameterDto['configValue'] {
-        return deepMerge(
-            this
-                .defaultConfig as CreateOrUpdateCodeReviewParameterDto['configValue'],
+    private getResolvedGlobalConfig(): ConfigDelta {
+        return deepMerge<ConfigDelta>(
+            this.defaultConfig,
             this.codeReviewConfigs.configs ?? {},
         );
     }
 
     private async getResolvedRepositoryConfig(
         repositoryId: string,
-    ): Promise<CreateOrUpdateCodeReviewParameterDto['configValue']> {
+    ): Promise<ConfigDelta> {
         const repository = this.findRepository(repositoryId);
         const resolvedGlobal = this.getResolvedGlobalConfig();
 
-        return deepMerge(resolvedGlobal, repository.configs ?? {});
+        return deepMerge<ConfigDelta>(resolvedGlobal, repository.configs ?? {});
     }
 }
 

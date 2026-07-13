@@ -13,6 +13,7 @@ import { FindLibraryKodyRulesUseCase } from './find-library-kody-rules.use-case'
 import { FindRecommendedKodyRulesUseCase } from './find-recommended-kody-rules.use-case';
 import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from './find-rules-in-organization-by-filter.use-case';
 import { FindSuggestionsByRuleUseCase } from './find-suggestions-by-rule.use-case';
+import { GenerateInitialKodyRulesUseCase } from './generate-initial-kody-rules.use-case';
 import { GenerateKodyRulesUseCase } from './generate-kody-rules.use-case';
 import { GetInheritedRulesKodyRulesUseCase } from './get-inherited-kody-rules.use-case';
 import { GetPendingKodyRulesUseCase } from './get-pending-kody-rules.use-case';
@@ -35,6 +36,7 @@ export const UseCases = [
     AddLibraryKodyRulesUseCase,
     ApplyPendingKodyRulesUseCase,
     GenerateKodyRulesUseCase,
+    GenerateInitialKodyRulesUseCase,
     ChangeStatusKodyRulesUseCase,
     SendRulesNotificationUseCase,
     SyncSelectedRepositoriesKodyRulesUseCase,
