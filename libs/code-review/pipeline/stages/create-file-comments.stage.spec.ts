@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { produce } from 'immer';
 import { CreateFileCommentsStage } from './create-file-comments.stage';
 import { COMMENT_MANAGER_SERVICE_TOKEN } from '@libs/code-review/domain/contracts/CommentManagerService.contract';
 import { SUGGESTION_SERVICE_TOKEN } from '@libs/code-review/domain/contracts/SuggestionService.contract';
@@ -116,6 +117,32 @@ describe('CreateFileCommentsStage — empty-suggestions persistence', () => {
         expect(enrichedFiles).toHaveLength(1);
         expect(enrichedFiles[0].filename).toBe('src/foo.ts');
         expect(orgAndTeam.organizationId).toBe('org-A');
+    });
+
+    it('persists when the context (incl. pullRequest) is Immer-frozen (regression)', async () => {
+        // In production the pipeline context is Immer-frozen (auto-freeze)
+        // after any earlier stage's produce(). The stage stamped the resolved
+        // heavy flag via direct mutation — `pullRequest.heavy = …` — which
+        // threw "Cannot assign to read only property 'heavy'" BEFORE
+        // aggregateAndSaveDataStructure on every review: comments were
+        // posted, but no suggestion was ever persisted (found live in QA,
+        // broken env-wide since the heavy-mode rollout). Same failure class
+        // as the context.heavy write fixed in agent-review.stage (#1522).
+        const frozenCtx = produce(
+            baseContext({ heavy: true } as any),
+            () => {},
+        );
+
+        await stage.execute(frozenCtx);
+
+        expect(
+            mockPullRequestService.aggregateAndSaveDataStructure,
+        ).toHaveBeenCalledTimes(1);
+        const savedPullRequest =
+            mockPullRequestService.aggregateAndSaveDataStructure.mock
+                .calls[0][0];
+        expect(savedPullRequest.number).toBe(99);
+        expect(savedPullRequest.heavy).toBe(true);
     });
 
     it('still persists when validSuggestions=0 but discardedSuggestions has items (regression for the prior happy path)', async () => {

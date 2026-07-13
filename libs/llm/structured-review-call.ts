@@ -15,7 +15,7 @@
  * Groq provider used (`API_GROQ_API_KEY` / `API_GROQ_BASE_URL`), so there is no
  * decrypt path and no synthetic BYOK config.
  */
-import { Output, type LanguageModel } from 'ai';
+import { Output, type LanguageModel, type Schema } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import type { BYOKConfig } from '@kodus/kodus-common/llm';
 import { z } from 'zod';
@@ -27,7 +27,11 @@ import {
     LLM_CALL_TIMEOUT_MS,
 } from '@libs/llm/llm-call';
 import { buildLangfuseTelemetry } from '@libs/core/log/langfuse';
+import { createLogger } from '@libs/core/log/logger';
+import { zodToStrictWireSchema } from '@libs/llm/strict-wire-schema';
 import { ObservabilityService } from '@libs/core/log/observability.service';
+
+const logger = createLogger('StructuredReviewCall');
 
 /** Managed trial-only fallback: Groq `openai/gpt-oss-120b`. Null if unconfigured. */
 function buildTrialGroqFallback(): LanguageModel | null {
@@ -42,8 +46,11 @@ function buildTrialGroqFallback(): LanguageModel | null {
     })('openai/gpt-oss-120b') as unknown as LanguageModel;
 }
 
-export interface StructuredReviewCallParams<S extends z.ZodType> {
+export interface StructuredReviewCallParams<S extends z.ZodType | Schema> {
     byokConfig?: BYOKConfig;
+    /** A zod schema, or an AI-SDK `jsonSchema()` Schema when the caller
+     *  needs the wire JSON schema to differ from the parse validation
+     *  (e.g. OpenAI-strict `required` semantics vs lenient providers). */
     schema: S;
     system: string;
     user: string;
@@ -59,9 +66,9 @@ export interface StructuredReviewCallParams<S extends z.ZodType> {
  * back to the org's own fallback / the trial Groq model per the policy above.
  * Returns the parsed object validated against `schema`.
  */
-export async function runStructuredReviewCall<S extends z.ZodType>(
+export async function runStructuredReviewCall<S extends z.ZodType | Schema>(
     params: StructuredReviewCallParams<S>,
-): Promise<z.infer<S>> {
+): Promise<S extends z.ZodType ? z.infer<S> : S extends Schema<infer T> ? T : never> {
     const {
         byokConfig,
         schema,
@@ -74,6 +81,32 @@ export async function runStructuredReviewCall<S extends z.ZodType>(
     } = params;
 
     const hasByok = !!byokConfig?.main;
+
+    // A raw zod schema would go through the AI SDK's zodSchema(), whose
+    // INPUT-side conversion drops `.optional()` fields from `required` —
+    // OpenAI strict structured outputs 400 on that, which silently killed
+    // kody-rules shards and guidance-file extraction for BYOK-OpenAI orgs.
+    // Convert centrally so every caller (present and future) sends a
+    // strict-compatible wire schema; AI-SDK Schema objects pass through
+    // untouched (the caller already controls its wire format).
+    let wireSchema: unknown = schema;
+    if (schema instanceof z.ZodType) {
+        try {
+            wireSchema = zodToStrictWireSchema(schema);
+        } catch (err) {
+            // Unconvertible zod shape — fall back to the SDK's own
+            // conversion rather than failing the call outright. That
+            // fallback still 400s on OpenAI strict when the schema has
+            // optional fields, so make the degradation loud: this is the
+            // exact silence that hid the shard/extraction failures.
+            logger.warn({
+                message: `[strict-wire-schema] conversion failed for ${runName}; falling back to raw zod schema (OpenAI-strict callers may reject it): ${err instanceof Error ? err.message : String(err)}`,
+                context: 'runStructuredReviewCall',
+                metadata: { runName, organizationId, err },
+            });
+            wireSchema = schema;
+        }
+    }
 
     const mainModel = wrapByokModel(
         byokToVercelModel(byokConfig, 'main', { structuredOutputs: true }),
@@ -96,7 +129,7 @@ export async function runStructuredReviewCall<S extends z.ZodType>(
         model: LanguageModel,
         modelName: string,
         isFallback: boolean,
-    ): Promise<z.infer<S>> =>
+    ): Promise<any> =>
         observabilityService
             .runAiSdkLLMInSpan<any>({
                 spanName: runName,
@@ -108,7 +141,7 @@ export async function runStructuredReviewCall<S extends z.ZodType>(
                         model: model as any,
                         system,
                         prompt: user,
-                        output: Output.object({ schema: schema as any }),
+                        output: Output.object({ schema: wireSchema as any }),
                         // Cap hung provider calls at LLM_CALL_TIMEOUT_MS (10min)
                         // instead of the 30min agent-level fallback — these run
                         // in parallel shards, so a stuck call must not hold a
@@ -122,7 +155,7 @@ export async function runStructuredReviewCall<S extends z.ZodType>(
             })
             .then(
                 (r: any) =>
-                    (r.experimental_output ?? r.output) as z.infer<S>,
+                    (r.experimental_output ?? r.output) as any,
             );
 
     try {

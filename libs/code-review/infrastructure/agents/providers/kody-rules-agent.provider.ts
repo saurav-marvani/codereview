@@ -13,7 +13,7 @@ import { mapAgentFindings } from '@libs/code-review/infrastructure/agents/collab
 import {
     judgeKodyRulesSharded,
     inlineRuleReferences,
-    shardViolationsSchema,
+    shardViolationsWireSchema,
     type RunJudge,
     type RawShardViolation,
     type ShardViolation,
@@ -174,7 +174,11 @@ export class KodyRulesAgentProvider extends BaseCodeReviewAgentProvider {
             const runJudge: RunJudge = async ({ system, user, filename }) => {
                 const parsed = await runStructuredReviewCall({
                     byokConfig: byokConfig ?? undefined,
-                    schema: shardViolationsSchema,
+                    // Wire schema, NOT the zod object: zodSchema() would
+                    // re-derive `required` from the zod input side and
+                    // reintroduce the OpenAI-strict 400. See the
+                    // shardViolationsWireSchema doc.
+                    schema: shardViolationsWireSchema,
                     system,
                     user,
                     runName: 'kodus-rules-review-agent.shard',
@@ -205,6 +209,7 @@ export class KodyRulesAgentProvider extends BaseCodeReviewAgentProvider {
                 runJudge,
                 prTitle: input.prTitle,
                 prBody: input.prBody,
+                logger: this.shardLogger,
             });
             judgeViolations = result.violations;
             shardsRun = result.shardsRun;
