@@ -12,6 +12,7 @@ import { MCPIntegrationAuthType } from '../integrations/enums/integration.enum';
 import { MCPIntegrationInterface } from '../integrations/interfaces/mcp-integration.interface';
 import { IntegrationsService } from '../integrations/integrations.service';
 import {
+    MCPIntegration,
     MCPProviderType,
     MCPTool,
 } from '../providers/interfaces/provider.interface';
@@ -43,9 +44,44 @@ const MANAGED_CATEGORY_BY_ID: Record<string, string> = Object.fromEntries(
         .map((server) => [server.id, server.category as string]),
 );
 
+// The available-integrations catalog comes from a slow per-provider fetch
+// (external round-trip), but it's static-ish. Cache it briefly per
+// (org, page, size, appName). Connection state is always read live and merged
+// afterwards, so isConnected/connectionStatus never go stale on a cache hit.
+const INTEGRATIONS_CATALOG_TTL_MS = 5 * 60 * 1000;
+
 @Injectable()
 export class McpService {
     private readonly logger = new Logger(McpService.name);
+
+    // Short-lived, request-independent cache of the integrations catalog
+    // (see INTEGRATIONS_CATALOG_TTL_MS). Keyed per org + pagination + filter.
+    private readonly integrationsCatalogCache = new Map<
+        string,
+        { expires: number; value: MCPIntegration[] }
+    >();
+
+    private getCachedCatalog(key: string): MCPIntegration[] | undefined {
+        const entry = this.integrationsCatalogCache.get(key);
+        if (!entry) return undefined;
+        if (entry.expires <= Date.now()) {
+            this.integrationsCatalogCache.delete(key);
+            return undefined;
+        }
+        return entry.value;
+    }
+
+    private setCachedCatalog(key: string, value: MCPIntegration[]): void {
+        // Bound growth: evict expired entries before inserting a new one.
+        const now = Date.now();
+        for (const [k, v] of this.integrationsCatalogCache) {
+            if (v.expires <= now) this.integrationsCatalogCache.delete(k);
+        }
+        this.integrationsCatalogCache.set(key, {
+            expires: now + INTEGRATIONS_CATALOG_TTL_MS,
+            value,
+        });
+    }
 
     constructor(
         private providerFactory: ProviderFactory,
@@ -94,30 +130,45 @@ export class McpService {
     }
 
     async getIntegrations(query: QueryDto, organizationId: string) {
-        const providers = this.providerFactory.getProviders();
         const { page, pageSize, appName } = query;
+        const cacheKey = `${organizationId}:${page}:${pageSize}:${appName ?? ''}`;
 
-        const results = await Promise.allSettled(
-            providers.map((provider) =>
-                provider.getIntegrations(String(page), pageSize, {
-                    appName,
-                    organizationId,
-                }),
-            ),
-        );
+        let integrations = this.getCachedCatalog(cacheKey);
 
-        const integrations = results.flatMap((result, index) => {
-            if (result.status === 'fulfilled') {
-                return result.value ?? [];
-            }
-            this.logger.error(
-                `Failed to load integrations from provider ${providers[index].constructor.name}`,
-                result.reason instanceof Error
-                    ? result.reason.stack
-                    : String(result.reason),
+        if (!integrations) {
+            const providers = this.providerFactory.getProviders();
+
+            const results = await Promise.allSettled(
+                providers.map((provider) =>
+                    provider.getIntegrations(String(page), pageSize, {
+                        appName,
+                        organizationId,
+                    }),
+                ),
             );
-            return [];
-        });
+
+            let hadFailure = false;
+            integrations = results.flatMap((result, index) => {
+                if (result.status === 'fulfilled') {
+                    return result.value ?? [];
+                }
+                hadFailure = true;
+                this.logger.error(
+                    `Failed to load integrations from provider ${providers[index].constructor.name}`,
+                    result.reason instanceof Error
+                        ? result.reason.stack
+                        : String(result.reason),
+                );
+                return [];
+            });
+
+            // Never cache a degraded catalog from a provider that momentarily
+            // failed — only a complete result.
+            if (!hadFailure) {
+                this.setCachedCatalog(cacheKey, integrations);
+            }
+        }
+
         const connections = await this.connectionRepository.find({
             where: { organizationId },
         });
@@ -457,7 +508,15 @@ export class McpService {
     async getCustomIntegrationConnectionConfig(
         organizationId: string,
         integrationId: string,
-    ): Promise<MCPIntegrationInterface & { accessToken?: string; refreshToken?: string; tokenExpiry?: number; scopes?: string[] } | null> {
+    ): Promise<
+        | (MCPIntegrationInterface & {
+              accessToken?: string;
+              refreshToken?: string;
+              tokenExpiry?: number;
+              scopes?: string[];
+          })
+        | null
+    > {
         try {
             const { integration } =
                 await this.integrationsService.getValidAccessToken(

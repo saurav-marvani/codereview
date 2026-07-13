@@ -1320,9 +1320,31 @@
     }
   },
   {
+    "key": "pullRequest.controller.ts#getAwaitingPullRequests",
+    "httpMethod": "GET",
+    "urlPath": "/pull-requests/awaiting",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "allow"
+    }
+  },
+  {
     "key": "pullRequest.controller.ts#getOnboardingSignals",
     "httpMethod": "GET",
     "urlPath": "/pull-requests/onboarding-signals",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "allow"
+    }
+  },
+  {
+    "key": "pullRequest.controller.ts#getPullRequestAuthors",
+    "httpMethod": "GET",
+    "urlPath": "/pull-requests/authors",
     "expected": {
       "owner": "allow",
       "billing_manager": "deny",
@@ -1345,6 +1367,28 @@
     "key": "pullRequest.controller.ts#getPullRequestFiles",
     "httpMethod": "GET",
     "urlPath": "/pull-requests/files",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "allow"
+    }
+  },
+  {
+    "key": "pullRequest.controller.ts#getPullRequestsDailyDigest",
+    "httpMethod": "GET",
+    "urlPath": "/pull-requests/executions/summary",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "allow"
+    }
+  },
+  {
+    "key": "pullRequest.controller.ts#getPullRequestsFacets",
+    "httpMethod": "GET",
+    "urlPath": "/pull-requests/executions/facets",
     "expected": {
       "owner": "allow",
       "billing_manager": "deny",

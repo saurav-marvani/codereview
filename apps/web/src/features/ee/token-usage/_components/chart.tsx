@@ -2,9 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { BaseUsageContract, ModelPricingInfo } from "@services/usage/types";
-import { cn } from "src/core/utils/components";
-
-import { rowCost } from "../_utils/cost";
 import {
     Bar,
     CartesianGrid,
@@ -14,9 +11,11 @@ import {
     Tooltip,
     XAxis,
     YAxis,
+    type TooltipContentProps,
 } from "recharts";
-import type { TooltipContentProps } from "recharts";
+import { cn } from "src/core/utils/components";
 
+import { rowCost } from "../_utils/cost";
 import {
     CHART_COLORS,
     rechartsAxisProps,
@@ -262,7 +261,11 @@ export const Chart = ({
             if (total <= capLimit) return d;
 
             const ratio = capLimit / total;
-            const scaled: ChartRow = { ...d, isCapped: true, capMarker: capLimit * 0.98 };
+            const scaled: ChartRow = {
+                ...d,
+                isCapped: true,
+                capMarker: capLimit * 0.98,
+            };
             for (const s of SERIES) scaled[s.key] = d[s.key] * ratio;
             return scaled;
         });
@@ -302,79 +305,79 @@ export const Chart = ({
             )}
             <div className="min-h-0 flex-1">
                 <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart
-                            data={chartData}
-                            margin={{ top: 10, right: 12, left: -8, bottom: 0 }}>
-                            <CartesianGrid {...rechartsGridProps} />
-                            {/* Auto tick skipping (cockpit convention):
+                    <ComposedChart
+                        data={chartData}
+                        margin={{ top: 10, right: 12, left: -8, bottom: 0 }}>
+                        <CartesianGrid {...rechartsGridProps} />
+                        {/* Auto tick skipping (cockpit convention):
                                 dense dimensions show a readable subset of
                                 labels; every bar stays hoverable and the
                                 tooltip carries the full identity. */}
-                            <XAxis
-                                dataKey="label"
-                                tickMargin={8}
-                                minTickGap={24}
-                                tickFormatter={(value) =>
-                                    formatXTick(String(value))
-                                }
-                                {...rechartsAxisProps}
-                            />
-                            <YAxis
-                                domain={maxDomain ? [0, maxDomain] : [0, "auto"]}
-                                allowDataOverflow={Boolean(maxDomain)}
-                                tickFormatter={(value) =>
-                                    formatValue(Number(value))
-                                }
-                                {...rechartsAxisProps}
-                            />
-                            <Tooltip
-                                cursor={{ fill: "#20203266" }}
-                                content={
-                                    <UsageTooltip
-                                        formatLabel={formatLabel}
-                                        formatValue={formatValue}
-                                    />
-                                }
-                            />
-                            {SERIES.map((series, i) => (
-                                <Bar
-                                    key={series.key}
-                                    dataKey={series.key}
-                                    name={series.label}
-                                    stackId="tokens"
-                                    hide={hidden[series.key]}
-                                    fill={series.color}
-                                    maxBarSize={28}
-                                    radius={
-                                        i === 0
-                                            ? [0, 0, 5, 5]
-                                            : i === SERIES.length - 1
-                                              ? [5, 5, 0, 0]
-                                              : undefined
-                                    }
+                        <XAxis
+                            dataKey="label"
+                            tickMargin={8}
+                            minTickGap={24}
+                            tickFormatter={(value) =>
+                                formatXTick(String(value))
+                            }
+                            {...rechartsAxisProps}
+                        />
+                        <YAxis
+                            domain={maxDomain ? [0, maxDomain] : [0, "auto"]}
+                            allowDataOverflow={Boolean(maxDomain)}
+                            tickFormatter={(value) =>
+                                formatValue(Number(value))
+                            }
+                            {...rechartsAxisProps}
+                        />
+                        <Tooltip
+                            cursor={{ fill: "#20203266" }}
+                            content={
+                                <UsageTooltip
+                                    formatLabel={formatLabel}
+                                    formatValue={formatValue}
                                 />
-                            ))}
-                            {maxDomain && (
-                                <Scatter
-                                    dataKey="capMarker"
-                                    name="Exceeds scale"
-                                    fill={CHART_COLORS.primary}
-                                    shape={(props: any) =>
-                                        typeof props.cy === "number" ? (
-                                            <circle
-                                                cx={props.cx}
-                                                cy={props.cy}
-                                                r={4}
-                                                fill={CHART_COLORS.primary}
-                                                stroke="#1f2937"
-                                                strokeWidth={2}
-                                            />
-                                        ) : (
-                                            <g />
-                                        )
-                                    }
-                                />
-                            )}
+                            }
+                        />
+                        {SERIES.map((series, i) => (
+                            <Bar
+                                key={series.key}
+                                dataKey={series.key}
+                                name={series.label}
+                                stackId="tokens"
+                                hide={hidden[series.key]}
+                                fill={series.color}
+                                maxBarSize={28}
+                                radius={
+                                    i === 0
+                                        ? [0, 0, 5, 5]
+                                        : i === SERIES.length - 1
+                                          ? [5, 5, 0, 0]
+                                          : undefined
+                                }
+                            />
+                        ))}
+                        {maxDomain && (
+                            <Scatter
+                                dataKey="capMarker"
+                                name="Exceeds scale"
+                                fill={CHART_COLORS.primary}
+                                shape={(props: any) =>
+                                    typeof props.cy === "number" ? (
+                                        <circle
+                                            cx={props.cx}
+                                            cy={props.cy}
+                                            r={4}
+                                            fill={CHART_COLORS.primary}
+                                            stroke="#1f2937"
+                                            strokeWidth={2}
+                                        />
+                                    ) : (
+                                        <g />
+                                    )
+                                }
+                            />
+                        )}
                     </ComposedChart>
                 </ResponsiveContainer>
             </div>

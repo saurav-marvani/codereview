@@ -12,6 +12,51 @@ const PG_CHANNEL = 'kodus_cross_process_events';
 const PG_TABLE = 'kodus_cross_process_events';
 
 /**
+ * Resolve the SSL option to hand to the raw `pg.Client` for the LISTEN
+ * connection, mirroring what `TypeORMFactory` ultimately passes to the
+ * `pg.Pool` through `extra.ssl`.
+ *
+ * Why this exists: TypeORM's top-level `ssl` field is a boolean flag it uses
+ * to gate its own logic. The value that the underlying `pg` driver actually
+ * consumes is `extra.ssl` — usually `{ rejectUnauthorized: false }` in
+ * managed setups (AWS RDS, DO managed Postgres, self-hosted with self-signed
+ * certs) whose CA isn't in Node's default trust store. Copying the bare
+ * top-level `ssl: true` to `new Client({ ssl: true })` yields a hard TLS
+ * handshake failure ("self-signed certificate in certificate chain") the
+ * moment we try to connect — observed live in prod: `connect()` threw before
+ * `ensureInfra()` could create the events table, and every reconnect
+ * repeated the same failure.
+ *
+ * Precedence (matches TypeORMFactory):
+ *   1. URL controls SSL (`?sslmode=` in DATABASE_URL) → don't override;
+ *      passing `ssl` alongside would contradict the URL and confuse pgbouncer /
+ *      TCP-proxy setups.
+ *   2. `extra.ssl` present → that's the concrete object the pool uses.
+ *   3. Top-level `ssl === true` → normalize to `{ rejectUnauthorized: false }`,
+ *      the same choice the factory makes for managed hosts.
+ *   4. Anything else (false / undefined / already an object) → pass through.
+ */
+export function resolvePgSslOption(
+    options: Record<string, unknown>,
+): boolean | { rejectUnauthorized: boolean } | undefined {
+    const url = options.url;
+    const urlControlsSsl =
+        typeof url === 'string' && /[?&]sslmode=/i.test(url);
+    if (urlControlsSsl) return undefined;
+
+    const extra = options.extra as Record<string, unknown> | undefined;
+    if (extra && extra.ssl !== undefined) {
+        return extra.ssl as boolean | { rejectUnauthorized: boolean };
+    }
+
+    if (options.ssl === true) return { rejectUnauthorized: false };
+    return options.ssl as
+        | boolean
+        | { rejectUnauthorized: boolean }
+        | undefined;
+}
+
+/**
  * Self-delivery guard. NOT process.pid: every containerized app is PID 1,
  * so a pid-based guard makes the worker and the API look like the SAME
  * process and every envelope gets dropped (found live on the hotfix
@@ -262,16 +307,24 @@ export class CrossProcessEventsBridge implements OnModuleInit, OnModuleDestroy {
         // Deployments may configure Postgres via a single URL instead of
         // discrete fields — building the client only from host/port left
         // those installs without a LISTEN connection.
+        //
+        // SSL: resolve via `resolvePgSslOption` (see its docstring) so the
+        // raw `pg.Client` picks the same value the pool uses — a bare
+        // `ssl: true` fails handshake against RDS/self-signed setups.
+        const ssl = resolvePgSslOption(options);
         const client = new Client(
             options.url
-                ? { connectionString: options.url, ssl: options.ssl }
+                ? {
+                      connectionString: options.url,
+                      ...(ssl !== undefined ? { ssl } : {}),
+                  }
                 : {
                       host: options.host,
                       port: options.port,
                       user: options.username,
                       password: options.password,
                       database: options.database,
-                      ssl: options.ssl,
+                      ...(ssl !== undefined ? { ssl } : {}),
                   },
         );
 

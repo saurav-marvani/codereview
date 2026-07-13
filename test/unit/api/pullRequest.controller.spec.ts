@@ -6,6 +6,10 @@ import { REQUEST } from '@nestjs/core';
 
 import { PullRequestController } from '@/core/infrastructure/http/controllers/pullRequest.controller';
 import { GetEnrichedPullRequestsUseCase } from '@libs/code-review/application/use-cases/dashboard/get-enriched-pull-requests.use-case';
+import { GetPullRequestsDailyDigestUseCase } from '@libs/code-review/application/use-cases/dashboard/get-pull-requests-daily-digest.use-case';
+import { GetPullRequestsFacetsUseCase } from '@libs/code-review/application/use-cases/dashboard/get-pull-requests-facets.use-case';
+import { GetAwaitingPullRequestsUseCase } from '@libs/code-review/application/use-cases/dashboard/get-awaiting-pull-requests.use-case';
+import { GetPullRequestAuthorsUseCase } from '@libs/code-review/application/use-cases/dashboard/get-pull-request-authors.use-case';
 import { GetPullRequestFilesUseCase } from '@libs/code-review/application/use-cases/pullRequests/get-pull-request-files.use-case';
 import { GetPullRequestSuggestionsUseCase } from '@libs/code-review/application/use-cases/pullRequests/get-pull-request-suggestions.use-case';
 import { CodeManagementService } from '@libs/platform/infrastructure/services/codeManagement.service';
@@ -115,6 +119,10 @@ const mockAutomationExecutionService = {
     create: jest.fn().mockResolvedValue({}),
 };
 const mockGetEnrichedPRs = { execute: jest.fn() };
+const mockGetPullRequestsDailyDigest = { execute: jest.fn() };
+const mockGetPullRequestsFacets = { execute: jest.fn() };
+const mockGetAwaitingPullRequests = { execute: jest.fn() };
+const mockGetPullRequestAuthors = { execute: jest.fn() };
 const mockGetPullRequestSuggestionsUseCase = { execute: jest.fn() };
 const mockGetPullRequestFilesUseCase = { execute: jest.fn() };
 const mockCodeManagement = {
@@ -139,6 +147,22 @@ describe('PullRequestController', () => {
                 {
                     provide: GetEnrichedPullRequestsUseCase,
                     useValue: mockGetEnrichedPRs,
+                },
+                {
+                    provide: GetPullRequestsDailyDigestUseCase,
+                    useValue: mockGetPullRequestsDailyDigest,
+                },
+                {
+                    provide: GetPullRequestsFacetsUseCase,
+                    useValue: mockGetPullRequestsFacets,
+                },
+                {
+                    provide: GetAwaitingPullRequestsUseCase,
+                    useValue: mockGetAwaitingPullRequests,
+                },
+                {
+                    provide: GetPullRequestAuthorsUseCase,
+                    useValue: mockGetPullRequestAuthors,
                 },
                 {
                     provide: CodeManagementService,

@@ -199,12 +199,12 @@ describe('LocalSandboxService sandbox file access', () => {
         const nestedDir = path.join(dir, 'escape', 'nested');
 
         jest.spyOn(fsPromises, 'realpath').mockImplementation(
-            async (p: string) => {
+            (async (p: string) => {
                 if (p === nestedDir) {
                     return '/tmp/outside-escape';
                 }
                 return originalRealpath(p);
-            },
+            }) as unknown as typeof fsPromises.realpath,
         );
 
         try {
@@ -214,5 +214,69 @@ describe('LocalSandboxService sandbox file access', () => {
         } finally {
             jest.restoreAllMocks();
         }
+    });
+});
+
+/**
+ * Repo-boundary checks must be correct on every host OS (Linux/macOS/Windows),
+ * not just POSIX. The previous `startsWith(root + '/')` form hard-coded the
+ * POSIX separator, so on Windows (backslash paths from `path`/`fs.realpath`) it
+ * treated every in-repo path as an escape — which made the write path's
+ * parent-symlink loop `break` early and skip its checks. `isPathInside` decides
+ * containment with `path.relative` instead, which is separator-agnostic.
+ *
+ * The service method uses the current platform's `path`, so on a POSIX CI it
+ * only exercises POSIX. To prove the algorithm holds on Windows too, the
+ * cross-platform block re-runs the exact same relative-based predicate against
+ * `path.win32` and `path.posix` explicitly.
+ */
+describe('LocalSandboxService.isPathInside', () => {
+    const service = new LocalSandboxService({} as any);
+    const isInside = (root: string, child: string): boolean =>
+        (service as any).isPathInside(root, child);
+
+    it('accepts the root itself and nested children (POSIX)', () => {
+        expect(isInside('/repo', '/repo')).toBe(true);
+        expect(isInside('/repo', '/repo/a/b.ts')).toBe(true);
+    });
+
+    it('rejects escapes and sibling dirs (POSIX)', () => {
+        expect(isInside('/repo', '/repo/../etc/passwd')).toBe(false);
+        expect(isInside('/repo', '/repo-legacy/x')).toBe(false);
+        expect(isInside('/repo', '/etc/passwd')).toBe(false);
+    });
+
+    describe('algorithm is separator-agnostic (Linux/macOS/Windows)', () => {
+        const predicate = (
+            mod: typeof path.posix | typeof path.win32,
+            root: string,
+            child: string,
+        ): boolean => {
+            const rel = mod.relative(root, child);
+            return rel === '' || (!rel.startsWith('..') && !mod.isAbsolute(rel));
+        };
+
+        it('holds under POSIX separators', () => {
+            expect(predicate(path.posix, '/repo', '/repo/a/b')).toBe(true);
+            expect(predicate(path.posix, '/repo', '/repo/../x')).toBe(false);
+            expect(predicate(path.posix, '/repo', '/repo-legacy/x')).toBe(
+                false,
+            );
+        });
+
+        it('holds under Windows separators — where startsWith("/") failed', () => {
+            // In-repo child: the old `startsWith(root + '/')` returned false
+            // here (backslash), silently flagging a valid path as an escape.
+            expect(predicate(path.win32, 'C:\\repo', 'C:\\repo\\a\\b')).toBe(
+                true,
+            );
+            expect(predicate(path.win32, 'C:\\repo', 'C:\\repo')).toBe(true);
+            // Real escapes still rejected.
+            expect(predicate(path.win32, 'C:\\repo', 'C:\\repo\\..\\etc')).toBe(
+                false,
+            );
+            // Different drive → `relative` returns an absolute path → rejected.
+            expect(predicate(path.win32, 'C:\\repo', 'D:\\repo\\x')).toBe(false);
+        });
     });
 });

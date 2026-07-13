@@ -15,7 +15,7 @@ import {
 } from 'fs/promises';
 import { constants as fsConstants } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { isAbsolute, join, relative } from 'path';
 import { promisify } from 'util';
 
 import {
@@ -436,8 +436,16 @@ export class LocalSandboxService implements ISandboxProvider {
                     // when they look like filesystem paths (start with `/`) —
                     // flag shorthands like `-n` or `--include` start with `-`,
                     // never `/`.
+                    // Treat both separators so a Windows-style arg (`C:\x`,
+                    // `..\etc`) is caught the same as POSIX (`/x`, `../etc`).
+                    // `isAbsolute` is platform-aware; the extra `startsWith('/')`
+                    // keeps POSIX absolute paths blocked even when running on
+                    // Windows (defense in depth).
                     const hasTraversal = args.some(
-                        (a) => a.startsWith('/') || /(^|\/)\.\.($|\/)/.test(a),
+                        (a) =>
+                            isAbsolute(a) ||
+                            a.startsWith('/') ||
+                            /(^|[/\\])\.\.($|[/\\])/.test(a),
                     );
                     if (hasTraversal) {
                         return {
@@ -568,10 +576,7 @@ export class LocalSandboxService implements ISandboxProvider {
                 // between resolveSafeWritePath and the actual write.
                 const repoReal = await realpath(repoDir);
                 const finalCheck = await realpath(dir);
-                if (
-                    !finalCheck.startsWith(repoReal + '/') &&
-                    finalCheck !== repoReal
-                ) {
+                if (!this.isPathInside(repoReal, finalCheck)) {
                     throw new Error(
                         `Path escapes repo boundary after mkdir: ${path}`,
                     );
@@ -700,17 +705,33 @@ export class LocalSandboxService implements ISandboxProvider {
         }
     }
 
+    /**
+     * Whether `child` is `root` itself or nested under it, decided with
+     * `path.relative` instead of a `startsWith(root + '/')` string prefix.
+     *
+     * The prefix form hard-codes the POSIX `/` separator: on Windows (where
+     * `path` and `fs.realpath` yield `\`) it would never match, silently
+     * treating every in-repo path as an escape — which in the write path
+     * made the parent-symlink loop `break` early and skip its checks. The
+     * `relative` form is separator-agnostic and also rejects a different
+     * drive/root (where `relative` returns an absolute path).
+     */
+    private isPathInside(root: string, child: string): boolean {
+        const rel = relative(root, child);
+        return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+    }
+
     private validatePath(path: string, repoDir?: string): void {
         // Check for .. traversal FIRST, before any absolute-path logic,
         // so paths like /repo/../../../etc/passwd are always rejected.
         if (path.includes('..')) {
             throw new Error('Path traversal using ".." is not allowed');
         }
-        if (path.startsWith('/')) {
-            if (
-                repoDir &&
-                (path.startsWith(repoDir + '/') || path === repoDir)
-            ) {
+        // `isAbsolute` (not `startsWith('/')`) so a Windows absolute path like
+        // `C:\repo\x` is recognized as absolute instead of being treated as a
+        // relative segment and joined onto repoDir.
+        if (isAbsolute(path)) {
+            if (repoDir && this.isPathInside(repoDir, path)) {
                 // Absolute path under repoDir — OK, will be validated by
                 // the realpath check in resolveSafePath / resolveSafeWritePath.
                 return;
@@ -728,7 +749,7 @@ export class LocalSandboxService implements ISandboxProvider {
         path: string,
     ): Promise<string> {
         this.validatePath(path, repoDir);
-        const candidate = path.startsWith('/') ? path : join(repoDir, path);
+        const candidate = isAbsolute(path) ? path : join(repoDir, path);
 
         // Check if the target itself is a symlink before resolving
         const stat = await lstat(candidate);
@@ -739,7 +760,7 @@ export class LocalSandboxService implements ISandboxProvider {
         // Resolve to real path and verify it's still under repoDir
         const real = await realpath(candidate);
         const repoReal = await realpath(repoDir);
-        if (!real.startsWith(repoReal + '/') && real !== repoReal) {
+        if (!this.isPathInside(repoReal, real)) {
             throw new Error(`Path escapes repo boundary: ${path}`);
         }
 
@@ -758,7 +779,7 @@ export class LocalSandboxService implements ISandboxProvider {
     ): Promise<string> {
         this.validatePath(path, repoDir);
         const repoReal = await realpath(repoDir);
-        const candidate = path.startsWith('/') ? path : join(repoDir, path);
+        const candidate = isAbsolute(path) ? path : join(repoDir, path);
 
         try {
             const targetStat = await lstat(candidate);
@@ -781,7 +802,16 @@ export class LocalSandboxService implements ISandboxProvider {
         let current = candidate;
         while (true) {
             const parent = join(current, '..');
-            if (parent === current || !parent.startsWith(repoDir + '/')) {
+            // Stop once the parent reaches (or passes) repoDir: repoDir is the
+            // trusted root, already realpath-verified as repoReal. `!== repoDir`
+            // via the empty `relative` result keeps the pre-existing behavior
+            // of not re-validating repoDir itself.
+            const parentRel = relative(repoDir, parent);
+            const parentStrictlyInside =
+                parentRel !== '' &&
+                !parentRel.startsWith('..') &&
+                !isAbsolute(parentRel);
+            if (parent === current || !parentStrictlyInside) {
                 break;
             }
             try {
@@ -795,10 +825,7 @@ export class LocalSandboxService implements ISandboxProvider {
                     throw new Error(`Non-directory parent in path: ${path}`);
                 }
                 const parentReal = await realpath(parent);
-                if (
-                    !parentReal.startsWith(repoReal + '/') &&
-                    parentReal !== repoReal
-                ) {
+                if (!this.isPathInside(repoReal, parentReal)) {
                     throw new Error(`Path escapes repo boundary: ${path}`);
                 }
                 break;

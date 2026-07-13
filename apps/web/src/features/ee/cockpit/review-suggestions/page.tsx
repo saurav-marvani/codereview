@@ -30,8 +30,11 @@ export default async function ReviewSuggestionsPage({
 }: {
     searchParams: Promise<ExplorerSearchParams>;
 }) {
-    const params = await searchParams;
-    const { startDate, endDate } = await getSelectedDateRange();
+    // searchParams and the date range are independent — resolve in parallel.
+    const [params, { startDate, endDate }] = await Promise.all([
+        searchParams,
+        getSelectedDateRange(),
+    ]);
 
     const result = await searchSuggestions({
         startDate,

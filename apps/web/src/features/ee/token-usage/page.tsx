@@ -71,18 +71,22 @@ export default async function TokenUsagePage({
 }: {
     searchParams: { [key: string]: string | string[] | undefined };
 }) {
-    const params = await searchParams;
-    const teamId = await getGlobalSelectedTeamId();
+    // searchParams, teamId, cookies and the date range are mutually independent
+    // — fetch them in one parallel wave instead of four serial round-trips.
+    // Only the license check depends on teamId, so it awaits after.
+    const [params, teamId, cookieStore, selectedDateRange] = await Promise.all([
+        searchParams,
+        getGlobalSelectedTeamId(),
+        cookies(),
+        getSelectedDateRange(),
+    ]);
+
     const subscription = await validateOrganizationLicense({ teamId }).catch(
         () => null,
     );
 
     const isBYOK = subscription ? isBYOKSubscriptionPlan(subscription) : false;
     const isTrial = subscription?.subscriptionStatus === "trial";
-
-    const cookieStore = await cookies();
-
-    const selectedDateRange = await getSelectedDateRange();
 
     const filters = {
         startDate: selectedDateRange.startDate,
@@ -189,9 +193,7 @@ export default async function TokenUsagePage({
                 ? reviewRows
                 : dailyRows;
 
-    activeDayCount = new Set(
-        dailyRows.map((r) => r.date).filter(Boolean),
-    ).size;
+    activeDayCount = new Set(dailyRows.map((r) => r.date).filter(Boolean)).size;
     uniquePrCount = new Set(
         prRows
             .map((r) => r.prNumber)

@@ -4,6 +4,58 @@ export interface Author {
     name: string;
 }
 
+// Daily digest ("PRs do dia") shown as the summary cards at the top of the list.
+export interface PullRequestsDailyDigest {
+    date: string;
+    reviewedToday: number;
+    needsAttention: number;
+    erroredToday: number;
+    awaitingReview: number;
+}
+
+export interface PullRequestsDailyDigestResponse {
+    data: PullRequestsDailyDigest;
+}
+
+// All-time counts per segment tab.
+export interface PullRequestsFacets {
+    all: number;
+    needsAttention: number;
+    errored: number;
+    awaiting: number;
+    mine: number;
+}
+
+export interface PullRequestsFacetsResponse {
+    data: PullRequestsFacets;
+}
+
+export interface AwaitingPullRequest {
+    prId: string;
+    prNumber: number;
+    title: string;
+    url: string;
+    repositoryName: string;
+    repositoryId: string;
+    author: { username: string; name?: string };
+    openedAt: string;
+}
+
+export interface AwaitingPullRequestsResponse {
+    data: AwaitingPullRequest[];
+}
+
+export interface PullRequestAuthorOption {
+    id: string;
+    name: string;
+    username: string;
+    count: number;
+}
+
+export interface PullRequestAuthorsResponse {
+    data: PullRequestAuthorOption[];
+}
+
 export interface AutomationExecution {
     uuid: string;
     status:
@@ -105,7 +157,18 @@ export interface PullRequestExecution {
     automationExecution: AutomationExecution | null;
     codeReviewTimeline: CodeReviewTimelineItem[];
     enrichedData: Record<string, any>;
-    suggestionsCount: { sent: number; filtered: number };
+    suggestionsCount: {
+        // Posted on the PR (deliveryStatus 'sent').
+        sent: number;
+        // Held back by the review config/priority rules ('not_sent').
+        filtered: number;
+        // Kody tried to post but couldn't ('failed'/'failed_lines_mismatch').
+        failed?: number;
+        // Superseded by a newer suggestion ('replaced').
+        replaced?: number;
+        bySeverity?: Record<"critical" | "high" | "medium" | "low", number>;
+        categories?: string[];
+    };
     reviewedCommitSha?: string | null;
     reviewedCommitUrl?: string | null;
     compareUrl?: string | null;
@@ -114,11 +177,21 @@ export interface PullRequestExecution {
     reviewWarnings?: ReviewWarning[];
 }
 
+export interface PullRequestExecutionsPagination {
+    totalItems?: number;
+    // Distinct PRs matching the DB-level filters — the accurate header count.
+    // Absent when the backend can't compute it (error/empty) or reflects only
+    // DB-level filters (see the use-case), so the client trusts it as exact only
+    // when no Mongo-side suggestion/author filter is active.
+    distinctPrTotal?: number;
+}
+
 export type PullRequestExecutionsPayload =
     | PullRequestExecution[]
     | {
           data?: PullRequestExecution[] | null;
           _page_data?: PullRequestExecution[] | null;
+          pagination?: PullRequestExecutionsPagination | null;
       }
     | null
     | undefined;

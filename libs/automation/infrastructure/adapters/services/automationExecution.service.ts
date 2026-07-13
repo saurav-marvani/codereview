@@ -158,12 +158,46 @@ export class AutomationExecutionService implements IAutomationExecutionService {
         pullRequestNumber?: number;
         pullRequestTitle?: string;
         prFilters?: Array<{ number: number; repositoryId: string }>;
+        status?: string;
+        createdAtFrom?: string;
+        createdAtTo?: string;
         skip?: number;
+        cursor?: { createdAt: string | Date; uuid: string };
         take?: number;
         order?: 'ASC' | 'DESC';
         includeTotal?: boolean;
-    }): Promise<{ data: AutomationExecutionEntity[]; total: number }> {
+    }): Promise<{
+        data: AutomationExecutionEntity[];
+        total: number;
+        distinctPrTotal: number;
+    }> {
         return this.automationExecutionRepository.findPullRequestExecutionsByOrganizationAndTeam(
+            params,
+        );
+    }
+
+    getDistinctReviewedPullRequestKeys(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryIds?: string[];
+        createdAtFrom?: Date | string;
+    }): Promise<
+        Array<{
+            repositoryId: string;
+            pullRequestNumber: number;
+            hasError: boolean;
+        }>
+    > {
+        return this.automationExecutionRepository.getDistinctReviewedPullRequestKeys(
+            params,
+        );
+    }
+
+    getAwaitingReviewPullRequestKeys(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryIds?: string[];
+        createdAtFrom?: Date | string;
+    }): Promise<Array<{ repositoryId: string; pullRequestNumber: number }>> {
+        return this.automationExecutionRepository.getAwaitingReviewPullRequestKeys(
             params,
         );
     }

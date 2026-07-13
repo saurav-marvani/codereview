@@ -10,6 +10,7 @@ import {
     ISuggestion,
     IPullRequestWithDeliveredSuggestions,
     IPullRequestUserMapping,
+    SuggestionCountsBySeverity,
 } from '../interfaces/pullRequests.interface';
 
 export const PULL_REQUESTS_REPOSITORY_TOKEN = Symbol.for(
@@ -130,7 +131,36 @@ export interface IPullRequestsRepository {
             repositoryId: string;
         }>,
         organizationId: string,
-    ): Promise<Map<string, { sent: number; filtered: number }>>;
+    ): Promise<Map<string, SuggestionCountsBySeverity>>;
+    findOpenPullRequestKeysOpenedSince(
+        since: string,
+        organizationId: string,
+        repositoryIds?: string[],
+    ): Promise<Array<{ number: number; repositoryId: string }>>;
+    // Distinct PR authors (by display name) for the Author search autocomplete.
+    findDistinctAuthorsByRepositoryIds(
+        organizationId: string,
+        repositoryIds: string[] | undefined,
+        search?: string,
+        limit?: number,
+    ): Promise<
+        Array<{
+            id: string;
+            name: string;
+            username: string;
+            count: number;
+        }>
+    >;
+    countDeliveredPullRequests(
+        organizationId: string,
+        repositoryIds: string[] | undefined,
+        opts: {
+            severities?: string[];
+            authorEmail?: string;
+            unresolvedOnly?: boolean;
+            openOnly?: boolean;
+        },
+    ): Promise<number>;
     findFileWithSuggestions(
         prnumber: number,
         repositoryName: string,
@@ -205,7 +235,6 @@ export interface IPullRequestsRepository {
         totalDeleted: number;
         totalChanges: number;
     }>;
-
 
     /** Generates a stable id for file/suggestion sub-documents. */
     newSubDocumentId(): string;

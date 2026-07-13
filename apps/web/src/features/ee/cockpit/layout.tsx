@@ -24,7 +24,6 @@ import { getAnalyticsStatus } from "./_services/analytics/fetch";
 export default async function Layout({
     bugRatioAnalytics,
     deployFrequencyAnalytics,
-    flowMetrics,
     kodusReviewTab,
     leadTimeBreakdownChart,
     prCycleTimeAnalytics,
@@ -45,7 +44,6 @@ export default async function Layout({
     prsOpenedVsClosedChart: React.ReactNode;
     prsMergedByDeveloperChart: React.ReactNode;
     teamActivityChart: React.ReactNode;
-    flowMetrics: React.ReactNode;
     kodusReviewTab: React.ReactNode;
 }) {
     // Cockpit availability is decided solely by the license tier below
@@ -61,9 +59,19 @@ export default async function Layout({
         getGlobalSelectedTeamId(),
     ]);
 
-    const organizationLicense = await validateOrganizationLicense({
+    // Kick the license check and the analytics/visibility fetches off together
+    // (the license call can be slow — billing cold-start), then await the
+    // license first for the tier gate. This hides the analytics latency behind
+    // the license round-trip instead of running them in series.
+    const licensePromise = validateOrganizationLicense({
         teamId: selectedTeamId,
     }).catch(() => null);
+    const analyticsPromise = Promise.all([
+        getAnalyticsStatus().catch(() => ({ hasData: false })),
+        getCockpitMetricsVisibility(),
+    ]);
+
+    const organizationLicense = await licensePromise;
 
     // Cockpit is scoped to Teams cloud + Enterprise (cloud and
     // self-hosted). Trials count as Teams-cloud. See
@@ -96,10 +104,7 @@ export default async function Layout({
         );
     }
 
-    const [analyticsResult, metricsVisibility] = await Promise.all([
-        getAnalyticsStatus().catch(() => ({ hasData: false })),
-        getCockpitMetricsVisibility(),
-    ]);
+    const [analyticsResult, metricsVisibility] = await analyticsPromise;
 
     const data = extractApiData(analyticsResult);
     const hasAnalyticsData = data?.hasData;
@@ -117,7 +122,6 @@ export default async function Layout({
     const showKodusReview = metricsVisibility.tabs?.kodusReview ?? true;
     const showProductivity = metricsVisibility.tabs?.productivity ?? true;
     const tabsVisibility: Record<TabValue, boolean> = {
-        "flow-metrics": false, // not surfaced in the tab bar yet
         "kodus-review": showKodusReview,
         "productivity": showProductivity || !showKodusReview,
     };
@@ -167,61 +171,57 @@ export default async function Layout({
                             })}
                         </TabsList>
 
-                        <TabsContent value={"flow-metrics" satisfies TabValue}>
-                            {flowMetrics}
-                        </TabsContent>
-
                         {tabsVisibility.productivity && (
-                        <TabsContent
-                            forceMount
-                            value={"productivity" satisfies TabValue}
-                            className="flex flex-col gap-2">
-                            <div className="grid grid-cols-4 gap-2 *:h-56">
-                                {metricsVisibility.summary.deployFrequency && (
-                                    <div>{deployFrequencyAnalytics}</div>
-                                )}
-                                {metricsVisibility.summary.prCycleTime && (
-                                    <div>{prCycleTimeAnalytics}</div>
-                                )}
-                                {metricsVisibility.summary.bugRatio && (
-                                    <div>{bugRatioAnalytics}</div>
-                                )}
-                                {metricsVisibility.summary.prSize && (
-                                    <div>{prSizeAnalytics}</div>
-                                )}
-                            </div>
+                            <TabsContent
+                                value={"productivity" satisfies TabValue}
+                                className="flex flex-col gap-2">
+                                <div className="grid grid-cols-4 gap-2 *:h-56">
+                                    {metricsVisibility.summary
+                                        .deployFrequency && (
+                                        <div>{deployFrequencyAnalytics}</div>
+                                    )}
+                                    {metricsVisibility.summary.prCycleTime && (
+                                        <div>{prCycleTimeAnalytics}</div>
+                                    )}
+                                    {metricsVisibility.summary.bugRatio && (
+                                        <div>{bugRatioAnalytics}</div>
+                                    )}
+                                    {metricsVisibility.summary.prSize && (
+                                        <div>{prSizeAnalytics}</div>
+                                    )}
+                                </div>
 
-                            <div className="relative grid grid-cols-2 gap-2 *:h-[500px]">
-                                <ExpandableCardsLayout>
-                                    {metricsVisibility.details
-                                        .leadTimeBreakdown &&
-                                        leadTimeBreakdownChart}
-                                    {metricsVisibility.details.prCycleTime &&
-                                        prCycleTimeChart}
-                                    {metricsVisibility.details
-                                        .prsOpenedVsClosed &&
-                                        prsOpenedVsClosedChart}
-                                    {metricsVisibility.details
-                                        .prsMergedByDeveloper &&
-                                        prsMergedByDeveloperChart}
-                                </ExpandableCardsLayout>
+                                <div className="relative grid grid-cols-2 gap-2 *:h-[500px]">
+                                    <ExpandableCardsLayout>
+                                        {metricsVisibility.details
+                                            .leadTimeBreakdown &&
+                                            leadTimeBreakdownChart}
+                                        {metricsVisibility.details
+                                            .prCycleTime && prCycleTimeChart}
+                                        {metricsVisibility.details
+                                            .prsOpenedVsClosed &&
+                                            prsOpenedVsClosedChart}
+                                        {metricsVisibility.details
+                                            .prsMergedByDeveloper &&
+                                            prsMergedByDeveloperChart}
+                                    </ExpandableCardsLayout>
 
-                                {metricsVisibility.details.teamActivity && (
-                                    <div className="col-span-2 h-auto!">
-                                        {teamActivityChart}
-                                    </div>
-                                )}
-                            </div>
-                        </TabsContent>
+                                    {metricsVisibility.details.teamActivity && (
+                                        <div className="col-span-2 h-auto!">
+                                            {teamActivityChart}
+                                        </div>
+                                    )}
+                                </div>
+                            </TabsContent>
                         )}
 
                         {tabsVisibility["kodus-review"] && (
-                        <TabsContent
-                            forceMount
-                            value={"kodus-review" satisfies TabValue}
-                            className="flex flex-col gap-6">
-                            {kodusReviewTab}
-                        </TabsContent>
+                            <TabsContent
+                                forceMount
+                                value={"kodus-review" satisfies TabValue}
+                                className="flex flex-col gap-6">
+                                {kodusReviewTab}
+                            </TabsContent>
                         )}
                     </CockpitTabs>
                 </div>

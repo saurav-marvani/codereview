@@ -127,6 +127,13 @@ export class PullRequestExecutionsPaginationDto {
     @ApiProperty()
     totalItems: number;
 
+    // Distinct PRs matching the DB-level filters — the accurate "N pull
+    // requests" for the header. Undefined on error/empty responses. Kept in the
+    // API envelope so class-transformer doesn't strip it and the OpenAPI
+    // contract matches the runtime `PaginationMetadata`.
+    @ApiProperty({ required: false })
+    distinctPrTotal?: number;
+
     @ApiProperty()
     itemsPerPage: number;
 

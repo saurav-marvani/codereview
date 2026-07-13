@@ -24,15 +24,16 @@ import { cacheSavings } from "../_utils/cost";
 import { AreaBreakdown } from "./area-breakdown";
 import { Chart, type ChartUnit } from "./chart";
 import { Filters } from "./filters";
-import { ReviewActivityTable } from "./review-activity-table";
 import { ModelBreakdownTable } from "./model-breakdown-table";
 import { NoData } from "./no-data";
+import { TokenUsageContentSkeleton } from "./page-skeleton";
+import { ReviewActivityTable } from "./review-activity-table";
 import { SpendLimitProgress } from "./spend-limit-progress";
 import { SummaryCards } from "./summary-cards";
 
 /** Section header per chart dimension — cockpit card-title/description. */
 const CHART_SECTION: Record<string, { title: string; description: string }> = {
-    daily: {
+    "daily": {
         title: "Usage over time",
         description:
             "Daily usage split by uncached input, cache, output and reasoning.",
@@ -148,8 +149,7 @@ export const TokenUsagePageClient = ({
                     input: acc.input + row.input,
                     output: acc.output + row.output,
                     total: acc.total + row.total,
-                    outputReasoning:
-                        acc.outputReasoning + row.outputReasoning,
+                    outputReasoning: acc.outputReasoning + row.outputReasoning,
                     cacheRead: acc.cacheRead + (row.cacheRead ?? 0),
                     cacheWrite: acc.cacheWrite + (row.cacheWrite ?? 0),
                     totalCost: acc.totalCost + row.cost.total,
@@ -191,8 +191,15 @@ export const TokenUsagePageClient = ({
         );
     }, [summary, selectedModels, pricing]);
 
+    // Render the content skeleton (not null) before mount so SSR and the
+    // pre-hydration window show the placeholder layout instead of an empty body
+    // that then pops in the real content.
     if (!isMounted) {
-        return null;
+        return (
+            <div className="flex flex-col gap-5">
+                <TokenUsageContentSkeleton />
+            </div>
+        );
     }
 
     return (
@@ -288,7 +295,10 @@ export const TokenUsagePageClient = ({
             <AreaBreakdown rows={byArea} selectedModels={selectedModels} />
 
             {/* Per-model breakdown (collapsed by default) */}
-            <ModelBreakdownTable rows={breakdownRows} pricing={filteredPricing} />
+            <ModelBreakdownTable
+                rows={breakdownRows}
+                pricing={filteredPricing}
+            />
         </div>
     );
 };
