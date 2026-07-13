@@ -110,8 +110,11 @@ export class GetPullRequestsFacetsUseCase implements IUseCase {
             // with an unaddressed suggestion — same predicate, plus the author.
             // countDeliveredPullRequests ANDs authorEmail with the other flags,
             // so this reuses the existing query (no new scan).
+            // `&& email` here (not just at the call site below) so a mine-scope
+            // caller with no resolvable email never falls back to an undefined
+            // authorEmail (which would count the whole team).
             const needsAttentionAuthor =
-                query.scope === 'mine' ? email : undefined;
+                query.scope === 'mine' && email ? email : undefined;
 
             const [reviewedKeys, needsAttention, mine, awaitingKeys] =
                 await Promise.all([
