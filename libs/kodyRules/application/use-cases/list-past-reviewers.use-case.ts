@@ -43,7 +43,8 @@ export class ListPastReviewersUseCase {
         repositoryId?: string;
         months?: number;
     }): Promise<PastReviewer[]> {
-        const { teamId, repositoryId, months = 3 } = params;
+        const { teamId, repositoryId } = params;
+        const months = this.normalizeMonths(params.months);
         const organizationAndTeamData: OrganizationAndTeamData = {
             organizationId: this.request.user.organization.uuid,
             teamId,
@@ -112,7 +113,10 @@ export class ListPastReviewersUseCase {
             );
 
             for (const result of results) {
+                // A rejection, or the adapter's null-on-failure sentinel, is a
+                // provider error — flag it so an empty result isn't cached.
                 if (result.status !== 'fulfilled' || !Array.isArray(result.value)) {
+                    hadError = true;
                     continue;
                 }
                 for (const pr of result.value) {
@@ -138,10 +142,11 @@ export class ListPastReviewersUseCase {
             a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
         );
 
-        // Cache genuine results (including an empty list) so empty teams don't
-        // re-fan-out every request; skip caching if a provider call errored, to
-        // avoid serving a failure-induced empty list for the whole TTL.
-        if (!hadError) {
+        // Cache a non-empty result always (a useful partial is worth keeping,
+        // and a single flaky repo shouldn't defeat caching). Cache an EMPTY
+        // result only when nothing errored — otherwise it's likely a
+        // failure-induced empty that we shouldn't serve for the whole TTL.
+        if (reviewers.length > 0 || !hadError) {
             this.cacheService
                 .addToCache(
                     cacheKey,
@@ -152,6 +157,19 @@ export class ListPastReviewersUseCase {
         }
 
         return reviewers;
+    }
+
+    /**
+     * Bound the lookback window (a business rule, not transport): reject
+     * NaN/non-finite input and clamp to 1–12 months, defaulting to 3. Keeps an
+     * abusive `months` value from building an invalid or unbounded date filter.
+     */
+    private normalizeMonths(raw?: number): number {
+        const DEFAULT_MONTHS = 3;
+        if (raw === undefined || raw === null || !Number.isFinite(raw)) {
+            return DEFAULT_MONTHS;
+        }
+        return Math.min(Math.max(Math.trunc(raw), 1), 12);
     }
 
     private addReviewer(

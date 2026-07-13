@@ -168,7 +168,7 @@ describe('ListPastReviewersUseCase', () => {
         );
     });
 
-    it('does not cache when a provider call errors (avoids caching a failure)', async () => {
+    it('still caches a non-empty result despite a partial provider error', async () => {
         const { useCase, cacheService, codeManagementService } = build({
             repos: [{ id: 'r1', name: 'repo-1' }],
             prsByRepo: { r1: [author(3, 'Carol')] },
@@ -179,7 +179,53 @@ describe('ListPastReviewersUseCase', () => {
 
         const result = await useCase.execute({ teamId: 'team-1' });
 
+        // A useful partial (PR authors) is worth caching even though the
+        // members call failed.
         expect(result).toEqual([{ id: '3', name: 'Carol' }]);
+        expect(cacheService.addToCache).toHaveBeenCalled();
+    });
+
+    it('does not cache an EMPTY result when the members call errors', async () => {
+        const { useCase, cacheService, codeManagementService } = build({
+            repos: [],
+        });
+        codeManagementService.getListMembers.mockRejectedValue(
+            new Error('members down'),
+        );
+
+        const result = await useCase.execute({ teamId: 'team-1' });
+
+        expect(result).toEqual([]);
         expect(cacheService.addToCache).not.toHaveBeenCalled();
+    });
+
+    it('does not cache an EMPTY result when a per-repo PR fetch fails', async () => {
+        const { useCase, cacheService } = build({
+            members: [],
+            repos: [{ id: 'r1', name: 'repo-1' }],
+            prsByRepo: { r1: new Error('rate limited') },
+        });
+
+        const result = await useCase.execute({ teamId: 'team-1' });
+
+        expect(result).toEqual([]);
+        expect(cacheService.addToCache).not.toHaveBeenCalled();
+    });
+
+    it('normalizes months: clamps out-of-range and defaults non-finite to 3', async () => {
+        const { useCase, cacheService } = build({
+            members: [{ id: 1, name: 'Alice' }],
+            repos: [],
+        });
+
+        await useCase.execute({ teamId: 'team-1', months: 99999 });
+        await useCase.execute({ teamId: 'team-1', months: NaN });
+
+        // The clamped/defaulted value ends the cache key (`..._<months>`).
+        const cacheKeys = (cacheService.addToCache as jest.Mock).mock.calls.map(
+            (c) => c[0] as string,
+        );
+        expect(cacheKeys.some((k) => k.endsWith('_12'))).toBe(true); // 99999 → 12
+        expect(cacheKeys.some((k) => k.endsWith('_3'))).toBe(true); // NaN → 3
     });
 });
