@@ -599,22 +599,6 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                             Held back by your review configuration
                         </TooltipContent>
                     </Tooltip>
-                    {/* Delivery failures — only shown when there are any, so a
-                        clean review stays "sent / filtered". Distinct from
-                        "filtered" (a config decision): Kody tried to post these
-                        and couldn't. */}
-                    {latest.suggestionsCount.failed ? (
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <span className="bg-warning/10 text-warning inline-flex min-w-7 items-center justify-center rounded-md px-2 py-0.5 text-xs font-medium tabular-nums">
-                                    {latest.suggestionsCount.failed}
-                                </span>
-                            </TooltipTrigger>
-                            <TooltipContent className="text-xs">
-                                Kody couldn&apos;t post these (delivery failed)
-                            </TooltipContent>
-                        </Tooltip>
-                    ) : null}
                 </NextLink>
 
                 {/* Status column — the review-run status, plus "Heavy" (the

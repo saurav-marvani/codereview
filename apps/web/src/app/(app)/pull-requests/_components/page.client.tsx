@@ -18,12 +18,13 @@ import {
     usePullRequestsFacets,
     type PullRequestExecution,
 } from "@services/pull-requests";
-import { ClockIcon, SearchIcon, UserIcon, XIcon } from "lucide-react";
+import { SearchIcon, UserIcon, XIcon } from "lucide-react";
 import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { cn } from "src/core/utils/components";
 
 import { AwaitingList } from "./pr-awaiting-list";
+import { PrAuthorSearch } from "./pr-author-search";
 import { PrDataTable } from "./pr-data-table";
 import { PullRequestsFilters } from "./pull-requests-filters";
 
@@ -293,18 +294,23 @@ export function PullRequestsPageClient() {
     // `groupedPullRequests.length` alone only reflects the loaded page, so it
     // understated the real total (read "150 pull requests" next to "665
     // awaiting"); it's the last resort.
+    // Any authorPolicy other than "all" narrows the visible set relative to the
+    // team-wide `facets.all` (the default "reviewable" already excludes some
+    // authors). Treat that as an active filter so the header stops showing the
+    // team total and falls back to the loaded-window count — the number then
+    // matches the list instead of overcounting.
     const hasActiveFilters =
         activeChips.length > 0 ||
         needsAttention === "true" ||
         isAwaiting ||
-        authorPolicy !== "reviewable";
+        authorPolicy !== "all";
     // Filters applied post-query (Mongo side) — while any is active,
     // `filteredPrTotal` (DB-level only) is an upper bound, not exact.
     const hasMongoFilters =
         suggestionsFilter !== "all" ||
         needsAttention === "true" ||
         !!debouncedAuthor.trim() ||
-        authorPolicy !== "reviewable";
+        authorPolicy !== "all";
     const canUseExactFilteredTotal =
         hasActiveFilters &&
         !isAwaiting &&
@@ -494,41 +500,40 @@ export function PullRequestsPageClient() {
                             ) : (
                                 <SearchIcon className="text-text-tertiary size-4 shrink-0" />
                             )}
-                            <input
-                                ref={searchRef}
-                                className="text-text-primary placeholder:text-text-tertiary/70 h-full min-w-0 flex-1 bg-transparent text-sm outline-none"
-                                inputMode={
-                                    searchMode === "number" ? "numeric" : "text"
-                                }
-                                placeholder={
-                                    searchMode === "number"
-                                        ? "Search by PR number…"
-                                        : searchMode === "author"
-                                          ? "Search by author…"
-                                          : "Search by title…"
-                                }
-                                value={
-                                    searchMode === "author"
-                                        ? (authorFilter ?? "")
-                                        : searchQuery
-                                }
-                                onChange={(event) => {
-                                    if (searchMode === "author") {
-                                        setAuthorFilter(
-                                            event.target.value || null,
-                                        );
-                                        return;
+                            {searchMode === "author" ? (
+                                <PrAuthorSearch
+                                    teamId={teamId}
+                                    onSelect={(name) =>
+                                        setAuthorFilter(name || null)
                                     }
-                                    setSearchQuery(
+                                />
+                            ) : (
+                                <input
+                                    ref={searchRef}
+                                    className="text-text-primary placeholder:text-text-tertiary/70 h-full min-w-0 flex-1 bg-transparent text-sm outline-none"
+                                    inputMode={
                                         searchMode === "number"
-                                            ? event.target.value.replace(
-                                                  /[^\d]/g,
-                                                  "",
-                                              )
-                                            : event.target.value,
-                                    );
-                                }}
-                            />
+                                            ? "numeric"
+                                            : "text"
+                                    }
+                                    placeholder={
+                                        searchMode === "number"
+                                            ? "Search by PR number…"
+                                            : "Search by title…"
+                                    }
+                                    value={searchQuery}
+                                    onChange={(event) => {
+                                        setSearchQuery(
+                                            searchMode === "number"
+                                                ? event.target.value.replace(
+                                                      /[^\d]/g,
+                                                      "",
+                                                  )
+                                                : event.target.value,
+                                        );
+                                    }}
+                                />
+                            )}
                             <div className="bg-card-lv1/80 flex shrink-0 items-center gap-0.5 rounded-lg p-0.5">
                                 {(["title", "number", "author"] as const).map(
                                     (mode) => (
@@ -609,26 +614,6 @@ export function PullRequestsPageClient() {
                                 ))}
                             </SelectContent>
                         </Select>
-
-                        <button
-                            type="button"
-                            onClick={() =>
-                                setView(isAwaiting ? null : "awaiting")
-                            }
-                            className={cn(
-                                "ml-auto flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-all",
-                                isAwaiting
-                                    ? "border-warning/60 bg-warning/10 text-warning"
-                                    : "border-card-lv3 text-text-secondary hover:bg-card-lv2/60",
-                            )}>
-                            <ClockIcon className="size-4" />
-                            Awaiting review
-                            {facets?.awaiting ? (
-                                <span className="tabular-nums opacity-80">
-                                    {facets.awaiting}
-                                </span>
-                            ) : null}
-                        </button>
                     </div>
                 </div>
 
