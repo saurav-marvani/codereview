@@ -15,6 +15,7 @@ import {
 } from "./fetch";
 import type {
     AwaitingPullRequestsResponse,
+    PullRequestAuthorsResponse,
     PullRequestExecution,
     PullRequestExecutionsPayload,
     PullRequestExecutionsResponse,
@@ -232,6 +233,24 @@ export const usePullRequestsAwaiting = (teamId?: string) => {
         enabled: !!teamId,
         retry: false,
         staleTime: 60_000,
+        select: (response) => response.data,
+    });
+};
+
+// Author-search autocomplete options. Loads the full (server-cached) author
+// list once per team and lets the caller filter client-side — so typing does
+// NOT hit the backend per keystroke (the distinct-authors aggregation is
+// expensive). staleTime keeps it cached across opens.
+export const usePullRequestAuthors = (teamId?: string, enabled = true) => {
+    return useQuery({
+        queryKey: ["pull-requests-authors", teamId],
+        queryFn: () =>
+            axiosAuthorized.fetcher<PullRequestAuthorsResponse>(
+                PULL_REQUEST_API.GET_AUTHORS(teamId, undefined, 500),
+            ),
+        enabled: !!teamId && enabled,
+        retry: false,
+        staleTime: 5 * 60_000,
         select: (response) => response.data,
     });
 };

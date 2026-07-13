@@ -235,6 +235,28 @@ export class PullRequestsService implements IPullRequestsService {
         );
     }
 
+    findDistinctAuthorsByRepositoryIds(
+        organizationId: string,
+        repositoryIds: string[] | undefined,
+        search?: string,
+        limit?: number,
+    ): Promise<
+        Array<{
+            id: string;
+            name: string;
+            username: string;
+            email: string | null;
+            count: number;
+        }>
+    > {
+        return this.pullRequestsRepository.findDistinctAuthorsByRepositoryIds(
+            organizationId,
+            repositoryIds,
+            search,
+            limit,
+        );
+    }
+
     countDeliveredPullRequests(
         organizationId: string,
         repositoryIds: string[] | undefined,

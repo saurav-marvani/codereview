@@ -45,6 +45,18 @@ export interface AwaitingPullRequestsResponse {
     data: AwaitingPullRequest[];
 }
 
+export interface PullRequestAuthorOption {
+    id: string;
+    name: string;
+    username: string;
+    email: string | null;
+    count: number;
+}
+
+export interface PullRequestAuthorsResponse {
+    data: PullRequestAuthorOption[];
+}
+
 export interface AutomationExecution {
     uuid: string;
     status:

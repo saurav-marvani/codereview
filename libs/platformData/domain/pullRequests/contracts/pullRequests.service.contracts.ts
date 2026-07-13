@@ -85,6 +85,20 @@ export interface IPullRequestsService extends IPullRequestsRepository {
         organizationId: string,
         repositoryIds?: string[],
     ): Promise<Array<{ number: number; repositoryId: string }>>;
+    findDistinctAuthorsByRepositoryIds(
+        organizationId: string,
+        repositoryIds: string[] | undefined,
+        search?: string,
+        limit?: number,
+    ): Promise<
+        Array<{
+            id: string;
+            name: string;
+            username: string;
+            email: string | null;
+            count: number;
+        }>
+    >;
     countDeliveredPullRequests(
         organizationId: string,
         repositoryIds: string[] | undefined,

@@ -105,6 +105,16 @@ export const PULL_REQUEST_API = {
             `/pull-requests/awaiting${queryString ? `?${queryString}` : ""}`,
         );
     },
+    GET_AUTHORS: (teamId?: string, q?: string, limit?: number) => {
+        const params = new URLSearchParams();
+        if (teamId) params.append("teamId", teamId);
+        if (q?.trim()) params.append("q", q.trim());
+        if (limit) params.append("limit", String(limit));
+        const queryString = params.toString();
+        return pathToApiUrl(
+            `/pull-requests/authors${queryString ? `?${queryString}` : ""}`,
+        );
+    },
     GET_ONBOARDING_SIGNALS: (filters: {
         teamId: string;
         repositoryIds: string[];

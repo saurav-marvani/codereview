@@ -596,6 +596,70 @@ export class PullRequestsRepository implements IPullRequestsRepository {
             }));
     }
 
+    // Distinct PR authors (by display name) for the org/team repo scope — powers
+    // the Author search autocomplete. Optional `search` narrows by a
+    // case-insensitive substring of name/username; results are ordered by PR
+    // count (most active first) and capped. Only authors with a non-empty
+    // display name are returned, since the list filters on the exact name.
+    async findDistinctAuthorsByRepositoryIds(
+        organizationId: string,
+        repositoryIds: string[] | undefined,
+        search?: string,
+        limit = 20,
+    ): Promise<
+        Array<{
+            id: string;
+            name: string;
+            username: string;
+            email: string | null;
+            count: number;
+        }>
+    > {
+        const match: Record<string, any> = { organizationId };
+        if (repositoryIds?.length) {
+            match['repository.id'] = { $in: repositoryIds };
+        }
+        const trimmed = search?.trim();
+        if (trimmed) {
+            const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const rx = new RegExp(escaped, 'i');
+            match.$or = [{ 'user.name': rx }, { 'user.username': rx }];
+        }
+
+        const rows = await this.pullRequestsModel
+            .aggregate([
+                { $match: match },
+                {
+                    $group: {
+                        // Group by the git identity — username is the stable key;
+                        // fall back to name when a provider omits it.
+                        _id: { $ifNull: ['$user.username', '$user.name'] },
+                        name: { $first: '$user.name' },
+                        username: { $first: '$user.username' },
+                        email: { $first: '$user.email' },
+                        userId: { $first: '$user.id' },
+                        count: { $sum: 1 },
+                    },
+                },
+                // Exact-name filtering means an author with no display name can't
+                // be selected — drop them from the suggestions.
+                { $match: { name: { $nin: [null, ''] } } },
+                { $sort: { count: -1, name: 1 } },
+                // Cap generously — the caller caches the full list once per team
+                // and filters in memory, so this runs rarely (not per keystroke).
+                { $limit: Math.max(1, Math.min(limit, 500)) },
+            ])
+            .exec();
+
+        return rows.map((r: any) => ({
+            id: r.userId != null ? String(r.userId) : '',
+            name: r.name ?? '',
+            username: r.username ?? '',
+            email: r.email ?? null,
+            count: r.count ?? 0,
+        }));
+    }
+
     // Counts DISTINCT PRs that delivered ≥1 suggestion, optionally narrowed by
     // severity (lowercased) and/or author email. Powers the "Needs attention"
     // (severities critical/high) and "Mine" (authorEmail) segment facets.

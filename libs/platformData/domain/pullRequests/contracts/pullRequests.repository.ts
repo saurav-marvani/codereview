@@ -137,6 +137,21 @@ export interface IPullRequestsRepository {
         organizationId: string,
         repositoryIds?: string[],
     ): Promise<Array<{ number: number; repositoryId: string }>>;
+    // Distinct PR authors (by display name) for the Author search autocomplete.
+    findDistinctAuthorsByRepositoryIds(
+        organizationId: string,
+        repositoryIds: string[] | undefined,
+        search?: string,
+        limit?: number,
+    ): Promise<
+        Array<{
+            id: string;
+            name: string;
+            username: string;
+            email: string | null;
+            count: number;
+        }>
+    >;
     countDeliveredPullRequests(
         organizationId: string,
         repositoryIds: string[] | undefined,

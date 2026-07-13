@@ -16,6 +16,10 @@ import {
     PullRequestsFacets,
 } from '@libs/code-review/application/use-cases/dashboard/get-pull-requests-facets.use-case';
 import {
+    GetPullRequestAuthorsUseCase,
+    PullRequestAuthorSuggestion,
+} from '@libs/code-review/application/use-cases/dashboard/get-pull-request-authors.use-case';
+import {
     GetAwaitingPullRequestsUseCase,
     AwaitingPullRequest,
 } from '@libs/code-review/application/use-cases/dashboard/get-awaiting-pull-requests.use-case';
@@ -106,6 +110,7 @@ export class PullRequestController implements OnApplicationShutdown {
         private readonly getPullRequestsDailyDigestUseCase: GetPullRequestsDailyDigestUseCase,
         private readonly getPullRequestsFacetsUseCase: GetPullRequestsFacetsUseCase,
         private readonly getAwaitingPullRequestsUseCase: GetAwaitingPullRequestsUseCase,
+        private readonly getPullRequestAuthorsUseCase: GetPullRequestAuthorsUseCase,
         private readonly getPullRequestSuggestionsUseCase: GetPullRequestSuggestionsUseCase,
         private readonly getPullRequestFilesUseCase: GetPullRequestFilesUseCase,
         private readonly codeManagementService: CodeManagementService,
@@ -211,6 +216,36 @@ export class PullRequestController implements OnApplicationShutdown {
         @Query('teamId') teamId?: string,
     ): Promise<AwaitingPullRequest[]> {
         return await this.getAwaitingPullRequestsUseCase.execute({ teamId });
+    }
+
+    @Get('/authors')
+    @ApiBearerAuth('jwt')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.PullRequests,
+        }),
+    )
+    @ApiOperation({
+        summary: 'PR author suggestions',
+        description:
+            'Distinct PR authors (by display name) for the Author-search autocomplete, ordered by PR count.',
+    })
+    public async getPullRequestAuthors(
+        @Query('teamId') teamId?: string,
+        @Query('q') q?: string,
+        @Query('limit') limit?: string,
+    ): Promise<PullRequestAuthorSuggestion[]> {
+        const parsedLimit = limit ? Number(limit) : undefined;
+        return await this.getPullRequestAuthorsUseCase.execute({
+            teamId,
+            search: q,
+            limit:
+                parsedLimit != null && Number.isFinite(parsedLimit)
+                    ? parsedLimit
+                    : undefined,
+        });
     }
 
     @Sse('/executions/events')
