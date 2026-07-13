@@ -145,6 +145,65 @@ describe('LocalSandboxService sandbox file access', () => {
         }
     });
 
+    it('writes a nested file through a symlinked repoDir end-to-end (#1532)', async () => {
+        // Behavioural black-box: the write must succeed and land in the real
+        // tree even when the sandbox root is reached through a symlink.
+        const realRoot = fs.mkdtempSync(
+            path.join(os.tmpdir(), 'kodus-sandbox-real-'),
+        );
+        const linkRoot = path.join(
+            os.tmpdir(),
+            'kodus-sandbox-link-' + path.basename(realRoot),
+        );
+        fs.symlinkSync(realRoot, linkRoot);
+        try {
+            const svc = new LocalSandboxService({} as any);
+            const symSandbox = (svc as any).buildSandboxFileAccess(linkRoot);
+            await symSandbox.writeFile('deep/nested/file.txt', 'ok');
+            expect(
+                fs.readFileSync(
+                    path.join(realRoot, 'deep/nested/file.txt'),
+                    'utf-8',
+                ),
+            ).toBe('ok');
+        } finally {
+            fs.unlinkSync(linkRoot);
+            fs.rmSync(realRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('still rejects a symlinked target file when repoDir is a symlink (fix must not open a hole)', async () => {
+        // Security guard: the symlinked-repoDir normalization must NOT let a
+        // symlinked target file be written through — the escape must still throw
+        // and the outside secret must stay untouched.
+        const realRoot = fs.mkdtempSync(
+            path.join(os.tmpdir(), 'kodus-sandbox-real-'),
+        );
+        const linkRoot = path.join(
+            os.tmpdir(),
+            'kodus-sandbox-link-' + path.basename(realRoot),
+        );
+        fs.symlinkSync(realRoot, linkRoot);
+        const secretDir = fs.mkdtempSync(
+            path.join(os.tmpdir(), 'kodus-sandbox-secret-'),
+        );
+        const secret = path.join(secretDir, 'secret.txt');
+        fs.writeFileSync(secret, 'secret');
+        fs.symlinkSync(secret, path.join(realRoot, 'linkfile.txt'));
+        try {
+            const svc = new LocalSandboxService({} as any);
+            const symSandbox = (svc as any).buildSandboxFileAccess(linkRoot);
+            await expect(
+                symSandbox.writeFile('linkfile.txt', 'x'),
+            ).rejects.toThrow(/Symlink/);
+            expect(fs.readFileSync(secret, 'utf-8')).toBe('secret');
+        } finally {
+            fs.unlinkSync(linkRoot);
+            fs.rmSync(realRoot, { recursive: true, force: true });
+            fs.rmSync(secretDir, { recursive: true, force: true });
+        }
+    });
+
     it('rejects absolute read paths outside the repo', async () => {
         await expect(sandbox.readFile('/etc/passwd')).rejects.toThrow(
             /Absolute paths are not allowed/,
