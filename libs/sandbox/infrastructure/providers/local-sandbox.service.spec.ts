@@ -108,6 +108,43 @@ describe('LocalSandboxService sandbox file access', () => {
         );
     });
 
+    it('hands openRepoWriteHandle a path under the REAL repo root when repoDir is a symlink (#1532 regression)', async () => {
+        // A repo root reached through a symlink — e.g. a symlinked temp mount
+        // on Linux/CI. resolveSafeWritePath returns a repoDir-prefixed path; if
+        // that is handed straight to the openat helper, its
+        // relative(repoReal, …) guard sees a leading `..` and rejects an
+        // otherwise-legitimate write. The path handed down must live under the
+        // realpath-resolved root.
+        const realRoot = fs.mkdtempSync(
+            path.join(os.tmpdir(), 'kodus-sandbox-real-'),
+        );
+        const linkRoot = path.join(
+            os.tmpdir(),
+            'kodus-sandbox-link-' + path.basename(realRoot),
+        );
+        fs.symlinkSync(realRoot, linkRoot);
+        try {
+            const svc = new LocalSandboxService({} as any);
+            const spy = jest.spyOn(svc as any, 'openRepoWriteHandle');
+            const symSandbox = (svc as any).buildSandboxFileAccess(linkRoot);
+
+            await symSandbox.writeFile('sub/c.txt', 'ok');
+
+            const repoReal = fs.realpathSync(linkRoot);
+            const passedSafePath = spy.mock.calls[0][1] as string;
+            const rel = path.relative(repoReal, passedSafePath);
+            expect(rel.startsWith('..')).toBe(false);
+            expect(path.isAbsolute(rel)).toBe(false);
+            // …and the write actually lands in the real repo tree.
+            expect(
+                fs.readFileSync(path.join(realRoot, 'sub/c.txt'), 'utf-8'),
+            ).toBe('ok');
+        } finally {
+            fs.unlinkSync(linkRoot);
+            fs.rmSync(realRoot, { recursive: true, force: true });
+        }
+    });
+
     it('rejects absolute read paths outside the repo', async () => {
         await expect(sandbox.readFile('/etc/passwd')).rejects.toThrow(
             /Absolute paths are not allowed/,

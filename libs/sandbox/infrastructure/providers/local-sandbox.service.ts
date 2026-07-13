@@ -16,7 +16,7 @@ import {
 import type { FileHandle } from 'fs/promises';
 import { constants as fsConstants } from 'fs';
 import { tmpdir } from 'os';
-import { isAbsolute, join, relative, sep } from 'path';
+import { basename, isAbsolute, join, relative, sep } from 'path';
 import { promisify } from 'util';
 
 import {
@@ -583,11 +583,22 @@ export class LocalSandboxService implements ISandboxProvider {
                     );
                 }
 
+                // Normalize the validated target to the REAL repo root before
+                // the openat traversal. resolveSafeWritePath returns a repoDir-
+                // prefixed path; when repoDir is reached through a symlink (e.g.
+                // a symlinked temp mount), handing that mix to the helper makes
+                // its relative(repoReal, …) guard see a leading `..` and reject a
+                // legitimate write. finalCheck is the already-realpath'd parent,
+                // so join it with the target filename to get a path under
+                // repoReal (the final component stays un-resolved so O_NOFOLLOW
+                // still refuses a symlinked target file).
+                const safePathReal = join(finalCheck, basename(safePath));
+
                 // Open the target refusing to follow a symlink at ANY path
                 // component (not just the final one). On Linux this fully
                 // closes the parent-dir-swap TOCTOU (#1532); elsewhere it is a
                 // best-effort O_NOFOLLOW on the final component (see helper).
-                const fd = await this.openRepoWriteHandle(repoReal, safePath);
+                const fd = await this.openRepoWriteHandle(repoReal, safePathReal);
                 try {
                     await fd.writeFile(content, 'utf-8');
                 } finally {
