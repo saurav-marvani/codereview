@@ -1342,6 +1342,17 @@
     }
   },
   {
+    "key": "pullRequest.controller.ts#getPullRequestAuthors",
+    "httpMethod": "GET",
+    "urlPath": "/pull-requests/authors",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "allow"
+    }
+  },
+  {
     "key": "pullRequest.controller.ts#getPullRequestExecutions",
     "httpMethod": "GET",
     "urlPath": "/pull-requests/executions",
