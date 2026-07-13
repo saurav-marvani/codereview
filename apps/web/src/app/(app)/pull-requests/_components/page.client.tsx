@@ -20,15 +20,13 @@ import {
 } from "@services/pull-requests";
 import { SearchIcon, UserIcon, XIcon } from "lucide-react";
 import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
-import { UserRole } from "@enums";
-import { useAuth } from "src/core/providers/auth.provider";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { cn } from "src/core/utils/components";
 
 import { AwaitingList } from "./pr-awaiting-list";
 import { PrAuthorSearch } from "./pr-author-search";
 import { PrDataTable } from "./pr-data-table";
-import { PrViewSwitcher, type PullRequestsScope } from "./pr-view-switcher";
+import { type PullRequestsScope } from "./pr-view-switcher";
 import { PullRequestsFilters } from "./pull-requests-filters";
 
 // Filters live in the URL (nuqs) so a filtered view is shareable / deep-linkable
@@ -112,35 +110,15 @@ export function PullRequestsPageClient() {
         parseAsStringLiteral(["awaiting"] as const).withOptions(urlOpts),
     );
 
-    // View scope. The org session only knows owner-vs-contributor (not
-    // leader-vs-member), so the role just seeds a sensible default: a plain
-    // contributor lands on their own worklist ("Minha fila"), everyone who
-    // manages (owner/admin/billing) lands on the team dashboard ("Meu time").
-    // The switcher (URL param) then wins — an explicit choice beats the guess.
-    const { role } = useAuth();
-    const defaultScope: PullRequestsScope =
-        role === UserRole.CONTRIBUTOR ? "mine" : "team";
-    const [scopeParam, setScopeParam] = useQueryState(
-        "scope",
-        parseAsStringLiteral(["mine", "team"] as const).withOptions(urlOpts),
-    );
-    const scope: PullRequestsScope = scopeParam ?? defaultScope;
-    const isMineView = scope === "mine";
-    const changeScope = (next: PullRequestsScope) => {
-        // Awaiting is a team/config backlog with no author scoping, so it has no
-        // place in "Minha fila" — leaving it on would show team data under a
-        // "mine" heading. Drop it (and the needs-attention toggle) on switch.
-        setView(null);
-        setNeedsAttention(null);
-        // Author scope is meaningless in "mine" (author is pinned to me); drop
-        // a leftover author search so its input doesn't linger dead.
-        if (next === "mine" && searchMode === "author") {
-            setSearchMode("title");
-            setSearchQuery("");
-            setAuthorFilter(null);
-        }
-        setScopeParam(next === defaultScope ? null : next);
-    };
+    // View scope is temporarily PINNED to the team dashboard — the "My queue /
+    // My team" switcher is hidden for now (product decision). The mine-view
+    // machinery below (mine cards, author=me pin, scoped facets) is intentionally
+    // left intact so re-enabling is just: restore the role default + `scope` URL
+    // param here and render <PrViewSwitcher> in the header again.
+    const scope: PullRequestsScope = "team";
+    // Pinned off while the switcher is hidden; flip back to `scope === "mine"`
+    // when the My queue view is re-enabled.
+    const isMineView = false;
 
     const searchRef = useRef<HTMLInputElement>(null);
 
@@ -533,9 +511,6 @@ export function PullRequestsPageClient() {
                             </span>
                         )}
                     </div>
-
-                    {/* View switcher — my worklist vs. the team dashboard. */}
-                    <PrViewSwitcher value={scope} onChange={changeScope} />
                 </div>
             </Page.Header>
 
