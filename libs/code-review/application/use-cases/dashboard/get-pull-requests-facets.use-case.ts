@@ -123,15 +123,21 @@ export class GetPullRequestsFacetsUseCase implements IUseCase {
                     // implemented). Actionable "someone needs to look at this",
                     // not "ever delivered a crit/high" (which counted merged/
                     // resolved PRs too). Scoped to the caller in the "mine" view.
-                    this.pullRequestsService.countDeliveredPullRequests(
-                        organizationId,
-                        repositoryIds,
-                        {
-                            unresolvedOnly: true,
-                            openOnly: true,
-                            authorEmail: needsAttentionAuthor,
-                        },
-                    ),
+                    // Guard: in the "mine" scope with no resolvable email we'd
+                    // otherwise drop authorEmail and count the WHOLE team — so
+                    // return 0 (matching the `mine` facet). Team scope always
+                    // runs the (team-wide) count.
+                    query.scope !== 'mine' || email
+                        ? this.pullRequestsService.countDeliveredPullRequests(
+                              organizationId,
+                              repositoryIds,
+                              {
+                                  unresolvedOnly: true,
+                                  openOnly: true,
+                                  authorEmail: needsAttentionAuthor,
+                              },
+                          )
+                        : Promise.resolve(0),
                     email
                         ? this.pullRequestsService.countDeliveredPullRequests(
                               organizationId,

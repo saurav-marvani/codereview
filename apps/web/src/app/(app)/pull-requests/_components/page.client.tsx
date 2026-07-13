@@ -151,6 +151,12 @@ export function PullRequestsPageClient() {
     // "Minha fila" pins the list to my own PRs. `me` is a backend sentinel the
     // enriched use-case resolves to the logged-in user's git identity, so it
     // overrides any free-text author search while this view is active.
+    // TODO(perf): author='me' is filtered post-query in the enriched use-case
+    // (author lives in Mongo, not automation_execution), so pagination is
+    // computed on the unfiltered team-wide batch. On a large team a
+    // contributor's mine-view pages can under-fill and need extra round-trips.
+    // Fix = resolve the caller's PR numbers first (needs a findNumbersByAuthor)
+    // and scope the execution query before LIMIT/OFFSET. Deferred.
     const effectiveAuthor = isMineView
         ? "me"
         : debouncedAuthor.trim() || undefined;
