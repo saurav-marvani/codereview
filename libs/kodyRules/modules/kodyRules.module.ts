@@ -41,6 +41,7 @@ import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from '../applicat
 import { GetPendingKodyRulesUseCase } from '../application/use-cases/get-pending-kody-rules.use-case';
 import { FindSuggestionsByRuleUseCase } from '../application/use-cases/find-suggestions-by-rule.use-case';
 import { GenerateKodyRulesUseCase } from '../application/use-cases/generate-kody-rules.use-case';
+import { GenerateInitialKodyRulesUseCase } from '../application/use-cases/generate-initial-kody-rules.use-case';
 import { GetInheritedRulesKodyRulesUseCase } from '../application/use-cases/get-inherited-kody-rules.use-case';
 import { GetRulesLimitStatusUseCase } from '../application/use-cases/get-rules-limit-status.use-case';
 import { ImportFastKodyRulesUseCase } from '../application/use-cases/import-fast-kody-rules.use-case';
@@ -107,6 +108,7 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
             useClass: KodyRulesService,
         },
         GenerateKodyRulesUseCase,
+        GenerateInitialKodyRulesUseCase,
         ApplyPendingKodyRulesUseCase,
         FindByOrganizationIdKodyRulesUseCase,
         FindRulesInOrganizationByRuleFilterKodyRulesUseCase,
@@ -150,6 +152,7 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         KODY_RULES_REPOSITORY_TOKEN,
         KODY_RULES_SERVICE_TOKEN,
         GenerateKodyRulesUseCase,
+        GenerateInitialKodyRulesUseCase,
         ApplyPendingKodyRulesUseCase,
         FindByOrganizationIdKodyRulesUseCase,
         FindRulesInOrganizationByRuleFilterKodyRulesUseCase,
