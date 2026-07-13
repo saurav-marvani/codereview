@@ -53,7 +53,118 @@ rss: true
                     <input className="kodus-changelog-filter-control" type="checkbox" id="kodus-filter-mcp" />
                     <span>MCP</span>
                 </label>
+                <label className="kodus-changelog-filter-button">
+                    <input className="kodus-changelog-filter-control" type="checkbox" id="kodus-filter-billing-licenses" />
+                    <span>Billing &amp; Licenses</span>
+                </label>
             </div>
+        </div>
+    </div>
+
+    <div className="kodus-changelog-release">
+        <div className="kodus-changelog-meta">
+            <span className="kodus-changelog-date">July 13, 2026</span>
+        </div>
+
+        <div className="kodus-changelog-content">
+            <div className="kodus-changelog-section">
+                <div role="heading" aria-level="2" className="kodus-changelog-section-label">What's new</div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-ux-interface filter-byok">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">New Token Usage Experience</div>
+                    <p className="kodus-changelog-copy">The Token Usage page has been redesigned to provide a more complete view of consumption.</p>
+                    <p className="kodus-changelog-copy">It is now easier to track costs by area, model, and review activity, as well as filter the data and drill down into more specific analyses. This helps teams better understand where tokens are being used and how they can optimize costs.</p>
+                    <video autoPlay loop muted playsInline preload="auto" className="kodus-changelog-video">
+                        <source src="https://kodus.io/wp-content/uploads/2026/07/new-experience-token-usage.mp4" type="video/mp4" />
+                    </video>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-kody-rules filter-ai-engine filter-performance">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Automatic Detector Backfill for Existing Rules</div>
+                    <p className="kodus-changelog-copy">Organizations that created Kody Rules before this release can also benefit from the new architecture. We created an automated process that analyzes existing rules and, whenever possible, generates mechanical detectors for them.</p>
+                    <p className="kodus-changelog-copy">The process is incremental, safe, and does not interfere with the normal execution of rules. When a rule cannot be converted into a detector, it continues to work through the traditional semantic review flow.</p>
+                </div>
+            </div>
+
+            <div className="kodus-changelog-section">
+                <div role="heading" aria-level="2" className="kodus-changelog-section-label">Improvements</div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-kody-rules filter-ai-engine filter-performance">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">More Accurate and Predictable Kody Rules</div>
+                    <p className="kodus-changelog-copy">We restructured how Kody applies custom rules during code reviews. Instead of relying solely on a more open-ended agent analysis, rules are now evaluated deterministically by file and PR scope.</p>
+                    <p className="kodus-changelog-copy">In practice, this improves rule coverage in large PRs, reduces cases where an applicable rule is overlooked, and makes Kody Rules behave more consistently across different models.</p>
+                    <p className="kodus-changelog-copy">We also introduced mechanical detectors for certain rules. When a rule can safely be converted into an objective check, Kody can apply it without making an LLM call, reducing costs and improving predictability.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-ai-engine filter-performance">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Code Review Engine Improvements</div>
+                    <p className="kodus-changelog-copy">This release includes a major upgrade to the review agent runtime. We migrated important parts of the execution flow to a new agent harness foundation, making the system more modular, observable, and ready for future improvements.</p>
+                    <p className="kodus-changelog-copy">We also improved the engine used to search for evidence in the codebase, with a focus on finding more relevant cross-file references and increasing the quality of generated suggestions.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-ai-engine filter-ux-interface">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Cleaner Review Comments</div>
+                    <p className="kodus-changelog-copy">We adjusted the format of Kody's review comments to prevent internal reasoning structures from appearing in the output and to make suggestions more natural, concise, and easier to understand.</p>
+                    <p className="kodus-changelog-copy">We also fixed issues involving aliases and internal prompt references following recent refactors.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-byok filter-ai-engine">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Improved BYOK Support</div>
+                    <p className="kodus-changelog-copy">We improved BYOK support across different parts of the product, including configuration, model fallback, and per-model cost calculations.</p>
+                    <p className="kodus-changelog-copy">We also introduced a clearer experience for viewing BYOK settings and understanding how each model affects token consumption.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-byok filter-ai-engine">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">More Accurate Cost Tracking and Telemetry</div>
+                    <p className="kodus-changelog-copy">We improved the observability of LLM calls to ensure token usage is attributed correctly, especially within the new Kody Rules and agent workflows.</p>
+                    <p className="kodus-changelog-copy">This increases the accuracy of usage reports and prevents undercounting in more complex review scenarios.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-mcp filter-security">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">MCP Manager and Plugin Improvements</div>
+                    <p className="kodus-changelog-copy">We improved tenant isolation for MCP connections, enhanced connection sorting and testing, and removed legacy integrations that had already been deprecated.</p>
+                    <p className="kodus-changelog-copy">These changes increase the reliability of the plugins and integrations experience.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-self-hosted filter-performance">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Improvements for Self-Hosted Environments</div>
+                    <p className="kodus-changelog-copy">We applied fixes to Dockerfiles, provisioning scripts, and local configuration to make self-hosted environments more stable.</p>
+                    <p className="kodus-changelog-copy">We also fixed an issue involving pnpm on macOS and adjusted the API hostname configuration used during provisioning.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-performance filter-ai-engine">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">More Stable Observability</div>
+                    <p className="kodus-changelog-copy">We fixed excessive memory consumption in the Mongo observability exporter and improved logging behavior across different environments.</p>
+                    <p className="kodus-changelog-copy">We also removed outdated references to the previous internal framework, simplifying the observability codebase.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-ai-engine filter-kody-rules">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">New Quality Tests and Validations</div>
+                    <p className="kodus-changelog-copy">We added new end-to-end scenarios and evaluations to validate Kody Rules, model recall, suggestion adherence, and prompt regressions.</p>
+                    <p className="kodus-changelog-copy">These validations help ensure that changes to models, prompts, or the underlying architecture do not reduce review quality.</p>
+                </div>
+
+                <div className="kodus-changelog-item kodus-changelog-filterable filter-ux-interface filter-byok filter-ai-engine">
+                    <div role="heading" aria-level="3" className="kodus-changelog-title">Updated Documentation</div>
+                    <p className="kodus-changelog-copy">We updated the documentation for BYOK, custom messages, and focused reviews. We also revised the README and added new pages explaining how to guide Kody during a review.</p>
+                </div>
+            </div>
+
+            <div className="kodus-changelog-section">
+                <div role="heading" aria-level="2" className="kodus-changelog-section-label">Bug fixes</div>
+
+                <div className="kodus-changelog-fix-list">
+                    <div className="kodus-changelog-fix kodus-changelog-filterable filter-security filter-kody-rules">
+                        <p className="kodus-changelog-copy"><strong className="kodus-changelog-fix-label">Safer Rule Execution:</strong> we added protections against potentially unsafe regex patterns in Kody Rules detectors. This prevents malformed or computationally expensive rules from affecting review performance. We also fixed cases where outdated detectors could remain associated with a rule after an edit changed the rule's intended behavior.</p>
+                    </div>
+
+                    <div className="kodus-changelog-fix kodus-changelog-filterable filter-billing-licenses filter-ux-interface">
+                        <p className="kodus-changelog-copy"><strong className="kodus-changelog-fix-label">License and Billing Improvements:</strong> we fixed issues involving trial creation, the listing of inactive users or users removed from the Git organization, and active seat counts. These changes make the license page more consistent and reduce discrepancies between the organization's actual users and the users displayed in billing.</p>
+                    </div>
+                </div>
+            </div>
+
+            <p className="kodus-changelog-empty">No changelog entries for this filter yet.</p>
         </div>
     </div>
 
@@ -516,6 +627,88 @@ rss: true
 </div>
 
 <div className="kodus-changelog-rss-source" aria-hidden="true">
+    <Update label="July 13, 2026 - New Token Usage Experience" tags={["UX & Interface", "BYOK"]}>
+        The Token Usage page has been redesigned to provide a more complete view of consumption.
+
+        It is now easier to track costs by area, model, and review activity, as well as filter the data and drill down into more specific analyses. This helps teams better understand where tokens are being used and how they can optimize costs.
+
+        Video: https://kodus.io/wp-content/uploads/2026/07/new-experience-token-usage.mp4
+    </Update>
+
+    <Update label="July 13, 2026 - Automatic Detector Backfill for Existing Rules" tags={["Kody Rules", "AI Engine", "Performance"]}>
+        Organizations that created Kody Rules before this release can also benefit from the new architecture. We created an automated process that analyzes existing rules and, whenever possible, generates mechanical detectors for them.
+
+        The process is incremental, safe, and does not interfere with the normal execution of rules. When a rule cannot be converted into a detector, it continues to work through the traditional semantic review flow.
+    </Update>
+
+    <Update label="July 13, 2026 - More Accurate and Predictable Kody Rules" tags={["Kody Rules", "AI Engine", "Performance"]}>
+        We restructured how Kody applies custom rules during code reviews. Instead of relying solely on a more open-ended agent analysis, rules are now evaluated deterministically by file and PR scope.
+
+        In practice, this improves rule coverage in large PRs, reduces cases where an applicable rule is overlooked, and makes Kody Rules behave more consistently across different models.
+
+        We also introduced mechanical detectors for certain rules. When a rule can safely be converted into an objective check, Kody can apply it without making an LLM call, reducing costs and improving predictability.
+    </Update>
+
+    <Update label="July 13, 2026 - Code Review Engine Improvements" tags={["AI Engine", "Performance"]}>
+        This release includes a major upgrade to the review agent runtime. We migrated important parts of the execution flow to a new agent harness foundation, making the system more modular, observable, and ready for future improvements.
+
+        We also improved the engine used to search for evidence in the codebase, with a focus on finding more relevant cross-file references and increasing the quality of generated suggestions.
+    </Update>
+
+    <Update label="July 13, 2026 - Cleaner Review Comments" tags={["AI Engine", "UX & Interface"]}>
+        We adjusted the format of Kody's review comments to prevent internal reasoning structures from appearing in the output and to make suggestions more natural, concise, and easier to understand.
+
+        We also fixed issues involving aliases and internal prompt references following recent refactors.
+    </Update>
+
+    <Update label="July 13, 2026 - Improved BYOK Support" tags={["BYOK", "AI Engine"]}>
+        We improved BYOK support across different parts of the product, including configuration, model fallback, and per-model cost calculations.
+
+        We also introduced a clearer experience for viewing BYOK settings and understanding how each model affects token consumption.
+    </Update>
+
+    <Update label="July 13, 2026 - More Accurate Cost Tracking and Telemetry" tags={["BYOK", "AI Engine"]}>
+        We improved the observability of LLM calls to ensure token usage is attributed correctly, especially within the new Kody Rules and agent workflows.
+
+        This increases the accuracy of usage reports and prevents undercounting in more complex review scenarios.
+    </Update>
+
+    <Update label="July 13, 2026 - MCP Manager and Plugin Improvements" tags={["MCP", "Security"]}>
+        We improved tenant isolation for MCP connections, enhanced connection sorting and testing, and removed legacy integrations that had already been deprecated.
+
+        These changes increase the reliability of the plugins and integrations experience.
+    </Update>
+
+    <Update label="July 13, 2026 - Improvements for Self-Hosted Environments" tags={["Self-hosted", "Performance"]}>
+        We applied fixes to Dockerfiles, provisioning scripts, and local configuration to make self-hosted environments more stable.
+
+        We also fixed an issue involving pnpm on macOS and adjusted the API hostname configuration used during provisioning.
+    </Update>
+
+    <Update label="July 13, 2026 - More Stable Observability" tags={["Performance", "AI Engine"]}>
+        We fixed excessive memory consumption in the Mongo observability exporter and improved logging behavior across different environments.
+
+        We also removed outdated references to the previous internal framework, simplifying the observability codebase.
+    </Update>
+
+    <Update label="July 13, 2026 - New Quality Tests and Validations" tags={["AI Engine", "Kody Rules"]}>
+        We added new end-to-end scenarios and evaluations to validate Kody Rules, model recall, suggestion adherence, and prompt regressions.
+
+        These validations help ensure that changes to models, prompts, or the underlying architecture do not reduce review quality.
+    </Update>
+
+    <Update label="July 13, 2026 - Updated Documentation" tags={["UX & Interface", "BYOK", "AI Engine"]}>
+        We updated the documentation for BYOK, custom messages, and focused reviews. We also revised the README and added new pages explaining how to guide Kody during a review.
+    </Update>
+
+    <Update label="July 13, 2026 - Safer Rule Execution" tags={["Security", "Kody Rules"]}>
+        We added protections against potentially unsafe regex patterns in Kody Rules detectors. This prevents malformed or computationally expensive rules from affecting review performance. We also fixed cases where outdated detectors could remain associated with a rule after an edit changed the rule's intended behavior.
+    </Update>
+
+    <Update label="July 13, 2026 - License and Billing Improvements" tags={["Billing & Licenses", "UX & Interface"]}>
+        We fixed issues involving trial creation, the listing of inactive users or users removed from the Git organization, and active seat counts. These changes make the license page more consistent and reduce discrepancies between the organization's actual users and the users displayed in billing.
+    </Update>
+
     <Update label="July 6, 2026 - Steer a review with focus" tags={["AI Engine"]}>
         You can now ask Kody to pay special attention to something specific during a review, without changing any configuration.
 
