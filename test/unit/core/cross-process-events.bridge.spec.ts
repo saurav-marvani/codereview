@@ -1,4 +1,7 @@
-import { CrossProcessEventsBridge } from '@libs/core/workflow/infrastructure/cross-process-events.bridge';
+import {
+    CrossProcessEventsBridge,
+    resolvePgSslOption,
+} from '@libs/core/workflow/infrastructure/cross-process-events.bridge';
 
 jest.mock('@libs/core/log/logger', () => ({
     createLogger: () => ({
@@ -8,6 +11,53 @@ jest.mock('@libs/core/log/logger', () => ({
         debug: jest.fn(),
     }),
 }));
+
+/**
+ * The LISTEN client's SSL handling MUST match what TypeORMFactory ultimately
+ * passes to the pool — a mismatch is what shipped the 2026-07-13 prod
+ * incident (raw `pg.Client` got `ssl: true`, failed TLS handshake against RDS,
+ * `ensureInfra` never ran, table never created, worker's INSERT storm).
+ */
+describe('resolvePgSslOption', () => {
+    it('returns extra.ssl verbatim when present (managed Postgres / RDS)', () => {
+        expect(
+            resolvePgSslOption({
+                ssl: true,
+                extra: { ssl: { rejectUnauthorized: false } },
+            }),
+        ).toEqual({ rejectUnauthorized: false });
+    });
+
+    it('normalizes a bare `ssl: true` to `{rejectUnauthorized:false}`', () => {
+        expect(resolvePgSslOption({ ssl: true })).toEqual({
+            rejectUnauthorized: false,
+        });
+    });
+
+    it('returns undefined when the URL declares sslmode= (driver reads it)', () => {
+        expect(
+            resolvePgSslOption({
+                url: 'postgres://u:p@h/db?sslmode=require',
+                ssl: true,
+                extra: { ssl: { rejectUnauthorized: false } },
+            }),
+        ).toBeUndefined();
+    });
+
+    it('passes through `ssl: false` for local self-hosted setups', () => {
+        expect(resolvePgSslOption({ ssl: false })).toBe(false);
+    });
+
+    it('passes through undefined when nothing is configured', () => {
+        expect(resolvePgSslOption({})).toBeUndefined();
+    });
+
+    it('honors extra.ssl even when top-level ssl is unset', () => {
+        expect(
+            resolvePgSslOption({ extra: { ssl: { rejectUnauthorized: true } } }),
+        ).toEqual({ rejectUnauthorized: true });
+    });
+});
 
 describe('CrossProcessEventsBridge', () => {
     beforeEach(() => {
