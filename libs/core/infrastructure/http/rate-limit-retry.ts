@@ -79,7 +79,7 @@ export async function with429Retry<T>(
     throw lastError;
 }
 
-function is429Error(err: unknown): boolean {
+export function is429Error(err: unknown): boolean {
     if (!err || typeof err !== 'object') return false;
     const anyErr = err as {
         status?: unknown;
