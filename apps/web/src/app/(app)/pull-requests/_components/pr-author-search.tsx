@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
     usePullRequestAuthors,
     type PullRequestAuthorOption,
@@ -29,6 +29,23 @@ export function PrAuthorSearch({
     const [open, setOpen] = useState(false);
     const [highlight, setHighlight] = useState(0);
     const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const activeOptionRef = useRef<HTMLButtonElement>(null);
+
+    const clearBlurTimer = () => {
+        if (blurTimer.current) {
+            clearTimeout(blurTimer.current);
+            blurTimer.current = null;
+        }
+    };
+
+    // Cancel a pending close on unmount so the delayed setOpen(false) can't fire
+    // after teardown (and a quick refocus can't be closed by a stale timer).
+    useEffect(() => clearBlurTimer, []);
+
+    // Keep the keyboard-highlighted option scrolled into the (max-h-64) list.
+    useEffect(() => {
+        activeOptionRef.current?.scrollIntoView({ block: "nearest" });
+    }, [highlight]);
 
     // Loads the full (server-cached) author list once and filters in memory —
     // no backend round-trip per keystroke. Only fetched once the field opens.
@@ -41,7 +58,7 @@ export function PrAuthorSearch({
         const q = query.trim().toLowerCase();
         const list = q
             ? authors.filter(
-                  (a) =>
+                  (a: PullRequestAuthorOption) =>
                       a.name.toLowerCase().includes(q) ||
                       a.username.toLowerCase().includes(q),
               )
@@ -66,9 +83,13 @@ export function PrAuthorSearch({
                     setOpen(true);
                     setHighlight(0);
                 }}
-                onFocus={() => setOpen(true)}
+                onFocus={() => {
+                    clearBlurTimer();
+                    setOpen(true);
+                }}
                 onBlur={() => {
                     // Delay so a click on an option registers before closing.
+                    clearBlurTimer();
                     blurTimer.current = setTimeout(() => setOpen(false), 120);
                 }}
                 onKeyDown={(event) => {
@@ -103,9 +124,12 @@ export function PrAuthorSearch({
                                 : "No authors yet."}
                         </div>
                     ) : (
-                        filtered.map((author, index) => (
+                        filtered.map((author: PullRequestAuthorOption, index: number) => (
                             <button
-                                key={author.username || author.name || index}
+                                key={`${author.username ?? ""}:${author.name ?? ""}:${index}`}
+                                ref={
+                                    index === highlight ? activeOptionRef : null
+                                }
                                 type="button"
                                 // Prevent the input blur from firing before the
                                 // click, which would close the dropdown first.

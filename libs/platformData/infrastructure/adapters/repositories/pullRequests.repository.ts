@@ -611,7 +611,6 @@ export class PullRequestsRepository implements IPullRequestsRepository {
             id: string;
             name: string;
             username: string;
-            email: string | null;
             count: number;
         }>
     > {
@@ -636,7 +635,6 @@ export class PullRequestsRepository implements IPullRequestsRepository {
                         _id: { $ifNull: ['$user.username', '$user.name'] },
                         name: { $first: '$user.name' },
                         username: { $first: '$user.username' },
-                        email: { $first: '$user.email' },
                         userId: { $first: '$user.id' },
                         count: { $sum: 1 },
                     },
@@ -651,11 +649,13 @@ export class PullRequestsRepository implements IPullRequestsRepository {
             ])
             .exec();
 
+        // Author email is deliberately NOT returned: the autocomplete only
+        // shows name/username and matching is done server-side, so surfacing it
+        // would leak colleague emails to any user with Read PullRequests.
         return rows.map((r: any) => ({
             id: r.userId != null ? String(r.userId) : '',
             name: r.name ?? '',
             username: r.username ?? '',
-            email: r.email ?? null,
             count: r.count ?? 0,
         }));
     }

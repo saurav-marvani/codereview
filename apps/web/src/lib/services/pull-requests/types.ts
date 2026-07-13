@@ -49,7 +49,6 @@ export interface PullRequestAuthorOption {
     id: string;
     name: string;
     username: string;
-    email: string | null;
     count: number;
 }
 
