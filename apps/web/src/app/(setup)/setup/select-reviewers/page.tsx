@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, AlertTitle } from "@components/ui/alert";
 import { Button } from "@components/ui/button";
@@ -8,9 +8,11 @@ import { Heading } from "@components/ui/heading";
 import { Page } from "@components/ui/page";
 import { Spinner } from "@components/ui/spinner";
 import { toast } from "@components/ui/toaster/use-toast";
+import { useGetRepositories } from "@services/codeManagement/hooks";
 import { useGetPastReviewers } from "@services/kodyRules/hooks";
 import { createOrUpdateCodeReviewParameter } from "@services/parameters/fetch";
 import { GitPullRequestIcon, ClockFadingIcon, Check } from "lucide-react";
+import { safeArray } from "src/core/utils/safe-array";
 import {
     Command,
     CommandEmpty,
@@ -30,9 +32,18 @@ export default function SelectReviewersPage() {
     const router = useRouter();
     const { teamId } = useSelectedTeamId();
 
-    // Team-wide list (global scope): current members ∪ authors of PRs in the
-    // last 3 months, so recently-departed devs are still selectable.
+    // Candidate reviewers across the team: current members ∪ authors of PRs in
+    // the last 3 months, so recently-departed devs are still selectable.
     const { data: reviewers = [], isLoading } = useGetPastReviewers({ teamId });
+
+    const { data: repositories = [] } = useGetRepositories(teamId);
+    const selectedRepoIds = useMemo(
+        () =>
+            safeArray<{ id: string; selected?: boolean }>(repositories)
+                .filter((repo) => repo.selected)
+                .map((repo) => repo.id),
+        [repositories],
+    );
 
     const [excluded, setExcluded] = useState<string[]>([]);
     const [isSaving, setIsSaving] = useState(false);
@@ -48,19 +59,32 @@ export default function SelectReviewersPage() {
     const goNext = () => router.push(NEXT_STEP);
 
     const handleContinue = async () => {
-        if (!teamId) {
+        // Nothing to exclude, or no repos to apply it to → just move on. The
+        // generator config lives per-repo (the toggle is repo-scoped), so we
+        // write the exclusions to each onboarded repo rather than to a global
+        // list that no per-repo screen would surface for editing.
+        if (!teamId || excluded.length === 0 || selectedRepoIds.length === 0) {
             goNext();
             return;
         }
         try {
             setIsSaving(true);
-            // Persist globally so it applies to every repo; refine per-repo
-            // later in Settings.
-            await createOrUpdateCodeReviewParameter(
-                { kodyLearningExcludedReviewers: excluded },
-                teamId,
-                "global",
+            const results = await Promise.allSettled(
+                selectedRepoIds.map((repositoryId) =>
+                    createOrUpdateCodeReviewParameter(
+                        { kodyLearningExcludedReviewers: excluded },
+                        teamId,
+                        repositoryId,
+                    ),
+                ),
             );
+            if (results.some((r) => r.status === "rejected")) {
+                toast({
+                    variant: "warning",
+                    description:
+                        "Some repositories couldn't be updated. You can adjust the list later in Settings.",
+                });
+            }
             goNext();
         } catch (error) {
             console.error("Error saving excluded reviewers", error);
