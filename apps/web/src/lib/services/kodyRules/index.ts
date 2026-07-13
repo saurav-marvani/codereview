@@ -35,6 +35,7 @@ export const KODY_RULES_PATHS = {
     GENERATE_KODY_RULES: pathToApiUrl("/kody-rules/generate-kody-rules"),
     SYNC_IDE_RULES: pathToApiUrl("/kody-rules/sync-ide-rules"),
     CHECK_SYNC_STATUS: pathToApiUrl("/kody-rules/check-sync-status"),
+    PAST_REVIEWERS: pathToApiUrl("/kody-rules/past-reviewers"),
     GET_INHERITED_RULES: pathToApiUrl("/kody-rules/inherited-rules"),
     GET_KODY_RULES_TOTAL_QUANTITY: pathToApiUrl("/kody-rules/limits"),
     GET_KODY_RULE_SUGGESTIONS: pathToApiUrl("/kody-rules/suggestions"),

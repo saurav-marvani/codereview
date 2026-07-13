@@ -486,7 +486,12 @@ export class CommentAnalysisService {
             reviewComments: any[];
             files?: any[];
         }[],
+        // Provider-native user ids whose comments must be dropped before
+        // learning (issue #1497). Denylist — empty/undefined keeps everyone.
+        excludedReviewerIds?: Set<string>,
     ) {
+        const hasExclusions = !!excludedReviewerIds && excludedReviewerIds.size > 0;
+
         const processedComments = comments
             .map((pr) => {
                 const allComments = [
@@ -496,9 +501,13 @@ export class CommentAnalysisService {
 
                 const mappedComments = allComments.flatMap((comment) => {
                     if (!('body' in comment)) {
+                        // GitLab discussion notes. Carry `author` so the
+                        // reviewer-exclusion filter below can identify them —
+                        // GitLab keys the author on `author`, not `user`.
                         return comment.notes.flatMap((note) => ({
                             id: note.id,
                             body: note.body,
+                            author: note.author,
                         }));
                     }
 
@@ -541,6 +550,17 @@ export class CommentAnalysisService {
                         // github / gitlab / azure / forgejo.
                         (comment) => !isKodyAuthoredBody(comment?.body),
                     )
+                    ?.filter((comment) => {
+                        // Reviewer denylist (issue #1497): drop comments from
+                        // excluded git users. Keep when we can't identify the
+                        // author, so a denylist never silently removes an
+                        // unidentifiable reviewer's comments.
+                        if (!hasExclusions) {
+                            return true;
+                        }
+                        const authorId = this.getCommentAuthorId(comment);
+                        return !authorId || !excludedReviewerIds.has(authorId);
+                    })
                     ?.filter((comment) => comment?.body?.length > 100);
 
                 let finalComments = filteredComments;
@@ -606,6 +626,21 @@ export class CommentAnalysisService {
         }
 
         return processedComments;
+    }
+
+    /**
+     * Provider-native author id of a raw review comment, as a string, for
+     * matching against the reviewer denylist. GitHub/Azure key the author on
+     * `user`, GitLab on `author`; ids are numeric on GitHub/GitLab and a GUID
+     * on Azure, so everything is normalized to string. Returns undefined when
+     * the author can't be identified.
+     */
+    private getCommentAuthorId(comment: any): string | undefined {
+        const rawId = comment?.user?.id ?? comment?.author?.id;
+        if (rawId === undefined || rawId === null || rawId === '') {
+            return undefined;
+        }
+        return String(rawId);
     }
 
     private fileExtensionFrequencyAnalysis(files: { filename: string }[]) {
