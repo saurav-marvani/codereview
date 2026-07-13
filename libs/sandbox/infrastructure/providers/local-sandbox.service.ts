@@ -13,9 +13,10 @@ import {
     writeFile,
     mkdir,
 } from 'fs/promises';
+import type { FileHandle } from 'fs/promises';
 import { constants as fsConstants } from 'fs';
 import { tmpdir } from 'os';
-import { isAbsolute, join, relative } from 'path';
+import { isAbsolute, join, relative, sep } from 'path';
 import { promisify } from 'util';
 
 import {
@@ -582,16 +583,11 @@ export class LocalSandboxService implements ISandboxProvider {
                     );
                 }
 
-                // Open with O_NOFOLLOW to prevent TOCTOU symlink swap
-                // between validation and write.
-                const fd = await open(
-                    safePath,
-                    fsConstants.O_WRONLY |
-                        fsConstants.O_CREAT |
-                        fsConstants.O_TRUNC |
-                        fsConstants.O_NOFOLLOW,
-                    0o644,
-                );
+                // Open the target refusing to follow a symlink at ANY path
+                // component (not just the final one). On Linux this fully
+                // closes the parent-dir-swap TOCTOU (#1532); elsewhere it is a
+                // best-effort O_NOFOLLOW on the final component (see helper).
+                const fd = await this.openRepoWriteHandle(repoReal, safePath);
                 try {
                     await fd.writeFile(content, 'utf-8');
                 } finally {
@@ -719,6 +715,88 @@ export class LocalSandboxService implements ISandboxProvider {
     private isPathInside(root: string, child: string): boolean {
         const rel = relative(root, child);
         return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+    }
+
+    /**
+     * Open `safePath` for writing while refusing to traverse a symlink at ANY
+     * path component — closing the parent-dir-swap TOCTOU (#1532) that a plain
+     * `open(path, O_NOFOLLOW)` leaves open (O_NOFOLLOW guards only the FINAL
+     * component; an intermediate directory swapped for a symlink after
+     * validation is still followed).
+     *
+     * Linux: emulate `openat(2)`. Anchor a descriptor on the trusted, already
+     * realpath'd repo root, then descend one component at a time via
+     * `/proc/self/fd/<fd>/<component>` opened with `O_NOFOLLOW`. Because each
+     * hop resolves relative to the held directory fd (a stable inode) and
+     * refuses to follow a symlink, a component swapped for a symlink after
+     * validation fails with `ELOOP` instead of redirecting the write outside
+     * the repo. `caller` must have created the parent dirs already.
+     *
+     * Non-Linux (dev macOS/Windows only — every real deployment runs the local
+     * sandbox on self-hosted Docker/Linux): there is no `/proc/self/fd`, so we
+     * fall back to a direct `open` with `O_NOFOLLOW` on the final component
+     * plus the post-mkdir realpath re-check the caller already performed. This
+     * is best-effort; a native `openat` addon would be needed to close it on
+     * those platforms (out of scope — see #1532).
+     */
+    private async openRepoWriteHandle(
+        repoReal: string,
+        safePath: string,
+    ): Promise<FileHandle> {
+        const writeFlags =
+            fsConstants.O_WRONLY |
+            fsConstants.O_CREAT |
+            fsConstants.O_TRUNC |
+            fsConstants.O_NOFOLLOW;
+
+        if (process.platform !== 'linux') {
+            return open(safePath, writeFlags, 0o644);
+        }
+
+        const rel = relative(repoReal, safePath);
+        // safePath was validated to live inside repoReal, so `rel` never
+        // escapes; guard defensively anyway.
+        if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
+            throw new Error(`Path escapes repo boundary: ${safePath}`);
+        }
+        const parts = rel.split(sep).filter((p) => p.length > 0);
+        const fileName = parts.pop();
+        if (!fileName) {
+            throw new Error(`Invalid write path: ${safePath}`);
+        }
+
+        // Trust anchor: repoReal is the realpath of the sandbox root we own, so
+        // it is canonical (not a symlink).
+        let dirFd = await open(
+            repoReal,
+            fsConstants.O_RDONLY |
+                fsConstants.O_DIRECTORY |
+                fsConstants.O_NOFOLLOW,
+        );
+        try {
+            for (const part of parts) {
+                // openat(dirFd, part): resolve `part` inside the held dir fd
+                // WITHOUT following a symlink — a swapped-in symlink → ELOOP.
+                const nextFd = await open(
+                    `/proc/self/fd/${dirFd.fd}/${part}`,
+                    fsConstants.O_RDONLY |
+                        fsConstants.O_DIRECTORY |
+                        fsConstants.O_NOFOLLOW,
+                );
+                await dirFd.close();
+                dirFd = nextFd;
+            }
+            // Create/open the file relative to the validated parent fd, again
+            // refusing to follow a symlink for the final component.
+            return await open(
+                `/proc/self/fd/${dirFd.fd}/${fileName}`,
+                writeFlags,
+                0o644,
+            );
+        } finally {
+            // The returned file handle is independent of this parent dir fd.
+            await dirFd.close();
+        }
     }
 
     private validatePath(path: string, repoDir?: string): void {

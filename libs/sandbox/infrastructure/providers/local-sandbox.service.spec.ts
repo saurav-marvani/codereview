@@ -280,3 +280,66 @@ describe('LocalSandboxService.isPathInside', () => {
         });
     });
 });
+
+/**
+ * openRepoWriteHandle emulates openat(2) on Linux to close the parent-dir-swap
+ * TOCTOU (#1532): it descends the path one component at a time refusing to
+ * follow a symlink, so an intermediate directory that is (or is swapped for) a
+ * symlink after validation fails instead of redirecting the write outside the
+ * repo. `/proc/self/fd` is Linux-only, so these run only on Linux; other hosts
+ * use the best-effort fallback covered by the O_NOFOLLOW tests above.
+ */
+const onLinux = process.platform === 'linux' ? describe : describe.skip;
+onLinux('LocalSandboxService.openRepoWriteHandle (Linux openat)', () => {
+    let dir: string;
+    let outsideDir: string;
+    let svc: LocalSandboxService;
+
+    beforeEach(() => {
+        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kodus-openat-'));
+        outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kodus-openat-out-'));
+        svc = new LocalSandboxService({} as any);
+    });
+
+    afterEach(() => {
+        fs.rmSync(dir, { recursive: true, force: true });
+        fs.rmSync(outsideDir, { recursive: true, force: true });
+    });
+
+    const openWrite = (repoReal: string, target: string): Promise<any> =>
+        (svc as any).openRepoWriteHandle(repoReal, target);
+
+    it('writes a file under a real nested directory', async () => {
+        fs.mkdirSync(path.join(dir, 'a', 'b'), { recursive: true });
+        const repoReal = fs.realpathSync(dir);
+        const target = path.join(repoReal, 'a', 'b', 'f.txt');
+        const fh = await openWrite(repoReal, target);
+        try {
+            await fh.writeFile('ok', 'utf-8');
+        } finally {
+            await fh.close();
+        }
+        expect(fs.readFileSync(target, 'utf-8')).toBe('ok');
+    });
+
+    it('refuses to follow a symlinked intermediate directory (openat ELOOP)', async () => {
+        // `evil` is a symlink to a dir outside the repo; a write through it
+        // must NOT land in outsideDir — the O_NOFOLLOW hop rejects it.
+        fs.symlinkSync(outsideDir, path.join(dir, 'evil'));
+        const repoReal = fs.realpathSync(dir);
+        const target = path.join(repoReal, 'evil', 'pwned.txt');
+        await expect(openWrite(repoReal, target)).rejects.toThrow();
+        expect(fs.existsSync(path.join(outsideDir, 'pwned.txt'))).toBe(false);
+    });
+
+    it('refuses to follow a symlinked FINAL component', async () => {
+        const outsideFile = path.join(outsideDir, 'target.txt');
+        fs.writeFileSync(outsideFile, 'secret');
+        fs.symlinkSync(outsideFile, path.join(dir, 'link.txt'));
+        const repoReal = fs.realpathSync(dir);
+        await expect(
+            openWrite(repoReal, path.join(repoReal, 'link.txt')),
+        ).rejects.toThrow();
+        expect(fs.readFileSync(outsideFile, 'utf-8')).toBe('secret');
+    });
+});
