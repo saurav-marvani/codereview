@@ -11,7 +11,12 @@ import { toast } from "@components/ui/toaster/use-toast";
 import { useGetRepositories } from "@services/codeManagement/hooks";
 import { useGetPastReviewers } from "@services/kodyRules/hooks";
 import { createOrUpdateCodeReviewParameter } from "@services/parameters/fetch";
-import { GitPullRequestIcon, ClockFadingIcon, Check } from "lucide-react";
+import {
+    GitPullRequestIcon,
+    ClockFadingIcon,
+    Check,
+    ChevronsUpDown,
+} from "lucide-react";
 import { safeArray } from "src/core/utils/safe-array";
 import {
     Command,
@@ -21,6 +26,11 @@ import {
     CommandItem,
     CommandList,
 } from "src/core/components/ui/command";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "src/core/components/ui/popover";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { cn } from "src/core/utils/components";
 
@@ -47,6 +57,7 @@ export default function SelectReviewersPage() {
 
     const [excluded, setExcluded] = useState<string[]>([]);
     const [isSaving, setIsSaving] = useState(false);
+    const [open, setOpen] = useState(false);
 
     const toggle = (id: string) => {
         setExcluded((current) =>
@@ -142,33 +153,57 @@ export default function SelectReviewersPage() {
                         </span>
                     </div>
 
-                    <Command className="border-card-lv3 rounded-xl border">
-                        <CommandInput placeholder="Search developers..." />
-                        <CommandList className="max-h-[320px]">
-                            <CommandEmpty>
-                                {isLoading
-                                    ? "Loading developers…"
-                                    : "No developers found."}
-                            </CommandEmpty>
-                            <CommandGroup>
-                                {reviewers.map((reviewer) => (
-                                    <CommandItem
-                                        key={reviewer.id}
-                                        value={reviewer.name}
-                                        onSelect={() => toggle(reviewer.id)}>
-                                        <span className="flex-1">
-                                            {reviewer.name}
-                                        </span>
-                                        {excluded.includes(reviewer.id) ? (
-                                            <span className="text-text-secondary flex items-center gap-1 text-xs">
-                                                Excluded <Check className="size-4" />
-                                            </span>
-                                        ) : null}
-                                    </CommandItem>
-                                ))}
-                            </CommandGroup>
-                        </CommandList>
-                    </Command>
+                    <Popover open={open} onOpenChange={setOpen}>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="helper"
+                                size="md"
+                                role="combobox"
+                                aria-expanded={open}
+                                className="w-full justify-between">
+                                {excludedCount > 0
+                                    ? `Excluding ${excludedCount} reviewer${excludedCount === 1 ? "" : "s"}`
+                                    : "Learning from all reviewers"}
+                                <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                            className="flex w-[var(--radix-popover-trigger-width)] flex-col overflow-hidden p-0"
+                            align="start">
+                            <Command className="flex max-h-[400px] flex-col">
+                                <CommandInput placeholder="Search developers..." />
+                                <CommandList className="max-h-[250px] overflow-y-auto">
+                                    <CommandEmpty>
+                                        {isLoading
+                                            ? "Loading developers…"
+                                            : "No developers found."}
+                                    </CommandEmpty>
+                                    <CommandGroup>
+                                        {reviewers.map((reviewer) => (
+                                            <CommandItem
+                                                key={reviewer.id}
+                                                value={reviewer.name}
+                                                onSelect={() =>
+                                                    toggle(reviewer.id)
+                                                }>
+                                                {reviewer.name}
+                                                <Check
+                                                    className={cn(
+                                                        "mr-2 size-4",
+                                                        excluded.includes(
+                                                            reviewer.id,
+                                                        )
+                                                            ? "opacity-100"
+                                                            : "opacity-0",
+                                                    )}
+                                                />
+                                            </CommandItem>
+                                        ))}
+                                    </CommandGroup>
+                                </CommandList>
+                            </Command>
+                        </PopoverContent>
+                    </Popover>
 
                     <div className="flex items-center gap-3">
                         <Button
