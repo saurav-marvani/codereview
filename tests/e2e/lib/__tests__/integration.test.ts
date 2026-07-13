@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { runMatrix } from "../runner.js";
 import { resolveScenarios } from "../../scenarios/index.js";
 import {
+    executionsRoute,
+    healthRoute,
     json,
     makeFakeJwt,
     startMockServer,
@@ -83,6 +85,10 @@ test("integration: code-review-basic runs end-to-end against mocked Kodus + GitH
                 json(res, 200, {});
             },
         },
+        // assertHealthyExecution polls executions; the runner's post-failure
+        // probe GETs /health — both added in #1494 without mock coverage.
+        executionsRoute(),
+        healthRoute(),
     ]);
 
     // Routes ordered specific → generic. Patterns use [^/]+ instead of .+
