@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import NextLink from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Spinner } from "@components/ui/spinner";
+import { Skeleton } from "@components/ui/skeleton";
 import {
     useInfinitePullRequestExecutions,
     usePullRequestFiles,
@@ -13,12 +13,11 @@ import {
     type PullRequestFile,
 } from "@services/pull-requests";
 import { ArrowLeftIcon } from "lucide-react";
-import { useSelectedTeamId } from "src/core/providers/selected-team-context";
-
 // Review screen — ported from the `try` app: a max-w page that scrolls as a
 // whole, with sticky left (file tree) and right (issues/metadata) rails and a
 // center column carrying the PR header + diff.
 import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
+import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 
 import { DiffViewer } from "./diff-viewer";
 import { ReviewStateProvider, useReviewStore } from "./review-store";
@@ -37,7 +36,9 @@ function PanelError({ error }: FallbackProps) {
         error instanceof Error ? error.message : String(error ?? "");
     return (
         <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-2)]/70 p-6 text-center text-sm">
-            <p className="font-semibold text-[var(--red)]">This panel crashed</p>
+            <p className="font-semibold text-[var(--red)]">
+                This panel crashed
+            </p>
             <p className="max-w-md font-mono text-xs break-words text-[var(--text-dim)]">
                 {message}
             </p>
@@ -103,16 +104,7 @@ export function ReviewPageClient({
     );
 
     if (suggestionsLoading) {
-        return (
-            <div className="flex h-full items-center justify-center">
-                <div className="flex flex-col items-center gap-3">
-                    <Spinner className="size-6" />
-                    <p className="text-text-tertiary text-sm">
-                        Loading suggestions...
-                    </p>
-                </div>
-            </div>
-        );
+        return <ReviewPageSkeleton />;
     }
 
     if (suggestionsError) {
@@ -150,6 +142,36 @@ export function ReviewPageClient({
                 }
             />
         </ReviewStateProvider>
+    );
+}
+
+// Mirrors ReviewLayout's shell (max-w-[1600px] + file-tree / diff / sidebar
+// grid) so the page paints its structure immediately instead of a centered
+// spinner while suggestions load.
+function ReviewPageSkeleton() {
+    return (
+        <div className="kodus-scroll h-full overflow-y-auto bg-[var(--bg)]">
+            <section className="px-6 py-6">
+                <div className="mx-auto max-w-[1600px]">
+                    <Skeleton className="mb-4 h-4 w-28" />
+                    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[280px_minmax(0,1fr)_300px]">
+                        <div className="hidden flex-col gap-2 lg:flex">
+                            {Array.from({ length: 9 }).map((_, i) => (
+                                <Skeleton key={i} className="h-6 w-full" />
+                            ))}
+                        </div>
+                        <div className="flex min-w-0 flex-col gap-4">
+                            <Skeleton className="h-16 w-full rounded-xl" />
+                            <Skeleton className="h-[60vh] w-full rounded-xl" />
+                        </div>
+                        <div className="hidden flex-col gap-3 lg:flex">
+                            <Skeleton className="h-32 w-full rounded-xl" />
+                            <Skeleton className="h-48 w-full rounded-xl" />
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
     );
 }
 

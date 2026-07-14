@@ -238,11 +238,32 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
         pullRequestNumber?: number;
         pullRequestTitle?: string;
         prFilters?: Array<{ number: number; repositoryId: string }>;
+        status?: string;
+        createdAtFrom?: string;
+        createdAtTo?: string;
         skip?: number;
+        // Keyset cursor: the (createdAt, uuid) of the last row of the previous
+        // page. When supplied, pagination uses an indexed range scan instead of
+        // OFFSET (which scans+discards `skip` rows and, under aggressive
+        // author-policy filtering, made the enriched-PR loop walk ever-deeper
+        // offsets — the source of the prod slowdown). `skip` stays for callers
+        // that haven't migrated.
+        cursor?: { createdAt: string | Date; uuid: string };
         take?: number;
         order?: 'ASC' | 'DESC';
         includeTotal?: boolean;
-    }): Promise<{ data: AutomationExecutionEntity[]; total: number }> {
+    }): Promise<{
+        data: AutomationExecutionEntity[];
+        total: number;
+        // Distinct PRs (repo + number) matching the same filters — the count the
+        // dashboard header wants ("N pull requests"), vs `total` which counts
+        // executions (a PR reviewed 5× is 5 there, 1 here). Only computed with
+        // `includeTotal`. Reflects the DB-level filters (status/date/repo/
+        // number/title); the Mongo-side suggestion/author filters are applied
+        // later in the use-case, so callers must not present this as exact when
+        // those are active.
+        distinctPrTotal: number;
+    }> {
         const {
             organizationAndTeamData,
             repositoryIds,
@@ -250,7 +271,11 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
             pullRequestNumber,
             pullRequestTitle: _pullRequestTitle,
             prFilters,
+            status,
+            createdAtFrom,
+            createdAtTo,
             skip = 0,
+            cursor,
             take = 30,
             order = 'DESC',
             includeTotal = true,
@@ -332,6 +357,26 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                 );
             }
 
+            if (status) {
+                queryBuilder.andWhere('automation_execution.status = :status', {
+                    status,
+                });
+            }
+
+            if (createdAtFrom) {
+                queryBuilder.andWhere(
+                    'automation_execution.createdAt >= :createdAtFrom',
+                    { createdAtFrom },
+                );
+            }
+
+            if (createdAtTo) {
+                queryBuilder.andWhere(
+                    'automation_execution.createdAt <= :createdAtTo',
+                    { createdAtTo },
+                );
+            }
+
             if (repositoryName) {
                 queryBuilder.andWhere(
                     "automation_execution.dataExecution->'repository'->>'name' = :repositoryName",
@@ -360,7 +405,31 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                 queryBuilder.andWhere(`(${prConditions})`, prParams);
             }
 
+            if (cursor) {
+                // Rows strictly after the cursor, expressed as a row-value
+                // (tuple) comparison so PostgreSQL can start the index scan AT
+                // the cursor. The earlier OR form
+                //   createdAt <cmp> :c OR (createdAt = :c AND uuid > :u)
+                // is NOT sargable on the (createdAt) index: the planner scanned
+                // from the newest row and filter-discarded every row newer than
+                // the cursor (EXPLAIN showed `Rows Removed by Filter` growing
+                // with cursor depth — the same over-scan the keyset was meant to
+                // kill). A tuple comparison `(createdAt, uuid) <cmp> (:c, :u)` is
+                // a proper range bound (Rows Removed drops to ~page size), but it
+                // requires the uuid tiebreaker to share createdAt's sort
+                // direction — see the matching addOrderBy(order) below.
+                const cmp = order === 'DESC' ? '<' : '>';
+                queryBuilder.andWhere(
+                    `(automation_execution.createdAt, automation_execution.uuid) ${cmp} (:cursorCreatedAt, :cursorUuid)`,
+                    {
+                        cursorCreatedAt: cursor.createdAt,
+                        cursorUuid: cursor.uuid,
+                    },
+                );
+            }
+
             let total = 0;
+            let distinctPrTotal = 0;
             if (includeTotal) {
                 // COUNT(*) instead of TypeORM's getCount() (COUNT(DISTINCT uuid)).
                 // The join chain automation_execution -> teamAutomation -> team
@@ -368,29 +437,48 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                 // filter is an EXISTS semi-join, so there is no row fan-out:
                 // COUNT(*) === COUNT(DISTINCT uuid). The DISTINCT variant sorted
                 // the whole filtered set to disk (~28GB of temp files in prod).
+                // The distinct-PR count keys on (repositoryId, pullRequestNumber)
+                // — both cast to text and concatenated so DISTINCT hashes a
+                // single scalar (cheap HashAggregate, not a full-row sort). One
+                // extra aggregate over the same WHERE; runs only on the first
+                // batch (includeTotal), where no keyset cursor is set yet.
                 const countRow = await queryBuilder
                     .clone()
                     .select('COUNT(*)', 'cnt')
-                    .getRawOne<{ cnt: string }>();
+                    .addSelect(
+                        // Raw SQL: TypeORM does NOT rewrite `alias.property` inside
+                        // addSelect (unlike where/orderBy), so the camelCase
+                        // columns must be quoted explicitly — otherwise Postgres
+                        // folds them to lowercase (repositoryid) and errors.
+                        `COUNT(DISTINCT (automation_execution."repositoryId"::text || '_' || automation_execution."pullRequestNumber"::text))`,
+                        'prCnt',
+                    )
+                    .getRawOne<{ cnt: string; prCnt: string }>();
                 total = Number(countRow?.cnt ?? 0);
+                distinctPrTotal = Number(countRow?.prCnt ?? 0);
 
                 if (total === 0) {
-                    return { data: [], total: 0 };
+                    return { data: [], total: 0, distinctPrTotal: 0 };
                 }
             }
 
             const executions = await queryBuilder
                 .orderBy('automation_execution.createdAt', order)
-                // Deterministic tiebreaker: reproduces the exact ordering the
-                // previous DISTINCT-pagination wrapper emitted (createdAt, uuid).
-                .addOrderBy('automation_execution.uuid', 'ASC')
+                // Deterministic tiebreaker in the SAME direction as createdAt so
+                // the keyset tuple predicate above stays a sargable range bound
+                // (a mixed direction would force a filter scan). Only reorders
+                // rows sharing an identical microsecond createdAt — effectively
+                // never — so the emitted page order is unchanged in practice.
+                .addOrderBy('automation_execution.uuid', order)
                 // offset/limit instead of skip/take. skip/take makes TypeORM wrap
                 // the query in SELECT DISTINCT "distinctAlias" (...) to paginate
                 // safely across to-many joins. There are none here (all ManyToOne
                 // + EXISTS), so that wrapper only added a full-set sort that
                 // spilled ~52GB of temp files. Raw offset/limit returns the
-                // identical rows without the DISTINCT pass.
-                .offset(skip)
+                // identical rows without the DISTINCT pass. When a keyset cursor
+                // is supplied the WHERE above already positions the page, so the
+                // offset is skipped entirely (indexed range scan, no over-scan).
+                .offset(cursor ? 0 : skip)
                 .limit(take)
                 .getMany();
 
@@ -400,7 +488,7 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                     AutomationExecutionEntity,
                 ) as AutomationExecutionEntity[]) ?? [];
 
-            return { data: mapped, total };
+            return { data: mapped, total, distinctPrTotal };
         } catch (error) {
             this.logger.error({
                 message:
@@ -409,7 +497,176 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                 error,
                 metadata: { params },
             });
-            return { data: [], total: 0 };
+            return { data: [], total: 0, distinctPrTotal: 0 };
+        }
+    }
+
+    // Distinct PRs that are "Awaiting review": the screen is driven by
+    // automation_execution (a PR only appears if Kody has an execution for it),
+    // and awaiting = the PRs Kody was triggered on but SKIPPED and never
+    // actually reviewed. A PR qualifies when ALL of its executions have
+    // status='skipped' — i.e. it has a skipped execution (no license, BYOK
+    // missing, manual/auto-pause cadence, ignored user, centralized config)
+    // and NO non-skipped execution (never success/error/partial_error). If any
+    // execution eventually reviewed it, it's no longer awaiting.
+    async getAwaitingReviewPullRequestKeys(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryIds?: string[];
+        createdAtFrom?: Date | string;
+    }): Promise<Array<{ repositoryId: string; pullRequestNumber: number }>> {
+        const { organizationAndTeamData, repositoryIds, createdAtFrom } =
+            params;
+        const { organizationId, teamId } = organizationAndTeamData ?? {};
+
+        if (!organizationId || !teamId) {
+            return [];
+        }
+
+        try {
+            const queryBuilder = this.automationExecutionRepository
+                .createQueryBuilder('automation_execution')
+                .select('automation_execution.repositoryId', 'repositoryId')
+                .addSelect(
+                    'automation_execution.pullRequestNumber',
+                    'pullRequestNumber',
+                )
+                .innerJoin(
+                    'automation_execution.teamAutomation',
+                    'teamAutomation',
+                )
+                .innerJoin('teamAutomation.team', 'team')
+                .innerJoin('team.organization', 'organization')
+                .where('automation_execution.pullRequestNumber IS NOT NULL')
+                .andWhere('automation_execution.repositoryId IS NOT NULL')
+                .andWhere('organization.uuid = :organizationId', {
+                    organizationId,
+                })
+                .andWhere('team.uuid = :teamId', { teamId })
+                .groupBy('automation_execution.repositoryId')
+                .addGroupBy('automation_execution.pullRequestNumber')
+                // Skipped-only: the PR has no execution that ran a review. If
+                // bool_or(status <> 'skipped') is false, every execution for
+                // this PR was skipped → it's still waiting for its first review.
+                .having(
+                    "bool_or(automation_execution.status <> 'skipped') = false",
+                );
+
+            if (repositoryIds?.length) {
+                queryBuilder.andWhere(
+                    'automation_execution.repositoryId IN (:...repositoryIds)',
+                    { repositoryIds },
+                );
+            }
+
+            if (createdAtFrom) {
+                queryBuilder.andWhere(
+                    'automation_execution.createdAt >= :createdAtFrom',
+                    { createdAtFrom },
+                );
+            }
+
+            const rows = await queryBuilder.getRawMany();
+            return rows.map((row) => ({
+                repositoryId: String(row.repositoryId),
+                pullRequestNumber: Number(row.pullRequestNumber),
+            }));
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to get awaiting-review pull request keys',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { params },
+            });
+            return [];
+        }
+    }
+
+    // Distinct reviewed PRs (one row per repo+PR) with whether any of that PR's
+    // executions errored. Powers the segment facet counts (All / Errored) and
+    // the reviewed-key set the Awaiting facet subtracts from. GROUP BY collapses
+    // the per-execution rows so counts are per-PR, not per-execution.
+    async getDistinctReviewedPullRequestKeys(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryIds?: string[];
+        createdAtFrom?: Date | string;
+    }): Promise<
+        Array<{
+            repositoryId: string;
+            pullRequestNumber: number;
+            hasError: boolean;
+        }>
+    > {
+        const { organizationAndTeamData, repositoryIds, createdAtFrom } =
+            params;
+        const { organizationId, teamId } = organizationAndTeamData ?? {};
+
+        if (!organizationId || !teamId) {
+            return [];
+        }
+
+        try {
+            const queryBuilder = this.automationExecutionRepository
+                .createQueryBuilder('automation_execution')
+                .select('automation_execution.repositoryId', 'repositoryId')
+                .addSelect(
+                    'automation_execution.pullRequestNumber',
+                    'pullRequestNumber',
+                )
+                .addSelect(
+                    "bool_or(automation_execution.status IN ('error','partial_error'))",
+                    'hasError',
+                )
+                .innerJoin(
+                    'automation_execution.teamAutomation',
+                    'teamAutomation',
+                )
+                .innerJoin('teamAutomation.team', 'team')
+                .innerJoin('team.organization', 'organization')
+                .where('automation_execution.pullRequestNumber IS NOT NULL')
+                .andWhere('automation_execution.repositoryId IS NOT NULL')
+                .andWhere('organization.uuid = :organizationId', {
+                    organizationId,
+                })
+                .andWhere('team.uuid = :teamId', { teamId })
+                .andWhere(
+                    'EXISTS (SELECT 1 FROM "code_review_execution" "cre" WHERE "cre"."automation_execution_id" = "automation_execution"."uuid")',
+                )
+                .groupBy('automation_execution.repositoryId')
+                .addGroupBy('automation_execution.pullRequestNumber');
+
+            if (repositoryIds?.length) {
+                queryBuilder.andWhere(
+                    'automation_execution.repositoryId IN (:...repositoryIds)',
+                    { repositoryIds },
+                );
+            }
+
+            // Optional lower bound on execution time — powers the daily digest
+            // (today's reviewed PRs) without loading raw executions into memory.
+            if (createdAtFrom) {
+                queryBuilder.andWhere(
+                    'automation_execution.createdAt >= :createdAtFrom',
+                    { createdAtFrom },
+                );
+            }
+
+            const rows = await queryBuilder.getRawMany();
+            return rows.map((row) => ({
+                repositoryId: String(row.repositoryId),
+                pullRequestNumber: Number(row.pullRequestNumber),
+                hasError:
+                    row.hasError === true ||
+                    row.hasError === 'true' ||
+                    row.hasError === 't',
+            }));
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to get distinct reviewed pull request keys',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { params },
+            });
+            return [];
         }
     }
 

@@ -123,7 +123,10 @@ export class PullRequestsModel extends CoreDocument {
     @Prop({ type: String, required: false })
     public provider: string;
 
-    @Prop({ type: { id: String, username: String, name: String, email: String }, required: false })
+    @Prop({
+        type: { id: String, username: String, name: String, email: String },
+        required: false,
+    })
     public user: {
         id: string;
         username: string;
@@ -217,6 +220,28 @@ PullRequestsSchema.index(
     { name: 'idx_createdAt_for_analytics_backfill' },
 );
 
+// PR-dashboard segment facets count DISTINCT PRs that delivered a suggestion
+// (see PullRequestsRepository.countDeliveredPullRequests). The document-level
+// countDocuments needs this multikey index to resolve the org + delivery match
+// from the index instead of a full collection scan + files×suggestions unwind
+// (multi-second at scale). Multikey on the nested files→suggestions path.
+// Em prod criar com `{ background: true }` antes de virar a flag (autoIndex
+// pode travar startup em coleções grandes).
+PullRequestsSchema.index(
+    { 'organizationId': 1, 'files.suggestions.deliveryStatus': 1 },
+    { name: 'idx_org_files_suggestions_delivery' },
+);
+
+// "Find suggestions by rule" (kody-rules screen) filters PRs by a broken-rule
+// id. Without this index the query scanned the whole org and unwound
+// files×suggestions to find the few PRs referencing the rule. Multikey on the
+// nested files→suggestions→brokenKodyRulesIds path. Em prod criar com
+// `{ background: true }` (autoIndex pode travar startup em coleções grandes).
+PullRequestsSchema.index(
+    { 'organizationId': 1, 'files.suggestions.brokenKodyRulesIds': 1 },
+    { name: 'idx_org_broken_kody_rules' },
+);
+
 // Token Usage repository filter: findNumbersByRepositoryId resolves a repo to
 // its PR numbers (org + repository.id, bounded by createdAt, newest first,
 // projecting only `number`). This compound covers the filter, the sort, and
@@ -225,4 +250,14 @@ PullRequestsSchema.index(
 PullRequestsSchema.index(
     { organizationId: 1, 'repository.id': 1, createdAt: -1, number: 1 },
     { name: 'idx_org_repo_createdAt_number_for_token_usage' },
+);
+
+// "Awaiting review" facet + daily digest: findOpenPullRequestKeysOpenedSince
+// scans open PRs for the org (status ≠ closed, not merged, openedAt ≥ cutoff).
+// Without this the match was a collection scan that grew with the org. Leading
+// on organizationId (equality) then the open-state fields keeps it index-bound.
+// Create with `{ background: true }` on large prod collections.
+PullRequestsSchema.index(
+    { organizationId: 1, status: 1, merged: 1, openedAt: 1 },
+    { name: 'idx_org_status_merged_openedAt_for_awaiting' },
 );

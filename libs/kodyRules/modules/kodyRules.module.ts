@@ -25,6 +25,7 @@ import { AddLibraryKodyRulesUseCase } from '../application/use-cases/add-library
 import { ApplyPendingKodyRulesUseCase } from '../application/use-cases/apply-pending-kody-rules.use-case';
 import { ChangeStatusKodyRulesUseCase } from '../application/use-cases/change-status-kody-rules.use-case';
 import { CheckSyncStatusUseCase } from '../application/use-cases/check-sync-status.use-case';
+import { ListPastReviewersUseCase } from '../application/use-cases/list-past-reviewers.use-case';
 import { ConvertPendingUpdatesToNewUseCase } from '../application/use-cases/convert-pending-updates-to-new.use-case';
 import { CreateOrUpdateKodyRulesUseCase } from '../application/use-cases/create-or-update.use-case';
 import { BackfillRuleDetectorsUseCase } from '../application/use-cases/backfill-rule-detectors.use-case';
@@ -41,6 +42,7 @@ import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from '../applicat
 import { GetPendingKodyRulesUseCase } from '../application/use-cases/get-pending-kody-rules.use-case';
 import { FindSuggestionsByRuleUseCase } from '../application/use-cases/find-suggestions-by-rule.use-case';
 import { GenerateKodyRulesUseCase } from '../application/use-cases/generate-kody-rules.use-case';
+import { GenerateInitialKodyRulesUseCase } from '../application/use-cases/generate-initial-kody-rules.use-case';
 import { GetInheritedRulesKodyRulesUseCase } from '../application/use-cases/get-inherited-kody-rules.use-case';
 import { GetRulesLimitStatusUseCase } from '../application/use-cases/get-rules-limit-status.use-case';
 import { ImportFastKodyRulesUseCase } from '../application/use-cases/import-fast-kody-rules.use-case';
@@ -107,6 +109,7 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
             useClass: KodyRulesService,
         },
         GenerateKodyRulesUseCase,
+        GenerateInitialKodyRulesUseCase,
         ApplyPendingKodyRulesUseCase,
         FindByOrganizationIdKodyRulesUseCase,
         FindRulesInOrganizationByRuleFilterKodyRulesUseCase,
@@ -128,6 +131,7 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         ExternalReferenceLoaderService,
         AddLibraryKodyRulesUseCase,
         CheckSyncStatusUseCase,
+        ListPastReviewersUseCase,
         DeleteRuleInOrganizationByIdKodyRulesUseCase,
         FastSyncIdeRulesUseCase,
         FindLibraryKodyRulesBucketsUseCase,
@@ -150,6 +154,7 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         KODY_RULES_REPOSITORY_TOKEN,
         KODY_RULES_SERVICE_TOKEN,
         GenerateKodyRulesUseCase,
+        GenerateInitialKodyRulesUseCase,
         ApplyPendingKodyRulesUseCase,
         FindByOrganizationIdKodyRulesUseCase,
         FindRulesInOrganizationByRuleFilterKodyRulesUseCase,
@@ -165,6 +170,7 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         SyncSelectedRepositoriesKodyRulesUseCase,
         AddLibraryKodyRulesUseCase,
         CheckSyncStatusUseCase,
+        ListPastReviewersUseCase,
         DeleteRuleInOrganizationByIdKodyRulesUseCase,
         FastSyncIdeRulesUseCase,
         FindLibraryKodyRulesBucketsUseCase,

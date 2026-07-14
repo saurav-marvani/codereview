@@ -7,6 +7,22 @@ import {
 } from '@libs/identity/domain/auth/contracts/auth.service.contracts';
 import { BackfillHistoricalPRsUseCase } from '@libs/platformData/application/use-cases/pullRequests/backfill-historical-prs.use-case';
 import { GetEnrichedPullRequestsUseCase } from '@libs/code-review/application/use-cases/dashboard/get-enriched-pull-requests.use-case';
+import {
+    GetPullRequestsDailyDigestUseCase,
+    PullRequestsDailyDigest,
+} from '@libs/code-review/application/use-cases/dashboard/get-pull-requests-daily-digest.use-case';
+import {
+    GetPullRequestsFacetsUseCase,
+    PullRequestsFacets,
+} from '@libs/code-review/application/use-cases/dashboard/get-pull-requests-facets.use-case';
+import {
+    GetPullRequestAuthorsUseCase,
+    PullRequestAuthorSuggestion,
+} from '@libs/code-review/application/use-cases/dashboard/get-pull-request-authors.use-case';
+import {
+    GetAwaitingPullRequestsUseCase,
+    AwaitingPullRequest,
+} from '@libs/code-review/application/use-cases/dashboard/get-awaiting-pull-requests.use-case';
 import { GetPullRequestFilesUseCase } from '@libs/code-review/application/use-cases/pullRequests/get-pull-request-files.use-case';
 import { GetPullRequestSuggestionsUseCase } from '@libs/code-review/application/use-cases/pullRequests/get-pull-request-suggestions.use-case';
 import {
@@ -91,6 +107,10 @@ export class PullRequestController implements OnApplicationShutdown {
 
     constructor(
         private readonly getEnrichedPullRequestsUseCase: GetEnrichedPullRequestsUseCase,
+        private readonly getPullRequestsDailyDigestUseCase: GetPullRequestsDailyDigestUseCase,
+        private readonly getPullRequestsFacetsUseCase: GetPullRequestsFacetsUseCase,
+        private readonly getAwaitingPullRequestsUseCase: GetAwaitingPullRequestsUseCase,
+        private readonly getPullRequestAuthorsUseCase: GetPullRequestAuthorsUseCase,
         private readonly getPullRequestSuggestionsUseCase: GetPullRequestSuggestionsUseCase,
         private readonly getPullRequestFilesUseCase: GetPullRequestFilesUseCase,
         private readonly codeManagementService: CodeManagementService,
@@ -137,6 +157,101 @@ export class PullRequestController implements OnApplicationShutdown {
         @Query() query: EnrichedPullRequestsQueryDto,
     ): Promise<PaginatedEnrichedPullRequestsResponse> {
         return await this.getEnrichedPullRequestsUseCase.execute(query);
+    }
+
+    @Get('/executions/summary')
+    @ApiBearerAuth('jwt')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.PullRequests,
+        }),
+    )
+    @ApiOperation({
+        summary: 'Daily PR digest',
+        description:
+            "Today's counts: reviewed, needs attention, errored, awaiting review.",
+    })
+    public async getPullRequestsDailyDigest(
+        @Query('teamId') teamId?: string,
+    ): Promise<PullRequestsDailyDigest> {
+        return await this.getPullRequestsDailyDigestUseCase.execute({ teamId });
+    }
+
+    @Get('/executions/facets')
+    @ApiBearerAuth('jwt')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.PullRequests,
+        }),
+    )
+    @ApiOperation({
+        summary: 'PR segment facet counts',
+        description:
+            'All-time counts per segment (all, needs attention, errored, awaiting, mine).',
+    })
+    public async getPullRequestsFacets(
+        @Query('teamId') teamId?: string,
+        // 'mine' narrows the actionable facet to the caller's own PRs (the dev
+        // "Minha fila" view); default 'team' counts the whole team scope.
+        @Query('scope') scope?: 'mine' | 'team',
+    ): Promise<PullRequestsFacets> {
+        return await this.getPullRequestsFacetsUseCase.execute({
+            teamId,
+            scope: scope === 'mine' ? 'mine' : 'team',
+        });
+    }
+
+    @Get('/awaiting')
+    @ApiBearerAuth('jwt')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.PullRequests,
+        }),
+    )
+    @ApiOperation({
+        summary: 'Awaiting-review PRs',
+        description: 'Open pull requests with no Kody review yet.',
+    })
+    public async getAwaitingPullRequests(
+        @Query('teamId') teamId?: string,
+    ): Promise<AwaitingPullRequest[]> {
+        return await this.getAwaitingPullRequestsUseCase.execute({ teamId });
+    }
+
+    @Get('/authors')
+    @ApiBearerAuth('jwt')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.PullRequests,
+        }),
+    )
+    @ApiOperation({
+        summary: 'PR author suggestions',
+        description:
+            'Distinct PR authors (by display name) for the Author-search autocomplete, ordered by PR count.',
+    })
+    public async getPullRequestAuthors(
+        @Query('teamId') teamId?: string,
+        @Query('q') q?: string,
+        @Query('limit') limit?: string,
+    ): Promise<PullRequestAuthorSuggestion[]> {
+        const parsedLimit = limit ? Number(limit) : undefined;
+        return await this.getPullRequestAuthorsUseCase.execute({
+            teamId,
+            search: q,
+            limit:
+                parsedLimit != null && Number.isFinite(parsedLimit)
+                    ? parsedLimit
+                    : undefined,
+        });
     }
 
     @Sse('/executions/events')

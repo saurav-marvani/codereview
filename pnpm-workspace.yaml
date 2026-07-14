@@ -43,7 +43,7 @@ minimumReleaseAgeExclude:
   - e2b@2.30.4 || 2.30.5
   - posthog-node@5.38.2 || 5.38.3 || 5.38.4
   - '@langchain/openai@1.5.2 || 1.5.3'
-  - '@ai-sdk/gateway@3.0.134'
+  - '@ai-sdk/gateway@3.0.134 || 4.0.11'
   - '@anthropic-ai/sdk@0.104.2'
   - '@nestjs/typeorm@11.0.2'
   - '@sentry/core@10.60.0'
@@ -63,16 +63,16 @@ minimumReleaseAgeExclude:
   - '@typescript-eslint/typescript-estree@8.61.1'
   - '@typescript-eslint/utils@8.61.1'
   - '@typescript-eslint/visitor-keys@8.61.1'
-  - ai@6.0.209
+  - ai@6.0.209 || 7.0.14
   - typescript-eslint@8.61.1
   - '@morphllm/morphsdk@0.2.183'
   - '@posthog/core@1.37.0 || 1.37.1'
   - '@posthog/types@1.391.0'
   - '@types/ramda@0.32.0'
   - uuid@14.0.1
-  - '@ai-sdk/amazon-bedrock@4.0.120 || 4.0.121'
-  - '@ai-sdk/google-vertex@4.0.148 || 4.0.149'
-  - '@ai-sdk/openai@3.0.74'
+  - '@ai-sdk/amazon-bedrock@4.0.120 || 4.0.121 || 5.0.10'
+  - '@ai-sdk/google-vertex@4.0.148 || 4.0.149 || 5.0.10'
+  - '@ai-sdk/openai@3.0.74 || 4.0.7'
   - smol-toml@1.7.0
   - ts-loader@9.6.2
   - '@langchain/anthropic@1.5.1'
@@ -80,10 +80,21 @@ minimumReleaseAgeExclude:
   - '@langfuse/client@5.6.0 || 5.7.0'
   - '@langfuse/core@5.6.0 || 5.7.0'
   - '@langfuse/tracing@5.6.0 || 5.7.0'
-  - '@react-email/ui@6.6.4'
-  - react-email@6.6.4
+  - '@react-email/ui@6.6.4 || 6.6.6'
+  - react-email@6.6.4 || 6.6.6
   - '@langfuse/langchain@5.6.0 || 5.7.0'
   - '@langfuse/otel@5.6.0 || 5.7.0'
-  - '@ai-sdk/anthropic@3.0.86 || 3.0.91'
-  - '@ai-sdk/provider-utils@4.0.34'
-  - '@ai-sdk/provider@3.0.13'
+  - '@ai-sdk/anthropic@3.0.86 || 3.0.91 || 4.0.7'
+  - '@ai-sdk/provider-utils@4.0.34 || 5.0.5'
+  - '@ai-sdk/provider@3.0.13 || 4.0.2'
+  - '@ai-sdk/google@4.0.8'
+  - '@ai-sdk/openai-compatible@3.0.5'
+  - '@opentelemetry/context-async-hooks@2.9.0'
+  - '@opentelemetry/core@2.9.0'
+  - '@opentelemetry/resources@2.9.0'
+  - '@opentelemetry/sdk-trace-base@2.9.0'
+  - '@opentelemetry/sdk-trace-node@2.9.0'
+  - '@opentelemetry/sdk-trace@2.9.0'
+  - '@react-email/render@2.0.10'
+  - immer@11.1.11
+  - resend@6.17.0

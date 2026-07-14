@@ -1,4 +1,9 @@
-import { forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+    forwardRef,
+    Inject,
+    Injectable,
+    NotFoundException,
+} from '@nestjs/common';
 import { v4 } from 'uuid';
 import bucketsData from './data/buckets.json';
 import libraryKodyRules from './data/library-kody-rules.json';
@@ -10,9 +15,7 @@ import {
     buildKodyRuleCentralizedFilePath,
     buildKodyRuleCentralizedMutationRequest,
 } from '@libs/centralized-config/utils/kody-rules-centralized-pr.builder';
-import {
-    PromptRunnerService,
-} from '@kodus/kodus-common/llm';
+import { PromptRunnerService } from '@kodus/kodus-common/llm';
 import {
     CODE_BASE_CONFIG_SERVICE_TOKEN,
     ICodeBaseConfigService,
@@ -559,6 +562,7 @@ export class KodyRulesService implements IKodyRulesService {
         rule: Partial<IKodyRule>,
     ): Promise<void> {
         if (
+            rule.origin === KodyRulesOrigin.MANUAL ||
             rule.origin === KodyRulesOrigin.ONBOARDING_REPO_ANALYSIS ||
             !rule.repositoryId ||
             rule.repositoryId === 'global'

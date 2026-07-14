@@ -248,7 +248,10 @@ export default {
         // ESM-only — any component spec that transitively imports
         // helpers.ts (even for an unrelated export like `greeting()`)
         // needs it transformed too, or Jest chokes on its `export` syntax.
-        'node_modules/(?!(@octokit|universal-user-agent|p-limit|uuid|universal-github-app-jwt|before-after-hook|yocto-queue|jose)/)',
+        // The Vercel AI SDK stack (`ai` + every `@ai-sdk/*` provider) is also
+        // ESM-only; the code-review/agents/llm specs import it transitively, so
+        // it must be transformed too or Jest chokes on its `import` syntax.
+        'node_modules/(?!(@octokit|universal-user-agent|p-limit|uuid|universal-github-app-jwt|before-after-hook|yocto-queue|jose|@ai-sdk|ai|@workflow)/)',
     ],
     modulePathIgnorePatterns: [
         '<rootDir>/dist',

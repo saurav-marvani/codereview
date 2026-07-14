@@ -296,7 +296,7 @@ ${reviewOptionsMarkdown}
                     translation.autoPauseDesc
                         ?.replace('{timeWindow}', String(timeWindow))
                         ?.replace('{pushes}', String(pushes)) ||
-                    `Kody reviews the first push automatically, then pauses if you make ${pushes}+ pushes in ${timeWindow} minutes. Use @kody resume to continue.`;
+                    `Kody reviews the first push automatically, then pauses if you make ${pushes}+ pushes in ${timeWindow} minutes. Use @kody start-review to continue.`;
                 break;
             }
 

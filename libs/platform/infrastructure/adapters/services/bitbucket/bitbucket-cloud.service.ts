@@ -2,6 +2,7 @@ import { createLogger } from '@libs/core/log/logger';
 
 import { fitPRDescription } from '@libs/code-review/utils/fit-pr-description';
 import { INTEGRATION_REQUEST_TIMEOUT_MS } from '@libs/core/infrastructure/http/integration-timeouts';
+import { is429Error } from '@libs/core/infrastructure/http/rate-limit-retry';
 import {
     parkRateGate,
     rateGateKey,
@@ -2490,6 +2491,15 @@ export class BitbucketCloudService implements Omit<
                     params,
                 },
             });
+            // A 429 means "we couldn't fetch the commits", NOT "the PR has no
+            // commits". Swallowing it as null lets it collapse to [] upstream,
+            // where ValidateNewCommitsStage misreads it as "PR has 0 commits"
+            // and silently SKIPs the review. Re-throw so callers can tell a
+            // genuine empty list apart from a throttled fetch. Non-429 errors
+            // keep the historical null contract.
+            if (is429Error(error)) {
+                throw error;
+            }
             return null;
         }
     }

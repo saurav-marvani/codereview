@@ -15,6 +15,7 @@ import {
     IPullRequestWithDeliveredSuggestions,
     ISuggestion,
     ISuggestionByPR,
+    SuggestionCountsBySeverity,
 } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
 import { PlatformType, PullRequestState } from '@libs/core/domain/enums';
 import { Repository } from '@libs/core/infrastructure/config/types/general/codeReview.type';
@@ -215,10 +216,60 @@ export class PullRequestsService implements IPullRequestsService {
             repositoryId: string;
         }>,
         organizationId: string,
-    ): Promise<Map<string, { sent: number; filtered: number }>> {
+    ): Promise<Map<string, SuggestionCountsBySeverity>> {
         return this.pullRequestsRepository.findSuggestionCountsByNumbersAndRepositoryIds(
             criteria,
             organizationId,
+        );
+    }
+
+    findOpenPullRequestKeysOpenedSince(
+        since: string,
+        organizationId: string,
+        repositoryIds?: string[],
+    ): Promise<Array<{ number: number; repositoryId: string }>> {
+        return this.pullRequestsRepository.findOpenPullRequestKeysOpenedSince(
+            since,
+            organizationId,
+            repositoryIds,
+        );
+    }
+
+    findDistinctAuthorsByRepositoryIds(
+        organizationId: string,
+        repositoryIds: string[] | undefined,
+        search?: string,
+        limit?: number,
+    ): Promise<
+        Array<{
+            id: string;
+            name: string;
+            username: string;
+            count: number;
+        }>
+    > {
+        return this.pullRequestsRepository.findDistinctAuthorsByRepositoryIds(
+            organizationId,
+            repositoryIds,
+            search,
+            limit,
+        );
+    }
+
+    countDeliveredPullRequests(
+        organizationId: string,
+        repositoryIds: string[] | undefined,
+        opts: {
+            severities?: string[];
+            authorEmail?: string;
+            unresolvedOnly?: boolean;
+            openOnly?: boolean;
+        },
+    ): Promise<number> {
+        return this.pullRequestsRepository.countDeliveredPullRequests(
+            organizationId,
+            repositoryIds,
+            opts,
         );
     }
 
@@ -1376,7 +1427,7 @@ export class PullRequestsService implements IPullRequestsService {
                         platformType,
                     );
 
-                    return {
+                return {
                     id: String(completeUser.id),
                     username:
                         completeUser?.login ||
@@ -1988,10 +2039,7 @@ export class PullRequestsService implements IPullRequestsService {
             metrics: r.metrics || {},
             recommendation: {
                 mode: r.recommendation.mode as
-                    | 'Safety'
-                    | 'Speed'
-                    | 'Coach'
-                    | 'Default',
+                    'Safety' | 'Speed' | 'Coach' | 'Default',
                 reasons: r.recommendation.reasons || [],
             },
         }));

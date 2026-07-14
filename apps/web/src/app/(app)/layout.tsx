@@ -21,9 +21,42 @@ import { getLayoutData, getTeamsCached } from "./_helpers/get-layout-data";
 import { Providers } from "./providers";
 import { AppRightSidebar } from "./right-sidebar";
 
+// Team-scoped layout fetches (platform config + layout data), run in parallel.
+// getLayoutData is React-cache()'d on teamId, so calling this twice with the
+// same teamId within a request costs a single upstream fetch.
+const fetchTeamScoped = (teamId: string) =>
+    Promise.all([
+        getTeamParametersNoCache<{
+            configValue: { finishOnboard?: boolean };
+        }>({
+            key: ParametersConfigKey.PLATFORM_CONFIGS,
+            teamId,
+        }).catch((err) => {
+            console.error("[Layout] Failed to fetch platform configs:", err);
+            return null;
+        }),
+        getLayoutData(teamId),
+    ]);
+
 export default async function Layout({ children }: React.PropsWithChildren) {
-    // Phase 1: auth + teams in parallel (both needed for redirect checks)
-    const [session, teams] = await Promise.all([auth(), getTeamsCached()]);
+    // The selected teamId lives in a cookie (no fetch), so we can kick off the
+    // team-scoped fetches up-front — in parallel with auth+teams — instead of
+    // waiting for the auth→teams→teamId→layout server waterfall. If the cookie
+    // team turns out to be stale/missing we refetch for the real team below
+    // (rare slow path).
+    const { cookies } = await import("next/headers");
+    const cookieStore = await cookies();
+    const selectedTeamIdFromCookie = cookieStore.get(
+        "global-selected-team-id",
+    )?.value;
+
+    const [session, teams, speculative] = await Promise.all([
+        auth(),
+        getTeamsCached(),
+        selectedTeamIdFromCookie
+            ? fetchTeamScoped(selectedTeamIdFromCookie)
+            : Promise.resolve(null),
+    ]);
 
     if (!session) {
         redirect("/sign-out");
@@ -42,11 +75,6 @@ export default async function Layout({ children }: React.PropsWithChildren) {
     }
 
     // Derive teamId from already-fetched teams (avoid refetching)
-    const { cookies } = await import("next/headers");
-    const cookieStore = await cookies();
-    const selectedTeamIdFromCookie = cookieStore.get(
-        "global-selected-team-id",
-    )?.value;
     const teamId =
         teams?.find((t) => t.uuid === selectedTeamIdFromCookie)?.uuid ??
         teams?.find((t) => t.status === TEAM_STATUS.ACTIVE)?.uuid!;
@@ -57,19 +85,13 @@ export default async function Layout({ children }: React.PropsWithChildren) {
         redirect("/sign-out");
     }
 
-    // Phase 2: platform config + layout data in parallel
-    const [platformConfigs, layoutData] = await Promise.all([
-        getTeamParametersNoCache<{
-            configValue: { finishOnboard?: boolean };
-        }>({
-            key: ParametersConfigKey.PLATFORM_CONFIGS,
-            teamId,
-        }).catch((err) => {
-            console.error("[Layout] Failed to fetch platform configs:", err);
-            return null;
-        }),
-        getLayoutData(teamId, organizationId),
-    ]);
+    // Reuse the speculative fetch when the cookie team matches the resolved
+    // team (common case → single round-trip); otherwise fetch for the real
+    // team (rare: stale or missing cookie).
+    const [platformConfigs, layoutData] =
+        speculative && teamId === selectedTeamIdFromCookie
+            ? speculative
+            : await fetchTeamScoped(teamId);
 
     if (platformConfigs && !platformConfigs?.configValue?.finishOnboard) {
         redirect("/setup");
@@ -116,7 +138,8 @@ export default async function Layout({ children }: React.PropsWithChildren) {
             isBYOK={isBYOK}
             isTrial={isTrial}
             isEnterprise={isEnterprise}
-            featureFlags={featureFlags}>
+            featureFlags={featureFlags}
+            initialSelectedTeamId={selectedTeamIdFromCookie}>
             <SubscriptionProvider
                 license={
                     organizationLicense

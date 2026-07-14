@@ -2,6 +2,7 @@ import { AddLibraryKodyRulesUseCase } from './add-library-kody-rules.use-case';
 import { ApplyPendingKodyRulesUseCase } from './apply-pending-kody-rules.use-case';
 import { ChangeStatusKodyRulesUseCase } from './change-status-kody-rules.use-case';
 import { CheckSyncStatusUseCase } from './check-sync-status.use-case';
+import { ListPastReviewersUseCase } from './list-past-reviewers.use-case';
 import { ConvertPendingUpdatesToNewUseCase } from './convert-pending-updates-to-new.use-case';
 import { CreateOrUpdateKodyRulesUseCase } from './create-or-update.use-case';
 import { DeleteRuleInOrganizationByIdKodyRulesUseCase } from './delete-rule-in-organization-by-id.use-case';
@@ -13,6 +14,7 @@ import { FindLibraryKodyRulesUseCase } from './find-library-kody-rules.use-case'
 import { FindRecommendedKodyRulesUseCase } from './find-recommended-kody-rules.use-case';
 import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from './find-rules-in-organization-by-filter.use-case';
 import { FindSuggestionsByRuleUseCase } from './find-suggestions-by-rule.use-case';
+import { GenerateInitialKodyRulesUseCase } from './generate-initial-kody-rules.use-case';
 import { GenerateKodyRulesUseCase } from './generate-kody-rules.use-case';
 import { GetInheritedRulesKodyRulesUseCase } from './get-inherited-kody-rules.use-case';
 import { GetPendingKodyRulesUseCase } from './get-pending-kody-rules.use-case';
@@ -35,10 +37,12 @@ export const UseCases = [
     AddLibraryKodyRulesUseCase,
     ApplyPendingKodyRulesUseCase,
     GenerateKodyRulesUseCase,
+    GenerateInitialKodyRulesUseCase,
     ChangeStatusKodyRulesUseCase,
     SendRulesNotificationUseCase,
     SyncSelectedRepositoriesKodyRulesUseCase,
     CheckSyncStatusUseCase,
+    ListPastReviewersUseCase,
     GetInheritedRulesKodyRulesUseCase,
     GetPendingKodyRulesUseCase,
     GetRulesLimitStatusUseCase,

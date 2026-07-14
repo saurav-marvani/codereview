@@ -177,6 +177,9 @@ export class CodeReviewConfigDataDto {
     @ApiProperty()
     kodyRulesGeneratorEnabled: boolean;
 
+    @ApiProperty({ type: [String], required: false })
+    kodyLearningExcludedReviewers?: string[];
+
     @ApiProperty({ type: CustomMessagesDto })
     customMessages: CustomMessagesDto;
 

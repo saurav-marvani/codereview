@@ -406,6 +406,11 @@ class CodeReviewConfigWithoutLLMProviderDto {
     kodyRulesGeneratorEnabled?: boolean;
 
     @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    kodyLearningExcludedReviewers?: string[];
+
+    @IsOptional()
     @ValidateNested()
     @Type(() => KodyKnowledgeApprovalDto)
     kodyKnowledgeApproval?: KodyKnowledgeApprovalDto;
