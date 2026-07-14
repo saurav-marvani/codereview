@@ -106,6 +106,7 @@ describe('CloneParamsResolver × real platform adapters (self-managed host)', ()
 
         return {
             resolver: new CloneParamsResolverService(codeManagementService),
+            codeManagementService,
             integrationService,
         };
     };
@@ -170,5 +171,76 @@ describe('CloneParamsResolver × real platform adapters (self-managed host)', ()
         );
 
         expect(result).toBeNull();
+    });
+});
+
+/**
+ * getCloneParams resolves the platform itself when the caller does not name
+ * one — the same fallback the list-returning methods in CodeManagementService
+ * use. Those all guard the null that getTypeIntegration returns for an
+ * organization with no integration; getCloneParams did not, and handed the
+ * null straight to the factory.
+ */
+describe('CodeManagementService.getCloneParams (platform not supplied)', () => {
+    const repository = {
+        id: 'repo-1',
+        defaultBranch: 'main',
+        fullName: 'group/repo',
+        name: 'repo',
+    };
+    const organizationAndTeamData = {
+        organizationId: 'org-1',
+        teamId: 'team-1',
+    };
+
+    const buildService = (connected?: PlatformType) => {
+        const integrationService = {
+            findOne: jest
+                .fn()
+                .mockResolvedValue(
+                    connected ? { platform: connected } : null,
+                ),
+            getPlatformAuthDetails: jest.fn().mockResolvedValue({
+                accessToken: 'oauth-token',
+                authMode: AuthMode.OAUTH,
+                host: 'https://gitlab.acme.com',
+            }),
+        };
+
+        const factory = new PlatformIntegrationFactory();
+        factory.registerCodeManagementService(
+            PlatformType.GITLAB,
+            new GitlabService(
+                integrationService as any,
+                {} as any,
+                {} as any,
+                { get: jest.fn() } as unknown as ConfigService,
+                {} as any,
+            ) as any,
+        );
+
+        return new CodeManagementService(integrationService as any, factory);
+    };
+
+    it('resolves the connected platform when none is passed', async () => {
+        const service = buildService(PlatformType.GITLAB);
+
+        const cloneParams = await service.getCloneParams({
+            repository,
+            organizationAndTeamData,
+        });
+
+        expect(cloneParams?.url).toBe('https://gitlab.acme.com/group/repo');
+        expect(cloneParams?.provider).toBe(PlatformType.GITLAB);
+    });
+
+    it('returns null instead of throwing when nothing is connected', async () => {
+        const service = buildService(undefined);
+
+        // Previously: getTypeIntegration → null → factory throws
+        // "Repository service for type 'null' not found."
+        await expect(
+            service.getCloneParams({ repository, organizationAndTeamData }),
+        ).resolves.toBeNull();
     });
 });
