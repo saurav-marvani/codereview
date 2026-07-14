@@ -411,7 +411,10 @@ export type KodusConfigFile = DeepPartial<
     version: string;
     customMessages?: Pick<
         IPullRequestMessages,
-        'startReviewMessage' | 'endReviewMessage' | 'globalSettings'
+        | 'startReviewMessage'
+        | 'endReviewMessage'
+        | 'errorReviewMessage'
+        | 'globalSettings'
     >;
 };
 

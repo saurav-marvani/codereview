@@ -844,6 +844,7 @@ You must always respond in ${languageResultPrompt}.`;
         reviewFailed?: boolean,
         reviewErrorMessage?: string,
         reviewHasPartialErrors?: boolean,
+        reviewErrorCustomMessage?: string,
     ): Promise<void> {
         try {
             // When the review failed, we cannot honor a customer-configured
@@ -863,6 +864,7 @@ You must always respond in ${languageResultPrompt}.`;
                     reviewFailed,
                     reviewErrorMessage,
                     reviewHasPartialErrors,
+                    reviewErrorCustomMessage,
                 );
             } else if (reviewHasPartialErrors) {
                 // Custom end-review template is rendering — the default
@@ -933,6 +935,7 @@ You must always respond in ${languageResultPrompt}.`;
         reviewFailed?: boolean,
         reviewErrorMessage?: string,
         reviewHasPartialErrors?: boolean,
+        reviewErrorCustomMessage?: string,
     ): Promise<string> {
         let commentBody = await this.generatePullRequestFinishSummaryMarkdown(
             organizationAndTeamData,
@@ -943,6 +946,7 @@ You must always respond in ${languageResultPrompt}.`;
             reviewFailed,
             reviewErrorMessage,
             reviewHasPartialErrors,
+            reviewErrorCustomMessage,
         );
 
         commentBody = this.sanitizeBitbucketMarkdown(commentBody, platformType);
@@ -1506,6 +1510,7 @@ You must always respond in ${languageResultPrompt}.`;
         reviewFailed?: boolean,
         reviewErrorMessage?: string,
         reviewHasPartialErrors?: boolean,
+        reviewErrorCustomMessage?: string,
     ): Promise<string> {
         try {
             const language =
@@ -1555,6 +1560,21 @@ You must always respond in ${languageResultPrompt}.`;
                         /\{\{errorMessage\}\}/g,
                         errorMessage,
                     );
+
+                    // Optional team-authored note appended below Kody's default
+                    // error comment (issue #1452). The technical reason above is
+                    // always preserved; this is only the org-specific next step
+                    // (e.g. "reach out to #devops"). Single newlines collapse in
+                    // Markdown, so we convert each to a hard break (two trailing
+                    // spaces) — what the author typed is what renders in the PR.
+                    const customError = reviewErrorCustomMessage?.trim();
+                    if (customError) {
+                        const withLineBreaks = customError.replace(
+                            /\n/g,
+                            '  \n',
+                        );
+                        resultText = `${resultText}\n\n${withLineBreaks}`;
+                    }
                 }
             }
 
@@ -2384,6 +2404,7 @@ ${reviewOptions}
         reviewFailed?: boolean,
         reviewErrorMessage?: string,
         reviewHasPartialErrors?: boolean,
+        reviewErrorCustomMessage?: string,
     ): Promise<void> {
         let commentBody: string;
 
@@ -2433,6 +2454,7 @@ ${reviewOptions}
                 reviewFailed,
                 reviewErrorMessage,
                 reviewHasPartialErrors,
+                reviewErrorCustomMessage,
             );
         }
 

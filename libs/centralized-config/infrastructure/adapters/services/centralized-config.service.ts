@@ -1047,6 +1047,7 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                 directoryId,
                 startReviewMessage: resolvedCustomMessages.startReviewMessage,
                 endReviewMessage: resolvedCustomMessages.endReviewMessage,
+                errorReviewMessage: resolvedCustomMessages.errorReviewMessage,
                 globalSettings: resolvedCustomMessages.globalSettings,
             };
 
@@ -1236,6 +1237,7 @@ export class CentralizedConfigService implements ICentralizedConfigService {
         return {
             startReviewMessage: json?.startReviewMessage,
             endReviewMessage: json?.endReviewMessage,
+            errorReviewMessage: json?.errorReviewMessage,
             globalSettings: json?.globalSettings,
         };
     }
@@ -1253,6 +1255,9 @@ export class CentralizedConfigService implements ICentralizedConfigService {
             if (override.endReviewMessage) {
                 merged.endReviewMessage = override.endReviewMessage;
             }
+            if (override.errorReviewMessage) {
+                merged.errorReviewMessage = override.errorReviewMessage;
+            }
             if (override.globalSettings) {
                 merged.globalSettings = {
                     ...merged.globalSettings,
@@ -1265,6 +1270,7 @@ export class CentralizedConfigService implements ICentralizedConfigService {
         if (
             !merged.startReviewMessage ||
             !merged.endReviewMessage ||
+            !merged.errorReviewMessage ||
             !merged.globalSettings?.hideComments ||
             !merged.globalSettings?.suggestionCopyPrompt
         ) {
@@ -1290,6 +1296,9 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                 merged.startReviewMessage || defaultConfigs?.startReviewMessage,
             endReviewMessage:
                 merged.endReviewMessage || defaultConfigs?.endReviewMessage,
+            errorReviewMessage:
+                merged.errorReviewMessage ||
+                defaultConfigs?.errorReviewMessage,
             globalSettings: {
                 hideComments:
                     merged.globalSettings?.hideComments ??

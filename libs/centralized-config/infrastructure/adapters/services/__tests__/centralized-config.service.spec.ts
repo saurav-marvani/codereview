@@ -271,6 +271,10 @@ describe('CentralizedConfigService', () => {
                         status: 'every_push',
                         content: 'Custom end message',
                     },
+                    errorReviewMessage: {
+                        status: 'off',
+                        content: '',
+                    },
                     globalSettings: {
                         hideComments: false,
                         suggestionCopyPrompt: true,
@@ -374,6 +378,10 @@ describe('CentralizedConfigService', () => {
                         status: 'off',
                         content: '',
                     },
+                    errorReviewMessage: {
+                        status: 'off',
+                        content: '',
+                    },
                     globalSettings: {
                         hideComments: true,
                         suggestionCopyPrompt: false,
@@ -463,6 +471,10 @@ describe('CentralizedConfigService', () => {
                     endReviewMessage: {
                         status: 'every_push',
                         content: 'Custom end message',
+                    },
+                    errorReviewMessage: {
+                        status: 'off',
+                        content: '',
                     },
                     globalSettings: {
                         hideComments: false,

@@ -332,4 +332,55 @@ describe('CommentManagerService.generateSummaryPR', () => {
             expect(systemPrompt).not.toContain('Length Constraint');
         });
     });
+
+    // Error message (issue #1452): the team's optional note is appended below
+    // Kody's default error comment; the technical reason is always preserved.
+    describe('error message custom note', () => {
+        const genErrorSummary = (customNote?: string) =>
+            (service as any).generatePullRequestFinishSummaryMarkdown(
+                stubOrg,
+                7,
+                [], // commentResults
+                { languageResultPrompt: 'en-US' } as any, // codeReviewConfig
+                [], // prLevelCommentResults
+                true, // reviewFailed
+                'invalid or missing API key', // reviewErrorMessage (the reason)
+                false, // reviewHasPartialErrors
+                customNote, // reviewErrorCustomMessage
+            );
+
+        beforeEach(() => {
+            // Isolate the error comment from the always-appended config guide.
+            (service as any).generateConfigReviewMarkdown = jest
+                .fn()
+                .mockResolvedValue('');
+        });
+
+        it('appends the custom note below the default error comment', async () => {
+            const result = await genErrorSummary('Ping #devops for help.');
+
+            // Default reason preserved AND the note appended after it.
+            expect(result).toContain('Code Review Could Not Complete');
+            expect(result).toContain('invalid or missing API key');
+            expect(result).toContain('Ping #devops for help.');
+            expect(result.indexOf('invalid or missing API key')).toBeLessThan(
+                result.indexOf('Ping #devops for help.'),
+            );
+        });
+
+        it('posts only the default comment when there is no custom note', async () => {
+            const result = await genErrorSummary(undefined);
+
+            expect(result).toContain('Code Review Could Not Complete');
+            expect(result).toContain('invalid or missing API key');
+        });
+
+        it('preserves the author line breaks as Markdown hard breaks', async () => {
+            const result = await genErrorSummary('line one\nline two\nline three');
+
+            // Each single newline becomes a hard break (two trailing spaces)
+            // so the note renders on separate lines in the PR comment.
+            expect(result).toContain('line one  \nline two  \nline three');
+        });
+    });
 });
