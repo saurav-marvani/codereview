@@ -6,6 +6,29 @@ import { CliReviewPipelineContext } from '@libs/cli-review/pipeline/context/cli-
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 
 /**
+ * Extract the host of a git remote, accepting both URL forms we deal with
+ * (`https://host/path` and the scp-like `git@host:path`).
+ */
+export function extractRemoteHost(url: string): string | undefined {
+    const value = url.trim();
+    if (!value) {
+        return undefined;
+    }
+
+    // scp-like (`git@host:path`) is not a parseable URL — match it first.
+    const scpLike = value.match(/^[^@\s/]+@([^:/]+):/);
+    if (scpLike) {
+        return scpLike[1].toLowerCase();
+    }
+
+    try {
+        return new URL(value).hostname.toLowerCase() || undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
  * Parse a git remote URL (HTTPS or SSH) into fullName/name parts.
  *
  * Accepts any number of path segments so hosts with nested namespaces work
@@ -120,9 +143,17 @@ export class CloneParamsResolverService {
             return null;
         }
 
-        const platform = gitContext.inferredPlatform || PlatformType.GITHUB;
+        // The CLI can only infer a platform from well-known SaaS hostnames
+        // (github.com, gitlab.com, ...), so a self-managed host — GitLab
+        // CE/EE, Bitbucket Server, Gitea/Forgejo, GHES — arrives here
+        // undefined. Do NOT guess GitHub: getCloneParams would then hand back
+        // a github.com URL built from `fullName` and the sandbox would clone
+        // from the wrong server entirely (#1541). Left undefined,
+        // getCloneParams resolves the organization's connected integration.
+        const inferredPlatform = gitContext.inferredPlatform;
         const branch = gitContext.branch || 'main';
 
+        let platform = inferredPlatform;
         let authToken = '';
         let authUsername: string | undefined;
         let cloneUrl = gitContext.remote;
@@ -132,35 +163,42 @@ export class CloneParamsResolverService {
         // there's no integration row to find for anonymous traffic.
         if (gitContext.githubPat) {
             authToken = gitContext.githubPat;
+            platform = platform ?? PlatformType.GITHUB;
         } else {
-            try {
-                const cloneParams =
-                    await this.codeManagementService.getCloneParams(
-                        {
-                            repository: {
-                                id: '0',
-                                defaultBranch: branch,
-                                fullName: parsed.fullName,
-                                name: parsed.name,
-                            },
-                            organizationAndTeamData:
-                                context.organizationAndTeamData,
-                        },
-                        platform,
-                    );
+            const cloneParams = await this.resolveCliCloneParams({
+                organizationAndTeamData: context.organizationAndTeamData,
+                repository: {
+                    id: '0',
+                    defaultBranch: branch,
+                    fullName: parsed.fullName,
+                    name: parsed.name,
+                },
+                remote: gitContext.remote,
+                inferredPlatform,
+            });
+
+            if (cloneParams) {
                 authToken = cloneParams.auth?.token || '';
                 authUsername = cloneParams.auth?.username;
+                platform = cloneParams.provider ?? platform;
 
                 if (cloneParams.url) {
                     cloneUrl = cloneParams.url;
                 }
-            } catch (error) {
-                this.logger.warn({
-                    message: `Could not get auth token for CLI sandbox, trying without auth`,
-                    context: CloneParamsResolverService.name,
-                    error,
-                });
             }
+        }
+
+        // Self-managed host with no connected integration: we know neither the
+        // platform nor a credential, and platform drives the git auth header
+        // shape. Skip the sandbox instead of guessing — the review still runs,
+        // just without the sandbox-dependent stages.
+        if (!platform) {
+            this.logger.warn({
+                message: `Could not resolve the platform for the CLI sandbox remote; skipping sandbox`,
+                context: CloneParamsResolverService.name,
+                metadata: { remoteHost: extractRemoteHost(gitContext.remote) },
+            });
+            return null;
         }
 
         // Ensure HTTPS (E2B requires HTTPS for token auth)
@@ -186,5 +224,91 @@ export class CloneParamsResolverService {
             platform,
             checkoutSha: gitContext.mergeBaseSha,
         };
+    }
+
+    /**
+     * Pick the clone params that actually belong to the user's remote.
+     *
+     * The CLI infers a platform only for well-known SaaS hostnames, so for a
+     * self-managed host we have to ask the organization's integrations. A team
+     * can legitimately hold several active ones (GitHub *and* a self-managed
+     * GitLab, say), and the platform is only knowable from the remote's host —
+     * so when there is a choice to make, make it by host rather than taking
+     * whichever row the database returned first.
+     */
+    private async resolveCliCloneParams(params: {
+        organizationAndTeamData: CodeReviewPipelineContext['organizationAndTeamData'];
+        repository: {
+            id: string;
+            defaultBranch: string;
+            fullName: string;
+            name: string;
+        };
+        remote: string;
+        inferredPlatform?: PlatformType;
+    }) {
+        const { organizationAndTeamData, repository, remote, inferredPlatform } =
+            params;
+
+        const candidates = inferredPlatform
+            ? [inferredPlatform]
+            : await this.codeManagementService.getCodeManagementPlatforms(
+                  organizationAndTeamData,
+              );
+
+        if (!candidates.length) {
+            this.logger.warn({
+                message: `No code management integration to resolve the CLI sandbox remote against`,
+                context: CloneParamsResolverService.name,
+                metadata: { remoteHost: extractRemoteHost(remote) },
+            });
+            return null;
+        }
+
+        const remoteHost = extractRemoteHost(remote);
+
+        for (const candidate of candidates) {
+            let cloneParams: Awaited<
+                ReturnType<CodeManagementService['getCloneParams']>
+            >;
+
+            try {
+                cloneParams = await this.codeManagementService.getCloneParams(
+                    { repository, organizationAndTeamData },
+                    candidate,
+                );
+            } catch (error) {
+                this.logger.warn({
+                    message: `Could not get clone params for ${candidate}, trying without auth`,
+                    context: CloneParamsResolverService.name,
+                    error,
+                });
+                continue;
+            }
+
+            if (!cloneParams) {
+                continue;
+            }
+
+            // Single candidate: trust it. Its host may legitimately differ from
+            // the remote's (internal DNS alias, mirror, vanity hostname) and
+            // there is no other integration this repo could belong to.
+            if (candidates.length === 1) {
+                return cloneParams;
+            }
+
+            if (extractRemoteHost(cloneParams.url) === remoteHost) {
+                return cloneParams;
+            }
+        }
+
+        // Several integrations and none serves this host: any of their tokens
+        // would authenticate against the wrong platform.
+        this.logger.warn({
+            message: `None of the connected integrations matches the git remote host; skipping sandbox`,
+            context: CloneParamsResolverService.name,
+            metadata: { remoteHost, candidates },
+        });
+        return null;
     }
 }
