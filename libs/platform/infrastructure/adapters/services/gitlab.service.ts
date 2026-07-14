@@ -3338,7 +3338,13 @@ export class GitlabService implements Omit<
                 params.organizationAndTeamData,
             );
 
-            if (!gitlabAuthDetail) {
+            // getAuthDetails spreads the lookup and defaults authMode, so it is
+            // always truthy — a plain `!gitlabAuthDetail` check never fires for
+            // an organization with no GitLab integration. Assert on the auth
+            // material instead: without it we would fall back to the
+            // gitlab.com base URL and hand back a tokenless clone URL for a
+            // host the caller never asked for (same failure as #1541).
+            if (!gitlabAuthDetail?.accessToken) {
                 throw new Error('GitLab authentication details not found');
             }
 

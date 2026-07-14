@@ -10,6 +10,7 @@ import {
 } from '@libs/cli-review/domain/types/cli-review.types';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { CliInputConverter } from '@libs/cli-review/infrastructure/converters/cli-input.converter';
+import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { CliReviewPipelineContext } from '@libs/cli-review/pipeline/context/cli-review-pipeline.context';
 import { CliReviewPipelineStrategy } from '@libs/cli-review/pipeline/strategy/cli-review-pipeline.strategy';
 import { PipelineExecutor } from '@libs/core/infrastructure/pipeline/services/pipeline-executor.service';
@@ -94,6 +95,7 @@ export class ExecuteCliReviewUseCase implements IUseCase {
     constructor(
         private readonly converter: CliInputConverter,
         private readonly pipelineStrategy: CliReviewPipelineStrategy,
+        private readonly codeManagementService: CodeManagementService,
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
         @Inject(AUTOMATION_EXECUTION_SERVICE_TOKEN)
@@ -194,6 +196,12 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                 ? { ...codeReviewConfig, reviewMode: 'fast' as const }
                 : codeReviewConfig;
 
+            const resolvedPlatform = await this.resolveCliPlatform(
+                organizationAndTeamData,
+                gitContext,
+                isTrialMode,
+            );
+
             const context: CliReviewPipelineContext = {
                 // CLI-specific fields
                 isFastMode,
@@ -247,7 +255,7 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                 teamAutomationId: 'cli-automation',
                 origin: 'cli',
                 action: 'review',
-                platformType: (gitContext?.inferredPlatform || 'github') as any,
+                platformType: resolvedPlatform as any,
 
                 // Git context for cross-file analysis (CLI mode)
                 gitContext: gitContext
@@ -368,6 +376,50 @@ export class ExecuteCliReviewUseCase implements IUseCase {
      * Load user's code review configuration from database,
      * including kody rules resolved for the repository matched by git remote.
      */
+    /**
+     * Platform backing this CLI review.
+     *
+     * The CLI infers it from the remote's hostname, which only works for the
+     * known SaaS hosts — every self-managed instance (GitLab CE/EE, Bitbucket
+     * Server, Forgejo, GHES) arrives undefined. This used to fall back to the
+     * literal 'github', which is doubly wrong: it names a platform the
+     * organization may not use, and it does not even match PlatformType.GITHUB
+     * ('GITHUB'), so the repository lookup it feeds could never hit (#1541).
+     *
+     * Ask the team's connected integration instead — the same fallback the
+     * CodeManagementService methods apply when the caller names no platform.
+     */
+    private async resolveCliPlatform(
+        organizationAndTeamData: OrganizationAndTeamData,
+        gitContext?: GitContext,
+        isTrialMode?: boolean,
+    ): Promise<PlatformType | undefined> {
+        if (gitContext?.inferredPlatform) {
+            return gitContext.inferredPlatform;
+        }
+
+        // Anonymous traffic has no integration row to look up.
+        if (isTrialMode) {
+            return undefined;
+        }
+
+        try {
+            return (
+                (await this.codeManagementService.getTypeIntegration(
+                    organizationAndTeamData,
+                )) ?? undefined
+            );
+        } catch (error) {
+            this.logger.warn({
+                message: 'Could not resolve the platform for the CLI review',
+                context: ExecuteCliReviewUseCase.name,
+                error,
+                metadata: { organizationAndTeamData },
+            });
+            return undefined;
+        }
+    }
+
     private async loadUserConfigWithRules(
         organizationAndTeamData: OrganizationAndTeamData,
         gitContext?: GitContext,
