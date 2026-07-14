@@ -703,7 +703,13 @@ export class BitbucketCloudService implements Omit<
                 params.organizationAndTeamData,
             );
 
-            if (!bitbucketAuthDetail) {
+            // getAuthDetails spreads the lookup and defaults authMode, so it is
+            // always truthy — a plain `!bitbucketAuthDetail` check never fires
+            // for an organization with no Bitbucket integration. Assert on the
+            // auth material instead: without it we would hand back a
+            // bitbucket.org clone URL carrying an empty token (same failure as
+            // #1541).
+            if (!bitbucketAuthDetail?.appPassword) {
                 throw new BadRequestException('Installation not found');
             }
             const fullBitbucketUrl = `https://bitbucket.org/${params?.repository?.fullName}`;
