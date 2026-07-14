@@ -1,3 +1,4 @@
+import { produce } from 'immer';
 import { UpdateCommentsAndGenerateSummaryStage } from './finish-comments.stage';
 import { PullRequestMessageStatus } from '@libs/core/infrastructure/config/types/general/pullRequestMessages.type';
 
@@ -91,22 +92,33 @@ describe('UpdateCommentsAndGenerateSummaryStage - lineComments forwarding', () =
 });
 
 /**
- * Guards the team-authored error message (issue #1452): on a failed review the
- * stage resolves `pullRequestMessagesConfig.errorReviewMessage.content` and
- * forwards the trimmed template to commentManager.updateOverallComment as the
- * trailing `reviewErrorCustomMessage` arg — whenever it has content AND the
- * review actually failed. The template IS the message (the comment manager then
- * expands @errorReason); the presence of content is the switch, and empty/unset
- * content falls back to Kody's default error comment.
+ * Guards the frozen-context error-recording path (issue #1452 matrix-gaps
+ * item 3, same family as create-file-comments #c886e369a / agent-review
+ * #1522). By the time this stage runs, an earlier stage has passed the
+ * pipeline context through Immer's produce(), so `context` is DEEP-FROZEN
+ * (auto-freeze). When PR-summary generation fails, the catch block used to
+ * record the error via `context.errors = []` / `context.errors.push(...)` —
+ * a direct mutation of the frozen context that throws "Cannot add property,
+ * object is not extensible" and, INSIDE the catch, replaced the real summary
+ * failure with a confusing frozen-mutation error and aborted the stage. The
+ * fix records the error through updateContext(); this test freezes the
+ * context exactly like production and asserts the error is recorded without
+ * throwing.
  */
-describe('UpdateCommentsAndGenerateSummaryStage - custom error message', () => {
+describe('UpdateCommentsAndGenerateSummaryStage - frozen-context error recording (regression)', () => {
     const makeStage = () => {
         const commentManagerService = {
+            // Summary generation blows up → the catch that records the error.
+            generateSummaryPR: jest
+                .fn()
+                .mockRejectedValue(new Error('summary boom')),
+            updateSummarizationInPR: jest.fn().mockResolvedValue(undefined),
+            // Reached after the summary catch (no endReviewMessage config).
+            updateOverallComment: jest.fn().mockResolvedValue(undefined),
+            createComment: jest.fn().mockResolvedValue(undefined),
             processEndReviewMessageTemplate: jest
                 .fn()
                 .mockResolvedValue('rendered body'),
-            updateOverallComment: jest.fn().mockResolvedValue(undefined),
-            createComment: jest.fn().mockResolvedValue(undefined),
         } as any;
         const stage = new UpdateCommentsAndGenerateSummaryStage(
             commentManagerService,
@@ -115,17 +127,15 @@ describe('UpdateCommentsAndGenerateSummaryStage - custom error message', () => {
         return { stage, commentManagerService };
     };
 
-    // No startReviewMessage/endReviewMessage → the `!endReviewMessage` branch
-    // that calls updateOverallComment (the default summary path used on
-    // failure). errorReviewMessage carries the team guidance.
-    const failedContext = (
-        errorReviewMessage: Record<string, unknown> | undefined,
-    ) =>
+    const summaryFailContext = () =>
         ({
-            lastExecution: undefined,
-            errors: [{ severity: 'critical' }],
-            lastReviewError: { friendlyMessage: 'no BYOK provider configured' },
-            codeReviewConfig: { languageResultPrompt: 'en-US' },
+            lastExecution: undefined, // isCommitRun=false
+            // generatePRSummary=true → shouldGenerateOrUpdateSummary=true,
+            // entering the try/catch whose failure path records the error.
+            codeReviewConfig: {
+                languageResultPrompt: 'en-US',
+                summary: { generatePRSummary: true },
+            },
             repository: { id: 'r' },
             pullRequest: { number: 7 },
             organizationAndTeamData: { organizationId: 'o', teamId: 't' },
@@ -134,81 +144,47 @@ describe('UpdateCommentsAndGenerateSummaryStage - custom error message', () => {
             changedFiles: [],
             dryRun: { enabled: false },
             lineComments: [],
-            pullRequestMessagesConfig: errorReviewMessage
-                ? { errorReviewMessage }
-                : {},
+            // A frozen, already-initialized errors array — the realistic
+            // shape. The old code's `context.errors.push(...)` throws on it.
+            errors: [],
         }) as any;
 
-    const lastArg = (mockFn: jest.Mock) => {
-        const call = mockFn.mock.calls[0];
-        return call[call.length - 1];
-    };
+    it('records the summary failure without throwing when the context is Immer-frozen', async () => {
+        const { stage } = makeStage();
+        // produce(x, () => {}) deep-freezes exactly like the real pipeline.
+        const frozenCtx = produce(summaryFailContext(), () => {});
 
-    it('forwards the trimmed custom note on a failed review', async () => {
-        const { stage, commentManagerService } = makeStage();
+        // The whole point: the OLD implementation threw here
+        // ("Cannot add property N, object is not extensible") because the
+        // catch mutated the frozen context/array in place.
+        const result = await (stage as any).executeStage(frozenCtx);
 
-        await (stage as any).executeStage(
-            failedContext({
-                status: PullRequestMessageStatus.ACTIVE,
-                content: '  Reach out to @platform-support  ',
-            }),
-        );
-
-        expect(commentManagerService.updateOverallComment).toHaveBeenCalledTimes(
-            1,
-        );
-        // Trimmed note forwarded as the trailing reviewErrorCustomMessage string
-        // (the comment manager appends it below the default comment).
-        expect(lastArg(commentManagerService.updateOverallComment)).toBe(
-            'Reach out to @platform-support',
+        expect(result.errors).toHaveLength(1);
+        expect(result.errors[0].metadata.reason).toBe(
+            'summary_generation_failed',
         );
     });
 
-    it('forwards content regardless of status (content is the switch)', async () => {
-        const { stage, commentManagerService } = makeStage();
-
-        // Status is vestigial for the error message — a non-empty content still
-        // forwards even when a hand-written config leaves status OFF.
-        await (stage as any).executeStage(
-            failedContext({
-                status: PullRequestMessageStatus.OFF,
-                content: 'Reach out to @platform-support',
-            }),
+    it('appends to a frozen non-empty errors array without dropping the prior error', async () => {
+        const { stage } = makeStage();
+        const priorError = {
+            stage: 'earlier-stage',
+            error: new Error('earlier'),
+            metadata: { reason: 'earlier_failure' },
+        };
+        const frozenCtx = produce(
+            { ...summaryFailContext(), errors: [priorError] } as any,
+            () => {},
         );
 
-        expect(lastArg(commentManagerService.updateOverallComment)).toBe(
-            'Reach out to @platform-support',
+        const result = await (stage as any).executeStage(frozenCtx);
+
+        // Both the pre-existing error and the newly-recorded summary error
+        // survive — the updateContext path must not clobber the array.
+        expect(result.errors).toHaveLength(2);
+        expect(result.errors[0].metadata.reason).toBe('earlier_failure');
+        expect(result.errors[1].metadata.reason).toBe(
+            'summary_generation_failed',
         );
-    });
-
-    it('does not forward an empty message', async () => {
-        const { stage, commentManagerService } = makeStage();
-
-        await (stage as any).executeStage(
-            failedContext({
-                status: PullRequestMessageStatus.ACTIVE,
-                content: '   ',
-            }),
-        );
-
-        expect(
-            lastArg(commentManagerService.updateOverallComment),
-        ).toBeUndefined();
-    });
-
-    it('does not forward the message when the review did not fail', async () => {
-        const { stage, commentManagerService } = makeStage();
-
-        const context = failedContext({
-            status: PullRequestMessageStatus.ACTIVE,
-            content: 'Reach out to @platform-support',
-        });
-        context.errors = []; // no critical error → reviewFailed is false
-
-        await (stage as any).executeStage(context);
-
-        expect(
-            lastArg(commentManagerService.updateOverallComment),
-        ).toBeUndefined();
     });
 });

@@ -185,10 +185,20 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                     },
                 };
 
-                if (!context.errors) {
-                    context.errors = [];
-                }
-                context.errors.push(pipelineError);
+                // The pipeline context is Immer-frozen once an earlier stage
+                // (e.g. agent-review) ran updateContext, so a direct
+                // `context.errors = []` / `.push()` throws "Cannot assign to
+                // read only property" — and here, INSIDE the summary-failure
+                // catch, that throw would replace the real summary error with a
+                // confusing frozen-mutation error and abort the stage. Record
+                // the pipeline error through updateContext (same fix class as
+                // create-file-comments #c886e369a / agent-review #1522).
+                context = this.updateContext(context, (draft) => {
+                    if (!draft.errors) {
+                        draft.errors = [];
+                    }
+                    draft.errors.push(pipelineError);
+                });
             }
         }
 
