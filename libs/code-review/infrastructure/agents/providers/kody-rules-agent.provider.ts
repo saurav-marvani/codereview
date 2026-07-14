@@ -230,6 +230,28 @@ export class KodyRulesAgentProvider extends BaseCodeReviewAgentProvider {
                     `[kody-rules] all ${shardsRun} judge shard(s) failed for PR#${input.prNumber} — every semantic kody-rule verdict was lost. Reporting 0 findings would green-wash a review that evaluated nothing; failing loudly so the execution is marked degraded. Check the shard warn logs (wire-schema 400 / provider outage / model unavailability).`,
                 );
             }
+
+            // Surface a PARTIAL shard failure (some shards died while others
+            // posted). We deliberately do NOT throw — the surviving shards'
+            // findings still ship — but a silent degrade is exactly the
+            // "one shard dead while the other posts" shape of the wire-schema
+            // regression: the review looks healthy yet a subset of semantic
+            // kody-rules were never evaluated, and today that only shows up as
+            // an `, N errored` fragment in an info line (easy to miss, not
+            // alertable). Emit a structured WARN with the counts so the
+            // partial degrade is greppable/alertable per-execution.
+            if (shardsErrored > 0 && shardsErrored < shardsRun) {
+                this.shardLogger.warn({
+                    message: `[kody-rules] PARTIAL judge-shard failure for PR#${input.prNumber}: ${shardsErrored}/${shardsRun} shard(s) errored — the surviving ${shardsRun - shardsErrored} shard(s) posted, but the semantic kody-rules on the failed shard(s) were NOT evaluated. Review degraded (not failed). Check the shard warn logs for the cause (wire-schema 400 / provider blip / model unavailability).`,
+                    context: this.getIdentity().name,
+                    metadata: {
+                        prNumber: input.prNumber,
+                        shardsRun,
+                        shardsErrored,
+                        shardsSucceeded: shardsRun - shardsErrored,
+                    },
+                });
+            }
         }
 
         // Merge both streams; downstream mapping/verify/dedup are identical.
