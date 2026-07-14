@@ -139,6 +139,10 @@ export class CloneParamsResolverService {
             this.logger.warn({
                 message: `Could not parse git remote URL: ${gitContext.remote}`,
                 context: CloneParamsResolverService.name,
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    remoteHost: extractRemoteHost(gitContext.remote),
+                },
             });
             return null;
         }
@@ -198,6 +202,11 @@ export class CloneParamsResolverService {
                     message: `Could not get auth token for CLI sandbox, trying without auth`,
                     context: CloneParamsResolverService.name,
                     error,
+                    metadata: {
+                        organizationAndTeamData: context.organizationAndTeamData,
+                        remoteHost: extractRemoteHost(gitContext.remote),
+                        inferredPlatform,
+                    },
                 });
             }
         }
@@ -210,7 +219,10 @@ export class CloneParamsResolverService {
             this.logger.warn({
                 message: `Could not resolve the platform for the CLI sandbox remote; skipping sandbox`,
                 context: CloneParamsResolverService.name,
-                metadata: { remoteHost: extractRemoteHost(gitContext.remote) },
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    remoteHost: extractRemoteHost(gitContext.remote),
+                },
             });
             return null;
         }
@@ -224,6 +236,11 @@ export class CloneParamsResolverService {
                 this.logger.warn({
                     message: `Could not parse SSH-like git remote URL: ${cloneUrl}`,
                     context: CloneParamsResolverService.name,
+                    metadata: {
+                        organizationAndTeamData: context.organizationAndTeamData,
+                        remoteHost: extractRemoteHost(cloneUrl),
+                        platform,
+                    },
                 });
                 return null;
             }
