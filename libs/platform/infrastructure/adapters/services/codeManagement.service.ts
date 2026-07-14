@@ -1016,6 +1016,15 @@ export class CodeManagementService implements ICodeManagementService {
             );
         }
 
+        // Same guard the list-returning methods here already apply: with no
+        // integration, getTypeIntegration answers null and the factory would
+        // throw "Repository service for type 'null' not found". Callers already
+        // treat a null result as "no clone params" — the adapters return null
+        // on failure too.
+        if (!type) {
+            return null;
+        }
+
         const codeManagementService =
             this.platformIntegrationFactory.getCodeManagementService(type);
 

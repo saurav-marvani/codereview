@@ -6014,7 +6014,16 @@ This is an experimental feature that generates committable changes. Review the d
                 params.organizationAndTeamData,
             );
 
-            if (!githubAuthDetail) {
+            // getGithubAuthDetails always returns a truthy object (it spreads
+            // the lookup and defaults authMode), so a plain `!githubAuthDetail`
+            // check never fires for an org with no GitHub integration. Assert
+            // on the auth material instead: without it we would build a
+            // github.com URL with an empty token and let the caller clone from
+            // the wrong host (#1541).
+            if (
+                !githubAuthDetail?.authToken &&
+                !githubAuthDetail?.installationId
+            ) {
                 throw new BadRequestException('Instalation not found');
             }
 

@@ -1133,17 +1133,6 @@
     }
   },
   {
-    "key": "parameters.controller.ts#applyCodeReviewPreset",
-    "httpMethod": "POST",
-    "urlPath": "/parameters/apply-code-review-preset",
-    "expected": {
-      "owner": "allow",
-      "billing_manager": "deny",
-      "repo_admin": "allow",
-      "contributor": "deny"
-    }
-  },
-  {
     "key": "parameters.controller.ts#createOrUpdate",
     "httpMethod": "POST",
     "urlPath": "/parameters/create-or-update",
@@ -1334,17 +1323,6 @@
     "key": "pullRequest.controller.ts#getAwaitingPullRequests",
     "httpMethod": "GET",
     "urlPath": "/pull-requests/awaiting",
-    "expected": {
-      "owner": "allow",
-      "billing_manager": "deny",
-      "repo_admin": "allow",
-      "contributor": "allow"
-    }
-  },
-  {
-    "key": "pullRequest.controller.ts#getOnboardingSignals",
-    "httpMethod": "GET",
-    "urlPath": "/pull-requests/onboarding-signals",
     "expected": {
       "owner": "allow",
       "billing_manager": "deny",
