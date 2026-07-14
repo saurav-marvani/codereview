@@ -68,6 +68,20 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
             !reviewFailed && errors.some((e) => e?.severity === 'partial');
         const reviewErrorMessage = context.lastReviewError?.friendlyMessage;
 
+        // Optional team-authored guidance appended below Kody's default error
+        // comment (issue #1452). Honored whenever the review failed and the
+        // message has content — the presence of content is the switch (there is
+        // no separate on/off toggle for the error message). Empty/unset content
+        // leaves the default error comment unchanged. Inherits global →
+        // repository → directory like the other custom messages (resolved into
+        // pullRequestMessagesConfig upstream).
+        const errorReviewMessageConfig =
+            context.pullRequestMessagesConfig?.errorReviewMessage;
+        const reviewErrorCustomMessage =
+            reviewFailed && errorReviewMessageConfig?.content?.trim()
+                ? errorReviewMessageConfig.content.trim()
+                : undefined;
+
         const isCommitRun = Boolean(lastExecution);
         const commitBehaviour =
             codeReviewConfig?.summary?.behaviourForNewCommits ??
@@ -199,6 +213,7 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 reviewFailed,
                 reviewErrorMessage,
                 reviewHasPartialErrors,
+                reviewErrorCustomMessage,
             );
             return context;
         }
@@ -260,6 +275,7 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 reviewFailed,
                 reviewErrorMessage,
                 reviewHasPartialErrors,
+                reviewErrorCustomMessage,
             );
             return context;
         }
@@ -297,6 +313,7 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 reviewFailed,
                 reviewErrorMessage,
                 reviewHasPartialErrors,
+                reviewErrorCustomMessage,
             );
         }
 
