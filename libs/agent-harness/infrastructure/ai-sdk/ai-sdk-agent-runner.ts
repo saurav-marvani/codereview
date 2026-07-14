@@ -482,12 +482,13 @@ function aggregateUsage(steps: readonly RunStep[]): TokenUsage {
 
 // --- mappers (AI SDK <-> core contracts) ---
 function toAgentMessage(m: ModelMessage): AgentMessage {
+    // Preserve structured content (tool-result / tool-call / text parts) as-is.
+    // Stringifying a `tool` turn here is what made the compressed window crash
+    // the SDK on `content.filter` at the next step; keeping the array intact
+    // lets it round-trip back to generateText unchanged.
     return {
         role: m.role as AgentMessage['role'],
-        content:
-            typeof m.content === 'string'
-                ? m.content
-                : JSON.stringify(m.content),
+        content: m.content,
     };
 }
 function toModelMessage(m: AgentMessage): ModelMessage {

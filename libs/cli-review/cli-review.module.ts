@@ -29,6 +29,7 @@ import { CliReviewJobProcessorService } from './workflow/cli-review-job-processo
 import { GitHubRateLimitGateService } from '@libs/platform/infrastructure/adapters/services/github/github-rate-limit-gate.service';
 import { RATE_LIMIT_GATE_SERVICE_TOKEN } from '@libs/core/workflow/domain/contracts/rate-limit-gate.service.contract';
 import { GithubModule } from '@libs/platform/modules/github.module';
+import { PlatformCoreModule } from '@libs/platform/modules/platform-core.module';
 
 // Services
 import { CliInputConverter } from './infrastructure/converters/cli-input.converter';
@@ -116,6 +117,7 @@ import { OutboxMessageModel } from '@libs/core/workflow/infrastructure/repositor
         forwardRef(() => LicenseModule), // For license validation and auto-assign
         forwardRef(() => KodyRulesModule), // For loading kody rules in CLI review
         forwardRef(() => GithubModule), // For GitHubRateLimitGateService dependency
+        forwardRef(() => PlatformCoreModule), // For CodeManagementService (platform resolution)
     ],
     providers: [
         // Strategy

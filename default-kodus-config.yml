@@ -34,7 +34,7 @@ reviewOptions:
 # suggestion control
 suggestionControl:
     applyFiltersToKodyRules: false
-    severityLevelFilter: 'high' # low | medium | high | critical
+    severityLevelFilter: 'medium' # low | medium | high | critical
 
 # PR summary
 summary:
