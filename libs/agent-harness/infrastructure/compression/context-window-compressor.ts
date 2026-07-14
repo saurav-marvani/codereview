@@ -44,12 +44,13 @@ export class ContextWindowCompressor implements Compressor {
         if (after >= check.currentTokens) return null; // no real savings
 
         return {
+            // Return content as-is: compressMessages already truncated the
+            // tool-result text while preserving the parts structure. Stringifying
+            // here would re-flatten `tool` turns and crash the SDK on
+            // `content.filter` when this window is handed back to generateText.
             messages: compressed.map((m) => ({
                 role: m.role as AgentMessage['role'],
-                content:
-                    typeof m.content === 'string'
-                        ? m.content
-                        : JSON.stringify(m.content),
+                content: m.content as AgentMessage['content'],
             })),
             beforeTokens: check.currentTokens,
             afterTokens: after,
