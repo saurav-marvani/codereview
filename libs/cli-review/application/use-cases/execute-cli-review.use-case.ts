@@ -386,12 +386,8 @@ export class ExecuteCliReviewUseCase implements IUseCase {
      * organization may not use, and it does not even match PlatformType.GITHUB
      * ('GITHUB'), so the repository lookup it feeds could never hit (#1541).
      *
-     * Ask the organization's integrations instead. With exactly one connected
-     * platform the answer is unambiguous; with several, only the remote's host
-     * could disambiguate, and that costs a credential round-trip per candidate
-     * — the sandbox stage already pays it and picks correctly. Here we would
-     * rather return undefined than guess: the only consumer is an optional
-     * repository lookup that degrades to "no call graph".
+     * Ask the team's connected integration instead — the same fallback the
+     * CodeManagementService methods apply when the caller names no platform.
      */
     private async resolveCliPlatform(
         organizationAndTeamData: OrganizationAndTeamData,
@@ -408,12 +404,11 @@ export class ExecuteCliReviewUseCase implements IUseCase {
         }
 
         try {
-            const platforms =
-                await this.codeManagementService.getCodeManagementPlatforms(
+            return (
+                (await this.codeManagementService.getTypeIntegration(
                     organizationAndTeamData,
-                );
-
-            return platforms.length === 1 ? platforms[0] : undefined;
+                )) ?? undefined
+            );
         } catch (error) {
             this.logger.warn({
                 message: 'Could not resolve the platform for the CLI review',

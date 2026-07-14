@@ -45,18 +45,15 @@ describe('CloneParamsResolver × real platform adapters (self-managed host)', ()
      * Builds the real object graph. `integrations` drives what the
      * organization has connected; `authDetails` what each adapter reads back.
      */
-    const buildResolver = (integrations: PlatformType[]) => {
+    const buildResolver = (connected?: PlatformType) => {
         const integrationService = {
-            find: jest.fn(async (filter: any) => {
-                if (
-                    filter?.integrationCategory !==
-                    IntegrationCategory.CODE_MANAGEMENT
-                ) {
-                    return [];
-                }
-                return integrations.map((platform) => ({ platform }));
-            }),
-            findOne: jest.fn().mockResolvedValue({ uuid: 'integration-1' }),
+            // getTypeIntegration reads the team's connected integration here.
+            findOne: jest.fn(async (filter: any) =>
+                filter?.integrationCategory ===
+                    IntegrationCategory.CODE_MANAGEMENT && connected
+                    ? { platform: connected }
+                    : null,
+            ),
             getPlatformAuthDetails: jest.fn(async (_org, platform) => {
                 if (platform === PlatformType.GITLAB) {
                     // OAUTH: the adapter returns accessToken as-is. (TOKEN mode
@@ -112,7 +109,7 @@ describe('CloneParamsResolver × real platform adapters (self-managed host)', ()
     };
 
     it('clones a self-managed GitLab remote from its own host, with its own token', async () => {
-        const { resolver } = buildResolver([PlatformType.GITLAB]);
+        const { resolver } = buildResolver(PlatformType.GITLAB);
 
         const result = await resolver.resolve(
             pipelineContext(),
@@ -128,9 +125,9 @@ describe('CloneParamsResolver × real platform adapters (self-managed host)', ()
     });
 
     it('does not reach the GitHub adapter for a GitLab-only organization', async () => {
-        const { resolver, integrationService } = buildResolver([
+        const { resolver, integrationService } = buildResolver(
             PlatformType.GITLAB,
-        ]);
+        );
 
         await resolver.resolve(
             pipelineContext(),
@@ -145,25 +142,8 @@ describe('CloneParamsResolver × real platform adapters (self-managed host)', ()
         expect(platformsAskedFor).not.toContain(PlatformType.GITHUB);
     });
 
-    it('picks GitLab over GitHub when both are connected and the remote is self-managed', async () => {
-        // GitHub first: it would win an unordered findOne.
-        const { resolver } = buildResolver([
-            PlatformType.GITHUB,
-            PlatformType.GITLAB,
-        ]);
-
-        const result = await resolver.resolve(
-            pipelineContext(),
-            cliContext(`https://${SELF_MANAGED_HOST}/group/repo.git`),
-        );
-
-        expect(new URL(result!.url).hostname).toBe(SELF_MANAGED_HOST);
-        expect(result!.platform).toBe(PlatformType.GITLAB);
-        expect(result!.authToken).toBe(GITLAB_TOKEN);
-    });
-
     it('skips the sandbox when the organization connected nothing', async () => {
-        const { resolver } = buildResolver([]);
+        const { resolver } = buildResolver(undefined);
 
         const result = await resolver.resolve(
             pipelineContext(),

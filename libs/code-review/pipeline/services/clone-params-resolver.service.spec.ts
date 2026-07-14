@@ -52,19 +52,15 @@ describe('CloneParamsResolverService (CLI mode, self-managed host)', () => {
     const REMOTE = `https://${SELF_MANAGED_HOST}/group/repo.git`;
 
     let service: CloneParamsResolverService;
-    let codeManagementService: {
-        getCloneParams: jest.Mock;
-        getCodeManagementPlatforms: jest.Mock;
-    };
+    let codeManagementService: { getCloneParams: jest.Mock };
 
     beforeEach(() => {
         codeManagementService = {
-            // This organization connected a self-managed GitLab, nothing else.
-            getCodeManagementPlatforms: jest
-                .fn()
-                .mockResolvedValue([PlatformType.GITLAB]),
+            // Stands in for CodeManagementService: an undefined platform makes
+            // it resolve the team's connected integration — a self-managed
+            // GitLab here.
             getCloneParams: jest.fn(async (params: any, type?: PlatformType) =>
-                paramsFor(type, params.repository.fullName),
+                paramsFor(type ?? PlatformType.GITLAB, params.repository.fullName),
             ),
         };
 
@@ -87,8 +83,9 @@ describe('CloneParamsResolverService (CLI mode, self-managed host)', () => {
         const platformsAskedFor =
             codeManagementService.getCloneParams.mock.calls.map(([, type]) => type);
 
-        expect(platformsAskedFor).not.toContain(PlatformType.GITHUB);
-        expect(platformsAskedFor).toEqual([PlatformType.GITLAB]);
+        // Undefined, not GITHUB: the service resolves the connected
+        // integration itself. Naming GitHub here was the bug.
+        expect(platformsAskedFor).toEqual([undefined]);
     });
 
     it('resolves the credentials of the connected integration', async () => {
@@ -107,10 +104,10 @@ describe('CloneParamsResolverService (CLI mode, self-managed host)', () => {
             cliContext(REMOTE, PlatformType.GITLAB),
         );
 
-        // Inferred from the hostname: no need to enumerate integrations.
-        expect(
-            codeManagementService.getCodeManagementPlatforms,
-        ).not.toHaveBeenCalled();
+        expect(codeManagementService.getCloneParams).toHaveBeenCalledWith(
+            expect.anything(),
+            PlatformType.GITLAB,
+        );
         expect(new URL(result!.url).hostname).toBe(SELF_MANAGED_HOST);
     });
 
@@ -124,11 +121,10 @@ describe('CloneParamsResolverService (CLI mode, self-managed host)', () => {
         expect(result?.authToken).toBe(GITLAB_TOKEN);
     });
 
-    it('trusts a lone integration whose host differs from the remote', async () => {
+    it('trusts the integration when its host differs from the remote', async () => {
         // Internal DNS alias / mirror / vanity hostname: the remote and the
-        // configured integration name the same server differently. With a
-        // single integration there is nothing to disambiguate against, and
-        // rejecting it would regress a setup that works today.
+        // configured integration name the same server differently. Rejecting
+        // that would regress a setup that works today.
         const result = await service.resolve(
             pipelineContext(),
             cliContext('https://git-mirror.acme.com/group/repo.git'),
@@ -139,7 +135,8 @@ describe('CloneParamsResolverService (CLI mode, self-managed host)', () => {
     });
 
     it('skips the sandbox when the organization has no integration at all', async () => {
-        codeManagementService.getCodeManagementPlatforms.mockResolvedValue([]);
+        // getCloneParams resolves no platform and returns null.
+        codeManagementService.getCloneParams.mockResolvedValue(null);
 
         const result = await service.resolve(
             pipelineContext(),
@@ -147,85 +144,51 @@ describe('CloneParamsResolverService (CLI mode, self-managed host)', () => {
         );
 
         expect(result).toBeNull();
-        expect(codeManagementService.getCloneParams).not.toHaveBeenCalled();
     });
 });
 
 /**
+ * KNOWN LIMITATION, deliberately not handled here.
+ *
  * A team can hold more than one active code-management integration: nothing
- * deactivates the previous one on connect, there is no unique constraint on
- * (org, team, category), and getTypeIntegration resolves it with a findOne
- * carrying no ORDER BY. The remote's host is the only thing that says which
- * integration a CLI review actually belongs to.
+ * deactivates the previous one on connect, and there is no unique constraint
+ * on (organization, team, category). getTypeIntegration then resolves it with
+ * a findOne carrying no ORDER BY, so the answer is arbitrary — and for a
+ * remote whose host belongs to the *other* integration, the CLI sandbox
+ * reproduces #1541 for that team.
+ *
+ * The resolver could disambiguate by matching the remote's host against each
+ * integration, but that treats the symptom: the real defect is that the state
+ * is reachable at all. The invariant belongs in the integration layer (a
+ * partial unique index on status = true, or deactivating the previous one on
+ * connect), so this spec pins the current behavior rather than papering over
+ * it. See the follow-up issue.
  */
 describe('CloneParamsResolverService (team with several integrations)', () => {
-    let service: CloneParamsResolverService;
-    let codeManagementService: {
-        getCloneParams: jest.Mock;
-        getCodeManagementPlatforms: jest.Mock;
-    };
-
-    beforeEach(() => {
-        codeManagementService = {
-            // GitHub was connected first and would win an unordered findOne.
-            getCodeManagementPlatforms: jest
-                .fn()
-                .mockResolvedValue([PlatformType.GITHUB, PlatformType.GITLAB]),
-            getCloneParams: jest.fn(async (params: any, type?: PlatformType) =>
-                paramsFor(type, params.repository.fullName),
+    it('follows whichever integration the service resolves, right or wrong', async () => {
+        const codeManagementService = {
+            // The unordered findOne landed on GitHub, though the remote is a
+            // self-managed GitLab.
+            getCloneParams: jest.fn(async (params: any) =>
+                paramsFor(PlatformType.GITHUB, params.repository.fullName),
             ),
         };
+        const service = new CloneParamsResolverService(
+            codeManagementService as any,
+        );
 
-        service = new CloneParamsResolverService(codeManagementService as any);
-    });
-
-    it('picks the integration that serves the remote host', async () => {
         const result = await service.resolve(
             pipelineContext(),
             cliContext(`https://${SELF_MANAGED_HOST}/group/repo.git`),
         );
 
-        expect(new URL(result!.url).hostname).toBe(SELF_MANAGED_HOST);
-        expect(result?.platform).toBe(PlatformType.GITLAB);
-        expect(result?.authToken).toBe(GITLAB_TOKEN);
-    });
-
-    it('picks GitHub for a github.com remote in the same organization', async () => {
-        const result = await service.resolve(
-            pipelineContext(),
-            cliContext('https://github.com/group/repo.git'),
-        );
-
+        // Documented, not endorsed: the clone targets the wrong host and the
+        // sandbox will fail to acquire. Fixing this means enforcing one
+        // code-management integration per team.
         expect(new URL(result!.url).hostname).toBe('github.com');
-        expect(result?.platform).toBe(PlatformType.GITHUB);
-        expect(result?.authToken).toBe(GITHUB_TOKEN);
-    });
-
-    it('never hands back credentials from the non-matching integration', async () => {
-        const result = await service.resolve(
-            pipelineContext(),
-            cliContext(`https://${SELF_MANAGED_HOST}/group/repo.git`),
-        );
-
-        expect(result?.authToken).not.toBe(GITHUB_TOKEN);
-    });
-
-    it('skips the sandbox when no integration serves the remote host', async () => {
-        const result = await service.resolve(
-            pipelineContext(),
-            cliContext('https://git.elsewhere.com/group/repo.git'),
-        );
-
-        // Every token on file authenticates against another platform. Better
-        // no sandbox than a wrong one — the review still runs without it.
-        expect(result).toBeNull();
     });
 });
 
-/**
- * The mechanism must not be GitHub-shaped: every platform resolves the same
- * way, through the organization's connected integration.
- */
 describe('CloneParamsResolverService (platform coverage)', () => {
     const cases = [
         {
@@ -264,7 +227,6 @@ describe('CloneParamsResolverService (platform coverage)', () => {
         'clones $name from its own host with its own credentials',
         async ({ host, provider }) => {
             const codeManagementService = {
-                getCodeManagementPlatforms: jest.fn().mockResolvedValue([provider]),
                 getCloneParams: jest.fn().mockResolvedValue({
                     url: `https://${host}/group/repo`,
                     provider,

@@ -67,7 +67,7 @@ function createMocks() {
     };
 
     const codeManagementService = {
-        getCodeManagementPlatforms: jest.fn().mockResolvedValue([]),
+        getTypeIntegration: jest.fn().mockResolvedValue(null),
     };
 
     const useCase = new ExecuteCliReviewUseCase(
@@ -132,15 +132,15 @@ describe('ExecuteCliReviewUseCase', () => {
 
             expect(result).toBe(PlatformType.GITHUB);
             expect(
-                codeManagementService.getCodeManagementPlatforms,
+                codeManagementService.getTypeIntegration,
             ).not.toHaveBeenCalled();
         });
 
-        it('falls back to the sole connected integration for a self-managed host', async () => {
+        it('falls back to the connected integration for a self-managed host', async () => {
             const { useCase, codeManagementService } = createMocks();
-            codeManagementService.getCodeManagementPlatforms.mockResolvedValue([
+            codeManagementService.getTypeIntegration.mockResolvedValue(
                 PlatformType.GITLAB,
-            ]);
+            );
 
             const result = await (useCase as any).resolveCliPlatform(
                 { organizationId: 'org-1', teamId: 'team-1' },
@@ -153,7 +153,7 @@ describe('ExecuteCliReviewUseCase', () => {
 
         it('never guesses GitHub when the organization has no integration', async () => {
             const { useCase, codeManagementService } = createMocks();
-            codeManagementService.getCodeManagementPlatforms.mockResolvedValue([]);
+            codeManagementService.getTypeIntegration.mockResolvedValue(null);
 
             const result = await (useCase as any).resolveCliPlatform(
                 { organizationId: 'org-1', teamId: 'team-1' },
@@ -161,24 +161,6 @@ describe('ExecuteCliReviewUseCase', () => {
                 false,
             );
 
-            expect(result).toBeUndefined();
-        });
-
-        it('stays undefined when several integrations could match', async () => {
-            const { useCase, codeManagementService } = createMocks();
-            codeManagementService.getCodeManagementPlatforms.mockResolvedValue([
-                PlatformType.GITHUB,
-                PlatformType.GITLAB,
-            ]);
-
-            const result = await (useCase as any).resolveCliPlatform(
-                { organizationId: 'org-1', teamId: 'team-1' },
-                { remote: 'https://gitlab.acme.com/group/repo.git' },
-                false,
-            );
-
-            // Only the remote's host could disambiguate, and the sandbox stage
-            // already does that properly. Guessing here would be worse.
             expect(result).toBeUndefined();
         });
 
@@ -193,13 +175,13 @@ describe('ExecuteCliReviewUseCase', () => {
 
             expect(result).toBeUndefined();
             expect(
-                codeManagementService.getCodeManagementPlatforms,
+                codeManagementService.getTypeIntegration,
             ).not.toHaveBeenCalled();
         });
 
         it('degrades to undefined when the lookup blows up', async () => {
             const { useCase, codeManagementService } = createMocks();
-            codeManagementService.getCodeManagementPlatforms.mockRejectedValue(
+            codeManagementService.getTypeIntegration.mockRejectedValue(
                 new Error('db down'),
             );
 

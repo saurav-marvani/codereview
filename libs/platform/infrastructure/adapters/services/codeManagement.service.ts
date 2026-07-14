@@ -81,44 +81,6 @@ export class CodeManagementService implements ICodeManagementService {
         }
     }
 
-    /**
-     * Every active code-management platform connected to the team.
-     *
-     * getTypeIntegration answers "which platform?" with a findOne that carries
-     * no ORDER BY — fine while a team has a single integration, arbitrary once
-     * it has more (nothing deactivates the previous one on connect, and there
-     * is no unique constraint on organization+team+category). Callers that can
-     * disambiguate — e.g. by matching the git remote's host — need the full
-     * list instead of an arbitrary pick.
-     */
-    async getCodeManagementPlatforms(
-        organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<PlatformType[]> {
-        try {
-            const integrations = await this.integrationService.find({
-                organization: { uuid: organizationAndTeamData.organizationId },
-                team: { uuid: organizationAndTeamData.teamId },
-                integrationCategory: IntegrationCategory.CODE_MANAGEMENT,
-                status: true,
-            });
-
-            return (integrations || [])
-                .map((integration) => integration.platform)
-                .filter(Boolean);
-        } catch (error) {
-            this.logger.error({
-                message: 'Failed to list code management integrations',
-                context: CodeManagementService.name,
-                error,
-                metadata: {
-                    organizationId: organizationAndTeamData.organizationId,
-                    teamId: organizationAndTeamData.teamId,
-                },
-            });
-            return [];
-        }
-    }
-
     async listIssues(
         params: ListIssuesParams,
         type?: PlatformType,

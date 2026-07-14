@@ -167,14 +167,15 @@ describe('CLI sandbox clone against a self-managed git host', () => {
     });
 
     /** Real adapters, with only the integration lookup faked. */
-    const buildResolver = (host: string, platforms: PlatformType[]) => {
+    const buildResolver = (host: string, connected?: PlatformType) => {
         const integrationService = {
-            find: jest.fn(async (filter: any) =>
-                filter?.integrationCategory === IntegrationCategory.CODE_MANAGEMENT
-                    ? platforms.map((platform) => ({ platform }))
-                    : [],
+            // What getTypeIntegration reads to resolve the team's platform.
+            findOne: jest.fn(async (filter: any) =>
+                filter?.integrationCategory ===
+                    IntegrationCategory.CODE_MANAGEMENT && connected
+                    ? { platform: connected }
+                    : null,
             ),
-            findOne: jest.fn().mockResolvedValue({ uuid: 'integration-1' }),
             getPlatformAuthDetails: jest.fn(async (_org, platform) =>
                 platform === PlatformType.GITLAB
                     ? {
@@ -215,7 +216,7 @@ describe('CLI sandbox clone against a self-managed git host', () => {
 
     it('materializes the working tree from the self-managed host', async () => {
         const host = `http://127.0.0.1:${port}`;
-        const resolver = buildResolver(host, [PlatformType.GITLAB]);
+        const resolver = buildResolver(host, PlatformType.GITLAB);
 
         const cloneInfo = await resolver.resolve(
             { origin: 'cli', organizationAndTeamData: { organizationId: 'org-1', teamId: 'team-1' } } as any,
@@ -257,7 +258,7 @@ describe('CLI sandbox clone against a self-managed git host', () => {
 
     it('fails loudly instead of silently cloning github.com when nothing is connected', async () => {
         const host = `http://127.0.0.1:${port}`;
-        const resolver = buildResolver(host, []);
+        const resolver = buildResolver(host, undefined);
 
         const cloneInfo = await resolver.resolve(
             { origin: 'cli', organizationAndTeamData: { organizationId: 'org-1', teamId: 'team-1' } } as any,
