@@ -214,6 +214,44 @@ export class KodyRulesAgentProvider extends BaseCodeReviewAgentProvider {
             judgeViolations = result.violations;
             shardsRun = result.shardsRun;
             shardsErrored = result.shardsErrored;
+
+            // Escalate a TOTAL shard failure. When every judge shard errored
+            // (e.g. an OpenAI-strict wire-schema 400 for a BYOK org, which
+            // 400s every shard identically — the #1523/#1526 regression), the
+            // judge path returns zero violations and the review used to
+            // complete "successfully" with only warn logs — a green review
+            // that evaluated none of its semantic kody-rules. Throw so the
+            // orchestrator's allSettled marks this agent PARTIAL_ERROR
+            // (surfaced by execution health) instead of silently reporting a
+            // healthy, rule-free review. A partial shard failure still
+            // degrades to the surviving shards' findings, as before.
+            if (shardsRun > 0 && shardsErrored === shardsRun) {
+                throw new Error(
+                    `[kody-rules] all ${shardsRun} judge shard(s) failed for PR#${input.prNumber} — every semantic kody-rule verdict was lost. Reporting 0 findings would green-wash a review that evaluated nothing; failing loudly so the execution is marked degraded. Check the shard warn logs (wire-schema 400 / provider outage / model unavailability).`,
+                );
+            }
+
+            // Surface a PARTIAL shard failure (some shards died while others
+            // posted). We deliberately do NOT throw — the surviving shards'
+            // findings still ship — but a silent degrade is exactly the
+            // "one shard dead while the other posts" shape of the wire-schema
+            // regression: the review looks healthy yet a subset of semantic
+            // kody-rules were never evaluated, and today that only shows up as
+            // an `, N errored` fragment in an info line (easy to miss, not
+            // alertable). Emit a structured WARN with the counts so the
+            // partial degrade is greppable/alertable per-execution.
+            if (shardsErrored > 0 && shardsErrored < shardsRun) {
+                this.shardLogger.warn({
+                    message: `[kody-rules] PARTIAL judge-shard failure for PR#${input.prNumber}: ${shardsErrored}/${shardsRun} shard(s) errored — the surviving ${shardsRun - shardsErrored} shard(s) posted, but the semantic kody-rules on the failed shard(s) were NOT evaluated. Review degraded (not failed). Check the shard warn logs for the cause (wire-schema 400 / provider blip / model unavailability).`,
+                    context: this.getIdentity().name,
+                    metadata: {
+                        prNumber: input.prNumber,
+                        shardsRun,
+                        shardsErrored,
+                        shardsSucceeded: shardsRun - shardsErrored,
+                    },
+                });
+            }
         }
 
         // Merge both streams; downstream mapping/verify/dedup are identical.
