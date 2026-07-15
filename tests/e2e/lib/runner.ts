@@ -24,6 +24,7 @@ import {
     signUp,
 } from './onboarding.js';
 import { randomBytes } from 'node:crypto';
+import { settle } from '../providers/base.js';
 import { registryRepoFor } from './cloud-tenant-registry.js';
 import { logger } from './log.js';
 import { collectServerEvidence, isTargetReachable } from './server-evidence.js';
@@ -663,7 +664,7 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
                             `RETRY ${cellLabel}: transient failure shape, re-running once${settleMs ? ` after a ${settleMs / 1000}s settle (absence shape — likely a deploy/worker rollout window)` : ''} (${e.message.slice(0, 160)})`,
                         );
                         if (settleMs) {
-                            await new Promise((r) => setTimeout(r, settleMs));
+                            await settle(settleMs);
                         }
                         continue;
                     }

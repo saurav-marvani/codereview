@@ -12,6 +12,7 @@ import {
     type HttpResponse,
 } from "./http.js";
 import { logger } from "./log.js";
+import { settle } from "../providers/base.js";
 
 const log = logger("onboarding");
 
@@ -700,7 +701,7 @@ export async function finishOnboarding(
         // observed case. See task #84 for the corresponding server-
         // side fix (validate-prerequisites should retry with backoff
         // when no automation is found).
-        await new Promise((r) => setTimeout(r, 10_000));
+        await settle(10_000);
         await resetCodeReviewConfig(target, session);
         return;
     }
