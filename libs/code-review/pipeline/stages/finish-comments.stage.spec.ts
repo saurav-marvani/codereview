@@ -1,4 +1,4 @@
-import { produce } from 'immer';
+import { frozenContext } from '../../../../test/fixtures/frozen-pipeline-context';
 import { UpdateCommentsAndGenerateSummaryStage } from './finish-comments.stage';
 import { PullRequestMessageStatus } from '@libs/core/infrastructure/config/types/general/pullRequestMessages.type';
 
@@ -37,8 +37,11 @@ describe('UpdateCommentsAndGenerateSummaryStage - lineComments forwarding', () =
         },
     ];
 
+    // Frozen by DEFAULT — the shape production hands this stage. This spec's
+    // own subject once threw INSIDE its catch because `context.errors.push()`
+    // hit the freeze (#1548). See test/fixtures/frozen-pipeline-context.ts.
     const baseContext = (over: Record<string, unknown> = {}) =>
-        ({
+        frozenContext({
             lastExecution: undefined,
             errors: [],
             // No summary config → shouldGenerateOrUpdateSummary is false, so the
@@ -128,7 +131,7 @@ describe('UpdateCommentsAndGenerateSummaryStage - frozen-context error recording
     };
 
     const summaryFailContext = () =>
-        ({
+        frozenContext({
             lastExecution: undefined, // isCommitRun=false
             // generatePRSummary=true → shouldGenerateOrUpdateSummary=true,
             // entering the try/catch whose failure path records the error.
@@ -151,8 +154,8 @@ describe('UpdateCommentsAndGenerateSummaryStage - frozen-context error recording
 
     it('records the summary failure without throwing when the context is Immer-frozen', async () => {
         const { stage } = makeStage();
-        // produce(x, () => {}) deep-freezes exactly like the real pipeline.
-        const frozenCtx = produce(summaryFailContext(), () => {});
+        // summaryFailContext() is deep-frozen by default.
+        const frozenCtx = summaryFailContext();
 
         // The whole point: the OLD implementation threw here
         // ("Cannot add property N, object is not extensible") because the
@@ -172,10 +175,10 @@ describe('UpdateCommentsAndGenerateSummaryStage - frozen-context error recording
             error: new Error('earlier'),
             metadata: { reason: 'earlier_failure' },
         };
-        const frozenCtx = produce(
-            { ...summaryFailContext(), errors: [priorError] } as any,
-            () => {},
-        );
+        const frozenCtx = frozenContext({
+            ...summaryFailContext(),
+            errors: [priorError],
+        } as any);
 
         const result = await (stage as any).executeStage(frozenCtx);
 
