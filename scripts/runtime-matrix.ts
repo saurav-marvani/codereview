@@ -214,6 +214,30 @@ const REPOS: Record<string, RepoSpec> = {
         warm: { pr: 28817, sha: 'd7d4d3bf7e', diffFile: 'scripts/rtbug/immich-null.json' },
         directive: BLIND_DIRECTIVE,
     },
+    'nocodb-rtbug': {
+        name: 'nocodb-rtbug',
+        url: 'https://github.com/nocodb/nocodb',
+        baseBranch: 'develop',
+        size: 'cpx51',
+        playbook: {
+            requiredEnv: [],
+            setup: [
+                'corepack enable 2>/dev/null || true',
+                'cd /opt/repo && ( (command -v pnpm >/dev/null || npm i -g pnpm) >/dev/null 2>&1; pnpm install 2>&1 | tail -6 )',
+                'docker rm -f nocodb-pg >/dev/null 2>&1 || true; docker run -d --name nocodb-pg -e POSTGRES_PASSWORD=nocodb -e POSTGRES_USER=nocodb -e POSTGRES_DB=nocodb -p 5432:5432 postgres:16-alpine',
+                'for i in $(seq 1 30); do docker exec nocodb-pg pg_isready -U nocodb >/dev/null 2>&1 && break; sleep 1; done; docker exec nocodb-pg pg_isready -U nocodb',
+            ],
+            build: [],
+            services: [],
+            test: [],
+            healthcheck: ['docker exec nocodb-pg pg_isready -U nocodb && echo pg-ready'],
+        },
+        cold: { pr: 12410, sha: 'c2f058d7a15d81434d16f0ed0ced1e8c1da41a23', diffFile: 'scripts/rtbug/nocodb-groupby.json' },
+        warm: { pr: 12410, sha: 'c2f058d7a15d81434d16f0ed0ced1e8c1da41a23', diffFile: 'scripts/rtbug/nocodb-groupby.json' },
+        directive:
+            BLIND_DIRECTIVE +
+            ' The changed file packages/nocodb/src/db/BaseModelSqlv2/group-by.ts builds the SQL for GROUP BY queries. A Postgres is up on localhost:5432 (nocodb/nocodb/nocodb). Reproduce the GROUP-BY behavior against a real DB: create a table with a column that has some BLANK/NULL/empty-string values mixed with real values, run the group-by aggregation the changed code produces, and QUERY the raw grouped result — verify that blank/null/empty rows are grouped and counted correctly and are not merged, mis-bucketed, dropped, or double-counted. Wrong grouping/counts for blank values is a defect.',
+    },
     'medusa-deep': {
         name: 'medusa-deep',
         url: 'https://github.com/medusajs/medusa',
@@ -444,8 +468,12 @@ async function main() {
 
     const env: Record<string, string> = {
         PREVIEW_VM_TOKEN: hetzner,
-        PREVIEW_AGENT_API_KEY: anthropic,
-        PREVIEW_AGENT_MODEL: 'claude-sonnet-4-5-20250929',
+        PREVIEW_AGENT_API_KEY: process.env.PREVIEW_AGENT_API_KEY || anthropic,
+        PREVIEW_AGENT_MODEL:
+            process.env.PREVIEW_AGENT_MODEL || 'claude-sonnet-4-5-20250929',
+        // Optional: route the Anthropic SDK at another Anthropic-compatible
+        // surface (e.g. Moonshot pay-per-token) instead of api.anthropic.com.
+        PREVIEW_AGENT_BASE_URL: process.env.PREVIEW_AGENT_BASE_URL || '',
         PREVIEW_VM_REGION: 'hil',
         PREVIEW_VM_SIZE: spec.size ?? 'cpx41',
         // On for warm-boot timing runs; OFF for cold-only batch (a snapshot we

@@ -224,9 +224,14 @@ export class RunPreviewEnvStage extends BasePipelineStage<CodeReviewPipelineCont
             const agentRes = await this.agent.run({
                 apiKey,
                 model,
-                baseURL: model.startsWith('kimi')
-                    ? 'https://api.kimi.com/coding'
-                    : this.configService.get<string>('PREVIEW_AGENT_BASE_URL'),
+                // Explicit base-URL always wins (e.g. Moonshot pay-per-token
+                // Anthropic surface); only fall back to the coding-plan endpoint
+                // for kimi models when nothing is configured.
+                baseURL:
+                    this.configService.get<string>('PREVIEW_AGENT_BASE_URL') ||
+                    (model.startsWith('kimi')
+                        ? 'https://api.kimi.com/coding'
+                        : undefined),
                 exec,
                 diff: buildDiffFromChangedFiles(context.changedFiles),
                 focus: context.reviewDirective,
