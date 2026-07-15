@@ -373,20 +373,24 @@ jobs:
                       Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
                       Trigger: ${{ github.event_name }}${{ github.event_name == 'schedule' && ' (nightly catch-all)' || '' }}
 
-            # Case 2 — the matrix ran and a P0 (gating) failure happened.
+            # Case 2 — the matrix ran, wrote a digest, and exited non-zero.
             #
-            # `always()`, not `failure()`: when the JOB hits timeout-minutes the
-            # matrix step is CANCELLED, not failed, so a `failure() &&
-            # outcome == 'failure'` guard silently skips this notify — exactly
-            # when it matters most. The worse the breakage, the longer the run
-            # burns on retries, the likelier the timeout, the more certain the
-            # silence. That inversion hid a broken QA github cell for 6 days
-            # (last green 2026-07-08). Gate on the digest instead: a non-zero
-            # gating_count means P0s failed, however the job ended.
+            # Gate on the STEP outcome, not on gating_count. run-matrix exits 1
+            # for THREE reasons (`gating.length > 0 || summary.blocked > 0 ||
+            # targetCrashed`) and only the first surfaces as gating_count, so a
+            # digest-only guard goes quiet on a fully-blocked or crashed target
+            # — trading silence-on-timeout for silence-on-blocked.
+            #
+            # This is safe now only because the matrix step carries its own
+            # timeout-minutes (above): a timed-out STEP fails, so `failure()`
+            # holds. Previously a job-level timeout CANCELLED the step,
+            # `failure()` was false, and this notify was skipped exactly when it
+            # mattered most — the inversion that hid a broken QA github cell for
+            # 6 days (last green 2026-07-08).
             - name: Notify Discord — gating failures
               if: >-
-                  always() && steps.digest.outputs.gating_count != '0' &&
-                  steps.digest.outputs.gating_count != ''
+                  failure() && steps.matrix.outcome == 'failure' &&
+                  steps.digest.outputs.found == 'true'
               uses: ./.github/actions/discord-notify
               with:
                   webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK }}
