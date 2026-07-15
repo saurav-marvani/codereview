@@ -20,8 +20,11 @@ import {
  */
 const LONGEST_SCENARIO_MS = 1502 * 1000; // command-review's own poll window
 
+// Both encodings are required by the overload — omitting publicKeyEncoding
+// falls through to the x448 signature and fails typecheck.
 const { privateKey } = generateKeyPairSync("rsa", {
     modulusLength: 2048,
+    publicKeyEncoding: { type: "spki", format: "pem" },
     privateKeyEncoding: { type: "pkcs8", format: "pem" },
 });
 
