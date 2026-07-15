@@ -373,7 +373,14 @@ jobs:
     e2e-cloud:
         name: E2E matrix on QA cloud
         needs: [build_push_and_open_pr, wait_for_qa_rollout]
-        if: needs.build_push_and_open_pr.result == 'success'
+        # BOTH results, explicitly: an `if:` overrides the default "skip when a
+        # need failed", so listing wait_for_qa_rollout under `needs` alone would
+        # NOT stop this job from running after a FAILED rollout — the exact case
+        # that job exists to catch. (A stalled rollout still succeeds-with-a-
+        # warning by design; only a FAILED one blocks here.)
+        if: >-
+            needs.build_push_and_open_pr.result == 'success' &&
+            needs.wait_for_qa_rollout.result == 'success'
         permissions:
             contents: read
         uses: ./.github/workflows/e2e-cloud.yml
