@@ -12,7 +12,7 @@ import {
 } from '@libs/sandbox/domain/contracts/sandbox.provider';
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Sandbox } from 'e2b';
+import { CommandExitError, Sandbox } from 'e2b';
 import { randomUUID } from 'crypto';
 
 import { calculateBackoffInterval } from '@libs/common/utils/polling';
@@ -582,33 +582,104 @@ export class SandboxLeaseManager implements ISandboxLeaseManager {
      * This is used by the joiner path when connecting to an already-READY sandbox.
      */
     private buildSandboxInstance(e2bSandbox: Sandbox, prKey: string, leaseId: string): SandboxInstance {
+        // Repo is cloned at REPO_DIR — NOT the sandbox default CWD (/home/user).
+        // The read-only tools MUST resolve relative paths against it, otherwise
+        // sed/rg/find run from /home/user and silently find nothing.
+        const REPO_DIR = '/home/user/repo';
+
+        // e2b's commands.run THROWS a CommandExitError on any non-zero exit.
+        // Normalize it back to a result so read-only tools can inspect
+        // exitCode/stderr instead of treating "no matches" (rg exit 1) or a
+        // missing file as a broken tool. Mirrors E2BSandboxService.runCmd.
+        const runCmd = async (
+            cmd: string,
+            timeoutMs: number,
+        ): Promise<{ stdout: string; stderr: string; exitCode: number }> => {
+            try {
+                const r = await e2bSandbox.commands.run(cmd, { timeoutMs });
+                return { stdout: r.stdout, stderr: r.stderr, exitCode: r.exitCode };
+            } catch (err) {
+                if (err instanceof CommandExitError) {
+                    return {
+                        stdout: err.stdout,
+                        stderr: err.stderr,
+                        exitCode: err.exitCode,
+                    };
+                }
+                throw err;
+            }
+        };
+
+        // Same guards + repo-root prefix as E2BSandboxService.resolvePath. This
+        // is the core fix: relative paths are resolved against the repo, not CWD.
+        const resolvePath = (p: string): string => {
+            if (p.startsWith('/')) {
+                throw new Error('Absolute paths are not allowed');
+            }
+            if (p.includes('..')) {
+                throw new Error('Path traversal using ".." is not allowed');
+            }
+            return `${REPO_DIR}/${p}`;
+        };
+
         return {
             remoteCommands: {
                 grep: async (pattern: string, path: string, glob?: string) => {
-                    const globArg = glob ? `--glob '${glob}'` : '';
-                    const result = await e2bSandbox.commands.run(
-                        `rg --no-heading -n ${globArg} -e '${pattern}' '${path}' 2>/dev/null || true`,
-                        { timeoutMs: 30_000 },
+                    const globArg = glob
+                        ? ` --glob '${glob.replace(/'/g, "'\\''")}'`
+                        : '';
+                    const safePattern = pattern.replace(/'/g, "'\\''");
+                    // rg runs inside REPO_DIR, so the original relative path is correct.
+                    const safePath = path.replace(/'/g, "'\\''");
+                    const result = await runCmd(
+                        `cd ${REPO_DIR} && rg --no-heading -n '${safePattern}' '${safePath}'${globArg}`,
+                        30_000,
                     );
-                    return result.stdout || '';
+                    // rg exit 1 = "no matches" (valid); exit >= 2 with stderr = real error.
+                    if (!result.stdout && result.exitCode >= 2 && result.stderr) {
+                        return `Error: ${result.stderr}`;
+                    }
+                    if (!result.stdout) {
+                        return 'No matches found.';
+                    }
+                    return result.stdout;
                 },
                 read: async (path: string, start: number, end: number) => {
-                    const result = await e2bSandbox.commands.run(
-                        `sed -n '${start},${end}p' '${path}' 2>/dev/null || true`,
-                        { timeoutMs: 10_000 },
-                    );
-                    return result.stdout || '';
+                    const fullPath = resolvePath(path).replace(/'/g, "'\\''");
+                    const cmd =
+                        start === 0 && end === 0
+                            ? `cat '${fullPath}'`
+                            : `sed -n '${start < 1 ? 1 : start},${end}p' '${fullPath}'`;
+                    const result = await runCmd(cmd, 10_000);
+                    if (!result.stdout) {
+                        this.logger.warn({
+                            message: `[SANDBOX-READ] Empty result (reconnect) for ${path}: exitCode=${result.exitCode} stderr=${(result.stderr || '').substring(0, 200)} cmd=${cmd}`,
+                            context: SandboxLeaseManager.name,
+                        });
+                    }
+                    if (!result.stdout && result.stderr) {
+                        throw new Error(result.stderr.trim());
+                    }
+                    return result.stdout;
                 },
                 listDir: async (path: string, maxDepth: number) => {
-                    const result = await e2bSandbox.commands.run(
-                        `find '${path}' -maxdepth ${maxDepth} 2>/dev/null | head -200 || true`,
-                        { timeoutMs: 10_000 },
+                    const fullPath = resolvePath(path).replace(/'/g, "'\\''");
+                    const result = await runCmd(
+                        `find '${fullPath}' -maxdepth ${maxDepth} -type f`,
+                        10_000,
                     );
-                    return result.stdout || '';
+                    return result.stdout;
                 },
                 exec: async (command: string) => {
-                    const result = await e2bSandbox.commands.run(command, { timeoutMs: 30_000 });
-                    return { stdout: result.stdout || '', exitCode: result.exitCode };
+                    const result = await runCmd(
+                        `cd ${REPO_DIR} && ${command}`,
+                        30_000,
+                    );
+                    return {
+                        stdout: result.stdout || '',
+                        stderr: result.stderr || '',
+                        exitCode: result.exitCode,
+                    };
                 },
             },
             cleanup: async () => {
