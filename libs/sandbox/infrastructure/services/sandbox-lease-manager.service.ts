@@ -12,12 +12,13 @@ import {
 } from '@libs/sandbox/domain/contracts/sandbox.provider';
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CommandExitError, Sandbox } from 'e2b';
+import { Sandbox } from 'e2b';
 import { randomUUID } from 'crypto';
 
 import { calculateBackoffInterval } from '@libs/common/utils/polling';
 import { SandboxLeaseRepository } from '../repositories/sandbox-lease.repository';
 import { NULL_SANDBOX_INSTANCE } from '../providers/null-sandbox.service';
+import { buildE2BRemoteCommands } from '../providers/e2b-sandbox.service';
 
 /**
  * Default idle timeout applied when the last lease on a sandbox is released.
@@ -582,118 +583,18 @@ export class SandboxLeaseManager implements ISandboxLeaseManager {
      * This is used by the joiner path when connecting to an already-READY sandbox.
      */
     private buildSandboxInstance(e2bSandbox: Sandbox, prKey: string, leaseId: string): SandboxInstance {
-        // Repo is cloned at REPO_DIR — NOT the sandbox default CWD (/home/user).
-        // The read-only tools MUST resolve relative paths against it, otherwise
-        // sed/rg/find run from /home/user and silently find nothing.
-        const REPO_DIR = '/home/user/repo';
-
-        // e2b's commands.run THROWS a CommandExitError on any non-zero exit.
-        // Normalize it back to a result so read-only tools can inspect
-        // exitCode/stderr instead of treating "no matches" (rg exit 1) or a
-        // missing file as a broken tool. Mirrors E2BSandboxService.runCmd.
-        const runCmd = async (
-            cmd: string,
-            timeoutMs: number,
-        ): Promise<{ stdout: string; stderr: string; exitCode: number }> => {
-            try {
-                const r = await e2bSandbox.commands.run(cmd, { timeoutMs });
-                return { stdout: r.stdout, stderr: r.stderr, exitCode: r.exitCode };
-            } catch (err) {
-                if (err instanceof CommandExitError) {
-                    return {
-                        stdout: err.stdout,
-                        stderr: err.stderr,
-                        exitCode: err.exitCode,
-                    };
-                }
-                throw err;
-            }
-        };
-
-        // Same guards + repo-root prefix as E2BSandboxService.resolvePath. This
-        // is the core fix: relative paths are resolved against the repo, not CWD.
-        const resolvePath = (p: string): string => {
-            if (p.startsWith('/')) {
-                throw new Error('Absolute paths are not allowed');
-            }
-            if (p.includes('..')) {
-                throw new Error('Path traversal using ".." is not allowed');
-            }
-            return `${REPO_DIR}/${p}`;
-        };
-
         return {
-            remoteCommands: {
-                grep: async (pattern: string, path: string, glob?: string) => {
-                    // Validate path (throws on '..' or absolute) — same guard as
-                    // read/listDir and E2BSandboxService.grep. rg then runs the
-                    // ORIGINAL relative path inside REPO_DIR via `cd`, so the
-                    // resolved path itself is only needed for its throw side-effect.
-                    resolvePath(path);
-                    const globArg = glob
-                        ? ` --glob '${glob.replace(/'/g, "'\\''")}'`
-                        : '';
-                    const safePattern = pattern.replace(/'/g, "'\\''");
-                    // rg runs inside REPO_DIR, so the original relative path is correct.
-                    const safePath = path.replace(/'/g, "'\\''");
-                    const result = await runCmd(
-                        `cd ${REPO_DIR} && rg --no-heading -n '${safePattern}' '${safePath}'${globArg}`,
-                        30_000,
-                    );
-                    // rg exit 1 = "no matches" (valid); exit >= 2 with stderr = real error.
-                    if (!result.stdout && result.exitCode >= 2 && result.stderr) {
-                        return `Error: ${result.stderr}`;
-                    }
-                    if (!result.stdout) {
-                        return 'No matches found.';
-                    }
-                    return result.stdout;
+            // Single shared implementation (see e2b-sandbox.service.ts) — resolves
+            // paths against the repo root, surfaces errors, logs empty reads.
+            // Sharing it prevents the creator/reconnect drift that blinded reviews.
+            remoteCommands: buildE2BRemoteCommands(e2bSandbox, {
+                logger: this.logger,
+                logContext: SandboxLeaseManager.name,
+                logMetadata: {
+                    organizationId: prKey.split(':')[0],
+                    prKey,
                 },
-                read: async (path: string, start: number, end: number) => {
-                    const fullPath = resolvePath(path).replace(/'/g, "'\\''");
-                    const cmd =
-                        start === 0 && end === 0
-                            ? `cat '${fullPath}'`
-                            : `sed -n '${start < 1 ? 1 : start},${end}p' '${fullPath}'`;
-                    const result = await runCmd(cmd, 10_000);
-                    if (!result.stdout) {
-                        this.logger.warn({
-                            message: `[SANDBOX-READ] Empty result (reconnect) for ${path}: exitCode=${result.exitCode} stderr=${(result.stderr || '').substring(0, 200)} cmd=${cmd}`,
-                            context: SandboxLeaseManager.name,
-                            metadata: {
-                                organizationId: prKey.split(':')[0],
-                                prKey,
-                                path,
-                                exitCode: result.exitCode,
-                                stderr: (result.stderr || '').substring(0, 200),
-                            },
-                        });
-                    }
-                    if (!result.stdout && result.stderr) {
-                        throw new Error(result.stderr.trim());
-                    }
-                    return result.stdout;
-                },
-                listDir: async (path: string, maxDepth: number) => {
-                    const fullPath = resolvePath(path).replace(/'/g, "'\\''");
-                    const result = await runCmd(
-                        `find '${fullPath}' -maxdepth ${maxDepth} -type f`,
-                        10_000,
-                    );
-                    return result.stdout;
-                },
-                exec: async (command: string) => {
-                    const result = await runCmd(
-                        `cd ${REPO_DIR} && ${command}`,
-                        30_000,
-                    );
-                    return {
-                        stdout: result.stdout || '',
-                        stderr: result.stderr || '',
-                        exitCode: result.exitCode,
-                    };
-                },
-            },
+            }),
             cleanup: async () => {
                 await this.release(leaseId);
             },
