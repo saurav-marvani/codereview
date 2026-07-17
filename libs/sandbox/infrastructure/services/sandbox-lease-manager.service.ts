@@ -18,6 +18,7 @@ import { randomUUID } from 'crypto';
 import { calculateBackoffInterval } from '@libs/common/utils/polling';
 import { SandboxLeaseRepository } from '../repositories/sandbox-lease.repository';
 import { NULL_SANDBOX_INSTANCE } from '../providers/null-sandbox.service';
+import { buildE2BRemoteCommands } from '../providers/e2b-sandbox.service';
 
 /**
  * Default idle timeout applied when the last lease on a sandbox is released.
@@ -583,34 +584,17 @@ export class SandboxLeaseManager implements ISandboxLeaseManager {
      */
     private buildSandboxInstance(e2bSandbox: Sandbox, prKey: string, leaseId: string): SandboxInstance {
         return {
-            remoteCommands: {
-                grep: async (pattern: string, path: string, glob?: string) => {
-                    const globArg = glob ? `--glob '${glob}'` : '';
-                    const result = await e2bSandbox.commands.run(
-                        `rg --no-heading -n ${globArg} -e '${pattern}' '${path}' 2>/dev/null || true`,
-                        { timeoutMs: 30_000 },
-                    );
-                    return result.stdout || '';
+            // Single shared implementation (see e2b-sandbox.service.ts) — resolves
+            // paths against the repo root, surfaces errors, logs empty reads.
+            // Sharing it prevents the creator/reconnect drift that blinded reviews.
+            remoteCommands: buildE2BRemoteCommands(e2bSandbox, {
+                logger: this.logger,
+                logContext: SandboxLeaseManager.name,
+                logMetadata: {
+                    organizationId: prKey.split(':')[0],
+                    prKey,
                 },
-                read: async (path: string, start: number, end: number) => {
-                    const result = await e2bSandbox.commands.run(
-                        `sed -n '${start},${end}p' '${path}' 2>/dev/null || true`,
-                        { timeoutMs: 10_000 },
-                    );
-                    return result.stdout || '';
-                },
-                listDir: async (path: string, maxDepth: number) => {
-                    const result = await e2bSandbox.commands.run(
-                        `find '${path}' -maxdepth ${maxDepth} 2>/dev/null | head -200 || true`,
-                        { timeoutMs: 10_000 },
-                    );
-                    return result.stdout || '';
-                },
-                exec: async (command: string) => {
-                    const result = await e2bSandbox.commands.run(command, { timeoutMs: 30_000 });
-                    return { stdout: result.stdout || '', exitCode: result.exitCode };
-                },
-            },
+            }),
             cleanup: async () => {
                 await this.release(leaseId);
             },

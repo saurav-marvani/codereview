@@ -1210,3 +1210,187 @@ describe('SandboxLeaseReaperService', () => {
         expect(leaseRepo.delete).toHaveBeenCalledTimes(3);
     });
 });
+
+// ─── Reconnect-path RemoteCommands (regression: blind reads bug) ──────────────
+//
+// The joiner/reconnect path (buildSandboxInstance) used to run sed/rg/find with
+// relative paths from the sandbox default CWD (/home/user) instead of the repo
+// root (/home/user/repo), and swallowed errors with `2>/dev/null || true` with
+// no log. Net effect: every reconnected review pass read '' for real files and
+// approved PRs blind. These tests pin the corrected behavior.
+describe('SandboxLeaseManager reconnect RemoteCommands (blind-read fix)', () => {
+    const REPO_DIR = '/home/user/repo';
+
+    function makeFakeE2bSandbox(
+        run: (cmd: string, opts?: any) => Promise<any>,
+    ): any {
+        return {
+            sandboxId: 'sbx-reconnect-1',
+            commands: { run: jest.fn(run) },
+            files: { read: jest.fn(), write: jest.fn() },
+        };
+    }
+
+    function buildReconnectCommands(fake: any) {
+        const manager = makeLeaseManager(
+            makeMockLeaseRepo(),
+            makeMockSandboxProvider(true),
+            makeMockConfigService('test-e2b-key'),
+        );
+        const instance = (manager as any).buildSandboxInstance(
+            fake,
+            'org:repo:225',
+            'lease-1',
+        );
+        return { manager, remoteCommands: instance.remoteCommands };
+    }
+
+    it('read resolves relative paths against the repo root, not the sandbox CWD', async () => {
+        const relPath = 'src/components/Button/Button.tsx';
+        // Simulate a real sandbox: the file only exists under REPO_DIR.
+        const fake = makeFakeE2bSandbox(async (cmd: string) => {
+            if (cmd.includes(`${REPO_DIR}/${relPath}`)) {
+                return {
+                    stdout: 'export function Button() {}\n',
+                    stderr: '',
+                    exitCode: 0,
+                };
+            }
+            return { stdout: '', stderr: '', exitCode: 0 }; // wrong CWD → nothing
+        });
+        const { remoteCommands } = buildReconnectCommands(fake);
+
+        const out = await remoteCommands.read(relPath, 100, 130);
+
+        expect(out).toContain('export function Button');
+        expect(fake.commands.run).toHaveBeenCalledWith(
+            expect.stringContaining(`${REPO_DIR}/${relPath}`),
+            expect.anything(),
+        );
+    });
+
+    it('grep runs inside the repo dir (cd $REPO_DIR)', async () => {
+        const fake = makeFakeE2bSandbox(async (cmd: string) =>
+            cmd.startsWith(`cd ${REPO_DIR} &&`)
+                ? { stdout: 'src/a.ts:1:hit\n', stderr: '', exitCode: 0 }
+                : { stdout: '', stderr: '', exitCode: 1 },
+        );
+        const { remoteCommands } = buildReconnectCommands(fake);
+
+        const out = await remoteCommands.grep('hit', '.', undefined);
+
+        expect(out).toContain('src/a.ts');
+        expect(fake.commands.run).toHaveBeenCalledWith(
+            expect.stringMatching(new RegExp(`^cd ${REPO_DIR} &&`)),
+            expect.anything(),
+        );
+    });
+
+    it('listDir resolves against the repo root', async () => {
+        const fake = makeFakeE2bSandbox(async (cmd: string) =>
+            cmd.includes(`${REPO_DIR}/src`)
+                ? { stdout: `${REPO_DIR}/src/a.ts\n`, stderr: '', exitCode: 0 }
+                : { stdout: '', stderr: '', exitCode: 0 },
+        );
+        const { remoteCommands } = buildReconnectCommands(fake);
+
+        const out = await remoteCommands.listDir('src', 2);
+
+        expect(out).toContain('src/a.ts');
+    });
+
+    it('read propagates real errors instead of silently returning empty', async () => {
+        // Previously `2>/dev/null || true` masked this as empty stdout, exit 0.
+        const fake = makeFakeE2bSandbox(async () => ({
+            stdout: '',
+            stderr: "sed: can't read /home/user/repo/nope.ts: No such file or directory",
+            exitCode: 2,
+        }));
+        const { remoteCommands } = buildReconnectCommands(fake);
+
+        await expect(remoteCommands.read('nope.ts', 1, 10)).rejects.toThrow(
+            /No such file/,
+        );
+    });
+
+    it('read emits a [SANDBOX-READ] warning on an empty result (observability)', async () => {
+        const fake = makeFakeE2bSandbox(async () => ({
+            stdout: '',
+            stderr: '',
+            exitCode: 0,
+        }));
+        const { manager, remoteCommands } = buildReconnectCommands(fake);
+        const warnSpy = jest
+            .spyOn((manager as any).logger, 'warn')
+            .mockImplementation(() => undefined);
+
+        await remoteCommands.read('empty.ts', 1, 10);
+
+        expect(warnSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+                message: expect.stringContaining('[SANDBOX-READ] Empty result'),
+            }),
+        );
+    });
+
+    it('read rejects absolute paths and ".." traversal (security guard)', async () => {
+        const { remoteCommands } = buildReconnectCommands(
+            makeFakeE2bSandbox(async () => ({
+                stdout: '',
+                stderr: '',
+                exitCode: 0,
+            })),
+        );
+
+        await expect(remoteCommands.read('/etc/passwd', 0, 0)).rejects.toThrow(
+            /Absolute/,
+        );
+        await expect(remoteCommands.read('../secrets', 0, 0)).rejects.toThrow(
+            /\.\./,
+        );
+    });
+
+    it('grep rejects absolute paths and ".." traversal (security guard)', async () => {
+        const run = jest.fn(async () => ({
+            stdout: '',
+            stderr: '',
+            exitCode: 1,
+        }));
+        const { remoteCommands } = buildReconnectCommands(
+            makeFakeE2bSandbox(run),
+        );
+
+        await expect(remoteCommands.grep('x', '/etc', undefined)).rejects.toThrow(
+            /Absolute/,
+        );
+        await expect(
+            remoteCommands.grep('x', '../secrets', undefined),
+        ).rejects.toThrow(/\.\./);
+        // The command must never have run for a rejected path.
+        expect(run).not.toHaveBeenCalled();
+    });
+
+    it('empty read warning carries structured metadata (path, exitCode, org)', async () => {
+        const fake = makeFakeE2bSandbox(async () => ({
+            stdout: '',
+            stderr: 'boom',
+            exitCode: 3,
+        }));
+        const { manager, remoteCommands } = buildReconnectCommands(fake);
+        const warnSpy = jest
+            .spyOn((manager as any).logger, 'warn')
+            .mockImplementation(() => undefined);
+
+        // prKey passed by buildReconnectCommands is 'org:repo:225'.
+        await expect(remoteCommands.read('x.ts', 1, 10)).rejects.toThrow(/boom/);
+        expect(warnSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+                metadata: expect.objectContaining({
+                    organizationId: 'org',
+                    path: 'x.ts',
+                    exitCode: 3,
+                }),
+            }),
+        );
+    });
+});
