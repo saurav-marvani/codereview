@@ -1349,4 +1349,48 @@ describe('SandboxLeaseManager reconnect RemoteCommands (blind-read fix)', () => 
             /\.\./,
         );
     });
+
+    it('grep rejects absolute paths and ".." traversal (security guard)', async () => {
+        const run = jest.fn(async () => ({
+            stdout: '',
+            stderr: '',
+            exitCode: 1,
+        }));
+        const { remoteCommands } = buildReconnectCommands(
+            makeFakeE2bSandbox(run),
+        );
+
+        await expect(remoteCommands.grep('x', '/etc', undefined)).rejects.toThrow(
+            /Absolute/,
+        );
+        await expect(
+            remoteCommands.grep('x', '../secrets', undefined),
+        ).rejects.toThrow(/\.\./);
+        // The command must never have run for a rejected path.
+        expect(run).not.toHaveBeenCalled();
+    });
+
+    it('empty read warning carries structured metadata (path, exitCode, org)', async () => {
+        const fake = makeFakeE2bSandbox(async () => ({
+            stdout: '',
+            stderr: 'boom',
+            exitCode: 3,
+        }));
+        const { manager, remoteCommands } = buildReconnectCommands(fake);
+        const warnSpy = jest
+            .spyOn((manager as any).logger, 'warn')
+            .mockImplementation(() => undefined);
+
+        // prKey passed by buildReconnectCommands is 'org:repo:225'.
+        await expect(remoteCommands.read('x.ts', 1, 10)).rejects.toThrow(/boom/);
+        expect(warnSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+                metadata: expect.objectContaining({
+                    organizationId: 'org',
+                    path: 'x.ts',
+                    exitCode: 3,
+                }),
+            }),
+        );
+    });
 });

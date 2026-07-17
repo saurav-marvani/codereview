@@ -625,6 +625,11 @@ export class SandboxLeaseManager implements ISandboxLeaseManager {
         return {
             remoteCommands: {
                 grep: async (pattern: string, path: string, glob?: string) => {
+                    // Validate path (throws on '..' or absolute) — same guard as
+                    // read/listDir and E2BSandboxService.grep. rg then runs the
+                    // ORIGINAL relative path inside REPO_DIR via `cd`, so the
+                    // resolved path itself is only needed for its throw side-effect.
+                    resolvePath(path);
                     const globArg = glob
                         ? ` --glob '${glob.replace(/'/g, "'\\''")}'`
                         : '';
@@ -655,6 +660,13 @@ export class SandboxLeaseManager implements ISandboxLeaseManager {
                         this.logger.warn({
                             message: `[SANDBOX-READ] Empty result (reconnect) for ${path}: exitCode=${result.exitCode} stderr=${(result.stderr || '').substring(0, 200)} cmd=${cmd}`,
                             context: SandboxLeaseManager.name,
+                            metadata: {
+                                organizationId: prKey.split(':')[0],
+                                prKey,
+                                path,
+                                exitCode: result.exitCode,
+                                stderr: (result.stderr || '').substring(0, 200),
+                            },
                         });
                     }
                     if (!result.stdout && result.stderr) {
